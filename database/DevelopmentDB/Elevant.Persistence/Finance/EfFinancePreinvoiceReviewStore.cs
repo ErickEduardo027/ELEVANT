@@ -55,7 +55,7 @@ internal sealed class EfFinancePreinvoiceReviewStore(ElevantDbContext context, I
     {
         var existing = await context.Preinvoices.AsNoTracking().SingleOrDefaultAsync(x => x.PublicId == id, ct);
         if (existing is null) return PackageWriteResult.Fail("not_found");
-        var actor = await AuthorizeAsync(actorId, existing.StationId, "finance.preinvoices.manage", ct);
+        var actor = await AuthorizeAsync(actorId, existing.StationId, "finance.preinvoices.update", ct);
         if (actor is null) return PackageWriteResult.Fail("forbidden");
         if (input.RequestId == Guid.Empty || string.IsNullOrWhiteSpace(input.ExpectedVersion) || string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Trim().Length is < 3 or > 500) return PackageWriteResult.Fail("invalid_request");
         var action = cancel ? "finance.preinvoice.cancelled" : "finance.preinvoice.calculation_restored";

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import ShellFrame from '../../shell/ShellFrame';
+import { useDepartmentNotificationCenter } from '../../notifications/DepartmentNotificationCenter';
 import ModulePlaceholder from '../../shell/components/ModulePlaceholder';
 import { usePreviewControls } from '../../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
@@ -45,6 +46,10 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   useCommercialRevalidation(revalidateClosures);
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
+  const notificationCenter = useDepartmentNotificationCenter({
+    enabled: process.env.NODE_ENV !== 'test' && Boolean(access?.can('contracts.notifications.read')),
+    onOpen: target => target.moduleId && handleSelectModule(target.moduleId),
+  });
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -87,20 +92,21 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
         onToggle: sidebar.toggle,
         onCloseOverlay: sidebar.closeOverlay,
       }}
-      topbarProps={{ station: stationSnapshot(), notificationsEnabled: false, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
+      topbarProps={{ station: stationSnapshot(), notificationsEnabled: notificationCenter.ui !== null, notificationsCount: notificationCenter.count, onOpenNotifications: notificationCenter.openPanel, theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout }}
     >
           {!activeModule ? (
             <NoModulesNotice />
           ) : activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
             <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={revalidateHome} onNavigate={handleSelectModule} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (
-            <ManagedAgreementsPage mode="contracts" />
+            <ManagedAgreementsPage mode="contracts" canSign={can('contracts.agreements.sign')}
+              onNewContract={can('contracts.requests.read') ? () => handleSelectModule(CONTRACT_MODULE_IDS.REQUESTS) : undefined} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (
-            <ManagedDraftsPage canEdit={can('contracts.drafts.edit')} canActivate={can('contracts.drafts.activate')} />
+            <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (
             <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CATALOG ? (
-            <CommercialCatalogPage canCreate={false} canEdit={false} canRetire={false} canSeeClosures={can('contracts.service_closures.read')} />
+            <CommercialCatalogPage canCreate={can('contracts.catalog.create')} canEdit={can('contracts.catalog.update')} canRetire={can('contracts.catalog.delete')} canSeeClosures={can('contracts.service_closures.read')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.SERVICES ? (
             <ManagedAgreementsPage mode="services" />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REPORTS ? (
@@ -112,6 +118,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
           ) : (
             <ModulePlaceholder icon={activeModule.icon} label={activeModule.label} description={activeModule.description} />
           )}
+      {notificationCenter.ui}
     </ShellFrame>
   );
 }

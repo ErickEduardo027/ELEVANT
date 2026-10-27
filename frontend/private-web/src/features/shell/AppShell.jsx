@@ -3,6 +3,7 @@ import ShellFrame from './ShellFrame';
 import { useResponsiveSidebar } from './useResponsiveSidebar';
 import { useTheme } from './useTheme';
 import useNotificationBadge from '../notifications/useNotificationBadge';
+import { useDepartmentNotificationCenter } from '../notifications/DepartmentNotificationCenter';
 
 export default function AppShell({
   navigation,
@@ -23,7 +24,13 @@ export default function AppShell({
   const { theme, toggleTheme } = useTheme();
   const notification = navigation.find(item => item.id === 'notifications');
   const fallbackCount = typeof notification?.badge === 'number' ? notification.badge : notification?.badge?.count ?? 0;
-  const notifications = useNotificationBadge({ fallback: fallbackCount, enabled: notificationsEnabled, source: notificationsSource });
+  // 'department' alerts pop up on screen and open in a drawer; the other sources keep their page.
+  const department = notificationsSource === 'department';
+  const notifications = useNotificationBadge({ fallback: fallbackCount, enabled: notificationsEnabled && !department, source: notificationsSource });
+  const center = useDepartmentNotificationCenter({
+    enabled: notificationsEnabled && department && process.env.NODE_ENV !== 'test',
+    onOpen: target => target.path && router.push(target.path),
+  });
 
   return (
     <ShellFrame
@@ -35,12 +42,14 @@ export default function AppShell({
         overlayOpen: sidebar.overlayOpen, onToggle: sidebar.toggle, onCloseOverlay: sidebar.closeOverlay,
       }}
       topbarProps={{
-        roleLabel, station, notificationsCount: notifications.count, notificationsEnabled, profileActionsEnabled,
+        roleLabel, station, notificationsCount: department ? center.count : notifications.count, notificationsEnabled, profileActionsEnabled,
         theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout, navigation,
-        onOpenNotifications: () => (notificationsPath ? router.push(notificationsPath) : notifications.refresh()),
+        onOpenNotifications: () => (department ? center.openPanel()
+          : notificationsPath ? router.push(notificationsPath) : notifications.refresh()),
       }}
     >
       {children}
+      {center.ui}
     </ShellFrame>
   );
 }

@@ -199,7 +199,7 @@ public sealed partial class SqlServerMigrationTests
         var operations = await AddPayablesExpenseActorAsync(db, "operations-own", ct, Department.Operations, DepartmentAssignmentKind.Member);
         var station = await db.Stations.FirstAsync(ct);
         var actor = (await scope.ServiceProvider.GetRequiredService<IActorContextResolver>().ResolveAsync(member, ct))!;
-        Assert.False(actor.HasPermission("finance.expenses.manage")); Assert.False(actor.HasPermission("finance.expenses.read"));
+        Assert.False(actor.HasPermission("finance.expenses.create")); Assert.False(actor.HasPermission("finance.expenses.read"));
         EmployeeExpenseSave Input(string description) => new(Guid.NewGuid(), station.PublicId, description, PayablesDate, PayablesUsd, new(), [new("Synthetic transport", 1, 100, 0)]);
         var capabilities = (await store.OptionsAsync(member, station.PublicId, ct)).Value!;
         Assert.True(capabilities.CanCreateOwnExpense); Assert.True(capabilities.CanReadOwnExpenses);

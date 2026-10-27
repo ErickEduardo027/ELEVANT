@@ -269,6 +269,13 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(profile => profile.VerifiedAt).HasPrecision(3);
             builder.Property(profile => profile.VerificationSourceUrl).HasMaxLength(512);
             builder.HasIndex(profile => profile.SourceName).IsUnique();
+            // A verified profile is a real airline: its designators cannot belong to another one.
+            builder.HasIndex(profile => profile.IataCode).IsUnique()
+                .HasFilter("[iata_code] IS NOT NULL AND [verified_at] IS NOT NULL")
+                .HasDatabaseName("ux_airline_profiles_verified_iata");
+            builder.HasIndex(profile => profile.IcaoCode).IsUnique()
+                .HasFilter("[icao_code] IS NOT NULL AND [verified_at] IS NOT NULL")
+                .HasDatabaseName("ux_airline_profiles_verified_icao");
             AddNoActionReference<Airline, CommercialAirlineProfile>(builder,
                 profile => profile.CanonicalAirlineId);
             AddNoActionReference<ApplicationUser, CommercialAirlineProfile>(builder,
@@ -293,6 +300,7 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(request => request.ContactCountry).HasMaxLength(80);
             builder.Property(request => request.ContactProvince).HasMaxLength(80);
             builder.Property(request => request.ContactMunicipality).HasMaxLength(80);
+            builder.Property(request => request.ContactDistrict).HasMaxLength(80);
             builder.Property(request => request.ContactDocumentType).HasMaxLength(24);
             builder.Property(request => request.ContactDocumentNumber).HasMaxLength(40);
             builder.Property(request => request.SubmittedAt).HasPrecision(3);
@@ -389,6 +397,22 @@ internal static class WorkforceCommercialConfiguration
             builder.HasKey(station => new { station.ContractVersionId, station.StationId });
             AddNoActionReference<ContractVersion, ContractVersionStation>(builder, station => station.ContractVersionId);
             AddNoActionReference<Station, ContractVersionStation>(builder, station => station.StationId);
+        });
+
+        modelBuilder.Entity<ContractSignature>(builder =>
+        {
+            builder.ToTable("contract_signatures", "commercial", table =>
+                table.HasCheckConstraint("ck_contract_signatures_sha256", "LEN([document_sha256]) = 64"));
+            builder.Property(signature => signature.Party).HasConversion<string>().HasMaxLength(16);
+            builder.Property(signature => signature.SignerName).HasMaxLength(160).IsRequired();
+            builder.Property(signature => signature.SignerTitle).HasMaxLength(120).IsRequired();
+            builder.Property(signature => signature.DocumentSha256).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+            builder.Property(signature => signature.SignedAt).HasPrecision(3);
+            // One acceptance per party and version; the request id makes a retry idempotent.
+            builder.HasIndex(signature => new { signature.ContractVersionId, signature.Party }).IsUnique();
+            builder.HasIndex(signature => signature.RequestId).IsUnique();
+            AddNoActionReference<ContractVersion, ContractSignature>(builder, signature => signature.ContractVersionId);
+            AddNoActionReference<ApplicationUser, ContractSignature>(builder, signature => signature.SignerAccountId);
         });
 
         modelBuilder.Entity<ContractDraftComment>(builder =>

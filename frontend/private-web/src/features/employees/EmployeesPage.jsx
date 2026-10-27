@@ -67,8 +67,9 @@ function EmployeeDetail({ employee, canManage, canTerminate, onEdit, onTransfer,
 /** Human Resources employee records (ADR-0017): accounts are only issued to employees registered here. */
 export default function EmployeesPage({ initialRequisition = null, onRequisitionConsumed }) {
   const access = useOptionalDepartmentAccess();
-  const canManage = Boolean(access?.can('human_resources.employees.manage'));
-  const canTerminate = Boolean(access?.can('human_resources.employees.terminate'));
+  const canCreate = Boolean(access?.can('human_resources.employees.create'));
+  const canUpdate = Boolean(access?.can('human_resources.employees.update'));
+  const canTerminate = Boolean(access?.can('human_resources.employees.delete'));
   const [tab, setTab] = useState('employees');
   const [filters, setFilters] = useState({ department: '', status: 'Active', search: '' });
   const [page, setPage] = useState(null);
@@ -98,12 +99,12 @@ export default function EmployeesPage({ initialRequisition = null, onRequisition
     onRequisitionConsumed?.();
   }, [initialRequisition, onRequisitionConsumed]);
   useEffect(() => {
-    if (tab !== 'pending' || !canManage) return;
+    if (tab !== 'pending' || !canCreate) return;
     listUnregisteredPersons().then(setUnregistered).catch(failure => {
       setUnregistered([]);
       setMessage({ tone: 'error', text: governanceMessage(failure) });
     });
-  }, [tab, canManage]);
+  }, [tab, canCreate]);
   const loadDetail = useCallback(async id => {
     try { setDetail(await getEmployee(id)); } catch (failure) { setMessage({ tone: 'error', text: governanceMessage(failure) }); }
   }, []);
@@ -136,8 +137,8 @@ export default function EmployeesPage({ initialRequisition = null, onRequisition
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow="Gestión Humana" title="Empleados"
         description="Expediente de cada persona que trabaja en AVIAM. Solo los empleados registrados pueden recibir acceso a ELEVANT."
-        actions={canManage && <button type="button" onClick={() => setEditing({})} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Registrar empleado</button>} />
-      {canManage && <Tabs activeId={tab} onChange={setTab} tabs={[{ id: 'employees', label: 'Empleados' }, { id: 'pending', label: 'Expedientes pendientes' }]} />}
+        actions={canCreate && <button type="button" onClick={() => setEditing({})} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Registrar empleado</button>} />
+      {canCreate && <Tabs activeId={tab} onChange={setTab} tabs={[{ id: 'employees', label: 'Empleados' }, { id: 'pending', label: 'Expedientes pendientes' }]} />}
       {message.text && <p role={message.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${message.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{message.text}</p>}
 
       {tab === 'employees' ? (
@@ -197,7 +198,7 @@ export default function EmployeesPage({ initialRequisition = null, onRequisition
 
       <Drawer open={Boolean(detail)} onClose={() => setSelected(null)} title={detail ? `${detail.summary.firstName} ${detail.summary.lastName}` : ''}
         description={detail ? EMPLOYEE_STATUS[detail.summary.status].label : ''} widthClassName="lg:w-[560px]">
-        {detail && <EmployeeDetail employee={detail} canManage={canManage} canTerminate={canTerminate}
+        {detail && <EmployeeDetail employee={detail} canManage={canUpdate} canTerminate={canTerminate}
           onEdit={() => setEditing({ employee: detail })} onTransfer={() => setTransfer(detail)} onTerminate={() => setTerminate(detail)} />}
       </Drawer>
       <EmployeeDrawer open={Boolean(editing)} employee={editing?.employee ?? null} requisition={editing?.requisition ?? null}

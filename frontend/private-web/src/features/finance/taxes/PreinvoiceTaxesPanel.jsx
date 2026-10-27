@@ -6,7 +6,7 @@ import { applyPreinvoiceTaxes, createTaxCommand, financeTaxError, getPreinvoiceT
 
 export default function PreinvoiceTaxesPanel({ preinvoiceId, status, onChanged }) {
   const { access } = useDepartmentAccess(); const canRead = access?.can('finance.taxes.read') ?? false;
-  const canManage = access?.can('finance.taxes.manage') ?? false;
+  const canManage = access?.can('finance.taxes.create') ?? false;
   const [data, setData] = useState(null); const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false);
   const [run] = useState(createTaxCommand);
   const loadSequence = useRef({ value: 0 });

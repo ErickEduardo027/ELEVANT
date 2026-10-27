@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ readSession: vi.fn(), getPlanningSnapshot: vi.fn() }));
+const mocks = vi.hoisted(() => ({ readSession: vi.fn(), getPlanningSnapshot: vi.fn(), loadOccPositions: vi.fn() }));
+vi.mock('./occPositionsService', () => ({ loadOccPositions: mocks.loadOccPositions }));
 vi.mock('../features/auth/authService', () => ({ readSession: mocks.readSession }));
 vi.mock('./planningService', () => ({ getPlanningSnapshot: mocks.getPlanningSnapshot }));
 
@@ -25,15 +26,24 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe('canonical positions map', () => {
-  it('marks only planned stands and never labels the others physically free', async () => {
+  it('shows PUJ real occupancy and labels free only stands registered in the station', async () => {
+    const turnaround = { turnaroundId: 't-1', operationCode: 'DEV-TAT-0001', airlineName: 'Aerolinea',
+      aircraftRegistration: 'HI1055', arrivalFlightNumber: 'DEV101', departureFlightNumber: null,
+      arrivalScheduledAt: '2026-08-18T16:00:00Z', arrivedAt: '2026-08-18T16:05:00Z', departureScheduledAt: null,
+      assignedFrom: '2026-08-18T15:00:00Z', status: 'InProgress' };
+    mocks.loadOccPositions.mockResolvedValue({ stationId, stationCode: 'PUJ', operationDate: '2026-08-18',
+      asOf: '2026-08-18T16:06:00Z', canAssign: true, unassigned: [], positions: [
+        { standId: 's-5', code: 'A05', terminalCode: 'A', standType: null, status: 'occupied', turnarounds: [turnaround] },
+        { standId: 's-2', code: 'A02', terminalCode: 'A', standType: null, status: 'available', turnarounds: [] }] });
     const snapshot = await getPositionsSnapshot('PUJ');
-    expect(mocks.getPlanningSnapshot).toHaveBeenCalledWith({ stationId });
-    expect(snapshot.source).toBe('planning');
+    expect(mocks.loadOccPositions).toHaveBeenCalledWith(stationId, expect.stringMatching(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/));
+    expect(mocks.getPlanningSnapshot).not.toHaveBeenCalled();
+    expect(snapshot).toEqual(expect.objectContaining({ source: 'occupancy', canAssign: true }));
     expect(snapshot.positions.find(position => position.id === 'A5')).toEqual(
-      expect.objectContaining({ status: 'planned', flightId: 'flight-leg', flightNumber: 'DEV101' }));
+      expect.objectContaining({ status: 'occupied', standId: 's-5', flightNumber: 'DEV101', aircraftRegistration: 'HI1055' }));
+    expect(snapshot.positions.find(position => position.id === 'A2').status).toBe('available');
     expect(snapshot.positions.find(position => position.id === 'A1')).toEqual(
-      expect.objectContaining({ status: 'unverified', flightId: null }));
-    expect(snapshot.positions.every(position => position.status !== 'available')).toBe(true);
+      expect.objectContaining({ status: 'unverified', standId: null }));
   });
 
   it('rejects out-of-scope stations without using prototype occupancy', async () => {
@@ -63,11 +73,12 @@ describe('canonical positions map', () => {
   });
 
   it('rejects a planning response for a different station', async () => {
+    mocks.readSession.mockReturnValue({ stationScopes: [{ stationId: '20000000-0000-0000-0000-000000000002', stationCode: 'SDQ' }] });
     mocks.getPlanningSnapshot.mockResolvedValue({
       station: { id: '20000000-0000-0000-0000-000000000099', code: 'SDQ' },
       turnarounds: [],
     });
-    await expect(getPositionsSnapshot('PUJ')).rejects.toThrow(/estación/);
+    await expect(getPositionsSnapshot('SDQ')).rejects.toThrow(/estación/);
   });
 
   it('polls the selected station and reports full replacement and failure', async () => {

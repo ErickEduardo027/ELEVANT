@@ -14,7 +14,8 @@ public sealed record CommercialRequestData(
     string? RepresentativeDocumentNumber,
     bool AuthorityDeclared, string Status, DateTimeOffset SubmittedAt,
     string? DecisionReason, Guid? ContractId,
-    IReadOnlyList<CommercialRequestItemData> Services);
+    IReadOnlyList<CommercialRequestItemData> Services,
+    string? RepresentativeDistrict = null);
 
 public sealed record VerifyAirlineInput(string LegalName, string CountryCode,
     string IataCode, string IcaoCode, string VerificationSourceUrl, string? LogoUrl);

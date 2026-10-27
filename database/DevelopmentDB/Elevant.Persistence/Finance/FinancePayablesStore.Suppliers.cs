@@ -28,9 +28,9 @@ internal sealed partial class FinancePayablesStore
         (await PublicAsync<Elevant.Domain.Entities.Reference.Station>(row.ScopeStationId, ct))!.Value, row.Code, row.Name,
         row.TaxReference, row.ContactEmail, row.IsActive, Version(row.RowVersion));
     public Task<FinancePayablesResult<FinancePayablesMutation>> SaveSupplierAsync(Guid actorId, Guid? id, SupplierSave input, CancellationToken ct = default) =>
-        WriteAsync(actorId, input.RequestId, "supplier.save", id, input, "finance.suppliers.manage", async a =>
+        WriteAsync(actorId, input.RequestId, "supplier.save", id, input, id is null ? "finance.suppliers.create" : "finance.suppliers.update", async a =>
         {
-            Require(Finance(a, "finance.suppliers.manage"), "forbidden");
+            Require(Finance(a, id is null ? "finance.suppliers.create" : "finance.suppliers.update"), "forbidden");
             Require(Text(input.Code, 40) && Text(input.Name, 200) && OptionalText(input.TaxReference, 80) && OptionalText(input.ContactEmail, 254));
             if (!string.IsNullOrEmpty(input.ContactEmail)) Require(System.Net.Mail.MailAddress.TryCreate(input.ContactEmail.Trim(), out _));
             var station = await StationAsync(a, input.ScopeStationId, ct); var now = clock.GetUtcNow();
@@ -42,9 +42,9 @@ internal sealed partial class FinancePayablesStore
             Audit(a, id is null ? "finance.supplier.created" : "finance.supplier.updated", "commercial.suppliers", row.PublicId); return row.PublicId;
         }, ct);
     public Task<FinancePayablesResult<FinancePayablesMutation>> DeleteSupplierAsync(Guid actorId, Guid id, FinancePayablesDecision input, CancellationToken ct = default) =>
-        WriteAsync(actorId, input.RequestId, "supplier.retire", id, input, "finance.suppliers.manage", async a =>
+        WriteAsync(actorId, input.RequestId, "supplier.retire", id, input, "finance.suppliers.delete", async a =>
         {
-            Require(Finance(a, "finance.suppliers.manage"), "forbidden"); var row = await SupplierAsync(a, id, ct);
+            Require(Finance(a, "finance.suppliers.delete"), "forbidden"); var row = await SupplierAsync(a, id, ct);
             Match(row.RowVersion, input.ExpectedVersion); Require(Text(input.Reason, 500));
             row.IsActive = false; row.UpdatedAt = clock.GetUtcNow(); Audit(a, "finance.supplier.retired", "commercial.suppliers", id, input.Reason); return id;
         }, ct);

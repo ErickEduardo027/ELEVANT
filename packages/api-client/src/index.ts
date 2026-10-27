@@ -70,6 +70,9 @@ export {
   type GetHumanResourcesReportOptions,
   type HumanResourcesReportKind,
   type HumanResourcesReportQuery,
+  type OccReportKey,
+  type OccReportQuery,
+  type OccReportFormat,
   type HumanResourcesReportPage,
   type ValidateHumanResourcesAttendanceOptions,
   type GetSystemPingOptions,
@@ -86,6 +89,13 @@ export {
   type ApplyRampServiceChargeOptions,
 } from "./client";
 export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
+export {
+  DOMINICAN_AREA_CODES,
+  identityDocumentExample,
+  normalizeIdentityDocument,
+  normalizePhone,
+  type IdentityDocumentKind,
+} from "./validation";
 export {
   type AccountChangeResponse,
   type AccountChangeListResponse,
@@ -207,6 +217,13 @@ export {
   type OperationMessageListResponse,
   type OperationalNotificationResponse,
   type OperationalNotificationListResponse,
+  type DepartmentNotificationResponse,
+  type DepartmentNotificationListResponse,
+  type OccReportCatalogResponse,
+  type OccPositionBoardResponse,
+  type ContractDocumentResponse,
+  type SignContractRequest,
+  type OccReportPageResponse,
   type SendOperationMessageRequest,
   type OccReviewServiceResponse,
   type OccReviewChecklistAnswerResponse,

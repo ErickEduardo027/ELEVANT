@@ -176,7 +176,7 @@ internal sealed class EfFinanceInvoiceLedgerStore(
     public async Task<FinanceCatalogResult> IssueCreditNoteAsync(Guid actorId, Guid invoiceId, IssueCreditNoteInput input,
         CancellationToken cancellationToken = default)
     {
-        var stations = await StationsAsync(actorId, "finance.reconciliation.record", cancellationToken);
+        var stations = await StationsAsync(actorId, "finance.reconciliation.create", cancellationToken);
         if (stations is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || input.RequestId == Guid.Empty || input.Amount is <= 0 or > 900_000_000_000m ||
             decimal.Round(input.Amount, 4) != input.Amount || input.Reason?.Trim().Length is not (>= 3 and <= 1000))

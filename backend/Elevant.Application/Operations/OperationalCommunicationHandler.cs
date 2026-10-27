@@ -35,7 +35,7 @@ public sealed class OperationalCommunicationHandler(
         Guid accountId, Guid operationId, Guid clientMessageId, Guid? installationId,
         string? content, CancellationToken cancellationToken = default)
     {
-        var access = await ResolveAccessAsync(accountId, "operations.chat.send", cancellationToken);
+        var access = await ResolveAccessAsync(accountId, "operations.chat.create", cancellationToken);
         if (access.Failure is { } failure)
             return CommunicationResults.Failed<OperationMessageData>(failure);
         var body = content?.Trim();

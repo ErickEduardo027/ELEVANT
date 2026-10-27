@@ -102,8 +102,8 @@ internal sealed partial class EfDepartmentGovernanceStore(
             : actor.Access.Department is { } own ? [own] : [];
         return visible.Select(department => new DepartmentCatalogData(KeyOf(department), DepartmentLabels[department],
             DepartmentPermissionCatalog.ModulesOf(department).Select(module => new PermissionModuleData(module.Key,
-                module.Label, module.Actions.Select(action =>
-                    new PermissionActionData(action.Code, action.Action, action.Label)).ToArray())).ToArray())).ToArray();
+                module.Label, module.Section, module.Parent, module.Actions.Select(action =>
+                    new PermissionActionData(action.Code, action.Action, action.Label, action.Kind)).ToArray())).ToArray())).ToArray();
     }
 
     private sealed record UserRow(long Id, Guid PublicId, string FirstName, string LastName, string Email,

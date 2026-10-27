@@ -60,3 +60,10 @@ public enum ContractVersionStatus
     Superseded,
     Rejected,
 }
+
+/// <summary>Party that accepts a contract version.</summary>
+public enum ContractSignatureParty
+{
+    Aviam,
+    Airline,
+}

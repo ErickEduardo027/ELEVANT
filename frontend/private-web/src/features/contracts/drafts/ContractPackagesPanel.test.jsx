@@ -20,7 +20,7 @@ const draft = (patch = {}) => ({ id: 'd1', version: 'contract-rv-1', versionStat
   contractCode: 'CTR-1', terms: 'Terms', validFrom: '2026-10-01', validTo: null, currencyCode: 'USD', stations: [], comments: [],
   rates: [{ id: 'r1', serviceName: 'Energía', billingUnit: 'minute', unitPrice: 20, minimumQuantity: 1, isConfirmed: true },
     { id: 'r2', serviceName: 'Equipaje', billingUnit: 'operation', unitPrice: 30, minimumQuantity: 1, isConfirmed: true }], ...patch });
-const grants = ['contracts.drafts.read', 'contracts.drafts.edit'];
+const grants = ['contracts.drafts.read', 'contracts.drafts.update'];
 let catalog;
 let bound;
 let currentDraft;

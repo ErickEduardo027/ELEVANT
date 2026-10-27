@@ -6,6 +6,7 @@ import { Suspense } from 'react';
 import { connection } from 'next/server';
 import { Manrope, IBM_Plex_Mono } from 'next/font/google';
 import Providers from './providers';
+import FormValidationMessages from '../src/components/FormValidationMessages';
 
 const manrope = Manrope({ subsets: ['latin'], display: 'swap', variable: '--font-manrope' });
 const plexMono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['400', '500', '600'],
@@ -22,6 +23,7 @@ export default async function RootLayout({ children }) {
   return (
     <html lang="es" className={`${manrope.variable} ${plexMono.variable}`}>
       <body>
+        <FormValidationMessages />
         <Providers>
           <Suspense fallback={<main role="status" className="min-h-screen bg-surface-light p-8 text-ink-900 dark:bg-surface-dark dark:text-text-primary-dark">Cargando…</main>}>
             {children}

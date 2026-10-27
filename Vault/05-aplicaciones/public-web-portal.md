@@ -44,6 +44,9 @@ tags:
 
 # Public Web y portal de aerolíneas
 
+> [!NOTE]
+> La revisión docente de octubre de 2026 cambió validaciones, permisos, notificaciones y otros comportamientos descritos aquí. El estado actual de cada punto está en [Correcciones de la revisión docente](correcciones-revision-docente-2026-10.md).
+
 > El commit de verificación del frontmatter corresponde a la base anterior.
 > El historial, Finanzas y Documentos ya tienen código en la release #118;
 > el snapshot de evidencia aprobada descrito más abajo pertenece a una rama

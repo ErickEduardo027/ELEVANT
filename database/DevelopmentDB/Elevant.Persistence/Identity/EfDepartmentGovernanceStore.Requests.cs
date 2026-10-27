@@ -126,6 +126,9 @@ internal sealed partial class EfDepartmentGovernanceStore
                 request.PublicId, null, stations.Select(station => (long?)station).ToArray(), now, parsed,
                 new AuditFieldChangeData("request.department", null, KeyOf(parsed)), new AuditFieldChangeData("request.kind", null, kind.ToString()));
             await NotifyRequestAsync(request, now, cancellationToken);
+            await DepartmentNotificationWriter.NotifyAsync(context, Department.HumanResources,
+                "human_resources.access_requests.validate", "access_request", request.PublicId,
+                $"{request.FirstName} {request.LastName}", now, cancellationToken, exceptAccountId: actor.Id);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(request.PublicId);
         }, cancellationToken);

@@ -11,7 +11,7 @@ import SummaryStrip from './console/SummaryStrip';
 import TurnaroundBoard from './console/TurnaroundBoard';
 import WeatherPanel from './console/WeatherPanel';
 
-const BLOCKING_STATES = ['forbidden', 'unavailable', 'unauthorized', 'error'];
+const BLOCKING_STATES = ['forbidden', 'unavailable', 'unauthorized', 'error', 'timeout'];
 const IDLE_WEATHER = { status: 'loading', data: null, refreshFailed: false, refresh: () => {} };
 const IDLE_TRAFFIC = { status: 'loading', data: null, refresh: () => {} };
 
@@ -33,7 +33,7 @@ export default function DashboardPage({
       {BLOCKING_STATES.includes(status) && (
         <div role="alert" className="rounded-xl border border-occ-line-strong bg-occ-panel p-5">
           <p className="text-sm font-semibold text-occ-danger">{t(`states.${status}`)}</p>
-          {status === 'error' && <button type="button" onClick={onRetry}
+          {(status === 'error' || status === 'timeout') && <button type="button" onClick={onRetry}
             className="mt-3 h-9 rounded-md bg-accent-600 px-4 text-xs font-semibold text-white">{t('states.retry')}</button>}
         </div>
       )}

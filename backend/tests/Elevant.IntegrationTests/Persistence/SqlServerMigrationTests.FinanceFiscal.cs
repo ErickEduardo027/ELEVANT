@@ -269,7 +269,7 @@ public sealed partial class SqlServerMigrationTests
                 [new(Guid.NewGuid(), Guid.NewGuid(), "QA", "QA", OrganizationType.AviamOperator,
                     internalMember ? MembershipKind.InternalStaff : MembershipKind.AirlineClient)],
                 [new(station, "PUJ")], new DepartmentAccess(DepartmentAssignmentKind.Member, Department.Finance,
-                    new HashSet<string>(["finance.fiscal.read", "finance.fiscal.manage", "finance.fiscal.simulate"]))));
+                    new HashSet<string>(["finance.fiscal.read", "finance.fiscal.create", "finance.fiscal.simulate"]))));
     }
     private sealed class FiscalTestArchive : IFiscalArtifactArchive
     {

@@ -14,7 +14,8 @@ const empty = () => ({ airlineId: '', stationId: '', currencyCode: 'USD', concep
 export default function TaxPoliciesPage() {
   const { access } = useDepartmentAccess();
   const canRead = access?.can('finance.taxes.read') ?? false;
-  const canManage = access?.can('finance.taxes.manage') ?? false;
+  // Configuring a treatment is «Crear»; publishing or changing its validity is «Modificar».
+  const canManage = (access?.can('finance.taxes.create') || access?.can('finance.taxes.update')) ?? false;
   const [state, setState] = useState({ status: 'loading', policies: [], context: { airlines: [], stations: [] } });
   const [form, setForm] = useState(null); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
   const [run] = useState(createTaxCommand);

@@ -7,16 +7,18 @@ import { usePrivateMediaUrl } from '../../../hooks/usePrivateMediaUrl';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { deleteManagedService, getManagedServices, saveManagedService, uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
+import { listBillingUnits } from '../../../services/financeBookService';
+import { serviceImageFallback } from './serviceImages';
 import ServiceClosurePanel from './ServiceClosurePanel';
 import { billingUnitOptions, buildServiceCatalog, buildServicePayload, nextDisplayOrder, normalizeText,
   sortServicesByOrder, validateServiceForm } from './serviceCatalogForm';
 
-const empty = { serviceChoice: '', name: '', code: '', unitChoice: '', customUnit: '', description: '', imageUrl: '', videoUrl: '', displayOrder: 1, isPublic: true, isActive: true, version: null };
+const empty = { serviceChoice: '', name: '', code: '', unitChoice: '', description: '', imageUrl: '', videoUrl: '', displayOrder: 1, isPublic: true, isActive: true, version: null };
 const PAGE_SIZE = 12;
 // Campos del formulario en el orden en que se enfoca el primero con error.
 const FIELD_IDS = { serviceChoice: 'service-name', name: 'service-edit-name', customName: 'service-custom-name',
-  customCode: 'service-custom-code', unitChoice: 'service-billing-unit', customUnit: 'service-custom-unit',
-  description: 'service-description' };
+  customCode: 'service-custom-code', unitChoice: 'service-billing-unit',
+  description: 'service-description', isPublic: 'service-is-public' };
 const dependentClassName = 'space-y-4 border-l-2 border-accent-600/30 pl-3';
 
 export default function CommercialCatalogPage({ canCreate = true, canEdit = true,
@@ -37,6 +39,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
   const [errors, setErrors] = useState({});
   const [notice, setNotice] = useState('');
   const [section, setSection] = useState('catalog');
+  const [units, setUnits] = useState(null);
   const dirty = image !== null || video !== null || JSON.stringify(form) !== JSON.stringify(initial);
 
   const reload = useCallback(async (focusId = null) => {
@@ -54,6 +57,11 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
     catch (failure) { setStatus('error'); setError(failure.message); }
   }, []);
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    let active = true;
+    listBillingUnits().then(result => { if (active) setUnits(result); }).catch(() => { if (active) setUnits([]); });
+    return () => { active = false; };
+  }, []);
   useCommercialRevalidation(reload);
   useEffect(() => {
     const observer = createPrivateWebAccountChangeObserver(resources => {
@@ -64,13 +72,13 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
   }, [reload]);
 
   const catalog = buildServiceCatalog(services);
-  const unitOptions = billingUnitOptions(services);
+  const editedService = editing ? services.find(service => service.id === editing) : null;
+  const unitOptions = billingUnitOptions(units, editedService?.billingUnit);
   const positionOf = new Map(services.map((service, index) => [service.id, index + 1]));
 
   function open(service = null) {
-    const unit = service && unitOptions.find(option => option.value === normalizeText(service.billingUnit));
     const values = service ? { serviceChoice: service.code, name: service.name, code: service.code,
-      unitChoice: unit ? unit.value : OTHER_OPTION, customUnit: unit ? '' : service.billingUnit,
+      unitChoice: normalizeText(service.billingUnit),
       description: service.description, imageUrl: service.imageUrl ?? '',
       videoUrl: service.videoUrl ?? '', displayOrder: service.displayOrder,
       isPublic: service.isPublic, isActive: service.isActive, version: service.version }
@@ -87,7 +95,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
   function discard() { setPendingClose(false); setDrawerOpen(false); setImage(null); setVideo(null); }
   async function save(event) {
     event.preventDefault(); setError('');
-    const found = validateServiceForm(form, { catalog, editingId: editing });
+    const found = validateServiceForm(form, { catalog, editingId: editing, hasNewImage: Boolean(image) });
     setErrors(found);
     if (Object.keys(found).length) {
       if (found.displayOrder) setError(found.displayOrder);
@@ -101,7 +109,9 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
       if (image) values.imageUrl = (await uploadCommercialMedia('service-image', image)).url;
       if (video) values.videoUrl = (await uploadCommercialMedia('service-video', video)).url;
       const saved = await saveManagedService(editing, values);
-      setNotice(editing ? 'Servicio actualizado. El catálogo público se refrescará.' : 'Servicio publicado en el catálogo.');
+      setNotice(editing ? 'Servicio actualizado. El catálogo público se refrescará.'
+        : values.isPublic && values.isActive ? 'Servicio publicado en el catálogo.'
+          : 'Servicio guardado como oculto. Publíquelo cuando tenga foto y descripción.');
       setDrawerOpen(false); setImage(null); setVideo(null); await reload(saved?.id ?? editing);
     } catch (failure) { setError(saveErrorMessage(failure, Boolean(editing))); }
     finally { setBusy(false); }
@@ -123,7 +133,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
       'serviceChoice', 'customName', 'customCode');
   }
   function chooseUnit(value) {
-    update({ unitChoice: value, customUnit: '' }, 'unitChoice', 'customUnit');
+    update({ unitChoice: value }, 'unitChoice');
   }
   const isNew = !editing && form.serviceChoice === OTHER_OPTION;
   const existing = !editing ? catalog.find(entry => entry.code === form.serviceChoice)?.service : null;
@@ -142,7 +152,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
     <section className="rounded-xl border border-black/5 bg-white p-5 dark:border-white/5 dark:bg-surface-dark-card">
       <div className="flex items-center justify-between"><h2 className="font-bold">Catálogo AVIAM</h2><button type="button" onClick={() => void reload()} className="text-xs font-semibold text-accent-600">Actualizar</button></div>
       {status === 'loading' ? <p className="mt-5 text-sm">Cargando servicios…</p> : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{visibleServices.map(service => <article key={service.id} className="overflow-hidden rounded-xl border border-black/10 dark:border-white/10">
-        <ServiceCardImage url={service.imageUrl} />
+        <ServiceCardImage service={service} />
         <div className="p-4"><div className="flex justify-between gap-2"><div className="flex min-w-0 items-start gap-2"><span title="Número de orden asignado por el sistema" className="shrink-0 rounded-md bg-black/5 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-text-secondary-light dark:bg-white/10 dark:text-text-secondary-dark"><span className="sr-only">Número de orden </span><span aria-hidden="true">N.º </span>{positionOf.get(service.id)}</span><strong className="text-sm">{service.name}</strong></div><span className={`text-[11px] ${service.isActive && service.isPublic ? 'text-status-success' : 'text-text-secondary-light'}`}>{service.isActive && service.isPublic ? 'Público' : 'Oculto'}</span></div><p className="mt-1 min-h-14 text-xs leading-relaxed text-text-secondary-light">{service.description}</p><p className="mt-2 font-mono text-[10px] text-text-secondary-light">{service.code} · por {service.billingUnit}</p>{(canEdit || canRetire) && <div className="mt-3 flex gap-3">{canEdit && <button type="button" onClick={() => open(service)} className="text-xs font-semibold text-accent-600">Editar</button>}{canRetire && <button type="button" onClick={() => setPendingRetire(service)} className="text-xs font-semibold text-status-danger">Retirar</button>}</div>}</div>
       </article>)}</div>}
       {status === 'ready' && services.length === 0 && <p className="mt-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">No hay servicios en el catálogo.</p>}
@@ -181,13 +191,8 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
             </div>
           </>}
           <Combobox id={FIELD_IDS.unitChoice} label="Unidad de cobro" required value={form.unitChoice} options={unitOptions}
-            onChange={chooseUnit} placeholder="Seleccionar unidad" error={errors.unitChoice}
-            hint="¿Cómo se factura o mide este servicio? Elige la unidad que corresponda al contrato." otherHint="Escribir otra unidad" />
-          {form.unitChoice === OTHER_OPTION && <div className={dependentClassName}>
-            <TextField id={FIELD_IDS.customUnit} label="Unidad de cobro personalizada" required maxLength={32} value={form.customUnit}
-              onChange={value => change('customUnit', value)} error={errors.customUnit}
-              hint="Escríbela en singular, por ejemplo «turno»; las tarifas la muestran como «Precio por …»." />
-          </div>}
+            onChange={chooseUnit} placeholder={units === null ? 'Cargando unidades…' : 'Seleccionar unidad'} error={errors.unitChoice} allowOther={false}
+            hint="¿Cómo se mide este servicio? Las unidades las mantiene Finanzas en «Unidades de cobro»; si falta una, pídala allí." />
           <TextField id={FIELD_IDS.description} label="Descripción" required multiline maxLength={500} value={form.description}
             onChange={value => change('description', value)} error={errors.description}
             hint={`Texto que verá la aerolínea en el catálogo (${form.description.length}/500).`} />
@@ -197,7 +202,8 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
             <p className="font-semibold">Número de orden <span className="ml-1 rounded-md bg-black/5 px-1.5 py-0.5 font-mono dark:bg-white/10">N.º {editing ? positionOf.get(editing) : form.displayOrder === null ? '—' : services.length + 1}</span></p>
             <p className="mt-1 text-text-secondary-light dark:text-text-secondary-dark">{editing ? 'Lo asigna el sistema y se conserva al editar.' : 'Lo asigna el sistema: el servicio nuevo se agrega al final del catálogo.'}</p>
           </div>
-          <div className="flex gap-4"><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={form.isPublic} onChange={event => change('isPublic', event.target.checked)} /> Visible al público</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={form.isActive} onChange={event => change('isActive', event.target.checked)} /> Activo</label></div>
+          <div className="flex gap-4"><label className="flex items-center gap-2 text-xs"><input id={FIELD_IDS.isPublic} type="checkbox" checked={form.isPublic} aria-invalid={errors.isPublic ? true : undefined} onChange={event => change('isPublic', event.target.checked)} /> Visible al público</label><label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={form.isActive} onChange={event => change('isActive', event.target.checked)} /> Activo</label></div>
+          {errors.isPublic && <p role="alert" className="text-xs text-status-danger">{errors.isPublic} Puede guardarlo oculto mientras tanto.</p>}
         </fieldset>
       </form>
     </Drawer>
@@ -212,6 +218,14 @@ function saveErrorMessage(failure, editing) {
     return editing ? 'No se pudo guardar porque el servicio cambió. Actualiza el catálogo e inténtalo de nuevo.'
       : 'No se pudo guardar: ya existe un servicio con ese código o el catálogo cambió. Actualiza el catálogo e inténtalo de nuevo.';
   }
+  const codes = {
+    image_required: 'Para publicarlo agregue una foto real del servicio, o guárdelo oculto.',
+    description_too_short: 'Para publicarlo la descripción debe tener al menos 20 caracteres.',
+    placeholder_name: 'Un servicio con nombre o código de prueba no puede publicarse.',
+    billing_unit_unknown: 'La unidad de cobro ya no está activa. Elija otra de la lista.',
+  };
+  if (failure.status === 400 && codes[failure.code]) return codes[failure.code];
+  if (failure.status === 403) return 'No tiene permiso para gestionar el catálogo de servicios.';
   if (failure.status === 400) return 'El sistema rechazó los datos del servicio. Revisa los campos e inténtalo de nuevo.';
   return failure.message;
 }
@@ -229,7 +243,15 @@ function TextField({ id, label, value, onChange, hint, error, placeholder, requi
   </div>;
 }
 
-function ServiceCardImage({ url }) {
-  const src = usePrivateMediaUrl(url);
-  return <div className="h-36 bg-surface-dark bg-cover bg-center" style={src ? { backgroundImage: `url("${src}")` } : {}} />;
+/** Uploaded photo, or an illustration of the service type when there is none or it cannot load. */
+function ServiceCardImage({ service }) {
+  const src = usePrivateMediaUrl(service.imageUrl);
+  const [failed, setFailed] = useState(false);
+  const fallback = serviceImageFallback(service);
+  const showPhoto = Boolean(service.imageUrl) && Boolean(src) && !failed;
+  return <div className="relative h-36 overflow-hidden bg-surface-dark">
+    <img src={showPhoto ? src : fallback} alt="" onError={() => setFailed(true)} className="h-full w-full object-cover" />
+    {!service.imageUrl && <span className="absolute bottom-2 left-2 rounded bg-white/85 px-2 py-0.5 text-[10px] font-semibold text-ink-900">Sin foto · ilustración</span>}
+    {service.imageUrl && failed && <span role="status" className="absolute bottom-2 left-2 rounded bg-status-danger px-2 py-0.5 text-[10px] font-semibold text-white">No se pudo cargar la foto</span>}
+  </div>;
 }

@@ -59,13 +59,13 @@ internal sealed partial class FinancePayablesStore
     public Task<FinancePayablesResult<FinancePayablesOptions>> OptionsAsync(Guid actorId, Guid? scopeStationId, CancellationToken ct = default) =>
         ReadAsync(actorId, "", async a =>
         {
-            Require(OwnExpenseAccess(a) || a.Context.HasPermission("finance.expenses.manage") || a.Context.HasPermission("finance.expenses.read") ||
-                a.Context.HasPermission("finance.suppliers.read") || a.Context.HasPermission("finance.suppliers.manage") ||
-                a.Context.HasPermission("finance.payables.read") || a.Context.HasPermission("finance.payables.manage") ||
+            Require(OwnExpenseAccess(a) || a.Context.HasPermission("finance.expenses.create") || a.Context.HasPermission("finance.expenses.update") || a.Context.HasPermission("finance.expenses.read") ||
+                a.Context.HasPermission("finance.suppliers.read") || a.Context.HasPermission("finance.suppliers.update") ||
+                a.Context.HasPermission("finance.payables.read") || a.Context.HasPermission("finance.payables.create") ||
                 a.Context.EffectiveAccess?.Kind == DepartmentAssignmentKind.Administrator, "forbidden");
             var station = scopeStationId is { } id ? await StationAsync(a, id, ct) : (long?)null;
             var stations = await context.Set<Station>().Where(x => a.Stations.Contains(x.Id)).OrderBy(x => x.Code).Select(x => new FinancePayablesOption(x.PublicId, x.Code, x.Name)).ToArrayAsync(ct);
-            var suppliers = a.Context.HasPermission("finance.suppliers.read") || a.Context.HasPermission("finance.payables.manage") || a.Context.HasPermission("finance.payables.read")
+            var suppliers = a.Context.HasPermission("finance.suppliers.read") || a.Context.HasPermission("finance.payables.create") || a.Context.HasPermission("finance.payables.read")
                 ? await context.Set<Supplier>().Where(x => a.Stations.Contains(x.ScopeStationId) && x.IsActive && (station == null || x.ScopeStationId == station))
                     .OrderBy(x => x.Code).Select(x => new FinancePayablesOption(x.PublicId, x.Code, x.Name)).ToArrayAsync(ct) : [];
             var airlines = await context.Set<Airline>().Where(x => x.IsActive).OrderBy(x => x.IataCode).Select(x => new FinancePayablesOption(x.PublicId, x.IataCode, x.Name)).ToArrayAsync(ct);

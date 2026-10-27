@@ -45,7 +45,7 @@ export const CONTRACT_MODULES = [
     description: 'Catálogo público de servicios de rampa, fotos y videos.',
   },
   {
-    id: CONTRACT_MODULE_IDS.SERVICES, permission: 'contracts.agreements.read',
+    id: CONTRACT_MODULE_IDS.SERVICES, permission: 'contracts.agreed_services.read',
     label: 'Servicios pactados',
     icon: ServiceIcon,
     description: 'Consulta de servicios, tarifas, vigencias y condiciones contractuales.',

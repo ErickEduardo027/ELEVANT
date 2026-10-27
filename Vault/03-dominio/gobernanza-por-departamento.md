@@ -7,10 +7,13 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-10-13"
-verified_commit: "0061b13b349f777e886889da28241e0e41efc589"
+last_verified: "2026-10-26"
+verified_commit: "e49e58d39b3eae80bd0184581d9231268ef55f7b"
 sources:
   - docs/adr/0015-department-user-governance.md
+  - docs/adr/0019-menu-option-permissions-and-department-notifications.md
+  - frontend/private-web/src/features/department-users/PermissionMatrix.jsx
+  - database/DevelopmentDB/Elevant.Persistence/Identity/DepartmentNotificationWriter.cs
   - docs/adr/0017-employees-positions-and-access.md
   - backend/Elevant.Domain/Entities/Workforce/Employees.cs
   - backend/Elevant.Application/Abstractions/Identity/IEmployeeGovernanceStore.cs
@@ -41,8 +44,9 @@ Las cuentas internas de AVIAM se administran en dos niveles: un
 superadministrador único y administradores por departamento. Gestión Humana
 es dueña de las personas: solo un empleado registrado por ella puede recibir
 acceso, y valida cada alta que piden los administradores. Las decisiones están
-en [ADR-0015](../../docs/adr/0015-department-user-governance.md) y
-[ADR-0017](../../docs/adr/0017-employees-positions-and-access.md).
+en [ADR-0015](../../docs/adr/0015-department-user-governance.md),
+[ADR-0017](../../docs/adr/0017-employees-positions-and-access.md) y
+[ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md).
 
 | Concepto | Dueño | Qué es |
 | --- | --- | --- |
@@ -78,9 +82,19 @@ lectura, porque el OCC programa los turnos con `operations.planning.assign`.
 Gestión Humana decide la disponibilidad con `human_resources.availability.decide`.
 
 El catálogo vive en código (`DepartmentPermissionCatalog`) con el formato
-`<departamento>.<módulo>.<acción>`, por ejemplo `contracts.requests.approve` u
-`operations.review.decide`. Conceder cualquier acción concede también la lectura
-del módulo. Las plantillas (`iam.access_profiles`) se aplican en vivo: editar o
+`<departamento>.<opción>.<acción>`, por ejemplo `contracts.catalog.create` u
+`operations.review.decide`.
+
+- **Una opción por entrada del menú.** Cada opción del menú lateral es un
+  módulo, con su sección; las funciones que viven dentro de una pantalla
+  declaran su opción padre.
+- **Columnas de la matriz.** Cada acción cae en una columna: Ver, Crear,
+  Modificar, Eliminar u Otras acciones (aprobar, publicar, emitir, exportar,
+  firmar…).
+- **Ver se concede siempre.** Conceder cualquier acción concede también «Ver».
+- **Grants antiguos.** Los códigos anteriores a ADR-0019 (`*.manage`,
+  `employees.terminate`, `attendance.record`…) se traducen al resolver el acceso,
+  así que las plantillas guardadas siguen funcionando. Las plantillas (`iam.access_profiles`) se aplican en vivo: editar o
 desactivar una plantilla cambia el acceso de sus miembros y rota su sello de
 seguridad.
 
@@ -91,7 +105,7 @@ sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/acce
 
 1. El departamento puede pedir personal con una requisición (puesto, cantidad y
    motivo). Gestión Humana la atiende, la cubre o la rechaza con motivo.
-2. Gestión Humana registra al empleado (`employees.manage`): identificación
+2. Gestión Humana registra al empleado (`employees.create`): identificación
    real normalizada y única, número de empleado único, correo corporativo,
    departamento, puesto y estaciones. Un puesto de rampa crea su `RampAgent`.
 3. El administrador elige un empleado de su departamento sin cuenta activa y
@@ -102,7 +116,7 @@ sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/acce
    contraseña temporal, o la rechaza con motivo. Quien la envió no puede
    resolverla. La cuenta se emite para la misma persona del empleado y exige
    cambio de contraseña.
-5. Un traslado (`employees.terminate`) desactiva la cuenta, invalida sesiones,
+5. Un traslado (`employees.delete`) desactiva la cuenta, invalida sesiones,
    revoca estaciones y cancela solicitudes; el nuevo departamento solicita el
    acceso y la misma cuenta se reaprovisiona.
 6. Una baja hace lo mismo y desactiva el agente de rampa; ninguna ruta reactiva
@@ -110,6 +124,19 @@ sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/acce
 
 Las cuentas creadas antes de los expedientes aparecen en **Expedientes
 pendientes**: Gestión Humana registra su identificación real y su puesto.
+
+## Notificaciones
+
+Cada departamento con la opción «Notificaciones» recibe en pantalla las alertas
+de lo que debe atender:
+
+- **Gestión Humana:** altas por validar, requisiciones y disponibilidad.
+- **Contratos:** solicitudes comerciales, comentarios y firmas de aerolíneas, y
+  clausuras.
+- **Finanzas:** contratos por aprobar, y prefacturas aceptadas o disputadas.
+
+Solo las recibe quien también puede abrir la fuente; ver
+[ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md).
 
 ## Actividad
 
@@ -140,6 +167,7 @@ lee todo, por periodos de hasta 92 días.
 
 - [ADR-0015](../../docs/adr/0015-department-user-governance.md)
 - [ADR-0017](../../docs/adr/0017-employees-positions-and-access.md)
+- [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md)
 - [API de empleados](../../backend/Elevant.Api/Controllers/HumanResourcesEmployeesController.cs)
 - [Acceso por empleado](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfDepartmentGovernanceStore.EmployeeAccess.cs)
 - [Catálogo de permisos](../../backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs)

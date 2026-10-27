@@ -4,6 +4,7 @@ using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
+using Elevant.Domain.Validation;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
 using Elevant.Persistence.Realtime;
@@ -75,7 +76,7 @@ internal sealed class EfCommercialWorkflowStore(
                     service.ServiceDefinitionId is long id && servicePublicIds.TryGetValue(id, out var publicId)
                         ? publicId : Guid.Empty,
                     service.RequestedServiceName, service.RequestedUnit ?? string.Empty))
-                .ToArray())).ToArray();
+                .ToArray(), item.request.ContactDistrict)).ToArray();
     }
 
     public async Task<CommercialWorkflowResult> VerifyAirlineAsync(Guid actorId,
@@ -84,8 +85,9 @@ internal sealed class EfCommercialWorkflowStore(
         if (!await permissions.HasAsync(actorId, "contracts.requests.verify", cancellationToken))
             return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Forbidden);
         if (input is null || !ValidText(input.LegalName, 200) ||
-            !ValidCode(input.CountryCode, 2) || !ValidCode(input.IataCode, 2) ||
-            !ValidCode(input.IcaoCode, 3) ||
+            !AirlineCodes.IsCountry(input.CountryCode?.ToUpperInvariant()) ||
+            !AirlineCodes.IsIata(input.IataCode?.ToUpperInvariant()) ||
+            !AirlineCodes.IsIcao(input.IcaoCode?.ToUpperInvariant()) ||
             !Uri.TryCreate(input.VerificationSourceUrl, UriKind.Absolute, out var source) ||
             source.Scheme != Uri.UriSchemeHttps || source.UserInfo.Length != 0 ||
             input.VerificationSourceUrl.Length > 512 || !ValidLegacyLogo(input.LogoUrl))
@@ -314,9 +316,6 @@ internal sealed class EfCommercialWorkflowStore(
 
     private static bool ValidText(string? value, int max) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;
-    private static bool ValidCode(string? value, int length) =>
-        value is not null && value.Length == length && value.All(character =>
-            char.IsAsciiLetterUpper(character) || length == 2 && char.IsAsciiDigit(character));
     private static bool ValidLegacyLogo(string? value) =>
         string.IsNullOrWhiteSpace(value) || value.Length <= 512 &&
         (value.StartsWith("/assets/", StringComparison.Ordinal) ||

@@ -13,7 +13,7 @@ vi.mock('../../../services/financeTreasuryService', async original => ({ ...(awa
 }));
 vi.mock('../../auth/authService', () => ({ readSession: () => ({ stationScopes: [{ stationId: 's-1', stationCode: 'PUJ' }] }) }));
 vi.mock('../../../services/accountChangeObserver', () => ({ createPrivateWebAccountChangeObserver: () => ({ start: vi.fn(), stop: vi.fn() }) }));
-const permissions = ['finance.receipts.read', 'finance.receipts.manage', 'finance.receipts.apply', 'finance.receipts.reverse', 'finance.receipts.refund', 'finance.adjustments.read', 'finance.adjustments.issue'];
+const permissions = ['finance.receipts.read', 'finance.receipts.create', 'finance.receipts.apply', 'finance.receipts.reverse', 'finance.receipts.refund', 'finance.adjustments.read', 'finance.adjustments.create'];
 const receipt = { id: 'r-1', airlineId: 'a-1', stationId: 's-1', reference: 'RC-1', currencyCode: 'USD', amount: 1000,
     available: 700, applied: 300, refunded: 0, reversed: false, version: 'r-v1', receivedOn: '2026-10-18', reason: 'Customer receipt', movements: [] };
 function view(ui, codes = permissions) { return render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', codes)}>{ui}</DepartmentAccessProvider>); }

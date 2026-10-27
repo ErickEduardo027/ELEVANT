@@ -6,7 +6,7 @@ import { commercialApi } from '../../../services/commercialGovernanceApi';
 import FiscalDocumentsPage from './FiscalDocumentsPage';
 vi.mock('../../../services/commercialGovernanceApi', () => ({ commercialApi: vi.fn() }));
 vi.mock('../../auth/authService', () => ({ readSession: () => ({ stationScopes: [{ stationId: 'station', stationCode: 'PUJ' }] }), handleUnauthorizedResponse: vi.fn() }));
-const permissions = ['finance.fiscal.read', 'finance.fiscal.manage', 'finance.fiscal.simulate', 'finance.reconciliation.read'];
+const permissions = ['finance.fiscal.read', 'finance.fiscal.create', 'finance.fiscal.simulate', 'finance.reconciliation.read'];
 const invoice = { id: 'invoice', number: 'NF-2026-001', preinvoiceId: 'preinvoice', airlineId: 'airline', airline: 'Aerolínea del Caribe',
   stationId: 'station', stationCode: 'PUJ', currencyCode: 'USD', total: 1250, paid: 0, credited: 0, balance: 1250,
   issuedAt: '2026-10-18T00:00:00Z', dueDate: '2026-11-18', status: 'Pending', daysOverdue: 0 };

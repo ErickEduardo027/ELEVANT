@@ -40,6 +40,9 @@ public sealed class ServiceRequest : AuditableEntity
 
     public string? ContactMunicipality { get; set; }
 
+    /// <summary>Municipal district (D. M.) inside the municipality, when the country has them.</summary>
+    public string? ContactDistrict { get; set; }
+
     public string? ContactDocumentType { get; set; }
 
     public string? ContactDocumentNumber { get; set; }

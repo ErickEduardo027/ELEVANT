@@ -51,13 +51,13 @@ public sealed partial class SqlServerMigrationTests
 
         // HR registers the hire against the seeded requisition; identification and numbers are unique.
         var created = await hr.CreateEmployeeAsync(HumanResourcesAccount, NewEmployee("Lucía", "QA-FIN-010",
-            "001-1234567-8", "finance", analyst.Id, "lucia.prueba@dev.elevant.test", SeededFinanceRequisition),
+            "001-1234567-3", "finance", analyst.Id, "lucia.prueba@dev.elevant.test", SeededFinanceRequisition),
             cancellationToken);
         Assert.True(created.IsSuccess, created.Code);
         Assert.Equal("identification_in_use", (await hr.CreateEmployeeAsync(HumanResourcesAccount, NewEmployee("Otra",
-            "QA-FIN-011", "00112345678", "finance", analyst.Id, null), cancellationToken)).Code);
+            "QA-FIN-011", "00112345673", "finance", analyst.Id, null), cancellationToken)).Code);
         Assert.Equal("employee_number_in_use", (await hr.CreateEmployeeAsync(HumanResourcesAccount, NewEmployee("Otra",
-            "dev-ra-001", "00299999999", "finance", analyst.Id, null), cancellationToken)).Code);
+            "dev-ra-001", "00299999995", "finance", analyst.Id, null), cancellationToken)).Code);
         var requisition = Assert.Single((await hr.ListRequisitionsAsync(HumanResourcesAccount, "finance", null,
             cancellationToken))!, item => item.Id == SeededFinanceRequisition);
         Assert.Equal("InProgress", requisition.Status);

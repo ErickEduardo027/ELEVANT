@@ -62,12 +62,12 @@ export const REQUISITION_STATUS = {
 };
 
 const MESSAGES = {
-  identification_invalid: 'La identificación no es válida.',
+  identification_invalid: 'La identificación no tiene el formato real de su tipo (cédula o residencia con dígito verificador, o pasaporte).',
   identification_in_use: 'Ya existe una persona con esa identificación.',
   identification_mismatch: 'La identificación no coincide con la que ya tiene registrada la persona.',
   employee_number_invalid: 'El número de empleado solo admite letras, números y guiones (2 a 32).',
   employee_number_in_use: 'Ese número de empleado ya está asignado.',
-  phone_invalid: 'El teléfono no es válido.',
+  phone_invalid: 'El teléfono no es válido: use 10 dígitos dominicanos (809, 829 o 849) o el prefijo internacional.',
   email_invalid: 'El correo no es válido.',
   email_in_use: 'Ese correo ya pertenece a otra persona o cuenta.',
   hire_date_invalid: 'La fecha de ingreso no es válida.',

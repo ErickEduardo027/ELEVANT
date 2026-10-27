@@ -12,7 +12,8 @@ namespace Elevant.Persistence.Identity;
 internal sealed partial class EfDepartmentGovernanceStore
 {
     private const string PositionsRead = "human_resources.positions.read";
-    private const string PositionsManage = "human_resources.positions.manage";
+    private const string PositionsCreate = "human_resources.positions.create";
+    private const string PositionsUpdate = "human_resources.positions.update";
     private const string RequisitionsRead = "human_resources.requisitions.read";
     private const string RequisitionsAttend = "human_resources.requisitions.attend";
 
@@ -56,7 +57,8 @@ internal sealed partial class EfDepartmentGovernanceStore
         CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
-        if (actor is null || !actor.Can(PositionsManage)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
+        if (actor is null || !actor.Can(positionId is null ? PositionsCreate : PositionsUpdate))
+            return GovernanceResult.Failed(GovernanceFailure.Forbidden);
         if (input is null || !TryParse(input.Department, out var department) ||
             input.Name?.Trim().Length is not (>= 3 and <= 120) || input.Description?.Trim().Length > 500 ||
             positionId is not null && string.IsNullOrWhiteSpace(input.ExpectedVersion))
@@ -276,6 +278,9 @@ internal sealed partial class EfDepartmentGovernanceStore
                 new AuditFieldChangeData("requisition.position", null, position.Name),
                 new AuditFieldChangeData("requisition.quantity", null, input.Quantity.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             await NotifyRequisitionsAsync(parsed, requisition.PublicId, requisition.RequestedByAccountId, now, cancellationToken);
+            await DepartmentNotificationWriter.NotifyAsync(context, Department.HumanResources,
+                "human_resources.requisitions.read", "requisition", requisition.PublicId,
+                $"{position.Name} × {input.Quantity}", now, cancellationToken, exceptAccountId: actor.Id);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(requisition.PublicId);
         }, cancellationToken);

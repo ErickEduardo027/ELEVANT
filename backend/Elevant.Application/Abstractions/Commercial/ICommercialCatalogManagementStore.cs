@@ -11,10 +11,13 @@ public sealed record ManagedServiceInput(string Code, string Name, string Descri
 public enum CatalogMutationFailure { Forbidden, Invalid, NotFound, Conflict }
 
 public sealed record CatalogMutationResult(ManagedServiceData? Service,
-    CatalogMutationFailure? Failure)
+    CatalogMutationFailure? Failure, string? Code = null)
 {
     public static CatalogMutationResult Success(ManagedServiceData service) => new(service, null);
-    public static CatalogMutationResult Failed(CatalogMutationFailure failure) => new(null, failure);
+
+    /// <param name="code">Machine-readable reason sent to the client as the Problem Details "code".</param>
+    public static CatalogMutationResult Failed(CatalogMutationFailure failure, string? code = null) =>
+        new(null, failure, code);
 }
 
 public interface ICommercialCatalogManagementStore

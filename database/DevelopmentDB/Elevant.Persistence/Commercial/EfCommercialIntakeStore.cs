@@ -1,3 +1,4 @@
+using Elevant.Persistence.Identity;
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
@@ -82,6 +83,7 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                         ContactCountry = Optional(command.RepresentativeCountry),
                         ContactProvince = Optional(command.RepresentativeProvince),
                         ContactMunicipality = Optional(command.RepresentativeMunicipality),
+                        ContactDistrict = Optional(command.RepresentativeDistrict),
                         ContactDocumentType = Optional(command.RepresentativeDocumentType),
                         ContactDocumentNumber = Optional(command.RepresentativeDocumentNumber),
                         AuthorityDeclared = command.AuthorityDeclared,
@@ -105,6 +107,9 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                     foreach (var recipient in recipients)
                         AccountChangeOutboxWriter.Add(context, recipient, null,
                             "commercial_requests", request.PublicId, request.SubmittedAt);
+                    await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts,
+                        "contracts.requests.read", "commercial_request", request.PublicId,
+                        request.RequestedAirlineName, request.SubmittedAt, cancellationToken);
 
                     await context.SaveChangesAsync(cancellationToken);
                     await transaction.CommitAsync(cancellationToken);
@@ -145,6 +150,8 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
             Optional(command.RepresentativeMunicipality) ?? string.Empty,
             Optional(command.RepresentativeDocumentType) ?? string.Empty,
             Optional(command.RepresentativeDocumentNumber) ?? string.Empty);
+        // Appended only when present so requests sent before districts existed keep their hash.
+        if (Optional(command.RepresentativeDistrict) is { } district) canonical += "\n" + district;
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

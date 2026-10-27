@@ -23,7 +23,8 @@ function withoutEmpty(values) {
 
 export default function CurrentQualificationsPage() {
   const access = useOptionalDepartmentAccess();
-  const canManage = Boolean(access?.can('human_resources.qualifications.manage'));
+  const canCreate = Boolean(access?.can('human_resources.qualifications.create'));
+  const canManage = Boolean(access?.can('human_resources.qualifications.update'));
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [revision, setRevision] = useState(0);
@@ -96,7 +97,7 @@ export default function CurrentQualificationsPage() {
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {state.status === 'success' && canManage && <button type="button"
+        {state.status === 'success' && canCreate && <button type="button"
           onClick={() => { setNotice(''); setForm({ open: true, initialQualification: null }); }}
           className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">
           Registrar habilitación

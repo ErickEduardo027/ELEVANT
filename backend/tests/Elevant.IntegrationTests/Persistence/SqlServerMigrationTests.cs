@@ -131,8 +131,15 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken)).Failure);
         Assert.Equal(approved.Request, (await closures.RequestAsync(occId, approvedRequestId,
             service.PublicId, reason, cancellationToken)).Request);
-        Assert.Equal(CatalogMutationFailure.Conflict, (await management.SaveAsync(
+        // Finance no longer edits the catalog; Contracts sees the approved closure as a conflict.
+        Assert.Equal(CatalogMutationFailure.Forbidden, (await management.SaveAsync(
             Guid.Parse("40000000-0000-7000-8000-000000000006"), service.PublicId,
+            new ManagedServiceInput(service.Code, service.Name, service.Description!,
+                service.DefaultBillingUnit, service.ImageUrl, service.VideoUrl,
+                service.DisplayOrder, true, true, approved.Request.ServiceVersion),
+            cancellationToken)).Failure);
+        Assert.Equal(CatalogMutationFailure.Conflict, (await management.SaveAsync(
+            contractsId, service.PublicId,
             new ManagedServiceInput(service.Code, service.Name, service.Description!,
                 service.DefaultBillingUnit, service.ImageUrl, service.VideoUrl,
                 service.DisplayOrder, true, true, approved.Request.ServiceVersion),
@@ -159,7 +166,7 @@ public sealed partial class SqlServerMigrationTests
                 item.ResourceId == service.PublicId).ToArray();
         Assert.NotEmpty(catalogHints);
 
-        var edited = await management.SaveAsync(Guid.Parse("40000000-0000-7000-8000-000000000006"), service.PublicId,
+        var edited = await management.SaveAsync(contractsId, service.PublicId,
             new ManagedServiceInput(service.Code, service.Name,
                 "Descripcion actualizada para OCC.", service.DefaultBillingUnit,
                 service.ImageUrl, service.VideoUrl, service.DisplayOrder, true, true,
@@ -1992,7 +1999,7 @@ public sealed partial class SqlServerMigrationTests
         foreach (var format in formats)
         {
             using var input = new MemoryStream(format.Content);
-            var uploadActor = format.Purpose.StartsWith("service-", StringComparison.Ordinal) ? FinanceAccount : actor;
+            var uploadActor = format.Purpose.StartsWith("service-", StringComparison.Ordinal) ? ContractsAccount : actor;
             var uploaded = await media.UploadAsync(uploadActor, format.Purpose,
                 format.ContentType, input, input.Length, cancellationToken);
 
@@ -2035,7 +2042,7 @@ public sealed partial class SqlServerMigrationTests
             .BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
-        var actor = FinanceAccount;
+        var actor = ContractsAccount;
         var accountId = await context.Users.Where(user => user.PublicId == actor)
             .Select(user => user.Id).SingleAsync(cancellationToken);
         var assetId = Guid.CreateVersion7();
@@ -2049,8 +2056,8 @@ public sealed partial class SqlServerMigrationTests
         context.MediaAssets.Add(asset);
         await context.SaveChangesAsync(cancellationToken);
         var manager = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
-        var input = new ManagedServiceInput("MEDIA-LINK-TEST", "Servicio con foto",
-            "Foto de prueba", "operación", url, null, 999, false, true, null);
+        var input = new ManagedServiceInput("MEDIA-LINK-PHOTO", "Servicio con foto",
+            "Servicio con fotografía real para validar los enlaces", "operación", url, null, 999, false, true, null);
         Assert.Equal(CatalogMutationFailure.Invalid,
             (await manager.SaveAsync(actor, null, input, cancellationToken)).Failure);
 
@@ -2122,9 +2129,9 @@ public sealed partial class SqlServerMigrationTests
             item.IataCode == "AF" && item.IcaoCode == "AFR");
         var command = new SubmitCommercialRequestCommand(Guid.NewGuid(),
             catalog.Airlines[0].Id, [catalog.Services[0].Id],
-            "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true,
+            "María Pérez", "Representante legal", "maria@example.test", "849-246-3371", true,
             "DO", "Avenida Principal 10", "República Dominicana", "Santo Domingo",
-            "Boca Chica", "Passport", "AB123456");
+            "Boca Chica", "Passport", "rd 123 4567");
         var handler = new SubmitCommercialRequestHandler(
             scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
         Assert.Equal(CommercialSubmissionFailure.ReceiptNotFound,
@@ -2147,7 +2154,25 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(catalog.Airlines[0].Name, request.RequestedAirlineName);
         Assert.True(request.AuthorityDeclared);
         Assert.Equal("DO", request.ContactNationalityCode);
-        Assert.Equal("AB123456", request.ContactDocumentNumber);
+        Assert.Equal("RD1234567", request.ContactDocumentNumber);
+        Assert.Equal("+18492463371", request.ContactPhone);
+        Assert.Null(request.ContactDistrict);
+
+        // Dominican addresses follow the official division down to the municipal district.
+        var seibo = command with
+        {
+            RequestId = Guid.NewGuid(), RepresentativeEmail = "seibo@example.test",
+            RepresentativeProvince = "El Seibo", RepresentativeMunicipality = "El Seibo",
+            RepresentativeDistrict = "Pedro Sánchez",
+        };
+        Assert.True((await handler.HandleAsync(seibo, cancellationToken)).IsSuccess);
+        Assert.Equal("Pedro Sánchez", await context.ServiceRequests.AsNoTracking()
+            .Where(item => item.PublicId == seibo.RequestId).Select(item => item.ContactDistrict)
+            .SingleAsync(cancellationToken));
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest, (await handler.HandleAsync(seibo with
+        {
+            RequestId = Guid.NewGuid(), RepresentativeMunicipality = "Pedro Sánchez", RepresentativeDistrict = null,
+        }, cancellationToken)).Failure);
         Assert.Equal(1, await context.Set<ServiceRequestItem>().CountAsync(
             item => item.ServiceRequestId == request.Id, cancellationToken));
 
@@ -2751,9 +2776,10 @@ public sealed partial class SqlServerMigrationTests
                 catalogCreatorRole.Id!.Value, "Synthetic-Catalog!234"), cancellationToken);
         Assert.True(catalogCreator.IsSuccess);
         var managedCatalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
-        Assert.Equal(CatalogMutationFailure.Forbidden, (await managedCatalog.SaveAsync(catalogCreator.Id!.Value, null,
+        // Contracts owns the catalog: Finance cannot create services, a legacy role with «create» can.
+        Assert.Equal(CatalogMutationFailure.Forbidden, (await managedCatalog.SaveAsync(FinanceAccount, null,
             new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética", "operación", null, null, 999, false, true, null), cancellationToken)).Failure);
-        var createdService = await managedCatalog.SaveAsync(FinanceAccount, null,
+        var createdService = await managedCatalog.SaveAsync(catalogCreator.Id!.Value, null,
             new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética",
                 "operación", null, null, 999, false, true, null), cancellationToken);
         Assert.Null(createdService.Failure);

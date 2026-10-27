@@ -49,7 +49,7 @@ export default function AdjustmentNotesPanel({ invoiceId, invoiceNumber, currenc
   if (!canRead) return <p className="text-sm">No tiene permiso para consultar notas de ajuste.</p>;
   return <section className="space-y-3" aria-label="Notas de ajuste">
     <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">Notas de ajuste{invoiceNumber && ' · ' + invoiceNumber}</h3>
-      {data && access?.can('finance.adjustments.issue') && <button type="button" onClick={open} className={primary}>Emitir nota</button>}</div>
+      {data && access?.can('finance.adjustments.create') && <button type="button" onClick={open} className={primary}>Emitir nota</button>}</div>
     {onOpenInvoice && <button type="button" onClick={() => onOpenInvoice(invoiceId)} className="min-h-[36px] text-sm text-accent-600">Ver factura vinculada</button>}
     {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
     {error && !form && <p role="alert" className="text-sm text-status-danger">{error} <button type="button" className="font-semibold" onClick={() => void load()}>Reintentar</button></p>}

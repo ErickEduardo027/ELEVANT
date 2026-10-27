@@ -68,6 +68,7 @@ public static class DependencyInjection
         services.AddScoped<EfDepartmentGovernanceStore>();
         services.AddScoped<IDepartmentGovernanceStore>(provider => provider.GetRequiredService<EfDepartmentGovernanceStore>());
         services.AddScoped<IEmployeeGovernanceStore>(provider => provider.GetRequiredService<EfDepartmentGovernanceStore>());
+        services.AddScoped<IDepartmentNotificationStore, EfDepartmentNotificationStore>();
         services.AddScoped<IRampProfileStore, EfRampProfileStore>();
         services.AddScoped<IRampMobileAccessRequestStore, EfRampMobileAccessRequestStore>();
         services.AddScoped<IHumanResourcesQualificationReadStore, EfHumanResourcesQualificationReadStore>();
@@ -80,6 +81,8 @@ public static class DependencyInjection
         services.AddScoped<IHumanResourcesAvailabilityReadStore, EfHumanResourcesAvailabilityReadStore>();
         services.AddScoped<IHumanResourcesAvailabilityWriteStore, EfHumanResourcesAvailabilityWriteStore>();
         services.AddScoped<IHumanResourcesReportStore, EfHumanResourcesReportStore>();
+        services.AddScoped<IOccReportStore, EfOccReportStore>();
+        services.AddScoped<IOccPositionStore, EfOccPositionStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
         services.AddScoped<IAirlinePreinvoiceAcceptanceStore, EfAirlinePreinvoiceAcceptanceStore>();
         services.AddScoped<IAirlinePreinvoiceDisputeStore, EfAirlinePreinvoiceDisputeStore>();
@@ -98,6 +101,7 @@ public static class DependencyInjection
         services.AddScoped<ICommercialProvisioningStore, EfCommercialProvisioningStore>();
         services.AddScoped<IContractDraftStore, EfContractDraftStore>();
         services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
+        services.AddScoped<IContractDocumentStore, EfContractDocumentStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
         services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();

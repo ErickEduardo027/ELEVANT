@@ -31,6 +31,9 @@ tags:
 
 # Turnaround y operación en tierra
 
+> [!NOTE]
+> La revisión docente de octubre de 2026 cambió validaciones, permisos, notificaciones y otros comportamientos descritos aquí. El estado actual de cada punto está en [Correcciones de la revisión docente](../05-aplicaciones/correcciones-revision-docente-2026-10.md).
+
 `Turnaround` representa la escala completa que AVIAM planifica en una estación. `GroundOperation` representa su ejecución en tierra. La separación permite conservar horarios y procedencia de los vuelos sin mezclar asignaciones, servicios, checklist, incidentes o revisión.
 
 ## Anatomía de una escala

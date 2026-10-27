@@ -26,7 +26,8 @@ function withoutEmpty(values) {
 
 export default function CurrentPermitsPage() {
   const access = useOptionalDepartmentAccess();
-  const canManage = Boolean(access?.can('human_resources.permits.manage'));
+  const canCreate = Boolean(access?.can('human_resources.permits.create'));
+  const canManage = Boolean(access?.can('human_resources.permits.update'));
   const [page, setPage] = useState(1);
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const [history, setHistory] = useState(null);
@@ -91,7 +92,7 @@ export default function CurrentPermitsPage() {
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
-        {state.status === 'success' && canManage && <button type="button"
+        {state.status === 'success' && canCreate && <button type="button"
           onClick={() => { setNotice(''); setForm({ open: true, initialPermit: null }); }}
           className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">
           Registrar permiso

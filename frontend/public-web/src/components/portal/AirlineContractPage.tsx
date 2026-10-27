@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AirlineContractPageResponse } from "@elevant/api-client";
 import type { AirlineDraftData } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { AirlineContractSignature } from "./AirlineContractSignature";
 import styles from "./AirlinePortalPage.module.css";
 
 const STATUS: Record<string, string> = {
@@ -94,6 +95,7 @@ export function AirlineContractPage() {
               <span>Precio por {rate.billingUnit}: {money(rate.unitPrice, version.currencyCode)} · cantidad mínima {rate.minimumQuantity}</span>
             </div>) : <p>Sin tarifas registradas en esta versión.</p>}
           </div>
+          <AirlineContractSignature versionId={version.id} fileName={`contrato-${contract.code}-v${version.versionNumber}.pdf`} />
         </section>)}
       </article>)}
     </div>}
