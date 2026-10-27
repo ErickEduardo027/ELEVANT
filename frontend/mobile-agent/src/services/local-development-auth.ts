@@ -1,8 +1,10 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 
-const LOCAL_PASSWORD_KEY = 'elevant.mobile.local-development-password.v1';
-const LOCAL_PASSWORD_SALT = 'elevant-mobile-local-development-v1';
+// PUJ uses a distinct credential namespace so a password created for an
+// earlier provisional account cannot block first activation on the device.
+const LOCAL_PASSWORD_KEY = 'elevant.mobile.local-development-password.puj.v1';
+const LOCAL_PASSWORD_SALT = 'elevant-mobile-local-development-puj-v1';
 
 export const LOCAL_DEVELOPMENT_EMAIL = 'agente.puj@elevant.local';
 export const LOCAL_DEVELOPMENT_TEMPORARY_PASSWORD = 'ElevantPUJ2026!';
