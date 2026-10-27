@@ -14,7 +14,7 @@ export default function HumanResourcesLayout({
   children,
 }) {
   const { access } = useDepartmentAccess();
-  // Department alerts are real data (ADR-0018), so the read-only demo keeps them.
+  // Department alerts are real data (ADR-0019), so the read-only demo keeps them.
   const notificationsEnabled = Boolean(access?.can('human_resources.notifications.read'));
 
   const navigation = useMemo(

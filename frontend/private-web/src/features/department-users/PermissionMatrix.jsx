@@ -55,7 +55,7 @@ export function matrixSections(catalog) {
 }
 
 /**
- * Menu option × action grid built from the server catalog (ADR-0018): one row per option of
+ * Menu option × action grid built from the server catalog (ADR-0019): one row per option of
  * the department's menu, grouped like the sidebar, with the columns Ver, Crear, Modificar and
  * Eliminar plus the option's own workflow actions.
  */

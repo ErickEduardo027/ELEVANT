@@ -17,7 +17,7 @@ public sealed record DepartmentNotificationResult<T>(T? Value, DepartmentNotific
     public static DepartmentNotificationResult<T> Failed(DepartmentNotificationFailure failure) => new(default, failure);
 }
 
-/// <summary>On-screen alerts of the caller's department (ADR-0018); OCC keeps its operational feed.</summary>
+/// <summary>On-screen alerts of the caller's department (ADR-0019); OCC keeps its operational feed.</summary>
 public interface IDepartmentNotificationStore
 {
     Task<DepartmentNotificationResult<DepartmentNotificationListData>> ListAsync(Guid accountId,

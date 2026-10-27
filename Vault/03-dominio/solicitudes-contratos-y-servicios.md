@@ -33,6 +33,9 @@ tags:
 
 # Solicitudes, contratos y servicios
 
+> [!NOTE]
+> La revisión docente de octubre de 2026 cambió validaciones, permisos, notificaciones y otros comportamientos descritos aquí. El estado actual de cada punto está en [Correcciones de la revisión docente](../05-aplicaciones/correcciones-revision-docente-2026-10.md).
+
 ELEVANT modela dos tipos de solicitud con propósitos distintos. La solicitud comercial inicia o amplía una relación de servicio; la solicitud operativa pide resolver una necesidad dentro de una estación y, opcionalmente, una escala concreta.
 
 > El commit verificado del frontmatter describe la base anterior. Esta rama de

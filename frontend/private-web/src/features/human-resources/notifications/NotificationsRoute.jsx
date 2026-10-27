@@ -3,7 +3,7 @@ import PageHeader from '../../../components/PageHeader';
 import { NotificationList } from '../../notifications/DepartmentNotificationCenter';
 import useDepartmentNotifications from '../../notifications/useDepartmentNotifications';
 
-// Real department feed (ADR-0018); new alerts also pop up on screen from the shell.
+// Real department feed (ADR-0019); new alerts also pop up on screen from the shell.
 export default function NotificationsRoute() {
   const notifications = useDepartmentNotifications();
   const router = useRouter();

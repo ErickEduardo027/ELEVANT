@@ -58,7 +58,7 @@ public sealed class EmployeeRulesTests
         Assert.Contains("human_resources.positions.update", codes);
         Assert.Contains("human_resources.requisitions.attend", codes);
         Assert.Contains("human_resources.ramp_profiles.update", codes);
-        // A grant stored before ADR-0018 keeps working.
+        // A grant stored before ADR-0019 keeps working.
         Assert.Equal(["human_resources.employees.delete", "human_resources.employees.read"],
             DepartmentPermissionCatalog.Normalize(["human_resources.employees.terminate"]));
     }

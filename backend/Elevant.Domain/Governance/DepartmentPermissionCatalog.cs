@@ -27,7 +27,7 @@ public sealed record PermissionModule(string Key, string Label, string Section, 
 
 /// <summary>
 /// Code-defined catalog of department permissions, one module per menu option with the standard
-/// actions Ver/Crear/Modificar/Eliminar plus its own workflow actions (ADR-0018). It is the single
+/// actions Ver/Crear/Modificar/Eliminar plus its own workflow actions (ADR-0019). It is the single
 /// source for validating grants and for rendering the matrix, so it works in every environment
 /// without seeded catalog rows. A code is <c>&lt;department&gt;.&lt;module&gt;.&lt;action&gt;</c>.
 /// </summary>
@@ -147,7 +147,7 @@ public static class DepartmentPermissionCatalog
         };
 
     /// <summary>
-    /// Codes stored before ADR-0018 and what they grant now, so existing templates and accounts keep
+    /// Codes stored before ADR-0019 and what they grant now, so existing templates and accounts keep
     /// their access: «manage» became the create/update/delete it covered and shared menu options got
     /// their own module. Read when grants are resolved; never written.
     /// </summary>
