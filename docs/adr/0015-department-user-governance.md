@@ -6,6 +6,10 @@ Accepted — 2026-10-07. Sustituye la gobernanza plana en la que sólo el
 superadministrador creaba usuarios internos y los permisos finos existían
 únicamente para el módulo comercial (`commercial.*`, roles `CUSTOM_*`).
 
+> Desde 2026-10-26, [ADR-0019](0019-menu-option-permissions-and-department-notifications.md)
+> organiza el catálogo por opción de menú, con las acciones Ver, Crear, Modificar
+> y Eliminar. El formato `<departamento>.<módulo>.<acción>` se mantiene.
+
 ## Contexto
 
 Hasta ahora cada cuenta interna tenía un rol y los departamentos eran sólo

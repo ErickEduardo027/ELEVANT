@@ -130,6 +130,11 @@ Nuevos módulos del catálogo de Finanzas:
 
 Los administradores de Finanzas los heredan.
 
+> Desde [ADR-0019](0019-menu-option-permissions-and-department-notifications.md),
+> cada `manage` se divide en Crear, Modificar, Eliminar y Publicar. Las unidades
+> de cobro tienen su propia opción (`finance.billing_units`). Los grants
+> anteriores se traducen automáticamente.
+
 ## Consecuencias
 
 - **Migración:** `AddFinanceTariffsAndCharges` es aditiva.

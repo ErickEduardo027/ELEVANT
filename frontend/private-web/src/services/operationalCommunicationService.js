@@ -39,7 +39,7 @@ export const loadOperationalNotifications = ({ signal } = {}) =>
 export const setOperationalNotificationRead = (notificationId, read, { signal } = {}) =>
   guarded(() => client().setOperationalNotificationRead(notificationId, read, { signal }));
 
-// On-screen alerts of Human Resources, Contracts and Finance (ADR-0018).
+// On-screen alerts of Human Resources, Contracts and Finance (ADR-0019).
 export const loadDepartmentNotifications = ({ signal } = {}) =>
   guarded(() => client().getDepartmentNotifications({ signal }));
 
