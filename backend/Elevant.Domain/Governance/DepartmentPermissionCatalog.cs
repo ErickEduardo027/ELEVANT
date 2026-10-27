@@ -88,7 +88,8 @@ public static class DepartmentPermissionCatalog
             [Department.Contracts] =
             [
                 Module("contracts", "home", "Inicio", "Gestión contractual", null, Read()),
-                Module("contracts", "agreements", "Contratos", "Gestión contractual", null, Read()),
+                Module("contracts", "agreements", "Contratos", "Gestión contractual", null,
+                    Read(), Other("sign", "Firmar por AVIAM")),
                 Module("contracts", "agreed_services", "Servicios pactados", "Gestión contractual", null, Read()),
                 Module("contracts", "drafts", "Borradores", "Gestión contractual", null,
                     Read(), Update("Editar borradores"), Other("activate", "Activar contrato")),

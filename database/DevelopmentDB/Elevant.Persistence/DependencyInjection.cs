@@ -82,6 +82,7 @@ public static class DependencyInjection
         services.AddScoped<IHumanResourcesAvailabilityWriteStore, EfHumanResourcesAvailabilityWriteStore>();
         services.AddScoped<IHumanResourcesReportStore, EfHumanResourcesReportStore>();
         services.AddScoped<IOccReportStore, EfOccReportStore>();
+        services.AddScoped<IOccPositionStore, EfOccPositionStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
         services.AddScoped<IAirlinePreinvoiceAcceptanceStore, EfAirlinePreinvoiceAcceptanceStore>();
         services.AddScoped<IAirlinePreinvoiceDisputeStore, EfAirlinePreinvoiceDisputeStore>();
@@ -100,6 +101,7 @@ public static class DependencyInjection
         services.AddScoped<ICommercialProvisioningStore, EfCommercialProvisioningStore>();
         services.AddScoped<IContractDraftStore, EfContractDraftStore>();
         services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
+        services.AddScoped<IContractDocumentStore, EfContractDocumentStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
         services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();

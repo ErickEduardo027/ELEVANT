@@ -99,7 +99,8 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
           ) : activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
             <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={revalidateHome} onNavigate={handleSelectModule} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (
-            <ManagedAgreementsPage mode="contracts" />
+            <ManagedAgreementsPage mode="contracts" canSign={can('contracts.agreements.sign')}
+              onNewContract={can('contracts.requests.read') ? () => handleSelectModule(CONTRACT_MODULE_IDS.REQUESTS) : undefined} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (
             <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (

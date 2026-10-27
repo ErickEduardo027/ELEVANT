@@ -86,6 +86,13 @@ import {
   getListHumanResourcesScheduleWarningsUrl,
   getExportHumanResourcesReportUrl,
   getListOccReportsUrl,
+  getGetOccPositionsUrl,
+  getRecordOccArrivalUrl,
+  getAssignOccStandUrl,
+  getReleaseOccStandUrl,
+  getGetContractDocumentUrl,
+  getDownloadContractDocumentUrl,
+  getSignContractVersionUrl,
   getGetOccReportUrl,
   getExportOccReportUrl,
   getValidateHumanResourcesAttendanceUrl,
@@ -189,6 +196,9 @@ import {
   type GetHumanResourcesAttendanceParams,
   type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
   type OccReportCatalogResponse,
+  type OccPositionBoardResponse,
+  type ContractDocumentResponse,
+  type SignContractRequest,
   type OccReportPageResponse,
   type HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse,
   type HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse,
@@ -773,6 +783,16 @@ export interface ElevantApiClient {
     query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
   listOccReports(options?: GetHumanResourcesReportOptions): Promise<OccReportCatalogResponse>;
+  getOccPositions(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  recordOccArrival(turnaroundId: string, request: { aircraftRegistration: string; arrivedAt?: string | null },
+    options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  assignOccStand(turnaroundId: string, request: { standId: string; reason?: string | null },
+    options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  getContractDocument(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
+  downloadContractDocument(versionId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  signContractVersion(versionId: string, request: SignContractRequest, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
   getOccReport(key: OccReportKey, query: OccReportQuery,
     options?: GetHumanResourcesReportOptions): Promise<OccReportPageResponse>;
   exportOccReport(key: OccReportKey, query: OccReportQuery, format: OccReportFormat,
@@ -2163,6 +2183,57 @@ function isDepartmentNotificationListResponse(value: unknown): value is Departme
     typeof value.hasMore === "boolean" && Number.isInteger(value.unreadCount) && (value.unreadCount as number) >= 0 &&
     Array.isArray(value.notifications) && value.notifications.length <= 50 &&
     value.notifications.every(isDepartmentNotificationResponse);
+}
+
+const OCC_POSITION_STATUSES = new Set<string>(["available", "planned", "occupied"]);
+
+function isOccPositionTurnaround(value: unknown): boolean {
+  return isRecord(value) && hasOnlyKeys(value, ["turnaroundId", "operationCode", "airlineName", "aircraftRegistration",
+      "arrivalFlightNumber", "departureFlightNumber", "arrivalScheduledAt", "arrivedAt", "departureScheduledAt",
+      "assignedFrom", "status"]) &&
+    isUuid(value.turnaroundId) && isNonEmptyString(value.operationCode) && isNonEmptyString(value.airlineName) &&
+    isOptionalNullable(value.aircraftRegistration, isNonEmptyString) && isOptionalNullable(value.arrivalFlightNumber, isNonEmptyString) &&
+    isOptionalNullable(value.departureFlightNumber, isNonEmptyString) && isOptionalNullable(value.arrivalScheduledAt, isDateTimeOffset) &&
+    isOptionalNullable(value.arrivedAt, isDateTimeOffset) && isOptionalNullable(value.departureScheduledAt, isDateTimeOffset) &&
+    isOptionalNullable(value.assignedFrom, isDateTimeOffset) && isNonEmptyString(value.status);
+}
+
+function isOccPositionBoard(value: unknown, stationId?: string): value is OccPositionBoardResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["stationId", "stationCode", "operationDate", "asOf", "positions", "unassigned", "canAssign"]) &&
+    isUuid(value.stationId) && (stationId === undefined || value.stationId.toLowerCase() === stationId) &&
+    isNonEmptyString(value.stationCode) && isDateOnly(value.operationDate) && isDateTimeOffset(value.asOf) &&
+    typeof value.canAssign === "boolean" && Array.isArray(value.unassigned) && value.unassigned.every(isOccPositionTurnaround) &&
+    Array.isArray(value.positions) && value.positions.every(position => isRecord(position) &&
+      hasOnlyKeys(position, ["standId", "code", "terminalCode", "standType", "status", "turnarounds"]) &&
+      isUuid(position.standId) && isNonEmptyString(position.code) && isOptionalNullable(position.terminalCode, isNonEmptyString) &&
+      isOptionalNullable(position.standType, isNonEmptyString) && typeof position.status === "string" &&
+      OCC_POSITION_STATUSES.has(position.status) && Array.isArray(position.turnarounds) && position.turnarounds.every(isOccPositionTurnaround));
+}
+
+const CONTRACT_PARTIES = new Set<string>(["Aviam", "Airline"]);
+
+function isContractDocument(value: unknown, versionId: string): value is ContractDocumentResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["contractId", "versionId", "contractCode", "contractStatus", "airlineName",
+      "airlineCode", "airlineLegalName", "versionNumber", "versionStatus", "validFrom", "validTo", "currencyCode",
+      "stations", "rates", "terms", "signedOn", "signatures", "contentSha256", "signableBy"]) &&
+    isUuid(value.contractId) && isUuid(value.versionId) && value.versionId.toLowerCase() === versionId &&
+    isNonEmptyString(value.contractCode) && isNonEmptyString(value.contractStatus) && isNonEmptyString(value.airlineName) &&
+    typeof value.airlineCode === "string" && isOptionalNullable(value.airlineLegalName, isNonEmptyString) &&
+    Number.isInteger(value.versionNumber) && isNonEmptyString(value.versionStatus) && isDateOnly(value.validFrom) &&
+    isOptionalNullable(value.validTo, isDateOnly) && isNonEmptyString(value.currencyCode) &&
+    Array.isArray(value.stations) && value.stations.every(isNonEmptyString) &&
+    Array.isArray(value.rates) && value.rates.every(rate => isRecord(rate) &&
+      hasOnlyKeys(rate, ["serviceCode", "serviceName", "billingUnit", "unitPrice", "minimumQuantity"]) &&
+      isNonEmptyString(rate.serviceCode) && isNonEmptyString(rate.serviceName) && isNonEmptyString(rate.billingUnit) &&
+      isFiniteNumber(rate.unitPrice) && isFiniteNumber(rate.minimumQuantity)) &&
+    isOptionalNullable(value.terms, (text: unknown) => typeof text === "string") && isOptionalNullable(value.signedOn, isDateOnly) &&
+    Array.isArray(value.signatures) && value.signatures.length <= 2 && value.signatures.every(signature => isRecord(signature) &&
+      hasOnlyKeys(signature, ["party", "signerName", "signerTitle", "signedAt", "documentSha256"]) &&
+      typeof signature.party === "string" && CONTRACT_PARTIES.has(signature.party) && isNonEmptyString(signature.signerName) &&
+      isNonEmptyString(signature.signerTitle) && isDateTimeOffset(signature.signedAt) &&
+      typeof signature.documentSha256 === "string" && /^[0-9a-f]{64}$/.test(signature.documentSha256)) &&
+    typeof value.contentSha256 === "string" && /^[0-9a-f]{64}$/.test(value.contentSha256) &&
+    isOptionalNullable(value.signableBy, (party: unknown) => typeof party === "string" && CONTRACT_PARTIES.has(party));
 }
 
 const OCC_REPORT_KEYS = new Set<string>(["operations", "turnaround-times", "services-by-airline", "reviews", "agent-productivity"]);
@@ -4381,6 +4452,15 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return new Blob([bytes], { type: mime });
   };
 
+  const positionCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    if (body !== undefined) headers.set("content-type", "application/json");
+    const result = await execute(path, { ...options, method: "POST", headers,
+      ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
+    if (!isOccPositionBoard(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
   const executeOccAssignment = async (
     turnaroundId: string,
     request: AssignOccOperationRequest,
@@ -5643,6 +5723,62 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
             ...(scope.documentKind && { documentKind: scope.documentKind }),
             ...(scope.validity && { validity: scope.validity }) }),
       format, options);
+    },
+    async getContractDocument(versionId: string, options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      const result = await execute(getGetContractDocumentUrl(version), { ...options, method: "GET" }, true);
+      if (!isContractDocument(result.data, version)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    downloadContractDocument(versionId: string, options?: GetHumanResourcesReportOptions) {
+      return executeReportDocument(getDownloadContractDocumentUrl(validatedUuid(versionId, "versionId")), "pdf", options);
+    },
+    async signContractVersion(versionId: string, request: SignContractRequest, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      const name = typeof request?.signerName === "string" ? request.signerName.trim() : "";
+      const title = typeof request?.signerTitle === "string" ? request.signerTitle.trim() : "";
+      if (name.length < 3 || name.length > 160 || title.length < 2 || title.length > 120 ||
+          typeof request.documentSha256 !== "string" || !/^[0-9a-f]{64}$/i.test(request.documentSha256) ||
+          request.accepted !== true)
+        throw new TypeError("The contract signature is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      const result = await execute(getSignContractVersionUrl(version), { ...options, method: "POST", headers,
+        body: JSON.stringify({ signerName: name, signerTitle: title, documentSha256: request.documentSha256.toLowerCase(),
+          accepted: true }) }, true);
+      if (!isContractDocument(result.data, version)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccPositions(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
+      const result = await execute(getGetOccPositionsUrl({ stationId: station, date }), { ...options, method: "GET" }, true);
+      if (!isOccPositionBoard(result.data, station)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async recordOccArrival(turnaroundId: string, request: { aircraftRegistration: string; arrivedAt?: string | null },
+      options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const registration = typeof request?.aircraftRegistration === "string" ? request.aircraftRegistration.trim().toUpperCase() : "";
+      if (!/^[A-Z0-9-]{2,10}$/.test(registration) ||
+          (request.arrivedAt != null && !isDateTimeOffset(request.arrivedAt)))
+        throw new TypeError("The arrival is invalid.");
+      return positionCommand(getRecordOccArrivalUrl(turnaround),
+        { aircraftRegistration: registration, arrivedAt: request.arrivedAt ?? null }, options);
+    },
+    async assignOccStand(turnaroundId: string, request: { standId: string; reason?: string | null },
+      options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const reason = typeof request?.reason === "string" && request.reason.trim() ? request.reason.trim() : null;
+      if (reason && reason.length > 500) throw new TypeError("The reason is too long.");
+      return positionCommand(getAssignOccStandUrl(turnaround),
+        { standId: validatedUuid(request?.standId, "standId"), reason }, options);
+    },
+    async releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+      return positionCommand(getReleaseOccStandUrl(validatedUuid(turnaroundId, "turnaroundId")), undefined, options);
     },
     async listOccReports(options?: GetHumanResourcesReportOptions) {
       const result = await execute(getListOccReportsUrl(), { ...options, method: "GET" }, true);

@@ -11,7 +11,8 @@
 import { RAMP_POSITIONS } from '../features/dashboard/positionsData';
 import { readSession } from '../features/auth/authService';
 import { getPlanningSnapshot } from './planningService';
-import { mapTurnaroundsToRampPositions } from '../features/positions-map/positionsMapMappers';
+import { mapOccupancyToRampPositions } from '../features/positions-map/positionsMapMappers';
+import { loadOccPositions } from './occPositionsService';
 
 // --- Estado operativo inicial (mock) ---
 // Las únicas relaciones combinadas Alfa/Bravo son las declaradas aquí explícitamente:
@@ -133,43 +134,54 @@ function buildPosition(coords, overrides, nowIso) {
   };
 }
 
+// Operating day at Punta Cana (America/Santo_Domingo, UTC-4 without daylight saving).
+export function stationDate(now = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Santo_Domingo' }).format(now);
+}
+
 export async function getPositionsSnapshot(stationCode = 'PUJ') {
   if (process.env.NODE_ENV !== 'test') {
     const stationScope = readSession()?.stationScopes?.find(scope => scope.stationCode === stationCode);
     if (!stationScope?.stationId) throw new Error('Tu cuenta no tiene acceso a esta estación.');
+    if (stationCode === 'PUJ') {
+      // PUJ shows real occupancy: arrivals and stand assignments recorded by OCC.
+      const board = await loadOccPositions(stationScope.stationId, stationDate());
+      return {
+        station: { code: board.stationCode, localAbbr: 'AST' },
+        source: 'occupancy',
+        operationDate: board.operationDate,
+        canAssign: board.canAssign,
+        unassigned: board.unassigned,
+        stands: board.positions,
+        positions: mapOccupancyToRampPositions(RAMP_POSITIONS, board),
+      };
+    }
     const snapshot = await getPlanningSnapshot({ stationId: stationScope.stationId });
     if (snapshot.station?.id !== stationScope.stationId ||
         snapshot.station?.code !== stationCode) {
       throw new Error('La respuesta no coincide con la estación seleccionada.');
     }
-    if (stationCode !== 'PUJ') {
-      const plannedByStand = new Map();
-      for (const turnaround of snapshot.turnarounds) {
-        if (!turnaround.stand?.code) continue;
-        const code = turnaround.stand.code;
-        const flights = [turnaround.arrival?.flightNumber,
-          turnaround.departure?.flightNumber].filter(Boolean);
-        const existing = plannedByStand.get(code);
-        if (existing) {
-          existing.plannedFlights.push(...flights);
-        } else {
-          plannedByStand.set(code, {
-            id: code, terminal: turnaround.stand.terminal?.code ?? null,
-            status: 'planned', latitude: null, longitude: null,
-            plannedFlights: flights,
-          });
-        }
+    const plannedByStand = new Map();
+    for (const turnaround of snapshot.turnarounds) {
+      if (!turnaround.stand?.code) continue;
+      const code = turnaround.stand.code;
+      const flights = [turnaround.arrival?.flightNumber,
+        turnaround.departure?.flightNumber].filter(Boolean);
+      const existing = plannedByStand.get(code);
+      if (existing) {
+        existing.plannedFlights.push(...flights);
+      } else {
+        plannedByStand.set(code, {
+          id: code, terminal: turnaround.stand.terminal?.code ?? null,
+          status: 'planned', latitude: null, longitude: null,
+          plannedFlights: flights,
+        });
       }
-      return {
-        station: { code: stationCode, name: snapshot.station.name },
-        source: 'planning-no-map',
-        positions: [...plannedByStand.values()],
-      };
     }
     return {
-      station: { code: snapshot.station.code, localAbbr: 'AST' },
-      source: 'planning',
-      positions: mapTurnaroundsToRampPositions(RAMP_POSITIONS, snapshot.turnarounds),
+      station: { code: stationCode, name: snapshot.station.name },
+      source: 'planning-no-map',
+      positions: [...plannedByStand.values()],
     };
   }
   const nowIso = new Date().toISOString();

@@ -11,6 +11,7 @@ const KINDS = {
   commercial_request: { title: 'Nueva solicitud comercial', target: { moduleId: CONTRACT_MODULE_IDS.REQUESTS } },
   draft_comment: { title: 'La aerolínea comentó un borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
   service_closure: { title: 'Solicitud de clausura de servicio', target: { moduleId: CONTRACT_MODULE_IDS.CATALOG } },
+  contract_signed: { title: 'La aerolínea firmó un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_approval: { title: 'Contrato pendiente de aprobación', target: { moduleId: FINANCE_MODULE_IDS.CONTRACT_APPROVALS } },
   preinvoice_accepted: { title: 'La aerolínea aceptó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.PREINVOICES } },
   preinvoice_disputed: { title: 'La aerolínea disputó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.PREINVOICES } },

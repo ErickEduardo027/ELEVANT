@@ -3,6 +3,8 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Entities.Operations;
+using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
 using Elevant.Persistence;
@@ -221,5 +223,145 @@ public sealed partial class SqlServerMigrationTests
         Assert.True(await context.AuditEntries.AnyAsync(entry => entry.Action == "operations.report.exported", ct));
         Assert.Equal(OccReportFailure.Forbidden, await reports.RecordExportAsync(FinanceAccount, OccReportKind.Operations,
             station.PublicId, from, to, "pdf", 0, ct));
+    }
+}
+
+public sealed partial class SqlServerMigrationTests
+{
+    private const string ContractSignaturesMigration = "20261027000905_AddContractSignatures";
+
+    [Fact]
+    public async Task ApprovedContractsPrintAndAreSignedOncePerPartyOverTheExactContent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
+        var airlineAccount = Guid.Parse("40000000-0000-7000-8000-000000000003");
+        await using var context = CreateContext(database.ConnectionString);
+        var versionId = await context.ContractVersions.Where(version => version.Status == ContractVersionStatus.Approved)
+            .Select(version => version.PublicId).FirstAsync(ct);
+
+        var read = await documents.ReadAsync(ContractsAccount, versionId, ct);
+        Assert.Null(read.Failure);
+        var document = read.Document!;
+        Assert.Equal("Aviam", document.SignableBy);
+        Assert.Equal(64, document.ContentSha256.Length);
+        Assert.Empty(document.Signatures);
+        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(
+            new Elevant.Infrastructure.Commercial.ContractPdfRenderer().Render(document)[..4]));
+
+        // Finance reads contracts to approve prices but does not sign for AVIAM.
+        var finance = await documents.ReadAsync(FinanceAccount, versionId, ct);
+        Assert.Null(finance.Document!.SignableBy);
+        Assert.Equal(ContractDocumentFailure.Forbidden, (await documents.SignAsync(FinanceAccount, versionId,
+            new SignContractInput(Guid.NewGuid(), "Marta Gómez", "Analista", document.ContentSha256, true), ct)).Failure);
+        Assert.Equal(ContractDocumentFailure.Conflict, (await documents.SignAsync(ContractsAccount, versionId,
+            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", new string('0', 64), true), ct)).Failure);
+        Assert.Equal(ContractDocumentFailure.Invalid, (await documents.SignAsync(ContractsAccount, versionId,
+            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", document.ContentSha256, false), ct)).Failure);
+
+        var aviamRequest = new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", document.ContentSha256, true);
+        var aviam = await documents.SignAsync(ContractsAccount, versionId, aviamRequest, ct);
+        Assert.Null(aviam.Failure);
+        Assert.True((await documents.SignAsync(ContractsAccount, versionId, aviamRequest, ct)).Replayed);
+        Assert.Equal(ContractDocumentFailure.AlreadySigned, (await documents.SignAsync(ContractsAccount, versionId,
+            aviamRequest with { RequestId = Guid.NewGuid() }, ct)).Failure);
+
+        var portal = await documents.ReadAsync(airlineAccount, versionId, ct);
+        Assert.Equal("Airline", portal.Document!.SignableBy);
+        var airline = await documents.SignAsync(airlineAccount, versionId,
+            new SignContractInput(Guid.NewGuid(), "Luis Marte", "Director de estación", document.ContentSha256, true), ct);
+        Assert.Null(airline.Failure);
+        Assert.Equal(["Aviam", "Airline"], airline.Document!.Signatures.Select(item => item.Party));
+        Assert.All(airline.Document.Signatures, item => Assert.Equal(document.ContentSha256, item.DocumentSha256));
+        Assert.NotNull(airline.Document.SignedOn);
+        Assert.Contains(await notificationsFor(ContractsAccount), item => item.Kind == "contract_signed");
+
+        var chain = context.Database.GetMigrations().ToArray();
+        var previous = chain[Array.IndexOf(chain, ContractSignaturesMigration) - 1];
+        var failure = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(previous, ct));
+        Assert.Equal(52320, failure.Number);
+
+        async Task<IReadOnlyList<DepartmentNotificationData>> notificationsFor(Guid account) =>
+            (await scope.ServiceProvider.GetRequiredService<IDepartmentNotificationStore>().ListAsync(account, ct)).Value!.Notifications;
+    }
+}
+
+public sealed partial class SqlServerMigrationTests
+{
+    [Fact]
+    public async Task OccRecordsArrivalsAndAssignsReassignsAndReleasesStandsWithoutOverlaps()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var positions = scope.ServiceProvider.GetRequiredService<IOccPositionStore>();
+        var occ = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        await using var context = CreateContext(database.ConnectionString);
+        var station = await context.Stations.SingleAsync(item => item.Code == "PUJ", ct);
+        var assigned = await (from assignment in context.Set<StandAssignment>()
+                              join turnaround in context.Turnarounds on assignment.TurnaroundId equals turnaround.Id
+                              where assignment.AssignedTo == null && turnaround.StationId == station.Id &&
+                                    turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
+                                    turnaround.CurrentStatus != TurnaroundStatus.Completed &&
+                                    context.FlightLegs.Any(leg => leg.TurnaroundId == turnaround.Id && leg.Direction == FlightDirection.Arrival)
+                              orderby turnaround.OperationDate, turnaround.Id
+                              select new { turnaround.Id, turnaround.PublicId, turnaround.OperationDate, assignment.StandId })
+            .FirstAsync(ct);
+
+        var board = await positions.ReadAsync(occ, station.PublicId, assigned.OperationDate, ct);
+        Assert.Null(board.Failure);
+        Assert.True(board.Board!.CanAssign);
+        var stand = Assert.Single(board.Board.Positions, item => item.Turnarounds.Any(turnaround => turnaround.TurnaroundId == assigned.PublicId));
+        Assert.Equal("planned", stand.Status);
+        Assert.Equal(OccPositionFailure.Forbidden, (await positions.ReadAsync(FinanceAccount, station.PublicId, assigned.OperationDate, ct)).Failure);
+        Assert.Equal(OccPositionFailure.Forbidden, (await positions.ReleaseAsync(FinanceAccount, assigned.PublicId, ct)).Failure);
+
+        // The aircraft arrives: the stand shows it occupied with its registration.
+        Assert.Equal(OccPositionFailure.Invalid, (await positions.RecordArrivalAsync(occ, assigned.PublicId,
+            new RecordArrivalInput("hi 1055!", null), ct)).Failure);
+        Assert.Equal(OccPositionFailure.Invalid, (await positions.RecordArrivalAsync(occ, assigned.PublicId,
+            new RecordArrivalInput("HI1055", DateTimeOffset.UtcNow.AddHours(2)), ct)).Failure);
+        var arrived = await positions.RecordArrivalAsync(occ, assigned.PublicId, new RecordArrivalInput("hi1055", null), ct);
+        var occupied = Assert.Single(arrived.Board!.Positions, item => item.StandId == stand.StandId);
+        Assert.Equal("occupied", occupied.Status);
+        Assert.Equal("HI1055", occupied.Turnarounds.Single(item => item.TurnaroundId == assigned.PublicId).AircraftRegistration);
+        Assert.Equal(TurnaroundStatus.InProgress, (await context.Turnarounds.AsNoTracking().SingleAsync(item => item.Id == assigned.Id, ct)).CurrentStatus);
+
+        // Reassigning to a free stand moves the aircraft; the previous assignment is kept closed.
+        var free = board.Board.Positions.First(item => item.Status == "available" && item.StandId != stand.StandId);
+        var moved = await positions.AssignAsync(occ, assigned.PublicId, free.StandId, "Cambio por mantenimiento", ct);
+        Assert.Null(moved.Failure);
+        Assert.Equal("occupied", moved.Board!.Positions.Single(item => item.StandId == free.StandId).Status);
+        Assert.Equal("available", moved.Board.Positions.Single(item => item.StandId == stand.StandId).Status);
+        Assert.Equal(2, await context.Set<StandAssignment>().CountAsync(item => item.TurnaroundId == assigned.Id, ct));
+
+        // Another turnaround whose window overlaps cannot take the occupied stand.
+        var other = await context.Turnarounds.Where(item => item.StationId == station.Id && item.Id != assigned.Id &&
+            item.CurrentStatus != TurnaroundStatus.Cancelled && item.CurrentStatus != TurnaroundStatus.Completed)
+            .Select(item => item.PublicId).FirstOrDefaultAsync(ct);
+        if (other != Guid.Empty)
+        {
+            var window = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == assigned.Id)
+                .Select(item => new { item.PlannedStartAt, item.PlannedEndAt }).FirstAsync(ct);
+            await context.GroundOperations.Where(item => context.Turnarounds.Any(turnaround => turnaround.PublicId == other &&
+                    turnaround.Id == item.TurnaroundId))
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.PlannedStartAt, window.PlannedStartAt)
+                    .SetProperty(item => item.PlannedEndAt, window.PlannedEndAt), ct);
+            Assert.Equal(OccPositionFailure.Conflict, (await positions.AssignAsync(occ, other, free.StandId, null, ct)).Failure);
+        }
+
+        var released = await positions.ReleaseAsync(occ, assigned.PublicId, ct);
+        Assert.Equal("available", released.Board!.Positions.Single(item => item.StandId == free.StandId).Status);
+        Assert.False(await context.Set<StandAssignment>().AnyAsync(item => item.TurnaroundId == assigned.Id && item.AssignedTo == null, ct));
+        Assert.True(await context.AuditEntries.CountAsync(entry => entry.EntityPublicId == assigned.PublicId &&
+            entry.Action.StartsWith("occ."), ct) >= 3);
     }
 }
