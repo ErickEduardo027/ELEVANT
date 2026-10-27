@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Infrastructure.Persistence;
@@ -178,5 +179,47 @@ public sealed partial class SqlServerMigrationTests
         var previous = chain[Array.IndexOf(chain, DepartmentNotificationsMigration) - 1];
         var failure = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(previous, ct));
         Assert.Equal(52310, failure.Number);
+    }
+}
+
+public sealed partial class SqlServerMigrationTests
+{
+    [Fact]
+    public async Task OccReportsAreBuiltOnTheServerForTheStationAndExportsAreAudited()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var reports = scope.ServiceProvider.GetRequiredService<IOccReportStore>();
+        var occ = Guid.Parse("40000000-0000-7000-8000-000000000001");
+        await using var context = CreateContext(database.ConnectionString);
+        var station = await context.Stations.SingleAsync(item => item.Code == "PUJ", ct);
+        DateOnly from = new(2026, 8, 1), to = new(2026, 8, 31);
+
+        var operations = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1, 100, ct);
+        Assert.Null(operations.Failure);
+        var table = operations.Table!;
+        Assert.Equal("PUJ", table.StationCode);
+        Assert.NotEmpty(table.Rows);
+        Assert.All(table.Rows, row => Assert.Equal(table.Definition.Columns.Count, row.Count));
+        Assert.Equal(await context.GroundOperations.CountAsync(operation => context.Turnarounds.Any(turnaround =>
+            turnaround.Id == operation.TurnaroundId && turnaround.StationId == station.Id &&
+            turnaround.OperationDate >= from && turnaround.OperationDate <= to), ct), table.RowCount);
+        var firstPage = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1, 1, ct);
+        Assert.Equal(table.RowCount > 1, firstPage.Table!.HasMore);
+        foreach (var kind in Enum.GetValues<OccReportKind>())
+            Assert.Null((await reports.ReadAsync(occ, kind, station.PublicId, from, to, 1, 100, ct)).Failure);
+
+        // Finance has no OCC «Reportes» option.
+        Assert.Equal(OccReportFailure.Forbidden,
+            (await reports.ReadAsync(FinanceAccount, OccReportKind.Operations, station.PublicId, from, to, 1, 10, ct)).Failure);
+        Assert.Null(await reports.RecordExportAsync(occ, OccReportKind.Operations, station.PublicId, from, to, "xlsx",
+            table.RowCount, ct));
+        Assert.True(await context.AuditEntries.AnyAsync(entry => entry.Action == "operations.report.exported", ct));
+        Assert.Equal(OccReportFailure.Forbidden, await reports.RecordExportAsync(FinanceAccount, OccReportKind.Operations,
+            station.PublicId, from, to, "pdf", 0, ct));
     }
 }

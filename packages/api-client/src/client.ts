@@ -85,6 +85,9 @@ import {
   getListHumanResourcesQualificationCoverageUrl,
   getListHumanResourcesScheduleWarningsUrl,
   getExportHumanResourcesReportUrl,
+  getListOccReportsUrl,
+  getGetOccReportUrl,
+  getExportOccReportUrl,
   getValidateHumanResourcesAttendanceUrl,
   getGetRampAssignedOperationsUrl,
   getGetSystemPingUrl,
@@ -185,6 +188,8 @@ import {
   type ValidateAttendanceRequest,
   type GetHumanResourcesAttendanceParams,
   type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
+  type OccReportCatalogResponse,
+  type OccReportPageResponse,
   type HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse,
   type HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse,
   type HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse,
@@ -283,6 +288,9 @@ export type HumanResourcesReportQuery = {
     documentKind?: "Qualification" | "Permit";
     validity?: "Current" | "Expired";
 };
+export type OccReportKey = "operations" | "turnaround-times" | "services-by-airline" | "reviews" | "agent-productivity";
+export type OccReportQuery = { stationId: string; from: string; to: string; page?: number; limit?: number };
+export type OccReportFormat = "csv" | "xlsx" | "pdf";
 export type HumanResourcesReportPage =
   HumanResourcesExpirationResponseHumanResourcesReportPageResponse |
   HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse |
@@ -763,6 +771,11 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<HumanResourcesReportPage>;
   exportHumanResourcesReport(kind: HumanResourcesReportKind,
     query: HumanResourcesReportQuery, format: "pdf" | "xlsx",
+    options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  listOccReports(options?: GetHumanResourcesReportOptions): Promise<OccReportCatalogResponse>;
+  getOccReport(key: OccReportKey, query: OccReportQuery,
+    options?: GetHumanResourcesReportOptions): Promise<OccReportPageResponse>;
+  exportOccReport(key: OccReportKey, query: OccReportQuery, format: OccReportFormat,
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
   validateHumanResourcesAttendance(
     assignmentId: string,
@@ -2150,6 +2163,42 @@ function isDepartmentNotificationListResponse(value: unknown): value is Departme
     typeof value.hasMore === "boolean" && Number.isInteger(value.unreadCount) && (value.unreadCount as number) >= 0 &&
     Array.isArray(value.notifications) && value.notifications.length <= 50 &&
     value.notifications.every(isDepartmentNotificationResponse);
+}
+
+const OCC_REPORT_KEYS = new Set<string>(["operations", "turnaround-times", "services-by-airline", "reviews", "agent-productivity"]);
+const OCC_REPORT_FORMATS = new Set<string>(["csv", "xlsx", "pdf"]);
+
+function validatedOccReportQuery(key: OccReportKey, query: OccReportQuery): OccReportQuery {
+  if (!OCC_REPORT_KEYS.has(key) || !isRecord(query) || !isDateOnly(query.from) || !isDateOnly(query.to) ||
+      query.from > query.to ||
+      (query.page !== undefined && (!Number.isInteger(query.page) || query.page < 1)) ||
+      (query.limit !== undefined && (!Number.isInteger(query.limit) || query.limit < 1 || query.limit > 100)))
+    throw new TypeError("OCC report query is invalid.");
+  return { stationId: validatedUuid(query.stationId, "stationId"), from: query.from, to: query.to,
+    ...(query.page !== undefined && { page: query.page }), ...(query.limit !== undefined && { limit: query.limit }) };
+}
+
+function isOccReportCatalog(value: unknown): value is OccReportCatalogResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["reports", "maxRangeDays"]) &&
+    Number.isInteger(value.maxRangeDays) && Array.isArray(value.reports) &&
+    value.reports.every(report => isRecord(report) && hasOnlyKeys(report, ["key", "title", "description", "columns"]) &&
+      typeof report.key === "string" && OCC_REPORT_KEYS.has(report.key) && isNonEmptyString(report.title) &&
+      isNonEmptyString(report.description) && Array.isArray(report.columns) && report.columns.every(isNonEmptyString));
+}
+
+function isOccReportPage(value: unknown, key: OccReportKey, query: OccReportQuery): value is OccReportPageResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["key", "title", "stationId", "stationCode", "from", "to", "asOf",
+      "columns", "rows", "page", "limit", "hasMore"]) || value.key !== key || !isNonEmptyString(value.title) ||
+      !isUuid(value.stationId) || value.stationId.toLowerCase() !== query.stationId.toLowerCase() ||
+      !isNonEmptyString(value.stationCode) || value.from !== query.from || value.to !== query.to ||
+      !isDateTimeOffset(value.asOf) || typeof value.hasMore !== "boolean" ||
+      !Number.isInteger(value.page) || !Number.isInteger(value.limit) ||
+      !Array.isArray(value.columns) || !value.columns.every(isNonEmptyString) || !Array.isArray(value.rows))
+    return false;
+  const width = value.columns.length;
+  return value.rows.length <= (value.limit as number) && value.rows.every(row => Array.isArray(row) && row.length === width &&
+    row.every(cell => isRecord(cell) && hasOnlyKeys(cell, ["value", "type"]) && typeof cell.value === "string" &&
+      (cell.type === "text" || cell.type === "number")));
 }
 
 function isOperationalNotificationListResponse(value: unknown): value is OperationalNotificationListResponse {
@@ -4306,10 +4355,10 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return new Blob([bytes], { type: "application/pdf" });
   };
 
-  const executeReportDocument = async (path: string, format: "pdf" | "xlsx",
+  const executeReportDocument = async (path: string, format: "pdf" | "xlsx" | "csv",
     init: ElevantRequestInit = {}): Promise<Blob> => {
     const response = await send(path, { ...init, method: "GET" }, true);
-    const mime = format === "pdf" ? "application/pdf" :
+    const mime = format === "pdf" ? "application/pdf" : format === "csv" ? "text/csv" :
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== mime)
       throw malformedResponse(response.status);
@@ -4324,7 +4373,8 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       throw malformedResponse(response.status);
     }
     const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 5));
-    const signature = format === "pdf" ? [37, 80, 68, 70, 45] : [80, 75];
+    // CSV exports start with the UTF-8 byte order mark.
+    const signature = format === "pdf" ? [37, 80, 68, 70, 45] : format === "csv" ? [0xef, 0xbb, 0xbf] : [80, 75];
     if (bytes.byteLength < 8 || bytes.byteLength > 16_777_216 ||
       !signature.every((value, index) => header[index] === value))
       throw malformedResponse(response.status);
@@ -5593,6 +5643,25 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
             ...(scope.documentKind && { documentKind: scope.documentKind }),
             ...(scope.validity && { validity: scope.validity }) }),
       format, options);
+    },
+    async listOccReports(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getListOccReportsUrl(), { ...options, method: "GET" }, true);
+      if (!isOccReportCatalog(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccReport(key: OccReportKey, query: OccReportQuery, options?: GetHumanResourcesReportOptions) {
+      const scope = validatedOccReportQuery(key, query);
+      const result = await execute(getGetOccReportUrl(key, scope), { ...options, method: "GET" }, true);
+      if (!isOccReportPage(result.data, key, scope)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    exportOccReport(key: OccReportKey, query: OccReportQuery, format: OccReportFormat,
+      options?: GetHumanResourcesReportOptions) {
+      const scope = validatedOccReportQuery(key, query);
+      if (scope.page !== undefined || scope.limit !== undefined || !OCC_REPORT_FORMATS.has(format))
+        throw new TypeError("OCC report export query is invalid.");
+      return executeReportDocument(getExportOccReportUrl(key, { stationId: scope.stationId, from: scope.from,
+        to: scope.to, format }), format, options);
     },
     async validateHumanResourcesAttendance(
       assignmentId: string, stationId: string,

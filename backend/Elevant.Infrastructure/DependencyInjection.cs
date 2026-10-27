@@ -5,6 +5,7 @@ using Elevant.Application.Abstractions.Finance;
 using Elevant.Infrastructure.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Infrastructure.Identity;
+using Elevant.Infrastructure.Operations;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Elevant.Infrastructure.Integrations.OpenSky;
 using Elevant.Application.Abstractions.Operations;
@@ -54,6 +55,7 @@ public static class DependencyInjection
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
+        services.AddSingleton<IOccReportRenderer, OccReportRenderer>();
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 
         return services;
