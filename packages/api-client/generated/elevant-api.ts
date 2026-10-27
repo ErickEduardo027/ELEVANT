@@ -3373,6 +3373,38 @@ export interface OccPlanningSnapshotResponse {
   turnarounds: OccTurnaroundResponse[];
 }
 
+export interface OccReportDefinitionResponse {
+  key: string;
+  title: string;
+  description: string;
+  columns: string[];
+}
+
+export interface OccReportCatalogResponse {
+  reports: OccReportDefinitionResponse[];
+  maxRangeDays: number;
+}
+
+export interface OccReportCellResponse {
+  value: string;
+  type: string;
+}
+
+export interface OccReportPageResponse {
+  key: string;
+  title: string;
+  stationId: string;
+  stationCode: string;
+  from: string;
+  to: string;
+  asOf: string;
+  columns: string[];
+  rows: OccReportCellResponse[][];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
 export interface OccReviewChecklistAnswerResponse {
   section: string;
   code: string;
@@ -5043,6 +5075,21 @@ turnaroundId: string;
 export type GetManualTurnaroundOptionsParams = {
 stationId: string;
 date: string;
+};
+
+export type GetOccReportParams = {
+stationId: string;
+from: string;
+to: string;
+page?: number;
+limit?: number;
+};
+
+export type ExportOccReportParams = {
+stationId: string;
+from: string;
+to: string;
+format: string;
 };
 
 export type GetOccReviewQueueParams = {
@@ -13240,6 +13287,107 @@ const res = await fetch(getAssignOccPlanningOperationUrl(turnaroundId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccAssignmentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListOccReportsUrl = () => {
+
+
+
+
+  return `/api/v1/occ/reports`
+}
+
+export const listOccReports = async ( options?: RequestInit): Promise<OccReportCatalogResponse> => {
+
+  const res = await fetch(getListOccReportsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReportCatalogResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccReportUrl = (key: string,
+    params: GetOccReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/reports/${key}?${stringifiedParams}` : `/api/v1/occ/reports/${key}`
+}
+
+export const getOccReport = async (key: string,
+    params: GetOccReportParams, options?: RequestInit): Promise<OccReportPageResponse> => {
+
+  const res = await fetch(getGetOccReportUrl(key,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReportPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getExportOccReportUrl = (key: string,
+    params: ExportOccReportParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/reports/${key}/export?${stringifiedParams}` : `/api/v1/occ/reports/${key}/export`
+}
+
+export const exportOccReport = async (key: string,
+    params: ExportOccReportParams, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getExportOccReportUrl(key,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 
