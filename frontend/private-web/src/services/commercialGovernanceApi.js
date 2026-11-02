@@ -45,6 +45,8 @@ export const enrichManagedAirlines = () => commercialApi('/governance/airlines/e
 export const saveManagedAirline = (id, values) => commercialApi(id ? `/governance/airlines/${id}` : '/governance/airlines', {
   method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
 });
+/** Checks the airline in Wikidata (or the offline OpenFlights copy) and stores the verdict (ADR-0023). */
+export const checkManagedAirlineRegistry = id => commercialApi(`/governance/airlines/${id}/registry-check`, { method: 'POST' });
 export const archiveManagedAirline = (id, version) => commercialApi(`/governance/airlines/${id}?version=${encodeURIComponent(version)}`, {
   method: 'DELETE',
 });

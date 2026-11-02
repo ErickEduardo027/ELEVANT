@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "04b8397a8c579c08cabe6ce7a7476525f57b09ae8d82c29f83c070258f86f3ba",
+        "sha256": "10f7c5ec2f44ff4c1c25a1b10fe758b87bf14d46a71a9097b25d4726b53cb847",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "f729e21e839abe93d0d45bf29efcbc6bf4f4d9f1d458cead834313e250746ab6",
+        "sha256": "bd9e005b0f4416632dbd631324f997231479978be2d736c72273f5321071f96a",
         "title": null,
         "version": null
       }
@@ -1400,6 +1400,12 @@
         "name": "AddEmailOutboxAndAccountTokens",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102130658_AddEmailOutboxAndAccountTokens.cs",
         "sha256": "2e7bd28ee6d82fe9a09585d80e55c869fecc3c0223e51c4e30189f31b4d83c50"
+      },
+      {
+        "id": "20261102161112",
+        "name": "AddAirlineRegistryCheck",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102161112_AddAirlineRegistryCheck.cs",
+        "sha256": "6976e771229cd9522cdd4f2776f44d692f88358899455c5e8bf25464a2d5ec0f"
       }
     ],
     "manifestContracts": [

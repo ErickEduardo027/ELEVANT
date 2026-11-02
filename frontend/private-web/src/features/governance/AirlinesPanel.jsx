@@ -10,7 +10,37 @@ const blank = {
   isVerified: false, isPublished: false, version: null,
 };
 
-export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich }) {
+const REGISTRY = {
+  Found: { label: 'Verificada en registro', tone: 'border-status-success/40 bg-status-success/10 text-status-success', icon: '✓' },
+  Mismatch: { label: 'Datos distintos en registro', tone: 'border-status-warning/40 bg-status-warning/10 text-status-warning', icon: '!' },
+  Defunct: { label: 'Ya no opera según el registro', tone: 'border-status-danger/40 bg-status-danger/10 text-status-danger', icon: '✕' },
+  NotFound: { label: 'No existe en el registro', tone: 'border-status-danger/40 bg-status-danger/10 text-status-danger', icon: '✕' },
+  Unavailable: { label: 'Registro no disponible', tone: 'border-black/15 bg-black/[.04] text-text-secondary-light', icon: '…' },
+};
+
+/** Green, amber or red seal of the last public-registry check (ADR-0023). */
+export function RegistryBadge({ status, source, url }) {
+  const meta = REGISTRY[status];
+  if (!meta) return <span className="text-xs text-text-secondary-light">Sin verificar en registro</span>;
+  return <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${meta.tone}`}>
+    <span aria-hidden="true">{meta.icon}</span>{meta.label}{source && <> · {url ? <a href={url} target="_blank" rel="noreferrer noopener" className="underline">{source}</a> : source}</>}
+  </span>;
+}
+
+export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, onCheckRegistry }) {
+  const [checks, setChecks] = useState({});
+  const [checking, setChecking] = useState(null);
+  async function checkRegistry(airline) {
+    setChecking(airline.id);
+    try {
+      const result = await onCheckRegistry(airline.id);
+      setChecks(current => ({ ...current, [airline.id]: result.check }));
+    } catch (error) {
+      setChecks(current => ({ ...current, [airline.id]: { status: 'Unavailable', differences: [error.message] } }));
+    } finally {
+      setChecking(null);
+    }
+  }
   const [query, setQuery] = useState('');
   const [showArchived, setShowArchived] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -66,9 +96,12 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich })
       <div className="mt-5 space-y-3">{visible.map((airline) => <article key={airline.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
         <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-accent-600/10 text-sm font-bold text-accent-600">{airline.logoUrl ? <PrivateMediaImage url={airline.logoUrl} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.displayName}` : `Logo de ${airline.displayName}`} className="max-h-10 max-w-10 object-contain" /> : airline.displayName.slice(0, 2)}</div>
-          <div className="min-w-0 [overflow-wrap:anywhere]"><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada' : 'Sin verificar'}</p></div>
+          <div className="min-w-0 [overflow-wrap:anywhere]"><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada manualmente' : 'Sin verificación manual'} · {[airline.iataCode, airline.icaoCode].filter(Boolean).join(' / ') || 'sin códigos'}</p>
+            <div className="mt-1"><RegistryBadge status={checks[airline.id]?.status === 'Unavailable' ? 'Unavailable' : airline.registryStatus} source={airline.registrySource} url={airline.registryEntityUrl} /></div>
+            {checks[airline.id]?.differences?.length > 0 && <ul role="status" className="mt-1 list-disc pl-4 text-xs text-text-secondary-light">{checks[airline.id].differences.map(item => <li key={item}>{item}</li>)}</ul>}
+          </div>
         </div>
-        <div className="flex gap-3"><button type="button" aria-label={`Editar ${airline.displayName}`} onClick={() => edit(airline)} className="text-xs font-semibold text-accent-600">Editar</button>{airline.isPublished && <button type="button" onClick={() => setPendingArchive(airline)} className="text-xs font-semibold text-status-danger">Archivar</button>}</div>
+        <div className="flex flex-wrap gap-3">{onCheckRegistry && <button type="button" disabled={checking === airline.id} onClick={() => void checkRegistry(airline)} className="text-xs font-semibold text-accent-600 disabled:opacity-50">{checking === airline.id ? 'Consultando…' : 'Verificar en registro'}</button>}<button type="button" aria-label={`Editar ${airline.displayName}`} onClick={() => edit(airline)} className="text-xs font-semibold text-accent-600">Editar</button>{airline.isPublished && <button type="button" onClick={() => setPendingArchive(airline)} className="text-xs font-semibold text-status-danger">Archivar</button>}</div>
       </article>)}{visible.length === 0 && <p className="rounded-xl bg-black/[.03] p-5 text-sm dark:bg-white/[.04]">No hay aerolíneas que coincidan con el filtro.</p>}</div>
     </section>
     <form onSubmit={save} className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
@@ -82,6 +115,7 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich })
       {uploadError && <p role="alert" className="mt-2 text-sm text-status-danger">{uploadError}</p>}
       <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isVerified} onChange={(event) => change('isVerified', event.target.checked)} /> Datos verificados con la fuente indicada</label>
       <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isPublished} onChange={(event) => change('isPublished', event.target.checked)} /> Disponible para nuevas solicitudes</label>
+      <p className="mt-1 text-xs text-text-secondary-light">Para publicarla hace falta un check verde en el registro público o la verificación manual con su fuente. Cambiar el nombre visible o los códigos anula el check.</p>
       <div className="mt-5 flex gap-2"><button disabled={busy} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Guardando…' : 'Guardar aerolínea'}</button>{editingId && <button type="button" onClick={clear} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button>}</div>
     </form>
     <ConfirmDialog open={Boolean(pendingArchive)} title="Archivar aerolínea" description={`¿Archivar ${pendingArchive?.displayName ?? ''}? Dejará de aparecer en nuevas solicitudes.`} confirmLabel="Archivar" onClose={() => setPendingArchive(null)} onConfirm={async () => { const target = pendingArchive; setPendingArchive(null); await onArchive(target.id, target.version); }} />

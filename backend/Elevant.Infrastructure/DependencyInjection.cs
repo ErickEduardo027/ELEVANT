@@ -53,6 +53,14 @@ public static class DependencyInjection
                 { Timeout = TimeSpan.FromSeconds(10) },
                 openSky,
                 provider.GetRequiredService<TimeProvider>()));
+        // Public airline registries, asked in this order (ADR-0023).
+        services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource>(_ =>
+            new Elevant.Infrastructure.Integrations.AirlineRegistry.WikidataAirlineRegistrySource(
+                new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(8) }));
+        services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource,
+            Elevant.Infrastructure.Integrations.AirlineRegistry.OpenFlightsAirlineRegistrySource>();
+        services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistryLookup,
+            Elevant.Application.Commercial.AirlineRegistryLookup>();
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();

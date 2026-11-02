@@ -1,3 +1,4 @@
+using Elevant.Domain.Enumerations;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Infrastructure.Persistence.Seed;
@@ -27,7 +28,8 @@ internal sealed class EfCommercialCatalogStore(ElevantDbContext context) : IComm
             .Select(profile => new { profile.SourceName, Data = new PublicAirlineData(profile.PublicId, profile.DisplayName,
                 profile.Region, profile.LegalName, profile.CountryCode,
                 profile.IataCode, profile.IcaoCode,
-                profile.LogoObjectKey, profile.VerifiedAt != null && profile.VerifiedByAccountId != null) })
+                profile.LogoObjectKey, profile.VerifiedAt != null && profile.VerifiedByAccountId != null,
+                profile.RegistryStatus == AirlineRegistryStatus.Found ? profile.RegistrySource : null) })
             .ToArrayAsync(cancellationToken);
         var airlines = airlineRows.Select(row => row.Data with
         {

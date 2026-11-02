@@ -19,6 +19,7 @@
     <EmbeddedResource Include="Finance/Fonts/NotoSans-Regular.ttf" />
     <EmbeddedResource Include="Finance/Fonts/NotoSans-Bold.ttf" />
     <EmbeddedResource Include="Commercial/Assets/elevant-logo.jpg" />
+    <EmbeddedResource Include="Integrations/AirlineRegistry/openflights-airlines.tsv" />
     <EmbeddedResource Include="Finance/XmlSchemas/*.xsd">
       <LogicalName>Elevant.Infrastructure.Finance.XmlSchemas.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>

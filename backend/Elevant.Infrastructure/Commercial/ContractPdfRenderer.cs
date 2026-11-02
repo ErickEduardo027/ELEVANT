@@ -26,7 +26,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
     private static readonly XColor Rule = XColor.FromArgb(214, 221, 231);
     private static readonly XColor Tint = XColor.FromArgb(244, 247, 251);
     private static readonly XColor Success = XColor.FromArgb(21, 128, 61);
-    private static readonly Lazy<byte[]> Logo = new(() => ElevantPdfFontResolver.Resource("elevant-logo.jpg"));
+    private static readonly Lazy<byte[]> Logo = new(() => EmbeddedResources.Read("elevant-logo.jpg"));
 
     static ContractPdfRenderer() => ElevantPdfFontResolver.EnsureRegistered();
 

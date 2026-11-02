@@ -418,3 +418,23 @@ it("reloads a withdrawn service immediately when the submit returns conflict", a
   expect(screen.getByText(/PASO 01 \/ 04/i)).toBeInTheDocument();
   expect(catalogReads).toBe(2);
 });
+
+it("shows the public-registry seal in step 2 only for airlines the registry confirmed", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  const confirmedId = "20000000-0000-7000-8000-000000000009";
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (url) => {
+    if (!String(url).endsWith("commercial-catalog")) throw new Error(`Unexpected request: ${url}`);
+    return new Response(JSON.stringify({ ...catalog, airlines: [...catalog.airlines,
+      { id: confirmedId, name: "Copa Airlines", region: "Central America", legalName: null, countryCode: "PA",
+        iataCode: "CM", icaoCode: "CMP", logoUrl: null, isVerified: false, registrySource: "Wikidata" }] }),
+    { headers: { "content-type": "application/json" } });
+  }));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  choose("Seleccione una aerolínea", airlineId);
+  expect(screen.queryByText(/Verificada en registro público/)).not.toBeInTheDocument();
+  choose("Seleccione una aerolínea", confirmedId);
+  expect(await screen.findByText(/Verificada en registro público \(Wikidata\)/)).toBeInTheDocument();
+});

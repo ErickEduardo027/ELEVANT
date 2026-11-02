@@ -2925,6 +2925,43 @@
         ]
       }
     },
+    "/api/v1/governance/airlines/{id}/registry-check": {
+      "post": {
+        "tags": [
+          "CommercialAirlineManagement"
+        ],
+        "summary": "Checks the airline against public registries (Wikidata, then OpenFlights) and stores the\nverdict; a green check allows publishing it in step 2 of the public wizard (ADR-0023).",
+        "operationId": "CheckManagedAirlineRegistry",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlineRegistryCheckResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/governance/airlines/{id}": {
       "put": {
         "tags": [
@@ -24880,6 +24917,78 @@
         },
         "additionalProperties": false
       },
+      "AirlineRegistryCheck": {
+        "required": [
+          "checkedAt",
+          "differences",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "nullable": true
+          },
+          "matchedName": {
+            "type": "string",
+            "nullable": true
+          },
+          "matchedIataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "matchedIcaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "country": {
+            "type": "string",
+            "nullable": true
+          },
+          "entityUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "differences": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "checkedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlineRegistryCheckResult": {
+        "required": [
+          "airline",
+          "check"
+        ],
+        "type": "object",
+        "properties": {
+          "airline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ManagedAirlineData"
+              }
+            ]
+          },
+          "check": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AirlineRegistryCheck"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
       "AirlineTreasuryAdjustmentLineResponse": {
         "required": [
           "amount",
@@ -34139,6 +34248,23 @@
           },
           "version": {
             "type": "string"
+          },
+          "registryStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "registrySource": {
+            "type": "string",
+            "nullable": true
+          },
+          "registryCheckedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "registryEntityUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -37016,6 +37142,10 @@
           },
           "isVerified": {
             "type": "boolean"
+          },
+          "registrySource": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
