@@ -69,6 +69,11 @@
 .access-representative :is(input, select)[aria-invalid="true"] { border-color: #9c2f13; }
 .access-select:disabled { background: #e9eef3; color: #71859b; cursor: not-allowed; }
 .access-field-hint { display: block; margin: 6px 0 0; color: #5d6577; font-size: .74rem; line-height: 1.4; }
+.access-doc-checklist { display: grid; gap: 4px; margin: 8px 0 0; padding: 0; list-style: none; font-size: .74rem; line-height: 1.4; }
+.access-doc-checklist li { display: flex; align-items: baseline; gap: 7px; color: #5d6577; transition: color .2s ease; }
+.access-doc-checklist li > span[aria-hidden] { flex: none; width: 1em; text-align: center; font-weight: 700; }
+.access-doc-checklist li[data-met="true"] { color: #15803d; font-weight: 600; }
+.access-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .access-field-error { margin: 7px 0 0; color: #9c2f13; font-size: .76rem; line-height: 1.45; }
 .access-field-error button { border: 0; padding: 0; background: none; color: inherit; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .access-representative__note { grid-column: 1 / -1; padding: 14px 18px; border-left: 3px solid #ff641f; background: #e9eef3; color: #425e79; font-size: .82rem; line-height: 1.5; }

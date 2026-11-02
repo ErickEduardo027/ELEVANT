@@ -92,7 +92,7 @@ test.describe("landing pública", () => {
     await page.getByRole("textbox", { name: "Teléfono" }).fill("+1 809 555 0100");
     // «Otro» no longer exists and each character is checked in its position.
     await expect(page.getByRole("combobox", { name: "Tipo de documento" }).locator("option"))
-      .toHaveText(["Seleccione", "Cédula dominicana", "Pasaporte"]);
+      .toHaveText(["Seleccione", "Cédula", "Pasaporte"]);
     await page.getByRole("combobox", { name: "Tipo de documento" }).selectOption("Passport");
     await page.getByRole("combobox", { name: "Nacionalidad del pasaporte" }).selectOption("DO");
     const documentNumber = page.getByRole("textbox", { name: "Número de documento" });
