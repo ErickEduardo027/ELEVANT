@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { identityDocumentExample, normalizeIdentityDocument, normalizePhone } from "../src";
+import { checkIdentityDocument, identityDocumentExample, normalizeIdentityDocument, normalizePhone } from "../src";
 
 const withLuhn = (ten: string) => {
   let sum = 0;
@@ -32,11 +32,25 @@ describe("identity documents (mirrors IdentityDocuments.cs)", () => {
   });
 
   it.each([
-    ["RD1234567", "DO", true], ["5050505050RD", "DO", false], ["1234567RD", "DO", false],
+    ["RD1234567", "DO", true], ["rd 123 4567", "DO", true], ["AB1234567", "DO", false],
+    ["5050505050RD", "DO", false], ["1234567RD", "DO", false], ["RD12345678", "DO", false],
+    ["123456789", "US", true], ["A12345678", "US", true], ["AB1234567", "US", false],
+    ["AB123456", "CA", true], ["A123456BC", "CA", true], ["A1234567", "CA", false],
     ["X1234567", "ES", true], ["AAAAAA", null, false],
   ] as const)("passport %s (%s) valid=%s", (number, nationality, valid) =>
     expect(normalizeIdentityDocument("Passport", number, nationality) !== null).toBe(valid));
 
   it("explains the expected format", () =>
-    expect(identityDocumentExample("Passport", "DO")).toContain("2 letras"));
+    expect(identityDocumentExample("Passport", "DO")).toBe("RD1234567 (RD y 7 dígitos)"));
+
+  // Same messages as IdentityValidationTests.ExplainsTheFirstWrongPosition in .NET.
+  it.each([
+    ["Passport", "AB1234567", "DO", "El pasaporte dominicano: la posición 1 debe ser «R»; encontramos «A». Formato: RD1234567."],
+    ["Passport", "RD12345X7", "DO", "El pasaporte dominicano: la posición 8 debe ser un dígito; encontramos «X». Formato: RD1234567."],
+    ["Passport", "RD123456", "DO", "El pasaporte dominicano tiene 9 caracteres; escribiste 8."],
+    ["Cedula", "001-12345A7-8", null, "La posición 9 de la cédula debe ser un dígito; encontramos «A»."],
+    ["Cedula", "0011234567", null, "La cédula tiene 11 dígitos (3 de oficina, 7 de secuencia y 1 verificador); escribiste 10."],
+    ["Passport", "RD-123*4567", "DO", "El carácter «*» no es válido; usa solo letras y dígitos."],
+  ] as const)("%s %s explains the first wrong position", (kind, number, nationality, problem) =>
+    expect(checkIdentityDocument(kind, number, nationality).problem).toBe(problem));
 });

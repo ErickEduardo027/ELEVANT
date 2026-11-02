@@ -62,4 +62,17 @@ public sealed class EmployeeRulesTests
         Assert.Equal(["human_resources.employees.delete", "human_resources.employees.read"],
             DepartmentPermissionCatalog.Normalize(["human_resources.employees.terminate"]));
     }
+
+    [Theory]
+    [InlineData("RD1234567", true)]
+    [InlineData("RD12345678", false)]
+    [InlineData("RD12345A7", false)]
+    [InlineData("X1234567", true)]
+    public void EmployeePassportsStartingWithRdFollowTheDominicanRule(string number, bool valid) =>
+        Assert.Equal(valid, IdentificationTypes.Normalize(IdentificationTypes.Pasaporte, number) is not null);
+
+    [Fact]
+    public void EmployeeDocumentsExplainTheWrongPosition() =>
+        Assert.Equal("El pasaporte dominicano: la posición 8 debe ser un dígito; encontramos «A». Formato: RD1234567.",
+            IdentificationTypes.Check(IdentificationTypes.Pasaporte, "RD12345A7").Problem);
 }

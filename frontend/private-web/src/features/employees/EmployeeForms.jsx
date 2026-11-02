@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { identityDocumentExample, normalizeIdentityDocument, normalizePhone } from '@elevant/api-client';
+import { checkIdentityDocument, DOMINICAN_PASSPORT_PREFIX, identityDocumentExample, normalizePhone } from '@elevant/api-client';
 import Drawer from '../../components/Drawer';
 import Modal from '../../components/Modal';
 import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../services/departmentGovernanceService';
@@ -16,10 +16,10 @@ const DOCUMENT_KINDS = { CEDULA: 'Cedula', RESIDENCIA: 'Residence', PASAPORTE: '
 /** Message for an identification that does not have the real format of its type, or ''. */
 export function identificationProblem(type, number) {
   const kind = DOCUMENT_KINDS[type];
-  if (!kind || !number.trim() || normalizeIdentityDocument(kind, number)) return '';
-  return kind === 'Passport'
-    ? `El pasaporte no tiene un formato válido: ${identityDocumentExample(kind)}.`
-    : `El número no es válido: revise los 11 dígitos y el dígito verificador (${identityDocumentExample(kind)}).`;
+  if (!kind || !number.trim()) return '';
+  // Same rule as IdentificationTypes.Check: a passport starting with RD is Dominican.
+  const dominican = kind === 'Passport' && number.replace(/[ .-]/g, '').toUpperCase().startsWith(DOMINICAN_PASSPORT_PREFIX);
+  return checkIdentityDocument(kind, number, dominican ? 'DO' : null).problem ?? '';
 }
 
 /** Message for a phone that is neither a Dominican number nor an international one, or ''. */

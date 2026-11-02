@@ -2887,16 +2887,16 @@ function validatedCommercialRequest(
       value => typeof value === "string" && value.trim().length <= 80) ||
     !isOptionalNullable(request.representativeDistrict,
       value => typeof value === "string" && value.trim().length <= 80) ||
-    !isOptionalNullable(request.representativeDocumentType,
-      value => value === "NationalId" || value === "Passport" || value === "Other") ||
-    !isOptionalNullable(request.representativeDocumentNumber,
-      value => typeof value === "string" && (
-        request.representativeDocumentType === "NationalId"
-          ? normalizeIdentityDocument("Cedula", value) !== null
-          : request.representativeDocumentType === "Passport"
-            ? normalizeIdentityDocument("Passport", value, request.representativeNationalityCode) !== null
-            : /^[A-Za-z0-9 /-]{3,40}$/.test(value))) ||
-    Boolean(request.representativeDocumentType) !== Boolean(request.representativeDocumentNumber) ||
+    // The representative is identified by a cédula (Dominican) or a passport with its nationality.
+    !(request.representativeDocumentType === "NationalId"
+      ? (request.representativeNationalityCode == null || request.representativeNationalityCode === "DO") &&
+        typeof request.representativeDocumentNumber === "string" &&
+        normalizeIdentityDocument("Cedula", request.representativeDocumentNumber) !== null
+      : request.representativeDocumentType === "Passport" &&
+        typeof request.representativeNationalityCode === "string" &&
+        typeof request.representativeDocumentNumber === "string" &&
+        normalizeIdentityDocument("Passport", request.representativeDocumentNumber,
+          request.representativeNationalityCode) !== null) ||
     request.authorityDeclared !== true)
     throw new TypeError("Commercial application is invalid.");
   return request as unknown as SubmitCommercialRequestRequest;

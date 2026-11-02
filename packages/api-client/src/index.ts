@@ -91,10 +91,14 @@ export {
 export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
 export {
   DOMINICAN_AREA_CODES,
+  DOMINICAN_PASSPORT_PREFIX,
+  PASSPORT_PATTERNS,
+  checkIdentityDocument,
   identityDocumentExample,
   normalizeIdentityDocument,
   normalizePhone,
   type IdentityDocumentKind,
+  type IdentityDocumentCheck,
 } from "./validation";
 export {
   type AccountChangeResponse,

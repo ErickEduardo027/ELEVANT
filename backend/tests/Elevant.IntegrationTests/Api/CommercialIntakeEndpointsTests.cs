@@ -32,7 +32,8 @@ public sealed class CommercialIntakeEndpointsTests(ElevantApiFactory factory)
             new { requestId, airlineProfileId, serviceIds = new[] { serviceId },
                 representativeName = "Ana López", representativeTitle = "Representante legal",
                 representativeEmail = "ana@example.test", representativePhone = "+1 809 555 0100",
-                authorityDeclared = true }, TestContext.Current.CancellationToken);
+                authorityDeclared = true, representativeDocumentType = "NationalId",
+                representativeDocumentNumber = "001-1234567-3" }, TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Contains("no-store", response.Headers.CacheControl?.ToString());
@@ -57,7 +58,8 @@ public sealed class CommercialIntakeEndpointsTests(ElevantApiFactory factory)
         var payload = new { requestId = Guid.NewGuid(), airlineProfileId = Guid.NewGuid(),
             serviceIds = new[] { Guid.NewGuid() }, representativeName = "Ana LÃ³pez",
             representativeTitle = "Representante legal", representativeEmail = "ana@example.test",
-            representativePhone = "+1 809 555 0100", authorityDeclared = true };
+            representativePhone = "+1 809 555 0100", authorityDeclared = true,
+            representativeDocumentType = "NationalId", representativeDocumentNumber = "001-1234567-3" };
 
         using var missing = await client.PostAsJsonAsync(
             "/api/v1/public/commercial-requests/receipt", payload,

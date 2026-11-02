@@ -10,7 +10,7 @@ const valid: RepresentativeDraft = {
   name: "María José Núñez-O'Connor", titleOption: "Gerente de estación", titleCustom: "",
   email: "maria@aerolinea.com", phone: "+1 (809) 555-0100", authorityDeclared: true,
   nationalityCode: "", address: "", country: "DO", province: "25",
-  municipality: "Santiago de los Caballeros", district: "", documentType: "", documentNumber: "",
+  municipality: "Santiago de los Caballeros", district: "", documentType: "NationalId", documentNumber: "001-1234567-3",
 };
 
 const errorsFor = (changes: Partial<RepresentativeDraft>, divisions: DivisionsState = DOMINICAN_REPUBLIC_DIVISIONS) => {
@@ -94,17 +94,22 @@ describe("validateRepresentative", () => {
       [{ code: "X", name: "Sin ciudades", cities: [] }])).toEqual({});
   });
 
-  it("requires document type and number together", () => {
-    expect(errorsFor({ documentType: "Passport" }).documentNumber).toBeDefined();
-    expect(errorsFor({ documentNumber: "AB123" }).documentType).toBeDefined();
-    expect(errorsFor({ documentType: "Passport", documentNumber: "A1" }).documentNumber).toBeDefined();
+  it("requires a cédula or a passport with its nationality, never «Otro»", () => {
+    expect(errorsFor({ documentType: "", documentNumber: "" }).documentType).toMatch(/cédula o pasaporte/);
+    expect(errorsFor({ documentType: "Other", documentNumber: "LIC-123" }).documentType).toBeDefined();
+    expect(errorsFor({ documentType: "Passport", documentNumber: "X1234567" }).nationalityCode).toMatch(/nacionalidad/);
+    expect(errorsFor({ documentType: "NationalId", nationalityCode: "ES" }).documentType)
+      .toMatch(/solo para nacionalidad dominicana/);
+    expect(errorsFor({ documentType: "Passport", documentNumber: "", nationalityCode: "ES" }).documentNumber).toBeDefined();
     expect(errorsFor({ documentType: "Passport", documentNumber: "X1234567", nationalityCode: "ES" })).toEqual({});
   });
 
   it("validates each document by its real format", () => {
     expect(errorsFor({ documentType: "Passport", documentNumber: "RD1234567", nationalityCode: "DO" })).toEqual({});
+    expect(errorsFor({ documentType: "Passport", documentNumber: "AB1234567", nationalityCode: "DO" }).documentNumber)
+      .toBe("El pasaporte dominicano: la posición 1 debe ser «R»; encontramos «A». Formato: RD1234567.");
     expect(errorsFor({ documentType: "Passport", documentNumber: "5050505050RD", nationalityCode: "DO" }).documentNumber)
-      .toMatch(/RD1234567 \(2 letras y 7 dígitos\)/);
+      .toBe("El pasaporte dominicano tiene 9 caracteres; escribiste 12.");
     expect(errorsFor({ documentType: "NationalId", documentNumber: "001-1234567-3" })).toEqual({});
     expect(errorsFor({ documentType: "NationalId", documentNumber: "001-1234567-8" }).documentNumber)
       .toMatch(/dígito verificador/);

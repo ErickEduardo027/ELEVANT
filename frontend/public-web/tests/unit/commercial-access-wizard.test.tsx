@@ -55,6 +55,9 @@ async function fillApplication() {
     { target: { value: "alex@synthetic.example.test" } });
   fireEvent.change(screen.getByRole("textbox", { name: "Teléfono" }),
     { target: { value: "+1 809 555 0100" } });
+  choose("Tipo de documento", "NationalId");
+  // Typed without dashes: the field shapes it as ###-#######-#.
+  fireEvent.change(screen.getByRole("textbox", { name: "Número de documento" }), { target: { value: "00112345673" } });
   await chooseDominicanLocation();
   fireEvent.click(screen.getByRole("checkbox", { name: /Declaro que estoy autorizado/i }));
   fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
@@ -92,6 +95,29 @@ it("does not show representative errors before the user interacts", async () => 
   expect(screen.getByText("Seleccione su país.")).toBeInTheDocument();
   expect(screen.getByRole("textbox", { name: "Nombre completo" })).toHaveFocus();
   expect(screen.getByRole("textbox", { name: "Nombre completo" })).toHaveAttribute("aria-invalid", "true");
+});
+
+it("offers only cédula or passport and checks every character in its position", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  await openRepresentativeStep();
+  expect([...field("Tipo de documento").querySelectorAll("option")].map((option) => option.textContent))
+    .toEqual(["Seleccione", "Cédula dominicana", "Pasaporte"]);
+
+  choose("Tipo de documento", "NationalId");
+  const number = screen.getByRole("textbox", { name: "Número de documento" });
+  fireEvent.change(number, { target: { value: "00112345673" } });
+  expect(number).toHaveValue("001-1234567-3");
+
+  choose("Tipo de documento", "Passport");
+  choose("Nacionalidad del pasaporte", "DO");
+  fireEvent.change(number, { target: { value: "ab1234567" } });
+  expect(number).toHaveValue("AB1234567");
+  fireEvent.blur(number);
+  expect(screen.getByText("El pasaporte dominicano: la posición 1 debe ser «R»; encontramos «A». Formato: RD1234567."))
+    .toBeInTheDocument();
 });
 
 it("asks for a custom title only while Otro is selected", async () => {

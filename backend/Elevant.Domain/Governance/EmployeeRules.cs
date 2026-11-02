@@ -21,14 +21,23 @@ public static class IdentificationTypes
 
     /// <summary>
     /// Canonical number when it has the real format of its type: a cédula or residence card
-    /// with its check digit, or a passport number (ICAO 9303). Null when the format is wrong.
+    /// with its check digit, or a passport number. Null when the format is wrong.
     /// </summary>
-    public static string? Normalize(string? type, string? number) => type switch
+    public static string? Normalize(string? type, string? number) => Check(type, number).Number;
+
+    /// <summary>
+    /// Validates every character in its position and says which one is wrong (ADR-0020). The
+    /// record keeps no nationality, so a passport that starts with «RD» is held to the Dominican
+    /// rule (RD and 7 digits) and any other to ICAO 9303.
+    /// </summary>
+    public static IdentityDocumentCheck Check(string? type, string? number) => type switch
     {
-        Cedula => IdentityDocuments.Normalize(IdentityDocumentKind.Cedula, number),
-        Residencia => IdentityDocuments.Normalize(IdentityDocumentKind.Residence, number),
-        Pasaporte => IdentityDocuments.Normalize(IdentityDocumentKind.Passport, number),
-        _ => null,
+        Cedula => IdentityDocuments.Check(IdentityDocumentKind.Cedula, number),
+        Residencia => IdentityDocuments.Check(IdentityDocumentKind.Residence, number),
+        Pasaporte => IdentityDocuments.Check(IdentityDocumentKind.Passport, number,
+            NormalizeNumber(number)?.StartsWith(IdentityDocuments.DominicanPassportPrefix, StringComparison.Ordinal) == true
+                ? "DO" : null),
+        _ => new IdentityDocumentCheck(null, "Elige cédula, residencia o pasaporte."),
     };
 
     public static bool IsSynthetic(string? type) => type is not null && Synthetic.Contains(type);

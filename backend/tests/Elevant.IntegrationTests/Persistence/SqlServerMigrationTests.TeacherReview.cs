@@ -65,7 +65,7 @@ public sealed partial class SqlServerMigrationTests
                 new SubmitCommercialRequestCommand(Guid.NewGuid(), catalog.Airlines[0].Id, [catalog.Services[0].Id],
                     "Rosa Díaz", "Representante legal", "rosa@example.test", "809-555-0100", true,
                     RepresentativeCountry: "República Dominicana", RepresentativeProvince: "El Seibo",
-                    RepresentativeMunicipality: "Miches", RepresentativeDistrict: "La Gina"), ct);
+                    RepresentativeMunicipality: "Miches", RepresentativeDistrict: "La Gina", RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673"), ct);
             Assert.True(submitted.IsSuccess);
         }
         // The request also raised Contracts alerts; clear them so only the district history blocks the rollback.
@@ -153,7 +153,7 @@ public sealed partial class SqlServerMigrationTests
             new SubmitCommercialRequestCommand(Guid.NewGuid(), catalog.Airlines[0].Id, [catalog.Services[0].Id],
                 "Rosa Díaz", "Representante legal", "rosa@example.test", "809-555-0100", true,
                 RepresentativeCountry: "República Dominicana", RepresentativeProvince: "El Seibo",
-                RepresentativeMunicipality: "Miches"), ct);
+                RepresentativeMunicipality: "Miches", RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673"), ct);
         Assert.True(submitted.IsSuccess);
 
         var after = (await notifications.ListAsync(ContractsAccount, ct)).Value!;

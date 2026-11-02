@@ -2385,7 +2385,7 @@ public sealed partial class SqlServerMigrationTests
         var requestId = Guid.NewGuid();
         Assert.True((await intake.HandleAsync(new SubmitCommercialRequestCommand(requestId,
             catalog.Airlines[0].Id, [catalog.Services[0].Id], "María Pérez",
-            "Representante legal", "maria@example.test", "+1 809 555 0100", true),
+            "Representante legal", "maria@example.test", "+1 809 555 0100", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673"),
             cancellationToken)).IsSuccess);
         var contractsAccountId = Guid.Parse("40000000-0000-7000-8000-000000000005");
         var workflow = scope.ServiceProvider.GetRequiredService<ICommercialWorkflowStore>();
@@ -2407,7 +2407,7 @@ public sealed partial class SqlServerMigrationTests
         var rejectedRequestId = Guid.NewGuid();
         Assert.True((await intake.HandleAsync(new SubmitCommercialRequestCommand(rejectedRequestId,
             catalog.Airlines[0].Id, [catalog.Services[0].Id], "Elena Rivera",
-            "Representante legal", "elena@example.test", "+1 809 555 0101", true),
+            "Representante legal", "elena@example.test", "+1 809 555 0101", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673"),
             cancellationToken)).IsSuccess);
         var requestChangesBeforeRejection = await CountCommercialRequestChangesAsync();
         Assert.True((await workflow.DecideAsync(contractsAccountId, rejectedRequestId,
