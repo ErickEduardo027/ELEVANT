@@ -1,3 +1,5 @@
+using Elevant.Application.Abstractions.Identity;
+
 namespace Elevant.Application.Identity.CreateSession;
 
 /// <summary>The safe outcome of attempting to create a session.</summary>
@@ -29,22 +31,26 @@ public sealed class CreateSessionResult
 /// <summary>Session information returned only after every authentication gate succeeds.</summary>
 public sealed record SessionDetails
 {
-    public SessionDetails(ActorContext actor, IssuedAccessToken accessToken)
+    public SessionDetails(ActorContext actor, IssuedAccessToken accessToken, IssuedRefreshToken? refreshToken = null)
     {
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentNullException.ThrowIfNull(accessToken);
 
         Actor = actor;
         AccessToken = accessToken;
+        RefreshToken = refreshToken;
     }
 
     public ActorContext Actor { get; }
 
     public IssuedAccessToken AccessToken { get; }
 
+    /// <summary>Renews the access token without asking for the password again (ADR-0021).</summary>
+    public IssuedRefreshToken? RefreshToken { get; }
+
     /// <summary>Returns a diagnostic representation that omits identity data and credentials.</summary>
     public override string ToString() =>
-        $"{nameof(SessionDetails)} {{ Actor = [REDACTED], AccessToken = [REDACTED] }}";
+        $"{nameof(SessionDetails)} {{ Actor = [REDACTED], AccessToken = [REDACTED], RefreshToken = [REDACTED] }}";
 }
 
 /// <summary>Failures deliberately avoid revealing whether an account exists.</summary>

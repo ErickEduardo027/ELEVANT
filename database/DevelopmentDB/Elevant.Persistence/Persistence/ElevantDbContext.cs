@@ -41,6 +41,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<DepartmentNotification> DepartmentNotifications => Set<DepartmentNotification>();
 
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
     public DbSet<AccountPermissionGrant> AccountPermissionGrants => Set<AccountPermissionGrant>();
 
     public DbSet<UserAccessRequest> UserAccessRequests => Set<UserAccessRequest>();

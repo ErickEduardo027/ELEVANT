@@ -81,7 +81,12 @@ const AirlineSessionContext = createContext<AirlineSessionContextValue | null>(n
 interface StoredSession {
   accessToken: string;
   expiresAt: string;
+  /** Renews the access token inside this tab (ADR-0021); null when the API issued none. */
+  refreshToken: string | null;
 }
+
+/** The portal renews this long before the access token expires. */
+export const RENEW_BEFORE_MS = 60_000;
 
 class AirlineAccessDenied extends Error {}
 
@@ -103,10 +108,12 @@ function readStoredSession(): StoredSession | null {
     const value: unknown = JSON.parse(raw);
     if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Invalid session");
     const record = value as Record<string, unknown>;
+    const refreshToken = typeof record.refreshToken === "string" && record.refreshToken ? record.refreshToken : null;
+    // An expired access token is still a session while it can be renewed.
     if (typeof record.accessToken !== "string" || !record.accessToken
-      || typeof record.expiresAt !== "string" || Date.parse(record.expiresAt) <= Date.now()
-      || !Number.isFinite(Date.parse(record.expiresAt))) throw new Error("Expired session");
-    return { accessToken: record.accessToken, expiresAt: record.expiresAt };
+      || typeof record.expiresAt !== "string" || !Number.isFinite(Date.parse(record.expiresAt))
+      || (!refreshToken && Date.parse(record.expiresAt) <= Date.now())) throw new Error("Expired session");
+    return { accessToken: record.accessToken, expiresAt: record.expiresAt, refreshToken };
   } catch {
     clearStoredSession();
     return null;
@@ -159,12 +166,31 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setStatus("anonymous");
   }, []);
 
+  /** Replaces the tokens of the tab; resolves false when the server ended the session. */
+  const renew = useCallback(async (record: StoredSession): Promise<boolean | null> => {
+    if (!record.refreshToken) return false;
+    try {
+      const response = await createPublicWebApiClient({ baseUrl }).refreshSession(record.refreshToken);
+      Object.assign(record, { accessToken: response.accessToken, expiresAt: response.expiresAt,
+        refreshToken: response.refreshToken ?? null });
+      saveStoredSession(record);
+      return true;
+    } catch (error) {
+      if (error instanceof ElevantApiError && (error.status === 401 || error.status === 409)) return false;
+      return null;
+    }
+  }, [baseUrl]);
+
   const validate = useCallback(async (record: StoredSession) => {
     const request = ++generation.current;
     stored.current = record;
     setSession(null);
     setStatus("loading");
     try {
+      if (Date.parse(record.expiresAt) - Date.now() <= RENEW_BEFORE_MS) {
+        const renewed = await renew(record);
+        if (renewed === false) throw new ElevantApiError({ kind: "http", status: 401 });
+      }
       const live = await load(record);
       if (request !== generation.current) return;
       setSession(live);
@@ -174,7 +200,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       if (["invalid", "forbidden", "context"].includes(failureReason(error))) clear();
       else setStatus("unavailable");
     }
-  }, [clear, load]);
+  }, [clear, load, renew]);
 
   useEffect(() => {
     let active = true;
@@ -189,11 +215,27 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
 
   useEffect(() => {
     if (!session) return;
-    const remaining = Date.parse(session.expiresAt) - Date.now();
+    const record = stored.current;
+    const renewable = Boolean(record?.refreshToken);
+    const remaining = Date.parse(session.expiresAt) - Date.now() - (renewable ? RENEW_BEFORE_MS : 0);
     if (remaining > 2_147_483_647) return;
-    const timer = window.setTimeout(clear, Math.max(0, remaining));
+    const timer = window.setTimeout(() => {
+      if (!record || !renewable) { clear(); return; }
+      void renew(record).then((renewed) => {
+        if (renewed === false) { clear(); return; }
+        // After a network failure the session stays and the next attempt comes shortly.
+        const expiresAt = renewed ? record.expiresAt : new Date(Date.now() + RENEW_BEFORE_MS * 1.5).toISOString();
+        setSession((current) => current && { ...current, expiresAt });
+      });
+    }, Math.max(0, remaining));
     return () => window.clearTimeout(timer);
-  }, [clear, session]);
+  }, [clear, renew, session]);
+
+  const signOut = useCallback(() => {
+    const token = stored.current?.refreshToken;
+    clear();
+    if (token) void createPublicWebApiClient({ baseUrl }).endSession(token).catch(() => {});
+  }, [baseUrl, clear]);
 
   const refreshLive = useCallback(async () => {
     const record = stored.current;
@@ -254,7 +296,8 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       const unauthenticated = createPublicWebApiClient({ baseUrl });
       const response = await unauthenticated.createSession(input);
       if (!authorizedAirline(response.actor)) throw new AirlineAccessDenied();
-      const record = { accessToken: response.accessToken, expiresAt: response.expiresAt };
+      const record = { accessToken: response.accessToken, expiresAt: response.expiresAt,
+        refreshToken: response.refreshToken ?? null };
       const live = await load(record);
       if (request !== generation.current) return { ok: false, reason: "unavailable" };
       stored.current = record;
@@ -629,7 +672,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getContractDocument, downloadContractDocument, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

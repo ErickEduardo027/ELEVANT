@@ -42,6 +42,24 @@ internal static class DepartmentGovernanceConfiguration
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
+        modelBuilder.Entity<RefreshToken>(builder =>
+        {
+            builder.ToTable("refresh_tokens", "iam");
+            builder.Property(token => token.TokenHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+            builder.Property(token => token.SecurityStampHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+            builder.Property(token => token.RevokedReason).HasMaxLength(16);
+            builder.Property(token => token.IssuedAt).HasPrecision(3);
+            builder.Property(token => token.LastUsedAt).HasPrecision(3);
+            builder.Property(token => token.RevokedAt).HasPrecision(3);
+            builder.HasIndex(token => token.TokenHash).IsUnique();
+            builder.HasIndex(token => new { token.FamilyId, token.RevokedAt });
+            builder.HasIndex(token => token.AccountId);
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(token => token.AccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+            builder.HasOne<RefreshToken>().WithMany().HasForeignKey(token => token.ReplacedByTokenId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<AccessProfileGrant>(builder =>
         {
             builder.ToTable("access_profile_grants", "iam");

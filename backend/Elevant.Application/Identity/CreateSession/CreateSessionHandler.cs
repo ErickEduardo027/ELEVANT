@@ -7,6 +7,7 @@ public sealed class CreateSessionHandler(
     ICredentialVerifier credentialVerifier,
     IActorContextResolver actorContextResolver,
     IAccessTokenIssuer accessTokenIssuer,
+    IRefreshTokenStore refreshTokens,
     TimeProvider timeProvider)
 {
     public async Task<CreateSessionResult> HandleAsync(
@@ -55,6 +56,8 @@ public sealed class CreateSessionHandler(
             return CreateSessionResult.Failed(CreateSessionFailure.TokenUnavailable);
         }
 
-        return CreateSessionResult.Succeeded(new SessionDetails(actor!, accessToken));
+        // Without a refresh token the session still works until the access token expires.
+        var refreshToken = await refreshTokens.IssueAsync(actor!.AccountId, cancellationToken);
+        return CreateSessionResult.Succeeded(new SessionDetails(actor, accessToken, refreshToken));
     }
 }

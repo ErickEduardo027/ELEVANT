@@ -1,5 +1,5 @@
 import { ElevantApiError } from '@elevant/api-client';
-import { createPrivateWebApiClient } from '../../config/elevantApiClient';
+import { createPrivateWebApiClient, setAccessTokenRenewer } from '../../config/elevantApiClient';
 import { getRoleHomePath, ROLE_KEYS } from './roleRouting';
 
 export const AUTH_STORAGE_KEY = 'elevant-auth-session';
@@ -101,15 +101,29 @@ function expireActiveSession() {
   window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
 }
 
+// A session with a refresh token renews itself this long before the access token expires,
+// so one login lasts until logout (ADR-0021). Without one it still ends at expiresAt.
+export const RENEW_BEFORE_MS = 60_000;
+let renewal = null;
+
+function canRenew(session) {
+  const refreshUntil = Date.parse(session?.refreshExpiresAt);
+  return typeof session?.refreshToken === 'string' && session.refreshToken.length > 0 &&
+    Number.isFinite(refreshUntil) && refreshUntil > Date.now();
+}
+
 function scheduleSessionExpiration(session) {
   cancelSessionExpiration();
   const expiresAt = Date.parse(session?.expiresAt);
   if (!Number.isFinite(expiresAt)) return;
+  const renewable = canRenew(session);
+  const deadline = renewable ? expiresAt - RENEW_BEFORE_MS : expiresAt;
 
   const scheduleNextCheck = () => {
-    const remaining = expiresAt - Date.now();
+    const remaining = deadline - Date.now();
     if (remaining <= 0) {
-      expireActiveSession();
+      if (renewable) void renewSession();
+      else expireActiveSession();
       return;
     }
 
@@ -130,8 +144,56 @@ function isFreshSupportedSession(session) {
   if (!SUPPORTED_BACK_OFFICE_ROLES.has(session.role) && !session.role?.startsWith('CUSTOM_')) return false;
 
   const expiresAt = Date.parse(session.expiresAt);
-  return Number.isFinite(expiresAt) && expiresAt > Date.now();
+  // An expired access token is still a session while its refresh token can renew it.
+  return (Number.isFinite(expiresAt) && expiresAt > Date.now()) || canRenew(session);
 }
+
+function storedIn() {
+  if (readFrom(window.localStorage)) return window.localStorage;
+  return window.sessionStorage;
+}
+
+async function withRenewalLock(work) {
+  // Tabs share localStorage: only one renews at a time, the others reuse its result.
+  const locks = globalThis.navigator?.locks;
+  return locks?.request ? locks.request('elevant-session-renewal', work) : work();
+}
+
+/**
+ * Renews the access token with the refresh token, once at a time across tabs. Resolves to the
+ * current session, or null when the server ended it (logout, password change, account disabled).
+ * A network failure keeps the session and retries at the next call.
+ */
+export function renewSession({ force = false } = {}) {
+  renewal ??= withRenewalLock(async () => {
+    const session = readFrom(storedIn());
+    if (!session || !canRenew(session)) return null;
+    const expiresAt = Date.parse(session.expiresAt);
+    if (!force && Number.isFinite(expiresAt) && expiresAt - Date.now() > RENEW_BEFORE_MS) return session;
+    try {
+      const response = await createPrivateWebApiClient().refreshSession(session.refreshToken);
+      const renewed = { ...session, ...mapApiSession(response) };
+      writeTo(storedIn(), renewed);
+      scheduleSessionExpiration(renewed);
+      return renewed;
+    } catch (error) {
+      if (error instanceof ElevantApiError && error.status === 409) {
+        // Another tab renewed first and already stored the new tokens.
+        const latest = readFrom(storedIn());
+        if (latest) scheduleSessionExpiration(latest);
+        return latest;
+      }
+      if (error instanceof ElevantApiError && error.status === 401) {
+        expireActiveSession();
+        return null;
+      }
+      return session;
+    }
+  }).finally(() => { renewal = null; });
+  return renewal;
+}
+
+setAccessTokenRenewer(() => renewSession());
 
 function readFreshFrom(storage) {
   const session = readFrom(storage);
@@ -165,6 +227,8 @@ function mapApiSession(response) {
   return {
     token: response.accessToken,
     expiresAt: response.expiresAt,
+    refreshToken: response.refreshToken ?? null,
+    refreshExpiresAt: response.refreshExpiresAt ?? null,
     accountId: response.actor.accountId,
     email: response.actor.email,
     name: response.actor.displayName,
@@ -224,13 +288,28 @@ export function clearSession() {
 
 export function handleUnauthorizedResponse(response) {
   if (response?.status !== 401) return false;
+  // A renewable session gets one forced renewal; only a refused renewal ends it.
+  const session = readFrom(storedIn());
+  if (canRenew(session)) {
+    void renewSession({ force: true });
+    return true;
+  }
   clearSession();
   window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
   return true;
 }
 
 export function logout() {
+  const session = readFrom(storedIn());
   clearSession();
+  // Revoke the refresh chain on the server; the local session is already gone either way.
+  if (session?.refreshToken && process.env.NODE_ENV !== 'test') {
+    try {
+      void createPrivateWebApiClient().endSession(session.refreshToken).catch(() => {});
+    } catch {
+      // Without an API URL there is no server session to end.
+    }
+  }
 }
 
 export async function login({ email, password, remember = false }, injectedApiClient = null) {

@@ -6664,6 +6664,107 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("persons", "iam");
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.RefreshToken", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("family_id");
+
+                    b.Property<DateTimeOffset>("IssuedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("issued_at");
+
+                    b.Property<DateTimeOffset>("LastUsedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<long?>("ReplacedByTokenId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("replaced_by_token_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("RevokedReason")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("revoked_reason");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("SecurityStampHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("security_stamp_hash")
+                        .IsFixedLength();
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("token_hash")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("ReplacedByTokenId");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("FamilyId", "RevokedAt");
+
+                    b.ToTable("refresh_tokens", "iam");
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Identity.RolePermissionGrant", b =>
                 {
                     b.Property<long>("RoleId")
@@ -12915,6 +13016,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("OrganizationId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Identity.RefreshToken", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Identity.RefreshToken", null)
+                        .WithMany()
+                        .HasForeignKey("ReplacedByTokenId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Identity.RolePermissionGrant", b =>

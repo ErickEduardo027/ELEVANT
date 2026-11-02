@@ -3,6 +3,7 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -363,5 +364,63 @@ public sealed partial class SqlServerMigrationTests
         Assert.False(await context.Set<StandAssignment>().AnyAsync(item => item.TurnaroundId == assigned.Id && item.AssignedTo == null, ct));
         Assert.True(await context.AuditEntries.CountAsync(entry => entry.EntityPublicId == assigned.PublicId &&
             entry.Action.StartsWith("occ."), ct) >= 3);
+    }
+}
+
+public sealed partial class SqlServerMigrationTests
+{
+    private sealed class MovableTimeProvider(DateTimeOffset start) : TimeProvider
+    {
+        public DateTimeOffset Now { get; set; } = start;
+
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+    [Fact]
+    public async Task RefreshTokensRotateRevokeOnReuseStampChangeIdlenessAndLogout()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var context = CreateContext(database.ConnectionString);
+        var clock = new MovableTimeProvider(DateTimeOffset.UtcNow);
+        var store = new Elevant.Persistence.Identity.EfRefreshTokenStore(context, clock);
+        var occ = Guid.Parse("40000000-0000-7000-8000-000000000001");
+
+        // A login starts a family; each use replaces the token.
+        var first = (await store.IssueAsync(occ, ct))!;
+        var second = await store.RotateAsync(first.Value, ct);
+        Assert.True(second.IsSuccess);
+        Assert.Equal(occ, second.AccountId);
+        Assert.NotEqual(first.Value, second.Token!.Value);
+        Assert.DoesNotContain(await context.Set<RefreshToken>().AsNoTracking().Select(token => token.TokenHash).ToArrayAsync(ct),
+            hash => hash == first.Value || hash == second.Token.Value);
+
+        // Two tabs renewing at once: the slower one is told to re-read, nothing is revoked.
+        Assert.Equal(RefreshTokenFailure.AlreadyRotated, (await store.RotateAsync(first.Value, ct)).Failure);
+        var third = await store.RotateAsync(second.Token.Value, ct);
+        Assert.True(third.IsSuccess);
+
+        // The same replaced token much later means it leaked: the whole family ends.
+        clock.Now += TimeSpan.FromMinutes(5);
+        Assert.Equal(RefreshTokenFailure.Invalid, (await store.RotateAsync(first.Value, ct)).Failure);
+        Assert.Equal(RefreshTokenFailure.Invalid, (await store.RotateAsync(third.Token!.Value, ct)).Failure);
+
+        // A password change (new security stamp) ends the session.
+        var afterStamp = (await store.IssueAsync(occ, ct))!;
+        await context.Users.Where(user => user.PublicId == occ)
+            .ExecuteUpdateAsync(update => update.SetProperty(user => user.SecurityStamp, Guid.NewGuid().ToString("N")), ct);
+        Assert.Equal(RefreshTokenFailure.Invalid, (await store.RotateAsync(afterStamp.Value, ct)).Failure);
+
+        // 30 days without use, or a logout, also end it.
+        var idle = (await store.IssueAsync(occ, ct))!;
+        clock.Now += Elevant.Persistence.Identity.EfRefreshTokenStore.IdleLifetime + TimeSpan.FromMinutes(1);
+        Assert.Equal(RefreshTokenFailure.Invalid, (await store.RotateAsync(idle.Value, ct)).Failure);
+        var loggedOut = (await store.IssueAsync(occ, ct))!;
+        await store.RevokeFamilyAsync(loggedOut.Value, ct);
+        Assert.Equal(RefreshTokenFailure.Invalid, (await store.RotateAsync(loggedOut.Value, ct)).Failure);
+        Assert.Equal(RefreshTokenFailure.Invalid, (await store.RotateAsync("unknown-token", ct)).Failure);
     }
 }

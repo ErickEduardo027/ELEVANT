@@ -62,6 +62,7 @@ public static class DependencyInjection
 
         services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
         services.AddScoped<ISessionSecurityVersionStore, EfSessionSecurityVersionStore>();
+        services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
         services.AddScoped<IPasswordChangeStore, EfPasswordChangeStore>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IGovernanceStore, EfGovernanceStore>();
