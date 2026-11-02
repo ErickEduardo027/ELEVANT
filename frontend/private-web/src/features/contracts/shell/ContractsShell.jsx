@@ -10,6 +10,7 @@ import ManagedAgreementsPage from '../agreements/ManagedAgreementsPage';
 import CommercialIntakePage from '../requests/CommercialIntakePage';
 import CommercialCatalogPage from '../catalog/CommercialCatalogPage';
 import ManagedDraftsPage from '../drafts/ManagedDraftsPage';
+import AirlinePermitsPage from '../permits/AirlinePermitsPage';
 import { CONTRACT_MODULES, CONTRACT_MODULE_IDS } from './modules';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
@@ -99,8 +100,10 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
           ) : activeModule.id === CONTRACT_MODULE_IDS.HOME ? (
             <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={revalidateHome} onNavigate={handleSelectModule} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (
-            <ManagedAgreementsPage mode="contracts" canSign={can('contracts.agreements.sign')}
+            <ManagedAgreementsPage mode="contracts" canSign={can('contracts.agreements.sign')} canManageLifecycle={can('contracts.agreements.lifecycle')}
               onNewContract={can('contracts.requests.read') ? () => handleSelectModule(CONTRACT_MODULE_IDS.REQUESTS) : undefined} />
+          ) : activeModule.id === CONTRACT_MODULE_IDS.PERMITS ? (
+            <AirlinePermitsPage canVerify={can('contracts.permits.verify')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (
             <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (

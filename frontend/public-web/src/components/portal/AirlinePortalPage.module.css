@@ -107,3 +107,16 @@
   .panel { break-inside: avoid; box-shadow: none !important; border: 1px solid #c8d3e0; }
   .contractRateList > div { background: none; border-bottom: 1px solid #dce6f0; border-radius: 0; }
 }
+
+/* Permit dossier and contract timeline (ADR-0024). */
+.permitOk, .permitMissing { padding: .3rem .65rem; border-radius: 999px; font-size: .72rem; }
+.permitOk { background: #e8f6ee; color: #145c36; }
+.permitMissing { background: #fff1e9; color: #81401f; }
+.timeline { list-style: none; margin: .75rem 0 0; padding: 0 0 0 1rem; border-left: 2px solid #dce6f0; display: grid; gap: .7rem; }
+.timeline li { position: relative; display: grid; gap: .1rem; font-size: .8rem; color: #435c76; }
+.timeline li::before { content: ""; position: absolute; left: -1.38rem; top: .3rem; width: .6rem; height: .6rem; border-radius: 50%; background: #123f81; }
+.timeline li[data-kind="permit"]::before { background: #d97706; }
+.timeline li[data-kind="signature"]::before { background: #ff5c00; }
+.timeline li[data-kind="upcoming"]::before { background: #fff; border: 2px dashed #94a3b8; }
+.timeline time { font-size: .7rem; }
+.timeline strong { color: #123f81; }

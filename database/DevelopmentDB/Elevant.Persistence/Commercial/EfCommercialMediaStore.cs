@@ -27,16 +27,19 @@ internal sealed class EfCommercialMediaStore(
     public async Task<MediaAssetData?> UploadAsync(Guid actorId, string purpose, string contentType,
         Stream content, long length, CancellationToken cancellationToken = default)
     {
-        var image = purpose is "service-image" or "airline-logo" or "avatar";
+        var image = purpose is "service-image" or "airline-logo" or "avatar" or "airline-permit";
         var video = purpose == "service-video";
         if (!image && !video || length <= 0 || length > (video ? MaxVideoBytes : MaxImageBytes))
             return null;
+        // Only a permit document may be a PDF (ADR-0024).
+        if (contentType == "application/pdf" && purpose != "airline-permit") return null;
         var authorized = purpose switch
         {
             "service-image" or "service-video" =>
                 await permissions.HasAnyAsync(actorId, ["contracts.catalog.create", "contracts.catalog.update"], cancellationToken),
             "airline-logo" => await permissions.IsSuperAdministratorAsync(actorId, cancellationToken),
             "avatar" => await CanManageAvatarsAsync(actorId, cancellationToken),
+            "airline-permit" => await AirlineOfAsync(actorId, cancellationToken) is not null,
             _ => false,
         };
         if (!authorized) return null;
@@ -131,6 +134,13 @@ internal sealed class EfCommercialMediaStore(
             "avatar" => actorId.HasValue &&
                 await CanManageAvatarsAsync(actorId.Value, cancellationToken) &&
                 await context.Persons.AsNoTracking().AnyAsync(item => item.AvatarMediaUrl == url, cancellationToken),
+            // A permit document is private: Contratos and the airline that submitted it.
+            "airline-permit" => actorId.HasValue && (
+                await permissions.HasAnyAsync(actorId.Value, ["contracts.permits.read"], cancellationToken) &&
+                await context.AirlinePermits.AsNoTracking().AnyAsync(item => item.DocumentUrl == url, cancellationToken) ||
+                await AirlineOfAsync(actorId.Value, cancellationToken) is { } airline &&
+                await context.AirlinePermits.AsNoTracking().AnyAsync(item => item.DocumentUrl == url &&
+                    item.AirlineId == airline, cancellationToken)),
             _ => false,
         };
         return linked ? new MediaContentData(asset.ObjectKey, asset.ContentType, asset.Length) : null;
@@ -172,7 +182,9 @@ internal sealed class EfCommercialMediaStore(
                     await context.CommercialAirlineProfiles.AsNoTracking().AnyAsync(
                         item => item.LogoObjectKey == url, cancellationToken) ||
                     await context.Persons.AsNoTracking().AnyAsync(
-                        item => item.AvatarMediaUrl == url, cancellationToken);
+                        item => item.AvatarMediaUrl == url, cancellationToken) ||
+                    await context.AirlinePermits.AsNoTracking().AnyAsync(
+                        item => item.DocumentUrl == url, cancellationToken);
                 if (linked) continue;
                 await client.DeleteObjectAsync(Bucket(), asset.ObjectKey, cancellationToken);
                 context.MediaAssets.Remove(asset);
@@ -184,7 +196,13 @@ internal sealed class EfCommercialMediaStore(
         return removed;
     }
 
+    /// <summary>Airline of a portal account (AIRLINE_CLIENT with one active airline membership), or null.</summary>
+    private Task<long?> AirlineOfAsync(Guid actorId, CancellationToken cancellationToken) =>
+        AirlinePortalTenant.AirlineIdAsync(context, actorId, cancellationToken);
+
     internal static bool MatchesSignature(byte[] bytes, string contentType, bool video) =>
+        !video && contentType == "application/pdf" && bytes.Length >= 5 &&
+            bytes.AsSpan(0, 5).SequenceEqual("%PDF-"u8) ||
         !video && contentType == "image/png" && bytes.Length >= 8 &&
             bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }) ||
         !video && contentType == "image/jpeg" && bytes.Length >= 3 &&

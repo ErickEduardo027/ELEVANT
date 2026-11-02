@@ -1,9 +1,10 @@
 import { HomeIcon, ContractIcon, RequestIcon, ServiceIcon } from '../components/icons';
-import { BarChartIcon, UsersIcon } from '../../shell/components/icons';
+import { BarChartIcon, ShieldCheckIcon as ShieldIcon, UsersIcon } from '../../shell/components/icons';
 
 export const CONTRACT_MODULE_IDS = {
   HOME: 'contracts-home',
   CONTRACTS: 'contracts-list',
+  PERMITS: 'contracts-permits',
   DRAFTS: 'contracts-drafts',
   REQUESTS: 'contracts-requests',
   SERVICES: 'contracts-services',
@@ -25,6 +26,12 @@ export const CONTRACT_MODULES = [
     label: 'Contratos',
     icon: ContractIcon,
     description: 'Registro, consulta y actualización de contratos por aerolínea.',
+  },
+  {
+    id: CONTRACT_MODULE_IDS.PERMITS, permission: 'contracts.permits.read',
+    label: 'Permisos de aerolíneas',
+    icon: ShieldIcon,
+    description: 'Permisos de operación, certificados y pólizas que condicionan cada contrato.',
   },
   {
     id: CONTRACT_MODULE_IDS.DRAFTS, permission: 'contracts.drafts.read',

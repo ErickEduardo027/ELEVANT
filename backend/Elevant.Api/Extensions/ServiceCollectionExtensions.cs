@@ -61,6 +61,7 @@ public static class ServiceCollectionExtensions
         if (configuration.GetValue<bool>("Realtime:AccountChangeDispatcherEnabled"))
             services.AddHostedService<AccountChangeDispatchWorker>();
         services.AddHostedService<Elevant.Api.Messaging.EmailDispatchWorker>();
+        services.AddHostedService<Elevant.Api.Commercial.ContractLifecycleWorker>();
         if (!string.IsNullOrWhiteSpace(configuration["MediaStorage:Endpoint"]))
             services.AddHostedService<CommercialMediaCleanupWorker>();
         services.AddExceptionHandler<GlobalExceptionHandler>();

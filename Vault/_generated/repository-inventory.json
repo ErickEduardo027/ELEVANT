@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "10f7c5ec2f44ff4c1c25a1b10fe758b87bf14d46a71a9097b25d4726b53cb847",
+        "sha256": "d29481a673c4de4217e95f0663ea22e3b9dd334dae5f661157e823279cd08a6f",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "bd9e005b0f4416632dbd631324f997231479978be2d736c72273f5321071f96a",
+        "sha256": "d53e2865fa935449d38b242de213a12f03058e2ffda6bdedf26751c9d2abeb0c",
         "title": null,
         "version": null
       }
@@ -1406,6 +1406,12 @@
         "name": "AddAirlineRegistryCheck",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102161112_AddAirlineRegistryCheck.cs",
         "sha256": "6976e771229cd9522cdd4f2776f44d692f88358899455c5e8bf25464a2d5ec0f"
+      },
+      {
+        "id": "20261102163828",
+        "name": "AddAirlinePermitsAndContractLifecycle",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102163828_AddAirlinePermitsAndContractLifecycle.cs",
+        "sha256": "b8cd7d54a9bf5aad4873031ffccd595bc5e94ea003962cb7ae379c56cf74d164"
       }
     ],
     "manifestContracts": [

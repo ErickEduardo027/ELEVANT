@@ -2557,7 +2557,8 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!);
         Assert.Equal(0, (await drafts.GetOverviewForContractsAsync(
             contractsAccountId, cancellationToken))!.Count);
-        Assert.Equal(ContractStatus.Active, (await context.Contracts.AsNoTracking()
+        // Finance approval alone does not activate it: both signatures and a verified permit come first (ADR-0024).
+        Assert.Equal(ContractStatus.Draft, (await context.Contracts.AsNoTracking()
             .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
         var agreementPage = (await agreements.ListAsync(contractsAccountId, 1, 20,
             cancellationToken))!;

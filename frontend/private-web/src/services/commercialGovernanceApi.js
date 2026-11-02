@@ -155,3 +155,26 @@ export async function downloadContractDocument(versionId, fileName) {
 
 export const signContractVersion = (versionId, request, idempotencyKey) =>
   contractCall(() => contractClient().signContractVersion(versionId, request, idempotencyKey));
+
+/** Airline permit dossier for Contratos (ADR-0024); review is Submitted, Verified or Rejected. */
+export const getAirlinePermitsForContracts = (review = '') =>
+  commercialApi(`/contracts/permits${review ? `?review=${encodeURIComponent(review)}` : ''}`);
+export const reviewAirlinePermit = (permitId, verified, note, expectedVersion) =>
+  commercialApi(`/contracts/permits/${permitId}/review`, {
+    method: 'POST', body: JSON.stringify({ verified, note: note || null, expectedVersion }),
+  });
+/** Contract history (request, Finance, signatures, permits and status), oldest first. */
+export const getContractTimeline = versionId => commercialApi(`/contract-versions/${versionId}/timeline`);
+/** Suspend, Reactivate, Terminate or Renew (validFrom/validTo) with a reason and the status the user saw. */
+export const applyContractLifecycle = (versionId, values) => commercialApi(`/contract-versions/${versionId}/lifecycle`, {
+  method: 'POST', body: JSON.stringify(values),
+});
+
+/** Opens a private media document (permit scan, PDF or image) in a new tab with the session token. */
+export async function openPrivateDocument(url) {
+  const response = await fetch(commercialMediaUrl(url), { headers: { Authorization: `Bearer ${readSession()?.token ?? ''}` } });
+  if (!response.ok) throw Object.assign(new Error('No se pudo abrir el documento.'), { status: response.status });
+  const objectUrl = URL.createObjectURL(await response.blob());
+  window.open(objectUrl, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}

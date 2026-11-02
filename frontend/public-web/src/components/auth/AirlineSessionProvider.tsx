@@ -12,7 +12,8 @@ import { ElevantApiError, type AirlineContractPageResponse, type ContractDocumen
   type PreinvoiceDisputeListResponse,
   type DisputeAirlinePreinvoiceRequest,
   type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse,
-  type SessionActorResponse, type SessionResponse } from "@elevant/api-client";
+  type SessionActorResponse, type SessionResponse, type AirlinePermitData, type SubmitAirlinePermitInput,
+  type ContractTimelineData } from "@elevant/api-client";
 import { createAirlineTreasuryService, type AirlineTreasuryService, type AirlineTreasuryStatement, type AirlineTreasuryInvoiceDetail, type AirlineTreasuryReceipt, type AirlineTreasuryNotes } from "@/lib/airline-treasury-service";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
@@ -62,6 +63,10 @@ interface AirlineSessionContextValue {
   downloadContractDocument(versionId: string): Promise<Blob>;
   /** Watermarked review PDF of a draft shared with the airline. */
   downloadContractDraft(versionId: string): Promise<Blob>;
+  /** Permit dossier of the airline and its submission (ADR-0024). */
+  getPermits(): Promise<AirlinePermitData[]>;
+  submitPermit(input: SubmitAirlinePermitInput, document?: File | null): Promise<AirlinePermitData>;
+  getContractTimeline(versionId: string): Promise<ContractTimelineData>;
   signContract(versionId: string, signerName: string, signerTitle: string, documentSha256: string,
     idempotencyKey: string): Promise<ContractDocumentResponse>;
   getOperations(page?: number): Promise<AirlineOperationPageResponse>;
@@ -452,6 +457,14 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     withContractClient(client => client.downloadContractDocument(versionId, { cache: "no-store" })), [withContractClient]);
   const downloadContractDraft = useCallback((versionId: string) =>
     withContractClient(client => client.downloadContractDraftPdf(versionId, { cache: "no-store" })), [withContractClient]);
+  const getPermits = useCallback(() =>
+    withContractClient(client => client.getAirlinePermits({ cache: "no-store" })), [withContractClient]);
+  const submitPermit = useCallback((input: SubmitAirlinePermitInput, document?: File | null) =>
+    withContractClient(async client => client.submitAirlinePermit({
+      ...input, documentUrl: document ? await client.uploadAirlinePermitDocument(document) : null,
+    })), [withContractClient]);
+  const getContractTimeline = useCallback((versionId: string) =>
+    withContractClient(client => client.getContractTimeline(versionId, { cache: "no-store" })), [withContractClient]);
 
   const signContract = useCallback((versionId: string, signerName: string, signerTitle: string,
     documentSha256: string, idempotencyKey: string) => withContractClient(client => client.signContractVersion(versionId,
@@ -755,7 +768,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, submitPermit, getContractTimeline, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }
