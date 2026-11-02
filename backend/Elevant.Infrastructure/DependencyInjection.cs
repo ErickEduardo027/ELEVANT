@@ -58,6 +58,8 @@ public static class DependencyInjection
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
         services.AddSingleton<IOccReportRenderer, OccReportRenderer>();
+        services.Configure<Elevant.Infrastructure.Messaging.SmtpOptions>(configuration.GetSection(Elevant.Infrastructure.Messaging.SmtpOptions.SectionName));
+        services.AddSingleton<Elevant.Application.Abstractions.Messaging.IEmailSender, Elevant.Infrastructure.Messaging.SmtpEmailSender>();
         services.AddSingleton<IContractPdfRenderer, ContractPdfRenderer>();
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 

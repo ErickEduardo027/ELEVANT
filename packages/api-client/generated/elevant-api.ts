@@ -755,6 +755,7 @@ export interface ClientUserData {
   /** @nullable */
   lastLoginAt?: string | null;
   version: string;
+  invitationPending: boolean;
 }
 
 export interface CommercialAccountResponse {
@@ -1024,7 +1025,8 @@ export interface CreateClientUserInput {
   firstName: string;
   lastName: string;
   email: string;
-  temporaryPassword: string;
+  /** @nullable */
+  temporaryPassword?: string | null;
 }
 
 export interface CreateDepartmentAccountInput {
@@ -1361,6 +1363,24 @@ export interface EditPreinvoiceLineInput {
   exclude: boolean;
   reason: string;
   expectedVersion: string;
+}
+
+export interface EmailDeliveryResponse {
+  id: string;
+  recipient: string;
+  purpose: string;
+  status: string;
+  attempts: number;
+  createdAt: string;
+  /** @nullable */
+  sentAt?: string | null;
+  /** @nullable */
+  lastError?: string | null;
+}
+
+export interface EmailDeliveriesResponse {
+  smtpConfigured: boolean;
+  deliveries: EmailDeliveryResponse[];
 }
 
 export interface EmployeeAccountRefData {
@@ -2996,6 +3016,13 @@ export interface LegacyRoleData {
   activeUsers: number;
 }
 
+export interface LoginChallengeResponse {
+  challengeId: string;
+  emailHint: string;
+  expiresAt: string;
+  readonly code: string;
+}
+
 export interface ManagedAirlineData {
   id: string;
   sourceName: string;
@@ -3652,6 +3679,10 @@ export interface OperationalNotificationListResponse {
   hasMore: boolean;
 }
 
+export interface PasswordResetRequest {
+  email: string;
+}
+
 export interface PreinvoiceDisputeResolutionResponse {
   id: string;
   decision: string;
@@ -3746,7 +3777,8 @@ export interface ProgramOccShiftResponse {
 
 export interface ProvisionAirlineInput {
   email: string;
-  temporaryPassword: string;
+  /** @nullable */
+  temporaryPassword?: string | null;
 }
 
 export interface ProvisioningTaskData {
@@ -4291,6 +4323,10 @@ export interface RequestUserAccessInput {
   employeeId?: string | null;
 }
 
+export interface ResendLoginCodeRequest {
+  challengeId: string;
+}
+
 export interface ResetGovernancePasswordRequest {
   temporaryPassword: string;
 }
@@ -4477,6 +4513,10 @@ export interface SendOperationMessageRequest {
   content: string;
 }
 
+export interface SendTestEmailRequest {
+  to: string;
+}
+
 export interface ServiceClosureData {
   id: string;
   serviceId: string;
@@ -4553,6 +4593,11 @@ export interface SetDepartmentUserStatusInput {
 
 export interface SetOperationalNotificationReadRequest {
   read: boolean;
+}
+
+export interface SetPasswordWithTokenRequest {
+  token: string;
+  newPassword: string;
 }
 
 export interface SetSuggestedProfileInput {
@@ -4776,6 +4821,11 @@ export interface VerifyAirlineInput {
   verificationSourceUrl: string;
   /** @nullable */
   logoUrl?: string | null;
+}
+
+export interface VerifyLoginCodeRequest {
+  challengeId: string;
+  code: string;
 }
 
 export type GetAccountChangesParams = {
@@ -6062,7 +6112,7 @@ export const getCreateSessionUrl = () => {
 /**
  * @summary Exchanges valid Development credentials for a short-lived bearer token.
  */
-export const createSession = async (createSessionRequest: CreateSessionRequest, options?: RequestInit): Promise<SessionResponse> => {
+export const createSession = async (createSessionRequest: CreateSessionRequest, options?: RequestInit): Promise<SessionResponse | LoginChallengeResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -6082,7 +6132,7 @@ const res = await fetch(getCreateSessionUrl(),
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: SessionResponse = body ? JSON.parse(body) : {}
+  const data: SessionResponse | LoginChallengeResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -6114,6 +6164,80 @@ export const getCurrentSession = async ( options?: RequestInit): Promise<Current
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CurrentSessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getVerifyLoginCodeUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session/verify-code`
+}
+
+/**
+ * @summary Completes a portal login with the 6-digit code sent by email.
+ */
+export const verifyLoginCode = async (verifyLoginCodeRequest: VerifyLoginCodeRequest, options?: RequestInit): Promise<SessionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getVerifyLoginCodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(verifyLoginCodeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResendLoginCodeUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session/resend-code`
+}
+
+/**
+ * @summary Sends a new code for a pending portal login; the earlier code stops working.
+ */
+export const resendLoginCode = async (resendLoginCodeRequest: ResendLoginCodeRequest, options?: RequestInit): Promise<LoginChallengeResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResendLoginCodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resendLoginCodeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: LoginChallengeResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -6641,6 +6765,37 @@ const res = await fetch(getProvisionCommercialAirlineUrl(requestId),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(provisionAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialAccountResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResendAirlineInvitationUrl = (accountId: string,) => {
+
+
+
+
+  return `/api/v1/governance/provisioning/accounts/${accountId}/resend-invitation`
+}
+
+/**
+ * @summary Sends a new activation link to an airline account that has not activated yet (ADR-0022).
+ */
+export const resendAirlineInvitation = async (accountId: string, options?: RequestInit): Promise<CommercialAccountResponse> => {
+
+  const res = await fetch(getResendAirlineInvitationUrl(accountId),
+  {
+    ...options,
+    method: 'POST'
+
+
   }
 )
 
@@ -14170,6 +14325,185 @@ const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OperationalNotificationResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getActivatePortalAccountUrl = () => {
+
+
+
+
+  return `/api/v1/auth/account/activate`
+}
+
+/**
+ * @summary Confirms the email of an invited portal account and sets its first password.
+ */
+export const activatePortalAccount = async (setPasswordWithTokenRequest: SetPasswordWithTokenRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getActivatePortalAccountUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setPasswordWithTokenRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getRequestPasswordResetUrl = () => {
+
+
+
+
+  return `/api/v1/auth/password-reset`
+}
+
+/**
+ * @summary Sends a reset link when a portal account uses this email. Always answers 202.
+ */
+export const requestPasswordReset = async (passwordResetRequest: PasswordResetRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRequestPasswordResetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(passwordResetRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getConfirmPasswordResetUrl = () => {
+
+
+
+
+  return `/api/v1/auth/password-reset/confirm`
+}
+
+/**
+ * @summary Sets a new password from a reset link; every open session ends.
+ */
+export const confirmPasswordReset = async (setPasswordWithTokenRequest: SetPasswordWithTokenRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getConfirmPasswordResetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setPasswordWithTokenRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getSendTestEmailUrl = () => {
+
+
+
+
+  return `/api/v1/governance/email/test`
+}
+
+/**
+ * @summary Superadmin smoke test: queues an email to check the no-reply sender.
+ */
+export const sendTestEmail = async (sendTestEmailRequest: SendTestEmailRequest, options?: RequestInit): Promise<EmailDeliveryResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSendTestEmailUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sendTestEmailRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmailDeliveryResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListEmailDeliveriesUrl = () => {
+
+
+
+
+  return `/api/v1/governance/email/deliveries`
+}
+
+/**
+ * @summary Latest emails with their delivery state (no bodies), for the superadmin.
+ */
+export const listEmailDeliveries = async ( options?: RequestInit): Promise<EmailDeliveriesResponse> => {
+
+  const res = await fetch(getListEmailDeliveriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmailDeliveriesResponse = body ? JSON.parse(body) : {}
   return data
 }
 

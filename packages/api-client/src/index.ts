@@ -87,8 +87,9 @@ export {
   type TransitionRampOperationServiceOptions,
   type GetRampOperationChargesOptions,
   type ApplyRampServiceChargeOptions,
+  type SessionStart,
 } from "./client";
-export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
+export { ElevantApiError, type ElevantApiErrorKind, type ElevantApiErrorCode } from "./errors";
 export {
   DOMINICAN_AREA_CODES,
   DOMINICAN_PASSPORT_PREFIX,

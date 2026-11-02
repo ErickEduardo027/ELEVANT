@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import GovernanceShell from './GovernanceShell';
 import { DepartmentAccessProvider } from '../access/DepartmentAccessContext';
-import { getGovernance } from '../../services/commercialGovernanceApi';
+import { getGovernance, getProvisioning, provisionAirline } from '../../services/commercialGovernanceApi';
 import { convertLegacyRole, getDepartmentsOverview, listLegacyRoles } from '../../services/departmentGovernanceService';
 
 vi.mock('../../services/commercialGovernanceApi', () => ({
@@ -12,6 +12,7 @@ vi.mock('../../services/commercialGovernanceApi', () => ({
   getGovernanceAudit: vi.fn().mockResolvedValue({ entries: [], hasMore: false }),
   getProvisioning: vi.fn().mockResolvedValue([]),
   getManagedAirlines: vi.fn().mockResolvedValue([]),
+  provisionAirline: vi.fn().mockResolvedValue({ accountId: 'acc-1' }),
 }));
 vi.mock('../../services/departmentGovernanceService', async importOriginal => ({
   ...(await importOriginal()),
@@ -71,5 +72,16 @@ describe('GovernanceShell', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Convertir en plantilla de Contratos' }));
     await userEvent.click(screen.getByRole('button', { name: 'Convertir' }));
     expect(convertLegacyRole).toHaveBeenCalledWith('role-1');
+  });
+
+  it('creates the airline account by emailed invitation unless a temporary password is chosen', async () => {
+    getProvisioning.mockResolvedValue([{ requestId: 'req-1', reference: 'REQ-2026-000001', airline: 'Demo Air',
+      representativeName: 'Ana Pérez', suggestedEmail: 'ana@demo-air.test', contractId: 'c-1', approvedAt: '2026-11-01T00:00:00Z' }]);
+    renderShell();
+    const create = await screen.findByRole('button', { name: 'Crear y enviar invitación' });
+    expect(screen.queryByLabelText('Contraseña temporal')).not.toBeInTheDocument();
+    await userEvent.click(create);
+    expect(provisionAirline).toHaveBeenCalledWith('req-1', 'ana@demo-air.test', '');
+    expect(await screen.findByText(/enlace de activación válido por 72 horas/)).toBeInTheDocument();
   });
 });

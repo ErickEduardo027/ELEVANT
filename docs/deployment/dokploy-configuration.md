@@ -21,6 +21,34 @@ El orden de promoción continúa siendo Database Release → API → AVIAM Web y
 Public Web. No se habilita el poll API para este cambio hasta que el
 almacenamiento, el backup y una restauración de prueba estén verificados.
 
+## Cambio pendiente: correo no-reply del portal (ADR-0022)
+
+La activación de cuentas de aerolínea, el código de 6 dígitos del login público
+y la recuperación de contraseña envían correo desde la API mediante
+`infra.email_outbox` y el worker `EmailDispatchWorker`. Sin `ELEVANT_SMTP_HOST`
+la API arranca igual y los correos quedan **pendientes** (nunca se marcan como
+enviados); en local, `compose.local.yml` los captura en Mailpit
+(`http://127.0.0.1:8025`).
+
+Para el envío real con la cuenta Gmail no-reply:
+
+1. En la cuenta Google: activar la verificación en 2 pasos y crear una
+   **contraseña de aplicación** (16 letras). Gmail rechaza por SMTP la
+   contraseña normal (`535 Login denied`).
+2. En el Environment privado del proyecto API de Dokploy, añadir sin comillas:
+   `ELEVANT_SMTP_HOST=smtp.gmail.com`, `ELEVANT_SMTP_PORT=587`,
+   `ELEVANT_SMTP_USE_TLS=true`, `ELEVANT_SMTP_USERNAME`, `ELEVANT_SMTP_PASSWORD`
+   (la contraseña de aplicación), `ELEVANT_SMTP_FROM_ADDRESS` y
+   `ELEVANT_SMTP_FROM_NAME=ELEVANT`. Los enlaces usan
+   `ELEVANT_API_PUBLIC_WEB_ORIGIN`, que ya existe.
+3. Actualizar el Raw API con `backend/compose.development.api.yml` y verificar
+   Preview Compose como en cualquier cambio de API.
+4. Prueba de humo: el superadministrador llama `POST governance/email/test` y
+   revisa `GET governance/email/deliveries` hasta ver `Sent`. Un `Failed`
+   muestra el motivo sin cuerpo ni credenciales.
+
+Las credenciales nunca entran al repositorio, al chat ni a los logs.
+
 Esta guía registra cómo se convirtió el VPS Development en un plano de control
 privado, cómo se desplegaron DB v1, la API y las dos webs, y cómo se habilitaron
 sus carriles CD pull-based. También define los runbooks de reconstrucción y el

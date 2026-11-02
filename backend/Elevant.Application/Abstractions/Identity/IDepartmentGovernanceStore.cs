@@ -105,8 +105,9 @@ public sealed record AccessRequestData(
 public sealed record AccessRequestPage(int Page, int Limit, bool HasMore, IReadOnlyList<AccessRequestData> Requests);
 
 public sealed record ClientAirlineData(Guid OrganizationId, string Name, string IataCode, int Users, int ActiveUsers);
+/// <param name="InvitationPending">The account was invited by email and has not set its password yet (ADR-0022).</param>
 public sealed record ClientUserData(Guid Id, string FirstName, string LastName, string Email, string Status,
-    bool MustChangePassword, DateTimeOffset? LastLoginAt, string Version);
+    bool MustChangePassword, DateTimeOffset? LastLoginAt, string Version, bool InvitationPending = false);
 
 public sealed record LegacyRoleData(Guid Id, string Code, string Name, IReadOnlyList<string> Permissions, int ActiveUsers);
 
@@ -163,7 +164,11 @@ public sealed record RequestUserAccessInput(
 
 public sealed record DecideUserAccessInput(string ExpectedVersion, string? TemporaryPassword = null, string? Reason = null);
 
-public sealed record CreateClientUserInput(string FirstName, string LastName, string Email, string TemporaryPassword);
+/// <summary>Without a temporary password the user receives an activation link by email (ADR-0022).</summary>
+public sealed record CreateClientUserInput(string FirstName, string LastName, string Email, string? TemporaryPassword = null)
+{
+    public override string ToString() => $"{nameof(CreateClientUserInput)} {{ Email = {Email}, TemporaryPassword = [REDACTED] }}";
+}
 
 /// <summary>
 /// Department governance: two-level administration where the single super

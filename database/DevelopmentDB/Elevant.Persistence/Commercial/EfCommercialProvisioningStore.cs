@@ -6,6 +6,8 @@ using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Identity;
+using Elevant.Application.Identity.AccountEmails;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -15,7 +17,8 @@ namespace Elevant.Persistence.Commercial;
 internal sealed class EfCommercialProvisioningStore(
     ElevantDbContext context,
     CommercialPermissionGuard permissions,
-    UserManager<ApplicationUser> userManager)
+    UserManager<ApplicationUser> userManager,
+    AccountEmailOptions emailOptions)
     : ICommercialProvisioningStore
 {
     public async Task<IReadOnlyList<ProvisioningTaskData>?> ListPendingAsync(Guid actorId,
@@ -41,8 +44,9 @@ internal sealed class EfCommercialProvisioningStore(
     {
         if (!await permissions.IsSuperAdministratorAsync(actorId, cancellationToken))
             return ProvisioningResult.Failed(ProvisioningFailure.Forbidden);
-        if (input is null || !ValidEmail(input.Email) ||
-            string.IsNullOrWhiteSpace(input.TemporaryPassword))
+        var invite = string.IsNullOrWhiteSpace(input?.TemporaryPassword);
+        // An invitation needs the portal origin for its activation link.
+        if (input is null || !ValidEmail(input.Email) || invite && emailOptions.Link("/activar", "x") is null)
             return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
         var email = input.Email.Trim();
         var strategy = context.Database.CreateExecutionStrategy();
@@ -92,13 +96,15 @@ internal sealed class EfCommercialProvisioningStore(
             {
                 PublicId = Guid.CreateVersion7(),
                 PersonId = person.Id,
-                UserName = email, Email = email, EmailConfirmed = true,
+                UserName = email, Email = email, EmailConfirmed = !invite,
                 LockoutEnabled = true,
                 Status = AccountLifecycleStatus.Active,
-                InvitationStatus = InvitationStatus.Accepted,
-                MustChangePassword = true,
+                // Invited accounts cannot sign in until they confirm the email and set a password.
+                InvitationStatus = invite ? InvitationStatus.Sent : InvitationStatus.Accepted,
+                MustChangePassword = !invite,
             };
-            var created = await userManager.CreateAsync(account, input.TemporaryPassword);
+            var created = invite ? await userManager.CreateAsync(account)
+                : await userManager.CreateAsync(account, input.TemporaryPassword!);
             if (!created.Succeeded)
                 return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
             context.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long>
@@ -127,10 +133,43 @@ internal sealed class EfCommercialProvisioningStore(
             });
             AccountChangeOutboxWriter.Add(context, account.Id, null,
                 "airline_contracts", request.PublicId, DateTimeOffset.UtcNow);
+            if (invite && !EfAccountEmailStore.AddActivation(context, emailOptions, account,
+                    person.FirstName, airline!.Name, DateTimeOffset.UtcNow))
+                return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return ProvisioningResult.Success(account.PublicId);
         });
+    }
+
+    public async Task<ProvisioningResult> ResendInvitationAsync(Guid actorId, Guid accountId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await permissions.IsSuperAdministratorAsync(actorId, cancellationToken))
+            return ProvisioningResult.Failed(ProvisioningFailure.Forbidden);
+        var target = await (from user in context.Users
+                            join person in context.Persons on user.PersonId equals person.Id
+                            where user.PublicId == accountId && user.Status == AccountLifecycleStatus.Active &&
+                                  context.UserRoles.Any(link => link.UserId == user.Id && context.Roles.Any(role =>
+                                      role.Id == link.RoleId && role.Portal == PortalKind.AirlinePortal))
+                            select new { User = user, person.FirstName }).SingleOrDefaultAsync(cancellationToken);
+        if (target is null) return ProvisioningResult.Failed(ProvisioningFailure.NotFound);
+        if (target.User.InvitationStatus == InvitationStatus.Accepted)
+            return ProvisioningResult.Failed(ProvisioningFailure.Conflict);
+        var airline = await (from membership in context.OrganizationMemberships
+                             join organization in context.Organizations on membership.OrganizationId equals organization.Id
+                             where membership.AccountId == target.User.Id && membership.Status == MembershipStatus.Active
+                             select organization.DisplayName).FirstOrDefaultAsync(cancellationToken) ?? "su aerolínea";
+        var now = DateTimeOffset.UtcNow;
+        // The new link replaces the earlier ones.
+        await context.Set<AccountEmailToken>().Where(item => item.AccountId == target.User.Id &&
+                item.Purpose == EmailPurpose.Activation && item.UsedAt == null)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.UsedAt, now), cancellationToken);
+        if (!EfAccountEmailStore.AddActivation(context, emailOptions, target.User, target.FirstName, airline, now))
+            return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
+        target.User.InvitationStatus = InvitationStatus.Sent;
+        await context.SaveChangesAsync(cancellationToken);
+        return ProvisioningResult.Success(target.User.PublicId);
     }
 
     private static bool ValidEmail(string? email) =>

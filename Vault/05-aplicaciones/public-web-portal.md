@@ -17,6 +17,8 @@ sources:
   - frontend/public-web/package.json
   - frontend/public-web/src/components/auth/AirlineSessionProvider.tsx
   - frontend/public-web/src/components/auth/AuthExperience.tsx
+  - frontend/public-web/src/components/auth/PasswordLinkExperience.tsx
+  - docs/adr/0022-portal-email-verification.md
   - frontend/public-web/src/components/portal/PortalGuard.tsx
   - frontend/public-web/src/components/portal/PortalShell.tsx
   - frontend/public-web/src/components/portal/AirlinePortalPage.tsx
@@ -61,8 +63,9 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 
 | Parte | Comportamiento verificado en el repositorio |
 | --- | --- |
-| Identidad | `POST /api/v1/auth/session` emite la sesión; `GET /api/v1/auth/session` la revalida al recargar. El navegador comprueba el rol de aerolínea y la membresía correspondiente, pero la API sigue siendo la autoridad de autorización. |
-| Contraseña temporal | El código permitido `password_change_required` conduce a `POST /api/v1/auth/password-change`; tras el cambio se requiere un inicio de sesión nuevo. |
+| Identidad | `POST /api/v1/auth/session` valida correo y contraseña y responde `202 code_required`; la sesión se emite en `POST /api/v1/auth/session/verify-code` con el código de 6 dígitos enviado al correo (10 minutos, 5 intentos, reenvío con `resend-code`; [ADR-0022](../../docs/adr/0022-portal-email-verification.md)). `GET /api/v1/auth/session` la revalida al recargar. El navegador comprueba el rol de aerolínea y la membresía correspondiente, pero la API sigue siendo la autoridad de autorización. |
+| Activación y recuperación | Las cuentas nuevas reciben un enlace a `/activar` (72 horas) para confirmar el correo y crear su contraseña. «¿Olvidaste tu contraseña?» lleva a `/recuperar`, que envía un enlace de 30 minutos y responde igual exista o no la cuenta. |
+| Contraseña temporal | Solo para cuentas creadas con la alternativa manual: el código `password_change_required` conduce a `POST /api/v1/auth/password-change`; tras el cambio se requiere un inicio de sesión nuevo. |
 | Tenant y estaciones | `GET /api/v1/airline/portal/bootstrap` deriva el tenant y la cobertura desde la sesión del servidor. El cliente no envía un ID de tenant elegido por el usuario. |
 | Inicio, vuelos y perfil | Inicio y perfil muestran el contexto del bootstrap sin mezclar rotaciones EV del prototipo. Vuelos consulta `GET /api/v1/airline/portal/operations`, paginado y filtrado por aerolínea/contrato histórico en SQL. El detalle relee por ID una operación propia aunque no figure en el bootstrap. Esta rama posterior añade una lectura de servicios y tiempos de la entrega aprobada por OCC, sin notas internas ni identidades de agentes; aún no está promocionada. |
 | Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |

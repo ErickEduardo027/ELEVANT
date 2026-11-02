@@ -25,7 +25,8 @@ public sealed class AuthenticationController(
     CreateSessionHandler createSessionHandler,
     GetCurrentSessionHandler getCurrentSessionHandler,
     ChangePasswordHandler changePasswordHandler,
-    RefreshSessionHandler refreshSessionHandler) : ControllerBase
+    RefreshSessionHandler refreshSessionHandler,
+    IAccountEmailStore accountEmails) : ControllerBase
 {
     /// <summary>Exchanges valid Development credentials for a short-lived bearer token.</summary>
     [AllowAnonymous]
@@ -33,6 +34,7 @@ public sealed class AuthenticationController(
     [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
     [HttpPost(Name = "CreateSession")]
     [ProducesResponseType<SessionResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<LoginChallengeResponse>(StatusCodes.Status202Accepted, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -48,6 +50,10 @@ public sealed class AuthenticationController(
         var result = await createSessionHandler.HandleAsync(
             new CreateSessionCommand(request.Email, request.Password),
             cancellationToken);
+
+        // Portal accounts continue with the code sent by email (ADR-0022).
+        if (result.Challenge is { } challenge)
+            return Accepted(new LoginChallengeResponse(challenge.ChallengeId, challenge.EmailHint, challenge.ExpiresAt));
 
         if (!result.IsSuccess)
         {
@@ -69,6 +75,47 @@ public sealed class AuthenticationController(
         }
 
         return Ok(MapSession(result.Session!));
+    }
+
+    /// <summary>Completes a portal login with the 6-digit code sent by email.</summary>
+    [AllowAnonymous]
+    [SessionCreationRateLimit]
+    [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
+    [HttpPost("verify-code", Name = "VerifyLoginCode")]
+    [ProducesResponseType<SessionResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    public async Task<ActionResult<SessionResponse>> VerifyCode(
+        [FromBody, BindRequired] VerifyLoginCodeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await createSessionHandler.VerifyCodeAsync(request.ChallengeId, request.Code, cancellationToken);
+        if (result.IsSuccess) return Ok(MapSession(result.Session!));
+        return result.Failure == CreateSessionFailure.TokenUnavailable
+            ? Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Authentication is temporarily unavailable.")
+            : UnauthorizedProblem(includeBearerChallenge: false);
+    }
+
+    /// <summary>Sends a new code for a pending portal login; the earlier code stops working.</summary>
+    [AllowAnonymous]
+    [SessionCreationRateLimit]
+    [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
+    [HttpPost("resend-code", Name = "ResendLoginCode")]
+    [ProducesResponseType<LoginChallengeResponse>(StatusCodes.Status202Accepted, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<ActionResult<LoginChallengeResponse>> ResendCode(
+        [FromBody, BindRequired] ResendLoginCodeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var challenge = request.ChallengeId == Guid.Empty ? null
+            : await accountEmails.ResendLoginCodeAsync(request.ChallengeId, cancellationToken);
+        return challenge is null
+            ? UnauthorizedProblem(includeBearerChallenge: false)
+            : Accepted(new LoginChallengeResponse(challenge.ChallengeId, challenge.EmailHint, challenge.ExpiresAt));
     }
 
     /// <summary>

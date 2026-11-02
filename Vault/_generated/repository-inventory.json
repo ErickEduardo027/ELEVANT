@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "98bd20e4b325335f6fb43139c127e11620bc72cf4d70125a4b4c88eed927ea92",
+        "sha256": "0196737e86042cdca4c1c541850e0153a427ad7f4d936198d42df36698daecec",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "b4b5186d5a9ecf2013e743013f0e1611e905522b3b055830b9b38ff3504f92aa",
+        "sha256": "e8bf3afe7977ba55f74b50b6240d1cc156b4d4726dfc8fd12ed01e21619bdc85",
         "title": null,
         "version": null
       }
@@ -1388,6 +1388,18 @@
         "name": "AddContractSignatures",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261027000905_AddContractSignatures.cs",
         "sha256": "ce9279b44b656dbf3d38fdb277268b6ff5b10829ce191b1723cc7bb3803155d2"
+      },
+      {
+        "id": "20261102120610",
+        "name": "AddRefreshTokens",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102120610_AddRefreshTokens.cs",
+        "sha256": "37d3d4ad9441754a29b4dc7c9faae498d298f19ff06e2c3cb707803049793d48"
+      },
+      {
+        "id": "20261102130658",
+        "name": "AddEmailOutboxAndAccountTokens",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102130658_AddEmailOutboxAndAccountTokens.cs",
+        "sha256": "2e7bd28ee6d82fe9a09585d80e55c869fecc3c0223e51c4e30189f31b4d83c50"
       }
     ],
     "manifestContracts": [
