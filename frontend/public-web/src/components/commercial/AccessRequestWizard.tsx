@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import { HubConnectionBuilder, HubConnectionState } from "@microsoft/signalr";
-import { ElevantApiError, identityDocumentExample, type PublicCommercialCatalog,
+import { ElevantApiError, identityDocumentExample, identityDocumentRequirements, type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest } from "@elevant/api-client";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
@@ -28,7 +28,7 @@ const DOCUMENT_LABELS: Record<string, string> = { NationalId: "Cédula", Passpor
 /** Shapes the number while typing: a cédula as ###-#######-#, a passport in capitals. */
 export function formatDocumentNumber(type: string, value: string): string {
   if (type === "NationalId") {
-    const digits = value.replace(/D/g, "").slice(0, 11);
+    const digits = value.replace(/\D/g, "").slice(0, 11);
     return [digits.slice(0, 3), digits.slice(3, 10), digits.slice(10)].filter(Boolean).join("-");
   }
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 9);
@@ -100,6 +100,11 @@ export function AccessRequestWizard() {
   const documentPlaceholder = representative.documentType === "NationalId" ? identityDocumentExample("Cedula")
     : representative.documentType === "Passport" ? identityDocumentExample("Passport", representative.nationalityCode)
       : undefined;
+  // Live checklist with the same rules as the API, shown once something is typed.
+  const documentRequirements = representative.documentNumber && representative.documentType
+    ? identityDocumentRequirements(representative.documentType === "NationalId" ? "Cedula" : "Passport",
+      representative.documentNumber, representative.documentType === "Passport" ? representative.nationalityCode : null)
+    : [];
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { catalogRef.current = catalog; }, [catalog]);
 
@@ -375,11 +380,15 @@ export function AccessRequestWizard() {
             <select {...control("nationalityCode")} className="access-select" required={representative.documentType === "Passport"} value={representative.nationalityCode} onChange={(event) => changeRepresentative({ nationalityCode: event.target.value })}><option value="">{representative.documentType === "Passport" ? "Seleccione el país del pasaporte" : "Seleccione si desea indicarla"}</option>{countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}</select>
           </FormField>
           <FormField field="documentType" label="Tipo de documento" error={fieldError("documentType")}>
-            <select {...control("documentType")} className="access-select" required value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value, documentNumber: formatDocumentNumber(event.target.value, representative.documentNumber) })}><option value="">Seleccione</option><option value="NationalId">Cédula dominicana</option><option value="Passport">Pasaporte</option></select>
+            <select {...control("documentType")} className="access-select" required value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value, documentNumber: formatDocumentNumber(event.target.value, representative.documentNumber) })}><option value="">Seleccione</option><option value="NationalId">Cédula</option><option value="Passport">Pasaporte</option></select>
           </FormField>
           <FormField field="documentNumber" label="Número de documento" error={fieldError("documentNumber")}>
             <input {...control("documentNumber")} required maxLength={13} autoCapitalize="characters" inputMode={representative.documentType === "NationalId" ? "numeric" : "text"} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: formatDocumentNumber(representative.documentType, event.target.value) })} />
             {documentPlaceholder && <small className="access-field-hint">Formato: {documentPlaceholder}</small>}
+            {documentRequirements.length > 0 && <ul className="access-doc-checklist" aria-live="polite" aria-label="Requisitos del número de documento">
+              {documentRequirements.map((item) => <li key={item.label.replace(/ \(.*\)$/, "")} data-met={item.met}>
+                <span aria-hidden="true">{item.met ? "✓" : "○"}</span>{item.label}<span className="access-visually-hidden">{item.met ? " (cumplido)" : " (pendiente)"}</span></li>)}
+            </ul>}
           </FormField>
           <FormField field="address" label="Dirección (opcional)" error={fieldError("address")} wide>
             <input {...control("address")} maxLength={250} autoComplete="street-address" value={representative.address} onChange={(event) => changeRepresentative({ address: event.target.value })} />

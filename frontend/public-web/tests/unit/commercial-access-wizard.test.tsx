@@ -104,7 +104,7 @@ it("offers only cédula or passport and checks every character in its position",
   render(<AccessRequestWizard />);
   await openRepresentativeStep();
   expect([...field("Tipo de documento").querySelectorAll("option")].map((option) => option.textContent))
-    .toEqual(["Seleccione", "Cédula dominicana", "Pasaporte"]);
+    .toEqual(["Seleccione", "Cédula", "Pasaporte"]);
 
   choose("Tipo de documento", "NationalId");
   const number = screen.getByRole("textbox", { name: "Número de documento" });
@@ -118,6 +118,37 @@ it("offers only cédula or passport and checks every character in its position",
   fireEvent.blur(number);
   expect(screen.getByText("El pasaporte dominicano: la posición 1 debe ser «R»; encontramos «A». Formato: RD1234567."))
     .toBeInTheDocument();
+});
+
+it("formats the cédula key by key without repeating dashes", async () => {
+  const { formatDocumentNumber } = await import("@/components/commercial/AccessRequestWizard");
+  let typed = "";
+  for (const digit of "00112345673") typed = formatDocumentNumber("NationalId", typed + digit);
+  expect(typed).toBe("001-1234567-3");
+  expect(formatDocumentNumber("NationalId", "402-1234")).toBe("402-1234");
+  expect(formatDocumentNumber("NationalId", "402-")).toBe("402");
+});
+
+it("shows the document requirements while typing and turns them green as they are met", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  await openRepresentativeStep();
+  choose("Tipo de documento", "NationalId");
+  const number = screen.getByRole("textbox", { name: "Número de documento" });
+  expect(screen.queryByRole("list", { name: "Requisitos del número de documento" })).not.toBeInTheDocument();
+  const met = () => within(screen.getByRole("list", { name: "Requisitos del número de documento" }))
+    .getAllByRole("listitem").map((item) => item.getAttribute("data-met"));
+
+  for (const digit of "001") fireEvent.change(number, { target: { value: (number as HTMLInputElement).value + digit } });
+  expect(number).toHaveValue("001");
+  expect(met()).toEqual(["true", "false", "false", "false"]);
+  expect(screen.getByText("11 dígitos (3/11)")).toBeInTheDocument();
+
+  for (const digit of "12345673") fireEvent.change(number, { target: { value: (number as HTMLInputElement).value + digit } });
+  expect(number).toHaveValue("001-1234567-3");
+  expect(met()).toEqual(["true", "true", "true", "true"]);
 });
 
 it("asks for a custom title only while Otro is selected", async () => {

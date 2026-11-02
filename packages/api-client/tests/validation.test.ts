@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { checkIdentityDocument, identityDocumentExample, normalizeIdentityDocument, normalizePhone } from "../src";
+import { checkIdentityDocument, identityDocumentExample, identityDocumentRequirements, normalizeIdentityDocument,
+  normalizePhone } from "../src";
 
 const withLuhn = (ten: string) => {
   let sum = 0;
@@ -53,4 +54,41 @@ describe("identity documents (mirrors IdentityDocuments.cs)", () => {
     ["Passport", "RD-123*4567", "DO", "El carácter «*» no es válido; usa solo letras y dígitos."],
   ] as const)("%s %s explains the first wrong position", (kind, number, nationality, problem) =>
     expect(checkIdentityDocument(kind, number, nationality).problem).toBe(problem));
+});
+
+describe("identity document requirements (live checklist)", () => {
+  const metLabels = (kind: Parameters<typeof identityDocumentRequirements>[0], number: string, nationality?: string | null) =>
+    identityDocumentRequirements(kind, number, nationality).filter((item) => item.met).map((item) => item.label);
+
+  it("turns the cédula requirements green one by one while typing", () => {
+    const cedula = withLuhn("4021234567");
+    expect(metLabels("Cedula", "")).toEqual([]);
+    expect(metLabels("Cedula", "402")).toEqual(["Solo dígitos"]);
+    expect(identityDocumentRequirements("Cedula", "402-1234")[1]).toEqual({ label: "11 dígitos (7/11)", met: false });
+    expect(metLabels("Cedula", `${cedula.slice(0, 3)}-${cedula.slice(3, 10)}-${cedula[10]}`)).toHaveLength(4);
+    expect(metLabels("Cedula", "11111111111")).toEqual(["Solo dígitos", "11 dígitos (11/11)"]);
+    expect(metLabels("Cedula", "402A")).toEqual([]);
+  });
+
+  it("follows the passport rules of the nationality", () => {
+    expect(metLabels("Passport", "RD123", "DO")).toEqual(["Empieza por RD"]);
+    expect(metLabels("Passport", "RD1234567", "DO")).toHaveLength(3);
+    expect(metLabels("Passport", "A1234", "US")).toEqual(["Solo letras y dígitos"]);
+    expect(metLabels("Passport", "A12345678", "US")).toHaveLength(3);
+    expect(metLabels("Passport", "X12", "ES")).toEqual(["Solo letras y dígitos", "Incluye al menos un dígito"]);
+    expect(metLabels("Passport", "X1234567", null)).toHaveLength(4);
+  });
+
+  // Every requirement is met exactly when checkIdentityDocument accepts the number.
+  it.each([
+    ["Cedula", withLuhn("0011234567"), null], ["Cedula", "00112345670", null], ["Cedula", "11111111111", null],
+    ["Cedula", "001-12345A7-8", null], ["Cedula", "", null], ["Residence", withLuhn("4029876543"), null],
+    ["Passport", "RD1234567", "DO"], ["Passport", "RD12345678", "DO"], ["Passport", "AB1234567", "DO"], ["Passport", "RD", "DO"],
+    ["Passport", "123456789", "US"], ["Passport", "AB1234567", "US"], ["Passport", "A123456BC", "CA"], ["Passport", "A1234567", "CA"],
+    ["Passport", "X1234567", "ES"], ["Passport", "AAAAAA", null], ["Passport", "A1A1A1", null], ["Passport", "X12*4567", null],
+    ["Passport", "X1234567890", null], ["Rnc", "101123456", null], ["Rnc", "131246796", null],
+  ] as const)("%s %s (%s) agrees with the check", (kind, number, nationality) => {
+    const accepted = checkIdentityDocument(kind, number, nationality).problem === null;
+    expect(identityDocumentRequirements(kind, number, nationality).every((item) => item.met)).toBe(accepted);
+  });
 });
