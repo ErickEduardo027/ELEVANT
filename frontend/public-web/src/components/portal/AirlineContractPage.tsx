@@ -5,6 +5,7 @@ import type { AirlineContractPageResponse } from "@elevant/api-client";
 import type { AirlineDraftData } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractSignature } from "./AirlineContractSignature";
+import { ContractPdfActions } from "./ContractPdfActions";
 import styles from "./AirlinePortalPage.module.css";
 
 const STATUS: Record<string, string> = {
@@ -17,7 +18,7 @@ function money(amount: number, currency: string) {
 }
 
 export function AirlineContractPage() {
-  const { session, getContracts, getDrafts, commentDraft, draftRevision } = useAirlineSession();
+  const { session, getContracts, getDrafts, commentDraft, downloadContractDraft, draftRevision } = useAirlineSession();
   const accountId = session?.actor.accountId;
   const [pages, setPages] = useState<AirlineContractPageResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +71,7 @@ export function AirlineContractPage() {
     </section> : null}
     {draftError && <section className={styles.panel} role="alert">No se pudieron cargar los borradores. Actualice la página para volver a intentarlo.</section>}
     {drafts.length > 0 && <section className={styles.contractGrid} aria-label="Borradores para revisión">
-      {drafts.map(draft => <AirlineDraftCard key={draft.id} draft={draft} onComment={commentDraft} />)}
+      {drafts.map(draft => <AirlineDraftCard key={draft.id} draft={draft} onComment={commentDraft} onDownload={downloadContractDraft} />)}
     </section>}
     {!loading && !error && contracts.length === 0 && drafts.length === 0 ? <section className={styles.panel}>
       <h2>No hay contratos aprobados</h2>
@@ -104,9 +105,10 @@ export function AirlineContractPage() {
   </div>;
 }
 
-function AirlineDraftCard({ draft, onComment }: {
+function AirlineDraftCard({ draft, onComment, onDownload }: {
   draft: AirlineDraftData;
   onComment: (versionId: string, body: string) => Promise<void>;
+  onDownload: (versionId: string) => Promise<Blob>;
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,6 +122,7 @@ function AirlineDraftCard({ draft, onComment }: {
   return <article className={styles.panel}>
     <div className={styles.sectionHeading}><div><span className={styles.kicker}>En revisión · {draft.contractCode}</span><h2>Propuesta de contrato</h2></div><strong className={styles.draftBadge}>BORRADOR</strong></div>
     <p className={styles.note}>Este documento todavía no habilita servicios operativos.</p>
+    <ContractPdfActions load={() => onDownload(draft.id)} fileName={`borrador-${draft.contractCode}.pdf`} label="borrador del contrato" />
     <div className={styles.contractVersion}><h3>Condiciones propuestas</h3><p>Vigencia prevista: {draft.validFrom} — {draft.validTo ?? "sin fecha de fin"}</p><p>Estaciones: {draft.stations.join(", ") || "Por definir"}</p><p>{draft.terms || "Contratos está preparando los términos de esta versión."}</p></div>
     <div className={styles.contractRateList}>{draft.rates.map(rate => <div key={rate.id}><strong>{rate.serviceName}</strong><span>Precio por {rate.billingUnit}: {rate.isConfirmed ? money(rate.unitPrice, draft.currencyCode) : "por definir"}</span><span>Cantidad mínima: {rate.minimumQuantity}</span></div>)}</div>
     <div className={styles.contractVersion}><h3>Observaciones</h3>{draft.comments.length ? <ul className={styles.draftComments}>{draft.comments.map(comment => <li key={comment.id}><strong>{comment.author}</strong><p>{comment.body}</p><small>{new Date(comment.at).toLocaleString("es-DO")}</small></li>)}</ul> : <p>Aún no hay observaciones.</p>}

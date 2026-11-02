@@ -33,6 +33,17 @@ describe("contract document client", () => {
     expect(JSON.parse(requests[1]!.body)).toEqual({ signerName: "Luis Marte", signerTitle: "Director", documentSha256: sha, accepted: true });
   });
 
+  it("downloads the watermarked draft PDF from its own route", async () => {
+    const urls: string[] = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async input => {
+      urls.push(String(input));
+      return new Response(new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55, 10]), { headers: { "content-type": "application/pdf" } });
+    } });
+    expect((await client.downloadContractDraftPdf(versionId)).type).toBe("application/pdf");
+    expect(urls).toEqual([`https://api.example.test/api/v1/contract-versions/${versionId}/draft/pdf`]);
+    expect(() => client.downloadContractDraftPdf("not-a-uuid")).toThrow(TypeError);
+  });
+
   it("refuses unaccepted signatures and unknown parties", async () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => Response.json({ ...document, signableBy: "Notary" }) });

@@ -52,6 +52,24 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
             $"contrato-{document.ContractCode}-v{document.VersionNumber}.pdf");
     }
 
+    /// <summary>Review PDF of a draft version, watermarked «BORRADOR» and never signable.</summary>
+    [HttpGet("draft/pdf", Name = "DownloadContractDraftPdf")]
+    [Produces("application/pdf")]
+    [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "application/pdf")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    public async Task<IActionResult> DraftPdf([FromRoute] Guid versionId, CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var actorId)) return Unauthorized<object>().Result!;
+        var result = await store.ReadDraftAsync(actorId, versionId, cancellationToken);
+        if (result.Failure is { } failure) return Failure<object>(failure).Result!;
+        var document = result.Document!;
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return File(renderer.Render(document), "application/pdf",
+            $"borrador-{document.ContractCode}-v{document.VersionNumber}.pdf");
+    }
+
     [HttpPost("signatures", Name = "SignContractVersion")]
     [RequestSizeLimit(2048)]
     [Consumes("application/json")]

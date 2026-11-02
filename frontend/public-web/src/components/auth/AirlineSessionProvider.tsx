@@ -60,6 +60,8 @@ interface AirlineSessionContextValue {
   getContracts(page?: number): Promise<AirlineContractPageResponse>;
   getContractDocument(versionId: string): Promise<ContractDocumentResponse>;
   downloadContractDocument(versionId: string): Promise<Blob>;
+  /** Watermarked review PDF of a draft shared with the airline. */
+  downloadContractDraft(versionId: string): Promise<Blob>;
   signContract(versionId: string, signerName: string, signerTitle: string, documentSha256: string,
     idempotencyKey: string): Promise<ContractDocumentResponse>;
   getOperations(page?: number): Promise<AirlineOperationPageResponse>;
@@ -448,6 +450,8 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
 
   const downloadContractDocument = useCallback((versionId: string) =>
     withContractClient(client => client.downloadContractDocument(versionId, { cache: "no-store" })), [withContractClient]);
+  const downloadContractDraft = useCallback((versionId: string) =>
+    withContractClient(client => client.downloadContractDraftPdf(versionId, { cache: "no-store" })), [withContractClient]);
 
   const signContract = useCallback((versionId: string, signerName: string, signerTitle: string,
     documentSha256: string, idempotencyKey: string) => withContractClient(client => client.signContractVersion(versionId,
@@ -751,7 +755,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

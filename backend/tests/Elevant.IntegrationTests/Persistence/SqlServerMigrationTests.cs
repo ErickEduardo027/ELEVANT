@@ -2458,6 +2458,17 @@ public sealed partial class SqlServerMigrationTests
         var airlineDraft = Assert.Single((await drafts.ListForAirlineAsync(
             provisioned.AccountId!.Value, cancellationToken))!);
         Assert.Equal(version.PublicId, airlineDraft.Id);
+        // The draft prints as a watermarked review copy for its airline and Contratos only.
+        var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
+        var draftCopy = await documents.ReadDraftAsync(provisioned.AccountId.Value, airlineDraft.Id, cancellationToken);
+        Assert.Null(draftCopy.Failure);
+        Assert.Null(draftCopy.Document!.SignableBy);
+        Assert.True(Elevant.Infrastructure.Commercial.ContractPdfRenderer.IsDraft(draftCopy.Document));
+        Assert.Null((await documents.ReadDraftAsync(contractsAccountId, airlineDraft.Id, cancellationToken)).Failure);
+        Assert.Equal(ContractDocumentFailure.Forbidden, (await documents.ReadDraftAsync(
+            Guid.Parse("40000000-0000-7000-8000-000000000003"), airlineDraft.Id, cancellationToken)).Failure);
+        Assert.Equal(ContractDocumentFailure.NotFound,
+            (await documents.ReadAsync(provisioned.AccountId.Value, airlineDraft.Id, cancellationToken)).Failure);
         Assert.True((await drafts.AddAirlineCommentAsync(provisioned.AccountId.Value,
             airlineDraft.Id, "Confirmar el horario de asistencia.", cancellationToken)).IsSuccess);
         await using (var commentsConnection = new SqlConnection(database.ConnectionString))

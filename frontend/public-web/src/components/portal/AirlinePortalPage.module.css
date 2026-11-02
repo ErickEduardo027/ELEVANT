@@ -92,3 +92,18 @@
 @container portal (max-width: 37.99rem) { .contractRateList > div { grid-template-columns: 1fr; gap: .2rem; } .operation, .requestHeading, .realScope { align-items: flex-start; flex-direction: column; } .operationSide { justify-items: start; text-align: left; } .requestHeading h1 { max-width: none; } }
 @container portal (max-width: 49.99rem) { .preinvoiceLines > div { grid-template-columns: 1fr; gap: .2rem; } }
 @container portal (max-width: 23.99rem) { .metrics { grid-template-columns: 1fr; } }
+
+/* Contract PDF actions (download / print the official document). */
+.pdfActions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .5rem 0 .75rem; }
+.pdfActions button { min-height: 2.5rem; padding: .5rem .95rem; border: 1px solid #123f81; border-radius: .5rem; background: #fff; color: #123f81; font-weight: 700; font-size: .8rem; cursor: pointer; }
+.pdfActions button:first-child { background: #123f81; color: #fff; }
+.pdfActions button:disabled { opacity: .6; cursor: progress; }
+.pdfActions button:focus-visible { outline: 3px solid #ff5c00; outline-offset: 2px; }
+.pdfActions p { flex-basis: 100%; margin: 0; color: #b42318; font-size: .78rem; }
+
+/* Printing the web view (Ctrl+P) keeps only the contract content. */
+@media print {
+  .pdfActions, .draftCommentForm, .loadMore { display: none !important; }
+  .panel { break-inside: avoid; box-shadow: none !important; border: 1px solid #c8d3e0; }
+  .contractRateList > div { background: none; border-bottom: 1px solid #dce6f0; border-radius: 0; }
+}

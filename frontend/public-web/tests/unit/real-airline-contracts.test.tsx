@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AirlineContractPageResponse, AirlinePortalBootstrapResponse,
   SessionResponse } from "@elevant/api-client";
 import { AIRLINE_SESSION_STORAGE_KEY,
@@ -54,6 +54,8 @@ function mount(page: AirlineContractPageResponse, drafts: unknown = []) {
     const path = new URL(String(input)).pathname;
     paths.push(path);
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-token");
+    if (path.endsWith("/draft/pdf"))
+      return new Response(new Uint8Array([37, 80, 68, 70]), { status: 200, headers: { "content-type": "application/pdf" } });
     const body = path.endsWith("/bootstrap") ? bootstrap
       : path.endsWith("/contracts") ? page
         : path.endsWith("/contract-drafts") ? drafts : { actor };
@@ -96,4 +98,19 @@ it("shows an honest empty state with no fabricated contract", async () => {
   mount({ page: 1, limit: 20, hasMore: false, contracts: [] });
   expect(await screen.findByText(/No hay contratos aprobados/i)).toBeInTheDocument();
   expect(screen.queryByText("DEMO-CON-001")).not.toBeInTheDocument();
+});
+
+it("downloads the draft as a watermarked review PDF from the draft card", async () => {
+  const draftId = "62000000-0000-7000-8000-000000000001";
+  URL.createObjectURL = vi.fn(() => "blob:draft");
+  URL.revokeObjectURL = vi.fn();
+  const paths = mount({ page: 1, limit: 20, hasMore: false, contracts: [] }, [{
+    id: draftId, contractId: "contract-1", contractCode: "DEV-CONTRACT-0002",
+    airline: "Demo Airlines", status: "Draft", validFrom: "2026-10-01", validTo: null,
+    currencyCode: "USD", terms: null, stations: [], comments: [], rates: [],
+  }]);
+  const group = await screen.findByRole("group", { name: "Documento: borrador del contrato" });
+  fireEvent.click(within(group).getByRole("button", { name: "Descargar PDF" }));
+  await waitFor(() => expect(paths).toContain(`/api/v1/contract-versions/${draftId}/draft/pdf`));
+  expect(within(group).getByRole("button", { name: "Imprimir" })).toBeInTheDocument();
 });

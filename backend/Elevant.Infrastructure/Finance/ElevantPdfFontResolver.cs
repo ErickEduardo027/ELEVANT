@@ -6,18 +6,11 @@ namespace Elevant.Infrastructure.Finance;
 internal sealed class ElevantPdfFontResolver : IFontResolver
 {
     internal const string Typeface = "Elevant Noto Sans";
-    private const string FaceName = "elevant-noto-sans-regular";
+    private const string RegularFace = "elevant-noto-sans-regular";
+    private const string BoldFace = "elevant-noto-sans-bold";
     private static readonly object Gate = new();
-    private static readonly Lazy<byte[]> FontBytes = new(() =>
-    {
-        var assembly = typeof(ElevantPdfFontResolver).Assembly;
-        var resource = assembly.GetManifestResourceNames().Single(name =>
-            name.EndsWith("NotoSans-Regular.ttf", StringComparison.Ordinal));
-        using var stream = assembly.GetManifestResourceStream(resource)!;
-        using var buffer = new MemoryStream();
-        stream.CopyTo(buffer);
-        return buffer.ToArray();
-    });
+    private static readonly Lazy<byte[]> RegularBytes = new(() => Resource("NotoSans-Regular.ttf"));
+    private static readonly Lazy<byte[]> BoldBytes = new(() => Resource("NotoSans-Bold.ttf"));
 
     internal static void EnsureRegistered()
     {
@@ -30,8 +23,26 @@ internal sealed class ElevantPdfFontResolver : IFontResolver
         }
     }
 
-    public FontResolverInfo? ResolveTypeface(string familyName, bool bold, bool italic) =>
-        familyName == Typeface ? new FontResolverInfo(FaceName) : null;
+    /// <summary>Reads an embedded resource of this assembly by its file name.</summary>
+    internal static byte[] Resource(string fileName)
+    {
+        var assembly = typeof(ElevantPdfFontResolver).Assembly;
+        var resource = assembly.GetManifestResourceNames().Single(name =>
+            name.EndsWith(fileName, StringComparison.Ordinal));
+        using var stream = assembly.GetManifestResourceStream(resource)!;
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        return buffer.ToArray();
+    }
 
-    public byte[]? GetFont(string faceName) => faceName == FaceName ? FontBytes.Value : null;
+    // Bold uses the real Noto Sans Bold face instead of a simulated stroke; italics are not used.
+    public FontResolverInfo? ResolveTypeface(string familyName, bool bold, bool italic) =>
+        familyName == Typeface ? new FontResolverInfo(bold ? BoldFace : RegularFace) : null;
+
+    public byte[]? GetFont(string faceName) => faceName switch
+    {
+        RegularFace => RegularBytes.Value,
+        BoldFace => BoldBytes.Value,
+        _ => null,
+    };
 }
