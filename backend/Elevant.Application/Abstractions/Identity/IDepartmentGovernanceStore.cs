@@ -105,8 +105,9 @@ public sealed record AccessRequestData(
 public sealed record AccessRequestPage(int Page, int Limit, bool HasMore, IReadOnlyList<AccessRequestData> Requests);
 
 public sealed record ClientAirlineData(Guid OrganizationId, string Name, string IataCode, int Users, int ActiveUsers);
+/// <param name="InvitationPending">The account was invited by email and has not set its password yet (ADR-0022).</param>
 public sealed record ClientUserData(Guid Id, string FirstName, string LastName, string Email, string Status,
-    bool MustChangePassword, DateTimeOffset? LastLoginAt, string Version);
+    bool MustChangePassword, DateTimeOffset? LastLoginAt, string Version, bool InvitationPending = false);
 
 public sealed record LegacyRoleData(Guid Id, string Code, string Name, IReadOnlyList<string> Permissions, int ActiveUsers);
 
@@ -127,6 +128,23 @@ public sealed record CreateDepartmentAccountInput(
     Guid? AccessProfileId = null,
     IReadOnlyList<string>? PermissionCodes = null,
     Guid? EmployeeId = null);
+
+/// <summary>
+/// The super administrator registers the employee and creates its account in one step, without a
+/// Human Resources request (second teacher review). <paramref name="Kind"/> is <c>administrator</c>
+/// or <c>member</c>; members take a template or explicit grants. The corporate email of the employee
+/// is the login, and <paramref name="StationIds"/> must be stations of the employee.
+/// </summary>
+public sealed record CreateInternalUserInput(
+    SaveEmployeeInput Employee,
+    string Kind,
+    string TemporaryPassword,
+    IReadOnlyList<Guid> StationIds,
+    Guid? AccessProfileId = null,
+    IReadOnlyList<string>? PermissionCodes = null)
+{
+    public override string ToString() => $"{nameof(CreateInternalUserInput)} {{ Kind = {Kind}, TemporaryPassword = [REDACTED] }}";
+}
 
 public sealed record UpdateDepartmentUserInput(
     string FirstName,
@@ -163,7 +181,11 @@ public sealed record RequestUserAccessInput(
 
 public sealed record DecideUserAccessInput(string ExpectedVersion, string? TemporaryPassword = null, string? Reason = null);
 
-public sealed record CreateClientUserInput(string FirstName, string LastName, string Email, string TemporaryPassword);
+/// <summary>Without a temporary password the user receives an activation link by email (ADR-0022).</summary>
+public sealed record CreateClientUserInput(string FirstName, string LastName, string Email, string? TemporaryPassword = null)
+{
+    public override string ToString() => $"{nameof(CreateClientUserInput)} {{ Email = {Email}, TemporaryPassword = [REDACTED] }}";
+}
 
 /// <summary>
 /// Department governance: two-level administration where the single super
@@ -187,6 +209,8 @@ public interface IDepartmentGovernanceStore
         CreateDepartmentAccountInput input, CancellationToken cancellationToken = default);
     Task<GovernanceResult> CreateMemberAsync(Guid actorId, string department,
         CreateDepartmentAccountInput input, CancellationToken cancellationToken = default);
+    Task<GovernanceResult> CreateInternalUserAsync(Guid actorId, string department, CreateInternalUserInput input,
+        CancellationToken cancellationToken = default);
     Task<GovernanceResult> UpdateUserAsync(Guid actorId, string department, Guid userId,
         UpdateDepartmentUserInput input, CancellationToken cancellationToken = default);
     Task<GovernanceResult> SetUserStatusAsync(Guid actorId, string department, Guid userId,

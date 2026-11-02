@@ -30,6 +30,8 @@ export function buildContentSecurityPolicy(apiOrigin, nonce, { development = fal
     "font-src 'self' data: https://fonts.gstatic.com",
     "form-action 'self'",
     "frame-ancestors 'none'",
+    // The print button loads the API-generated PDF into a hidden blob: frame.
+    "frame-src 'self' blob:",
     `img-src 'self' data: blob: ${apiOrigin} ${tileOrigins} ${dataOrigins}`,
     `media-src 'self' blob: ${apiOrigin}`,
     "object-src 'none'",

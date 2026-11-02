@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "5a7e66f8725b9461e130533f75f641a99fc4e2601b90bfc50a891b93757e67c7",
+        "sha256": "f14f4078894a6adedcc6ee07e67dacd58f1f0a4ef6419cf1cf735527f01ea0cc",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "89bf77b73a46dae66dba30a39953909fad39d2dc66b2c5064bd8f86783e5e15b",
+        "sha256": "31648d437ebb892b3e4643a8475f1727a7ee4aaf6e60cd1afa21dea2ffab8b39",
         "title": null,
         "version": null
       }
@@ -1388,6 +1388,36 @@
         "name": "AddContractSignatures",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261027000905_AddContractSignatures.cs",
         "sha256": "ce9279b44b656dbf3d38fdb277268b6ff5b10829ce191b1723cc7bb3803155d2"
+      },
+      {
+        "id": "20261102120610",
+        "name": "AddRefreshTokens",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102120610_AddRefreshTokens.cs",
+        "sha256": "37d3d4ad9441754a29b4dc7c9faae498d298f19ff06e2c3cb707803049793d48"
+      },
+      {
+        "id": "20261102130658",
+        "name": "AddEmailOutboxAndAccountTokens",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102130658_AddEmailOutboxAndAccountTokens.cs",
+        "sha256": "2e7bd28ee6d82fe9a09585d80e55c869fecc3c0223e51c4e30189f31b4d83c50"
+      },
+      {
+        "id": "20261102161112",
+        "name": "AddAirlineRegistryCheck",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102161112_AddAirlineRegistryCheck.cs",
+        "sha256": "6976e771229cd9522cdd4f2776f44d692f88358899455c5e8bf25464a2d5ec0f"
+      },
+      {
+        "id": "20261102163828",
+        "name": "AddAirlinePermitsAndContractLifecycle",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102163828_AddAirlinePermitsAndContractLifecycle.cs",
+        "sha256": "b8cd7d54a9bf5aad4873031ffccd595bc5e94ea003962cb7ae379c56cf74d164"
+      },
+      {
+        "id": "20261102173042",
+        "name": "GrantEmailOutboxToApplication",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261102173042_GrantEmailOutboxToApplication.cs",
+        "sha256": "40ff26b6e8c0c2d43a9e34f32b70e0b564b317f3b71f91b6238c933cc063de83"
       }
     ],
     "manifestContracts": [

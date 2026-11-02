@@ -148,6 +148,15 @@ services:
       Authentication__Audience: "${Authentication__Audience:?Authentication__Audience must be set}"
       Authentication__SigningKeyBase64: "${Authentication__SigningKeyBase64:?Authentication__SigningKeyBase64 must be set}"
       Authentication__AccessTokenMinutes: "${Authentication__AccessTokenMinutes:-15}"
+      # Portal emails (ADR-0022): Mailpit captures them locally unless real SMTP settings are given.
+      Smtp__Host: "${Smtp__Host:-mailpit}"
+      Smtp__Port: "${Smtp__Port:-1025}"
+      Smtp__UseTls: "${Smtp__UseTls:-false}"
+      Smtp__Username: "${Smtp__Username:-}"
+      Smtp__Password: "${Smtp__Password:-}"
+      Smtp__FromAddress: "${Smtp__FromAddress:-no-reply@elevant.local}"
+      Smtp__FromName: "${Smtp__FromName:-ELEVANT}"
+      AccountEmail__PublicWebBaseUrl: "${AccountEmail__PublicWebBaseUrl:-http://localhost:3000}"
       Cors__AllowedOrigins__0: "${CORS_ALLOWED_ORIGIN_0:-http://localhost:5173}"
       Cors__AllowedOrigins__1: "${CORS_ALLOWED_ORIGIN_1:-http://localhost:3000}"
       HttpsRedirection__Enabled: "false"
@@ -162,6 +171,16 @@ services:
     networks:
       - edge
       - data
+
+  # Local email capture: http://127.0.0.1:8025 shows every email the API sends.
+  mailpit:
+    image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+    ports:
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+    restart: unless-stopped
+    logging: *rotated-logs
+    networks:
+      - edge
 
 volumes:
   sql-local-data:

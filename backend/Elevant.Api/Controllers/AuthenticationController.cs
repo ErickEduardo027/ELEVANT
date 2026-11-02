@@ -6,6 +6,7 @@ using Elevant.Application.Identity.CreateSession;
 using Elevant.Application.Identity.ChangePassword;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity.GetCurrentSession;
+using Elevant.Application.Identity.RefreshSession;
 using Elevant.Contracts.Identity;
 using Elevant.Domain.Enumerations;
 using Microsoft.AspNetCore.Authorization;
@@ -23,7 +24,9 @@ namespace Elevant.Api.Controllers;
 public sealed class AuthenticationController(
     CreateSessionHandler createSessionHandler,
     GetCurrentSessionHandler getCurrentSessionHandler,
-    ChangePasswordHandler changePasswordHandler) : ControllerBase
+    ChangePasswordHandler changePasswordHandler,
+    RefreshSessionHandler refreshSessionHandler,
+    IAccountEmailStore accountEmails) : ControllerBase
 {
     /// <summary>Exchanges valid Development credentials for a short-lived bearer token.</summary>
     [AllowAnonymous]
@@ -31,6 +34,7 @@ public sealed class AuthenticationController(
     [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
     [HttpPost(Name = "CreateSession")]
     [ProducesResponseType<SessionResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<LoginChallengeResponse>(StatusCodes.Status202Accepted, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -46,6 +50,10 @@ public sealed class AuthenticationController(
         var result = await createSessionHandler.HandleAsync(
             new CreateSessionCommand(request.Email, request.Password),
             cancellationToken);
+
+        // Portal accounts continue with the code sent by email (ADR-0022).
+        if (result.Challenge is { } challenge)
+            return Accepted(new LoginChallengeResponse(challenge.ChallengeId, challenge.EmailHint, challenge.ExpiresAt));
 
         if (!result.IsSuccess)
         {
@@ -66,13 +74,111 @@ public sealed class AuthenticationController(
             };
         }
 
-        var session = result.Session!;
-        return Ok(new SessionResponse(
-            AccessToken: session.AccessToken.Value,
-            TokenType: "Bearer",
-            ExpiresAt: session.AccessToken.ExpiresAt,
-            Actor: MapActor(session.Actor)));
+        return Ok(MapSession(result.Session!));
     }
+
+    /// <summary>Completes a portal login with the 6-digit code sent by email.</summary>
+    [AllowAnonymous]
+    [SessionCreationRateLimit]
+    [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
+    [HttpPost("verify-code", Name = "VerifyLoginCode")]
+    [ProducesResponseType<SessionResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    public async Task<ActionResult<SessionResponse>> VerifyCode(
+        [FromBody, BindRequired] VerifyLoginCodeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await createSessionHandler.VerifyCodeAsync(request.ChallengeId, request.Code, cancellationToken);
+        if (result.IsSuccess) return Ok(MapSession(result.Session!));
+        return result.Failure == CreateSessionFailure.TokenUnavailable
+            ? Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Authentication is temporarily unavailable.")
+            : UnauthorizedProblem(includeBearerChallenge: false);
+    }
+
+    /// <summary>Sends a new code for a pending portal login; the earlier code stops working.</summary>
+    [AllowAnonymous]
+    [SessionCreationRateLimit]
+    [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
+    [HttpPost("resend-code", Name = "ResendLoginCode")]
+    [ProducesResponseType<LoginChallengeResponse>(StatusCodes.Status202Accepted, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<ActionResult<LoginChallengeResponse>> ResendCode(
+        [FromBody, BindRequired] ResendLoginCodeRequest request,
+        CancellationToken cancellationToken)
+    {
+        var challenge = request.ChallengeId == Guid.Empty ? null
+            : await accountEmails.ResendLoginCodeAsync(request.ChallengeId, cancellationToken);
+        return challenge is null
+            ? UnauthorizedProblem(includeBearerChallenge: false)
+            : Accepted(new LoginChallengeResponse(challenge.ChallengeId, challenge.EmailHint, challenge.ExpiresAt));
+    }
+
+    /// <summary>
+    /// Renews the session with a refresh token, which is replaced in the same call (ADR-0021).
+    /// 409 <c>refresh_rotated</c> means another tab renewed it a moment ago: re-read the stored token.
+    /// </summary>
+    [AllowAnonymous]
+    [SessionCreationRateLimit]
+    [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
+    [HttpPost("refresh", Name = "RefreshSession")]
+    [ProducesResponseType<SessionResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    public async Task<ActionResult<SessionResponse>> Refresh(
+        [FromBody, BindRequired] RefreshSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await refreshSessionHandler.HandleAsync(request.RefreshToken, cancellationToken);
+        if (result.IsSuccess) return Ok(MapSession(result.Session!));
+        return result.Failure switch
+        {
+            RefreshSessionFailure.AlreadyRotated => Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "The refresh token was already renewed.",
+                Instance = HttpContext.Request.Path,
+                Extensions = { ["code"] = "refresh_rotated" },
+            }),
+            RefreshSessionFailure.TokenUnavailable => Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "Authentication is temporarily unavailable."),
+            _ => UnauthorizedProblem(includeBearerChallenge: false),
+        };
+    }
+
+    /// <summary>Ends the session: every refresh token of its family stops working.</summary>
+    [AllowAnonymous]
+    [SessionCreationRateLimit]
+    [RequestSizeLimit(ApiConfiguration.SessionRequestBodyLimitBytes)]
+    [HttpPost("logout", Name = "EndSession")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests, "application/problem+json")]
+    public async Task<IActionResult> Logout(
+        [FromBody, BindRequired] RefreshSessionRequest request,
+        CancellationToken cancellationToken)
+    {
+        await refreshSessionHandler.LogoutAsync(request.RefreshToken, cancellationToken);
+        return NoContent();
+    }
+
+    private static SessionResponse MapSession(SessionDetails session) => new(
+        AccessToken: session.AccessToken.Value,
+        TokenType: "Bearer",
+        ExpiresAt: session.AccessToken.ExpiresAt,
+        Actor: MapActor(session.Actor))
+    {
+        RefreshToken = session.RefreshToken?.Value,
+        RefreshExpiresAt = session.RefreshToken?.IdleExpiresAt,
+    };
 
     /// <summary>Changes a verified password, then requires a fresh login.</summary>
     [AllowAnonymous]

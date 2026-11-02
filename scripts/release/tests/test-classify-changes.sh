@@ -39,6 +39,7 @@ check public-seam '{"api_client_validate":true,"public_validate":true}' 'fronten
 check mobile-seam '{"api_client_validate":true,"mobile_validate":true}' 'frontend/mobile-agent/src/config/elevant-api.ts'
 check client-tooling '{"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' 'packages/api-client/scripts/check-openapi.mjs'
 check geo-generator '{"backend_validate":true,"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' 'scripts/geo/generate-do-territory.mjs'
+check data-generator '{"backend_validate":true,"aviam_validate":false,"public_validate":false,"api_release":false}' 'scripts/data/generate-openflights-airlines.mjs'
 check asset-generator '{"backend_validate":false,"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' 'scripts/assets/generate-service-illustrations.mjs'
 check publication-guards '{"backend_validate":true,"api_release":false,"aviam_validate":true,"public_validate":true,"aviam_release":false,"public_release":false}' 'backend/scripts/deployment/guard-api-publication.sh' 'frontend/scripts/deployment/guard-web-publication.sh'
 check ops-only '{"ops_validate":true,"database_release":false,"api_release":false,"aviam_release":false,"public_release":false}' 'ops/dokploy/firewall/elevant-firewall-apply'

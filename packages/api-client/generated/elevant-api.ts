@@ -359,6 +359,27 @@ export interface AirlineOperationalRequestPageResponse {
   requests: AirlineOperationalRequestResponse[];
 }
 
+export interface AirlinePermitData {
+  id: string;
+  airlineId: string;
+  airline: string;
+  kind: string;
+  number: string;
+  issuer: string;
+  issuedOn: string;
+  expiresOn: string;
+  validity: string;
+  review: string;
+  /** @nullable */
+  reviewNote?: string | null;
+  /** @nullable */
+  documentUrl?: string | null;
+  submittedAt: string;
+  /** @nullable */
+  reviewedAt?: string | null;
+  version: string;
+}
+
 export interface AirlinePortalStationResponse {
   id: string;
   code: string;
@@ -423,6 +444,60 @@ export interface AirlinePreinvoicePageResponse {
   limit: number;
   hasMore: boolean;
   preinvoices: AirlinePreinvoiceResponse[];
+}
+
+export interface AirlineRegistryCheck {
+  status: string;
+  /** @nullable */
+  source?: string | null;
+  /** @nullable */
+  matchedName?: string | null;
+  /** @nullable */
+  matchedIataCode?: string | null;
+  /** @nullable */
+  matchedIcaoCode?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  entityUrl?: string | null;
+  differences: string[];
+  checkedAt: string;
+}
+
+export interface ManagedAirlineData {
+  id: string;
+  sourceName: string;
+  displayName: string;
+  /** @nullable */
+  legalName?: string | null;
+  region: string;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  sourceUrl: string;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  isVerified: boolean;
+  isPublished: boolean;
+  version: string;
+  /** @nullable */
+  registryStatus?: string | null;
+  /** @nullable */
+  registrySource?: string | null;
+  /** @nullable */
+  registryCheckedAt?: string | null;
+  /** @nullable */
+  registryEntityUrl?: string | null;
+}
+
+export interface AirlineRegistryCheckResult {
+  airline: ManagedAirlineData;
+  check: AirlineRegistryCheck;
 }
 
 export interface AirlineTreasuryAdjustmentLineResponse {
@@ -755,6 +830,7 @@ export interface ClientUserData {
   /** @nullable */
   lastLoginAt?: string | null;
   version: string;
+  invitationPending: boolean;
 }
 
 export interface CommercialAccountResponse {
@@ -1014,6 +1090,53 @@ export interface ContractDraftOverviewData {
   recent: ContractDraftOverviewItemData[];
 }
 
+export type ContractLifecycleFailure = typeof ContractLifecycleFailure[keyof typeof ContractLifecycleFailure];
+
+
+export const ContractLifecycleFailure = {
+  NUMBER_0: 0,
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+} as const;
+
+export interface ContractLifecycleInput {
+  action: string;
+  reason: string;
+  expectedStatus: string;
+  /** @nullable */
+  validFrom?: string | null;
+  /** @nullable */
+  validTo?: string | null;
+}
+
+export interface ContractLifecycleResult {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  draftVersionId?: string | null;
+  failure?: ContractLifecycleFailure | null;
+  /** @nullable */
+  code?: string | null;
+}
+
+export interface ContractTimelineEntry {
+  at: string;
+  kind: string;
+  title: string;
+  /** @nullable */
+  detail?: string | null;
+  /** @nullable */
+  actor?: string | null;
+}
+
+export interface ContractTimelineData {
+  contractId: string;
+  contractCode: string;
+  status: string;
+  entries: ContractTimelineEntry[];
+}
+
 export interface CorrectExchangeRateInput {
   rate: number;
   source: string;
@@ -1024,7 +1147,8 @@ export interface CreateClientUserInput {
   firstName: string;
   lastName: string;
   email: string;
-  temporaryPassword: string;
+  /** @nullable */
+  temporaryPassword?: string | null;
 }
 
 export interface CreateDepartmentAccountInput {
@@ -1064,6 +1188,37 @@ export interface CreateGovernanceUserInput {
   expectedRampProfileVersion?: string | null;
   /** @nullable */
   expectedStationCodes?: string[] | null;
+}
+
+export interface SaveEmployeeInput {
+  firstName: string;
+  lastName: string;
+  identificationType: string;
+  identificationNumber: string;
+  employeeNumber: string;
+  department: string;
+  positionId: string;
+  stationIds: string[];
+  hireDate: string;
+  /** @nullable */
+  phoneNumber?: string | null;
+  /** @nullable */
+  corporateEmail?: string | null;
+  /** @nullable */
+  requisitionId?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface CreateInternalUserInput {
+  employee: SaveEmployeeInput;
+  kind: string;
+  temporaryPassword: string;
+  stationIds: string[];
+  /** @nullable */
+  accessProfileId?: string | null;
+  /** @nullable */
+  permissionCodes?: string[] | null;
 }
 
 export interface CreateManualTurnaroundRequest {
@@ -1361,6 +1516,24 @@ export interface EditPreinvoiceLineInput {
   exclude: boolean;
   reason: string;
   expectedVersion: string;
+}
+
+export interface EmailDeliveryResponse {
+  id: string;
+  recipient: string;
+  purpose: string;
+  status: string;
+  attempts: number;
+  createdAt: string;
+  /** @nullable */
+  sentAt?: string | null;
+  /** @nullable */
+  lastError?: string | null;
+}
+
+export interface EmailDeliveriesResponse {
+  smtpConfigured: boolean;
+  deliveries: EmailDeliveryResponse[];
 }
 
 export interface EmployeeAccountRefData {
@@ -2996,27 +3169,11 @@ export interface LegacyRoleData {
   activeUsers: number;
 }
 
-export interface ManagedAirlineData {
-  id: string;
-  sourceName: string;
-  displayName: string;
-  /** @nullable */
-  legalName?: string | null;
-  region: string;
-  /** @nullable */
-  countryCode?: string | null;
-  /** @nullable */
-  iataCode?: string | null;
-  /** @nullable */
-  icaoCode?: string | null;
-  /** @nullable */
-  logoUrl?: string | null;
-  sourceUrl: string;
-  /** @nullable */
-  verificationSourceUrl?: string | null;
-  isVerified: boolean;
-  isPublished: boolean;
-  version: string;
+export interface LoginChallengeResponse {
+  challengeId: string;
+  emailHint: string;
+  expiresAt: string;
+  readonly code: string;
 }
 
 export interface ManagedAirlineInput {
@@ -3683,6 +3840,10 @@ export interface OwnPresenceResponse {
   message?: string | null;
 }
 
+export interface PasswordResetRequest {
+  email: string;
+}
+
 export interface PreinvoiceDisputeResolutionResponse {
   id: string;
   decision: string;
@@ -3791,7 +3952,8 @@ export interface ProgramOccShiftResponse {
 
 export interface ProvisionAirlineInput {
   email: string;
-  temporaryPassword: string;
+  /** @nullable */
+  temporaryPassword?: string | null;
 }
 
 export interface ProvisioningTaskData {
@@ -3819,6 +3981,8 @@ export interface PublicAirlineData {
   /** @nullable */
   logoUrl?: string | null;
   isVerified: boolean;
+  /** @nullable */
+  registrySource?: string | null;
 }
 
 export interface PublicServiceData {
@@ -4219,6 +4383,10 @@ export interface RecordOccArrivalRequest {
   arrivedAt?: string | null;
 }
 
+export interface RefreshSessionRequest {
+  refreshToken: string;
+}
+
 export interface RegisterEmployeeInput {
   identificationType: string;
   identificationNumber: string;
@@ -4332,6 +4500,10 @@ export interface RequestUserAccessInput {
   employeeId?: string | null;
 }
 
+export interface ResendLoginCodeRequest {
+  challengeId: string;
+}
+
 export interface ResetGovernancePasswordRequest {
   temporaryPassword: string;
 }
@@ -4353,6 +4525,13 @@ export interface ResolvePreinvoiceDisputeResponse {
   preinvoiceId: string;
   status: string;
   replayed: boolean;
+}
+
+export interface ReviewAirlinePermitInput {
+  verified: boolean;
+  /** @nullable */
+  note?: string | null;
+  expectedVersion: string;
 }
 
 export interface ReviewCommercialInput {
@@ -4420,26 +4599,6 @@ export interface SaveChargeTariffDraftInput {
   note?: string | null;
   rates: ChargeRateInput[];
   expectedVersion: string;
-}
-
-export interface SaveEmployeeInput {
-  firstName: string;
-  lastName: string;
-  identificationType: string;
-  identificationNumber: string;
-  employeeNumber: string;
-  department: string;
-  positionId: string;
-  stationIds: string[];
-  hireDate: string;
-  /** @nullable */
-  phoneNumber?: string | null;
-  /** @nullable */
-  corporateEmail?: string | null;
-  /** @nullable */
-  requisitionId?: string | null;
-  /** @nullable */
-  expectedVersion?: string | null;
 }
 
 export interface SaveFinancePackageRequest {
@@ -4518,6 +4677,10 @@ export interface SendOperationMessageRequest {
   content: string;
 }
 
+export interface SendTestEmailRequest {
+  to: string;
+}
+
 export interface ServiceClosureData {
   id: string;
   serviceId: string;
@@ -4571,6 +4734,10 @@ export interface SessionResponse {
   tokenType: string;
   expiresAt: string;
   actor: SessionActorResponse;
+  /** @nullable */
+  refreshToken?: string | null;
+  /** @nullable */
+  refreshExpiresAt?: string | null;
 }
 
 export interface SetContractPackagesRequest {
@@ -4592,6 +4759,11 @@ export interface SetOperationalNotificationReadRequest {
   read: boolean;
 }
 
+export interface SetPasswordWithTokenRequest {
+  token: string;
+  newPassword: string;
+}
+
 export interface SetSuggestedProfileInput {
   /** @nullable */
   accessProfileId?: string | null;
@@ -4603,6 +4775,16 @@ export interface SignContractRequest {
   signerTitle: string;
   documentSha256: string;
   accepted: boolean;
+}
+
+export interface SubmitAirlinePermitInput {
+  kind: string;
+  number: string;
+  issuer: string;
+  issuedOn: string;
+  expiresOn: string;
+  /** @nullable */
+  documentUrl?: string | null;
 }
 
 export interface SubmitCommercialRequestRequest {
@@ -4815,6 +4997,11 @@ export interface VerifyAirlineInput {
   logoUrl?: string | null;
 }
 
+export interface VerifyLoginCodeRequest {
+  challengeId: string;
+  code: string;
+}
+
 export type GetAccountChangesParams = {
 after?: string;
 limit?: number;
@@ -4865,6 +5052,10 @@ version?: string;
 export type UploadCommercialMediaBody = {
   purpose?: string;
   file?: Blob;
+};
+
+export type GetContractsAirlinePermitsParams = {
+review?: string;
 };
 
 export type ListDepartmentAccessCandidatesParams = {
@@ -6116,7 +6307,7 @@ export const getCreateSessionUrl = () => {
 /**
  * @summary Exchanges valid Development credentials for a short-lived bearer token.
  */
-export const createSession = async (createSessionRequest: CreateSessionRequest, options?: RequestInit): Promise<SessionResponse> => {
+export const createSession = async (createSessionRequest: CreateSessionRequest, options?: RequestInit): Promise<SessionResponse | LoginChallengeResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -6136,7 +6327,7 @@ const res = await fetch(getCreateSessionUrl(),
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: SessionResponse = body ? JSON.parse(body) : {}
+  const data: SessionResponse | LoginChallengeResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -6168,6 +6359,155 @@ export const getCurrentSession = async ( options?: RequestInit): Promise<Current
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CurrentSessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getVerifyLoginCodeUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session/verify-code`
+}
+
+/**
+ * @summary Completes a portal login with the 6-digit code sent by email.
+ */
+export const verifyLoginCode = async (verifyLoginCodeRequest: VerifyLoginCodeRequest, options?: RequestInit): Promise<SessionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getVerifyLoginCodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(verifyLoginCodeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getResendLoginCodeUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session/resend-code`
+}
+
+/**
+ * @summary Sends a new code for a pending portal login; the earlier code stops working.
+ */
+export const resendLoginCode = async (resendLoginCodeRequest: ResendLoginCodeRequest, options?: RequestInit): Promise<LoginChallengeResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResendLoginCodeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resendLoginCodeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: LoginChallengeResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRefreshSessionUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session/refresh`
+}
+
+/**
+ * @summary Renews the session with a refresh token, which is replaced in the same call (ADR-0021).
+409 `refresh_rotated` means another tab renewed it a moment ago: re-read the stored token.
+ */
+export const refreshSession = async (refreshSessionRequest: RefreshSessionRequest, options?: RequestInit): Promise<SessionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRefreshSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(refreshSessionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getEndSessionUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session/logout`
+}
+
+/**
+ * @summary Ends the session: every refresh token of its family stops working.
+ */
+export const endSession = async (refreshSessionRequest: RefreshSessionRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getEndSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(refreshSessionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
   return data
 }
 
@@ -6295,6 +6635,38 @@ export const enrichManagedAirlines = async ( options?: RequestInit): Promise<Air
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlineEnrichmentResult = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCheckManagedAirlineRegistryUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/airlines/${id}/registry-check`
+}
+
+/**
+ * @summary Checks the airline against public registries (Wikidata, then OpenFlights) and stores the
+verdict; a green check allows publishing it in step 2 of the public wizard (ADR-0023).
+ */
+export const checkManagedAirlineRegistry = async (id: string, options?: RequestInit): Promise<AirlineRegistryCheckResult> => {
+
+  const res = await fetch(getCheckManagedAirlineRegistryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineRegistryCheckResult = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -6632,6 +7004,37 @@ const res = await fetch(getProvisionCommercialAirlineUrl(requestId),
 
 
 
+export const getResendAirlineInvitationUrl = (accountId: string,) => {
+
+
+
+
+  return `/api/v1/governance/provisioning/accounts/${accountId}/resend-invitation`
+}
+
+/**
+ * @summary Sends a new activation link to an airline account that has not activated yet (ADR-0022).
+ */
+export const resendAirlineInvitation = async (accountId: string, options?: RequestInit): Promise<CommercialAccountResponse> => {
+
+  const res = await fetch(getResendAirlineInvitationUrl(accountId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialAccountResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getListCommercialRequestsUrl = () => {
 
 
@@ -6797,6 +7200,36 @@ export const getDownloadContractDocumentUrl = (versionId: string,) => {
 export const downloadContractDocument = async (versionId: string, options?: RequestInit): Promise<Blob> => {
 
   const res = await fetch(getDownloadContractDocumentUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getDownloadContractDraftPdfUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/draft/pdf`
+}
+
+/**
+ * @summary Review PDF of a draft version, watermarked «BORRADOR» and never signable.
+ */
+export const downloadContractDraftPdf = async (versionId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getDownloadContractDraftPdfUrl(versionId),
   {
     ...options,
     method: 'GET'
@@ -7025,6 +7458,201 @@ export const activateManagedContractDraft = async (versionId: string, options?: 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePermitsUrl = () => {
+
+
+
+
+  return `/api/v1/airline/permits`
+}
+
+export const getAirlinePermits = async ( options?: RequestInit): Promise<AirlinePermitData[]> => {
+
+  const res = await fetch(getGetAirlinePermitsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSubmitAirlinePermitUrl = () => {
+
+
+
+
+  return `/api/v1/airline/permits`
+}
+
+export const submitAirlinePermit = async (submitAirlinePermitInput: SubmitAirlinePermitInput, options?: RequestInit): Promise<AirlinePermitData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSubmitAirlinePermitUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitAirlinePermitInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetContractsAirlinePermitsUrl = (params?: GetContractsAirlinePermitsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/permits?${stringifiedParams}` : `/api/v1/contracts/permits`
+}
+
+export const getContractsAirlinePermits = async (params?: GetContractsAirlinePermitsParams, options?: RequestInit): Promise<AirlinePermitData[]> => {
+
+  const res = await fetch(getGetContractsAirlinePermitsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReviewAirlinePermitUrl = (permitId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/permits/${permitId}/review`
+}
+
+export const reviewAirlinePermit = async (permitId: string,
+    reviewAirlinePermitInput: ReviewAirlinePermitInput, options?: RequestInit): Promise<AirlinePermitData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReviewAirlinePermitUrl(permitId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reviewAirlinePermitInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetContractTimelineUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/timeline`
+}
+
+export const getContractTimeline = async (versionId: string, options?: RequestInit): Promise<ContractTimelineData> => {
+
+  const res = await fetch(getGetContractTimelineUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractTimelineData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getApplyContractLifecycleUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/lifecycle`
+}
+
+export const applyContractLifecycle = async (versionId: string,
+    contractLifecycleInput: ContractLifecycleInput, options?: RequestInit): Promise<ContractLifecycleResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getApplyContractLifecycleUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(contractLifecycleInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractLifecycleResult = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -7521,6 +8149,45 @@ const res = await fetch(getCreateDepartmentAdministratorUrl(department),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(createDepartmentAccountInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateInternalUserUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/internal-users`
+}
+
+/**
+ * @summary Super administrator only: registers the employee and creates its account (administrator or
+member with per-option permissions) in one step, without a Human Resources request.
+ */
+export const createInternalUser = async (department: string,
+    createInternalUserInput?: CreateInternalUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateInternalUserUrl(department),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createInternalUserInput)
   }
 )
 
@@ -14295,6 +14962,185 @@ const res = await fetch(getPutOwnOperationalPresenceStatusUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OwnPresenceResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getActivatePortalAccountUrl = () => {
+
+
+
+
+  return `/api/v1/auth/account/activate`
+}
+
+/**
+ * @summary Confirms the email of an invited portal account and sets its first password.
+ */
+export const activatePortalAccount = async (setPasswordWithTokenRequest: SetPasswordWithTokenRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getActivatePortalAccountUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setPasswordWithTokenRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getRequestPasswordResetUrl = () => {
+
+
+
+
+  return `/api/v1/auth/password-reset`
+}
+
+/**
+ * @summary Sends a reset link when a portal account uses this email. Always answers 202.
+ */
+export const requestPasswordReset = async (passwordResetRequest: PasswordResetRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRequestPasswordResetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(passwordResetRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getConfirmPasswordResetUrl = () => {
+
+
+
+
+  return `/api/v1/auth/password-reset/confirm`
+}
+
+/**
+ * @summary Sets a new password from a reset link; every open session ends.
+ */
+export const confirmPasswordReset = async (setPasswordWithTokenRequest: SetPasswordWithTokenRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getConfirmPasswordResetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setPasswordWithTokenRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getSendTestEmailUrl = () => {
+
+
+
+
+  return `/api/v1/governance/email/test`
+}
+
+/**
+ * @summary Superadmin smoke test: queues an email to check the no-reply sender.
+ */
+export const sendTestEmail = async (sendTestEmailRequest: SendTestEmailRequest, options?: RequestInit): Promise<EmailDeliveryResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSendTestEmailUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(sendTestEmailRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmailDeliveryResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListEmailDeliveriesUrl = () => {
+
+
+
+
+  return `/api/v1/governance/email/deliveries`
+}
+
+/**
+ * @summary Latest emails with their delivery state (no bodies), for the superadmin.
+ */
+export const listEmailDeliveries = async ( options?: RequestInit): Promise<EmailDeliveriesResponse> => {
+
+  const res = await fetch(getListEmailDeliveriesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmailDeliveriesResponse = body ? JSON.parse(body) : {}
   return data
 }
 

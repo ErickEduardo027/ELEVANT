@@ -78,6 +78,12 @@ npm run build
 
 Para E2E, instale los navegadores de Playwright según su documentación y ejecute `npm run test:e2e`.
 
+`npm run test:e2e:stack` recorre el portal contra el stack local real: API en `127.0.0.1:18088`, SQL Server y Mailpit en `127.0.0.1:8025`. Cubre la recuperación de contraseña por correo, la nueva contraseña y el inicio de sesión con el código de 6 dígitos, y lee los correos desde la API de Mailpit. Requisitos:
+- Levantar antes el stack con `compose.local.yml`.
+- Usar la cuenta sembrada `airline.client@dev.elevant.test`, a la que la prueba cambia la contraseña.
+
+El navegador usa el nombre HTTPS `api.stack.elevant.test`, que exige la CSP, y la prueba lo reenvía a la API local. No corre en CI: sin el stack, la prueba se omite.
+
 Variables públicas actuales:
 
 ```text

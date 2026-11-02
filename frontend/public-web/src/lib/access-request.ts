@@ -1,4 +1,4 @@
-import { identityDocumentExample, normalizeIdentityDocument, normalizePhone } from "@elevant/api-client";
+import { checkIdentityDocument, normalizePhone } from "@elevant/api-client";
 import { type GeoDivision, isCountryCode } from "./geo/catalog";
 
 export const TITLE_OTHER = "Otro";
@@ -59,7 +59,6 @@ const LETTER = /\p{L}/gu;
 // Mirrors what the API accepts through .NET MailAddress: a dotted local part
 // and a domain made of valid labels ending in an alphabetic TLD.
 const EMAIL_PATTERN = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$/;
-const DOCUMENT_PATTERN = /^[A-Za-z0-9 /-]{3,40}$/;
 
 export function effectiveTitle(draft: Pick<RepresentativeDraft, "titleOption" | "titleCustom">): string {
   return draft.titleOption === TITLE_OTHER ? draft.titleCustom.trim() : draft.titleOption;
@@ -104,21 +103,19 @@ export function validateRepresentative(
   if (draft.nationalityCode && !isCountryCode(draft.nationalityCode))
     errors.nationalityCode = "Seleccione una nacionalidad de la lista.";
 
-  const documentNumber = draft.documentNumber.trim();
-  if (draft.documentType && !["NationalId", "Passport", "Other"].includes(draft.documentType))
+  // Same position-by-position rules and messages as the API (IdentityDocuments.Check).
+  if (!draft.documentType) errors.documentType = "Seleccione el tipo de documento: cédula o pasaporte.";
+  else if (!["NationalId", "Passport"].includes(draft.documentType))
     errors.documentType = "Seleccione un tipo de documento de la lista.";
-  else if (draft.documentType && !documentNumber)
-    errors.documentNumber = "Ingrese el número del documento indicado.";
-  else if (!draft.documentType && documentNumber)
-    errors.documentType = "Seleccione el tipo del documento indicado.";
-  else if (documentNumber && draft.documentType === "NationalId" &&
-    normalizeIdentityDocument("Cedula", documentNumber) === null)
-    errors.documentNumber = `La cédula no es válida: revise los 11 dígitos y el dígito verificador. Formato: ${identityDocumentExample("Cedula")}.`;
-  else if (documentNumber && draft.documentType === "Passport" &&
-    normalizeIdentityDocument("Passport", documentNumber, draft.nationalityCode) === null)
-    errors.documentNumber = `El número de pasaporte no tiene el formato esperado: ${identityDocumentExample("Passport", draft.nationalityCode)}.`;
-  else if (documentNumber && draft.documentType === "Other" && !DOCUMENT_PATTERN.test(documentNumber))
-    errors.documentNumber = "El número de documento debe tener entre 3 y 40 letras, dígitos, espacios, / o -.";
+  else if (draft.documentType === "NationalId" && draft.nationalityCode && draft.nationalityCode !== "DO")
+    errors.documentType = "La cédula es solo para nacionalidad dominicana; para otra nacionalidad elija pasaporte.";
+  else if (draft.documentType === "Passport" && !draft.nationalityCode)
+    errors.nationalityCode = "Seleccione la nacionalidad del pasaporte: su formato depende del país.";
+  else {
+    const check = checkIdentityDocument(draft.documentType === "NationalId" ? "Cedula" : "Passport",
+      draft.documentNumber, draft.documentType === "Passport" ? draft.nationalityCode : null);
+    if (check.problem) errors.documentNumber = check.problem;
+  }
 
   if (draft.address.trim().length > 250) errors.address = "La dirección admite un máximo de 250 caracteres.";
 

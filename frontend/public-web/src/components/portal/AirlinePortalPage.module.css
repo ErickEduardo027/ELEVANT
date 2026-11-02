@@ -92,3 +92,34 @@
 @container portal (max-width: 37.99rem) { .contractRateList > div { grid-template-columns: 1fr; gap: .2rem; } .operation, .requestHeading, .realScope { align-items: flex-start; flex-direction: column; } .operationSide { justify-items: start; text-align: left; } .requestHeading h1 { max-width: none; } }
 @container portal (max-width: 49.99rem) { .preinvoiceLines > div { grid-template-columns: 1fr; gap: .2rem; } }
 @container portal (max-width: 23.99rem) { .metrics { grid-template-columns: 1fr; } }
+
+/* Contract PDF actions (download / print the official document). */
+.pdfActions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .5rem 0 .75rem; }
+.pdfActions button { min-height: 2.5rem; padding: .5rem .95rem; border: 1px solid #123f81; border-radius: .5rem; background: #fff; color: #123f81; font-weight: 700; font-size: .8rem; cursor: pointer; }
+.pdfActions button:first-child { background: #123f81; color: #fff; }
+.pdfActions button:disabled { opacity: .6; cursor: progress; }
+.pdfActions button:focus-visible { outline: 3px solid #ff5c00; outline-offset: 2px; }
+.pdfActions p { flex-basis: 100%; margin: 0; color: #b42318; font-size: .78rem; }
+
+/* Printing the web view (Ctrl+P) keeps only the contract content. */
+@media print {
+  .pdfActions, .draftCommentForm, .loadMore { display: none !important; }
+  .panel { break-inside: avoid; box-shadow: none !important; border: 1px solid #c8d3e0; }
+  .contractRateList > div { background: none; border-bottom: 1px solid #dce6f0; border-radius: 0; }
+}
+
+/* Permit dossier and contract timeline (ADR-0024). */
+.permitOk, .permitMissing { padding: .3rem .65rem; border-radius: 999px; font-size: .72rem; }
+.permitOk { background: #e8f6ee; color: #145c36; }
+.permitMissing { background: #fff1e9; color: #81401f; }
+.timeline { list-style: none; margin: .75rem 0 0; padding: 0 0 0 1rem; border-left: 2px solid #dce6f0; display: grid; gap: .7rem; }
+.timeline li { position: relative; display: grid; gap: .1rem; font-size: .8rem; color: #435c76; }
+.timeline li::before { content: ""; position: absolute; left: -1.38rem; top: .3rem; width: .6rem; height: .6rem; border-radius: 50%; background: #123f81; }
+.timeline li[data-kind="permit"]::before { background: #d97706; }
+.timeline li[data-kind="signature"]::before { background: #ff5c00; }
+.timeline li[data-kind="upcoming"]::before { background: #fff; border: 2px dashed #94a3b8; }
+.timeline time { font-size: .7rem; }
+.timeline strong { color: #123f81; }
+/* Long option names and the file input must not widen the panel on phones. */
+.panel, .draftCommentForm { min-width: 0; }
+.draftCommentForm select, .draftCommentForm input:not([type="checkbox"]):not([type="radio"]) { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }

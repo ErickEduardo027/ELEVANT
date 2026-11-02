@@ -3,6 +3,7 @@ import { createPrivateWebAccountChangeObserver } from '../../../services/account
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import ContractPackagesPanel from './ContractPackagesPanel';
+import ContractPdfButtons from '../agreements/ContractPdfButtons';
 import { activateManagedDraft, getManagedDrafts, updateManagedDraft } from '../../../services/commercialGovernanceApi';
 
 export default function ManagedDraftsPage({ canEdit = true, canActivate = true }) {
@@ -92,6 +93,7 @@ function DraftEditor({ draft, act, canEdit, canActivate, onPackagesSaved }) {
   const updateRate = (index, patch) => setRates(current => current.map((item, position) => (position === index ? { ...item, ...patch } : item)));
   const updateCharge = (id, patch) => setCharges(current => current.map(item => (item.chargeId === id ? { ...item, ...patch } : item)));
   return <div><p className="text-xs font-mono text-signal-500">{draft.contractCode}</p><h2 className="mt-1 text-xl font-bold">{draft.airline}</h2><p className="mt-1 text-xs text-text-secondary-light">Estaciones: {draft.stations.join(' · ')}</p>
+    <ContractPdfButtons versionId={draft.id} fileName={`borrador-${draft.contractCode}.pdf`} draft className="mt-3" />
     <p className="mt-2 inline-flex rounded-full bg-black/5 px-2.5 py-1 text-xs font-semibold dark:bg-white/10">{VERSION_STATUS[draft.versionStatus] ?? draft.versionStatus ?? 'Borrador'}</p>
     {draft.financeDecision === 'Returned' && !pending && <p role="alert" className="mt-3 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">Finanzas devolvió el contrato: {draft.financeReason}</p>}
     <section className="mt-5 rounded-lg bg-black/[.03] p-4 dark:bg-white/[.04]"><h3 className="text-sm font-bold">Observaciones de la aerolínea</h3>{draft.comments.length ? <ul className="mt-3 space-y-2">{draft.comments.map(comment => <li key={comment.id} className="border-b border-black/5 pb-2 text-sm"><strong>{comment.author}</strong><p>{comment.body}</p><time className="text-xs text-text-secondary-light">{new Date(comment.at).toLocaleString('es-DO')}</time></li>)}</ul> : <p className="mt-2 text-xs text-text-secondary-light">Aún no hay comentarios.</p>}</section>

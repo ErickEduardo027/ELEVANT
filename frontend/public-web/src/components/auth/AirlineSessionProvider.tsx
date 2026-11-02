@@ -12,7 +12,8 @@ import { ElevantApiError, type AirlineContractPageResponse, type ContractDocumen
   type PreinvoiceDisputeListResponse,
   type DisputeAirlinePreinvoiceRequest,
   type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse,
-  type SessionActorResponse } from "@elevant/api-client";
+  type SessionActorResponse, type SessionResponse, type AirlinePermitData, type SubmitAirlinePermitInput,
+  type ContractTimelineData } from "@elevant/api-client";
 import { createAirlineTreasuryService, type AirlineTreasuryService, type AirlineTreasuryStatement, type AirlineTreasuryInvoiceDetail, type AirlineTreasuryReceipt, type AirlineTreasuryNotes } from "@/lib/airline-treasury-service";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
@@ -34,21 +35,38 @@ export interface AirlineDraftData {
 }
 
 export type AirlineSessionStatus = "loading" | "anonymous" | "ready" | "unavailable";
+/** The 6-digit email step of the portal login (ADR-0022). */
+export interface AirlineLoginChallenge { challengeId: string; emailHint: string; expiresAt: string }
 export type AirlineSignInResult =
   | { ok: true }
+  | { ok: false; reason: "code-required"; challenge: AirlineLoginChallenge }
   | { ok: false; reason: "invalid" | "forbidden" | "context" | "password-change-required" | "rate-limited" | "unavailable" };
+export type AirlineSignInFailure = Exclude<AirlineSignInResult, { ok: true } | { reason: "code-required" }>["reason"];
+/** Result of an activation or reset link: invalid-link covers used and expired links. */
+export type AirlineLinkResult = { ok: true } | { ok: false; reason: "invalid-link" | "policy" | "rate-limited" | "unavailable" };
 export type AirlinePasswordChangeResult = { ok: true } | { ok: false; reason: "invalid" | "policy" | "rate-limited" | "unavailable" };
 
 interface AirlineSessionContextValue {
   status: AirlineSessionStatus;
   session: AirlineSessionData | null;
   signIn(input: { email: string; password: string }): Promise<AirlineSignInResult>;
+  verifyLoginCode(challengeId: string, code: string): Promise<AirlineSignInResult>;
+  resendLoginCode(challengeId: string): Promise<AirlineLoginChallenge | null>;
+  activateAccount(token: string, newPassword: string): Promise<AirlineLinkResult>;
+  requestPasswordReset(email: string): Promise<{ ok: boolean }>;
+  resetPassword(token: string, newPassword: string): Promise<AirlineLinkResult>;
   changePassword(input: { email: string; currentPassword: string; newPassword: string }): Promise<AirlinePasswordChangeResult>;
   signOut(): void;
   retry(): Promise<void>;
   getContracts(page?: number): Promise<AirlineContractPageResponse>;
   getContractDocument(versionId: string): Promise<ContractDocumentResponse>;
   downloadContractDocument(versionId: string): Promise<Blob>;
+  /** Watermarked review PDF of a draft shared with the airline. */
+  downloadContractDraft(versionId: string): Promise<Blob>;
+  /** Permit dossier of the airline and its submission (ADR-0024). */
+  getPermits(): Promise<AirlinePermitData[]>;
+  submitPermit(input: SubmitAirlinePermitInput, document?: File | null): Promise<AirlinePermitData>;
+  getContractTimeline(versionId: string): Promise<ContractTimelineData>;
   signContract(versionId: string, signerName: string, signerTitle: string, documentSha256: string,
     idempotencyKey: string): Promise<ContractDocumentResponse>;
   getOperations(page?: number): Promise<AirlineOperationPageResponse>;
@@ -81,7 +99,12 @@ const AirlineSessionContext = createContext<AirlineSessionContextValue | null>(n
 interface StoredSession {
   accessToken: string;
   expiresAt: string;
+  /** Renews the access token inside this tab (ADR-0021); null when the API issued none. */
+  refreshToken: string | null;
 }
+
+/** The portal renews this long before the access token expires. */
+export const RENEW_BEFORE_MS = 60_000;
 
 class AirlineAccessDenied extends Error {}
 
@@ -103,10 +126,12 @@ function readStoredSession(): StoredSession | null {
     const value: unknown = JSON.parse(raw);
     if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Invalid session");
     const record = value as Record<string, unknown>;
+    const refreshToken = typeof record.refreshToken === "string" && record.refreshToken ? record.refreshToken : null;
+    // An expired access token is still a session while it can be renewed.
     if (typeof record.accessToken !== "string" || !record.accessToken
-      || typeof record.expiresAt !== "string" || Date.parse(record.expiresAt) <= Date.now()
-      || !Number.isFinite(Date.parse(record.expiresAt))) throw new Error("Expired session");
-    return { accessToken: record.accessToken, expiresAt: record.expiresAt };
+      || typeof record.expiresAt !== "string" || !Number.isFinite(Date.parse(record.expiresAt))
+      || (!refreshToken && Date.parse(record.expiresAt) <= Date.now())) throw new Error("Expired session");
+    return { accessToken: record.accessToken, expiresAt: record.expiresAt, refreshToken };
   } catch {
     clearStoredSession();
     return null;
@@ -118,7 +143,17 @@ function saveStoredSession(value: StoredSession) {
   catch { /* The live tab still works when storage is unavailable. */ }
 }
 
-function failureReason(error: unknown): Exclude<AirlineSignInResult, { ok: true }>["reason"] {
+function linkFailure(error: unknown): AirlineLinkResult {
+  if (error instanceof ElevantApiError) {
+    if (error.status === 400 && error.code === "password_policy") return { ok: false, reason: "policy" };
+    if (error.status === 400) return { ok: false, reason: "invalid-link" };
+    if (error.status === 429) return { ok: false, reason: "rate-limited" };
+  }
+  if (error instanceof TypeError) return { ok: false, reason: "invalid-link" };
+  return { ok: false, reason: "unavailable" };
+}
+
+function failureReason(error: unknown): AirlineSignInFailure {
   if (error instanceof AirlineAccessDenied) return "forbidden";
   if (error instanceof ElevantApiError) {
     if (error.status === 409 && error.code === "password_change_required") return "password-change-required";
@@ -159,12 +194,31 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setStatus("anonymous");
   }, []);
 
+  /** Replaces the tokens of the tab; resolves false when the server ended the session. */
+  const renew = useCallback(async (record: StoredSession): Promise<boolean | null> => {
+    if (!record.refreshToken) return false;
+    try {
+      const response = await createPublicWebApiClient({ baseUrl }).refreshSession(record.refreshToken);
+      Object.assign(record, { accessToken: response.accessToken, expiresAt: response.expiresAt,
+        refreshToken: response.refreshToken ?? null });
+      saveStoredSession(record);
+      return true;
+    } catch (error) {
+      if (error instanceof ElevantApiError && (error.status === 401 || error.status === 409)) return false;
+      return null;
+    }
+  }, [baseUrl]);
+
   const validate = useCallback(async (record: StoredSession) => {
     const request = ++generation.current;
     stored.current = record;
     setSession(null);
     setStatus("loading");
     try {
+      if (Date.parse(record.expiresAt) - Date.now() <= RENEW_BEFORE_MS) {
+        const renewed = await renew(record);
+        if (renewed === false) throw new ElevantApiError({ kind: "http", status: 401 });
+      }
       const live = await load(record);
       if (request !== generation.current) return;
       setSession(live);
@@ -174,7 +228,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       if (["invalid", "forbidden", "context"].includes(failureReason(error))) clear();
       else setStatus("unavailable");
     }
-  }, [clear, load]);
+  }, [clear, load, renew]);
 
   useEffect(() => {
     let active = true;
@@ -189,11 +243,27 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
 
   useEffect(() => {
     if (!session) return;
-    const remaining = Date.parse(session.expiresAt) - Date.now();
+    const record = stored.current;
+    const renewable = Boolean(record?.refreshToken);
+    const remaining = Date.parse(session.expiresAt) - Date.now() - (renewable ? RENEW_BEFORE_MS : 0);
     if (remaining > 2_147_483_647) return;
-    const timer = window.setTimeout(clear, Math.max(0, remaining));
+    const timer = window.setTimeout(() => {
+      if (!record || !renewable) { clear(); return; }
+      void renew(record).then((renewed) => {
+        if (renewed === false) { clear(); return; }
+        // After a network failure the session stays and the next attempt comes shortly.
+        const expiresAt = renewed ? record.expiresAt : new Date(Date.now() + RENEW_BEFORE_MS * 1.5).toISOString();
+        setSession((current) => current && { ...current, expiresAt });
+      });
+    }, Math.max(0, remaining));
     return () => window.clearTimeout(timer);
-  }, [clear, session]);
+  }, [clear, renew, session]);
+
+  const signOut = useCallback(() => {
+    const token = stored.current?.refreshToken;
+    clear();
+    if (token) void createPublicWebApiClient({ baseUrl }).endSession(token).catch(() => {});
+  }, [baseUrl, clear]);
 
   const refreshLive = useCallback(async () => {
     const record = stored.current;
@@ -245,16 +315,11 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     return () => { void observer.stop(); };
   }, [accountId, baseUrl, refreshLive, status]);
 
-  const signIn = useCallback(async (input: { email: string; password: string }): Promise<AirlineSignInResult> => {
-    const request = ++generation.current;
-    stored.current = null;
-    setSession(null);
-    clearStoredSession();
+  const establish = useCallback(async (request: number, response: SessionResponse): Promise<AirlineSignInResult> => {
     try {
-      const unauthenticated = createPublicWebApiClient({ baseUrl });
-      const response = await unauthenticated.createSession(input);
       if (!authorizedAirline(response.actor)) throw new AirlineAccessDenied();
-      const record = { accessToken: response.accessToken, expiresAt: response.expiresAt };
+      const record = { accessToken: response.accessToken, expiresAt: response.expiresAt,
+        refreshToken: response.refreshToken ?? null };
       const live = await load(record);
       if (request !== generation.current) return { ok: false, reason: "unavailable" };
       stored.current = record;
@@ -266,7 +331,71 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       if (request === generation.current) setStatus("anonymous");
       return { ok: false, reason: failureReason(error) };
     }
-  }, [baseUrl, load]);
+  }, [load]);
+
+  const signIn = useCallback(async (input: { email: string; password: string }): Promise<AirlineSignInResult> => {
+    const request = ++generation.current;
+    stored.current = null;
+    setSession(null);
+    clearStoredSession();
+    try {
+      const started = await createPublicWebApiClient({ baseUrl }).startSession(input);
+      if (started.kind === "code_required") {
+        const { challengeId, emailHint, expiresAt } = started.challenge;
+        return { ok: false, reason: "code-required", challenge: { challengeId, emailHint, expiresAt } };
+      }
+      return await establish(request, started.session);
+    } catch (error) {
+      if (request === generation.current) setStatus("anonymous");
+      return { ok: false, reason: failureReason(error) };
+    }
+  }, [baseUrl, establish]);
+
+  const verifyLoginCode = useCallback(async (challengeId: string, code: string): Promise<AirlineSignInResult> => {
+    const request = ++generation.current;
+    try {
+      return await establish(request, await createPublicWebApiClient({ baseUrl }).verifyLoginCode(challengeId, code));
+    } catch (error) {
+      if (request === generation.current) setStatus("anonymous");
+      return { ok: false, reason: error instanceof TypeError ? "invalid" : failureReason(error) };
+    }
+  }, [baseUrl, establish]);
+
+  const resendLoginCode = useCallback(async (challengeId: string): Promise<AirlineLoginChallenge | null> => {
+    try {
+      const { emailHint, expiresAt } = await createPublicWebApiClient({ baseUrl }).resendLoginCode(challengeId);
+      return { challengeId, emailHint, expiresAt };
+    } catch {
+      return null;
+    }
+  }, [baseUrl]);
+
+  const activateAccount = useCallback(async (token: string, newPassword: string): Promise<AirlineLinkResult> => {
+    try {
+      await createPublicWebApiClient({ baseUrl }).activateAccount(token, newPassword);
+      return { ok: true };
+    } catch (error) {
+      return linkFailure(error);
+    }
+  }, [baseUrl]);
+
+  const requestPasswordReset = useCallback(async (email: string) => {
+    try {
+      await createPublicWebApiClient({ baseUrl }).requestPasswordReset(email);
+      return { ok: true };
+    } catch {
+      return { ok: false };
+    }
+  }, [baseUrl]);
+
+  const resetPassword = useCallback(async (token: string, newPassword: string): Promise<AirlineLinkResult> => {
+    try {
+      await createPublicWebApiClient({ baseUrl }).resetPassword(token, newPassword);
+      return { ok: true };
+    } catch (error) {
+      return linkFailure(error);
+    }
+  }, [baseUrl]);
 
   const retry = useCallback(async () => {
     const record = stored.current ?? readStoredSession();
@@ -326,6 +455,16 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
 
   const downloadContractDocument = useCallback((versionId: string) =>
     withContractClient(client => client.downloadContractDocument(versionId, { cache: "no-store" })), [withContractClient]);
+  const downloadContractDraft = useCallback((versionId: string) =>
+    withContractClient(client => client.downloadContractDraftPdf(versionId, { cache: "no-store" })), [withContractClient]);
+  const getPermits = useCallback(() =>
+    withContractClient(client => client.getAirlinePermits({ cache: "no-store" })), [withContractClient]);
+  const submitPermit = useCallback((input: SubmitAirlinePermitInput, document?: File | null) =>
+    withContractClient(async client => client.submitAirlinePermit({
+      ...input, documentUrl: document ? await client.uploadAirlinePermitDocument(document) : null,
+    })), [withContractClient]);
+  const getContractTimeline = useCallback((versionId: string) =>
+    withContractClient(client => client.getContractTimeline(versionId, { cache: "no-store" })), [withContractClient]);
 
   const signContract = useCallback((versionId: string, signerName: string, signerTitle: string,
     documentSha256: string, idempotencyKey: string) => withContractClient(client => client.signContractVersion(versionId,
@@ -629,7 +768,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, changePassword, signOut: clear, retry, getContracts, getContractDocument, downloadContractDocument, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, submitPermit, getContractTimeline, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

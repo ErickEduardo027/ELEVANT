@@ -14,6 +14,8 @@ export default function AppShell({
   onLogout,
   notificationsEnabled = true,
   notificationsSource = 'legacy',
+  // Turns on the department bell, toasts and drawer; tests enable it explicitly.
+  observeNotifications = process.env.NODE_ENV !== 'test',
   profileActionsEnabled = true,
   frameProps,
   notificationCenter,
@@ -29,7 +31,7 @@ export default function AppShell({
   const department = notificationsSource === 'department';
   const notifications = useNotificationBadge({ fallback: fallbackCount, enabled: notificationsEnabled && !department && !notificationCenter, source: notificationsSource });
   const center = useDepartmentNotificationCenter({
-    enabled: notificationsEnabled && department && process.env.NODE_ENV !== 'test',
+    enabled: notificationsEnabled && department && observeNotifications,
     onOpen: target => target.path && router.push(target.path),
   });
 

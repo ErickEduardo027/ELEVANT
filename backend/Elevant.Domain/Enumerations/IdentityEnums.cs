@@ -48,3 +48,20 @@ public enum MembershipStatus
     Suspended,
     Ended,
 }
+
+/// <summary>Why an email is sent to an account (ADR-0022).</summary>
+public enum EmailPurpose
+{
+    Activation,
+    LoginCode,
+    PasswordReset,
+    Test,
+}
+
+/// <summary>Delivery state of an email in the outbox.</summary>
+public enum EmailDeliveryStatus
+{
+    Pending,
+    Sent,
+    Failed,
+}

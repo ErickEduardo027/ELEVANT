@@ -60,6 +60,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAccountChangePush, SignalRAccountChangePush>();
         if (configuration.GetValue<bool>("Realtime:AccountChangeDispatcherEnabled"))
             services.AddHostedService<AccountChangeDispatchWorker>();
+        services.AddHostedService<Elevant.Api.Messaging.EmailDispatchWorker>();
+        services.AddHostedService<Elevant.Api.Commercial.ContractLifecycleWorker>();
         if (!string.IsNullOrWhiteSpace(configuration["MediaStorage:Endpoint"]))
             services.AddHostedService<CommercialMediaCleanupWorker>();
         services.AddExceptionHandler<GlobalExceptionHandler>();

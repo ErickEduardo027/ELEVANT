@@ -126,6 +126,60 @@ describe("createElevantApiClient", () => {
     });
   });
 
+  it("renews and ends a session with the refresh token, never with the bearer", async () => {
+    const refreshToken = "aB3-dE5_fG7hI9jK1lM3nO5pQ7rS9tU1";
+    const requests: Array<{ url: string; authorization: string | null; body: unknown }> = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => { throw new Error("Refreshing must not request a bearer token"); },
+      fetch: async (input, init) => {
+        requests.push({ url: String(input), authorization: new Headers(init?.headers).get("authorization"),
+          body: JSON.parse(String(init?.body)) });
+        return String(input).endsWith("/logout") ? new Response(null, { status: 204 })
+          : jsonResponse({ ...session, refreshToken: "zZ9-yY8_xX7wW6vV5uU4tT3sS2rR1qQ0", refreshExpiresAt: "2026-12-01T00:00:00.000Z" });
+      },
+    });
+    await expect(client.refreshSession(refreshToken)).resolves.toMatchObject({ refreshToken: "zZ9-yY8_xX7wW6vV5uU4tT3sS2rR1qQ0" });
+    await client.endSession(refreshToken);
+    expect(requests).toEqual([
+      { url: "https://api.example.test/api/v1/auth/session/refresh", authorization: null, body: { refreshToken } },
+      { url: "https://api.example.test/api/v1/auth/session/logout", authorization: null, body: { refreshToken } },
+    ]);
+    await expect(client.refreshSession("short")).rejects.toThrow(TypeError);
+  });
+
+  it("runs the portal email steps without a bearer: code challenge, verify, resend, activation and reset", async () => {
+    const challengeId = "7a000000-0000-7000-8000-000000000001";
+    const challenge = { challengeId, emailHint: "a••••t@dev.elevant.test", expiresAt: "2026-11-02T13:10:00.000Z", code: "code_required" };
+    const token = "aB3-dE5_fG7hI9jK1lM3nO5pQ7rS9tU1";
+    const requests: Array<{ path: string; body: unknown }> = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => { throw new Error("Portal email steps must not request a bearer token"); },
+      fetch: async (input, init) => {
+        const path = new URL(String(input)).pathname.replace("/api/v1/auth/", "");
+        requests.push({ path, body: JSON.parse(String(init?.body)) });
+        if (path === "session" || path === "session/resend-code") return jsonResponse(challenge, 202);
+        if (path === "session/verify-code") return jsonResponse(session);
+        return new Response(null, { status: path === "password-reset" ? 202 : 204 });
+      },
+    });
+
+    await expect(client.startSession({ email: "airline.client@dev.elevant.test", password: "Synthetic-Password!2026" }))
+      .resolves.toEqual({ kind: "code_required", challenge });
+    await expect(client.verifyLoginCode(challengeId, "123456")).resolves.toEqual(session);
+    await expect(client.resendLoginCode(challengeId)).resolves.toEqual(challenge);
+    await client.activateAccount(token, "Synthetic-Activated!2026");
+    await client.requestPasswordReset(" airline.client@dev.elevant.test ");
+    await client.resetPassword(token, "Synthetic-Reset!2026");
+    expect(requests.map(item => item.path)).toEqual(["session", "session/verify-code", "session/resend-code",
+      "account/activate", "password-reset", "password-reset/confirm"]);
+    expect(requests[4]?.body).toEqual({ email: "airline.client@dev.elevant.test" });
+    await expect(client.verifyLoginCode(challengeId, "12a456")).rejects.toThrow(TypeError);
+    await expect(client.activateAccount("short", "x")).rejects.toThrow(TypeError);
+    expect(requests).toHaveLength(6);
+  });
+
   it("changes a password without sending a stale bearer or retaining secrets", async () => {
     let requestedUrl = "";
     let authorization: string | null = null;

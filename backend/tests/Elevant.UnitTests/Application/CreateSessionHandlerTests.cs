@@ -1,12 +1,53 @@
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Identity;
+using Elevant.Application.Identity.AccountEmails;
 using Elevant.Application.Identity.CreateSession;
+using Elevant.Domain.Enumerations;
 
 namespace Elevant.UnitTests.Application;
 
 public sealed class CreateSessionHandlerTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 16, 12, 0, 0, TimeSpan.Zero);
+
+    private static ActorContext PortalActor() => IdentityTestData.CreateActor() with
+    {
+        Roles = [new ActorRole(Guid.Parse("41000000-0000-7000-8000-000000000003"), "AIRLINE_CLIENT", "Airline client",
+            PortalKind.AirlinePortal, "airline_client")],
+        Memberships = [new ActorMembership(Guid.Parse("42000000-0000-7000-8000-000000000003"),
+            Guid.Parse("43000000-0000-7000-8000-000000000003"), "DEMO-AIR", "Demo Air",
+            OrganizationType.AirlineCustomer, MembershipKind.AirlineClient)],
+        StationScopes = [],
+    };
+
+    [Fact]
+    public async Task PortalAccountsGetAnEmailChallengeInsteadOfATokenAndTheCodeCompletesTheLogin()
+    {
+        var emails = new StubAccountEmails();
+        var issued = 0;
+        var handler = CreateHandler(
+            new StubCredentialVerifier((_, _, _) => Task.FromResult<VerifiedCredential?>(new(IdentityTestData.AccountId))),
+            new StubActorContextResolver((_, _) => Task.FromResult<ActorContext?>(PortalActor())),
+            new StubAccessTokenIssuer((_, _) =>
+            {
+                issued++;
+                return Task.FromResult<IssuedAccessToken?>(new("signed.jwt.value", Now.AddMinutes(15)));
+            }),
+            emails);
+
+        var started = await handler.HandleAsync(new CreateSessionCommand("airline@example.test", "Synthetic-Password!2026"),
+            TestContext.Current.CancellationToken);
+        Assert.False(started.IsSuccess);
+        Assert.Equal(StubAccountEmails.Challenge, started.Challenge!.ChallengeId);
+        Assert.Equal(0, issued);
+
+        Assert.False((await handler.VerifyCodeAsync(StubAccountEmails.Challenge, "000000", TestContext.Current.CancellationToken)).IsSuccess);
+        Assert.False((await handler.VerifyCodeAsync(StubAccountEmails.Challenge, "12345a", TestContext.Current.CancellationToken)).IsSuccess);
+        var completed = await handler.VerifyCodeAsync(StubAccountEmails.Challenge, "123456", TestContext.Current.CancellationToken);
+        Assert.True(completed.IsSuccess);
+        Assert.Equal(1, issued);
+        Assert.NotNull(completed.Session!.RefreshToken);
+    }
 
     [Fact]
     public async Task ValidCredentialsCreateSessionFromResolvedActor()
@@ -202,8 +243,12 @@ public sealed class CreateSessionHandlerTests
             new CreateSessionCommand("airline.client@dev.elevant.test", "password"),
             TestContext.Current.CancellationToken);
 
-        Assert.True(result.IsSuccess);
-        Assert.Same(actor, result.Session?.Actor);
+        // A valid airline actor with no direct stations reaches the email code step (ADR-0022).
+        Assert.Null(result.Failure);
+        Assert.NotNull(result.Challenge);
+        var completed = await handler.VerifyCodeAsync(result.Challenge!.ChallengeId, "123456",
+            TestContext.Current.CancellationToken);
+        Assert.Same(actor, completed.Session?.Actor);
     }
 
     [Theory]
@@ -296,7 +341,48 @@ public sealed class CreateSessionHandlerTests
     private static CreateSessionHandler CreateHandler(
         ICredentialVerifier verifier,
         IActorContextResolver resolver,
-        IAccessTokenIssuer issuer) => new(verifier, resolver, issuer, new FixedTimeProvider(Now));
+        IAccessTokenIssuer issuer, StubAccountEmails? emails = null) => new(verifier, resolver, issuer, new StubRefreshTokens(),
+        emails ?? new StubAccountEmails(), new AccountEmailOptions(), new FixedTimeProvider(Now));
+
+    private sealed class StubAccountEmails : IAccountEmailStore
+    {
+        public static readonly Guid Challenge = Guid.Parse("7a000000-0000-7000-8000-000000000001");
+        public int Issued { get; private set; }
+
+        public Task<LoginChallenge?> IssueLoginCodeAsync(Guid accountId, CancellationToken cancellationToken = default)
+        {
+            Issued++;
+            return Task.FromResult<LoginChallenge?>(new LoginChallenge(Challenge, "a••••z@example.test", Now.AddMinutes(10)));
+        }
+
+        public Task<LoginChallenge?> ResendLoginCodeAsync(Guid challengeId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<AccountEmailResult> VerifyLoginCodeAsync(Guid challengeId, string code, CancellationToken cancellationToken = default) =>
+            Task.FromResult(challengeId == Challenge && code == "123456"
+                ? new AccountEmailResult(IdentityTestData.AccountId, null)
+                : new AccountEmailResult(null, AccountEmailFailure.Invalid));
+
+        public Task<AccountEmailResult> ActivateAsync(string token, string newPassword, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task RequestPasswordResetAsync(string email, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<AccountEmailResult> ResetPasswordAsync(string token, string newPassword, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class StubRefreshTokens : IRefreshTokenStore
+    {
+        public Task<IssuedRefreshToken?> IssueAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IssuedRefreshToken?>(new IssuedRefreshToken("refresh-" + accountId, Now.AddDays(30)));
+
+        public Task<RefreshTokenRotation> RotateAsync(string token, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task RevokeFamilyAsync(string token, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

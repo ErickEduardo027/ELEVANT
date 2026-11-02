@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), read: vi.fn() }));
-vi.mock('../../config/elevantApiClient', () => ({ createPrivateWebApiClient: mocks.create }));
+vi.mock('../../config/elevantApiClient', () => ({ createPrivateWebApiClient: mocks.create, setAccessTokenRenewer: vi.fn() }));
 import { requestForAuthSession } from './requestForAuthSession';
 import { AUTH_EXPIRED_EVENT, AUTH_STORAGE_KEY, clearSession, readSession } from './authService';
 

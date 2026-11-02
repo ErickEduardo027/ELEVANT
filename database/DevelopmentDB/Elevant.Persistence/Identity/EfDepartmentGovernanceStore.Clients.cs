@@ -50,7 +50,7 @@ internal sealed partial class EfDepartmentGovernanceStore
                       orderby person.LastName, person.FirstName
                       select new ClientUserData(user.PublicId, person.FirstName, person.LastName, user.Email ?? string.Empty,
                           user.Status.ToString(), user.MustChangePassword, user.LastLoginAt,
-                          Convert.ToBase64String(user.RowVersion)))
+                          Convert.ToBase64String(user.RowVersion), user.InvitationStatus == InvitationStatus.Sent))
             .ToArrayAsync(cancellationToken);
     }
 
@@ -63,8 +63,11 @@ internal sealed partial class EfDepartmentGovernanceStore
         var organization = await AirlineOrganizationAsync(organizationId, cancellationToken);
         if (organization is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
         if (input is null || !GovernanceSupport.ValidName(input.FirstName) || !GovernanceSupport.ValidName(input.LastName) ||
-            !GovernanceSupport.ValidEmail(input.Email) || string.IsNullOrWhiteSpace(input.TemporaryPassword))
+            !GovernanceSupport.ValidEmail(input.Email))
             return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        var invite = string.IsNullOrWhiteSpace(input.TemporaryPassword);
+        // An invitation needs the portal origin for its activation link.
+        if (invite && emailOptions.Link("/activar", "x") is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
         if (await EmailInUseAsync(input.Email, null, cancellationToken))
             return GovernanceResult.Failed(GovernanceFailure.Conflict);
 
@@ -92,13 +95,14 @@ internal sealed partial class EfDepartmentGovernanceStore
                 PersonId = person.Id,
                 UserName = email,
                 Email = email,
-                EmailConfirmed = true,
+                EmailConfirmed = !invite,
                 LockoutEnabled = true,
                 Status = AccountLifecycleStatus.Active,
-                InvitationStatus = InvitationStatus.Accepted,
-                MustChangePassword = true,
+                InvitationStatus = invite ? InvitationStatus.Sent : InvitationStatus.Accepted,
+                MustChangePassword = !invite,
             };
-            var created = await userManager.CreateAsync(account, input.TemporaryPassword);
+            var created = invite ? await userManager.CreateAsync(account)
+                : await userManager.CreateAsync(account, input.TemporaryPassword!);
             if (!created.Succeeded) return GovernanceResult.Failed(GovernanceFailure.Invalid);
             context.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long> { UserId = account.Id, RoleId = role.Id });
             context.OrganizationMemberships.Add(new OrganizationMembership
@@ -111,6 +115,13 @@ internal sealed partial class EfDepartmentGovernanceStore
             });
             GovernanceSupport.AddAudit(context, actor.Id, "governance.client_user.created", "iam.accounts",
                 account.PublicId, null, [], now, new AuditFieldChangeData("organization", null, organizationId.ToString()));
+            if (invite)
+            {
+                var airline = await context.Organizations.Where(item => item.Id == organization.Value)
+                    .Select(item => item.DisplayName).SingleAsync(cancellationToken);
+                if (!EfAccountEmailStore.AddActivation(context, emailOptions, account, person.FirstName, airline, now))
+                    return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            }
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(account.PublicId);
         }, cancellationToken);

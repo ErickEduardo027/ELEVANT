@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import AirlinesPanel from './AirlinesPanel';
 
@@ -25,5 +25,31 @@ describe('Superadministrador Aerolíneas', () => {
       legalName: 'Test Airways Ltd.', sourceName: 'TEST AIRWAYS',
       version: airline.version, isVerified: false,
     }));
+  });
+
+  it('checks the airline in the public registry and shows the green seal with its source', async () => {
+    const found = { ...airline, displayName: 'Copa Airlines', iataCode: 'CM', icaoCode: 'CMP' };
+    const onCheckRegistry = vi.fn(async () => ({
+      airline: { ...found, registryStatus: 'Found', registrySource: 'Wikidata' },
+      check: { status: 'Found', source: 'Wikidata', differences: [] },
+    }));
+    const { rerender } = render(<AirlinesPanel airlines={[found]} onSave={vi.fn()} onArchive={vi.fn()} onCheckRegistry={onCheckRegistry} />);
+    expect(screen.getByText('Sin verificar en registro')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar en registro' }));
+    expect(onCheckRegistry).toHaveBeenCalledWith(found.id);
+    rerender(<AirlinesPanel airlines={[{ ...found, registryStatus: 'Found', registrySource: 'Wikidata',
+      registryEntityUrl: 'https://www.wikidata.org/wiki/Q849404' }]} onSave={vi.fn()} onArchive={vi.fn()} onCheckRegistry={onCheckRegistry} />);
+    const seal = await screen.findByText(/Verificada en registro/);
+    expect(within(seal).getByRole('link', { name: 'Wikidata' })).toHaveAttribute('href', 'https://www.wikidata.org/wiki/Q849404');
+  });
+
+  it('explains a mismatch with the differences the registry reported', async () => {
+    const onCheckRegistry = vi.fn(async () => ({
+      airline: { ...airline, registryStatus: 'Mismatch', registrySource: 'Wikidata' },
+      check: { status: 'Mismatch', source: 'Wikidata', differences: ['Con esos códigos el registro muestra «Copa Airlines», no «Test Airways».'] },
+    }));
+    render(<AirlinesPanel airlines={[airline]} onSave={vi.fn()} onArchive={vi.fn()} onCheckRegistry={onCheckRegistry} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar en registro' }));
+    expect(await screen.findByText(/el registro muestra «Copa Airlines»/)).toBeInTheDocument();
   });
 });

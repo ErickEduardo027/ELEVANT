@@ -1,3 +1,4 @@
+using Elevant.Domain.Enumerations;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Entities.Commercial;
@@ -144,6 +145,14 @@ internal sealed class EfCommercialAirlineManagementStore(
         var beforeLogo = profile.LogoObjectKey;
         var beforePublished = profile.IsPublished;
         var beforeVerified = profile.VerifiedAt is not null;
+        // A registry check is about the name and codes it saw; changing them makes it stale.
+        if (profile.DisplayName != input.DisplayName.Trim() || profile.IataCode != Optional(input.IataCode) ||
+            profile.IcaoCode != Optional(input.IcaoCode))
+            ClearRegistry(profile);
+        // Publishing (step 2 of the public wizard) needs a green registry check or a manual
+        // verification with its source.
+        if (input.IsPublished && !input.IsVerified && profile.RegistryStatus != AirlineRegistryStatus.Found)
+            return AirlineMutationResult.Failed(CatalogMutationFailure.Invalid, "registry_check_required");
         profile.DisplayName = input.DisplayName.Trim();
         profile.LegalName = Optional(input.LegalName);
         profile.Region = input.Region.Trim();
@@ -225,12 +234,69 @@ internal sealed class EfCommercialAirlineManagementStore(
                 "commercial_airlines", profileId, DateTimeOffset.UtcNow);
     }
 
+    public async Task<(AirlineRegistryKey? Key, CatalogMutationFailure? Failure)> RegistryKeyAsync(Guid actorId,
+        Guid profileId, CancellationToken cancellationToken = default)
+    {
+        if (!await permissions.IsSuperAdministratorAsync(actorId, cancellationToken))
+            return (null, CatalogMutationFailure.Forbidden);
+        var key = await context.CommercialAirlineProfiles.AsNoTracking().Where(item => item.PublicId == profileId)
+            .Select(item => new AirlineRegistryKey(item.PublicId, item.DisplayName, item.IataCode, item.IcaoCode))
+            .SingleOrDefaultAsync(cancellationToken);
+        return key is null ? (null, CatalogMutationFailure.NotFound) : (key, null);
+    }
+
+    public async Task<AirlineMutationResult> RecordRegistryCheckAsync(Guid actorId, AirlineRegistryKey key,
+        AirlineRegistryCheck check, CancellationToken cancellationToken = default)
+    {
+        if (!await permissions.IsSuperAdministratorAsync(actorId, cancellationToken))
+            return AirlineMutationResult.Failed(CatalogMutationFailure.Forbidden);
+        var profile = await context.CommercialAirlineProfiles.SingleOrDefaultAsync(item => item.PublicId == key.Id,
+            cancellationToken);
+        if (profile is null) return AirlineMutationResult.Failed(CatalogMutationFailure.NotFound);
+        if (profile.DisplayName != key.Name || profile.IataCode != key.IataCode || profile.IcaoCode != key.IcaoCode)
+            return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict);
+        // «Unavailable» is not a verdict: the previous check stays as it was.
+        if (!Enum.TryParse<AirlineRegistryStatus>(check.Status, out var status)) return AirlineMutationResult.Success(Map(profile));
+        var actorDatabaseId = await context.Users.Where(user => user.PublicId == actorId)
+            .Select(user => user.Id).SingleAsync(cancellationToken);
+        var before = profile.RegistryStatus?.ToString();
+        profile.RegistryStatus = status;
+        profile.RegistrySource = check.Source;
+        profile.RegistryCheckedAt = check.CheckedAt;
+        profile.RegistryEntityUrl = check.EntityUrl is { Length: <= 300 } url &&
+            url.StartsWith("https://www.wikidata.org/wiki/Q", StringComparison.Ordinal) ? url : null;
+        profile.UpdatedAt = DateTimeOffset.UtcNow;
+        CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.airline.registry_checked",
+            "commercial.airline_profiles", profile.PublicId, null,
+            new AuditFieldChangeData("airline.registry_status", before, status.ToString()),
+            new AuditFieldChangeData("airline.registry_source", null, check.Source));
+        await NotifyInternalAsync(profile.PublicId, cancellationToken);
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict);
+        }
+        return AirlineMutationResult.Success(Map(profile));
+    }
+
+    private static void ClearRegistry(CommercialAirlineProfile profile)
+    {
+        profile.RegistryStatus = null;
+        profile.RegistrySource = null;
+        profile.RegistryCheckedAt = null;
+        profile.RegistryEntityUrl = null;
+    }
+
     private static ManagedAirlineData Map(CommercialAirlineProfile profile) => new(
         profile.PublicId, profile.SourceName, profile.DisplayName, profile.LegalName,
         profile.Region, profile.CountryCode, profile.IataCode, profile.IcaoCode,
         profile.LogoObjectKey ?? AviamAirlineReference.LogoPaths.GetValueOrDefault(profile.SourceName), profile.SourceUrl, profile.VerificationSourceUrl,
         profile.VerifiedAt is not null && profile.VerifiedByAccountId is not null, profile.IsPublished,
-        Convert.ToBase64String(profile.RowVersion));
+        Convert.ToBase64String(profile.RowVersion), profile.RegistryStatus?.ToString(), profile.RegistrySource,
+        profile.RegistryCheckedAt, profile.RegistryEntityUrl);
 
     private static bool ValidVersion(string? version)
     {

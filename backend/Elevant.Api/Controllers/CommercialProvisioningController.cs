@@ -39,8 +39,25 @@ public sealed class CommercialProvisioningController(
             ProvisioningFailure.Forbidden => Forbid(),
             ProvisioningFailure.NotFound => Problem(statusCode: 404, title: "Provisioning request not found."),
             ProvisioningFailure.Conflict => Problem(statusCode: 409, title: "Provisioning request is no longer available."),
-            ProvisioningFailure.Invalid => Problem(statusCode: 400, title: "Email or temporary password is invalid."),
+            ProvisioningFailure.Invalid => Problem(statusCode: 400, title: "Email or temporary password is invalid, or invitations are not configured."),
             _ => throw new InvalidOperationException(),
+        };
+    }
+
+    /// <summary>Sends a new activation link to an airline account that has not activated yet (ADR-0022).</summary>
+    [HttpPost("accounts/{accountId:guid}/resend-invitation", Name = "ResendAirlineInvitation")]
+    [ProducesResponseType<CommercialAccountResponse>(StatusCodes.Status202Accepted, "application/json")]
+    public async Task<IActionResult> ResendInvitation(Guid accountId, CancellationToken cancellationToken)
+    {
+        if (!TryActor(out var actorId)) return Unauthorized();
+        var result = await store.ResendInvitationAsync(actorId, accountId, cancellationToken);
+        return result.Failure switch
+        {
+            null => Accepted(new CommercialAccountResponse(result.AccountId!.Value)),
+            ProvisioningFailure.Forbidden => Forbid(),
+            ProvisioningFailure.NotFound => Problem(statusCode: 404, title: "Airline account not found."),
+            ProvisioningFailure.Conflict => Problem(statusCode: 409, title: "The account is already active."),
+            _ => Problem(statusCode: 400, title: "The portal origin for activation links is not configured."),
         };
     }
 

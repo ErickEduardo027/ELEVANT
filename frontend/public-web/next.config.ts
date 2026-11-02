@@ -35,6 +35,8 @@ export function buildContentSecurityPolicy(
     "font-src 'self' data:",
     "form-action 'self'",
     "frame-ancestors 'none'",
+    // The print button loads the API-generated PDF into a hidden blob: frame.
+    "frame-src 'self' blob:",
     `img-src 'self' data: blob: ${configuredApiOrigin ?? ""}`.trim(),
     `media-src 'self' blob: ${configuredApiOrigin ?? ""}`.trim(),
     "manifest-src 'self'",

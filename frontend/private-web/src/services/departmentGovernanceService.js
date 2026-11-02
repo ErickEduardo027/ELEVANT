@@ -36,6 +36,9 @@ export const listDepartmentUsers = (department, filters = {}) =>
   commercialApi(`${dept(department)}/users${query({ page: 1, limit: 25, ...filters })}`);
 export const createDepartmentAdministrator = (department, values) =>
   commercialApi(`${dept(department)}/administrators`, json('POST', values));
+/** Super administrator: employee record and account in one step, without a Human Resources request. */
+export const createInternalUser = (department, values) =>
+  commercialApi(`${dept(department)}/internal-users`, json('POST', values));
 export const createDepartmentUser = (department, values) =>
   commercialApi(`${dept(department)}/users`, json('POST', values));
 export const updateDepartmentUser = (department, id, values) =>
@@ -74,3 +77,8 @@ export const resetClientUserPassword = (organizationId, id, temporaryPassword) =
 
 export const listLegacyRoles = () => commercialApi('/governance/legacy-roles');
 export const convertLegacyRole = id => commercialApi(`/governance/legacy-roles/${id}/convert`, { method: 'POST' });
+
+/** Email deliveries of the system sender (no bodies) and whether SMTP is configured (ADR-0022). */
+export const listEmailDeliveries = () => commercialApi('/governance/email/deliveries');
+/** Super administrator smoke test: queues one email to check the no-reply sender. */
+export const sendTestEmail = to => commercialApi('/governance/email/test', json('POST', { to }));

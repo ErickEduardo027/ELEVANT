@@ -5,7 +5,9 @@ namespace Elevant.Contracts.Operations;
 // MVC validates positional records through their constructor parameters; property-targeted
 // attributes on a record parameter make model binding throw instead of returning 400.
 public sealed record PresenceHeartbeatRequest(
-    Guid ClientId, [Range(0, 9007199254740991d)] long Sequence,
+    // A per-client counter that starts at 0: int is enough, and Operations contracts expose no
+    // long values (OccPlanningContractSafetyTests), so they cannot carry internal bigint keys.
+    Guid ClientId, [Range(0, int.MaxValue)] int Sequence,
     [Required, RegularExpression("^(foreground|background|closed)$")] string Mode,
     bool ActivityObserved);
 public sealed record ParticipantPresenceResponse(

@@ -70,11 +70,12 @@ public sealed partial class SqlServerMigrationTests
             var review = await db.ContractFinanceReviews.AsNoTracking().SingleAsync(r => r.ContractVersionId == version.Id, ct);
             Assert.Equal(validDecision, review.Decision);
             Assert.Equal(validDecision == ContractFinanceDecision.Approved ? ContractVersionStatus.Approved : ContractVersionStatus.Draft, finalVersion.Status);
-            Assert.Equal(validDecision == ContractFinanceDecision.Approved ? ContractStatus.Active : ContractStatus.Draft, finalContract.Status);
+            // The contract waits for both signatures and a verified permit after approval (ADR-0024).
+            Assert.Equal(ContractStatus.Draft, finalContract.Status);
             if (validDecision == ContractFinanceDecision.Approved)
             {
                 Assert.NotNull(finalVersion.ApprovedAt); Assert.NotNull(finalVersion.ApprovedByAccountId);
-                Assert.NotNull(finalContract.SignedOn);
+                Assert.Null(finalContract.SignedOn);
             }
             else
             {

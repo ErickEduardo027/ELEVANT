@@ -209,7 +209,7 @@ public sealed class DiagnosticsEndpointsTests(ElevantApiFactory factory) : IClas
         Assert.Equal("CreateSession", createSession.GetProperty("operationId").GetString());
         Assert.False(createSession.TryGetProperty("security", out _));
         Assert.Equal(
-            ["200", "400", "401", "409", "413", "415", "429", "500", "503"],
+            ["200", "202", "400", "401", "409", "413", "415", "429", "500", "503"],
             createSession
                 .GetProperty("responses")
                 .EnumerateObject()

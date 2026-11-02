@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AirlineContractPageResponse, AirlinePortalBootstrapResponse,
   SessionResponse } from "@elevant/api-client";
 import { AIRLINE_SESSION_STORAGE_KEY,
@@ -54,6 +54,8 @@ function mount(page: AirlineContractPageResponse, drafts: unknown = []) {
     const path = new URL(String(input)).pathname;
     paths.push(path);
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-token");
+    if (path.endsWith("/draft/pdf"))
+      return new Response(new Uint8Array([37, 80, 68, 70]), { status: 200, headers: { "content-type": "application/pdf" } });
     const body = path.endsWith("/bootstrap") ? bootstrap
       : path.endsWith("/contracts") ? page
         : path.endsWith("/contract-drafts") ? drafts : { actor };
@@ -96,4 +98,61 @@ it("shows an honest empty state with no fabricated contract", async () => {
   mount({ page: 1, limit: 20, hasMore: false, contracts: [] });
   expect(await screen.findByText(/No hay contratos aprobados/i)).toBeInTheDocument();
   expect(screen.queryByText("DEMO-CON-001")).not.toBeInTheDocument();
+});
+
+it("downloads the draft as a watermarked review PDF from the draft card", async () => {
+  const draftId = "62000000-0000-7000-8000-000000000001";
+  URL.createObjectURL = vi.fn(() => "blob:draft");
+  URL.revokeObjectURL = vi.fn();
+  const paths = mount({ page: 1, limit: 20, hasMore: false, contracts: [] }, [{
+    id: draftId, contractId: "contract-1", contractCode: "DEV-CONTRACT-0002",
+    airline: "Demo Airlines", status: "Draft", validFrom: "2026-10-01", validTo: null,
+    currencyCode: "USD", terms: null, stations: [], comments: [], rates: [],
+  }]);
+  const group = await screen.findByRole("group", { name: "Documento: borrador del contrato" });
+  fireEvent.click(within(group).getByRole("button", { name: "Descargar PDF" }));
+  await waitFor(() => expect(paths).toContain(`/api/v1/contract-versions/${draftId}/draft/pdf`));
+  expect(within(group).getByRole("button", { name: "Imprimir" })).toBeInTheDocument();
+});
+
+it("submits a permit with its scanned document and shows the contract timeline", async () => {
+  const permit = { id: "63000000-0000-7000-8000-000000000001", airlineId: "20000000-0000-7000-8000-000000000001",
+    airline: "Demo Airlines", kind: "OperatingPermit", number: "JAC-2026-002", issuer: "JAC", issuedOn: "2026-10-01",
+    expiresOn: "2099-01-01", validity: "Current", review: "Submitted", reviewNote: null,
+    documentUrl: "/api/v1/media/64000000-0000-7000-8000-000000000001", submittedAt: "2026-11-02T12:00:00.000Z",
+    reviewedAt: null, version: "AAAAAAAAB9E=" };
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({ accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z" }));
+  const posted: Array<{ path: string; body: unknown }> = [];
+  let submitted = false;
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+    if (init?.method === "POST") posted.push({ path, body: init.body instanceof FormData ? "form" : JSON.parse(String(init.body)) });
+    if (path.endsWith("/media")) return json({ id: "64000000-0000-7000-8000-000000000001", url: permit.documentUrl });
+    if (path.endsWith("/airline/permits")) {
+      if (init?.method === "POST") { submitted = true; return json(permit, 201); }
+      return json(submitted ? [permit] : []);
+    }
+    if (path.endsWith("/timeline")) return json({ contractId: "c", contractCode: "DEV-CONTRACT-0001", status: "Active",
+      entries: [{ at: "2026-10-21T12:00:00Z", kind: "status", title: "Contrato activo", detail: "Aprobado por Finanzas…", actor: null }] });
+    const body = path.endsWith("/bootstrap") ? bootstrap : path.endsWith("/contracts") ? contracts
+      : path.endsWith("/contract-drafts") ? [] : { actor };
+    return json(body);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlinePortalPage view="contracts" /></AirlineSessionProvider>);
+
+  expect(await screen.findByText("Falta un permiso de operación verificado")).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Número"), { target: { value: "JAC-2026-002" } });
+  fireEvent.change(screen.getByLabelText("Emisor"), { target: { value: "JAC" } });
+  fireEvent.change(screen.getByLabelText("Fecha de emisión"), { target: { value: "2026-10-01" } });
+  fireEvent.change(screen.getByLabelText("Fecha de vencimiento"), { target: { value: "2099-01-01" } });
+  fireEvent.change(screen.getByLabelText(/Documento escaneado/), { target: { files: [new File(["%PDF-1.7"], "jac.pdf", { type: "application/pdf" })] } });
+  fireEvent.click(screen.getByRole("button", { name: "Enviar permiso" }));
+  expect(await screen.findByText(/Permiso enviado/)).toBeInTheDocument();
+  expect(posted.map(item => item.path)).toEqual(["/api/v1/media", "/api/v1/airline/permits"]);
+  expect(posted[1]?.body).toMatchObject({ kind: "OperatingPermit", number: "JAC-2026-002", documentUrl: permit.documentUrl });
+  expect(await screen.findByText(/En revisión por AVIAM/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "Ver línea de tiempo del contrato" }));
+  expect(await screen.findByText("Contrato activo")).toBeInTheDocument();
 });

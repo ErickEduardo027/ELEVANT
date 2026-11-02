@@ -9,54 +9,87 @@ using PdfSharp.Pdf;
 namespace Elevant.Infrastructure.Commercial;
 
 /// <summary>
-/// Formal ground-handling contract: parties, validity, stations, agreed rates, terms and the
-/// signature block with each party's acceptance and the SHA-256 of the signed content.
+/// Formal ground-handling contract: branded header, parties, validity, stations, agreed rates,
+/// numbered terms and the signature block with the SHA-256 of the signed content. Draft versions
+/// (still editable or awaiting Finance) carry a diagonal «BORRADOR» watermark and show unconfirmed
+/// prices as «Por definir»; they are for review, never for signature.
 /// </summary>
-public sealed class ContractPdfRenderer : IContractPdfRenderer
+public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : IContractPdfRenderer
 {
     private const double Margin = 48;
     private const double Line = 13;
     private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-DO");
     private static readonly XColor Navy = XColor.FromArgb(8, 27, 58);
+    private static readonly XColor Blue = XColor.FromArgb(0, 51, 153);
+    private static readonly XColor Orange = XColor.FromArgb(255, 92, 0);
     private static readonly XColor Muted = XColor.FromArgb(77, 93, 118);
+    private static readonly XColor Rule = XColor.FromArgb(214, 221, 231);
+    private static readonly XColor Tint = XColor.FromArgb(244, 247, 251);
+    private static readonly XColor Success = XColor.FromArgb(21, 128, 61);
+    private static readonly Lazy<byte[]> Logo = new(() => EmbeddedResources.Read("elevant-logo.jpg"));
 
     static ContractPdfRenderer() => ElevantPdfFontResolver.EnsureRegistered();
+
+    /// <summary>Versions that are not yet approved print as drafts.</summary>
+    public static bool IsDraft(ContractDocumentData document) =>
+        document.VersionStatus is "Draft" or "PendingFinanceApproval";
 
     public byte[] Render(ContractDocumentData document)
     {
         ArgumentNullException.ThrowIfNull(document);
+        var draft = IsDraft(document);
         using var pdf = new PdfDocument();
-        pdf.Info.Title = $"Contrato {document.ContractCode} · versión {document.VersionNumber}";
+        pdf.Info.Title = $"Contrato {document.ContractCode} · versión {document.VersionNumber}" + (draft ? " · borrador" : string.Empty);
         pdf.Info.Author = "ELEVANT · AVIAM";
         pdf.Info.Subject = "Contrato de servicios de asistencia en tierra";
         var writer = new Writer(pdf);
 
-        writer.Banner(document);
-        writer.Heading("1. Partes");
+        writer.Header(document, draft);
+        writer.Parties(document);
+        writer.Summary(document);
+
+        writer.Heading("1", "Objeto");
         writer.Paragraph("AVIAM, operador de servicios de asistencia en tierra (en adelante, «el Prestador»), y " +
             $"{document.AirlineLegalName ?? document.AirlineName} ({document.AirlineCode}), en adelante «la Aerolínea», " +
             "acuerdan los servicios, tarifas y condiciones de esta versión del contrato.");
-        writer.Heading("2. Vigencia, moneda y cobertura");
-        writer.Paragraph($"Vigente desde el {Date(document.ValidFrom)} " +
+
+        writer.Heading("2", "Vigencia y cobertura");
+        writer.Paragraph($"El contrato rige desde el {Date(document.ValidFrom)} " +
             (document.ValidTo is { } end ? $"hasta el {Date(end)}." : "sin fecha de vencimiento.") +
-            $" Moneda de facturación: {document.CurrencyCode}. Estado de la versión: {VersionStatus(document.VersionStatus)}.");
+            $" Las operaciones se facturan en {document.CurrencyCode}.");
         writer.Paragraph("Estaciones cubiertas: " + (document.Stations.Count == 0 ? "ninguna" : string.Join("; ", document.Stations)) + ".");
-        writer.Heading("3. Servicios y tarifas pactadas");
-        writer.Table(["Código", "Servicio", "Unidad", $"Precio ({document.CurrencyCode})", "Mínimo"], [0.14, 0.38, 0.18, 0.17, 0.13],
+
+        writer.Heading("3", "Servicios y tarifas pactadas");
+        writer.Table(
+            [new("Código", 0.13, false), new("Servicio", 0.37, false), new("Unidad", 0.18, false),
+                new($"Precio ({document.CurrencyCode})", 0.18, true), new("Mínimo", 0.14, true)],
             document.Rates.Select(rate => (IReadOnlyList<string>)
             [
                 rate.ServiceCode, rate.ServiceName, rate.BillingUnit,
-                rate.UnitPrice.ToString("N2", Spanish), rate.MinimumQuantity.ToString("0.##", Spanish),
+                rate.PriceConfirmed ? rate.UnitPrice.ToString("N2", Spanish) : "Por definir",
+                rate.MinimumQuantity.ToString("0.##", Spanish),
             ]).ToArray());
-        writer.Heading("4. Términos y condiciones");
-        writer.Paragraph(string.IsNullOrWhiteSpace(document.Terms) ? "Sin términos particulares." : document.Terms.Trim());
-        writer.Heading("5. Firmas");
-        writer.Paragraph("Cada parte acepta el contenido identificado por esta huella SHA-256. Un cambio en servicios, " +
-            "tarifas, vigencia, estaciones o términos produce otra huella y requiere una nueva firma.", Muted);
-        writer.Paragraph(document.ContentSha256, Navy, monospace: true);
-        writer.Signatures(document);
-        writer.Finish();
+        if (draft && document.Rates.Any(rate => !rate.PriceConfirmed))
+            writer.Paragraph("«Por definir»: tarifa propuesta pendiente de confirmación por Contratos.", Muted, small: true);
 
+        writer.Heading("4", "Términos y condiciones");
+        writer.Clauses("4", document.Terms);
+
+        writer.Heading("5", "Firmas");
+        if (draft)
+        {
+            writer.Paragraph("Este documento es un borrador para revisión. No es válido para firma: las partes firman " +
+                "la versión aprobada por Finanzas, que se publica con su propia huella.", Muted);
+        }
+        else
+        {
+            writer.Paragraph("Cada parte acepta el contenido identificado por esta huella SHA-256. Un cambio en servicios, " +
+                "tarifas, vigencia, estaciones o términos produce otra huella y requiere una nueva firma.", Muted);
+            writer.Fingerprint(document.ContentSha256);
+            writer.Signatures(document);
+        }
+
+        writer.Finish(document, draft, (timeProvider ?? TimeProvider.System).GetUtcNow());
         using var output = new MemoryStream();
         pdf.Save(output, false);
         return output.ToArray();
@@ -66,22 +99,34 @@ public sealed class ContractPdfRenderer : IContractPdfRenderer
 
     private static string VersionStatus(string status) => status switch
     {
-        "Approved" => "aprobada",
-        "Superseded" => "reemplazada por una versión posterior",
+        "Draft" => "Borrador",
+        "PendingFinanceApproval" => "Borrador · en revisión de Finanzas",
+        "Approved" => "Aprobada",
+        "Superseded" => "Reemplazada por una versión posterior",
         _ => status,
     };
 
+    private sealed record Column(string Title, double Share, bool AlignRight);
+
     private sealed class Writer
     {
+        // PdfSharp's subsetter drops the components of composite glyphs, so «á», «í» or «ó» print
+        // without accents; embedding the complete Noto Sans faces keeps Spanish text intact.
+        private static readonly XPdfFontOptions Embedded = new(PdfSharp.Pdf.PdfFontEncoding.Unicode,
+            PdfSharp.Pdf.PdfFontEmbedding.EmbedCompleteFontFile);
         private readonly PdfDocument pdf;
-        private readonly XFont body = new(ElevantPdfFontResolver.Typeface, 9.5, XFontStyleEx.Regular);
-        private readonly XFont small = new(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Regular);
-        private readonly XFont heading = new(ElevantPdfFontResolver.Typeface, 12, XFontStyleEx.Regular);
-        private readonly XFont title = new(ElevantPdfFontResolver.Typeface, 16, XFontStyleEx.Regular);
+        private readonly XFont body = new(ElevantPdfFontResolver.Typeface, 9.5, XFontStyleEx.Regular, Embedded);
+        private readonly XFont bodyBold = new(ElevantPdfFontResolver.Typeface, 9.5, XFontStyleEx.Bold, Embedded);
+        private readonly XFont small = new(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Regular, Embedded);
+        private readonly XFont smallBold = new(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Bold, Embedded);
+        private readonly XFont label = new(ElevantPdfFontResolver.Typeface, 7, XFontStyleEx.Bold, Embedded);
+        private readonly XFont heading = new(ElevantPdfFontResolver.Typeface, 12, XFontStyleEx.Bold, Embedded);
+        private readonly XFont title = new(ElevantPdfFontResolver.Typeface, 17, XFontStyleEx.Bold, Embedded);
+        private readonly XFont watermark = new(ElevantPdfFontResolver.Typeface, 72, XFontStyleEx.Bold, Embedded);
+        private readonly XFont watermarkNote = new(ElevantPdfFontResolver.Typeface, 22, XFontStyleEx.Bold, Embedded);
         private PdfPage page = null!;
         private XGraphics graphics = null!;
         private double y;
-        private string footer = string.Empty;
 
         public Writer(PdfDocument pdf)
         {
@@ -91,28 +136,83 @@ public sealed class ContractPdfRenderer : IContractPdfRenderer
 
         private double Width => page.Width.Point - 2 * Margin;
 
-        public void Banner(ContractDocumentData document)
+        public void Header(ContractDocumentData document, bool draft)
         {
-            footer = $"{document.ContractCode} · versión {document.VersionNumber}";
-            graphics.DrawRectangle(new XSolidBrush(Navy), 0, 0, page.Width.Point, 92);
-            graphics.DrawString("ELEVANT · AVIAM", heading, XBrushes.White, new XRect(Margin, 24, Width, 18), XStringFormats.TopLeft);
-            graphics.DrawString("Contrato de servicios de asistencia en tierra", title, XBrushes.White,
-                new XRect(Margin, 46, Width, 24), XStringFormats.TopLeft);
-            y = 112;
-            Paragraph($"Contrato {document.ContractCode} · Versión {document.VersionNumber} · {document.AirlineName}", Navy);
+            using (var logo = XImage.FromStream(new MemoryStream(Logo.Value)))
+                graphics.DrawImage(logo, Margin, 34, 92, 92 * logo.PixelHeight / (double)logo.PixelWidth);
+            var right = new XRect(Margin + 120, 38, Width - 120, 12);
+            graphics.DrawString("CONTRATO DE SERVICIOS DE ASISTENCIA EN TIERRA", label, new XSolidBrush(Muted), right, XStringFormats.TopRight);
+            right.Offset(0, 14);
+            graphics.DrawString(document.ContractCode, title, new XSolidBrush(Navy), right, XStringFormats.TopRight);
+            right.Offset(0, 24);
+            graphics.DrawString($"Versión {document.VersionNumber} · {VersionStatus(document.VersionStatus)}", small,
+                new XSolidBrush(draft ? Orange : Muted), right, XStringFormats.TopRight);
+            graphics.DrawRectangle(new XSolidBrush(Navy), Margin, 98, Width, 2.2);
+            graphics.DrawRectangle(new XSolidBrush(Orange), Margin, 100.2, Width * 0.28, 2.2);
+            y = 116;
         }
 
-        public void Heading(string text)
+        public void Parties(ContractDocumentData document)
         {
-            Ensure(Line * 3);
+            var column = (Width - 14) / 2;
+            var boxes = new[]
+            {
+                ("EL PRESTADOR", "AVIAM", "Operador de servicios de asistencia en tierra"),
+                ("LA AEROLÍNEA", document.AirlineLegalName ?? document.AirlineName,
+                    $"{document.AirlineName} · código {document.AirlineCode}"),
+            };
+            for (var index = 0; index < boxes.Length; index++)
+            {
+                var (caption, name, detail) = boxes[index];
+                var x = Margin + index * (column + 14);
+                graphics.DrawRectangle(new XSolidBrush(Tint), x, y, column, 58);
+                graphics.DrawRectangle(new XSolidBrush(index == 0 ? Navy : Orange), x, y, 3, 58);
+                graphics.DrawString(caption, label, new XSolidBrush(Muted), new XRect(x + 12, y + 9, column - 20, 10), XStringFormats.TopLeft);
+                graphics.DrawString(Fit(name, bodyBold, column - 20), bodyBold, new XSolidBrush(Navy),
+                    new XRect(x + 12, y + 22, column - 20, Line), XStringFormats.TopLeft);
+                graphics.DrawString(Fit(detail, small, column - 20), small, new XSolidBrush(Muted),
+                    new XRect(x + 12, y + 37, column - 20, Line), XStringFormats.TopLeft);
+            }
+            y += 70;
+        }
+
+        public void Summary(ContractDocumentData document)
+        {
+            var cards = new[]
+            {
+                ("VIGENCIA", $"{document.ValidFrom.ToString("dd/MM/yyyy", Spanish)} – " +
+                    (document.ValidTo?.ToString("dd/MM/yyyy", Spanish) ?? "sin vencimiento")),
+                ("MONEDA", document.CurrencyCode),
+                ("ESTACIONES", document.Stations.Count == 1 ? "1 estación" : $"{document.Stations.Count} estaciones"),
+                ("SERVICIOS", document.Rates.Count == 1 ? "1 tarifa" : $"{document.Rates.Count} tarifas"),
+            };
+            // The validity card is wider so both dates fit.
+            var shares = new[] { 0.34, 0.18, 0.24, 0.24 };
+            var x = Margin;
+            for (var index = 0; index < cards.Length; index++)
+            {
+                var width = shares[index] * (Width - 3 * 10);
+                if (index > 0) x += shares[index - 1] * (Width - 3 * 10) + 10;
+                graphics.DrawRectangle(new XPen(Rule, 0.7), x, y, width, 42);
+                graphics.DrawString(cards[index].Item1, label, new XSolidBrush(Muted), new XRect(x + 9, y + 8, width - 18, 10), XStringFormats.TopLeft);
+                graphics.DrawString(Fit(cards[index].Item2, bodyBold, width - 18), bodyBold, new XSolidBrush(Navy),
+                    new XRect(x + 9, y + 21, width - 18, Line), XStringFormats.TopLeft);
+            }
+            y += 54;
+        }
+
+        public void Heading(string number, string text)
+        {
+            Ensure(Line * 4);
             y += 8;
-            graphics.DrawString(text, heading, new XSolidBrush(Navy), new XRect(Margin, y, Width, 16), XStringFormats.TopLeft);
-            y += 20;
+            graphics.DrawRectangle(new XSolidBrush(Orange), Margin, y + 2, 3, 13);
+            graphics.DrawString($"{number}. {text}", heading, new XSolidBrush(Navy), new XRect(Margin + 10, y, Width - 10, 16), XStringFormats.TopLeft);
+            y += 22;
         }
 
-        public void Paragraph(string text, XColor? color = null, bool monospace = false)
+        public void Paragraph(string text, XColor? color = null, bool monospace = false, bool small = false)
         {
-            var font = monospace ? small : body;
+            var font = monospace || small ? this.small : body;
             foreach (var paragraph in text.Replace("\r\n", "\n").Split('\n'))
                 foreach (var line in Wrap(paragraph, font, Width))
                 {
@@ -124,69 +224,141 @@ public sealed class ContractPdfRenderer : IContractPdfRenderer
             y += 4;
         }
 
-        public void Table(IReadOnlyList<string> columns, IReadOnlyList<double> shares, IReadOnlyList<IReadOnlyList<string>> rows)
+        /// <summary>Each non-empty line of the terms becomes a numbered clause (4.1, 4.2, …).</summary>
+        public void Clauses(string section, string? terms)
         {
-            var widths = shares.Select(share => share * Width).ToArray();
-            void Row(IReadOnlyList<string> cells, XFont font, XColor color)
+            var clauses = (terms ?? string.Empty).Replace("\r\n", "\n").Split('\n')
+                .Select(item => item.Trim()).Where(item => item.Length > 0).ToArray();
+            if (clauses.Length == 0)
             {
-                var wrapped = cells.Select((cell, index) => Wrap(cell, font, widths[index] - 6)).ToArray();
-                var height = wrapped.Max(lines => lines.Count) * Line + 4;
+                Paragraph("Sin términos particulares.", Muted);
+                return;
+            }
+            for (var index = 0; index < clauses.Length; index++)
+            {
+                var number = $"{section}.{index + 1}";
+                var lines = Wrap(clauses[index], body, Width - 30);
+                for (var line = 0; line < lines.Count; line++)
+                {
+                    Ensure(Line);
+                    if (line == 0)
+                        graphics.DrawString(number, bodyBold, new XSolidBrush(Navy), new XRect(Margin, y, 28, Line), XStringFormats.TopLeft);
+                    graphics.DrawString(lines[line], body, XBrushes.Black, new XRect(Margin + 30, y, Width - 30, Line), XStringFormats.TopLeft);
+                    y += Line;
+                }
+                y += 5;
+            }
+        }
+
+        public void Table(IReadOnlyList<Column> columns, IReadOnlyList<IReadOnlyList<string>> rows)
+        {
+            var widths = columns.Select(column => column.Share * Width).ToArray();
+            void Row(IReadOnlyList<string> cells, XFont font, XColor color, XColor? fill)
+            {
+                var wrapped = cells.Select((cell, index) => Wrap(cell, font, widths[index] - 12)).ToArray();
+                var height = wrapped.Max(lines => lines.Count) * Line + 8;
                 Ensure(height);
+                if (fill is { } background) graphics.DrawRectangle(new XSolidBrush(background), Margin, y, Width, height);
                 var x = Margin;
                 for (var column = 0; column < cells.Count; column++)
                 {
+                    var format = columns[column].AlignRight ? XStringFormats.TopRight : XStringFormats.TopLeft;
+                    var cellColor = cells[column] == "Por definir" ? Orange : color;
                     for (var line = 0; line < wrapped[column].Count; line++)
-                        graphics.DrawString(wrapped[column][line], font, new XSolidBrush(color),
-                            new XRect(x, y + line * Line, widths[column] - 6, Line), XStringFormats.TopLeft);
+                        graphics.DrawString(wrapped[column][line], font, new XSolidBrush(cellColor),
+                            new XRect(x + 6, y + 4 + line * Line, widths[column] - 12, Line), format);
                     x += widths[column];
                 }
                 y += height;
-                graphics.DrawLine(new XPen(XColor.FromArgb(225, 231, 239), 0.4), Margin, y - 2, Margin + Width, y - 2);
             }
-            Row(columns, small, Muted);
+            Row(columns.Select(column => column.Title).ToArray(), smallBold, XColors.White, Navy);
             if (rows.Count == 0) Paragraph("Sin tarifas pactadas en esta versión.", Muted);
-            foreach (var row in rows) Row(row, body, XColors.Black);
-            y += 6;
+            for (var index = 0; index < rows.Count; index++)
+                Row(rows[index], body, XColors.Black, index % 2 == 1 ? Tint : null);
+            graphics.DrawLine(new XPen(Rule, 0.7), Margin, y, Margin + Width, y);
+            y += 8;
+        }
+
+        public void Fingerprint(string sha256)
+        {
+            Ensure(34);
+            graphics.DrawRectangle(new XSolidBrush(Tint), Margin, y, Width, 30);
+            graphics.DrawString("HUELLA SHA-256 DEL CONTENIDO", label, new XSolidBrush(Muted), new XRect(Margin + 10, y + 5, Width - 20, 10), XStringFormats.TopLeft);
+            graphics.DrawString(sha256, small, new XSolidBrush(Navy), new XRect(Margin + 10, y + 16, Width - 20, 10), XStringFormats.TopLeft);
+            y += 40;
         }
 
         public void Signatures(ContractDocumentData document)
         {
-            Ensure(120);
-            var column = (Width - 24) / 2;
-            var top = y + 6;
-            var parties = new[] { ("Aviam", "Por AVIAM (el Prestador)"), ("Airline", $"Por {document.AirlineName} (la Aerolínea)") };
+            Ensure(126);
+            var column = (Width - 20) / 2;
+            var top = y;
+            var parties = new[] { ("Aviam", "POR AVIAM (EL PRESTADOR)"), ("Airline", $"POR {document.AirlineName.ToUpper(Spanish)} (LA AEROLÍNEA)") };
             for (var index = 0; index < parties.Length; index++)
             {
-                var (party, label) = parties[index];
-                var x = Margin + index * (column + 24);
+                var (party, caption) = parties[index];
+                var x = Margin + index * (column + 20);
                 var signature = document.Signatures.FirstOrDefault(item => item.Party == party);
-                graphics.DrawRectangle(new XPen(XColor.FromArgb(200, 208, 220), 0.6), x, top, column, 104);
-                graphics.DrawString(label, small, new XSolidBrush(Muted), new XRect(x + 8, top + 8, column - 16, Line), XStringFormats.TopLeft);
+                graphics.DrawRectangle(new XPen(Rule, 0.8), x, top, column, 108);
+                graphics.DrawString(Fit(caption, label, column - 90), label, new XSolidBrush(Muted),
+                    new XRect(x + 10, top + 10, column - 90, 10), XStringFormats.TopLeft);
+                var signed = signature is not null;
+                var chip = signed ? "FIRMADO" : "PENDIENTE";
+                var chipWidth = graphics.MeasureString(chip, label).Width + 14;
+                graphics.DrawRoundedRectangle(new XSolidBrush(signed ? Success : Muted), x + column - chipWidth - 10, top + 7, chipWidth, 14, 6, 6);
+                graphics.DrawString(chip, label, XBrushes.White, new XRect(x + column - chipWidth - 10, top + 10, chipWidth, 10), XStringFormats.TopCenter);
                 var lines = signature is null
-                    ? new[] { "Pendiente de firma." }
+                    ? new[] { ("Pendiente de firma.", Muted, body) }
                     : new[]
                     {
-                        $"Firmado por: {signature.SignerName}", $"Cargo: {signature.SignerTitle}",
-                        $"Fecha: {signature.SignedAt.ToUniversalTime().ToString("dd/MM/yyyy HH:mm", Spanish)} UTC",
+                        (signature.SignerName, Navy, bodyBold),
+                        (signature.SignerTitle, XColors.Black, body),
+                        ($"{signature.SignedAt.ToUniversalTime().ToString("dd/MM/yyyy HH:mm", Spanish)} UTC", Muted, small),
                         signature.DocumentSha256 == document.ContentSha256
-                            ? "Huella coincidente con este documento."
-                            : "Atención: firmó un contenido distinto.",
+                            ? ("Huella coincidente con este documento.", Success, small)
+                            : ("Atención: firmó un contenido distinto.", Orange, small),
                     };
+                graphics.DrawLine(new XPen(Rule, 0.6), x + 10, top + 30, x + column - 10, top + 30);
                 for (var line = 0; line < lines.Length; line++)
-                    graphics.DrawString(lines[line], body, new XSolidBrush(signature is null ? Muted : XColors.Black),
-                        new XRect(x + 8, top + 28 + line * Line, column - 16, Line), XStringFormats.TopLeft);
+                    graphics.DrawString(Fit(lines[line].Item1, lines[line].Item3, column - 20), lines[line].Item3,
+                        new XSolidBrush(lines[line].Item2), new XRect(x + 10, top + 40 + line * Line, column - 20, Line), XStringFormats.TopLeft);
             }
-            y = top + 116;
+            y = top + 120;
             if (document.SignedOn is { } signedOn)
                 Paragraph($"Contrato firmado por ambas partes el {Date(signedOn)}.", Navy);
         }
 
-        public void Finish() => DrawFooter();
+        /// <summary>Draws the footer («Página X de Y») and, for drafts, the watermark on every page.</summary>
+        public void Finish(ContractDocumentData document, bool draft, DateTimeOffset generatedAt)
+        {
+            graphics.Dispose();
+            var stamp = $"Generado el {generatedAt.ToUniversalTime().ToString("dd/MM/yyyy HH:mm", Spanish)} UTC";
+            var reference = $"ELEVANT · AVIAM · {document.ContractCode} v{document.VersionNumber}" + (draft ? " · BORRADOR" : string.Empty);
+            for (var index = 0; index < pdf.PageCount; index++)
+            {
+                var current = pdf.Pages[index];
+                using var overlay = XGraphics.FromPdfPage(current, XGraphicsPdfPageOptions.Append);
+                var width = current.Width.Point - 2 * Margin;
+                var bottom = current.Height.Point - 44;
+                overlay.DrawLine(new XPen(Rule, 0.6), Margin, bottom - 6, Margin + width, bottom - 6);
+                var area = new XRect(Margin, bottom, width, 12);
+                overlay.DrawString(reference, small, new XSolidBrush(Muted), area, XStringFormats.TopLeft);
+                overlay.DrawString(stamp, small, new XSolidBrush(Muted), new XRect(Margin, bottom + 11, width, 12), XStringFormats.TopLeft);
+                overlay.DrawString($"Página {index + 1} de {pdf.PageCount}", smallBold, new XSolidBrush(Navy), area, XStringFormats.TopRight);
+                if (!draft) continue;
+                var center = new XPoint(current.Width.Point / 2, current.Height.Point / 2);
+                overlay.Save();
+                overlay.RotateAtTransform(-35, center);
+                var ink = new XSolidBrush(XColor.FromArgb(46, 255, 92, 0));
+                overlay.DrawString("BORRADOR", watermark, ink, new XRect(center.X - 300, center.Y - 60, 600, 80), XStringFormats.Center);
+                overlay.DrawString("NO VÁLIDO PARA FIRMA", watermarkNote, ink, new XRect(center.X - 300, center.Y + 18, 600, 30), XStringFormats.Center);
+                overlay.Restore();
+            }
+        }
 
         private void Ensure(double height)
         {
-            if (y + height <= page.Height.Point - 56) return;
-            DrawFooter();
+            if (y + height <= page.Height.Point - 60) return;
             NewPage();
         }
 
@@ -199,9 +371,12 @@ public sealed class ContractPdfRenderer : IContractPdfRenderer
             y = Margin;
         }
 
-        private void DrawFooter() =>
-            graphics.DrawString($"{footer}  ·  Página {pdf.PageCount}", small, new XSolidBrush(Muted),
-                new XRect(Margin, page.Height.Point - 36, Width, 14), XStringFormats.TopRight);
+        private string Fit(string text, XFont font, double width)
+        {
+            if (graphics.MeasureString(text, font).Width <= width) return text;
+            while (text.Length > 1 && graphics.MeasureString(text + "…", font).Width > width) text = text[..^1];
+            return text + "…";
+        }
 
         private List<string> Wrap(string text, XFont font, double width)
         {

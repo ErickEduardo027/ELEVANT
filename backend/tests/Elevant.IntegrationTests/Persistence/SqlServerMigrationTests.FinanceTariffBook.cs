@@ -160,7 +160,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("Returned", returned.FinanceDecision);
         Assert.Equal(130m, Assert.Single(returned.Rates).BasePrice);
 
-        // Contracts negotiates a charge and resubmits; Finance approves and the contract becomes active.
+        // Contracts negotiates a charge and resubmits; Finance approves and the contract awaits the signatures.
         var night = Assert.Single(returned.Charges!, item => item.Code == "NIGHT");
         Assert.True((await drafts.UpdateAsync(ContractsAccount, version.PublicId, new UpdateContractDraftInput(
             returned.ValidFrom, null, "USD", "QA revisado",
@@ -171,7 +171,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(20m, Assert.Single(pending.Charges, item => item.ChargeCode == "NIGHT").ContractValue);
         Assert.True((await book.DecideContractApprovalAsync(FinanceAccount, version.PublicId,
             new DecideContractApprovalInput("Approved", null, pending.Summary.Version), cancellationToken)).IsSuccess);
-        Assert.Equal(ContractStatus.Active, (await context.Contracts.AsNoTracking()
+        Assert.Equal(ContractStatus.Draft, (await context.Contracts.AsNoTracking()
             .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
         Assert.Equal(2, (await book.GetContractApprovalAsync(FinanceAccount, version.PublicId, cancellationToken))!
             .History.Count);

@@ -268,6 +268,10 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(profile => profile.SourceUrl).HasMaxLength(512).IsRequired();
             builder.Property(profile => profile.VerifiedAt).HasPrecision(3);
             builder.Property(profile => profile.VerificationSourceUrl).HasMaxLength(512);
+            builder.Property(profile => profile.RegistryStatus).HasConversion<string>().HasMaxLength(16);
+            builder.Property(profile => profile.RegistrySource).HasMaxLength(24);
+            builder.Property(profile => profile.RegistryCheckedAt).HasPrecision(3);
+            builder.Property(profile => profile.RegistryEntityUrl).HasMaxLength(300);
             builder.HasIndex(profile => profile.SourceName).IsUnique();
             // A verified profile is a real airline: its designators cannot belong to another one.
             builder.HasIndex(profile => profile.IataCode).IsUnique()
@@ -365,6 +369,7 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(contract => contract.Status).HasConversion<string>().HasMaxLength(16);
             builder.Property(contract => contract.SignedOn).HasColumnType("date");
             builder.Property(contract => contract.TerminatedOn).HasColumnType("date");
+            builder.Property(contract => contract.ExpiryNoticeSentAt).HasPrecision(3);
             builder.HasIndex(contract => contract.ContractCode).IsUnique();
             builder.HasIndex(contract => new { contract.AirlineId, contract.Status });
             AddNoActionReference<Airline, Contract>(builder, contract => contract.AirlineId);
@@ -452,6 +457,27 @@ internal static class WorkforceCommercialConfiguration
             builder.HasIndex(statusEvent => new { statusEvent.ContractId, statusEvent.OccurredAt });
             AddNoActionReference<Contract, ContractStatusEvent>(builder, statusEvent => statusEvent.ContractId);
             AddNoActionReference<ApplicationUser, ContractStatusEvent>(builder, statusEvent => statusEvent.ActorAccountId);
+        });
+
+        modelBuilder.Entity<AirlinePermit>(builder =>
+        {
+            builder.ToTable("airline_permits", "commercial", table =>
+                table.HasCheckConstraint("ck_airline_permit_dates", "[expires_on] >= [issued_on]"));
+            builder.Property(permit => permit.Kind).HasConversion<string>().HasMaxLength(32);
+            builder.Property(permit => permit.Number).HasMaxLength(60).IsRequired();
+            builder.Property(permit => permit.Issuer).HasMaxLength(120).IsRequired();
+            builder.Property(permit => permit.IssuedOn).HasColumnType("date");
+            builder.Property(permit => permit.ExpiresOn).HasColumnType("date");
+            builder.Property(permit => permit.DocumentUrl).HasMaxLength(512);
+            builder.Property(permit => permit.Review).HasConversion<string>().HasMaxLength(16);
+            builder.Property(permit => permit.ReviewedAt).HasPrecision(3);
+            builder.Property(permit => permit.ReviewNote).HasMaxLength(500);
+            builder.Property(permit => permit.ExpiryNoticeSentAt).HasPrecision(3);
+            builder.HasIndex(permit => new { permit.AirlineId, permit.Kind, permit.ExpiresOn });
+            builder.HasIndex(permit => new { permit.Review, permit.ExpiresOn });
+            AddNoActionReference<Airline, AirlinePermit>(builder, permit => permit.AirlineId);
+            AddNoActionReference<ApplicationUser, AirlinePermit>(builder, permit => permit.SubmittedByAccountId);
+            AddNoActionReference<ApplicationUser, AirlinePermit>(builder, permit => permit.ReviewedByAccountId);
         });
     }
 

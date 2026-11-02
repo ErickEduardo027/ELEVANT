@@ -45,13 +45,19 @@ export const enrichManagedAirlines = () => commercialApi('/governance/airlines/e
 export const saveManagedAirline = (id, values) => commercialApi(id ? `/governance/airlines/${id}` : '/governance/airlines', {
   method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
 });
+/** Checks the airline in Wikidata (or the offline OpenFlights copy) and stores the verdict (ADR-0023). */
+export const checkManagedAirlineRegistry = id => commercialApi(`/governance/airlines/${id}/registry-check`, { method: 'POST' });
 export const archiveManagedAirline = (id, version) => commercialApi(`/governance/airlines/${id}?version=${encodeURIComponent(version)}`, {
   method: 'DELETE',
 });
 export const getMyPermissions = () => commercialApi('/governance/me/permissions');
 export const getProvisioning = () => commercialApi('/governance/provisioning');
+/** Without a temporary password the API emails an activation link instead (ADR-0022). */
 export const provisionAirline = (requestId, email, temporaryPassword) => commercialApi(`/governance/provisioning/${requestId}`, {
-  method: 'POST', body: JSON.stringify({ email, temporaryPassword }),
+  method: 'POST', body: JSON.stringify(temporaryPassword ? { email, temporaryPassword } : { email }),
+});
+export const resendAirlineInvitation = accountId => commercialApi(`/governance/provisioning/accounts/${accountId}/resend-invitation`, {
+  method: 'POST',
 });
 export const getCommercialRequests = () => commercialApi('/contracts/commercial-requests');
 export const getCommercialStations = () => commercialApi('/contracts/commercial-requests/stations');
@@ -132,8 +138,13 @@ async function contractCall(request) {
 /** Formal document of an approved contract version, with its signatures and content hash. */
 export const getContractDocument = versionId => contractCall(() => contractClient().getContractDocument(versionId));
 
+/** PDF of an approved version, or the watermarked review copy of a draft (`{ draft: true }`). */
+export const loadContractPdf = (versionId, { draft = false } = {}) => contractCall(() => draft
+  ? contractClient().downloadContractDraftPdf(versionId)
+  : contractClient().downloadContractDocument(versionId));
+
 export async function downloadContractDocument(versionId, fileName) {
-  const blob = await contractCall(() => contractClient().downloadContractDocument(versionId));
+  const blob = await loadContractPdf(versionId);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -144,3 +155,26 @@ export async function downloadContractDocument(versionId, fileName) {
 
 export const signContractVersion = (versionId, request, idempotencyKey) =>
   contractCall(() => contractClient().signContractVersion(versionId, request, idempotencyKey));
+
+/** Airline permit dossier for Contratos (ADR-0024); review is Submitted, Verified or Rejected. */
+export const getAirlinePermitsForContracts = (review = '') =>
+  commercialApi(`/contracts/permits${review ? `?review=${encodeURIComponent(review)}` : ''}`);
+export const reviewAirlinePermit = (permitId, verified, note, expectedVersion) =>
+  commercialApi(`/contracts/permits/${permitId}/review`, {
+    method: 'POST', body: JSON.stringify({ verified, note: note || null, expectedVersion }),
+  });
+/** Contract history (request, Finance, signatures, permits and status), oldest first. */
+export const getContractTimeline = versionId => commercialApi(`/contract-versions/${versionId}/timeline`);
+/** Suspend, Reactivate, Terminate or Renew (validFrom/validTo) with a reason and the status the user saw. */
+export const applyContractLifecycle = (versionId, values) => commercialApi(`/contract-versions/${versionId}/lifecycle`, {
+  method: 'POST', body: JSON.stringify(values),
+});
+
+/** Opens a private media document (permit scan, PDF or image) in a new tab with the session token. */
+export async function openPrivateDocument(url) {
+  const response = await fetch(commercialMediaUrl(url), { headers: { Authorization: `Bearer ${readSession()?.token ?? ''}` } });
+  if (!response.ok) throw Object.assign(new Error('No se pudo abrir el documento.'), { status: response.status });
+  const objectUrl = URL.createObjectURL(await response.blob());
+  window.open(objectUrl, '_blank', 'noopener');
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}
