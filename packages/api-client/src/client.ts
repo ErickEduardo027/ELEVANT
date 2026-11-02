@@ -2896,13 +2896,14 @@ function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCat
     isOptionalNullable(item.videoUrl, isString) && isInt32(item.displayOrder));
   const airlines = value.airlines.every((item: unknown) => isRecord(item) &&
     hasOnlyKeys(item, ["id", "name", "region", "legalName", "countryCode",
-      "iataCode", "icaoCode", "logoUrl", "isVerified"]) &&
+      "iataCode", "icaoCode", "logoUrl", "isVerified", "registrySource"]) &&
     isUuid(item.id) && isNonEmptyString(item.name) && isNonEmptyString(item.region) &&
     isOptionalNullable(item.legalName, isString) &&
     isOptionalNullable(item.countryCode, isString) &&
     isOptionalNullable(item.iataCode, isString) &&
     isOptionalNullable(item.icaoCode, isString) &&
-    isOptionalNullable(item.logoUrl, isString) && typeof item.isVerified === "boolean");
+    isOptionalNullable(item.logoUrl, isString) && typeof item.isVerified === "boolean" &&
+    isOptionalNullable(item.registrySource, (source: unknown) => source === "Wikidata" || source === "OpenFlights"));
   return services && airlines &&
     new Set(value.services.map(item => item.id.toLowerCase())).size === value.services.length &&
     new Set(value.airlines.map(item => item.id.toLowerCase())).size === value.airlines.length;

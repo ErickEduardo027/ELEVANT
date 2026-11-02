@@ -9,8 +9,8 @@ internal sealed class ElevantPdfFontResolver : IFontResolver
     private const string RegularFace = "elevant-noto-sans-regular";
     private const string BoldFace = "elevant-noto-sans-bold";
     private static readonly object Gate = new();
-    private static readonly Lazy<byte[]> RegularBytes = new(() => Resource("NotoSans-Regular.ttf"));
-    private static readonly Lazy<byte[]> BoldBytes = new(() => Resource("NotoSans-Bold.ttf"));
+    private static readonly Lazy<byte[]> RegularBytes = new(() => EmbeddedResources.Read("NotoSans-Regular.ttf"));
+    private static readonly Lazy<byte[]> BoldBytes = new(() => EmbeddedResources.Read("NotoSans-Bold.ttf"));
 
     internal static void EnsureRegistered()
     {
@@ -21,18 +21,6 @@ internal sealed class ElevantPdfFontResolver : IFontResolver
             else if (GlobalFontSettings.FontResolver is not ElevantPdfFontResolver)
                 throw new InvalidOperationException("An incompatible PDF font resolver is configured.");
         }
-    }
-
-    /// <summary>Reads an embedded resource of this assembly by its file name.</summary>
-    internal static byte[] Resource(string fileName)
-    {
-        var assembly = typeof(ElevantPdfFontResolver).Assembly;
-        var resource = assembly.GetManifestResourceNames().Single(name =>
-            name.EndsWith(fileName, StringComparison.Ordinal));
-        using var stream = assembly.GetManifestResourceStream(resource)!;
-        using var buffer = new MemoryStream();
-        stream.CopyTo(buffer);
-        return buffer.ToArray();
     }
 
     // Bold uses the real Noto Sans Bold face instead of a simulated stroke; italics are not used.

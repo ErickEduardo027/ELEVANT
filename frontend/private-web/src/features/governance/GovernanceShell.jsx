@@ -15,7 +15,7 @@ import PasswordField from '../../components/PasswordField';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import {
   getGovernance, getProvisioning, provisionAirline, getGovernanceAudit,
-  getManagedAirlines, saveManagedAirline, archiveManagedAirline, enrichManagedAirlines,
+  getManagedAirlines, saveManagedAirline, archiveManagedAirline, enrichManagedAirlines, checkManagedAirlineRegistry,
 } from '../../services/commercialGovernanceApi';
 import { convertLegacyRole, getDepartmentsOverview, listLegacyRoles } from '../../services/departmentGovernanceService';
 
@@ -91,7 +91,12 @@ export default function GovernanceShell({ user, onLogout }) {
   async function run(action, successMessage) {
     setError(''); setNotice('');
     try { await action(); setNotice(successMessage); await refresh(); return true; }
-    catch (failure) { setError(failure.message); return false; }
+    catch (failure) {
+      setError(failure.code === 'registry_check_required'
+        ? 'Para publicarla, verifica la aerolínea en el registro público (check verde) o marca la verificación manual con su fuente.'
+        : failure.message);
+      return false;
+    }
   }
 
   const pendingValidations = overview?.pendingRequests ?? 0;
@@ -128,7 +133,8 @@ export default function GovernanceShell({ user, onLogout }) {
           {status === 'ready' && moduleId === 'airlines' && <AirlinesPanel airlines={airlines}
             onSave={(id, values) => run(() => saveManagedAirline(id, values), 'Aerolínea guardada.')}
             onArchive={(id, version) => run(() => archiveManagedAirline(id, version), 'Aerolínea archivada.')}
-            onEnrich={() => run(enrichManagedAirlines, 'Fichas históricas sin edición manual revisadas.')} />}
+            onEnrich={() => run(enrichManagedAirlines, 'Fichas históricas sin edición manual revisadas.')}
+            onCheckRegistry={async id => { const result = await checkManagedAirlineRegistry(id); await refresh(); return result; }} />}
           {status === 'ready' && moduleId === 'settings' && <GovernanceSettings snapshot={snapshot} run={run} />}
         </div>
   </ShellFrame>;

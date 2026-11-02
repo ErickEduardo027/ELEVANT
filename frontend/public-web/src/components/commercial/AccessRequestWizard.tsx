@@ -346,6 +346,7 @@ export function AccessRequestWizard() {
             <ReadOnlyField label="Código IATA" value={airline.iataCode ?? null} />
             <ReadOnlyField label="Código ICAO" value={airline.icaoCode ?? null} />
           </div>
+          {airline.registrySource && <p className="access-airline__registry" role="note">✓ Verificada en registro público ({airline.registrySource}): el nombre y los códigos coinciden con una aerolínea en operación.</p>}
           <p className="access-airline__verification">{airline.isVerified ? "✓ Identidad verificada por AVIAM" : "Los datos sin fuente aparecen como «Sin dato confirmado»; Contratos verificará la identidad legal."}</p>
         </div>}
       </> : step === 3 ? <>

@@ -1,10 +1,19 @@
 namespace Elevant.Application.Abstractions.Commercial;
 
+/// <param name="RegistryStatus">Last public-registry check (ADR-0023): Found, Mismatch, Defunct or NotFound; null when never checked or stale.</param>
 public sealed record ManagedAirlineData(
     Guid Id, string SourceName, string DisplayName, string? LegalName,
     string Region, string? CountryCode, string? IataCode, string? IcaoCode,
     string? LogoUrl, string SourceUrl, string? VerificationSourceUrl,
-    bool IsVerified, bool IsPublished, string Version);
+    bool IsVerified, bool IsPublished, string Version,
+    string? RegistryStatus = null, string? RegistrySource = null, DateTimeOffset? RegistryCheckedAt = null,
+    string? RegistryEntityUrl = null);
+
+/// <summary>What a registry check is about; the record step refuses it if these changed meanwhile.</summary>
+public sealed record AirlineRegistryKey(Guid Id, string Name, string? IataCode, string? IcaoCode);
+
+/// <summary>The stored airline after a registry check, with the full verdict for the screen.</summary>
+public sealed record AirlineRegistryCheckResult(ManagedAirlineData Airline, AirlineRegistryCheck Check);
 
 public sealed record ManagedAirlineInput(
     string SourceName, string DisplayName, string? LegalName,
@@ -52,10 +61,10 @@ public sealed record ManagedAirlineInput(
 }
 
 public sealed record AirlineMutationResult(ManagedAirlineData? Airline,
-    CatalogMutationFailure? Failure)
+    CatalogMutationFailure? Failure, string? Code = null)
 {
     public static AirlineMutationResult Success(ManagedAirlineData airline) => new(airline, null);
-    public static AirlineMutationResult Failed(CatalogMutationFailure failure) => new(null, failure);
+    public static AirlineMutationResult Failed(CatalogMutationFailure failure, string? code = null) => new(null, failure, code);
 }
 
 public sealed record AirlineEnrichmentResult(int Changed, CatalogMutationFailure? Failure);
@@ -70,4 +79,10 @@ public interface ICommercialAirlineManagementStore
         string version, CancellationToken cancellationToken = default);
     Task<AirlineEnrichmentResult> EnrichHistoricalCatalogAsync(Guid actorId,
         CancellationToken cancellationToken = default);
+    /// <summary>Name and codes to check; null with a failure for a non super administrator or an unknown airline.</summary>
+    Task<(AirlineRegistryKey? Key, CatalogMutationFailure? Failure)> RegistryKeyAsync(Guid actorId, Guid profileId,
+        CancellationToken cancellationToken = default);
+    /// <summary>Stores the verdict unless the name or codes changed after the key was read (Conflict).</summary>
+    Task<AirlineMutationResult> RecordRegistryCheckAsync(Guid actorId, AirlineRegistryKey key,
+        AirlineRegistryCheck check, CancellationToken cancellationToken = default);
 }

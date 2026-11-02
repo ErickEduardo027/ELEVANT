@@ -425,6 +425,60 @@ export interface AirlinePreinvoicePageResponse {
   preinvoices: AirlinePreinvoiceResponse[];
 }
 
+export interface AirlineRegistryCheck {
+  status: string;
+  /** @nullable */
+  source?: string | null;
+  /** @nullable */
+  matchedName?: string | null;
+  /** @nullable */
+  matchedIataCode?: string | null;
+  /** @nullable */
+  matchedIcaoCode?: string | null;
+  /** @nullable */
+  country?: string | null;
+  /** @nullable */
+  entityUrl?: string | null;
+  differences: string[];
+  checkedAt: string;
+}
+
+export interface ManagedAirlineData {
+  id: string;
+  sourceName: string;
+  displayName: string;
+  /** @nullable */
+  legalName?: string | null;
+  region: string;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  sourceUrl: string;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  isVerified: boolean;
+  isPublished: boolean;
+  version: string;
+  /** @nullable */
+  registryStatus?: string | null;
+  /** @nullable */
+  registrySource?: string | null;
+  /** @nullable */
+  registryCheckedAt?: string | null;
+  /** @nullable */
+  registryEntityUrl?: string | null;
+}
+
+export interface AirlineRegistryCheckResult {
+  airline: ManagedAirlineData;
+  check: AirlineRegistryCheck;
+}
+
 export interface AirlineTreasuryAdjustmentLineResponse {
   invoiceLineId: string;
   quantity: number;
@@ -3054,29 +3108,6 @@ export interface LoginChallengeResponse {
   readonly code: string;
 }
 
-export interface ManagedAirlineData {
-  id: string;
-  sourceName: string;
-  displayName: string;
-  /** @nullable */
-  legalName?: string | null;
-  region: string;
-  /** @nullable */
-  countryCode?: string | null;
-  /** @nullable */
-  iataCode?: string | null;
-  /** @nullable */
-  icaoCode?: string | null;
-  /** @nullable */
-  logoUrl?: string | null;
-  sourceUrl: string;
-  /** @nullable */
-  verificationSourceUrl?: string | null;
-  isVerified: boolean;
-  isPublished: boolean;
-  version: string;
-}
-
 export interface ManagedAirlineInput {
   sourceName: string;
   displayName: string;
@@ -3837,6 +3868,8 @@ export interface PublicAirlineData {
   /** @nullable */
   logoUrl?: string | null;
   isVerified: boolean;
+  /** @nullable */
+  registrySource?: string | null;
 }
 
 export interface PublicServiceData {
@@ -6451,6 +6484,38 @@ export const enrichManagedAirlines = async ( options?: RequestInit): Promise<Air
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlineEnrichmentResult = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCheckManagedAirlineRegistryUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/governance/airlines/${id}/registry-check`
+}
+
+/**
+ * @summary Checks the airline against public registries (Wikidata, then OpenFlights) and stores the
+verdict; a green check allows publishing it in step 2 of the public wizard (ADR-0023).
+ */
+export const checkManagedAirlineRegistry = async (id: string, options?: RequestInit): Promise<AirlineRegistryCheckResult> => {
+
+  const res = await fetch(getCheckManagedAirlineRegistryUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineRegistryCheckResult = body ? JSON.parse(body) : {}
   return data
 }
 
