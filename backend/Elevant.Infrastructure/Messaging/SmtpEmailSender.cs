@@ -3,6 +3,7 @@ using System.Net.Mail;
 using System.Net.Mime;
 using System.Text;
 using Elevant.Application.Abstractions.Messaging;
+using Elevant.Application.Identity.AccountEmails;
 using Microsoft.Extensions.Options;
 
 namespace Elevant.Infrastructure.Messaging;
@@ -48,19 +49,7 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IEmailSende
         var settings = options.Value;
         if (!settings.IsConfigured) throw new InvalidOperationException("SMTP is not configured.");
 
-        using var mail = new MailMessage
-        {
-            From = new MailAddress(settings.FromAddress!, settings.FromName, Encoding.UTF8),
-            Subject = message.Subject,
-            SubjectEncoding = Encoding.UTF8,
-            BodyEncoding = Encoding.UTF8,
-            Body = message.TextBody,
-            IsBodyHtml = false,
-        };
-        mail.To.Add(new MailAddress(message.To));
-        mail.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(message.HtmlBody, Encoding.UTF8,
-            MediaTypeNames.Text.Html));
-
+        using var mail = BuildMessage(message, settings);
         using var client = new SmtpClient(settings.Host, settings.Port)
         {
             EnableSsl = settings.UseTls,
@@ -71,4 +60,34 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IEmailSende
         };
         await client.SendMailAsync(mail, cancellationToken);
     }
+
+    /// <summary>
+    /// Plain text plus an HTML alternative. When the HTML shows the ELEVANT logo
+    /// (`cid:` + <see cref="AccountEmailTemplates.LogoContentId"/>), the logo travels inside the
+    /// message, so it displays without loading anything from the internet.
+    /// </summary>
+    internal static MailMessage BuildMessage(EmailMessage message, SmtpOptions settings)
+    {
+        var mail = new MailMessage
+        {
+            From = new MailAddress(settings.FromAddress!, settings.FromName, Encoding.UTF8),
+            Subject = message.Subject,
+            SubjectEncoding = Encoding.UTF8,
+            BodyEncoding = Encoding.UTF8,
+            Body = message.TextBody,
+            IsBodyHtml = false,
+        };
+        mail.To.Add(new MailAddress(message.To));
+        var html = AlternateView.CreateAlternateViewFromString(message.HtmlBody, Encoding.UTF8, MediaTypeNames.Text.Html);
+        if (message.HtmlBody.Contains("cid:" + AccountEmailTemplates.LogoContentId, StringComparison.Ordinal))
+            html.LinkedResources.Add(new LinkedResource(new MemoryStream(Logo.Value), MediaTypeNames.Image.Jpeg)
+            {
+                ContentId = AccountEmailTemplates.LogoContentId,
+                TransferEncoding = TransferEncoding.Base64,
+            });
+        mail.AlternateViews.Add(html);
+        return mail;
+    }
+
+    private static readonly Lazy<byte[]> Logo = new(() => EmbeddedResources.Read("elevant-logo.jpg"));
 }
