@@ -23,29 +23,48 @@ almacenamiento, el backup y una restauración de prueba estén verificados.
 
 ## Cambio pendiente: correo no-reply del portal (ADR-0022)
 
-La activación de cuentas de aerolínea, el código de 6 dígitos del login público
-y la recuperación de contraseña envían correo desde la API mediante
-`infra.email_outbox` y el worker `EmailDispatchWorker`. Sin `ELEVANT_SMTP_HOST`
-la API arranca igual y los correos quedan **pendientes** (nunca se marcan como
-enviados); en local, `compose.local.yml` los captura en Mailpit
-(`http://127.0.0.1:8025`).
+La activación de cuentas de aerolínea, el código de 6 dígitos del login público y la recuperación de contraseña envían correo desde la API mediante `infra.email_outbox` y el worker `EmailDispatchWorker`. Sin `ELEVANT_SMTP_HOST` la API arranca igual y los correos quedan **pendientes**: nunca se marcan como enviados. En local, `compose.local.yml` los captura en Mailpit (`http://127.0.0.1:8025`).
 
-Para el envío real con la cuenta Gmail no-reply:
+La cuenta Gmail no-reply ya tiene la verificación en 2 pasos y una contraseña de aplicación de 16 letras. Gmail rechaza la contraseña normal con `535 Login denied`. El 2 de noviembre de 2026 se verificó un envío real desde Development local de dos formas: con curl y con `SmtpEmailSender`, la prueba opt-in `SmtpEmailSenderLiveTests` con `ELEVANT_LIVE_SMTP=1`. El agente entrega fuera del repositorio las siete variables `ELEVANT_SMTP_*` listas para pegar.
 
-1. En la cuenta Google: activar la verificación en 2 pasos y crear una
-   **contraseña de aplicación** (16 letras). Gmail rechaza por SMTP la
-   contraseña normal (`535 Login denied`).
-2. En el Environment privado del proyecto API de Dokploy, añadir sin comillas:
-   `ELEVANT_SMTP_HOST=smtp.gmail.com`, `ELEVANT_SMTP_PORT=587`,
-   `ELEVANT_SMTP_USE_TLS=true`, `ELEVANT_SMTP_USERNAME`, `ELEVANT_SMTP_PASSWORD`
-   (la contraseña de aplicación), `ELEVANT_SMTP_FROM_ADDRESS` y
-   `ELEVANT_SMTP_FROM_NAME=ELEVANT`. Los enlaces usan
-   `ELEVANT_API_PUBLIC_WEB_ORIGIN`, que ya existe.
-3. Actualizar el Raw API con `backend/compose.development.api.yml` y verificar
-   Preview Compose como en cualquier cambio de API.
-4. Prueba de humo: el superadministrador llama `POST governance/email/test` y
-   revisa `GET governance/email/deliveries` hasta ver `Sent`. Un `Failed`
-   muestra el motivo sin cuerpo ni credenciales.
+**Checklist del VPS.** El operador lo aplica en orden, sin mostrar valores en pantalla, logs ni capturas.
+
+1. **Salida a internet de la API.** En el VPS:
+   - `docker network inspect elevant-dev-api-runtime --format '{{.Internal}}'` debe responder `false`.
+   - Conexión al puerto 587 desde esa red:
+     `docker run --rm --network elevant-dev-api-runtime curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777 -sv --max-time 10 telnet://smtp.gmail.com:587 </dev/null`.
+     La salida debe mostrar el saludo `220 smtp.gmail.com ESMTP`.
+   - El firewall versionado (`ops/dokploy/firewall`) solo filtra la entrada; si la conexión falla, la salida la bloquea el proveedor o la red de Docker.
+2. **Variables en el Environment root-only del proyecto API.** Añadir las siete variables, sin comillas:
+   - `ELEVANT_SMTP_HOST=smtp.gmail.com`
+   - `ELEVANT_SMTP_PORT=587`
+   - `ELEVANT_SMTP_USE_TLS=true`
+   - `ELEVANT_SMTP_USERNAME` y `ELEVANT_SMTP_FROM_ADDRESS`: la dirección no-reply completa; deben ser iguales porque Gmail reescribe cualquier otro remitente.
+   - `ELEVANT_SMTP_PASSWORD`: la contraseña de aplicación.
+   - `ELEVANT_SMTP_FROM_NAME=ELEVANT`
+
+   Los enlaces de los correos usan `ELEVANT_API_PUBLIC_WEB_ORIGIN`, que ya existe.
+3. **Antes del merge, igual que en el checkpoint de CORS:**
+   - deshabilitar el schedule `ELEVANT API CD - Poll` y pausar `api-cd`;
+   - guardar en Raw el Compose de `backend/compose.development.api.yml` del PR, que añade las entradas `Smtp__*` y `AccountEmail__PublicWebBaseUrl`;
+   - verificar Preview Compose;
+   - ejecutar `--dry-run`.
+
+   No pulsar **Deploy**.
+4. **Merge y promoción**, en orden Database Release → API → AVIAM Web y Public Web: publicar el bundle certificado, hacer `--poll` manual, aceptar y reactivar el schedule.
+5. **Prueba de humo** desde el navegador:
+   - En AVIAM Web, **Superadministración → Configuración → Correo del sistema** debe mostrar «SMTP configurado».
+   - «Enviar correo de prueba» a un buzón real debe pasar de «Pendiente» a «Enviado» en pocos segundos.
+   - Después, «¿Olvidaste tu contraseña?» en Public Web con una cuenta de aerolínea real debe entregar el enlace.
+6. **Si algo falla**, la misma tarjeta muestra el motivo sin cuerpo ni credenciales:
+
+   | Motivo | Acción |
+   |---|---|
+   | `Authentication` o `5.7.8` | Rehacer la contraseña de aplicación |
+   | Timeout | Volver al paso 1 |
+   | «SMTP sin configurar» | Revisar el paso 2 y que el contenedor se recreó |
+
+   Contingencia temporal: `AccountEmail__RequireAirlineLoginCode=false` en el Environment API desactiva el código del login. Activación y recuperación siguen requiriendo SMTP.
 
 Las credenciales nunca entran al repositorio, al chat ni a los logs.
 
