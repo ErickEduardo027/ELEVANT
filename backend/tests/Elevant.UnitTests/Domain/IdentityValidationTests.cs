@@ -45,8 +45,14 @@ public sealed class IdentityValidationTests
     [InlineData("5050505050RD", "DO", false)]
     [InlineData("1234567RD", "DO", false)]
     [InlineData("RD12345678", "DO", false)]
+    [InlineData("AB1234567", "DO", false)]
     [InlineData("X1234567", "ES", true)]
     [InlineData("123456789", "US", true)]
+    [InlineData("A12345678", "US", true)]
+    [InlineData("AB1234567", "US", false)]
+    [InlineData("AB123456", "CA", true)]
+    [InlineData("A123456BC", "CA", true)]
+    [InlineData("A1234567", "CA", false)]
     [InlineData("AAAAAA", null, false)]
     [InlineData("1111111", null, false)]
     [InlineData("5050505050RD", null, false)]
@@ -65,9 +71,20 @@ public sealed class IdentityValidationTests
     [Fact]
     public void ExplainsTheExpectedFormat()
     {
-        Assert.Contains("2 letras", IdentityDocuments.Example(IdentityDocumentKind.Passport, "DO"));
+        Assert.Equal("RD1234567 (RD y 7 dígitos)", IdentityDocuments.Example(IdentityDocumentKind.Passport, "DO"));
         Assert.Contains("11 dígitos", IdentityDocuments.Example(IdentityDocumentKind.Cedula));
     }
+
+    // Same messages as the api-client validation tests, so the form and the API say the same.
+    [Theory]
+    [InlineData(IdentityDocumentKind.Passport, "AB1234567", "DO", "El pasaporte dominicano: la posición 1 debe ser «R»; encontramos «A». Formato: RD1234567.")]
+    [InlineData(IdentityDocumentKind.Passport, "RD12345X7", "DO", "El pasaporte dominicano: la posición 8 debe ser un dígito; encontramos «X». Formato: RD1234567.")]
+    [InlineData(IdentityDocumentKind.Passport, "RD123456", "DO", "El pasaporte dominicano tiene 9 caracteres; escribiste 8.")]
+    [InlineData(IdentityDocumentKind.Cedula, "001-12345A7-8", null, "La posición 9 de la cédula debe ser un dígito; encontramos «A».")]
+    [InlineData(IdentityDocumentKind.Cedula, "0011234567", null, "La cédula tiene 11 dígitos (3 de oficina, 7 de secuencia y 1 verificador); escribiste 10.")]
+    [InlineData(IdentityDocumentKind.Passport, "RD-123*4567", "DO", "El carácter «*» no es válido; usa solo letras y dígitos.")]
+    public void ExplainsTheFirstWrongPosition(IdentityDocumentKind kind, string number, string? nationality, string problem) =>
+        Assert.Equal(problem, IdentityDocuments.Check(kind, number, nationality).Problem);
 
     /// <summary>Builds a cédula whose last digit satisfies the Luhn rule used by the JCE.</summary>
     public static string WithLuhnDigit(string tenDigits)

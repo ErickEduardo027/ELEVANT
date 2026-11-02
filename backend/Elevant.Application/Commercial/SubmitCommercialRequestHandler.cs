@@ -87,27 +87,24 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
         };
     }
 
+    /// <summary>
+    /// The representative identifies with a Dominican cédula or a passport whose nationality is
+    /// given; every character is checked in its position (ADR-0020). «Otro» is no longer accepted.
+    /// </summary>
     private static (bool Valid, string? Number)? CanonicalDocument(string? type, string? number,
         string? nationality)
     {
-        if (string.IsNullOrWhiteSpace(type) && string.IsNullOrWhiteSpace(number)) return null;
-        if (string.IsNullOrWhiteSpace(number)) return (false, null);
+        if (string.IsNullOrWhiteSpace(type) || string.IsNullOrWhiteSpace(number)) return (false, null);
         var canonical = type switch
         {
-            "NationalId" => IdentityDocuments.Normalize(IdentityDocumentKind.Cedula, number),
-            "Passport" => IdentityDocuments.Normalize(IdentityDocumentKind.Passport, number, nationality),
-            "Other" => OtherDocument(number),
+            "NationalId" when string.IsNullOrWhiteSpace(nationality) ||
+                string.Equals(nationality.Trim(), "DO", StringComparison.OrdinalIgnoreCase) =>
+                IdentityDocuments.Normalize(IdentityDocumentKind.Cedula, number),
+            "Passport" when !string.IsNullOrWhiteSpace(nationality) =>
+                IdentityDocuments.Normalize(IdentityDocumentKind.Passport, number, nationality),
             _ => null,
         };
         return (canonical is not null, canonical);
-    }
-
-    private static string? OtherDocument(string number)
-    {
-        var value = number.Trim();
-        return value.Length is >= 3 and <= 40 &&
-            value.All(character => char.IsAsciiLetterOrDigit(character) ||
-                character is ' ' or '-' or '/') ? value : null;
     }
 
     private static bool IsValid(SubmitCommercialRequestCommand command) =>

@@ -46,6 +46,38 @@ public sealed class SubmitCommercialRequestHandlerTests
         Assert.Equal("REQ-2026-0001", result.Reference);
     }
 
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("Other", "LIC-12345")]
+    public async Task RequiresACedulaOrPassportAndNoLongerAcceptsOther(string? type, string? number)
+    {
+        var store = new RecordingStore();
+        var result = await new SubmitCommercialRequestHandler(store).HandleAsync(ValidCommand() with
+        {
+            RepresentativeDocumentType = type,
+            RepresentativeDocumentNumber = number,
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest, result.Failure);
+        Assert.Null(store.Written);
+    }
+
+    [Theory]
+    [InlineData("Passport", "RD1234567", null)]
+    [InlineData("NationalId", "00112345673", "ES")]
+    public async Task APassportNeedsItsNationalityAndACedulaIsDominican(string type, string number, string? nationality)
+    {
+        var store = new RecordingStore();
+        var result = await new SubmitCommercialRequestHandler(store).HandleAsync(ValidCommand() with
+        {
+            RepresentativeDocumentType = type,
+            RepresentativeDocumentNumber = number,
+            RepresentativeNationalityCode = nationality,
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest, result.Failure);
+    }
+
     [Fact]
     public async Task ReceiptLookupDoesNotSubmitAndRequiresValidOriginalPayload()
     {
@@ -126,6 +158,7 @@ public sealed class SubmitCommercialRequestHandlerTests
     [Theory]
     [InlineData("Passport", "5050505050RD", "DO")]
     [InlineData("Passport", "AAAAAA", "ES")]
+    [InlineData("Passport", "AB1234567", "DO")]
     [InlineData("NationalId", "001-1234567-8", null)]
     [InlineData("NationalId", "ABC123", null)]
     public async Task RejectsDocumentsThatDoNotMatchTheirRealFormat(string type, string number, string? nationality)
@@ -144,7 +177,8 @@ public sealed class SubmitCommercialRequestHandlerTests
 
     private static SubmitCommercialRequestCommand ValidCommand() => new(
         Guid.NewGuid(), Guid.NewGuid(), [Guid.NewGuid()],
-        "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true);
+        "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true,
+        RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673");
 
     private sealed class RecordingStore : ICommercialIntakeStore
     {

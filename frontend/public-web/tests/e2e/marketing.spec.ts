@@ -90,6 +90,18 @@ test.describe("landing pública", () => {
     await page.getByRole("combobox", { name: "Cargo" }).selectOption("Gerente de operaciones");
     await page.getByRole("textbox", { name: "Correo corporativo" }).fill("ana@synthetic.example.test");
     await page.getByRole("textbox", { name: "Teléfono" }).fill("+1 809 555 0100");
+    // «Otro» no longer exists and each character is checked in its position.
+    await expect(page.getByRole("combobox", { name: "Tipo de documento" }).locator("option"))
+      .toHaveText(["Seleccione", "Cédula dominicana", "Pasaporte"]);
+    await page.getByRole("combobox", { name: "Tipo de documento" }).selectOption("Passport");
+    await page.getByRole("combobox", { name: "Nacionalidad del pasaporte" }).selectOption("DO");
+    const documentNumber = page.getByRole("textbox", { name: "Número de documento" });
+    await documentNumber.fill("ab1234567");
+    await documentNumber.blur();
+    await expect(page.getByText("El pasaporte dominicano: la posición 1 debe ser «R»; encontramos «A». Formato: RD1234567."))
+      .toBeVisible();
+    await documentNumber.fill("rd1234567");
+    await expect(documentNumber).toHaveValue("RD1234567");
     await page.getByRole("combobox", { name: "País" }).selectOption("DO");
     await page.getByRole("combobox", { name: "Provincia / Estado / Región" }).selectOption("25");
     await page.getByRole("combobox", { name: "Municipio / Ciudad" }).selectOption("Santiago de los Caballeros");
@@ -101,7 +113,9 @@ test.describe("landing pública", () => {
     expect(submissions[0]).toMatchObject({ airlineProfileId: airlineId, serviceIds: [serviceId],
       representativeEmail: "ana@synthetic.example.test", authorityDeclared: true,
       representativeTitle: "Gerente de operaciones", representativeCountry: "República Dominicana",
-      representativeProvince: "Santiago", representativeMunicipality: "Santiago de los Caballeros" });
+      representativeProvince: "Santiago", representativeMunicipality: "Santiago de los Caballeros",
+      representativeDocumentType: "Passport", representativeDocumentNumber: "RD1234567",
+      representativeNationalityCode: "DO" });
     expect(submissions[0]).not.toHaveProperty("password");
   });
 
