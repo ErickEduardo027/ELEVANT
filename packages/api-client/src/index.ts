@@ -98,10 +98,12 @@ export {
   PASSPORT_PATTERNS,
   checkIdentityDocument,
   identityDocumentExample,
+  identityDocumentRequirements,
   normalizeIdentityDocument,
   normalizePhone,
   type IdentityDocumentKind,
   type IdentityDocumentCheck,
+  type DocumentRequirement,
 } from "./validation";
 export {
   type AccountChangeResponse,

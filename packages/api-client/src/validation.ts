@@ -68,14 +68,19 @@ function checkCedula(value: string): IdentityDocumentCheck {
     if (!/\d/.test(value[index]!))
       return invalid(`La posición ${index + 1} de la cédula debe ser un dígito; encontramos «${value[index]}».`);
   if (new Set(value).size === 1) return invalid("La cédula no puede repetir el mismo dígito en todas las posiciones.");
+  return cedulaCheckDigitMatches(value)
+    ? valid(value)
+    : invalid("El dígito verificador (posición 11) no corresponde a los 10 anteriores; revisa el número.");
+}
+
+/** Luhn over the first 10 digits of an 11-digit cédula, compared with digit 11. */
+function cedulaCheckDigitMatches(value: string): boolean {
   let sum = 0;
   for (let index = 0; index < 10; index += 1) {
     const product = Number(value[index]) * (index % 2 === 0 ? 1 : 2);
     sum += product > 9 ? product - 9 : product;
   }
-  return (10 - sum % 10) % 10 === Number(value[10])
-    ? valid(value)
-    : invalid("El dígito verificador (posición 11) no corresponde a los 10 anteriores; revisa el número.");
+  return (10 - sum % 10) % 10 === Number(value[10]);
 }
 
 // "RD9999999" reads as RD1234567; "AA999999" as LL000000 (L = letra, 0 = dígito).
@@ -127,12 +132,16 @@ function checkRnc(value: string): IdentityDocumentCheck {
   for (let index = 0; index < 9; index += 1)
     if (!/\d/.test(value[index]!))
       return invalid(`La posición ${index + 1} del RNC debe ser un dígito; encontramos «${value[index]}».`);
+  return rncCheckDigitMatches(value) ? valid(value)
+    : invalid("El dígito verificador del RNC (posición 9) no corresponde; revisa el número.");
+}
+
+function rncCheckDigitMatches(value: string): boolean {
   const weights = [7, 9, 8, 6, 5, 4, 3, 2];
   const sum = weights.reduce((total, weight, index) => total + Number(value[index]) * weight, 0);
   const remainder = sum % 11;
   const check = remainder === 0 ? 2 : remainder === 1 ? 1 : 11 - remainder;
-  return check === Number(value[8]) ? valid(value)
-    : invalid("El dígito verificador del RNC (posición 9) no corresponde; revisa el número.");
+  return check === Number(value[8]);
 }
 
 /** Validates the document and explains the first position that fails (mirror of IdentityDocuments.Check). */
@@ -158,6 +167,72 @@ export function checkIdentityDocument(kind: IdentityDocumentKind, number: string
 export function normalizeIdentityDocument(kind: IdentityDocumentKind, number: string | null | undefined,
   nationality?: string | null): string | null {
   return checkIdentityDocument(kind, number, nationality).number;
+}
+
+/** One rule of a document number and whether the typed value already meets it. */
+export type DocumentRequirement = { label: string; met: boolean };
+
+/**
+ * The rules of {@link checkIdentityDocument} as a checklist to show while typing. Every
+ * requirement is met exactly when the check accepts the number.
+ */
+export function identityDocumentRequirements(kind: IdentityDocumentKind, number: string | null | undefined,
+  nationality?: string | null): DocumentRequirement[] {
+  const value = (number ?? "").trim().replace(/[ .-]/g, "").toUpperCase();
+  const length = value.length;
+  const digits = /^\d+$/.test(value);
+  const alphanumeric = /^[A-Z0-9]+$/.test(value);
+  const rule = (label: string, met: boolean): DocumentRequirement => ({ label, met });
+  const nation = country(nationality);
+  switch (kind) {
+    case "Cedula":
+    case "Residence": {
+      const complete = digits && length === 11;
+      return [
+        rule("Solo dígitos", digits),
+        rule(`11 dígitos (${Math.min(length, 99)}/11)`, length === 11),
+        rule("No repite el mismo dígito en todas las posiciones", complete && new Set(value).size > 1),
+        rule("Dígito verificador correcto", complete && cedulaCheckDigitMatches(value)),
+      ];
+    }
+    case "Passport": {
+      if (nation === "DO") {
+        const rest = value.startsWith(DOMINICAN_PASSPORT_PREFIX) ? value.slice(2) : "";
+        const leading = /^\d*/.exec(rest)![0].length;
+        return [
+          rule(`Empieza por ${DOMINICAN_PASSPORT_PREFIX}`, value.startsWith(DOMINICAN_PASSPORT_PREFIX)),
+          rule(`7 dígitos después de ${DOMINICAN_PASSPORT_PREFIX} (${Math.min(leading, 7)}/7)`, /^\d{7}$/.test(rest)),
+          rule(`9 caracteres en total (${Math.min(length, 99)})`, length === 9),
+        ];
+      }
+      const patterns = nation ? PASSPORT_PATTERNS[nation] : undefined;
+      if (patterns) {
+        const lengths = [...new Set(patterns.map((item) => item.length))].sort((a, b) => a - b);
+        const shapes = patterns.map((item) => item.replace(/A/g, "L").replace(/9/g, "0")).join(" o ");
+        return [
+          rule("Solo letras y dígitos", alphanumeric),
+          rule(`${lengths.join(" o ")} caracteres (${Math.min(length, 99)})`, lengths.includes(length)),
+          rule(`Sigue el formato ${shapes} (L = letra, 0 = dígito)`, alphanumeric
+            && patterns.some((pattern) => pattern.length === length && !mismatch(value, pattern))),
+        ];
+      }
+      return [
+        rule("Solo letras y dígitos", alphanumeric),
+        rule(`De 6 a 9 caracteres (${Math.min(length, 99)})`, length >= 6 && length <= 9),
+        rule("Incluye al menos un dígito", /\d/.test(value)),
+        rule("No repite casi el mismo carácter", length >= 6 && new Set(value).size > 2),
+      ];
+    }
+    case "Rnc": {
+      const complete = digits && length === 9;
+      return [
+        rule("Solo dígitos", digits),
+        rule(`9 dígitos (${Math.min(length, 99)}/9)`, length === 9),
+        rule("Dígito verificador correcto", complete && rncCheckDigitMatches(value)),
+      ];
+    }
+    default: return [];
+  }
 }
 
 /** Example shown next to the error so people know the expected shape. */
