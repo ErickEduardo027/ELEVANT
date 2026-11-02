@@ -2,10 +2,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ContractDetailDrawer from './ContractDetailDrawer';
-import { downloadContractDocument, getContractDocument, signContractVersion } from '../../../services/commercialGovernanceApi';
+import { getContractDocument, loadContractPdf, signContractVersion } from '../../../services/commercialGovernanceApi';
 
 vi.mock('../../../services/commercialGovernanceApi', () => ({
-  getContractDocument: vi.fn(), downloadContractDocument: vi.fn(), signContractVersion: vi.fn(),
+  getContractDocument: vi.fn(), loadContractPdf: vi.fn(), signContractVersion: vi.fn(),
 }));
 
 const sha = 'b'.repeat(64);
@@ -17,7 +17,9 @@ const document = { contractId: 'c-1', versionId: 'v-1', contractCode: 'CT-001', 
 
 beforeEach(() => {
   getContractDocument.mockResolvedValue(document);
-  downloadContractDocument.mockResolvedValue(undefined);
+  loadContractPdf.mockResolvedValue(new Blob(['%PDF-'], { type: 'application/pdf' }));
+  URL.createObjectURL = vi.fn(() => 'blob:contract');
+  URL.revokeObjectURL = vi.fn();
   signContractVersion.mockResolvedValue({ ...document, signableBy: null, signatures: [
     { party: 'Aviam', signerName: 'Ana Pérez', signerTitle: 'Gerente comercial', signedAt: '2026-10-26T12:00:00Z', documentSha256: sha }] });
 });
@@ -33,7 +35,8 @@ it('shows the formal content, downloads the PDF and signs for AVIAM over the sho
   expect(within(screen.getByRole('region', { name: 'Firmas' })).getAllByText('Pendiente de firma')).toHaveLength(2);
 
   await userEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
-  expect(downloadContractDocument).toHaveBeenCalledWith('v-1', 'contrato-CT-001-v2.pdf');
+  expect(loadContractPdf).toHaveBeenCalledWith('v-1', { draft: false });
+  expect(screen.getByRole('button', { name: 'Imprimir' })).toBeEnabled();
 
   await userEvent.click(screen.getByRole('button', { name: 'Acepto y firmo' }));
   expect(screen.getByRole('alert')).toHaveTextContent('Escribe tu nombre completo y cargo');

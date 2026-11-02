@@ -23,6 +23,9 @@ sources:
   - backend/Elevant.Api/Controllers/OccReportsController.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/EfOccReportStore.cs
   - backend/Elevant.Api/Controllers/ContractDocumentsController.cs
+  - backend/Elevant.Infrastructure/Commercial/ContractPdfRenderer.cs
+  - frontend/public-web/src/components/portal/ContractPdfActions.tsx
+  - frontend/private-web/src/features/contracts/agreements/ContractPdfButtons.jsx
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfContractDocumentStore.cs
   - backend/Elevant.Infrastructure/Commercial/ContractPdfRenderer.cs
   - backend/Elevant.Api/Controllers/OccPositionsController.cs
@@ -121,6 +124,28 @@ cada exportación admite hasta 5 000 filas.
   `SignedOn`.
 - **Origen.** Todo contrato nace de una solicitud aprobada. La pantalla lo
   explica y lleva a Solicitudes.
+- **Formato de impresión (segunda ronda, noviembre de 2026).** `ContractPdfRenderer`
+  produce el mismo diseño para el borrador y para la versión final:
+  - cabecera con el logo de ELEVANT, el código del contrato y el estado de la
+    versión;
+  - partes en dos columnas y tarjetas de vigencia, moneda, estaciones y
+    servicios;
+  - tarifas con filas alternas y precios alineados a la derecha;
+  - términos numerados como cláusulas (4.1, 4.2…);
+  - cajas de firma con su estado y la huella SHA-256;
+  - pie con «Página X de Y» y la fecha de generación.
+
+  Usa Noto Sans Regular y Bold incrustadas completas, porque el subconjunto de
+  PdfSharp perdía las tildes.
+- **PDF del borrador.** `GET contract-versions/{id}/draft/pdf` sirve las versiones
+  en borrador o en revisión de Finanzas a Contratos y a la aerolínea dueña. Lleva
+  la marca de agua «BORRADOR · NO VÁLIDO PARA FIRMA», muestra las tarifas sin
+  confirmar como «Por definir» y no incluye bloque de firma. Ese campo no entra
+  en la huella firmada.
+- **Descargar e imprimir.** El portal (borrador y contrato final) y Contratos en
+  Private Web (detalle y borradores) ofrecen «Descargar PDF» e «Imprimir».
+  Imprimir abre el mismo PDF en un marco oculto, así que el papel conserva el
+  diseño oficial; la vista web del portal tiene además una hoja `@media print`.
 
 ## Mapa de posiciones y panorama OCC
 

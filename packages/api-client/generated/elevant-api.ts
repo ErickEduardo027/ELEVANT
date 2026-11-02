@@ -6989,6 +6989,36 @@ export const downloadContractDocument = async (versionId: string, options?: Requ
 
 
 
+export const getDownloadContractDraftPdfUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/draft/pdf`
+}
+
+/**
+ * @summary Review PDF of a draft version, watermarked «BORRADOR» and never signable.
+ */
+export const downloadContractDraftPdf = async (versionId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getDownloadContractDraftPdfUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
 export const getSignContractVersionUrl = (versionId: string,) => {
 
 

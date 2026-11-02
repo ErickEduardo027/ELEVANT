@@ -102,6 +102,7 @@ import {
   getReleaseOccStandUrl,
   getGetContractDocumentUrl,
   getDownloadContractDocumentUrl,
+  getDownloadContractDraftPdfUrl,
   getSignContractVersionUrl,
   getGetOccReportUrl,
   getExportOccReportUrl,
@@ -823,6 +824,8 @@ export interface ElevantApiClient {
   releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
   getContractDocument(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
   downloadContractDocument(versionId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** Watermarked review PDF of a draft version (never signable). */
+  downloadContractDraftPdf(versionId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
   signContractVersion(versionId: string, request: SignContractRequest, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
   getOccReport(key: OccReportKey, query: OccReportQuery,
@@ -5887,6 +5890,9 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     },
     downloadContractDocument(versionId: string, options?: GetHumanResourcesReportOptions) {
       return executeReportDocument(getDownloadContractDocumentUrl(validatedUuid(versionId, "versionId")), "pdf", options);
+    },
+    downloadContractDraftPdf(versionId: string, options?: GetHumanResourcesReportOptions) {
+      return executeReportDocument(getDownloadContractDraftPdfUrl(validatedUuid(versionId, "versionId")), "pdf", options);
     },
     async signContractVersion(versionId: string, request: SignContractRequest, idempotencyKey: string,
       options?: GetHumanResourcesReportOptions) {

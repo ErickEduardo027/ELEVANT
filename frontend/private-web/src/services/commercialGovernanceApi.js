@@ -136,8 +136,13 @@ async function contractCall(request) {
 /** Formal document of an approved contract version, with its signatures and content hash. */
 export const getContractDocument = versionId => contractCall(() => contractClient().getContractDocument(versionId));
 
+/** PDF of an approved version, or the watermarked review copy of a draft (`{ draft: true }`). */
+export const loadContractPdf = (versionId, { draft = false } = {}) => contractCall(() => draft
+  ? contractClient().downloadContractDraftPdf(versionId)
+  : contractClient().downloadContractDocument(versionId));
+
 export async function downloadContractDocument(versionId, fileName) {
-  const blob = await contractCall(() => contractClient().downloadContractDocument(versionId));
+  const blob = await loadContractPdf(versionId);
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

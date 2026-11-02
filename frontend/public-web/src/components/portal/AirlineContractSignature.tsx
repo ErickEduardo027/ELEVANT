@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ElevantApiError, type ContractDocumentResponse } from "@elevant/api-client";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { ContractPdfActions } from "./ContractPdfActions";
 import styles from "./AirlinePortalPage.module.css";
 
 const PARTY: Record<string, string> = { Aviam: "AVIAM", Airline: "Su aerolínea" };
@@ -34,17 +35,6 @@ export function AirlineContractSignature({ versionId, fileName }: { versionId: s
     return () => { active = false; };
   }, [getContractDocument, versionId, revision]);
 
-  async function download() {
-    setBusy("pdf"); setMessage("");
-    try {
-      const url = URL.createObjectURL(await downloadContractDocument(versionId));
-      const link = window.document.createElement("a");
-      link.href = url; link.download = fileName; link.click();
-      URL.revokeObjectURL(url);
-    } catch (error) { setMessage(problem(error)); }
-    finally { setBusy(""); }
-  }
-
   async function sign(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!document) return;
@@ -68,8 +58,7 @@ export function AirlineContractSignature({ versionId, fileName }: { versionId: s
 
   return <div className={styles.contractVersion}>
     <h3>Documento y firmas</h3>
-    <button type="button" onClick={() => void download()} disabled={busy === "pdf"}>
-      {busy === "pdf" ? "Generando PDF…" : "Descargar contrato (PDF)"}</button>
+    <ContractPdfActions load={() => downloadContractDocument(versionId)} fileName={fileName} label="contrato firmable" />
     {document && <>
       <ul className={styles.draftComments} aria-label="Firmas">
         {["Aviam", "Airline"].map(party => {

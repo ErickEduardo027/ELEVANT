@@ -32,6 +32,17 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         return new(document with { SignableBy = SignableBy(document, reader) }, null);
     }
 
+    public async Task<ContractDocumentResult> ReadDraftAsync(Guid actorId, Guid versionId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        var row = await VersionAsync(versionId, cancellationToken, draft: true);
+        if (row is null) return Failed(ContractDocumentFailure.NotFound);
+        if (await ReaderAsync(actor, actorId, row.Value.AirlineId, cancellationToken) is null)
+            return Failed(ContractDocumentFailure.Forbidden);
+        return new(await DocumentAsync(row.Value.VersionId, cancellationToken), null);
+    }
+
     public async Task<ContractDocumentResult> SignAsync(Guid actorId, Guid versionId, SignContractInput input,
         CancellationToken cancellationToken = default)
     {
@@ -113,12 +124,16 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
             ? reader.Party.ToString() : null;
 
     private async Task<(long VersionId, long ContractId, Guid ContractPublicId, long AirlineId, ContractVersionStatus Status)?>
-        VersionAsync(Guid versionId, CancellationToken cancellationToken)
+        VersionAsync(Guid versionId, CancellationToken cancellationToken, bool draft = false)
     {
+        // Drafts follow the airline draft list: editable or awaiting Finance, on a live contract.
         var row = await (from version in context.ContractVersions.AsNoTracking()
                          join contract in context.Contracts.AsNoTracking() on version.ContractId equals contract.Id
-                         where version.PublicId == versionId &&
-                               (version.Status == ContractVersionStatus.Approved || version.Status == ContractVersionStatus.Superseded)
+                         where version.PublicId == versionId && (draft
+                             ? (version.Status == ContractVersionStatus.Draft ||
+                                version.Status == ContractVersionStatus.PendingFinanceApproval) &&
+                               (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active)
+                             : version.Status == ContractVersionStatus.Approved || version.Status == ContractVersionStatus.Superseded)
                          select new { version.Id, ContractId = contract.Id, contract.PublicId, contract.AirlineId, version.Status })
             .SingleOrDefaultAsync(cancellationToken);
         return row is null ? null : (row.Id, row.ContractId, row.PublicId, row.AirlineId, row.Status);
@@ -168,7 +183,7 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
                            where rate.ContractVersionId == versionId
                            orderby service.Code, rate.BillingUnit
                            select new ContractDocumentRate(service.Code, service.Name, rate.BillingUnit, rate.UnitPrice,
-                               rate.MinimumQuantity)).ToArrayAsync(cancellationToken);
+                               rate.MinimumQuantity, rate.IsConfirmed != false)).ToArrayAsync(cancellationToken);
         var signatures = (await context.ContractSignatures.AsNoTracking()
                 .Where(item => item.ContractVersionId == versionId).OrderBy(item => item.SignedAt)
                 .ToArrayAsync(cancellationToken))
