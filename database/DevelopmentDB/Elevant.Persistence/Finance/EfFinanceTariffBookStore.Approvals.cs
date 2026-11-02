@@ -273,17 +273,11 @@ internal sealed partial class EfFinanceTariffBookStore
                 row.Version.ApprovedAt = now;
                 row.Version.ApprovedByAccountId = actor.Id;
                 row.Version.UpdatedAt = now;
-                if (row.Contract.Status == ContractStatus.Draft)
-                {
-                    row.Contract.Status = ContractStatus.Active;
-                    row.Contract.SignedOn = DateOnly.FromDateTime(now.UtcDateTime);
-                    row.Contract.UpdatedAt = now;
-                    context.Set<ContractStatusEvent>().Add(new ContractStatusEvent
-                    {
-                        ContractId = row.Contract.Id, FromStatus = ContractStatus.Draft,
-                        ToStatus = ContractStatus.Active, OccurredAt = now, ActorAccountId = actor.Id,
-                    });
-                }
+                // Approval does not activate the contract: both parties sign this version first and the
+                // airline needs a verified operating permit (ADR-0024). A new version restarts the
+                // expiry notice.
+                row.Contract.ExpiryNoticeSentAt = null;
+                row.Contract.UpdatedAt = now;
                 if (requestAccount is { } airlineAccount)
                     AccountChangeOutboxWriter.Add(context, airlineAccount, null, "airline_contracts", row.Contract.PublicId, now);
                 foreach (var station in await context.Set<ContractVersionStation>().AsNoTracking()

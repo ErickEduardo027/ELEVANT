@@ -231,6 +231,21 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
         {
             if (await UniquenessAsync(shape!, null, cancellationToken) is { } conflict) return conflict;
             var now = timeProvider.GetUtcNow();
+            var employee = await AddEmployeeAsync(actor, shape!, now, cancellationToken);
+            GovernanceSupport.AddAudit(context, actor.Id, "hr.employee.created", "hr.employees", employee.PublicId, null,
+                shape!.Stations.Select(station => (long?)station).ToArray(), now, shape.Department,
+                new AuditFieldChangeData("employee.number", null, employee.EmployeeNumber),
+                new AuditFieldChangeData("employee.position", null, shape.Position.Name));
+            await NotifyEmployeesAsync(shape.Department, employee.PublicId, now, cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
+            return GovernanceResult.Success(employee.PublicId);
+        }, cancellationToken);
+    }
+
+    /// <summary>Adds the person and employee rows with their stations, ramp profile and requisition progress.</summary>
+    private async Task<Employee> AddEmployeeAsync(Actor actor, EmployeeShape shape, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
             var person = new Person
             {
                 PublicId = Guid.CreateVersion7(), FirstName = shape!.FirstName, LastName = shape.LastName,
@@ -263,14 +278,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
                     requisition.UpdatedAt = now;
                 }
             }
-            GovernanceSupport.AddAudit(context, actor.Id, "hr.employee.created", "hr.employees", employee.PublicId, null,
-                shape.Stations.Select(station => (long?)station).ToArray(), now, shape.Department,
-                new AuditFieldChangeData("employee.number", null, employee.EmployeeNumber),
-                new AuditFieldChangeData("employee.position", null, shape.Position.Name));
-            await NotifyEmployeesAsync(shape.Department, employee.PublicId, now, cancellationToken);
-            await context.SaveChangesAsync(cancellationToken);
-            return GovernanceResult.Success(employee.PublicId);
-        }, cancellationToken);
+            return employee;
     }
 
     public async Task<GovernanceResult> UpdateEmployeeAsync(Guid actorId, Guid employeeId, SaveEmployeeInput input,

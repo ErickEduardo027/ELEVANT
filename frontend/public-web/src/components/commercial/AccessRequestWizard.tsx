@@ -23,7 +23,16 @@ const emptyRepresentative: Representative = {
   municipality: "", district: "", documentType: "", documentNumber: "",
 };
 const SERVICES_PER_PAGE = 6;
-const DOCUMENT_LABELS: Record<string, string> = { NationalId: "Cédula", Passport: "Pasaporte", Other: "Otro" };
+const DOCUMENT_LABELS: Record<string, string> = { NationalId: "Cédula", Passport: "Pasaporte" };
+
+/** Shapes the number while typing: a cédula as ###-#######-#, a passport in capitals. */
+export function formatDocumentNumber(type: string, value: string): string {
+  if (type === "NationalId") {
+    const digits = value.replace(/D/g, "").slice(0, 11);
+    return [digits.slice(0, 3), digits.slice(3, 10), digits.slice(10)].filter(Boolean).join("-");
+  }
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 9);
+}
 const fieldId = (field: RepresentativeField) => `representative-${field}`;
 const apiOrigin = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, "");
 const mediaUrl = (path: string | null | undefined) => path?.startsWith("/api/v1/media/") ? `${apiOrigin}${path}` : path ?? undefined;
@@ -337,6 +346,7 @@ export function AccessRequestWizard() {
             <ReadOnlyField label="Código IATA" value={airline.iataCode ?? null} />
             <ReadOnlyField label="Código ICAO" value={airline.icaoCode ?? null} />
           </div>
+          {airline.registrySource && <p className="access-airline__registry" role="note">✓ Verificada en registro público ({airline.registrySource}): el nombre y los códigos coinciden con una aerolínea en operación.</p>}
           <p className="access-airline__verification">{airline.isVerified ? "✓ Identidad verificada por AVIAM" : "Los datos sin fuente aparecen como «Sin dato confirmado»; Contratos verificará la identidad legal."}</p>
         </div>}
       </> : step === 3 ? <>
@@ -361,14 +371,15 @@ export function AccessRequestWizard() {
             <input {...control("phone")} required type="tel" maxLength={32} autoComplete="tel" inputMode="tel" placeholder="809-555-0100" value={representative.phone} onChange={(event) => changeRepresentative({ phone: event.target.value.replace(/[^+\d ().-]/g, "") })} />
             <small className="access-field-hint">República Dominicana: 10 dígitos (809, 829 o 849). Otros países: con su prefijo, p. ej. +34.</small>
           </FormField>
-          <FormField field="nationalityCode" label="Nacionalidad (opcional)" error={fieldError("nationalityCode")}>
-            <select {...control("nationalityCode")} className="access-select" value={representative.nationalityCode} onChange={(event) => changeRepresentative({ nationalityCode: event.target.value })}><option value="">Seleccione si desea indicarla</option>{countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}</select>
+          <FormField field="nationalityCode" label={representative.documentType === "Passport" ? "Nacionalidad del pasaporte" : "Nacionalidad"} error={fieldError("nationalityCode")}>
+            <select {...control("nationalityCode")} className="access-select" required={representative.documentType === "Passport"} value={representative.nationalityCode} onChange={(event) => changeRepresentative({ nationalityCode: event.target.value })}><option value="">{representative.documentType === "Passport" ? "Seleccione el país del pasaporte" : "Seleccione si desea indicarla"}</option>{countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}</select>
           </FormField>
-          <FormField field="documentType" label="Tipo de documento (opcional)" error={fieldError("documentType")}>
-            <select {...control("documentType")} className="access-select" value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value })}><option value="">Seleccione</option><option value="NationalId">Cédula</option><option value="Passport">Pasaporte</option><option value="Other">Otro</option></select>
+          <FormField field="documentType" label="Tipo de documento" error={fieldError("documentType")}>
+            <select {...control("documentType")} className="access-select" required value={representative.documentType} onChange={(event) => changeRepresentative({ documentType: event.target.value, documentNumber: formatDocumentNumber(event.target.value, representative.documentNumber) })}><option value="">Seleccione</option><option value="NationalId">Cédula dominicana</option><option value="Passport">Pasaporte</option></select>
           </FormField>
-          <FormField field="documentNumber" label="Número de documento (opcional)" error={fieldError("documentNumber")}>
-            <input {...control("documentNumber")} maxLength={40} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: event.target.value.replace(/[^A-Za-z0-9 /-]/g, "") })} />
+          <FormField field="documentNumber" label="Número de documento" error={fieldError("documentNumber")}>
+            <input {...control("documentNumber")} required maxLength={13} autoCapitalize="characters" inputMode={representative.documentType === "NationalId" ? "numeric" : "text"} placeholder={documentPlaceholder} value={representative.documentNumber} onChange={(event) => changeRepresentative({ documentNumber: formatDocumentNumber(representative.documentType, event.target.value) })} />
+            {documentPlaceholder && <small className="access-field-hint">Formato: {documentPlaceholder}</small>}
           </FormField>
           <FormField field="address" label="Dirección (opcional)" error={fieldError("address")} wide>
             <input {...control("address")} maxLength={250} autoComplete="street-address" value={representative.address} onChange={(event) => changeRepresentative({ address: event.target.value })} />

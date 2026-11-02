@@ -22,7 +22,7 @@ while IFS= read -r -d '' path; do
     packages/typescript-config/README.md | packages/eslint-config/README.md | \
     ops/dokploy/* | ops/AGENTS.md | \
     scripts/release/* | scripts/repository/* | scripts/vault/* | \
-    scripts/geo/* | scripts/assets/* | \
+    scripts/geo/* | scripts/assets/* | scripts/data/* | \
     scripts/setup/verify-prerequisites.ps1 | scripts/README.md | \
     docs/* | Vault/* | .obsidian/* | .github/ISSUE_TEMPLATE/* | \
     .github/BRANCH_PROTECTION.md | .github/CODEOWNERS.template | \
@@ -70,6 +70,8 @@ while IFS= read -r -d '' path; do
   # Generators whose output is committed into the clients (and, for geography, the API).
   case "$path" in
     scripts/geo/*) backend_validate=true; aviam_validate=true; public_validate=true ;;
+    # Offline airline registry generator (ADR-0023): its output is embedded in the backend.
+    scripts/data/*) backend_validate=true ;;
     scripts/assets/*) aviam_validate=true; public_validate=true ;;
   esac
   if elevant_is_web_application_input_path public-web "$path"; then public_validate=true; fi

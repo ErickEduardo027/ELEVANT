@@ -2385,7 +2385,7 @@ public sealed partial class SqlServerMigrationTests
         var requestId = Guid.NewGuid();
         Assert.True((await intake.HandleAsync(new SubmitCommercialRequestCommand(requestId,
             catalog.Airlines[0].Id, [catalog.Services[0].Id], "María Pérez",
-            "Representante legal", "maria@example.test", "+1 809 555 0100", true),
+            "Representante legal", "maria@example.test", "+1 809 555 0100", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673"),
             cancellationToken)).IsSuccess);
         var contractsAccountId = Guid.Parse("40000000-0000-7000-8000-000000000005");
         var workflow = scope.ServiceProvider.GetRequiredService<ICommercialWorkflowStore>();
@@ -2407,7 +2407,7 @@ public sealed partial class SqlServerMigrationTests
         var rejectedRequestId = Guid.NewGuid();
         Assert.True((await intake.HandleAsync(new SubmitCommercialRequestCommand(rejectedRequestId,
             catalog.Airlines[0].Id, [catalog.Services[0].Id], "Elena Rivera",
-            "Representante legal", "elena@example.test", "+1 809 555 0101", true),
+            "Representante legal", "elena@example.test", "+1 809 555 0101", true, RepresentativeDocumentType: "NationalId", RepresentativeDocumentNumber: "00112345673"),
             cancellationToken)).IsSuccess);
         var requestChangesBeforeRejection = await CountCommercialRequestChangesAsync();
         Assert.True((await workflow.DecideAsync(contractsAccountId, rejectedRequestId,
@@ -2458,6 +2458,17 @@ public sealed partial class SqlServerMigrationTests
         var airlineDraft = Assert.Single((await drafts.ListForAirlineAsync(
             provisioned.AccountId!.Value, cancellationToken))!);
         Assert.Equal(version.PublicId, airlineDraft.Id);
+        // The draft prints as a watermarked review copy for its airline and Contratos only.
+        var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
+        var draftCopy = await documents.ReadDraftAsync(provisioned.AccountId.Value, airlineDraft.Id, cancellationToken);
+        Assert.Null(draftCopy.Failure);
+        Assert.Null(draftCopy.Document!.SignableBy);
+        Assert.True(Elevant.Infrastructure.Commercial.ContractPdfRenderer.IsDraft(draftCopy.Document));
+        Assert.Null((await documents.ReadDraftAsync(contractsAccountId, airlineDraft.Id, cancellationToken)).Failure);
+        Assert.Equal(ContractDocumentFailure.Forbidden, (await documents.ReadDraftAsync(
+            Guid.Parse("40000000-0000-7000-8000-000000000003"), airlineDraft.Id, cancellationToken)).Failure);
+        Assert.Equal(ContractDocumentFailure.NotFound,
+            (await documents.ReadAsync(provisioned.AccountId.Value, airlineDraft.Id, cancellationToken)).Failure);
         Assert.True((await drafts.AddAirlineCommentAsync(provisioned.AccountId.Value,
             airlineDraft.Id, "Confirmar el horario de asistencia.", cancellationToken)).IsSuccess);
         await using (var commentsConnection = new SqlConnection(database.ConnectionString))
@@ -2546,7 +2557,8 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!);
         Assert.Equal(0, (await drafts.GetOverviewForContractsAsync(
             contractsAccountId, cancellationToken))!.Count);
-        Assert.Equal(ContractStatus.Active, (await context.Contracts.AsNoTracking()
+        // Finance approval alone does not activate it: both signatures and a verified permit come first (ADR-0024).
+        Assert.Equal(ContractStatus.Draft, (await context.Contracts.AsNoTracking()
             .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
         var agreementPage = (await agreements.ListAsync(contractsAccountId, 1, 20,
             cancellationToken))!;

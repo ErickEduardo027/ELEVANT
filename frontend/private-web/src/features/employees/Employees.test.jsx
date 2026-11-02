@@ -173,6 +173,8 @@ describe('employee identification and phone rules', () => {
     expect(identificationProblem('CEDULA', '001-0000001-1')).toMatch(/dígito verificador/);
     expect(identificationProblem('CEDULA', '001-0000001-7')).toBe('');
     expect(identificationProblem('PASAPORTE', '1111111')).toMatch(/pasaporte/i);
+    expect(identificationProblem('PASAPORTE', 'RD12345A7')).toBe('El pasaporte dominicano: la posición 8 debe ser un dígito; encontramos «A». Formato: RD1234567.');
+    expect(identificationProblem('CEDULA', '001-12345A7-8')).toBe('La posición 9 de la cédula debe ser un dígito; encontramos «A».');
     expect(phoneProblem('849-246-3371')).toBe('');
     expect(phoneProblem('555-0100')).toMatch(/10 dígitos/);
   });

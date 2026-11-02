@@ -17,7 +17,7 @@ test("public login uses the real API contract, remains tab-scoped and signs out"
   expect(paths.slice(0, 3)).toEqual(["POST /api/v1/auth/session", "GET /api/v1/auth/session", "GET /api/v1/airline/portal/bootstrap"]);
   await expect.poll(() => paths.includes("GET /api/v1/changes")).toBe(true);
   const stored = await page.evaluate(() => ({ session: sessionStorage.getItem("elevant-airline-session-v1"), local: localStorage.length }));
-  expect(JSON.parse(stored.session ?? "null")).toEqual({ accessToken: "synthetic-e2e-token", expiresAt: "2099-01-01T00:00:00Z" });
+  expect(JSON.parse(stored.session ?? "null")).toEqual({ accessToken: "synthetic-e2e-token", expiresAt: "2099-01-01T00:00:00Z", refreshToken: null });
   expect(stored.local).toBe(0);
   await page.reload();
   await expect(page.getByRole("heading", { level: 1, name: "Demo Airlines" })).toBeVisible();
@@ -36,7 +36,7 @@ test("protected portal keeps safe returnTo and rejects non-airline actors", asyn
   await page.goto("/portal/finanzas");
   await expect(page).toHaveURL(/\/login\?mode=login&returnTo=%2Fportal%2Ffinanzas$/);
   await enterAirline(page);
-  await expect(page.getByRole("region", { name: "Iniciar sesión" }).getByRole("alert")).toContainText("no tiene acceso");
+  await expect(page.locator("#login-panel").getByRole("alert")).toContainText("no tiene acceso");
   await expect(page).not.toHaveURL(/\/portal\/finanzas$/);
 });
 

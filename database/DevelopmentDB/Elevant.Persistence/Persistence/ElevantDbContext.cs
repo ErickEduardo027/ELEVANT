@@ -41,6 +41,12 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<DepartmentNotification> DepartmentNotifications => Set<DepartmentNotification>();
 
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    public DbSet<AccountEmailToken> AccountEmailTokens => Set<AccountEmailToken>();
+
+    public DbSet<Elevant.Domain.Entities.Infrastructure.EmailOutboxMessage> EmailOutbox => Set<Elevant.Domain.Entities.Infrastructure.EmailOutboxMessage>();
+
     public DbSet<AccountPermissionGrant> AccountPermissionGrants => Set<AccountPermissionGrant>();
 
     public DbSet<UserAccessRequest> UserAccessRequests => Set<UserAccessRequest>();
@@ -111,6 +117,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
     public DbSet<ContractServiceRate> ContractServiceRates => Set<ContractServiceRate>();
 
     public DbSet<ContractSignature> ContractSignatures => Set<ContractSignature>();
+
+    public DbSet<AirlinePermit> AirlinePermits => Set<AirlinePermit>();
 
     public DbSet<Preinvoice> Preinvoices => Set<Preinvoice>();
 

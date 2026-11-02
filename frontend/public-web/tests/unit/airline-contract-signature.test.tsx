@@ -25,7 +25,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 it("downloads the PDF and signs for the airline over the content hash with a stable key", async () => {
   render(<AirlineContractSignature versionId="v-1" fileName="contrato-CT-001-v1.pdf" />);
   expect(await screen.findAllByText("Pendiente de firma")).toHaveLength(2);
-  fireEvent.click(screen.getByRole("button", { name: "Descargar contrato (PDF)" }));
+  fireEvent.click(screen.getByRole("button", { name: "Descargar PDF" }));
   await waitFor(() => expect(session.downloadContractDocument).toHaveBeenCalledWith("v-1"));
 
   fireEvent.click(screen.getByRole("button", { name: "Acepto y firmo" }));
@@ -48,4 +48,25 @@ it("hides the form once the airline signed and explains a foreign version", asyn
   render(<AirlineContractSignature versionId="v-2" fileName="x.pdf" />);
   expect(await screen.findByRole("status")).toHaveTextContent("Su cuenta no puede firmar este contrato.");
   expect(screen.queryByRole("button", { name: "Acepto y firmo" })).not.toBeInTheDocument();
+});
+
+it("prints the official PDF from a hidden frame instead of the web page", async () => {
+  render(<AirlineContractSignature versionId="v-1" fileName="contrato-CT-001-v1.pdf" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Imprimir" }));
+  await waitFor(() => expect(session.downloadContractDocument).toHaveBeenCalledWith("v-1"));
+  const frame = await waitFor(() => {
+    const element = window.document.querySelector<HTMLIFrameElement>("iframe[title^='Impresión']");
+    expect(element).not.toBeNull();
+    return element!;
+  });
+  expect(frame.getAttribute("src")).toBe("blob:contract");
+  expect(frame).toHaveAttribute("aria-hidden", "true");
+});
+
+it("explains a failed download without leaving the buttons disabled", async () => {
+  session.downloadContractDocument.mockRejectedValueOnce(new ElevantApiError({ kind: "http", status: 404 }));
+  render(<AirlineContractSignature versionId="v-1" fileName="contrato-CT-001-v1.pdf" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Descargar PDF" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("ya no está disponible");
+  expect(screen.getByRole("button", { name: "Descargar PDF" })).toBeEnabled();
 });

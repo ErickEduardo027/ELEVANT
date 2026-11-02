@@ -14,7 +14,7 @@ import {
   type MockSignInInput,
   validateSignIn,
 } from "@/lib/mock-auth";
-import { useAirlineSession, type AirlineSignInResult } from "./AirlineSessionProvider";
+import { useAirlineSession, type AirlineLoginChallenge, type AirlineSignInFailure } from "./AirlineSessionProvider";
 
 import styles from "./AuthExperience.module.css";
 
@@ -85,7 +85,7 @@ export function AuthExperience({
   );
 }
 
-function CredentialPanel() {
+export function CredentialPanel() {
   return (
     <aside className={styles.credential} aria-labelledby="auth-title">
       <div className={styles.credentialGrid} aria-hidden="true" />
@@ -139,7 +139,7 @@ function CredentialPanel() {
   );
 }
 
-function signInFailureMessage(reason: Exclude<AirlineSignInResult, { ok: true }>["reason"]): string {
+function signInFailureMessage(reason: AirlineSignInFailure): string {
   switch (reason) {
     case "invalid": return "No se pudo validar la cuenta. Revisa el correo y la contraseña.";
     case "forbidden": return "Esta cuenta no tiene acceso al portal de aerolíneas.";
@@ -152,7 +152,17 @@ function signInFailureMessage(reason: Exclude<AirlineSignInResult, { ok: true }>
 
 function SignInPanel({ returnTo }: { returnTo: string }) {
   const router = useRouter();
-  const { signIn, changePassword } = useAirlineSession();
+  const { signIn, changePassword, verifyLoginCode, resendLoginCode } = useAirlineSession();
+  const [challenge, setChallenge] = useState<AirlineLoginChallenge | null>(null);
+  const [code, setCode] = useState("");
+  const [resendAvailableAt, setResendAvailableAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!challenge) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [challenge]);
   const [input, setInput] = useState<MockSignInInput>(INITIAL_SIGN_IN);
   const [errors, setErrors] = useState<SignInErrors>({});
   const [showPassword, setShowPassword] = useState(false);
@@ -205,11 +215,55 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
 
     if (result.ok) {
       router.replace(returnTo);
+    } else if (result.reason === "code-required") {
+      setChallenge(result.challenge);
+      setCode("");
+      setResendAvailableAt(Date.now() + 30_000);
+      setFeedback({ kind: "info", message: `Enviamos un código de 6 dígitos a ${result.challenge.emailHint}.` });
     } else {
       if (result.reason === "password-change-required") setPasswordChangeRequired(true);
       setFeedback({ kind: "error", message: signInFailureMessage(result.reason) });
     }
   };
+
+  const submitCode = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!challenge) return;
+    if (!/^\d{6}$/.test(code)) {
+      setFeedback({ kind: "error", message: "El código tiene 6 dígitos." });
+      return;
+    }
+    setPending(true);
+    const result = await verifyLoginCode(challenge.challengeId, code);
+    setPending(false);
+    if (result.ok) {
+      router.replace(returnTo);
+      return;
+    }
+    setCode("");
+    setFeedback({ kind: "error", message: result.reason === "invalid"
+      ? "El código no es válido o ya venció. Revisa el último correo o pide uno nuevo."
+      : signInFailureMessage(result.reason as AirlineSignInFailure) });
+  };
+
+  const resendCode = async () => {
+    if (!challenge) return;
+    setPending(true);
+    const next = await resendLoginCode(challenge.challengeId);
+    setPending(false);
+    if (!next) {
+      setChallenge(null);
+      setFeedback({ kind: "error", message: "El código venció o se bloqueó. Inicia sesión de nuevo." });
+      return;
+    }
+    setChallenge(next);
+    setCode("");
+    setResendAvailableAt(Date.now() + 30_000);
+    setFeedback({ kind: "info", message: `Enviamos un código nuevo a ${next.emailHint}. El anterior ya no sirve.` });
+  };
+
+  const secondsLeft = challenge ? Math.max(0, Math.ceil((Date.parse(challenge.expiresAt) - now) / 1000)) : 0;
+  const resendIn = Math.max(0, Math.ceil((resendAvailableAt - now) / 1000));
 
   const submitPasswordChange = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -252,7 +306,29 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
         </p>
       </header>
 
-      <form className={styles.form} onSubmit={submit} noValidate hidden={passwordChangeRequired}>
+      {challenge && <form className={styles.form} onSubmit={submitCode} noValidate aria-labelledby="code-heading">
+        <h3 id="code-heading">Código enviado a tu correo</h3>
+        <p>Escribe el código de 6 dígitos que enviamos a <strong>{challenge.emailHint}</strong>.</p>
+        <Field id="auth-code" name="code" label="Código de verificación" type="text" value={code}
+          autoComplete="one-time-code" inputMode="numeric" maxLength={6}
+          onChange={(value) => { setCode(value.replace(/\D/g, "").slice(0, 6)); setFeedback(null); }}
+          onBlur={() => {}} required />
+        <p className={styles.localOnly} aria-live="polite">
+          {secondsLeft > 0 ? `Vence en ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}` : "El código venció; pide uno nuevo."}
+        </p>
+        {feedback && <div className={styles.feedback} data-kind={feedback.kind} role={feedback.kind === "error" ? "alert" : "status"}><InfoIcon /><p>{feedback.message}</p></div>}
+        <button className={styles.primaryButton} type="submit" disabled={pending || code.length !== 6 || secondsLeft === 0}>
+          {pending ? "Verificando…" : "Verificar y entrar"}
+        </button>
+        <button className={styles.secondaryButton} type="button" onClick={() => void resendCode()} disabled={pending || resendIn > 0}>
+          {resendIn > 0 ? `Reenviar código en ${resendIn} s` : "Reenviar código"}
+        </button>
+        <button className={styles.secondaryButton} type="button" onClick={() => { setChallenge(null); setFeedback(null); }}>
+          Usar otra cuenta
+        </button>
+      </form>}
+
+      <form className={styles.form} onSubmit={submit} noValidate hidden={passwordChangeRequired || challenge !== null}>
         <Field
           id={SIGN_IN_IDS.email}
           name="email"
@@ -281,9 +357,10 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
 
         <div className={styles.formOptions}>
           <span className={styles.localOnly}>Sesión temporal en esta pestaña</span>
+          <Link href="/recuperar">¿Olvidaste tu contraseña?</Link>
         </div>
 
-        {feedback && (
+        {feedback && !challenge && (
           <div
             className={styles.feedback}
             data-kind={feedback.kind}
@@ -342,6 +419,7 @@ type FieldProps = {
   autoComplete: string;
   hint?: string;
   maxLength?: number;
+  inputMode?: "numeric" | "text" | "email";
   required?: boolean;
   wide?: boolean;
   code?: boolean;
@@ -359,6 +437,7 @@ function Field({
   autoComplete,
   hint,
   maxLength,
+  inputMode,
   required,
   wide,
   code,
@@ -383,6 +462,7 @@ function Field({
         value={value}
         autoComplete={autoComplete}
         maxLength={maxLength}
+        inputMode={inputMode}
         required={required}
         aria-invalid={Boolean(error)}
         aria-describedby={descriptionId}
@@ -520,7 +600,7 @@ function EyeOffIcon() {
   );
 }
 
-function InfoIcon() {
+export function InfoIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <circle cx="10" cy="10" r="7.5" />

@@ -36,7 +36,11 @@ function stationSnapshot() {
   return { code: 'PUJ', localAbbr: 'AST', localTime: now, utcTime: now };
 }
 
-export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
+/**
+ * `observeNotifications` turns on the bell, toasts and drawer; tests switch it on explicitly
+ * instead of the shell guessing the environment.
+ */
+export default function FinanceShell({ user = CURRENT_USER, onLogout, observeNotifications = process.env.NODE_ENV !== 'test' }) {
   const { access } = useDepartmentAccess();
   const navigation = useMemo(() => financeNavigation(item => allowedNavigation([item], access).length > 0), [access]);
   const modules = useMemo(() => selectableModules(navigation), [navigation]);
@@ -46,7 +50,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout }) {
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
   const notificationCenter = useDepartmentNotificationCenter({
-    enabled: process.env.NODE_ENV !== 'test' && Boolean(access?.can('finance.notifications.read')),
+    enabled: observeNotifications && Boolean(access?.can('finance.notifications.read')),
     onOpen: target => target.moduleId && handleSelectModule(target.moduleId),
   });
 

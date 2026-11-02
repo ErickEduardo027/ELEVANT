@@ -9,9 +9,24 @@ public sealed record SessionResponse(
     DateTimeOffset ExpiresAt,
     SessionActorResponse Actor)
 {
+    /// <summary>
+    /// Rotating token that renews the session without the password (ADR-0021). Absent when it
+    /// could not be issued; the session then ends with the access token.
+    /// </summary>
+    public string? RefreshToken { get; init; }
+
+    /// <summary>When the refresh token expires if it is not used.</summary>
+    public DateTimeOffset? RefreshExpiresAt { get; init; }
+
     /// <summary>Returns a diagnostic representation that omits identity data and credentials.</summary>
     public override string ToString() =>
-        $"{nameof(SessionResponse)} {{ AccessToken = [REDACTED], Actor = [REDACTED] }}";
+        $"{nameof(SessionResponse)} {{ AccessToken = [REDACTED], RefreshToken = [REDACTED], Actor = [REDACTED] }}";
+}
+
+/// <summary>A refresh token presented to renew or end a session.</summary>
+public sealed record RefreshSessionRequest(string RefreshToken)
+{
+    public override string ToString() => $"{nameof(RefreshSessionRequest)} {{ RefreshToken = [REDACTED] }}";
 }
 
 /// <summary>The current actor resolved from server-side identity state.</summary>

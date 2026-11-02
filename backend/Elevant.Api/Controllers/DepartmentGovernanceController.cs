@@ -113,6 +113,18 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
         MutateAsync(actorId => store.CreateAdministratorAsync(actorId, department, input, cancellationToken),
             StatusCodes.Status201Created);
 
+    /// <summary>
+    /// Super administrator only: registers the employee and creates its account (administrator or
+    /// member with per-option permissions) in one step, without a Human Resources request.
+    /// </summary>
+    [HttpPost("departments/{department}/internal-users", Name = "CreateInternalUser")]
+    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
+    [RequestSizeLimit(32768)]
+    public Task<IActionResult> CreateInternalUser(string department, [FromBody] CreateInternalUserInput input,
+        CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.CreateInternalUserAsync(actorId, department, input, cancellationToken),
+            StatusCodes.Status201Created);
+
     /// <summary>Deprecated (ADR-0017): members are requested for an employee and validated by Human Resources.</summary>
     [Obsolete("Request access for an employee instead.")]
     [HttpPost("departments/{department}/users", Name = "CreateDepartmentUser")]

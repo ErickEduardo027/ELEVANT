@@ -18,7 +18,8 @@ internal sealed partial class EfDepartmentGovernanceStore(
     ElevantDbContext context,
     UserManager<ApplicationUser> userManager,
     IActorContextResolver actors,
-    TimeProvider timeProvider) : IDepartmentGovernanceStore
+    TimeProvider timeProvider,
+    Elevant.Application.Identity.AccountEmails.AccountEmailOptions emailOptions) : IDepartmentGovernanceStore
 {
     private static readonly IReadOnlyDictionary<string, Department> DepartmentKeys =
         new Dictionary<string, Department>(StringComparer.Ordinal)

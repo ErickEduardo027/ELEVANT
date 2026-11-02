@@ -343,6 +343,76 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
         Assert.Equal(2, state.ActorResolutionCount);
     }
 
+    [Fact]
+    public async Task RefreshTokenRenewsTheSessionRotatesAndEndsAtLogout()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var application = CreateApplication(new AuthenticationState());
+        using var client = application.CreateClient();
+        using var login = await client.PostAsJsonAsync("/api/v1/auth/session", new CreateSessionRequest(Email, Password), ct);
+        var session = (await login.Content.ReadFromJsonAsync<SessionResponse>(cancellationToken: ct))!;
+        Assert.False(string.IsNullOrEmpty(session.RefreshToken));
+        Assert.NotNull(session.RefreshExpiresAt);
+
+        using var refreshed = await client.PostAsJsonAsync("/api/v1/auth/session/refresh",
+            new RefreshSessionRequest(session.RefreshToken!), ct);
+        Assert.Equal(HttpStatusCode.OK, refreshed.StatusCode);
+        AssertPrivateResponseHeaders(refreshed);
+        var renewed = (await refreshed.Content.ReadFromJsonAsync<SessionResponse>(cancellationToken: ct))!;
+        Assert.NotEqual(session.RefreshToken, renewed.RefreshToken);
+        Assert.Equal(AccountId, renewed.Actor.AccountId);
+
+        using var rotated = await client.PostAsJsonAsync("/api/v1/auth/session/refresh",
+            new RefreshSessionRequest(session.RefreshToken!), ct);
+        Assert.Equal(HttpStatusCode.Conflict, rotated.StatusCode);
+        Assert.Contains("refresh_rotated", await rotated.Content.ReadAsStringAsync(ct));
+
+        using var logout = await client.PostAsJsonAsync("/api/v1/auth/session/logout",
+            new RefreshSessionRequest(renewed.RefreshToken!), ct);
+        Assert.Equal(HttpStatusCode.NoContent, logout.StatusCode);
+        using var afterLogout = await client.PostAsJsonAsync("/api/v1/auth/session/refresh",
+            new RefreshSessionRequest(renewed.RefreshToken!), ct);
+        Assert.Equal(HttpStatusCode.Unauthorized, afterLogout.StatusCode);
+    }
+
+    /// <summary>Rotation semantics without SQL; the SQL store has its own integration test.</summary>
+    private sealed class InMemoryRefreshTokens : IRefreshTokenStore
+    {
+        private readonly Dictionary<string, (Guid Account, Guid Family, bool Rotated, bool Revoked)> tokens = [];
+
+        public Task<IssuedRefreshToken?> IssueAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IssuedRefreshToken?>(Add(accountId, Guid.NewGuid()));
+
+        public Task<RefreshTokenRotation> RotateAsync(string token, CancellationToken cancellationToken = default)
+        {
+            lock (tokens)
+            {
+                if (!tokens.TryGetValue(token, out var entry) || entry.Revoked)
+                    return Task.FromResult(new RefreshTokenRotation(null, null, RefreshTokenFailure.Invalid));
+                if (entry.Rotated)
+                    return Task.FromResult(new RefreshTokenRotation(null, null, RefreshTokenFailure.AlreadyRotated));
+                tokens[token] = entry with { Rotated = true };
+                return Task.FromResult(new RefreshTokenRotation(entry.Account, Add(entry.Account, entry.Family), null));
+            }
+        }
+
+        public Task RevokeFamilyAsync(string token, CancellationToken cancellationToken = default)
+        {
+            lock (tokens)
+                if (tokens.TryGetValue(token, out var entry))
+                    foreach (var key in tokens.Where(item => item.Value.Family == entry.Family).Select(item => item.Key).ToArray())
+                        tokens[key] = tokens[key] with { Revoked = true };
+            return Task.CompletedTask;
+        }
+
+        private IssuedRefreshToken Add(Guid account, Guid family)
+        {
+            var value = Guid.NewGuid().ToString("N");
+            lock (tokens) tokens[value] = (account, family, false, false);
+            return new IssuedRefreshToken(value, DateTimeOffset.UtcNow.AddDays(30));
+        }
+    }
+
     private WebApplicationFactory<Program> CreateApplication(AuthenticationState state) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         {
@@ -350,7 +420,9 @@ public sealed class AuthenticationEndpointsTests(ElevantApiFactory factory)
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<ISessionSecurityVersionStore>();
             services.RemoveAll<IPasswordChangeStore>();
+            services.RemoveAll<IRefreshTokenStore>();
             services.AddSingleton(state);
+            services.AddSingleton<IRefreshTokenStore>(new InMemoryRefreshTokens());
             services.AddScoped<ICredentialVerifier>(_ => new StubCredentialVerifier(state));
             services.AddScoped<IActorContextResolver>(_ => new StubActorContextResolver(state));
             services.AddScoped<ISessionSecurityVersionStore>(_ => new StubSecurityVersionStore(state));

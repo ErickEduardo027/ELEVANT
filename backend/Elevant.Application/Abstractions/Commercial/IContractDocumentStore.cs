@@ -5,8 +5,9 @@ using System.Text.Json;
 
 namespace Elevant.Application.Abstractions.Commercial;
 
+/// <param name="PriceConfirmed">False only for a draft rate still «por definir»; not part of the signed hash.</param>
 public sealed record ContractDocumentRate(string ServiceCode, string ServiceName, string BillingUnit,
-    decimal UnitPrice, decimal MinimumQuantity);
+    decimal UnitPrice, decimal MinimumQuantity, bool PriceConfirmed = true);
 
 public sealed record ContractDocumentSignature(string Party, string SignerName, string SignerTitle,
     DateTimeOffset SignedAt, string DocumentSha256);
@@ -69,6 +70,12 @@ public interface IContractDocumentStore
     /// reads versions of its own airline. Only approved or superseded versions have a document.
     /// </summary>
     Task<ContractDocumentResult> ReadAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Review copy of a version that is not approved yet (draft or awaiting Finance), for the same
+    /// readers. It is never signable and prints with a watermark.
+    /// </summary>
+    Task<ContractDocumentResult> ReadDraftAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Records the reader's party acceptance: AVIAM with Contratos «Firmar por AVIAM», the airline

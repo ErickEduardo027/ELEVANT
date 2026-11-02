@@ -92,6 +92,11 @@ El catálogo vive en código (`DepartmentPermissionCatalog`) con el formato
   Modificar, Eliminar u Otras acciones (aprobar, publicar, emitir, exportar,
   firmar…).
 - **Ver se concede siempre.** Conceder cualquier acción concede también «Ver».
+- **Subventanas.** Conceder una subventana (por ejemplo, Solicitudes de
+  clausura dentro de Servicios) concede «Ver» de la pantalla que la contiene;
+  prohibir esa pantalla prohíbe sus subventanas. La matriz ofrece por fila el
+  selector rápido «Prohibido / Ver / Editar», con las casillas para el ajuste
+  fino ([ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md)).
 - **Grants antiguos.** Los códigos anteriores a ADR-0019 (`*.manage`,
   `employees.terminate`, `attendance.record`…) se traducen al resolver el acceso,
   así que las plantillas guardadas siguen funcionando. Las plantillas (`iam.access_profiles`) se aplican en vivo: editar o
@@ -125,18 +130,33 @@ sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/acce
 Las cuentas creadas antes de los expedientes aparecen en **Expedientes
 pendientes**: Gestión Humana registra su identificación real y su puesto.
 
+**Alta directa por el superadministrador.** Desde «Usuarios internos → Nuevo
+usuario interno», el superadministrador registra el expediente y la cuenta en
+un solo paso, sin solicitud ni validación de Gestión Humana. Puede crear un
+administrador o un sub-usuario con permisos por opción y subventana. El alta
+queda auditada como hecha por el superadministrador. Los agentes de rampa
+siguen el flujo de solicitud.
+
 ## Notificaciones
 
 Cada departamento con la opción «Notificaciones» recibe en pantalla las alertas
 de lo que debe atender:
 
 - **Gestión Humana:** altas por validar, requisiciones y disponibilidad.
-- **Contratos:** solicitudes comerciales, comentarios y firmas de aerolíneas, y
-  clausuras.
+- **Contratos:** solicitudes comerciales, comentarios y firmas de aerolíneas,
+  clausuras, permisos enviados o por vencer, y cambios del ciclo del contrato
+  (activación, suspensión, vencimiento y aviso a 30 días;
+  [ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
 - **Finanzas:** contratos por aprobar, y prefacturas aceptadas o disputadas.
 
 Solo las recibe quien también puede abrir la fuente; ver
 [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md).
+
+**Pruebas.** Cada tipo tiene una prueba SQL que comprueba quién la recibe y quién
+no, el filtro por estación, la marca de leída, la reaparición como no leída de
+la misma fuente y la señal del feed de cambios. Las shells reciben la opción
+`observeNotifications`, de modo que sus pruebas cubren la campana con su contador,
+el aviso emergente con «Abrir» y el cajón de notificaciones.
 
 ## Actividad
 

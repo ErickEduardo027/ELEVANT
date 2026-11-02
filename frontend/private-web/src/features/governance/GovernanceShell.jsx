@@ -15,7 +15,7 @@ import PasswordField from '../../components/PasswordField';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import {
   getGovernance, getProvisioning, provisionAirline, getGovernanceAudit,
-  getManagedAirlines, saveManagedAirline, archiveManagedAirline, enrichManagedAirlines,
+  getManagedAirlines, saveManagedAirline, archiveManagedAirline, enrichManagedAirlines, checkManagedAirlineRegistry,
 } from '../../services/commercialGovernanceApi';
 import { convertLegacyRole, getDepartmentsOverview, listLegacyRoles } from '../../services/departmentGovernanceService';
 
@@ -91,7 +91,12 @@ export default function GovernanceShell({ user, onLogout }) {
   async function run(action, successMessage) {
     setError(''); setNotice('');
     try { await action(); setNotice(successMessage); await refresh(); return true; }
-    catch (failure) { setError(failure.message); return false; }
+    catch (failure) {
+      setError(failure.code === 'registry_check_required'
+        ? 'Para publicarla, verifica la aerolínea en el registro público (check verde) o marca la verificación manual con su fuente.'
+        : failure.message);
+      return false;
+    }
   }
 
   const pendingValidations = overview?.pendingRequests ?? 0;
@@ -128,7 +133,8 @@ export default function GovernanceShell({ user, onLogout }) {
           {status === 'ready' && moduleId === 'airlines' && <AirlinesPanel airlines={airlines}
             onSave={(id, values) => run(() => saveManagedAirline(id, values), 'Aerolínea guardada.')}
             onArchive={(id, version) => run(() => archiveManagedAirline(id, version), 'Aerolínea archivada.')}
-            onEnrich={() => run(enrichManagedAirlines, 'Fichas históricas sin edición manual revisadas.')} />}
+            onEnrich={() => run(enrichManagedAirlines, 'Fichas históricas sin edición manual revisadas.')}
+            onCheckRegistry={async id => { const result = await checkManagedAirlineRegistry(id); await refresh(); return result; }} />}
           {status === 'ready' && moduleId === 'settings' && <GovernanceSettings snapshot={snapshot} run={run} />}
         </div>
   </ShellFrame>;
@@ -166,11 +172,13 @@ function GovernanceHome({ snapshot, tasks, overview, onOpen, run }) {
 function ProvisioningCard({ task, run }) {
   const [email, setEmail] = useState(task.suggestedEmail);
   const [password, setPassword] = useState('');
+  const [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false);
   async function submit(event) {
     event.preventDefault(); setBusy(true);
-    const saved = await run(() => provisionAirline(task.requestId, email, password),
-      `Cuenta de ${task.airline} creada. Entregue las credenciales manualmente; el primer ingreso exige cambiar la contraseña.`);
+    const saved = await run(() => provisionAirline(task.requestId, email, manual ? password : ''),
+      manual ? `Cuenta de ${task.airline} creada. Entregue las credenciales manualmente; el primer ingreso exige cambiar la contraseña.`
+        : `Cuenta de ${task.airline} creada. Enviamos a ${email} un enlace de activación válido por 72 horas.`);
     if (saved) setPassword('');
     setBusy(false);
   }
@@ -178,8 +186,9 @@ function ProvisioningCard({ task, run }) {
     <div className="flex items-center justify-between gap-3"><strong>{task.airline}</strong><span className="text-xs font-mono text-text-secondary-light">{task.reference.slice(0, 12)}</span></div>
     <p className="mt-1 text-sm text-text-secondary-light">Representante: {task.representativeName}</p>
     <label className="mt-4 block text-xs font-semibold">Correo de acceso<input type="email" required value={email} onChange={event => setEmail(event.target.value)} className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" /></label>
-    <PasswordField fieldClassName="mt-3 text-xs font-semibold" inputClassName="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" label="Contraseña temporal" id={`provision-password-${task.requestId}`} required minLength={14} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" />
-    <button disabled={busy} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Creando…' : 'Crear credenciales'}</button>
+    <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={manual} onChange={event => setManual(event.target.checked)} /> Entregar una contraseña temporal en lugar de la invitación por correo</label>
+    {manual && <PasswordField fieldClassName="mt-3 text-xs font-semibold" inputClassName="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" label="Contraseña temporal" id={`provision-password-${task.requestId}`} required minLength={14} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" />}
+    <button disabled={busy} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Creando…' : manual ? 'Crear credenciales' : 'Crear y enviar invitación'}</button>
   </form>;
 }
 

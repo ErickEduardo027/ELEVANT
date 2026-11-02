@@ -87,14 +87,19 @@ export {
   type TransitionRampOperationServiceOptions,
   type GetRampOperationChargesOptions,
   type ApplyRampServiceChargeOptions,
+  type SessionStart,
 } from "./client";
-export { ElevantApiError, type ElevantApiErrorKind } from "./errors";
+export { ElevantApiError, type ElevantApiErrorKind, type ElevantApiErrorCode } from "./errors";
 export {
   DOMINICAN_AREA_CODES,
+  DOMINICAN_PASSPORT_PREFIX,
+  PASSPORT_PATTERNS,
+  checkIdentityDocument,
   identityDocumentExample,
   normalizeIdentityDocument,
   normalizePhone,
   type IdentityDocumentKind,
+  type IdentityDocumentCheck,
 } from "./validation";
 export {
   type AccountChangeResponse,
@@ -222,6 +227,10 @@ export {
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
   type ContractDocumentResponse,
+  type AirlinePermitData,
+  type SubmitAirlinePermitInput,
+  type ContractTimelineData,
+  type ContractTimelineEntry,
   type SignContractRequest,
   type OccReportPageResponse,
   type SendOperationMessageRequest,

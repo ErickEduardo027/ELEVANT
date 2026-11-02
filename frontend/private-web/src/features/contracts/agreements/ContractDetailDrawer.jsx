@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import Drawer from '../../../components/Drawer';
-import { downloadContractDocument, getContractDocument, signContractVersion } from '../../../services/commercialGovernanceApi';
+import { getContractDocument, signContractVersion } from '../../../services/commercialGovernanceApi';
+import ContractLifecyclePanel from './ContractLifecyclePanel';
+import ContractPdfButtons from './ContractPdfButtons';
 
 const PARTY = { Aviam: 'AVIAM', Airline: 'Aerolínea' };
 
@@ -20,7 +22,7 @@ function problem(error) {
  * Detail of an approved contract version: parties, validity, stations, rates and terms, the
  * printable PDF and the signature of each party over the content hash.
  */
-export default function ContractDetailDrawer({ versionId, canSign = false, onClose, onSigned }) {
+export default function ContractDetailDrawer({ versionId, canSign = false, canManageLifecycle = false, onClose, onSigned }) {
   const [state, setState] = useState({ status: 'loading' });
   const [form, setForm] = useState({ signerName: '', signerTitle: '', accepted: false });
   const [busy, setBusy] = useState('');
@@ -38,18 +40,6 @@ export default function ContractDetailDrawer({ versionId, canSign = false, onClo
   }, [versionId, revision]);
 
   const document = state.status === 'success' ? state.document : null;
-
-  async function download() {
-    setBusy('pdf');
-    setError('');
-    try {
-      await downloadContractDocument(versionId, `contrato-${document.contractCode}-v${document.versionNumber}.pdf`);
-    } catch (failure) {
-      setError(problem(failure));
-    } finally {
-      setBusy('');
-    }
-  }
 
   async function sign(event) {
     event.preventDefault();
@@ -79,9 +69,8 @@ export default function ContractDetailDrawer({ versionId, canSign = false, onClo
     <Drawer open={Boolean(versionId)} onClose={onClose} widthClassName="lg:w-[640px]"
       title={document ? `Contrato ${document.contractCode} · versión ${document.versionNumber}` : 'Detalle de contrato'}
       description={document ? document.airlineName : undefined}
-      footer={document && <button type="button" onClick={() => void download()} disabled={busy === 'pdf'}
-        className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-        {busy === 'pdf' ? 'Generando PDF…' : 'Descargar PDF'}</button>}>
+      footer={document && <ContractPdfButtons versionId={versionId}
+        fileName={`contrato-${document.contractCode}-v${document.versionNumber}.pdf`} className="justify-end" />}>
       {state.status === 'loading' && <p role="status" className="text-sm">Cargando contrato…</p>}
       {state.status === 'error' && <div role="alert" className="space-y-2 text-sm"><p>{state.message}</p>
         <button type="button" className="font-semibold text-accent-600 underline" onClick={() => setRevision(value => value + 1)}>Reintentar</button></div>}
@@ -142,6 +131,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, onClo
             </form>
           )}
           {error && <p role="alert" className="text-status-danger">{error}</p>}
+          <ContractLifecyclePanel key={revision} versionId={versionId} canManage={canManageLifecycle} onChanged={() => { setRevision(value => value + 1); onSigned?.(); }} />
         </div>
       )}
     </Drawer>
