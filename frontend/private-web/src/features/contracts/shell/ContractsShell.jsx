@@ -28,7 +28,11 @@ function stationSnapshot() {
   return { code: 'PUJ', localAbbr: 'AST', localTime: now, utcTime: now };
 }
 
-export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
+/**
+ * `observeNotifications` turns on the bell, toasts and drawer; tests switch it on explicitly
+ * instead of the shell guessing the environment.
+ */
+export default function ContractsShell({ user = CURRENT_USER, onLogout, observeNotifications = process.env.NODE_ENV !== 'test' }) {
   const { access } = useDepartmentAccess();
   const modules = useMemo(() => allowedNavigation(CONTRACT_MODULES, access), [access]);
   const can = code => access?.can(code) ?? false;
@@ -48,7 +52,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout }) {
   const { theme, toggleTheme } = usePreviewControls();
   const sidebar = useResponsiveSidebar();
   const notificationCenter = useDepartmentNotificationCenter({
-    enabled: process.env.NODE_ENV !== 'test' && Boolean(access?.can('contracts.notifications.read')),
+    enabled: observeNotifications && Boolean(access?.can('contracts.notifications.read')),
     onOpen: target => target.moduleId && handleSelectModule(target.moduleId),
   });
 

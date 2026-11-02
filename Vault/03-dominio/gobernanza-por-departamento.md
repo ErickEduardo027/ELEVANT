@@ -143,12 +143,20 @@ Cada departamento con la opción «Notificaciones» recibe en pantalla las alert
 de lo que debe atender:
 
 - **Gestión Humana:** altas por validar, requisiciones y disponibilidad.
-- **Contratos:** solicitudes comerciales, comentarios y firmas de aerolíneas, y
-  clausuras.
+- **Contratos:** solicitudes comerciales, comentarios y firmas de aerolíneas,
+  clausuras, permisos enviados o por vencer, y cambios del ciclo del contrato
+  (activación, suspensión, vencimiento y aviso a 30 días;
+  [ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
 - **Finanzas:** contratos por aprobar, y prefacturas aceptadas o disputadas.
 
 Solo las recibe quien también puede abrir la fuente; ver
 [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md).
+
+**Pruebas.** Cada tipo tiene una prueba SQL que comprueba quién la recibe y quién
+no, el filtro por estación, la marca de leída, la reaparición como no leída de
+la misma fuente y la señal del feed de cambios. Las shells reciben la opción
+`observeNotifications`, de modo que sus pruebas cubren la campana con su contador,
+el aviso emergente con «Abrir» y el cajón de notificaciones.
 
 ## Actividad
 
