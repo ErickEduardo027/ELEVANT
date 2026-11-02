@@ -2578,7 +2578,7 @@
         "tags": [
           "Authentication"
         ],
-        "summary": "Renews the session with a refresh token, which is replaced in the same call (ADR-0021).\r\n409 `refresh_rotated` means another tab renewed it a moment ago: re-read the stored token.",
+        "summary": "Renews the session with a refresh token, which is replaced in the same call (ADR-0021).\n409 `refresh_rotated` means another tab renewed it a moment ago: re-read the stored token.",
         "operationId": "RefreshSession",
         "requestBody": {
           "content": {
@@ -2930,7 +2930,7 @@
         "tags": [
           "CommercialAirlineManagement"
         ],
-        "summary": "Checks the airline against public registries (Wikidata, then OpenFlights) and stores the\r\nverdict; a green check allows publishing it in step 2 of the public wizard (ADR-0023).",
+        "summary": "Checks the airline against public registries (Wikidata, then OpenFlights) and stores the\nverdict; a green check allows publishing it in step 2 of the public wizard (ADR-0023).",
         "operationId": "CheckManagedAirlineRegistry",
         "parameters": [
           {
@@ -5433,7 +5433,7 @@
         "tags": [
           "DepartmentGovernance"
         ],
-        "summary": "Super administrator only: registers the employee and creates its account (administrator or\r\nmember with per-option permissions) in one step, without a Human Resources request.",
+        "summary": "Super administrator only: registers the employee and creates its account (administrator or\nmember with per-option permissions) in one step, without a Human Resources request.",
         "operationId": "CreateInternalUser",
         "parameters": [
           {
