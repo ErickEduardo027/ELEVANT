@@ -108,4 +108,25 @@ public sealed class DepartmentPermissionCatalogTests
 
         Assert.Equal(["contracts.requests.approve", "contracts.requests.read"], normalized);
     }
+
+    [Theory]
+    [InlineData("contracts.service_closures.decide", "contracts.catalog.read")]
+    [InlineData("finance.adjustments.create", "finance.reconciliation.read")]
+    [InlineData("operations.attendance.read", "operations.planning.read")]
+    [InlineData("human_resources.availability.create", "human_resources.schedules.read")]
+    public void SubWindowGrantsReadOfTheScreenThatContainsIt(string code, string parentRead)
+    {
+        var normalized = DepartmentPermissionCatalog.Normalize([code]);
+
+        Assert.Contains(parentRead, normalized);
+        Assert.Contains(code[..code.LastIndexOf('.')] + ".read", normalized);
+        // The parent grant is read-only: nothing else of the containing screen is added.
+        Assert.DoesNotContain(normalized, item => item.StartsWith(parentRead[..parentRead.LastIndexOf('.')], StringComparison.Ordinal) && item != parentRead);
+    }
+
+    [Fact]
+    public void CatalogReadAloneGrantsNoSubWindow()
+    {
+        Assert.Equal(["contracts.catalog.read"], DepartmentPermissionCatalog.Normalize(["contracts.catalog.read"]));
+    }
 }

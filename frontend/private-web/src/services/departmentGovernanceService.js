@@ -36,6 +36,9 @@ export const listDepartmentUsers = (department, filters = {}) =>
   commercialApi(`${dept(department)}/users${query({ page: 1, limit: 25, ...filters })}`);
 export const createDepartmentAdministrator = (department, values) =>
   commercialApi(`${dept(department)}/administrators`, json('POST', values));
+/** Super administrator: employee record and account in one step, without a Human Resources request. */
+export const createInternalUser = (department, values) =>
+  commercialApi(`${dept(department)}/internal-users`, json('POST', values));
 export const createDepartmentUser = (department, values) =>
   commercialApi(`${dept(department)}/users`, json('POST', values));
 export const updateDepartmentUser = (department, id, values) =>

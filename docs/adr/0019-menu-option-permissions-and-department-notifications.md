@@ -62,6 +62,29 @@ En la revisión del proyecto del 19-oct-2026, el profesor observó lo siguiente:
   Así, las plantillas y las cuentas existentes conservan su acceso. Los grants
   de gestión de `finance.catalog.*` se descartan y no se trasladan a Contratos,
   para no conceder escritura en otro departamento.
+- **Subventanas (actualización del 2 de noviembre de 2026).** Una función que vive
+  dentro de otra pantalla es un módulo con `Parent` (Solicitudes de clausura
+  dentro de Servicios, Notas de ajuste dentro de Facturas, Asistencia dentro de
+  Planificación, Solicitudes de disponibilidad dentro de Horarios, Clausuras
+  dentro de Revisión). Conceder cualquier acción de una subventana concede
+  también «Ver» de la pantalla que la contiene, que es el único camino para
+  llegar a ella; esa concesión es de solo lectura. Prohibir la pantalla prohíbe
+  sus subventanas.
+- **Selector rápido.** La matriz ofrece por fila «Prohibido / Ver / Editar»,
+  donde «Editar» equivale a Ver + Crear + Modificar + Eliminar de las acciones
+  que la opción ofrece y no toca las acciones de flujo. Las casillas siguen
+  disponibles para el ajuste fino, y una mezcla se muestra como
+  «Personalizado». Una subventana queda bloqueada mientras su pantalla esté
+  prohibida.
+- **Alta directa por el superadministrador.**
+  `POST governance/departments/{d}/internal-users` registra el expediente del
+  empleado y su cuenta (administrador o sub-usuario con permisos de la matriz)
+  en una sola transacción, sin solicitud a Gestión Humana. Usa las mismas
+  validaciones que un alta de Gestión Humana y que una validación de acceso, y
+  audita `origin=superadmin`. Los agentes de rampa siguen el flujo de
+  solicitud, porque necesitan supervisor y terminales. La ruta heredada sin
+  empleado (`[Obsolete] departments/{d}/users`) se conserva durante la fase de
+  expansión de ADR-0017, pero ninguna pantalla la usa.
 - **Comprobaciones en el servidor.** Cada endpoint comprueba la acción exacta de
   su operación. Crear un borrador exige `create`; editarlo, `update`;
   publicarlo, `publish`. El tráfico en vivo exige Dashboard o Monitoreo de

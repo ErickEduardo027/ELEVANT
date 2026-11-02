@@ -129,6 +129,23 @@ public sealed record CreateDepartmentAccountInput(
     IReadOnlyList<string>? PermissionCodes = null,
     Guid? EmployeeId = null);
 
+/// <summary>
+/// The super administrator registers the employee and creates its account in one step, without a
+/// Human Resources request (second teacher review). <paramref name="Kind"/> is <c>administrator</c>
+/// or <c>member</c>; members take a template or explicit grants. The corporate email of the employee
+/// is the login, and <paramref name="StationIds"/> must be stations of the employee.
+/// </summary>
+public sealed record CreateInternalUserInput(
+    SaveEmployeeInput Employee,
+    string Kind,
+    string TemporaryPassword,
+    IReadOnlyList<Guid> StationIds,
+    Guid? AccessProfileId = null,
+    IReadOnlyList<string>? PermissionCodes = null)
+{
+    public override string ToString() => $"{nameof(CreateInternalUserInput)} {{ Kind = {Kind}, TemporaryPassword = [REDACTED] }}";
+}
+
 public sealed record UpdateDepartmentUserInput(
     string FirstName,
     string LastName,
@@ -192,6 +209,8 @@ public interface IDepartmentGovernanceStore
         CreateDepartmentAccountInput input, CancellationToken cancellationToken = default);
     Task<GovernanceResult> CreateMemberAsync(Guid actorId, string department,
         CreateDepartmentAccountInput input, CancellationToken cancellationToken = default);
+    Task<GovernanceResult> CreateInternalUserAsync(Guid actorId, string department, CreateInternalUserInput input,
+        CancellationToken cancellationToken = default);
     Task<GovernanceResult> UpdateUserAsync(Guid actorId, string department, Guid userId,
         UpdateDepartmentUserInput input, CancellationToken cancellationToken = default);
     Task<GovernanceResult> SetUserStatusAsync(Guid actorId, string department, Guid userId,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { DEPARTMENTS, getDepartmentsOverview } from '../../services/departmentGovernanceService';
 import DepartmentUsersPage from '../department-users/DepartmentUsersPage';
+import InternalUserDrawer from './InternalUserDrawer';
 import { CalendarIcon, ChevronDownIcon, ShieldCheckIcon, UsersIcon, LayoutGridIcon } from '../shell/components/icons';
 
 const DEPARTMENT_ICONS = {
@@ -49,6 +50,8 @@ function DepartmentCard({ summary, onOpen }) {
 /** Super administrator view of every internal user, grouped by department. */
 export default function InternalUsersPanel() {
   const [department, setDepartment] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [notice, setNotice] = useState('');
   const [state, setState] = useState({ status: 'loading', overview: null, error: '' });
   const version = useRef(0);
 
@@ -90,6 +93,14 @@ export default function InternalUsersPanel() {
   const overview = state.overview;
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="max-w-2xl text-sm text-text-secondary-light dark:text-text-secondary-dark">Crea el expediente y la cuenta de un empleado interno en un solo paso, con permisos por opción y subventana.</p>
+        <button type="button" onClick={() => { setNotice(''); setCreating(true); }}
+          className="min-h-[40px] rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nuevo usuario interno</button>
+      </div>
+      {notice && <div role="status" className="rounded-lg border border-status-success/30 bg-status-success/10 p-3 text-sm">{notice}</div>}
+      <InternalUserDrawer open={creating} onClose={() => setCreating(false)}
+        onCreated={(_, message) => { setCreating(false); setNotice(message); void refresh(); }} />
       {state.status === 'loading' && <p role="status" className="rounded-xl bg-white p-6 text-sm dark:bg-surface-dark-card">Cargando usuarios internos…</p>}
       {state.status === 'error' && (
         <div role="alert" className="rounded-xl border border-status-danger/30 bg-white p-6 text-sm dark:bg-surface-dark-card">

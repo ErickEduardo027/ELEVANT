@@ -104,6 +104,10 @@ const MESSAGES = {
   administrators_use_back_office: 'Un administrador debe ocupar un puesto de oficina, no de rampa.',
   employee_record_managed_by_hr: 'El nombre y el correo los gestiona Gestión Humana en el expediente.',
   reason_required: 'Indique el motivo (3 a 500 caracteres).',
+  department_mismatch: 'El puesto y el expediente deben pertenecer al departamento elegido.',
+  permissions_required: 'Un sub-usuario necesita una plantilla o al menos un permiso.',
+  ramp_agents_use_requests: 'Los agentes de rampa se solicitan desde Centro de Operaciones (requieren supervisor y terminales).',
+  stations_outside_employee: 'Las estaciones de la cuenta deben ser estaciones del empleado.',
 };
 
 /** Message for a governance failure: the server's rule code wins over the generic title. */

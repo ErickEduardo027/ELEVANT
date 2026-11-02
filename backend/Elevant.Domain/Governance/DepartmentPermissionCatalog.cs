@@ -193,6 +193,13 @@ public static class DepartmentPermissionCatalog
             .Select(action => (action.Code, Department: entry.Key)))
         .ToDictionary(item => item.Code, item => item.Department, StringComparer.Ordinal);
 
+    /// <summary>Option prefix of a sub-window ('contracts.service_closures') → the option that contains it.</summary>
+    private static readonly IReadOnlyDictionary<string, string> Parents = Modules
+        .SelectMany(entry => entry.Value.Where(module => module.Parent is not null).Select(module =>
+            (Child: module.Actions[0].Code[..module.Actions[0].Code.LastIndexOf('.')],
+             Parent: module.Actions[0].Code[..module.Actions[0].Code.IndexOf('.')] + "." + module.Parent)))
+        .ToDictionary(item => item.Child, item => item.Parent, StringComparer.Ordinal);
+
     public static IReadOnlyList<Department> Departments { get; } =
         [Department.HumanResources, Department.Contracts, Department.Operations, Department.Finance];
 
@@ -223,7 +230,9 @@ public static class DepartmentPermissionCatalog
 
     /// <summary>
     /// Translates legacy codes and adds the option's <c>read</c> action whenever another action
-    /// of that option is granted, so a member can always see what they are allowed to change.
+    /// of that option is granted, so a member can always see what they are allowed to change. A
+    /// sub-window also grants <c>read</c> of the screen that contains it, which is the only way to
+    /// reach it; forbidding that screen therefore forbids its sub-windows.
     /// </summary>
     public static IReadOnlyList<string> Normalize(IEnumerable<string> codes)
     {
@@ -231,8 +240,10 @@ public static class DepartmentPermissionCatalog
         foreach (var code in codes.SelectMany(Expand))
         {
             result.Add(code);
-            var read = code[..code.LastIndexOf('.')] + ".read";
-            if (IsKnown(read)) result.Add(read);
+            var option = code[..code.LastIndexOf('.')];
+            if (IsKnown(option + ".read")) result.Add(option + ".read");
+            for (var parent = Parents.GetValueOrDefault(option); parent is not null; parent = Parents.GetValueOrDefault(parent))
+                if (IsKnown(parent + ".read")) result.Add(parent + ".read");
         }
         return result.ToArray();
     }

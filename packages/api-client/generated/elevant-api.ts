@@ -1068,6 +1068,37 @@ export interface CreateGovernanceUserInput {
   expectedStationCodes?: string[] | null;
 }
 
+export interface SaveEmployeeInput {
+  firstName: string;
+  lastName: string;
+  identificationType: string;
+  identificationNumber: string;
+  employeeNumber: string;
+  department: string;
+  positionId: string;
+  stationIds: string[];
+  hireDate: string;
+  /** @nullable */
+  phoneNumber?: string | null;
+  /** @nullable */
+  corporateEmail?: string | null;
+  /** @nullable */
+  requisitionId?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface CreateInternalUserInput {
+  employee: SaveEmployeeInput;
+  kind: string;
+  temporaryPassword: string;
+  stationIds: string[];
+  /** @nullable */
+  accessProfileId?: string | null;
+  /** @nullable */
+  permissionCodes?: string[] | null;
+}
+
 export interface CreateManualTurnaroundRequest {
   turnaroundId: string;
   stationId: string;
@@ -4417,26 +4448,6 @@ export interface SaveChargeTariffDraftInput {
   expectedVersion: string;
 }
 
-export interface SaveEmployeeInput {
-  firstName: string;
-  lastName: string;
-  identificationType: string;
-  identificationNumber: string;
-  employeeNumber: string;
-  department: string;
-  positionId: string;
-  stationIds: string[];
-  hireDate: string;
-  /** @nullable */
-  phoneNumber?: string | null;
-  /** @nullable */
-  corporateEmail?: string | null;
-  /** @nullable */
-  requisitionId?: string | null;
-  /** @nullable */
-  expectedVersion?: string | null;
-}
-
 export interface SaveFinancePackageRequest {
   requestId: string;
   code: string;
@@ -7727,6 +7738,45 @@ const res = await fetch(getCreateDepartmentAdministratorUrl(department),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(createDepartmentAccountInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateInternalUserUrl = (department: string,) => {
+
+
+
+
+  return `/api/v1/governance/departments/${department}/internal-users`
+}
+
+/**
+ * @summary Super administrator only: registers the employee and creates its account (administrator or
+member with per-option permissions) in one step, without a Human Resources request.
+ */
+export const createInternalUser = async (department: string,
+    createInternalUserInput?: CreateInternalUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateInternalUserUrl(department),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createInternalUserInput)
   }
 )
 
