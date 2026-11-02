@@ -29,6 +29,10 @@ cuentas internas de AVIAM quedan fuera.
 - **Servidor:** la cuenta Gmail no-reply se configura con `ELEVANT_SMTP_*` en el Environment
   privado de Dokploy, con una contraseña de aplicación
   (`docs/deployment/dokploy-configuration.md`).
+- **Diseño:** las plantillas usan la paleta de ELEVANT con tablas y estilos en línea, y el logo
+  real como imagen embebida (`cid:elevant-logo`). `SmtpEmailSender` lo adjunta al enviar, así
+  que el destinatario no descarga nada externo: la web Development solo se alcanza por la
+  tailnet. La bandeja de salida guarda solo el HTML con la referencia.
 
 ### Secretos de un solo uso
 

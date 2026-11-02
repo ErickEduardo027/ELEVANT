@@ -88,7 +88,7 @@ internal sealed class EfEmailOutboxStore(ElevantDbContext context, Application.A
     {
         if (!await IsSuperAdministratorAsync(actorId, cancellationToken) || !ValidEmail(recipient)) return null;
         var now = timeProvider.GetUtcNow();
-        Add(context, AccountEmailTemplates.Test(recipient.Trim()), EmailPurpose.Test, now);
+        Add(context, AccountEmailTemplates.Test(recipient.Trim(), now), EmailPurpose.Test, now);
         await context.SaveChangesAsync(cancellationToken);
         return await context.Set<EmailOutboxMessage>().AsNoTracking()
             .Where(item => item.Purpose == EmailPurpose.Test).OrderByDescending(item => item.Id)
