@@ -5,6 +5,7 @@ import ShellFrame from '../shell/ShellFrame';
 import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon, UsersIcon } from '../shell/components/icons';
 import AirlinesPanel from './AirlinesPanel';
 import ClientsPanel from './ClientsPanel';
+import EmailDeliveryPanel from './EmailDeliveryPanel';
 import InternalUsersPanel from './InternalUsersPanel';
 import AccessValidationsPage from '../department-users/AccessValidationsPage';
 import { usePreviewControls } from '../dashboard/usePreviewControls';
@@ -135,6 +136,7 @@ export default function GovernanceShell({ user, onLogout }) {
             onArchive={(id, version) => run(() => archiveManagedAirline(id, version), 'Aerolínea archivada.')}
             onEnrich={() => run(enrichManagedAirlines, 'Fichas históricas sin edición manual revisadas.')}
             onCheckRegistry={async id => { const result = await checkManagedAirlineRegistry(id); await refresh(); return result; }} />}
+          {status === 'ready' && moduleId === 'settings' && <EmailDeliveryPanel />}
           {status === 'ready' && moduleId === 'settings' && <GovernanceSettings snapshot={snapshot} run={run} />}
         </div>
   </ShellFrame>;

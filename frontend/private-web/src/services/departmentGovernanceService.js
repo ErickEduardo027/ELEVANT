@@ -77,3 +77,8 @@ export const resetClientUserPassword = (organizationId, id, temporaryPassword) =
 
 export const listLegacyRoles = () => commercialApi('/governance/legacy-roles');
 export const convertLegacyRole = id => commercialApi(`/governance/legacy-roles/${id}/convert`, { method: 'POST' });
+
+/** Email deliveries of the system sender (no bodies) and whether SMTP is configured (ADR-0022). */
+export const listEmailDeliveries = () => commercialApi('/governance/email/deliveries');
+/** Super administrator smoke test: queues one email to check the no-reply sender. */
+export const sendTestEmail = to => commercialApi('/governance/email/test', json('POST', { to }));
