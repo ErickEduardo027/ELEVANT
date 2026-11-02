@@ -52,3 +52,43 @@ describe("contract document client", () => {
     await expect(client.getContractDocument(versionId)).rejects.toMatchObject({ kind: "malformed-response" });
   });
 });
+
+describe("airline permits and contract timeline", () => {
+  const permit = { id: "63000000-0000-7000-8000-000000000001", airlineId: "20000000-0000-7000-8000-000000000001",
+    airline: "Demo Airlines", kind: "OperatingPermit", number: "JAC-2026-002", issuer: "JAC", issuedOn: "2026-10-01",
+    expiresOn: "2026-11-20", validity: "Expiring", review: "Submitted", reviewNote: null,
+    documentUrl: "/api/v1/media/64000000-0000-7000-8000-000000000001", submittedAt: "2026-11-02T12:00:00.000Z",
+    reviewedAt: null, version: "AAAAAAAAB9E=" };
+
+  it("lists, uploads and submits permits with the bearer, and reads the timeline", async () => {
+    const calls: Array<{ url: string; method: string; body: unknown }> = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", getAccessToken: () => "token",
+      fetch: async (input, init) => {
+        const url = String(input);
+        calls.push({ url, method: init?.method ?? "GET", body: init?.body });
+        if (url.endsWith("/media")) return Response.json({ id: "64000000-0000-7000-8000-000000000001", url: permit.documentUrl });
+        if (url.endsWith("/timeline")) return Response.json({ contractId: "c", contractCode: "CT-001", status: "Active",
+          entries: [{ at: "2026-11-02T12:00:00.000Z", kind: "status", title: "Contrato activo", detail: null, actor: null }] });
+        return init?.method === "POST" ? Response.json(permit, { status: 201 }) : Response.json([permit]);
+      } });
+
+    await expect(client.getAirlinePermits()).resolves.toEqual([permit]);
+    const url = await client.uploadAirlinePermitDocument(new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+    expect(calls[1]!.body).toBeInstanceOf(FormData);
+    expect((calls[1]!.body as FormData).get("purpose")).toBe("airline-permit");
+    await expect(client.submitAirlinePermit({ kind: "OperatingPermit", number: " JAC-2026-002 ", issuer: "JAC",
+      issuedOn: "2026-10-01", expiresOn: "2026-11-20", documentUrl: url })).resolves.toEqual(permit);
+    expect(JSON.parse(String(calls[2]!.body))).toMatchObject({ number: "JAC-2026-002", documentUrl: permit.documentUrl });
+    await expect(client.getContractTimeline(versionId)).resolves.toMatchObject({ status: "Active" });
+    expect(calls.map(call => call.url.replace("https://api.example.test/api/v1/", ""))).toEqual([
+      "airline/permits", "media", "airline/permits", `contract-versions/${versionId}/timeline`]);
+  });
+
+  it("refuses inconsistent permits and unsupported files before calling the API", async () => {
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", getAccessToken: () => "token",
+      fetch: async () => { throw new Error("must not be called"); } });
+    await expect(client.submitAirlinePermit({ kind: "OperatingPermit", number: "X", issuer: "JAC",
+      issuedOn: "2026-12-01", expiresOn: "2026-11-01", documentUrl: null })).rejects.toThrow(TypeError);
+    await expect(client.uploadAirlinePermitDocument(new Blob(["x"], { type: "text/plain" }))).rejects.toThrow(TypeError);
+  });
+});

@@ -89,7 +89,10 @@ public static class DepartmentPermissionCatalog
             [
                 Module("contracts", "home", "Inicio", "Gestión contractual", null, Read()),
                 Module("contracts", "agreements", "Contratos", "Gestión contractual", null,
-                    Read(), Other("sign", "Firmar por AVIAM")),
+                    Read(), Other("sign", "Firmar por AVIAM"),
+                    Other("lifecycle", "Suspender, reactivar, terminar y renovar")),
+                Module("contracts", "permits", "Permisos de aerolíneas", "Gestión contractual", null,
+                    Read(), Other("verify", "Verificar o rechazar permisos")),
                 Module("contracts", "agreed_services", "Servicios pactados", "Gestión contractual", null, Read()),
                 Module("contracts", "drafts", "Borradores", "Gestión contractual", null,
                     Read(), Update("Editar borradores"), Other("activate", "Activar contrato")),
@@ -164,7 +167,8 @@ public static class DepartmentPermissionCatalog
         ["human_resources.qualifications.manage"] = ["human_resources.qualifications.create", "human_resources.qualifications.update"],
         ["human_resources.permits.manage"] = ["human_resources.permits.create", "human_resources.permits.update"],
         ["human_resources.availability.decide"] = ["human_resources.availability.create"],
-        ["contracts.agreements.read"] = ["contracts.agreed_services.read"],
+        // Reading contracts also shows the permits that condition them (ADR-0024).
+        ["contracts.agreements.read"] = ["contracts.agreed_services.read", "contracts.permits.read"],
         ["contracts.drafts.edit"] = ["contracts.drafts.update"],
         ["contracts.catalog.edit"] = ["contracts.catalog.update"],
         ["contracts.catalog.retire"] = ["contracts.catalog.delete"],

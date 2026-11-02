@@ -6,6 +6,7 @@ import type { AirlineDraftData } from "@/components/auth/AirlineSessionProvider"
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractSignature } from "./AirlineContractSignature";
 import { ContractPdfActions } from "./ContractPdfActions";
+import { AirlinePermitsSection, ContractTimeline } from "./AirlinePermitsSection";
 import styles from "./AirlinePortalPage.module.css";
 
 const STATUS: Record<string, string> = {
@@ -58,7 +59,7 @@ export function AirlineContractPage() {
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Consulta real · su aerolínea</span>
       <h1>Contratos y tarifarios</h1>
-      <p>Revise borradores y comente las condiciones propuestas. La cobertura operativa aparece tras la activación de Contratos.</p>
+      <p>Revise borradores y comente las condiciones propuestas. El contrato se activa cuando Finanzas lo aprueba, ambas partes lo firman y su permiso de operación está verificado y vigente.</p>
     </header>
     {loading && pages.length === 0 ? <section className={styles.panel} role="status">Cargando contratos autorizados…</section> : null}
     {error ? <section className={styles.panel} role="alert">
@@ -69,6 +70,7 @@ export function AirlineContractPage() {
           .catch(() => { setError(true); setLoading(false); });
       }}>Reintentar</button>}
     </section> : null}
+    <AirlinePermitsSection />
     {draftError && <section className={styles.panel} role="alert">No se pudieron cargar los borradores. Actualice la página para volver a intentarlo.</section>}
     {drafts.length > 0 && <section className={styles.contractGrid} aria-label="Borradores para revisión">
       {drafts.map(draft => <AirlineDraftCard key={draft.id} draft={draft} onComment={commentDraft} onDownload={downloadContractDraft} />)}
@@ -97,6 +99,7 @@ export function AirlineContractPage() {
             </div>) : <p>Sin tarifas registradas en esta versión.</p>}
           </div>
           <AirlineContractSignature versionId={version.id} fileName={`contrato-${contract.code}-v${version.versionNumber}.pdf`} />
+          <ContractTimeline versionId={version.id} />
         </section>)}
       </article>)}
     </div>}

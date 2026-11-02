@@ -121,7 +121,9 @@ cada exportación admite hasta 5 000 filas.
   contenido. Una huella desactualizada se rechaza. `commercial.contract_signatures`
   es de solo inserción.
 - **Contrato firmado.** Cuando firma la segunda parte, el contrato registra
-  `SignedOn`.
+  `SignedOn`. Desde noviembre de 2026 la segunda firma, con la aprobación de
+  Finanzas y un permiso de operación verificado, es también lo que activa el
+  contrato ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
 - **Origen.** Todo contrato nace de una solicitud aprobada. La pantalla lo
   explica y lleva a Solicitudes.
 - **Formato de impresión (segunda ronda, noviembre de 2026).** `ContractPdfRenderer`

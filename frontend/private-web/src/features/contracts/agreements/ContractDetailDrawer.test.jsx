@@ -6,6 +6,8 @@ import { getContractDocument, loadContractPdf, signContractVersion } from '../..
 
 vi.mock('../../../services/commercialGovernanceApi', () => ({
   getContractDocument: vi.fn(), loadContractPdf: vi.fn(), signContractVersion: vi.fn(),
+  getContractTimeline: vi.fn().mockResolvedValue({ contractId: 'c-1', contractCode: 'CT-001', status: 'Active', entries: [] }),
+  applyContractLifecycle: vi.fn(),
 }));
 
 const sha = 'b'.repeat(64);

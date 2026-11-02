@@ -14,7 +14,7 @@ function date(value) {
     .format(new Date(`${value}T12:00:00Z`)) : 'Sin vencimiento';
 }
 
-export default function ManagedAgreementsPage({ mode = 'contracts', canSign = false, onNewContract }) {
+export default function ManagedAgreementsPage({ mode = 'contracts', canSign = false, canManageLifecycle = false, onNewContract }) {
   const [detailId, setDetailId] = useState(null);
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
@@ -97,6 +97,6 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
         <button type="button" disabled={!state.result?.hasMore} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Siguiente página</button>
       </nav>
     </>}
-    <ContractDetailDrawer versionId={detailId} canSign={canSign} onClose={() => setDetailId(null)} onSigned={refresh} />
+    <ContractDetailDrawer versionId={detailId} canSign={canSign} canManageLifecycle={canManageLifecycle} onClose={() => setDetailId(null)} onSigned={refresh} />
   </div>;
 }

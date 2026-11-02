@@ -101,6 +101,10 @@ import {
   getAssignOccStandUrl,
   getReleaseOccStandUrl,
   getGetContractDocumentUrl,
+  getGetAirlinePermitsUrl,
+  getSubmitAirlinePermitUrl,
+  getGetContractTimelineUrl,
+  getUploadCommercialMediaUrl,
   getDownloadContractDocumentUrl,
   getDownloadContractDraftPdfUrl,
   getSignContractVersionUrl,
@@ -209,6 +213,9 @@ import {
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
   type ContractDocumentResponse,
+  type AirlinePermitData,
+  type SubmitAirlinePermitInput,
+  type ContractTimelineData,
   type SignContractRequest,
   type OccReportPageResponse,
   type HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse,
@@ -826,6 +833,13 @@ export interface ElevantApiClient {
   downloadContractDocument(versionId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
   /** Watermarked review PDF of a draft version (never signable). */
   downloadContractDraftPdf(versionId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** Permit dossier of the portal user's airline (ADR-0024). */
+  getAirlinePermits(options?: GetHumanResourcesReportOptions): Promise<AirlinePermitData[]>;
+  submitAirlinePermit(input: SubmitAirlinePermitInput, options?: GetHumanResourcesReportOptions): Promise<AirlinePermitData>;
+  /** Uploads the scanned permit (PDF, JPG or PNG, up to 8 MB) and returns its private media URL. */
+  uploadAirlinePermitDocument(file: Blob, options?: GetHumanResourcesReportOptions): Promise<string>;
+  /** History of the contract of a version, oldest first (request, Finance, signatures, permits, status). */
+  getContractTimeline(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractTimelineData>;
   signContractVersion(versionId: string, request: SignContractRequest, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
   getOccReport(key: OccReportKey, query: OccReportQuery,
@@ -2255,6 +2269,33 @@ function isOccPositionBoard(value: unknown, stationId?: string): value is OccPos
 }
 
 const CONTRACT_PARTIES = new Set<string>(["Aviam", "Airline"]);
+
+const PERMIT_KINDS = ["OperatingPermit", "AirOperatorCertificate", "Insurance", "Other"];
+
+function isAirlinePermit(value: unknown): value is AirlinePermitData {
+  return isRecord(value) && typeof value.id === "string" && typeof value.airline === "string" &&
+    typeof value.kind === "string" && PERMIT_KINDS.includes(value.kind) && typeof value.number === "string" &&
+    typeof value.issuer === "string" && isDateOnly(value.issuedOn) && isDateOnly(value.expiresOn) &&
+    ["Current", "Expiring", "Expired"].includes(value.validity as string) &&
+    ["Submitted", "Verified", "Rejected"].includes(value.review as string) &&
+    isOptionalNullable(value.reviewNote, isString) && isOptionalNullable(value.documentUrl, isString) &&
+    typeof value.version === "string";
+}
+
+function isTimelineEntry(value: unknown): boolean {
+  return isRecord(value) && isDateTimeOffset(value.at) && typeof value.kind === "string" &&
+    typeof value.title === "string" && isOptionalNullable(value.detail, isString) && isOptionalNullable(value.actor, isString);
+}
+
+function validatedPermitInput(input: SubmitAirlinePermitInput): SubmitAirlinePermitInput {
+  if (!isRecord(input) || !PERMIT_KINDS.includes(input.kind) || !isNonEmptyString(input.number) || input.number.trim().length > 60 ||
+      !isNonEmptyString(input.issuer) || input.issuer.trim().length > 120 || !isDateOnly(input.issuedOn) ||
+      !isDateOnly(input.expiresOn) || input.expiresOn < input.issuedOn ||
+      input.documentUrl != null && !/^\/api\/v1\/media\/[0-9a-f-]{36}$/i.test(input.documentUrl))
+    throw new TypeError("Permit data is incomplete or inconsistent.");
+  return { kind: input.kind, number: input.number.trim(), issuer: input.issuer.trim(), issuedOn: input.issuedOn,
+    expiresOn: input.expiresOn, documentUrl: input.documentUrl ?? null };
+}
 
 function isContractDocument(value: unknown, versionId: string): value is ContractDocumentResponse {
   return isRecord(value) && hasOnlyKeys(value, ["contractId", "versionId", "contractCode", "contractStatus", "airlineName",
@@ -5891,6 +5932,42 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     },
     downloadContractDocument(versionId: string, options?: GetHumanResourcesReportOptions) {
       return executeReportDocument(getDownloadContractDocumentUrl(validatedUuid(versionId, "versionId")), "pdf", options);
+    },
+    async getAirlinePermits(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getGetAirlinePermitsUrl(), { ...options, method: "GET" }, true);
+      if (!Array.isArray(result.data) || !result.data.every(isAirlinePermit)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async submitAirlinePermit(input: SubmitAirlinePermitInput, options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getSubmitAirlinePermitUrl(), {
+        ...options, method: "POST",
+        headers: { ...Object.fromEntries(headersFrom(options?.headers, "Request headers")), "content-type": "application/json" },
+        body: JSON.stringify(validatedPermitInput(input)),
+      }, true);
+      if (!isAirlinePermit(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async uploadAirlinePermitDocument(file: Blob, options?: GetHumanResourcesReportOptions) {
+      if (!(file instanceof Blob) || file.size === 0 || file.size > 8 * 1024 * 1024 ||
+          !["application/pdf", "image/jpeg", "image/png"].includes(file.type))
+        throw new TypeError("The permit document must be a PDF, JPG or PNG of up to 8 MB.");
+      const form = new FormData();
+      form.append("purpose", "airline-permit");
+      form.append("file", file);
+      const result = await execute(getUploadCommercialMediaUrl(), {
+        ...options, method: "POST", headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")), body: form,
+      }, true);
+      if (!isRecord(result.data) || typeof result.data.url !== "string" || !/^\/api\/v1\/media\/[0-9a-f-]{36}$/i.test(result.data.url))
+        throw malformedResponse(result.status);
+      return result.data.url;
+    },
+    async getContractTimeline(versionId: string, options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getGetContractTimelineUrl(validatedUuid(versionId, "versionId")), { ...options, method: "GET" }, true);
+      const data = result.data;
+      if (!isRecord(data) || typeof data.contractCode !== "string" || typeof data.status !== "string" ||
+          !Array.isArray(data.entries) || !data.entries.every(isTimelineEntry))
+        throw malformedResponse(result.status);
+      return data as unknown as ContractTimelineData;
     },
     downloadContractDraftPdf(versionId: string, options?: GetHumanResourcesReportOptions) {
       return executeReportDocument(getDownloadContractDraftPdfUrl(validatedUuid(versionId, "versionId")), "pdf", options);

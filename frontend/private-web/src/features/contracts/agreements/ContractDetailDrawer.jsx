@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Drawer from '../../../components/Drawer';
 import { getContractDocument, signContractVersion } from '../../../services/commercialGovernanceApi';
+import ContractLifecyclePanel from './ContractLifecyclePanel';
 import ContractPdfButtons from './ContractPdfButtons';
 
 const PARTY = { Aviam: 'AVIAM', Airline: 'Aerolínea' };
@@ -21,7 +22,7 @@ function problem(error) {
  * Detail of an approved contract version: parties, validity, stations, rates and terms, the
  * printable PDF and the signature of each party over the content hash.
  */
-export default function ContractDetailDrawer({ versionId, canSign = false, onClose, onSigned }) {
+export default function ContractDetailDrawer({ versionId, canSign = false, canManageLifecycle = false, onClose, onSigned }) {
   const [state, setState] = useState({ status: 'loading' });
   const [form, setForm] = useState({ signerName: '', signerTitle: '', accepted: false });
   const [busy, setBusy] = useState('');
@@ -130,6 +131,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, onClo
             </form>
           )}
           {error && <p role="alert" className="text-status-danger">{error}</p>}
+          <ContractLifecyclePanel key={revision} versionId={versionId} canManage={canManageLifecycle} onChanged={() => { setRevision(value => value + 1); onSigned?.(); }} />
         </div>
       )}
     </Drawer>

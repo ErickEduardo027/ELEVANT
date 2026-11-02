@@ -75,7 +75,7 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("human_resources.employees.manage", new[] { "human_resources.employees.create", "human_resources.employees.read",
         "human_resources.employees.update" })]
     [InlineData("contracts.catalog.retire", new[] { "contracts.catalog.delete", "contracts.catalog.read" })]
-    [InlineData("contracts.agreements.read", new[] { "contracts.agreed_services.read", "contracts.agreements.read" })]
+    [InlineData("contracts.agreements.read", new[] { "contracts.agreed_services.read", "contracts.agreements.read", "contracts.permits.read" })]
     [InlineData("finance.receipts.read", new[] { "finance.receipts.read", "finance.statements.read" })]
     public void LegacyGrantsKeepTheirAccessAsCrudActions(string legacy, string[] expected)
     {

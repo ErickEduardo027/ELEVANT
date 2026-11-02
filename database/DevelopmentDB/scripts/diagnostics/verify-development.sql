@@ -87,7 +87,8 @@ VALUES
     (N'20261027000905_AddContractSignatures'),
     (N'20261102120610_AddRefreshTokens'),
     (N'20261102130658_AddEmailOutboxAndAccountTokens'),
-    (N'20261102161112_AddAirlineRegistryCheck');
+    (N'20261102161112_AddAirlineRegistryCheck'),
+    (N'20261102163828_AddAirlinePermitsAndContractLifecycle');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')

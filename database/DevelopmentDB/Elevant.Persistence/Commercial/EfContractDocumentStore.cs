@@ -112,6 +112,9 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
             context.ChangeTracker.Clear();
             return Failed(ContractDocumentFailure.Conflict);
         }
+        // The second signature may complete the activation conditions (ADR-0024).
+        if (document.Signatures.Count == 1)
+            await ContractActivation.ActivateReadyAsync(context, row.Value.AirlineId, reader.AccountId, now, cancellationToken);
         return new(await DocumentAsync(row.Value.VersionId, cancellationToken) with
             { SignableBy = null }, null);
     }

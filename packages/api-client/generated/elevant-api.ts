@@ -359,6 +359,27 @@ export interface AirlineOperationalRequestPageResponse {
   requests: AirlineOperationalRequestResponse[];
 }
 
+export interface AirlinePermitData {
+  id: string;
+  airlineId: string;
+  airline: string;
+  kind: string;
+  number: string;
+  issuer: string;
+  issuedOn: string;
+  expiresOn: string;
+  validity: string;
+  review: string;
+  /** @nullable */
+  reviewNote?: string | null;
+  /** @nullable */
+  documentUrl?: string | null;
+  submittedAt: string;
+  /** @nullable */
+  reviewedAt?: string | null;
+  version: string;
+}
+
 export interface AirlinePortalStationResponse {
   id: string;
   code: string;
@@ -1067,6 +1088,53 @@ export interface ContractDraftOverviewItemData {
 export interface ContractDraftOverviewData {
   count: number;
   recent: ContractDraftOverviewItemData[];
+}
+
+export type ContractLifecycleFailure = typeof ContractLifecycleFailure[keyof typeof ContractLifecycleFailure];
+
+
+export const ContractLifecycleFailure = {
+  NUMBER_0: 0,
+  NUMBER_1: 1,
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+} as const;
+
+export interface ContractLifecycleInput {
+  action: string;
+  reason: string;
+  expectedStatus: string;
+  /** @nullable */
+  validFrom?: string | null;
+  /** @nullable */
+  validTo?: string | null;
+}
+
+export interface ContractLifecycleResult {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  draftVersionId?: string | null;
+  failure?: ContractLifecycleFailure | null;
+  /** @nullable */
+  code?: string | null;
+}
+
+export interface ContractTimelineEntry {
+  at: string;
+  kind: string;
+  title: string;
+  /** @nullable */
+  detail?: string | null;
+  /** @nullable */
+  actor?: string | null;
+}
+
+export interface ContractTimelineData {
+  contractId: string;
+  contractCode: string;
+  status: string;
+  entries: ContractTimelineEntry[];
 }
 
 export interface CorrectExchangeRateInput {
@@ -4414,6 +4482,13 @@ export interface ResolvePreinvoiceDisputeResponse {
   replayed: boolean;
 }
 
+export interface ReviewAirlinePermitInput {
+  verified: boolean;
+  /** @nullable */
+  note?: string | null;
+  expectedVersion: string;
+}
+
 export interface ReviewCommercialInput {
   approve: boolean;
   /** @nullable */
@@ -4655,6 +4730,16 @@ export interface SignContractRequest {
   signerTitle: string;
   documentSha256: string;
   accepted: boolean;
+}
+
+export interface SubmitAirlinePermitInput {
+  kind: string;
+  number: string;
+  issuer: string;
+  issuedOn: string;
+  expiresOn: string;
+  /** @nullable */
+  documentUrl?: string | null;
 }
 
 export interface SubmitCommercialRequestRequest {
@@ -4922,6 +5007,10 @@ version?: string;
 export type UploadCommercialMediaBody = {
   purpose?: string;
   file?: Blob;
+};
+
+export type GetContractsAirlinePermitsParams = {
+review?: string;
 };
 
 export type ListDepartmentAccessCandidatesParams = {
@@ -7307,6 +7396,201 @@ export const activateManagedContractDraft = async (versionId: string, options?: 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePermitsUrl = () => {
+
+
+
+
+  return `/api/v1/airline/permits`
+}
+
+export const getAirlinePermits = async ( options?: RequestInit): Promise<AirlinePermitData[]> => {
+
+  const res = await fetch(getGetAirlinePermitsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSubmitAirlinePermitUrl = () => {
+
+
+
+
+  return `/api/v1/airline/permits`
+}
+
+export const submitAirlinePermit = async (submitAirlinePermitInput: SubmitAirlinePermitInput, options?: RequestInit): Promise<AirlinePermitData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSubmitAirlinePermitUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitAirlinePermitInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetContractsAirlinePermitsUrl = (params?: GetContractsAirlinePermitsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/permits?${stringifiedParams}` : `/api/v1/contracts/permits`
+}
+
+export const getContractsAirlinePermits = async (params?: GetContractsAirlinePermitsParams, options?: RequestInit): Promise<AirlinePermitData[]> => {
+
+  const res = await fetch(getGetContractsAirlinePermitsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReviewAirlinePermitUrl = (permitId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/permits/${permitId}/review`
+}
+
+export const reviewAirlinePermit = async (permitId: string,
+    reviewAirlinePermitInput: ReviewAirlinePermitInput, options?: RequestInit): Promise<AirlinePermitData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReviewAirlinePermitUrl(permitId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reviewAirlinePermitInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetContractTimelineUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/timeline`
+}
+
+export const getContractTimeline = async (versionId: string, options?: RequestInit): Promise<ContractTimelineData> => {
+
+  const res = await fetch(getGetContractTimelineUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractTimelineData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getApplyContractLifecycleUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/lifecycle`
+}
+
+export const applyContractLifecycle = async (versionId: string,
+    contractLifecycleInput: ContractLifecycleInput, options?: RequestInit): Promise<ContractLifecycleResult> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getApplyContractLifecycleUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(contractLifecycleInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractLifecycleResult = body ? JSON.parse(body) : {}
   return data
 }
 

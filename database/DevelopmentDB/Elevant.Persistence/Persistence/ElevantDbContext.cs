@@ -118,6 +118,8 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<ContractSignature> ContractSignatures => Set<ContractSignature>();
 
+    public DbSet<AirlinePermit> AirlinePermits => Set<AirlinePermit>();
+
     public DbSet<Preinvoice> Preinvoices => Set<Preinvoice>();
 
     public DbSet<PreinvoiceLine> PreinvoiceLines => Set<PreinvoiceLine>();
