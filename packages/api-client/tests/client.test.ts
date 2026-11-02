@@ -126,6 +126,28 @@ describe("createElevantApiClient", () => {
     });
   });
 
+  it("renews and ends a session with the refresh token, never with the bearer", async () => {
+    const refreshToken = "aB3-dE5_fG7hI9jK1lM3nO5pQ7rS9tU1";
+    const requests: Array<{ url: string; authorization: string | null; body: unknown }> = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => { throw new Error("Refreshing must not request a bearer token"); },
+      fetch: async (input, init) => {
+        requests.push({ url: String(input), authorization: new Headers(init?.headers).get("authorization"),
+          body: JSON.parse(String(init?.body)) });
+        return String(input).endsWith("/logout") ? new Response(null, { status: 204 })
+          : jsonResponse({ ...session, refreshToken: "zZ9-yY8_xX7wW6vV5uU4tT3sS2rR1qQ0", refreshExpiresAt: "2026-12-01T00:00:00.000Z" });
+      },
+    });
+    await expect(client.refreshSession(refreshToken)).resolves.toMatchObject({ refreshToken: "zZ9-yY8_xX7wW6vV5uU4tT3sS2rR1qQ0" });
+    await client.endSession(refreshToken);
+    expect(requests).toEqual([
+      { url: "https://api.example.test/api/v1/auth/session/refresh", authorization: null, body: { refreshToken } },
+      { url: "https://api.example.test/api/v1/auth/session/logout", authorization: null, body: { refreshToken } },
+    ]);
+    await expect(client.refreshSession("short")).rejects.toThrow(TypeError);
+  });
+
   it("changes a password without sending a stale bearer or retaining secrets", async () => {
     let requestedUrl = "";
     let authorization: string | null = null;

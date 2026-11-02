@@ -16,6 +16,7 @@ const request: SubmitCommercialRequestRequest = {
   representativeName: "Alex Test", representativeTitle: "Operations Manager",
   representativeEmail: "alex@synthetic.example.test",
   representativePhone: "+1 809 555 0100", authorityDeclared: true,
+  representativeDocumentType: "NationalId", representativeDocumentNumber: "001-1234567-3",
 };
 
 describe("canonical public commercial intake client", () => {
@@ -127,6 +128,13 @@ describe("canonical public commercial intake client", () => {
       .rejects.toBeInstanceOf(TypeError);
     await expect(client.submitCommercialRequest({ ...request, authorityDeclared: false }))
       .rejects.toBeInstanceOf(TypeError);
+    // The representative must be identified: no document, «Other», or a passport without nationality.
+    await expect(client.submitCommercialRequest({ ...request, representativeDocumentType: null,
+      representativeDocumentNumber: null })).rejects.toBeInstanceOf(TypeError);
+    await expect(client.submitCommercialRequest({ ...request, representativeDocumentType: "Other",
+      representativeDocumentNumber: "LIC-12345" })).rejects.toBeInstanceOf(TypeError);
+    await expect(client.submitCommercialRequest({ ...request, representativeDocumentType: "Passport",
+      representativeDocumentNumber: "RD1234567" })).rejects.toBeInstanceOf(TypeError);
     await expect(client.submitCommercialRequest(request)).rejects.toMatchObject({
       kind: "malformed-response",
     });

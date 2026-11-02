@@ -4174,6 +4174,10 @@ export interface RecordOccArrivalRequest {
   arrivedAt?: string | null;
 }
 
+export interface RefreshSessionRequest {
+  refreshToken: string;
+}
+
 export interface RegisterEmployeeInput {
   identificationType: string;
   identificationNumber: string;
@@ -4526,6 +4530,10 @@ export interface SessionResponse {
   tokenType: string;
   expiresAt: string;
   actor: SessionActorResponse;
+  /** @nullable */
+  refreshToken?: string | null;
+  /** @nullable */
+  refreshExpiresAt?: string | null;
 }
 
 export interface SetContractPackagesRequest {
@@ -6106,6 +6114,81 @@ export const getCurrentSession = async ( options?: RequestInit): Promise<Current
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CurrentSessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRefreshSessionUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session/refresh`
+}
+
+/**
+ * @summary Renews the session with a refresh token, which is replaced in the same call (ADR-0021).
+409 `refresh_rotated` means another tab renewed it a moment ago: re-read the stored token.
+ */
+export const refreshSession = async (refreshSessionRequest: RefreshSessionRequest, options?: RequestInit): Promise<SessionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRefreshSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(refreshSessionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: SessionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getEndSessionUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session/logout`
+}
+
+/**
+ * @summary Ends the session: every refresh token of its family stops working.
+ */
+export const endSession = async (refreshSessionRequest: RefreshSessionRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getEndSessionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(refreshSessionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
   return data
 }
 

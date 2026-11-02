@@ -104,7 +104,7 @@ it("loads a real airline session, persists only the token per tab, and revalidat
     null, "Bearer synthetic-short-lived-token", "Bearer synthetic-short-lived-token",
   ]);
   expect(JSON.parse(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY) ?? "null")).toEqual({
-    accessToken: session.accessToken, expiresAt: session.expiresAt,
+    accessToken: session.accessToken, expiresAt: session.expiresAt, refreshToken: null,
   });
   expect(localStorage.length).toBe(0);
 
@@ -371,4 +371,31 @@ it("reads a non-fiscal invoice with the same tenant bearer without changing the 
   expect(requests).toEqual([{ path:
     '/api/v1/airline/portal/preinvoices/74000000-0000-7000-8000-000000000001/invoice',
     authorization: 'Bearer synthetic-short-lived-token' }]);
+});
+
+it("renews an expired tab session with its refresh token and ends the chain on sign out", async () => {
+  const refreshToken = "aB3-dE5_fG7hI9jK1lM3nO5pQ7rS9tU1";
+  const renewed = "zZ9-yY8_xX7wW6vV5uU4tT3sS2rR1qQ0";
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: "expired-token", expiresAt: "2020-01-01T00:00:00Z", refreshToken }));
+  const requests: Array<{ path: string; body: string }> = [];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    requests.push({ path, body: String(init?.body ?? "") });
+    if (path === "/api/v1/auth/session/refresh") return json({ ...session, refreshToken: renewed,
+      refreshExpiresAt: "2099-01-01T00:00:00Z" });
+    if (path === "/api/v1/auth/session/logout") return new Response(null, { status: 204 });
+    if (path === "/api/v1/auth/session") return json({ actor });
+    return json(bootstrap);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+  await screen.findByText("Demo Airlines");
+  expect(requests[0]).toEqual({ path: "/api/v1/auth/session/refresh", body: JSON.stringify({ refreshToken }) });
+  expect(JSON.parse(sessionStorage.getItem(AIRLINE_SESSION_STORAGE_KEY) ?? "null")).toEqual({
+    accessToken: session.accessToken, expiresAt: session.expiresAt, refreshToken: renewed });
+
+  fireEvent.click(screen.getByRole("button", { name: "Salir" }));
+  await screen.findByText("anonymous");
+  await waitFor(() => expect(requests.at(-1)).toEqual({ path: "/api/v1/auth/session/logout",
+    body: JSON.stringify({ refreshToken: renewed }) }));
 });

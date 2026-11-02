@@ -296,7 +296,18 @@ public sealed class CreateSessionHandlerTests
     private static CreateSessionHandler CreateHandler(
         ICredentialVerifier verifier,
         IActorContextResolver resolver,
-        IAccessTokenIssuer issuer) => new(verifier, resolver, issuer, new FixedTimeProvider(Now));
+        IAccessTokenIssuer issuer) => new(verifier, resolver, issuer, new StubRefreshTokens(), new FixedTimeProvider(Now));
+
+    private sealed class StubRefreshTokens : IRefreshTokenStore
+    {
+        public Task<IssuedRefreshToken?> IssueAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IssuedRefreshToken?>(new IssuedRefreshToken("refresh-" + accountId, Now.AddDays(30)));
+
+        public Task<RefreshTokenRotation> RotateAsync(string token, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task RevokeFamilyAsync(string token, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

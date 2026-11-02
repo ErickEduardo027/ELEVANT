@@ -53,6 +53,8 @@ import {
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
+  getRefreshSessionUrl,
+  getEndSessionUrl,
   getChangePasswordUrl,
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
@@ -433,6 +435,10 @@ export interface ElevantApiClient {
     request: ChangePasswordRequest,
     options?: ChangePasswordOptions,
   ): Promise<void>;
+  /** Renews the session; a 409 with code refresh_rotated means another tab already did (ADR-0021). */
+  refreshSession(refreshToken: string, options?: CreateSessionOptions): Promise<SessionResponse>;
+  /** Ends the session: the refresh token and every renewal of it stop working. */
+  endSession(refreshToken: string, options?: CreateSessionOptions): Promise<void>;
   getCurrentSession(options?: GetCurrentSessionOptions): Promise<CurrentSessionResponse>;
   getAirlinePortalBootstrap(
     options?: GetAirlinePortalBootstrapOptions,
@@ -2456,9 +2462,17 @@ function isSessionActorResponse(value: unknown): value is SessionActorResponse {
   );
 }
 
+function validatedRefreshToken(value: unknown): string {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(value))
+    throw new TypeError("refreshToken is invalid.");
+  return value;
+}
+
 function isSessionResponse(value: unknown): value is SessionResponse {
   return (
     isRecord(value) &&
+    isOptionalNullable(value.refreshToken, (token: unknown) => typeof token === "string" && /^[A-Za-z0-9_-]{16,128}$/.test(token)) &&
+    isOptionalNullable(value.refreshExpiresAt, isDateTimeOffset) &&
     isNonEmptyString(value.accessToken) &&
     value.tokenType === "Bearer" &&
     isNonEmptyString(value.expiresAt) &&
@@ -4534,6 +4548,24 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       );
       if (!isSessionResponse(result.data)) throw malformedResponse(result.status);
       return result.data;
+    },
+    async refreshSession(refreshToken: string, options?: CreateSessionOptions) {
+      const result = await execute(getRefreshSessionUrl(), {
+        ...options,
+        method: "POST",
+        headers: { ...Object.fromEntries(headersFrom(options?.headers, "Request headers")), "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: validatedRefreshToken(refreshToken) }),
+      }, false);
+      if (!isSessionResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async endSession(refreshToken: string, options?: CreateSessionOptions) {
+      await execute(getEndSessionUrl(), {
+        ...options,
+        method: "POST",
+        headers: { ...Object.fromEntries(headersFrom(options?.headers, "Request headers")), "content-type": "application/json" },
+        body: JSON.stringify({ refreshToken: validatedRefreshToken(refreshToken) }),
+      }, false);
     },
     async changePassword(request: ChangePasswordRequest, options?: ChangePasswordOptions) {
       const body = validatedChangePasswordRequest(request);
