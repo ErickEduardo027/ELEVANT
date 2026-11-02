@@ -34,6 +34,10 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
+        // Portal account emails (ADR-0022): links point at the public portal origin.
+        services.TryAddSingleton(configuration.GetSection(Elevant.Application.Identity.AccountEmails.AccountEmailOptions.SectionName)
+            .Get<Elevant.Application.Identity.AccountEmails.AccountEmailOptions>() ?? new());
+
         var connectionString = configuration.GetConnectionString(DatabaseConnectionName);
         if (string.IsNullOrWhiteSpace(connectionString))
         {
@@ -63,6 +67,8 @@ public static class DependencyInjection
         services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
         services.AddScoped<ISessionSecurityVersionStore, EfSessionSecurityVersionStore>();
         services.AddScoped<IRefreshTokenStore, EfRefreshTokenStore>();
+        services.AddScoped<IAccountEmailStore, EfAccountEmailStore>();
+        services.AddScoped<Elevant.Application.Abstractions.Messaging.IEmailOutboxStore, EfEmailOutboxStore>();
         services.AddScoped<IPasswordChangeStore, EfPasswordChangeStore>();
         services.AddScoped<IActorContextResolver, EfActorContextResolver>();
         services.AddScoped<IGovernanceStore, EfGovernanceStore>();

@@ -60,6 +60,33 @@ internal static class DepartmentGovernanceConfiguration
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
+        modelBuilder.Entity<AccountEmailToken>(builder =>
+        {
+            builder.ToTable("account_email_tokens", "iam");
+            builder.Property(token => token.Purpose).HasConversion<string>().HasMaxLength(24);
+            builder.Property(token => token.SecretHash).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
+            builder.Property(token => token.ExpiresAt).HasPrecision(3);
+            builder.Property(token => token.UsedAt).HasPrecision(3);
+            builder.HasIndex(token => token.SecretHash);
+            builder.HasIndex(token => new { token.ChallengeId, token.Purpose });
+            builder.HasIndex(token => new { token.AccountId, token.Purpose, token.UsedAt });
+            builder.HasOne<ApplicationUser>().WithMany().HasForeignKey(token => token.AccountId)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
+        modelBuilder.Entity<Elevant.Domain.Entities.Infrastructure.EmailOutboxMessage>(builder =>
+        {
+            builder.ToTable("email_outbox", "infra");
+            builder.Property(message => message.Recipient).HasMaxLength(256).IsRequired();
+            builder.Property(message => message.Subject).HasMaxLength(200).IsRequired();
+            builder.Property(message => message.Purpose).HasConversion<string>().HasMaxLength(24);
+            builder.Property(message => message.Status).HasConversion<string>().HasMaxLength(16);
+            builder.Property(message => message.LastError).HasMaxLength(300);
+            builder.Property(message => message.NextAttemptAt).HasPrecision(3);
+            builder.Property(message => message.SentAt).HasPrecision(3);
+            builder.HasIndex(message => new { message.Status, message.NextAttemptAt });
+        });
+
         modelBuilder.Entity<AccessProfileGrant>(builder =>
         {
             builder.ToTable("access_profile_grants", "iam");

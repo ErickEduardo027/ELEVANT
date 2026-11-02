@@ -43,6 +43,10 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
+    public DbSet<AccountEmailToken> AccountEmailTokens => Set<AccountEmailToken>();
+
+    public DbSet<Elevant.Domain.Entities.Infrastructure.EmailOutboxMessage> EmailOutbox => Set<Elevant.Domain.Entities.Infrastructure.EmailOutboxMessage>();
+
     public DbSet<AccountPermissionGrant> AccountPermissionGrants => Set<AccountPermissionGrant>();
 
     public DbSet<UserAccessRequest> UserAccessRequests => Set<UserAccessRequest>();
