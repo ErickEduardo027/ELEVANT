@@ -92,6 +92,11 @@ El catálogo vive en código (`DepartmentPermissionCatalog`) con el formato
   Modificar, Eliminar u Otras acciones (aprobar, publicar, emitir, exportar,
   firmar…).
 - **Ver se concede siempre.** Conceder cualquier acción concede también «Ver».
+- **Subventanas.** Conceder una subventana (por ejemplo, Solicitudes de
+  clausura dentro de Servicios) concede «Ver» de la pantalla que la contiene;
+  prohibir esa pantalla prohíbe sus subventanas. La matriz ofrece por fila el
+  selector rápido «Prohibido / Ver / Editar», con las casillas para el ajuste
+  fino ([ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md)).
 - **Grants antiguos.** Los códigos anteriores a ADR-0019 (`*.manage`,
   `employees.terminate`, `attendance.record`…) se traducen al resolver el acceso,
   así que las plantillas guardadas siguen funcionando. Las plantillas (`iam.access_profiles`) se aplican en vivo: editar o
@@ -124,6 +129,13 @@ sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/acce
 
 Las cuentas creadas antes de los expedientes aparecen en **Expedientes
 pendientes**: Gestión Humana registra su identificación real y su puesto.
+
+**Alta directa por el superadministrador.** Desde «Usuarios internos → Nuevo
+usuario interno», el superadministrador registra el expediente y la cuenta en
+un solo paso, sin solicitud ni validación de Gestión Humana. Puede crear un
+administrador o un sub-usuario con permisos por opción y subventana. El alta
+queda auditada como hecha por el superadministrador. Los agentes de rampa
+siguen el flujo de solicitud.
 
 ## Notificaciones
 

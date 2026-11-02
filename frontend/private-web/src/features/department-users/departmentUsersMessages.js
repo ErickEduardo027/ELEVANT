@@ -151,7 +151,11 @@ export const departmentUsersMessages = {
       other: 'Otras acciones',
       inside: 'dentro de {parent}',
       none: 'No aplica',
-      hint: 'Cada opción del menú se concede por separado. Marcar cualquier acción concede también «Ver».',
+      hint: 'Cada opción y subventana se concede por separado. Elige un nivel rápido o marca acciones concretas; cualquier acción concede también «Ver», y una subventana concede «Ver» de la pantalla que la contiene.',
+      access: 'Acceso',
+      levels: { none: 'Prohibido', read: 'Ver', edit: 'Editar', custom: 'Personalizado' },
+      levelHint: { none: 'Sin acceso a esta opción', read: 'Solo consulta', edit: 'Ver, crear, modificar y eliminar' },
+      blockedByParent: 'Bloqueada: {parent} está prohibida',
     },
     account: {
       titles: {
@@ -427,7 +431,11 @@ export const departmentUsersMessages = {
       other: 'Other actions',
       inside: 'inside {parent}',
       none: 'Not applicable',
-      hint: 'Each menu option is granted separately. Choosing any action also grants «View».',
+      hint: 'Each option and sub-window is granted separately. Pick a quick level or tick specific actions; any action also grants «View», and a sub-window grants «View» on the screen that contains it.',
+      access: 'Access',
+      levels: { none: 'Forbidden', read: 'View', edit: 'Edit', custom: 'Custom' },
+      levelHint: { none: 'No access to this option', read: 'Read only', edit: 'View, create, modify and delete' },
+      blockedByParent: 'Blocked: {parent} is forbidden',
     },
     account: {
       titles: {

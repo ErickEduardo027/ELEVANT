@@ -4969,6 +4969,73 @@
         ]
       }
     },
+    "/api/v1/governance/departments/{department}/internal-users": {
+      "post": {
+        "tags": [
+          "DepartmentGovernance"
+        ],
+        "summary": "Super administrator only: registers the employee and creates its account (administrator or\nmember with per-option permissions) in one step, without a Human Resources request.",
+        "operationId": "CreateInternalUser",
+        "parameters": [
+          {
+            "name": "department",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateInternalUserInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateInternalUserInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateInternalUserInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/governance/departments/{department}/users/{id}": {
       "put": {
         "tags": [
@@ -27042,6 +27109,50 @@
             "nullable": true
           },
           "expectedStationCodes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateInternalUserInput": {
+        "required": [
+          "employee",
+          "kind",
+          "stationIds",
+          "temporaryPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "employee": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SaveEmployeeInput"
+              }
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "temporaryPassword": {
+            "type": "string"
+          },
+          "stationIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "accessProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "permissionCodes": {
             "type": "array",
             "items": {
               "type": "string"
