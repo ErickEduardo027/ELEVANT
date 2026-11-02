@@ -4,8 +4,10 @@ import { usePlanningData } from './usePlanningData';
 import { useAdminOccPreview } from '../admin-occ/AdminOccPreviewContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { useAuth } from '../auth/AuthContext';
 
 export default function PlanningRoute() {
+  const { session } = useAuth();
   const { stationScopes } = useOccStation();
   const [stationId, setStationId] = useState(() => stationScopes[0]?.stationId ?? '');
   const [requestedDate, setRequestedDate] = useState('');
@@ -30,6 +32,7 @@ export default function PlanningRoute() {
     };
   }, []);
   const planning = usePlanningData({
+    accountId: session?.accountId ?? session?.email,
     stationId: stationId || undefined,
     date: requestedDate || undefined,
     refreshToken: retryToken,
@@ -71,6 +74,7 @@ export default function PlanningRoute() {
       hasStationScope={stationScopes.length > 0}
       forceState={forceState}
       dataRevision={retryToken}
+      refreshing={planning.refreshing}
     />
   );
 }

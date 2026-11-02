@@ -57,6 +57,13 @@ export function awaitingDecision(reviews = []) {
   return reviews.filter(item => AWAITING_DECISION.has(item.status));
 }
 
+/** Station notices from the shared feed: one row per id, newest first. */
+export function recentStationNotices(items = [], stationCode) {
+  const unique = [...new Map(items.filter(item => item.stationCode === stationCode).map(item => [item.id, item])).values()];
+  const time = item => { const value = Date.parse(item.occurredAt); return Number.isNaN(value) ? 0 : value; };
+  return unique.sort((left, right) => time(right) - time(left));
+}
+
 export function buildDashboardModel(data) {
   const turnarounds = classifyTurnarounds(data?.turnarounds);
   const pendingReviews = awaitingDecision(data?.reviews);

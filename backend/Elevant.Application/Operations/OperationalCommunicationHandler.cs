@@ -8,27 +8,36 @@ namespace Elevant.Application.Operations;
 public sealed class OperationalCommunicationHandler(
     IActorContextResolver actorResolver, IOperationalCommunicationStore store)
 {
+    public Task<CommunicationResult<OperationConversationListData>> GetConversationsAsync(
+        Guid accountId, Guid? stationId, CancellationToken cancellationToken = default) =>
+        GetConversationsAsync(accountId, stationId, 0, cancellationToken);
+
     public async Task<CommunicationResult<OperationConversationListData>> GetConversationsAsync(
-        Guid accountId, Guid? stationId, CancellationToken cancellationToken = default)
+        Guid accountId, Guid? stationId, int offset, CancellationToken cancellationToken = default)
     {
         var access = await ResolveAccessAsync(accountId, "operations.chat.read", cancellationToken);
         if (access.Failure is { } failure)
             return CommunicationResults.Failed<OperationConversationListData>(failure);
+        if (offset < 0) return CommunicationResults.Failed<OperationConversationListData>(OperationalCommunicationFailure.InvalidRequest);
         if (stationId == Guid.Empty || (stationId is Guid requested &&
             !access.Value!.AllowedStationIds.Contains(requested)))
             return CommunicationResults.Failed<OperationConversationListData>(OperationalCommunicationFailure.NotFound);
-        return await store.GetConversationsAsync(access.Value!, stationId, cancellationToken);
+        return await store.GetConversationsAsync(access.Value!, stationId, offset, cancellationToken);
     }
 
+    public Task<CommunicationResult<OperationMessageListData>> GetMessagesAsync(
+        Guid accountId, Guid operationId, CancellationToken cancellationToken = default) =>
+        GetMessagesAsync(accountId, operationId, 0, cancellationToken);
+
     public async Task<CommunicationResult<OperationMessageListData>> GetMessagesAsync(
-        Guid accountId, Guid operationId, CancellationToken cancellationToken = default)
+        Guid accountId, Guid operationId, int offset, CancellationToken cancellationToken = default)
     {
         var access = await ResolveAccessAsync(accountId, "operations.chat.read", cancellationToken);
         if (access.Failure is { } failure)
             return CommunicationResults.Failed<OperationMessageListData>(failure);
-        if (operationId == Guid.Empty)
+        if (offset < 0 || operationId == Guid.Empty)
             return CommunicationResults.Failed<OperationMessageListData>(OperationalCommunicationFailure.InvalidRequest);
-        return await store.GetMessagesAsync(access.Value!, operationId, cancellationToken);
+        return await store.GetMessagesAsync(access.Value!, operationId, offset, cancellationToken);
     }
 
     public async Task<CommunicationResult<OperationMessageData>> SendMessageAsync(
@@ -69,6 +78,9 @@ public sealed class OperationalCommunicationHandler(
             return CommunicationResults.Failed<OperationalNotificationData>(OperationalCommunicationFailure.InvalidRequest);
         return await store.SetNotificationReadAsync(access.Value!, notificationId, isRead, cancellationToken);
     }
+
+    public Task<CommunicationResult<OperationalAccess>> AuthorizePresenceAsync(Guid accountId, CancellationToken cancellationToken) =>
+        ResolveAccessAsync(accountId, "operations.chat.read", cancellationToken);
 
     private async Task<CommunicationResult<OperationalAccess>> ResolveAccessAsync(
         Guid accountId, string occPermission, CancellationToken cancellationToken)

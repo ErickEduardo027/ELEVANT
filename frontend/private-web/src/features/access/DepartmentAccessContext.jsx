@@ -1,13 +1,18 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { getMyDepartmentAccess } from '../../services/departmentGovernanceService';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { getLanguage, subscribeLanguage } from '../../i18n/languageStore';
 
 const DepartmentAccessContext = createContext(null);
 
 /** Resources whose change can alter what the signed-in account may do. */
 const ACCESS_RESOURCES = ['department_users', 'access_requests'];
+const ACCESS_GATE_MESSAGES = {
+  es: { loading: 'Cargando permisos…', error: 'No se pudieron cargar sus permisos.', hint: 'Vuelve a intentar o solicita asistencia a tu administrador.', retry: 'Reintentar' },
+  en: { loading: 'Loading permissions…', error: 'Your permissions could not be loaded.', hint: 'Try again or ask your administrator for help.', retry: 'Retry' },
+};
 
 export function buildAccess(data) {
   const permissions = new Set(data?.permissions ?? []);
@@ -79,17 +84,19 @@ export function allowedNavigation(items, access) {
 }
 
 export function AccessGate({ children }) {
-  const { status, error, refresh } = useDepartmentAccess();
+  const { status, refresh } = useDepartmentAccess();
+  const language = useSyncExternalStore(subscribeLanguage, getLanguage, () => 'es');
+  const text = ACCESS_GATE_MESSAGES[language] ?? ACCESS_GATE_MESSAGES.es;
   if (status === 'loading') {
-    return <main className="min-h-screen bg-surface-light p-8 text-ink-900 dark:bg-surface-dark dark:text-text-primary-dark" role="status">Cargando permisos…</main>;
+    return <main className="min-h-screen bg-surface-light p-8 text-ink-900 dark:bg-surface-dark dark:text-text-primary-dark" role="status">{text.loading}</main>;
   }
   if (status === 'error') {
     return (
       <main className="flex min-h-screen items-center justify-center bg-surface-light p-6 dark:bg-surface-dark">
         <div role="alert" className="max-w-md rounded-2xl border border-status-danger/30 bg-white p-6 text-sm text-ink-900 dark:bg-surface-dark-card dark:text-text-primary-dark">
-          <p className="font-semibold">No se pudieron cargar sus permisos.</p>
-          <p className="mt-1 text-text-secondary-light dark:text-text-secondary-dark">{error}</p>
-          <button type="button" onClick={() => void refresh()} className="mt-4 rounded-lg bg-accent-600 px-3 py-2 font-medium text-white">Reintentar</button>
+          <p className="font-semibold">{text.error}</p>
+          <p className="mt-1 text-text-secondary-light dark:text-text-secondary-dark">{text.hint}</p>
+          <button type="button" onClick={() => void refresh()} className="mt-4 rounded-lg bg-accent-600 px-3 py-2 font-medium text-white">{text.retry}</button>
         </div>
       </main>
     );

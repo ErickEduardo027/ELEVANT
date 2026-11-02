@@ -47,9 +47,10 @@ export function AuthProvider({ children }) {
     publishSession(nextSession);
     return nextSession;
   }, []);
-  const logout = useCallback(() => {
-    closeBackendSession();
-    publishSession(null);
+  const logout = useCallback(async () => {
+    const closingToken = currentSession?.token;
+    await closeBackendSession();
+    if (currentSession?.token === closingToken) publishSession(null);
   }, []);
   const updatePassword = useCallback(credentials => changeBackendPassword(credentials), []);
   const value = useMemo(() => ({

@@ -230,7 +230,30 @@ export function handleUnauthorizedResponse(response) {
 }
 
 export function logout() {
-  clearSession();
+  // Manual sign-out must report a failed removal; expiration/401 cleanup keeps
+  // its existing best-effort behavior in clearSession(). Capture both stores
+  // before changing either, and restore the snapshot if cleanup fails.
+  let snapshots = [];
+  try {
+    const stores = [window.localStorage, window.sessionStorage];
+    snapshots = stores.map(store => ({ store, value: store.getItem(AUTH_STORAGE_KEY) }));
+    for (const { store, value } of snapshots) {
+      if (value !== null) store.removeItem(AUTH_STORAGE_KEY);
+    }
+    if (stores.some(store => store.getItem(AUTH_STORAGE_KEY) !== null)) {
+      throw new Error('Session cleanup was not confirmed.');
+    }
+  } catch {
+    for (const { store, value } of snapshots) {
+      try {
+        if (value !== null && store.getItem(AUTH_STORAGE_KEY) !== value) {
+          store.setItem(AUTH_STORAGE_KEY, value);
+        }
+      } catch { /* The caller reports failure; never publish successful logout. */ }
+    }
+    throw coded('No fue posible completar el cierre de sesión.', 'logout_failed');
+  }
+  cancelSessionExpiration();
 }
 
 export async function login({ email, password, remember = false }, injectedApiClient = null) {

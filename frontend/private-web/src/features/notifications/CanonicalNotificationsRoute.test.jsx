@@ -1,11 +1,12 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  useAuth: vi.fn(), load: vi.fn(), setRead: vi.fn(), observer: vi.fn(),
+  useAuth: vi.fn(), load: vi.fn(), setRead: vi.fn(), observer: vi.fn(), push: vi.fn(),
 }));
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
-vi.mock('../../services/operationalCommunicationService', () => ({
+vi.mock('./operationalNotificationService', () => ({
   loadOperationalNotifications: mocks.load,
   setOperationalNotificationRead: mocks.setRead,
 }));
@@ -34,7 +35,7 @@ const notice = (id, operationCode) => ({
 
 afterEach(() => vi.useRealTimers());
 
-it('ignores AbortError and keeps the latest result when periodic reads finish out of order', async () => {
+it('coalesces periodic reads while pending and refreshes after completion', async () => {
   const first = deferred();
   const second = deferred();
   mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
@@ -45,10 +46,12 @@ it('ignores AbortError and keeps the latest result when periodic reads finish ou
   render(<CanonicalNotificationsRoute />);
   expect(mocks.load).toHaveBeenCalledTimes(1);
   await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
-  expect(mocks.load).toHaveBeenCalledTimes(2);
-
-  await act(async () => second.resolve({ notifications: [notice('new', 'NEWER')], hasMore: false }));
+  expect(mocks.load).toHaveBeenCalledTimes(1);
   await act(async () => first.resolve({ notifications: [notice('old', 'OLDER')], hasMore: false }));
+  expect(screen.getByText(/OLDER/)).toBeInTheDocument();
+  await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+  expect(mocks.load).toHaveBeenCalledTimes(2);
+  await act(async () => second.resolve({ notifications: [notice('new', 'NEWER')], hasMore: false }));
   expect(screen.getByText(/NEWER/)).toBeInTheDocument();
   expect(screen.queryByText(/OLDER/)).not.toBeInTheDocument();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
@@ -65,7 +68,10 @@ it('does not turn an AbortError into an operational error state', async () => {
   expect(screen.getByRole('status')).toHaveTextContent('Cargando notificaciones');
 });
 
-it('renders notices in English with the shared kind labels and target links inside the OCC scope', async () => {
+it('renders English notices and confirms reading before opening authorized targets', async () => {
+  const receipt = deferred();
+  mocks.push.mockReset();
+  mocks.setRead.mockReset().mockReturnValue(receipt.promise);
   mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
   mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
   mocks.load.mockReset().mockResolvedValue({ notifications: [
@@ -79,12 +85,19 @@ it('renders notices in English with the shared kind labels and target links insi
     expect(screen.getByText('New message from the agent')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Operational notifications' })).toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveTextContent('1 unread of 2 visible');
-    const links = screen.getAllByRole('link', { name: 'Open' });
-    expect(links[0]).toHaveAttribute('href', '/admin-occ/review?operationId=70000000-0000-0000-0000-000000000001');
-    expect(links[1]).toHaveAttribute('href', '/admin-occ/chat?operationId=70000000-0000-0000-0000-000000000001');
+    const actions = screen.getAllByRole('button', { name: 'Open' });
+    expect(actions).toHaveLength(2);
     expect(screen.getByRole('button', { name: 'Mark as read' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark as unread' })).toBeInTheDocument();
-    expect(screen.getByText('Showing the 100 most recent notices; more history exists.')).toBeInTheDocument();
+    expect(screen.getByText('Showing recent notices; more history exists.')).toBeInTheDocument();
+    fireEvent.click(actions[0]);
+    expect(mocks.setRead).toHaveBeenCalledWith('submitted', true, expect.anything());
+    expect(mocks.push).not.toHaveBeenCalled();
+    await act(async () => receipt.resolve({ ...notice('submitted', 'SUBMITTED'), readAt: '2026-09-01T12:10:00Z' }));
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith('/admin-occ/review?operationId=70000000-0000-0000-0000-000000000001'));
+    fireEvent.click(actions[1]);
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith('/admin-occ/chat?operationId=70000000-0000-0000-0000-000000000001'));
+    expect(mocks.setRead).toHaveBeenCalledTimes(1);
   } finally {
     act(() => resetLanguageForTests('es'));
   }

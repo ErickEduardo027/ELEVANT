@@ -40,7 +40,7 @@ describe('usePlanningData', () => {
       usePlanningData({ stationId, enabled: false })
     );
 
-    expect(result.current).toEqual({ status: 'idle', data: null, error: null });
+    expect(result.current).toMatchObject({ status: 'idle', data: null, error: null, refreshing: false });
     expect(serviceSpy).not.toHaveBeenCalled();
   });
 
@@ -99,11 +99,13 @@ describe('usePlanningData', () => {
     await waitFor(() => expect(result.current.status).toBe('success'));
     rerender({ refreshToken: 1 });
 
-    expect(result.current.status).toBe('loading');
+    expect(result.current.status).toBe('success');
+    expect(result.current.refreshing).toBe(true);
     expect(result.current.data?.flights).toEqual(rawSnapshot.turnarounds);
 
     await act(async () => resolveRefresh({ ...rawSnapshot, turnarounds: [] }));
     expect(result.current.status).toBe('empty');
+    expect(result.current.refreshing).toBe(false);
     expect(result.current.data?.flights).toEqual([]);
   });
 

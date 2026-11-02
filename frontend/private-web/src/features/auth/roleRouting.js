@@ -23,17 +23,22 @@ export function normalizeRole(role) {
 const ENTRY_REDIRECTS = {
   '/': ROUTE_PATHS.LOGIN,
   '/index.html': ROUTE_PATHS.LOGIN,
-  '/dashboard.html': ROUTE_PATHS.ADMIN_OCC,
+  '/dashboard.html': `${ROUTE_PATHS.ADMIN_OCC}/dashboard`,
   '/contracts.html': ROUTE_PATHS.CONTRATOS,
   '/finance.html': ROUTE_PATHS.FINANZAS,
 };
 
-const ROLE_HOME_PATHS = {
+const ROLE_BASE_PATHS = {
   [ROLE_KEYS.ADMIN_OCC]: ROUTE_PATHS.ADMIN_OCC,
   [ROLE_KEYS.GESTION_HUMANA]: ROUTE_PATHS.GESTION_HUMANA,
   [ROLE_KEYS.CONTRATOS]: ROUTE_PATHS.CONTRATOS,
   [ROLE_KEYS.FINANZAS]: ROUTE_PATHS.FINANZAS,
   [ROLE_KEYS.SUPERADMIN]: ROUTE_PATHS.SUPERADMIN,
+};
+
+const ROLE_HOME_PATHS = {
+  ...ROLE_BASE_PATHS,
+  [ROLE_KEYS.ADMIN_OCC]: `${ROUTE_PATHS.ADMIN_OCC}/dashboard`,
 };
 
 export function normalizePathname(pathname = '/') {
@@ -48,7 +53,7 @@ export function getRoleHomePath(role) {
 
 export function getRoleFromPath(pathname) {
   const normalized = normalizePathname(pathname);
-  return Object.entries(ROLE_HOME_PATHS).find(([, basePath]) => normalized === basePath || normalized.startsWith(`${basePath}/`))?.[0] ?? null;
+  return Object.entries(ROLE_BASE_PATHS).find(([, basePath]) => normalized === basePath || normalized.startsWith(`${basePath}/`))?.[0] ?? null;
 }
 
 export function resolveRoute(pathname, session) {

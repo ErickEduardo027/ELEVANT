@@ -111,7 +111,7 @@ describe('authService', () => {
       name: 'Alex Operations',
       role: 'ADMIN_OCC',
       roleLabel: 'Administrador OCC',
-      homePath: '/admin-occ',
+      homePath: '/admin-occ/dashboard',
     });
     expect(window.localStorage.getItem(AUTH_STORAGE_KEY)).not.toBeNull();
     expect(window.sessionStorage.getItem(AUTH_STORAGE_KEY)).toBeNull();

@@ -6,7 +6,7 @@ import { planningMessages } from '../planningMessages';
 export default function PlanningKPIs({ kpis, loading = false }) {
   const { t } = useTranslation(planningMessages);
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    <div data-occ-summary className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <KpiCard label={t('kpis.turnarounds')} value={kpis.turnarounds} icon={PlaneIcon} loading={loading} />
       <KpiCard label={t('kpis.flightLegs')} value={kpis.flightLegs} icon={PlaneIcon} loading={loading} />
       <KpiCard

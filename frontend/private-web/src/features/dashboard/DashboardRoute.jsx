@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from '../shell/useTheme';
 import { useOccStation } from '../admin-occ/useOccStation';
@@ -6,6 +6,8 @@ import DashboardPage from './DashboardPage';
 import { useDashboardData } from './useDashboardData';
 import { useMdpcWeather } from '../weather/useMdpcWeather';
 import { useRegionalTraffic } from './useRegionalTraffic';
+import { useOperationalNotificationCenter } from '../admin-occ/notifications/OperationalNotificationCenter';
+import { recentStationNotices } from './dashboardModel';
 
 export default function DashboardRoute() {
   const { session } = useAuth();
@@ -22,6 +24,15 @@ export default function DashboardRoute() {
   const weather = useMdpcWeather({ enabled: station.status === 'ready' });
   const traffic = useRegionalTraffic({ stationId: station.stationId, enabled: station.status === 'ready' });
   const retry = () => setRetryToken(value => value + 1);
+  // Avisos recientes reads the shell's notification feed, so arrivals and read receipts
+  // match the tray without waiting for the next Panorama snapshot.
+  const center = useOperationalNotificationCenter();
+  const stationCode = dashboard.data?.stationCode;
+  const centerItems = center?.status === 'success' ? center.items : null;
+  const centerHasMore = Boolean(center?.hasMore);
+  const notices = useMemo(() => centerItems && stationCode
+    ? { items: recentStationNotices(centerItems, stationCode), hasMore: centerHasMore } : null,
+  [centerItems, centerHasMore, stationCode]);
 
   return <DashboardPage
     status={station.status === 'unavailable' ? 'unavailable' : dashboard.status}
@@ -32,6 +43,7 @@ export default function DashboardRoute() {
     theme={theme}
     weather={weather}
     traffic={traffic}
+    notices={notices}
     onRetry={retry}
   />;
 }

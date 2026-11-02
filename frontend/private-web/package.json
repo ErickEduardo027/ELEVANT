@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "predev": "node ./scripts/copy-maplibre-worker.mjs",
-    "dev": "node ./scripts/run-next.mjs dev",
+    "dev": "node ./scripts/run-next.mjs dev --webpack",
     "start": "node ./scripts/run-next.mjs start",
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",

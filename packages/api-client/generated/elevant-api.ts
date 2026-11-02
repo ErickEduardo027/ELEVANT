@@ -3635,6 +3635,29 @@ export interface OperationMessageListResponse {
   hasMore: boolean;
 }
 
+export interface ParticipantPresenceResponse {
+  accountId: string;
+  name: string;
+  role: string;
+  state: string;
+  /** @nullable */
+  lastActivityAt?: string | null;
+  /** @nullable */
+  availability?: string | null;
+  /** @nullable */
+  message?: string | null;
+}
+
+export interface OperationPresenceResponse {
+  operationId: string;
+  participants: ParticipantPresenceResponse[];
+}
+
+export interface OperationPresenceListResponse {
+  asOf: string;
+  operations: OperationPresenceResponse[];
+}
+
 export interface OperationalNotificationResponse {
   id: string;
   operationId: string;
@@ -3650,6 +3673,14 @@ export interface OperationalNotificationResponse {
 export interface OperationalNotificationListResponse {
   notifications: OperationalNotificationResponse[];
   hasMore: boolean;
+}
+
+export interface OwnPresenceResponse {
+  state: string;
+  /** @nullable */
+  availability?: string | null;
+  /** @nullable */
+  message?: string | null;
 }
 
 export interface PreinvoiceDisputeResolutionResponse {
@@ -3716,6 +3747,20 @@ export interface PreinvoiceDraftResponse {
   lines: PreinvoiceDraftLineResponse[];
   /** @nullable */
   version?: string | null;
+}
+
+export interface PresenceHeartbeatRequest {
+  clientId: string;
+  sequence: number;
+  mode: string;
+  activityObserved: boolean;
+}
+
+export interface PresenceStatusRequest {
+  /** @nullable */
+  availability?: string | null;
+  /** @nullable */
+  message?: string | null;
 }
 
 export interface ProblemDetails {
@@ -5211,6 +5256,23 @@ stationId: string;
 
 export type GetOperationalConversationsParams = {
 stationId?: string;
+/**
+ * @minimum 0
+ * @maximum 2147483647
+ */
+offset?: number;
+};
+
+export type GetOperationalMessagesParams = {
+/**
+ * @minimum 0
+ * @maximum 2147483647
+ */
+offset?: number;
+};
+
+export type GetOperationalPresenceParams = {
+operationIds?: string[];
 };
 
 export type GetFinancePreinvoiceDisputesParams = {
@@ -13966,17 +14028,26 @@ export const getOperationalConversations = async (params?: GetOperationalConvers
 
 
 
-export const getGetOperationalMessagesUrl = (operationId: string,) => {
+export const getGetOperationalMessagesUrl = (operationId: string,
+    params?: GetOperationalMessagesParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/chat/conversations/${operationId}/messages`
+  return stringifiedParams.length > 0 ? `/api/v1/chat/conversations/${operationId}/messages?${stringifiedParams}` : `/api/v1/chat/conversations/${operationId}/messages`
 }
 
-export const getOperationalMessages = async (operationId: string, options?: RequestInit): Promise<OperationMessageListResponse> => {
+export const getOperationalMessages = async (operationId: string,
+    params?: GetOperationalMessagesParams, options?: RequestInit): Promise<OperationMessageListResponse> => {
 
-  const res = await fetch(getGetOperationalMessagesUrl(operationId),
+  const res = await fetch(getGetOperationalMessagesUrl(operationId,params),
   {
     ...options,
     method: 'GET'
@@ -14087,6 +14158,143 @@ const res = await fetch(getSetOperationalNotificationReadUrl(notificationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OperationalNotificationResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getPutOperationalPresenceUrl = () => {
+
+
+
+
+  return `/api/v1/chat/presence`
+}
+
+export const putOperationalPresence = async (presenceHeartbeatRequest?: PresenceHeartbeatRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPutOperationalPresenceUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(presenceHeartbeatRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? (contentType.includes('json') ? JSON.parse(body) : body) : undefined
+  return data
+}
+
+
+
+export const getGetOperationalPresenceUrl = (params?: GetOperationalPresenceParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    const explodeParameters = ["operationIds"];
+
+    if (Array.isArray(value) && explodeParameters.includes(key)) {
+      value.forEach((v) => {
+        normalizedParams.append(key, v === null ? 'null' : String(v));
+      });
+      return;
+    }
+
+
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/chat/presence?${stringifiedParams}` : `/api/v1/chat/presence`
+}
+
+export const getOperationalPresence = async (params?: GetOperationalPresenceParams, options?: RequestInit): Promise<OperationPresenceListResponse> => {
+
+  const res = await fetch(getGetOperationalPresenceUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationPresenceListResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetOwnOperationalPresenceUrl = () => {
+
+
+
+
+  return `/api/v1/chat/presence/status`
+}
+
+export const getOwnOperationalPresence = async ( options?: RequestInit): Promise<OwnPresenceResponse> => {
+
+  const res = await fetch(getGetOwnOperationalPresenceUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OwnPresenceResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getPutOwnOperationalPresenceStatusUrl = () => {
+
+
+
+
+  return `/api/v1/chat/presence/status`
+}
+
+export const putOwnOperationalPresenceStatus = async (presenceStatusRequest?: PresenceStatusRequest, options?: RequestInit): Promise<OwnPresenceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPutOwnOperationalPresenceStatusUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(presenceStatusRequest)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OwnPresenceResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 

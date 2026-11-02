@@ -7,10 +7,13 @@ const mocks = vi.hoisted(() => ({ session: vi.fn(), loadQueue: vi.fn(),
   loadNotifications: vi.fn(), setNotificationRead: vi.fn(), observe: vi.fn() }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: mocks.session() }) }));
 vi.mock('../../services/occReviewService', () => ({ loadOccReviewQueue: mocks.loadQueue }));
-vi.mock('../../services/operationalCommunicationService', () => ({
-  loadOperationalConversations: mocks.loadConversations,
-  loadOperationalMessages: mocks.loadMessages,
-  sendOperationalMessage: mocks.sendMessage,
+vi.mock('../chat/chatService', () => ({
+  readConversations: mocks.loadConversations,
+  readMessages: mocks.loadMessages,
+  sendMessage: mocks.sendMessage,
+}));
+vi.mock('../access/DepartmentAccessContext', () => ({ useOptionalDepartmentAccess: () => ({ can: () => true }) }));
+vi.mock('../notifications/operationalNotificationService', () => ({
   loadOperationalNotifications: mocks.loadNotifications,
   setOperationalNotificationRead: mocks.setNotificationRead,
 }));
@@ -73,9 +76,11 @@ describe('OCC canonical read surfaces', () => {
   it('shows durable account notifications and stores the read receipt', async () => {
     render(<MemoryRouter><CanonicalNotificationsRoute /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText('Nuevo mensaje del agente')).toBeInTheDocument());
-    expect(screen.getByRole('link', { name: 'Abrir' })).toHaveAttribute('href', `/admin-occ/chat?operationId=${operationId}`);
+    // Opening now confirms reading before navigation; destination/order are
+    // covered by CanonicalNotificationsRoute.test.jsx.
+    expect(screen.getByRole('button', { name: 'Abrir' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Marcar leída' }));
-    await waitFor(() => expect(mocks.setNotificationRead).toHaveBeenCalledWith(notificationId, true));
+    await waitFor(() => expect(mocks.setNotificationRead).toHaveBeenCalledWith(notificationId, true, expect.objectContaining({ signal: expect.any(AbortSignal) })));
     expect(await screen.findByRole('button', { name: 'Marcar no leída' })).toBeInTheDocument();
   });
 

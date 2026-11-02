@@ -15,7 +15,10 @@ export default function PositionListItem({ position, selected, onSelect }) {
       tabIndex={0}
       onClick={() => onSelect(position.id)}
       onKeyDown={event => {
-        if (event.key === 'Enter' || event.key === ' ') onSelect(position.id);
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(position.id);
+        }
       }}
       style={{ borderLeftWidth: 4, borderLeftColor: accentColor }}
       className={`cursor-pointer rounded-xl border bg-white/70 p-3 shadow-sm backdrop-blur-md transition-shadow hover:shadow-md dark:bg-surface-dark-card ${

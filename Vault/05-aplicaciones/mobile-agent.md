@@ -184,3 +184,20 @@ verificables de:
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [API compartida](api-compartida.md)
 - [Mapa de aplicaciones](README.md)
+
+
+## Ampliación local de presencia posterior a la fotografía histórica
+
+El [emisor](../../frontend/mobile-agent/src/services/mobile-presence.ts) utiliza
+la sesión canónica y el cliente compartido. Observa actividad táctil, AppState
+y revisiones de identidad sin modificar el proceso de autenticación.
+No persiste heartbeats ni los incorpora a la outbox; ante almacenamiento
+incierto suspende actividad hasta comprobar la cuenta.
+
+El [layout](../../frontend/mobile-agent/src/app/_layout.tsx) inicia y detiene
+el servicio; los indicadores se muestran en OCC. La retención es transitoria
+en la API, sin migraciones. Las pruebas, bundles y validación Android real
+se describen por separado en la
+[auditoría](../../frontend/private-web/docs/design/admin-occ/audit.md).
+No se afirma una publicación de APK ni se actualizan aquí los metadatos de
+verificación de las secciones históricas anteriores.

@@ -70,6 +70,8 @@ public static class DependencyInjection
         services.AddScoped<RampOperationCorrectionHandler>();
         services.AddScoped<OccReviewHandler>();
         services.AddScoped<OperationalCommunicationHandler>();
+        services.AddSingleton<OperationalPresenceRegistry>();
+        services.AddScoped<OperationalPresenceHandler>();
         return services;
     }
 }

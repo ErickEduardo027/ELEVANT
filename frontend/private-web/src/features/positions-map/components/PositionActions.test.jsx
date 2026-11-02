@@ -55,7 +55,7 @@ it('registers the arrival, releases the stand and brings another flight to a fre
   expect(screen.getByRole('alert')).toHaveTextContent('Elige el vuelo');
   expect(screen.getByRole('option', { name: /ZZ101 · Demo Airlines .*\(ahora en A01\)/ })).toBeInTheDocument();
   await userEvent.selectOptions(screen.getByRole('combobox'), 't-2');
-  assignOccStand.mockRejectedValueOnce(new Error('La posición está ocupada o reservada en ese horario.'));
+  assignOccStand.mockRejectedValueOnce(Object.assign(new Error('La posición está ocupada o reservada en ese horario.'), { status: 409 }));
   await userEvent.click(screen.getByRole('button', { name: 'Asignar posición' }));
   expect(await screen.findByRole('alert')).toHaveTextContent('ocupada o reservada');
   await userEvent.click(screen.getByRole('button', { name: 'Asignar posición' }));

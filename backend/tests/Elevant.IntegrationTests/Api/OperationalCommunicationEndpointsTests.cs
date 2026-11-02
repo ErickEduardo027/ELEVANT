@@ -51,6 +51,42 @@ public sealed class OperationalCommunicationEndpointsTests(ElevantApiFactory fac
         Assert.Equal(OperationId, body.GetProperty("conversations")[0].GetProperty("operationId").GetGuid());
     }
 
+    [Theory]
+    [InlineData("/api/v1/chat/conversations?offset=-1")]
+    [InlineData("/api/v1/chat/conversations?offset=1.5")]
+    [InlineData("/api/v1/chat/conversations?offset=2147483648")]
+    [InlineData("/api/v1/chat/conversations/70000000-0000-7000-8000-000000000005/messages?offset=-1")]
+    public async Task ChatRejectsInvalidOffsets(string path)
+    {
+        var state = new State { Actor = OccActor() };
+        await using var application = CreateApplication(state);
+        using var client = Authorized(application);
+        using var response = await client.GetAsync(path, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(0, state.ConversationReads);
+        Assert.Equal(-1, state.MessageOffset);
+    }
+
+    [Fact]
+    public async Task ChatDefaultsOffsetsToZeroAndForwardsSubsequentPages()
+    {
+        var state = new State { Actor = OccActor() };
+        await using var application = CreateApplication(state);
+        using var client = Authorized(application);
+        using var firstConversations = await client.GetAsync($"/api/v1/chat/conversations?stationId={StationId:D}", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, firstConversations.StatusCode);
+        Assert.Equal(0, state.ConversationOffset);
+        using var firstMessages = await client.GetAsync($"/api/v1/chat/conversations/{OperationId:D}/messages", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, firstMessages.StatusCode);
+        Assert.Equal(0, state.MessageOffset);
+        using var conversations = await client.GetAsync($"/api/v1/chat/conversations?stationId={StationId:D}&offset=100", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, conversations.StatusCode);
+        Assert.Equal(100, state.ConversationOffset);
+        using var messages = await client.GetAsync($"/api/v1/chat/conversations/{OperationId:D}/messages?offset=200", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, messages.StatusCode);
+        Assert.Equal(200, state.MessageOffset);
+    }
+
     [Fact]
     public async Task MobileSendRequiresInstallationAndPassesIdempotencyKey()
     {
@@ -108,6 +144,80 @@ public sealed class OperationalCommunicationEndpointsTests(ElevantApiFactory fac
         Assert.True(paths.GetProperty("/api/v1/chat/conversations/{operationId}/messages").TryGetProperty("post", out _));
         Assert.True(paths.GetProperty("/api/v1/notifications").TryGetProperty("get", out _));
         Assert.True(paths.GetProperty("/api/v1/notifications/{notificationId}/read").TryGetProperty("put", out _));
+    }
+
+    [Fact]
+    public async Task PresenceIsAuthorizedScopedAndDoesNotResurrectClosedClients()
+    {
+        var state = new State { Actor = OccActor() };
+        await using var application = CreateApplication(state);
+        using var anonymous = application.CreateClient();
+        using var unauthorized = await anonymous.GetAsync("/api/v1/chat/presence?operationIds=" + OperationId, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        using var client = Authorized(application);
+        var lease = Guid.NewGuid();
+        using var sent = await client.PutAsJsonAsync("/api/v1/chat/presence",
+            new { clientId = lease, sequence = 1, mode = "foreground", activityObserved = true }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, sent.StatusCode);
+        var other = Guid.NewGuid();
+        using var read = await client.GetAsync($"/api/v1/chat/presence?operationIds={OperationId}&operationIds={other}", TestContext.Current.CancellationToken);
+        var body = await read.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, read.StatusCode);
+        Assert.Single(body.GetProperty("operations").EnumerateArray());
+        var person = body.GetProperty("operations")[0].GetProperty("participants")[0];
+        Assert.Equal(AccountId, person.GetProperty("accountId").GetGuid());
+        Assert.Equal("active", person.GetProperty("state").GetString());
+        using var closed = await client.PutAsJsonAsync("/api/v1/chat/presence",
+            new { clientId = lease, sequence = 3, mode = "closed", activityObserved = false }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, closed.StatusCode);
+        using var late = await client.PutAsJsonAsync("/api/v1/chat/presence",
+            new { clientId = lease, sequence = 2, mode = "foreground", activityObserved = true }, TestContext.Current.CancellationToken);
+        using var after = await client.GetAsync("/api/v1/chat/presence?operationIds=" + OperationId, TestContext.Current.CancellationToken);
+        var result = await after.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("offline", result.GetProperty("operations")[0].GetProperty("participants")[0].GetProperty("state").GetString());
+        using var excessive = await client.GetAsync("/api/v1/chat/presence?" + string.Join("&", Enumerable.Range(0, 101).Select(_ => "operationIds=" + Guid.NewGuid())), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, excessive.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChosenPresenceStatusIsOwnedValidatedAndPublishedToParticipants()
+    {
+        await using var application = CreateApplication(new State { Actor = OccActor() });
+        using var anonymous = application.CreateClient();
+        using var unauthorized = await anonymous.GetAsync("/api/v1/chat/presence/status", TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        using var client = Authorized(application);
+        using var invalid = await client.PutAsJsonAsync("/api/v1/chat/presence/status",
+            new { availability = "active", message = (string?)null }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var set = await client.PutAsJsonAsync("/api/v1/chat/presence/status",
+            new { availability = "doNotDisturb", message = "Atendiendo operaciones de Arajet" }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, set.StatusCode);
+        var own = await set.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("unknown", own.GetProperty("state").GetString());
+        Assert.Equal("doNotDisturb", own.GetProperty("availability").GetString());
+        using var lease = await client.PutAsJsonAsync("/api/v1/chat/presence",
+            new { clientId = Guid.NewGuid(), sequence = 1, mode = "foreground", activityObserved = true }, TestContext.Current.CancellationToken);
+        using var read = await client.GetAsync("/api/v1/chat/presence?operationIds=" + OperationId, TestContext.Current.CancellationToken);
+        var person = (await read.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken))
+            .GetProperty("operations")[0].GetProperty("participants")[0];
+        Assert.Equal("active", person.GetProperty("state").GetString());
+        Assert.Equal("doNotDisturb", person.GetProperty("availability").GetString());
+        Assert.Equal("Atendiendo operaciones de Arajet", person.GetProperty("message").GetString());
+        using var current = await client.GetAsync("/api/v1/chat/presence/status", TestContext.Current.CancellationToken);
+        Assert.Equal("active", (await current.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken)).GetProperty("state").GetString());
+    }
+
+    [Theory]
+    [InlineData(-1, "foreground")]
+    [InlineData(1, "available")]
+    public async Task PresenceRejectsInvalidHeartbeats(long sequence, string mode)
+    {
+        await using var application = CreateApplication(new State { Actor = OccActor() });
+        using var client = Authorized(application);
+        using var response = await client.PutAsJsonAsync("/api/v1/chat/presence",
+            new { clientId = Guid.NewGuid(), sequence, mode, activityObserved = true }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     private WebApplicationFactory<Program> CreateApplication(State state) =>
@@ -178,6 +288,8 @@ public sealed class OperationalCommunicationEndpointsTests(ElevantApiFactory fac
     {
         public ActorContext? Actor { get; init; }
         public int ConversationReads { get; private set; }
+        public int ConversationOffset { get; private set; } = -1;
+        public int MessageOffset { get; private set; } = -1;
         public SendOperationMessageCommand? Sent { get; private set; }
         public (Guid AccountId, Guid NotificationId, bool Read)? Marked { get; private set; }
 
@@ -185,18 +297,28 @@ public sealed class OperationalCommunicationEndpointsTests(ElevantApiFactory fac
             Task.FromResult(accountId == AccountId ? Actor : null);
 
         public Task<CommunicationResult<OperationConversationListData>> GetConversationsAsync(
-            OperationalAccess access, Guid? stationId, CancellationToken cancellationToken = default)
+            OperationalAccess access, Guid? stationId, int offset, CancellationToken cancellationToken = default)
         {
             ConversationReads++;
+            ConversationOffset = offset;
             return Task.FromResult(CommunicationResults.Success(new OperationConversationListData(
                 [new OperationConversationData(OperationId, "DEV-OP-1", new DateOnly(2026, 9, 24),
                     "PUJ", "Demo Air", "Agent", "InProgress", null)], false)));
         }
 
         public Task<CommunicationResult<OperationMessageListData>> GetMessagesAsync(
-            OperationalAccess access, Guid operationId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(CommunicationResults.Success(new OperationMessageListData(
+            OperationalAccess access, Guid operationId, int offset, CancellationToken cancellationToken = default)
+        {
+            MessageOffset = offset;
+            return Task.FromResult(CommunicationResults.Success(new OperationMessageListData(
                 operationId, [], false)));
+        }
+
+        public Task<CommunicationResult<OperationPresenceContactsList>> GetPresenceParticipantsAsync(
+            OperationalAccess access, IReadOnlyCollection<Guid> operationIds, CancellationToken cancellationToken = default) =>
+            Task.FromResult(CommunicationResults.Success(new OperationPresenceContactsList(
+                operationIds.Contains(OperationId) ? new[] { new OperationPresenceContacts(OperationId,
+                    new[] { new PresenceIdentity(access.AccountId, "OCC Test", access.Role) }) } : Array.Empty<OperationPresenceContacts>())));
 
         public Task<CommunicationResult<OperationMessageData>> SendMessageAsync(
             SendOperationMessageCommand command, CancellationToken cancellationToken = default)

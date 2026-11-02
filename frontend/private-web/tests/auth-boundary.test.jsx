@@ -45,7 +45,7 @@ describe('Next.js authentication boundary', () => {
     });
     fireEvent.click(submitButton);
 
-    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/admin-occ'));
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith('/admin-occ/dashboard'));
     expect(window.sessionStorage.getItem('elevant-auth-session')).not.toBeNull();
     expect(window.localStorage.getItem('elevant-auth-session')).toBeNull();
   });

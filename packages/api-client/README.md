@@ -360,3 +360,22 @@ huella. Los checks también rechazan claves adicionales, una versión desconocid
 y cualquier huella que no coincida exactamente con `openapi/elevant-v1.json`.
 El descriptor identifica el contrato compartido; la procedencia de una release
 concreta se mantiene en sus manifiestos inmutables de entrega.
+
+### Chat operativo paginado
+
+Las lecturas `getOperationalConversations(stationId, { signal, offset })` y `getOperationalMessages(operationId, { signal, offset })` aceptan offset entero no negativo (cero predeterminado). Las llamadas existentes con signal conservan sus URLs y comportamiento. Los limites siguen siendo 100 conversaciones y 200 mensajes; hasMore y el orden del servidor se mantienen. Publicar primero la API compatible y despues los clientes. No hay cambios de esquema ni despliegues en esta tarea.
+
+
+## Presencia operativa
+
+`getOperationalPresence(operationIds, options)` consulta hasta 100 operaciones
+por petición, preservando `signal`; `putOperationalPresence(heartbeat, options)`
+envía el lease propio. Las respuestas se validan antes de exponerse al cliente.
+`createPresenceLease` comparte el contador, coalescencia, pausa, reanudación y
+cierre entre Web y Expo; no incorpora persistencia ni outbox.
+
+El contrato compilado incluye los estados `active/away/offline/unknown`, nombres
+reales por operación y actividad UTC opcional. El cliente no infiere presencia
+desde el historial ni desde tener abierta una conversación. Los servidores
+anteriores sin estas interfaces dejan la presencia no disponible y conservan
+el chat existente. La publicación futura será API primero.

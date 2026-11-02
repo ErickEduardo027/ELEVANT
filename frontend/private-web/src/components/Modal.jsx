@@ -7,7 +7,7 @@ import { useDialogFocus } from '../hooks/useDialogFocus';
 // para permitir contenido más ancho (p. ej. detalle + historial) sin romper
 // ningún uso existente. En teléfono se presenta como hoja inferior y el cuerpo
 // desplaza su contenido cuando no cabe en la altura visible.
-export default function Modal({ open, onClose, title, children, footer, tone = 'default', widthClassName = 'max-w-md' }) {
+export default function Modal({ open, onClose, title, children, footer, tone = 'default', widthClassName = 'max-w-md', panelClassName = '', descriptionId, busy, focusable = false, lang }) {
   useEscapeToClose(open, onClose);
   const dialogRef = useDialogFocus(open);
 
@@ -21,7 +21,11 @@ export default function Modal({ open, onClose, title, children, footer, tone = '
         role={tone === 'danger' ? 'alertdialog' : 'dialog'}
         aria-modal="true"
         aria-label={title}
-        className={`relative flex max-h-[92dvh] w-full flex-col rounded-t-2xl border border-black/5 bg-white shadow-2xl dark:border-white/5 dark:bg-surface-dark-card sm:max-h-[90dvh] sm:rounded-2xl ${widthClassName}`}
+        aria-describedby={descriptionId}
+        aria-busy={busy || undefined}
+        tabIndex={focusable ? -1 : undefined}
+        lang={lang}
+        className={`relative flex max-h-[92dvh] w-full flex-col rounded-t-2xl border border-black/5 bg-white shadow-2xl dark:border-white/5 dark:bg-surface-dark-card sm:max-h-[90dvh] sm:rounded-2xl ${widthClassName} ${panelClassName}`}
       >
         <h2 className="px-5 pt-5 text-base font-semibold text-ink-900 dark:text-text-primary-dark sm:px-6 sm:pt-6">{title}</h2>
         <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-5 text-sm text-text-secondary-light dark:text-text-secondary-dark sm:px-6">{children}</div>
