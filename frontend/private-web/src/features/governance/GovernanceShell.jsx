@@ -166,11 +166,13 @@ function GovernanceHome({ snapshot, tasks, overview, onOpen, run }) {
 function ProvisioningCard({ task, run }) {
   const [email, setEmail] = useState(task.suggestedEmail);
   const [password, setPassword] = useState('');
+  const [manual, setManual] = useState(false);
   const [busy, setBusy] = useState(false);
   async function submit(event) {
     event.preventDefault(); setBusy(true);
-    const saved = await run(() => provisionAirline(task.requestId, email, password),
-      `Cuenta de ${task.airline} creada. Entregue las credenciales manualmente; el primer ingreso exige cambiar la contraseña.`);
+    const saved = await run(() => provisionAirline(task.requestId, email, manual ? password : ''),
+      manual ? `Cuenta de ${task.airline} creada. Entregue las credenciales manualmente; el primer ingreso exige cambiar la contraseña.`
+        : `Cuenta de ${task.airline} creada. Enviamos a ${email} un enlace de activación válido por 72 horas.`);
     if (saved) setPassword('');
     setBusy(false);
   }
@@ -178,8 +180,9 @@ function ProvisioningCard({ task, run }) {
     <div className="flex items-center justify-between gap-3"><strong>{task.airline}</strong><span className="text-xs font-mono text-text-secondary-light">{task.reference.slice(0, 12)}</span></div>
     <p className="mt-1 text-sm text-text-secondary-light">Representante: {task.representativeName}</p>
     <label className="mt-4 block text-xs font-semibold">Correo de acceso<input type="email" required value={email} onChange={event => setEmail(event.target.value)} className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" /></label>
-    <PasswordField fieldClassName="mt-3 text-xs font-semibold" inputClassName="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" label="Contraseña temporal" id={`provision-password-${task.requestId}`} required minLength={14} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" />
-    <button disabled={busy} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Creando…' : 'Crear credenciales'}</button>
+    <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={manual} onChange={event => setManual(event.target.checked)} /> Entregar una contraseña temporal en lugar de la invitación por correo</label>
+    {manual && <PasswordField fieldClassName="mt-3 text-xs font-semibold" inputClassName="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:bg-surface-dark" label="Contraseña temporal" id={`provision-password-${task.requestId}`} required minLength={14} value={password} onChange={event => setPassword(event.target.value)} autoComplete="new-password" />}
+    <button disabled={busy} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Creando…' : manual ? 'Crear credenciales' : 'Crear y enviar invitación'}</button>
   </form>;
 }
 

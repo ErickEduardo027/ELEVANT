@@ -1,11 +1,14 @@
 export type ElevantApiErrorKind = "http" | "malformed-response";
+/** Machine-readable Problem Details codes the clients act on. */
+export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated";
+export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy", "invalid_link", "refresh_rotated"];
 
 interface ElevantApiErrorOptions {
   readonly kind: ElevantApiErrorKind;
   readonly status: number;
   readonly title?: string | null | undefined;
   readonly traceId?: string | null | undefined;
-  readonly code?: "password_change_required" | undefined;
+  readonly code?: ElevantApiErrorCode | undefined;
 }
 
 function safeMetadata(value: string | null | undefined, maximumLength: number) {
@@ -28,7 +31,7 @@ export class ElevantApiError extends Error {
   readonly status: number;
   readonly title: string;
   readonly traceId: string | undefined;
-  readonly code: "password_change_required" | undefined;
+  readonly code: ElevantApiErrorCode | undefined;
 
   constructor(options: ElevantApiErrorOptions) {
     const message =

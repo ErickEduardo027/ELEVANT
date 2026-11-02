@@ -50,8 +50,12 @@ export const archiveManagedAirline = (id, version) => commercialApi(`/governance
 });
 export const getMyPermissions = () => commercialApi('/governance/me/permissions');
 export const getProvisioning = () => commercialApi('/governance/provisioning');
+/** Without a temporary password the API emails an activation link instead (ADR-0022). */
 export const provisionAirline = (requestId, email, temporaryPassword) => commercialApi(`/governance/provisioning/${requestId}`, {
-  method: 'POST', body: JSON.stringify({ email, temporaryPassword }),
+  method: 'POST', body: JSON.stringify(temporaryPassword ? { email, temporaryPassword } : { email }),
+});
+export const resendAirlineInvitation = accountId => commercialApi(`/governance/provisioning/accounts/${accountId}/resend-invitation`, {
+  method: 'POST',
 });
 export const getCommercialRequests = () => commercialApi('/contracts/commercial-requests');
 export const getCommercialStations = () => commercialApi('/contracts/commercial-requests/stations');

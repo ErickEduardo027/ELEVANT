@@ -14,6 +14,7 @@ import {
   resetClientUserPassword,
   setClientUserStatus,
 } from '../../services/departmentGovernanceService';
+import { resendAirlineInvitation } from '../../services/commercialGovernanceApi';
 import { PASSWORD_HINT, PASSWORD_PATTERN } from '../department-users/useDepartmentGovernance';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
@@ -24,6 +25,7 @@ function AirlineUsers({ airline, onBack }) {
   const [notice, setNotice] = useState('');
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', temporaryPassword: '' });
+  const [manual, setManual] = useState(false);
   const [resetting, setResetting] = useState(null);
   const [password, setPassword] = useState('');
   const [toggling, setToggling] = useState(null);
@@ -46,7 +48,7 @@ function AirlineUsers({ airline, onBack }) {
         <button type="button" onClick={onBack} className="inline-flex min-h-[40px] items-center gap-1.5 text-sm font-semibold text-accent-600">
           <ChevronDownIcon className="h-3.5 w-3.5 rotate-90" /> Todas las aerolíneas
         </button>
-        <button type="button" onClick={() => { setForm({ firstName: '', lastName: '', email: '', temporaryPassword: '' }); setCreating(true); }}
+        <button type="button" onClick={() => { setForm({ firstName: '', lastName: '', email: '', temporaryPassword: '' }); setManual(false); setCreating(true); }}
           className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Añadir usuario</button>
       </div>
       <h2 className="text-xl font-bold">{airline.name} <span className="text-sm font-normal text-text-secondary-light">{airline.iataCode}</span></h2>
@@ -61,9 +63,10 @@ function AirlineUsers({ airline, onBack }) {
             <tbody>{users.map(user => (
               <tr key={user.id} className="border-t border-black/5 dark:border-white/5">
                 <td className="p-3"><strong>{user.firstName} {user.lastName}</strong><span className="block text-xs text-text-secondary-light">{user.email}</span></td>
-                <td className="p-3"><StatusBadge tone={user.status === 'Active' ? 'success' : 'neutral'} label={user.status === 'Active' ? 'Activo' : 'Inactivo'} />{user.mustChangePassword && <span className="block text-xs text-signal-500">Cambio de clave pendiente</span>}</td>
+                <td className="p-3"><StatusBadge tone={user.status === 'Active' ? 'success' : 'neutral'} label={user.status === 'Active' ? 'Activo' : 'Inactivo'} />{user.mustChangePassword && <span className="block text-xs text-signal-500">Cambio de clave pendiente</span>}{user.invitationPending && <span className="block text-xs text-signal-500">Invitación pendiente de activar</span>}</td>
                 <td className="p-3 text-xs">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('es-DO') : 'Nunca'}</td>
                 <td className="p-3"><div className="flex flex-wrap gap-x-3 text-xs font-semibold">
+                  {user.invitationPending && user.status === 'Active' && <button type="button" onClick={() => act(() => resendAirlineInvitation(user.id), `Enviamos un nuevo enlace de activación a ${user.email}. Los anteriores dejaron de funcionar.`)} className="min-h-[32px] text-accent-600">Reenviar invitación</button>}
                   <button type="button" onClick={() => { setResetting(user); setPassword(''); }} className="min-h-[32px] text-accent-600">Restablecer clave</button>
                   <button type="button" onClick={() => setToggling(user)} className={`min-h-[32px] ${user.status === 'Active' ? 'text-status-danger' : 'text-status-success'}`}>{user.status === 'Active' ? 'Desactivar' : 'Reactivar'}</button>
                 </div></td>
@@ -73,17 +76,21 @@ function AirlineUsers({ airline, onBack }) {
         </StackedTable>
       )}
       <Drawer open={creating} onClose={() => setCreating(false)} title={`Añadir usuario a ${airline.name}`}
-        description="El usuario accede al portal de aerolíneas con la contraseña temporal y debe cambiarla al ingresar."
+        description="El usuario recibe por correo un enlace para activar su cuenta y crear su contraseña. Cada inicio de sesión le pide un código enviado a su correo."
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setCreating(false)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button><button type="submit" form="client-user-form" className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Crear usuario</button></div>}>
         {creating && <form id="client-user-form" className="space-y-4" onSubmit={async event => {
           event.preventDefault();
-          if (await act(() => createClientUser(airline.organizationId, form), 'Usuario creado. Entregue la contraseña temporal por un canal autorizado.')) setCreating(false);
+          const payload = manual ? form : { firstName: form.firstName, lastName: form.lastName, email: form.email };
+          if (await act(() => createClientUser(airline.organizationId, payload), manual
+            ? 'Usuario creado. Entregue la contraseña temporal por un canal autorizado.'
+            : `Usuario creado. Enviamos a ${form.email} un enlace de activación válido por 72 horas.`)) setCreating(false);
         }}>
           {[['firstName', 'Nombre'], ['lastName', 'Apellido']].map(([key, label]) => (
             <label key={key} className="block text-xs font-semibold">{label}<input required minLength={2} maxLength={100} value={form[key]} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} className={fieldClass} /></label>
           ))}
           <label className="block text-xs font-semibold">Correo de acceso<input required type="email" maxLength={256} value={form.email} onChange={event => setForm(current => ({ ...current, email: event.target.value }))} className={fieldClass} /></label>
-          <PasswordField fieldClassName="text-xs font-semibold" inputClassName={fieldClass} label="Contraseña temporal" id="client-user-password" required minLength={14} pattern={PASSWORD_PATTERN} title={PASSWORD_HINT} autoComplete="new-password" value={form.temporaryPassword} onChange={event => setForm(current => ({ ...current, temporaryPassword: event.target.value }))} />
+          <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={manual} onChange={event => setManual(event.target.checked)} /> Entregar una contraseña temporal en lugar de la invitación por correo</label>
+          {manual && <PasswordField fieldClassName="text-xs font-semibold" inputClassName={fieldClass} label="Contraseña temporal" id="client-user-password" required minLength={14} pattern={PASSWORD_PATTERN} title={PASSWORD_HINT} autoComplete="new-password" value={form.temporaryPassword} onChange={event => setForm(current => ({ ...current, temporaryPassword: event.target.value }))} />}
         </form>}
       </Drawer>
       <Modal open={Boolean(resetting)} onClose={() => setResetting(null)} title={`Restablecer clave de ${resetting?.firstName ?? ''}`}

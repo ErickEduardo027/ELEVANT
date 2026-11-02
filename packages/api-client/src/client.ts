@@ -55,6 +55,14 @@ import {
   getCreateSessionUrl,
   getRefreshSessionUrl,
   getEndSessionUrl,
+  getVerifyLoginCodeUrl,
+  getResendLoginCodeUrl,
+  getActivatePortalAccountUrl,
+  getRequestPasswordResetUrl,
+  getConfirmPasswordResetUrl,
+  getResendAirlineInvitationUrl,
+  getSendTestEmailUrl,
+  getListEmailDeliveriesUrl,
   getChangePasswordUrl,
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
@@ -250,11 +258,14 @@ import {
   type RegisterMobileDeviceResponse,
   type SessionActorResponse,
   type SessionResponse,
+  type LoginChallengeResponse,
+  type EmailDeliveryResponse,
+  type EmailDeliveriesResponse,
   type SubmitRampOperationChecklistRequest,
   type SystemPingResponse,
   type TransitionRampOperationServiceRequest,
 } from "../generated/elevant-api";
-import { ElevantApiError } from "./errors";
+import { ELEVANT_API_ERROR_CODES, ElevantApiError, type ElevantApiErrorCode } from "./errors";
 import { normalizeIdentityDocument, normalizePhone } from "./validation";
 
 type AccessToken = string | null | undefined;
@@ -435,6 +446,21 @@ export interface ElevantApiClient {
     request: ChangePasswordRequest,
     options?: ChangePasswordOptions,
   ): Promise<void>;
+  /**
+   * Portal login (ADR-0022): returns the session, or the email-code challenge that
+   * {@link ElevantApiClient.verifyLoginCode} completes.
+   */
+  startSession(request: CreateSessionRequest, options?: CreateSessionOptions): Promise<SessionStart>;
+  verifyLoginCode(challengeId: string, code: string, options?: CreateSessionOptions): Promise<SessionResponse>;
+  resendLoginCode(challengeId: string, options?: CreateSessionOptions): Promise<LoginChallengeResponse>;
+  /** Sets the first password from the invitation link; Problem Details code invalid_link or password_policy. */
+  activateAccount(token: string, newPassword: string, options?: CreateSessionOptions): Promise<void>;
+  /** Always resolves when the request is well formed, whether or not the email has an account. */
+  requestPasswordReset(email: string, options?: CreateSessionOptions): Promise<void>;
+  resetPassword(token: string, newPassword: string, options?: CreateSessionOptions): Promise<void>;
+  resendAirlineInvitation(accountId: string, options?: CreateSessionOptions): Promise<void>;
+  sendTestEmail(to: string, options?: CreateSessionOptions): Promise<EmailDeliveryResponse>;
+  listEmailDeliveries(options?: CreateSessionOptions): Promise<EmailDeliveriesResponse>;
   /** Renews the session; a 409 with code refresh_rotated means another tab already did (ADR-0021). */
   refreshSession(refreshToken: string, options?: CreateSessionOptions): Promise<SessionResponse>;
   /** Ends the session: the refresh token and every renewal of it stop working. */
@@ -870,7 +896,7 @@ interface ApiResult {
 interface ProblemMetadata {
   readonly title?: string;
   readonly traceId?: string;
-  readonly code?: "password_change_required";
+  readonly code?: ElevantApiErrorCode;
 }
 
 function validatedBaseUrl(input: string) {
@@ -953,6 +979,15 @@ function validResponse(value: unknown): value is Response {
   );
 }
 
+function jsonPost(options: CreateSessionOptions | undefined, body: unknown): RequestInit {
+  return {
+    ...options,
+    method: "POST",
+    headers: { ...Object.fromEntries(headersFrom(options?.headers, "Request headers")), "content-type": "application/json" },
+    body: JSON.stringify(body),
+  };
+}
+
 function malformedResponse(status: number) {
   return new ElevantApiError({
     kind: "malformed-response",
@@ -967,7 +1002,7 @@ function problemMetadata(value: unknown): ProblemMetadata {
   return {
     ...(typeof record.title === "string" ? { title: record.title } : {}),
     ...(typeof record.traceId === "string" ? { traceId: record.traceId } : {}),
-    ...(record.code === "password_change_required" ? { code: record.code } : {}),
+    ...(ELEVANT_API_ERROR_CODES.includes(record.code as ElevantApiErrorCode) ? { code: record.code as ElevantApiErrorCode } : {}),
   };
 }
 
@@ -3749,6 +3784,47 @@ function validatedManagedContractParams(
   };
 }
 
+export type SessionStart =
+  | { kind: "session"; session: SessionResponse }
+  | { kind: "code_required"; challenge: LoginChallengeResponse };
+
+function isLoginChallengeResponse(value: unknown): value is LoginChallengeResponse {
+  return isRecord(value) && value.code === "code_required" && typeof value.challengeId === "string" &&
+    UUID_TEXT.test(value.challengeId) && typeof value.emailHint === "string" && value.emailHint.length <= 320 &&
+    typeof value.expiresAt === "string" && !Number.isNaN(Date.parse(value.expiresAt));
+}
+
+function isEmailDeliveryResponse(value: unknown): value is EmailDeliveryResponse {
+  return isRecord(value) && typeof value.id === "string" && typeof value.recipient === "string" &&
+    typeof value.purpose === "string" && typeof value.status === "string" && typeof value.attempts === "number" &&
+    typeof value.createdAt === "string";
+}
+
+const UUID_TEXT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function validatedLoginCode(code: string): string {
+  if (typeof code !== "string" || !/^\d{6}$/.test(code)) throw new TypeError("The code must be 6 digits.");
+  return code;
+}
+
+function validatedLinkToken(token: string): string {
+  if (typeof token !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(token))
+    throw new TypeError("The link token is invalid.");
+  return token;
+}
+
+function validatedNewPassword(password: string): string {
+  if (typeof password !== "string" || password.length === 0 || password.length > 256)
+    throw new TypeError("The new password is required.");
+  return password;
+}
+
+function validatedEmailAddress(email: string): string {
+  if (typeof email !== "string" || email.length > 256 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim()))
+    throw new TypeError("A valid email is required.");
+  return email.trim();
+}
+
 function validatedSessionRequest(request: CreateSessionRequest): CreateSessionRequest {
   if (
     !isRecord(request) ||
@@ -4548,6 +4624,53 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       );
       if (!isSessionResponse(result.data)) throw malformedResponse(result.status);
       return result.data;
+    },
+    async startSession(request: CreateSessionRequest, options?: CreateSessionOptions): Promise<SessionStart> {
+      const result = await execute(getCreateSessionUrl(), jsonPost(options, validatedSessionRequest(request)), false);
+      if (isLoginChallengeResponse(result.data)) return { kind: "code_required", challenge: result.data };
+      if (!isSessionResponse(result.data)) throw malformedResponse(result.status);
+      return { kind: "session", session: result.data };
+    },
+    async verifyLoginCode(challengeId: string, code: string, options?: CreateSessionOptions) {
+      const result = await execute(getVerifyLoginCodeUrl(), jsonPost(options,
+        { challengeId: validatedUuid(challengeId, "challengeId"), code: validatedLoginCode(code) }), false);
+      if (!isSessionResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async resendLoginCode(challengeId: string, options?: CreateSessionOptions) {
+      const result = await execute(getResendLoginCodeUrl(), jsonPost(options,
+        { challengeId: validatedUuid(challengeId, "challengeId") }), false);
+      if (!isLoginChallengeResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async activateAccount(token: string, newPassword: string, options?: CreateSessionOptions) {
+      await execute(getActivatePortalAccountUrl(), jsonPost(options,
+        { token: validatedLinkToken(token), newPassword: validatedNewPassword(newPassword) }), false);
+    },
+    async requestPasswordReset(email: string, options?: CreateSessionOptions) {
+      await execute(getRequestPasswordResetUrl(), jsonPost(options, { email: validatedEmailAddress(email) }), false);
+    },
+    async resetPassword(token: string, newPassword: string, options?: CreateSessionOptions) {
+      await execute(getConfirmPasswordResetUrl(), jsonPost(options,
+        { token: validatedLinkToken(token), newPassword: validatedNewPassword(newPassword) }), false);
+    },
+    async resendAirlineInvitation(accountId: string, options?: CreateSessionOptions) {
+      await execute(getResendAirlineInvitationUrl(validatedUuid(accountId, "accountId")),
+        { ...options, method: "POST", headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+    },
+    async sendTestEmail(to: string, options?: CreateSessionOptions) {
+      const result = await execute(getSendTestEmailUrl(), jsonPost(options, { to: validatedEmailAddress(to) }), true);
+      if (!isEmailDeliveryResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async listEmailDeliveries(options?: CreateSessionOptions) {
+      const result = await execute(getListEmailDeliveriesUrl(), { ...options, method: "GET",
+        headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+      const data = result.data;
+      if (!isRecord(data) || typeof data.smtpConfigured !== "boolean" || !Array.isArray(data.deliveries) ||
+          !data.deliveries.every(isEmailDeliveryResponse))
+        throw malformedResponse(result.status);
+      return data as unknown as EmailDeliveriesResponse;
     },
     async refreshSession(refreshToken: string, options?: CreateSessionOptions) {
       const result = await execute(getRefreshSessionUrl(), {

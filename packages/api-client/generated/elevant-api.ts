@@ -755,6 +755,7 @@ export interface ClientUserData {
   /** @nullable */
   lastLoginAt?: string | null;
   version: string;
+  invitationPending: boolean;
 }
 
 export interface CommercialAccountResponse {
@@ -1024,7 +1025,8 @@ export interface CreateClientUserInput {
   firstName: string;
   lastName: string;
   email: string;
-  temporaryPassword: string;
+  /** @nullable */
+  temporaryPassword?: string | null;
 }
 
 export interface CreateDepartmentAccountInput {

@@ -25899,6 +25899,7 @@
           "email",
           "firstName",
           "id",
+          "invitationPending",
           "lastName",
           "mustChangePassword",
           "status",
@@ -25932,6 +25933,9 @@
           },
           "version": {
             "type": "string"
+          },
+          "invitationPending": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -26848,8 +26852,7 @@
         "required": [
           "email",
           "firstName",
-          "lastName",
-          "temporaryPassword"
+          "lastName"
         ],
         "type": "object",
         "properties": {
@@ -26863,7 +26866,8 @@
             "type": "string"
           },
           "temporaryPassword": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
