@@ -157,6 +157,8 @@ test('request nonce policy confines client traffic to the certified API and map 
   assert.match(policy, /connect-src 'self' https:\/\/api\.elevant\.test wss:\/\/api\.elevant\.test https:\/\/demotiles\.maplibre\.org https:\/\/tiles\.openfreemap\.org https:\/\/mesonet\.agron\.iastate\.edu https:\/\/gibs\.earthdata\.nasa\.gov;/);
   assert.match(policy, /img-src [^;]*https:\/\/gibs\.earthdata\.nasa\.gov/);
   assert.match(policy, /frame-ancestors 'none'/);
+  // The print button frames the generated PDF as a blob: URL.
+  assert.match(policy, /frame-src 'self' blob:/);
   assert.doesNotMatch(policy, /script-src[^;]*'unsafe-inline'/);
   assert.throws(() => buildContentSecurityPolicy('http://api.elevant.test', 'nonce-123'));
 });

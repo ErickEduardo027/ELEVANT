@@ -3,6 +3,7 @@ next-env.d.ts
 node_modules/
 coverage/
 playwright-report/
+playwright-report-stack/
 test-results/
 output/playwright/
 .playwright-cli/
