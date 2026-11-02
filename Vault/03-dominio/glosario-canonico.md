@@ -59,6 +59,9 @@ Este glosario normaliza términos usados por código, base y prototipos. “Can�
 | Puesto | Cargo del organigrama de un departamento, mantenido por Gestión Humana. | No es un perfil de acceso ni una posición operativa de rampa. |
 | Perfil de acceso | Plantilla de permisos de un departamento que decide qué ve una cuenta en ELEVANT. | Lo administra el departamento; no cambia el puesto. |
 | Requisición de personal | Petición de un departamento a Gestión Humana de N personas para un puesto. | Lo cubierto es una proyección de los empleados enlazados. |
+| Refresh token | Secreto rotativo que renueva el access token de 15 minutos sin volver a iniciar sesión; solo se guarda su SHA-256 ([ADR-0021](../../docs/adr/0021-rotating-refresh-tokens.md)). | Reutilizar uno ya rotado revoca toda la familia. |
+| Código de verificación | Código de 6 dígitos enviado al correo en cada inicio de sesión del portal; 10 minutos y 5 intentos ([ADR-0022](../../docs/adr/0022-portal-email-verification.md)). | Solo aplica a cuentas del portal, no a las internas. |
+| Subventana | Función dentro de otra pantalla (Solicitudes de clausura dentro de Servicios) con permiso propio. | Concederla concede «Ver» de la pantalla que la contiene. |
 
 ## Geografía y catálogos
 
@@ -119,7 +122,9 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Firma de contrato | Aceptación de una parte (AVIAM o la aerolínea) sobre una versión aprobada, con nombre, cargo, fecha y huella; solo de inserción. | Una firma electrónica certificada. |
 | Marca de cargo | Tipo de cargo que el agente de rampa aplica a un servicio, sin precio ni cantidad. | La línea de cargo valorada en la prefactura. |
 | Ajuste | Línea manual de Finanzas en una prefactura borrador, positiva o negativa, con motivo. | Una nota de crédito sobre una factura emitida. |
-| Aprobación de Finanzas | Revisión que activa una versión de contrato enviada por Contratos o la devuelve con motivo. | La aprobación de una entrega por OCC. |
+| Aprobación de Finanzas | Revisión que aprueba una versión de contrato enviada por Contratos o la devuelve con motivo; el contrato se activa después, con ambas firmas y el permiso de operación. | La aprobación de una entrega por OCC. |
+| Permiso de operación | Autorización de la autoridad aeronáutica (JAC) que la aerolínea envía desde el portal y Contratos verifica ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)). | Vigente, por vencer o vencido se calcula con la fecha; un contrato no se activa sin uno verificado y vigente. |
+| Verificación en registro | Consulta de la aerolínea en Wikidata (o la copia de OpenFlights) por IATA/ICAO ([ADR-0023](../../docs/adr/0023-airline-public-registry-check.md)). | La verificación legal de Contratos. |
 | Tasa de cambio | Tasa diaria USD→DOP registrada manualmente por Finanzas; las correcciones conservan historia. | Una cotización bancaria automática. |
 | Nota de crédito | Reducción no fiscal del saldo de una factura, idempotente y nunca mayor que el saldo. | Una anulación de prefactura. |
 | Saldo | Total de la factura menos pagos y notas de crédito; su estado (pendiente, parcial, pagada, vencida) es una proyección. | Una conciliación bancaria. |
