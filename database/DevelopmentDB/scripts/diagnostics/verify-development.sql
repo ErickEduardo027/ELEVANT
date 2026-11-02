@@ -88,7 +88,8 @@ VALUES
     (N'20261102120610_AddRefreshTokens'),
     (N'20261102130658_AddEmailOutboxAndAccountTokens'),
     (N'20261102161112_AddAirlineRegistryCheck'),
-    (N'20261102163828_AddAirlinePermitsAndContractLifecycle');
+    (N'20261102163828_AddAirlinePermitsAndContractLifecycle'),
+    (N'20261102173042_GrantEmailOutboxToApplication');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')
@@ -526,6 +527,10 @@ INSERT INTO #permission_checks VALUES
     (N'app-insert-account-changes', COALESCE(HAS_PERMS_BY_NAME(N'infra.account_changes', N'OBJECT', N'INSERT'), 0), 1),
     (N'app-update-account-changes', COALESCE(HAS_PERMS_BY_NAME(N'infra.account_changes', N'OBJECT', N'UPDATE'), 0), 0),
     (N'app-delete-account-changes', COALESCE(HAS_PERMS_BY_NAME(N'infra.account_changes', N'OBJECT', N'DELETE'), 0), 0),
+    (N'app-select-email-outbox', COALESCE(HAS_PERMS_BY_NAME(N'infra.email_outbox', N'OBJECT', N'SELECT'), 0), 1),
+    (N'app-insert-email-outbox', COALESCE(HAS_PERMS_BY_NAME(N'infra.email_outbox', N'OBJECT', N'INSERT'), 0), 1),
+    (N'app-update-email-outbox', COALESCE(HAS_PERMS_BY_NAME(N'infra.email_outbox', N'OBJECT', N'UPDATE'), 0), 1),
+    (N'app-delete-email-outbox', COALESCE(HAS_PERMS_BY_NAME(N'infra.email_outbox', N'OBJECT', N'DELETE'), 0), 0),
     (N'app-delete-audit', COALESCE(HAS_PERMS_BY_NAME(N'audit', N'SCHEMA', N'DELETE'), 0), 0),
     (N'app-execute-credential-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.set_development_account_credential', N'OBJECT', N'EXECUTE'), 0), 0),
     (N'app-execute-hr-activation-procedure', COALESCE(HAS_PERMS_BY_NAME(N'iam.require_development_hr_password_change', N'OBJECT', N'EXECUTE'), 0), 0),

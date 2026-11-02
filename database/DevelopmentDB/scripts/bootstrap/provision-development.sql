@@ -161,6 +161,8 @@ IF OBJECT_ID(N'[infra].[outbox_messages]', N'U') IS NOT NULL
     GRANT SELECT, INSERT, UPDATE ON OBJECT::[infra].[outbox_messages] TO [elevant_app_role];
 IF OBJECT_ID(N'[infra].[account_changes]', N'U') IS NOT NULL
     GRANT SELECT, INSERT ON OBJECT::[infra].[account_changes] TO [elevant_app_role];
+IF OBJECT_ID(N'[infra].[email_outbox]', N'U') IS NOT NULL
+    GRANT SELECT, INSERT, UPDATE ON OBJECT::[infra].[email_outbox] TO [elevant_app_role];
 
 GRANT SELECT, INSERT ON SCHEMA::[iam] TO [elevant_seeder_role];
 GRANT SELECT, INSERT ON SCHEMA::[ref] TO [elevant_seeder_role];

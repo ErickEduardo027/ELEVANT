@@ -5,6 +5,7 @@ import { type FormEvent, useState } from "react";
 
 import { BrandMark } from "@/components/marketing/BrandMark";
 import { useAirlineSession, type AirlineLinkResult } from "./AirlineSessionProvider";
+import { CredentialPanel, InfoIcon } from "./AuthExperience";
 
 import styles from "./AuthExperience.module.css";
 
@@ -48,6 +49,7 @@ export function PasswordLinkExperience({ mode, token }: { mode: Mode; token?: st
         <Link className={styles.backLink} href="/login">Volver al acceso</Link>
       </header>
       <main className={styles.main} id="auth-content">
+        <CredentialPanel />
         <section className={styles.formRegion} aria-label={COPY[mode].kicker}>
           <div className={styles.formShell}>
             {token ? <SetPasswordForm mode={mode} token={token} />
@@ -167,6 +169,7 @@ function PasswordInput({ id, label, value, onChange }: { id: string; label: stri
 function Feedback({ kind, text }: { kind: "info" | "error"; text: string }) {
   return (
     <div className={styles.feedback} data-kind={kind} role={kind === "error" ? "alert" : "status"}>
+      <InfoIcon />
       <p>{text}</p>
     </div>
   );

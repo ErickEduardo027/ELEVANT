@@ -85,7 +85,7 @@ export function AuthExperience({
   );
 }
 
-function CredentialPanel() {
+export function CredentialPanel() {
   return (
     <aside className={styles.credential} aria-labelledby="auth-title">
       <div className={styles.credentialGrid} aria-hidden="true" />
@@ -600,7 +600,7 @@ function EyeOffIcon() {
   );
 }
 
-function InfoIcon() {
+export function InfoIcon() {
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
       <circle cx="10" cy="10" r="7.5" />

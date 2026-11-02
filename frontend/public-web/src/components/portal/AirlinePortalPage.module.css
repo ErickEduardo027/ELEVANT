@@ -120,3 +120,6 @@
 .timeline li[data-kind="upcoming"]::before { background: #fff; border: 2px dashed #94a3b8; }
 .timeline time { font-size: .7rem; }
 .timeline strong { color: #123f81; }
+/* Long option names and the file input must not widen the panel on phones. */
+.panel, .draftCommentForm { min-width: 0; }
+.draftCommentForm select, .draftCommentForm input:not([type="checkbox"]):not([type="radio"]) { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }

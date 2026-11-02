@@ -26,6 +26,8 @@ describe("Next Content-Security-Policy", () => {
     expect(policy).not.toContain("'unsafe-eval'");
     expect(policy).toContain("img-src 'self' data: blob: https://api.development.elevant.test");
     expect(policy).toContain("media-src 'self' blob: https://api.development.elevant.test");
+    // The print button frames the generated PDF as a blob: URL.
+    expect(policy).toContain("frame-src 'self' blob:");
   });
 
   it("allows only the matching API websocket origin for the durable change feed", () => {
