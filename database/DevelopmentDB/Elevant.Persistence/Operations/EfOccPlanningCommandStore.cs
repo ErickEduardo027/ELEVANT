@@ -239,26 +239,15 @@ internal sealed class EfOccPlanningCommandStore(
             return Conflict();
         }
 
-        var applicableContracts = await (
-                from contract in context.Contracts.AsNoTracking()
-                join version in context.ContractVersions.AsNoTracking()
-                    on contract.Id equals version.ContractId
-                where contract.AirlineId == scope.AirlineId &&
-                      contract.Status == ContractStatus.Active &&
-                      (contract.SignedOn == null || contract.SignedOn <= scope.OperationDate) &&
-                      (contract.TerminatedOn == null || contract.TerminatedOn >= scope.OperationDate) &&
-                      (version.Status == ContractVersionStatus.Approved || version.Status == ContractVersionStatus.Superseded) &&
-                      version.ValidFrom <= scope.OperationDate &&
-                      (version.ValidTo == null || version.ValidTo >= scope.OperationDate) &&
-                      context.Set<ContractVersionStation>().AsNoTracking().Any(link =>
-                          link.ContractVersionId == version.Id &&
-                          link.StationId == scope.StationInternalId)
-                orderby version.VersionNumber descending, version.PublicId
-                select new ApplicableContractProjection(
-                    contract.PublicId,
-                    version.Id,
-                    version.VersionNumber,
-                    version.CurrencyCode))
+        // A flight planned under a version keeps it while that version still covers the date (ADR-0027).
+        var storedVersionId = await context.Turnarounds.AsNoTracking()
+            .Where(item => item.Id == scope.TurnaroundInternalId).Select(item => item.ContractVersionId)
+            .SingleAsync(cancellationToken);
+        var applicableContracts = await ApplicableContracts.For(context, scope.AirlineId, scope.StationInternalId, scope.OperationDate)
+            .OrderByDescending(row => row.VersionNumber).ThenBy(row => row.VersionPublicId)
+            .Where(row => storedVersionId == null || row.VersionId == storedVersionId)
+            .Select(row => new ApplicableContractProjection(row.ContractPublicId, row.VersionId, row.VersionNumber,
+                row.CurrencyCode))
             .Take(2)
             .ToArrayAsync(cancellationToken);
         if (applicableContracts.Length != 1)

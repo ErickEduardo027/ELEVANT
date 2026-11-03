@@ -60,6 +60,7 @@ internal static class OperationsConfiguration
             AddReference<Airline, Turnaround>(builder, turnaround => turnaround.AirlineId);
             AddReference<Station, Turnaround>(builder, turnaround => turnaround.StationId);
             AddReference<AircraftType, Turnaround>(builder, turnaround => turnaround.AircraftTypeId);
+            AddReference<Elevant.Domain.Entities.Commercial.ContractVersion, Turnaround>(builder, turnaround => turnaround.ContractVersionId);
         });
 
         modelBuilder.Entity<FlightLeg>(builder =>

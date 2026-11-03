@@ -18,7 +18,8 @@ function Field({ label, children }) {
   );
 }
 
-export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring, canAssign = false, candidates = [], onChanged }) {
+export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring, canAssign = false, candidates = [], onChanged,
+  onStartPlacing, operationDate }) {
   const { t, language, locale } = useTranslation(positionsMapMessages);
   useEffect(() => {
     if (!position) return undefined;
@@ -84,7 +85,8 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
             <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{position.status === 'unverified' ? t('detail.unverifiedNote') : t('detail.noFlight')}</p>
           )}
 
-          {canAssign && position.standId && <PositionActions position={position} candidates={candidates} onChanged={onChanged} />}
+          {canAssign && position.standId && <PositionActions position={position} candidates={candidates} onChanged={onChanged}
+            onStartPlacing={onStartPlacing} operationDate={operationDate} />}
 
           <p className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
             {t('detail.lastUpdate', { time: position.updatedAt ? formatClockTime(position.updatedAt, locale) : '—' })}

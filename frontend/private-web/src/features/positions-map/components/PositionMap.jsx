@@ -53,7 +53,7 @@ function boundsFromPositions(positions) {
 // dejó el mapa compacto (y viceversa) sin reiniciar la selección.
 const PositionMap = forwardRef(function PositionMap({
   positions, selectedPositionId, onSelectPosition, theme, viewMode, initialCamera, onCameraChange,
-  allowBuildingExtrusion = false, dashboardLabels = false,
+  allowBuildingExtrusion = false, dashboardLabels = false, onMapClick, placing = false,
 }, ref) {
   const { t } = useTranslation(positionsMapMessages);
   const [mapUnavailable, setMapUnavailable] = useState(false);
@@ -76,6 +76,8 @@ const PositionMap = forwardRef(function PositionMap({
   const onCameraChangeRef = useRef(onCameraChange);
   onCameraChangeRef.current = onCameraChange;
   const initialCameraRef = useRef(initialCamera);
+  const onMapClickRef = useRef(onMapClick);
+  onMapClickRef.current = onMapClick;
 
   useEffect(() => {
     let map;
@@ -121,6 +123,8 @@ const PositionMap = forwardRef(function PositionMap({
         bearing: map.getBearing(), pitch: map.getPitch() });
     };
     map.on('moveend', handleMoveEnd);
+    const handleClick = event => onMapClickRef.current?.({ latitude: event.lngLat.lat, longitude: event.lngLat.lng });
+    map.on('click', handleClick);
 
     function setupLayers() {
       attachAerowayLayers(map, { theme: themeRef.current });
@@ -151,6 +155,7 @@ const PositionMap = forwardRef(function PositionMap({
       map.off('error', handleError);
       map.off('style.load', setupLayers);
       map.off('moveend', handleMoveEnd);
+      map.off('click', handleClick);
       detachLayersRef.current();
       map.remove();
       mapRef.current = null;
@@ -180,6 +185,11 @@ const PositionMap = forwardRef(function PositionMap({
     if (!map) return;
     setSelectedPositionFilter(map, selectedPositionId);
   }, [selectedPositionId]);
+
+  useEffect(() => {
+    const canvas = mapRef.current?.getCanvas?.();
+    if (canvas) canvas.style.cursor = placing ? 'crosshair' : '';
+  }, [placing]);
 
   useEffect(() => {
     const map = mapRef.current;

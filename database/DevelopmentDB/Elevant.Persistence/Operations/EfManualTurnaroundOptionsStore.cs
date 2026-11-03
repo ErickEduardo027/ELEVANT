@@ -46,19 +46,11 @@ internal sealed class EfManualTurnaroundOptionsStore(
         if (station is null) return null;
 
         var contracted = await (
-            from airline in context.Airlines.AsNoTracking()
-            join contract in context.Contracts.AsNoTracking() on airline.Id equals contract.AirlineId
-            join version in context.ContractVersions.AsNoTracking() on contract.Id equals version.ContractId
-            where airline.IsActive && contract.Status == ContractStatus.Active &&
-                  (contract.SignedOn == null || contract.SignedOn <= operationDate) &&
-                  (contract.TerminatedOn == null || contract.TerminatedOn >= operationDate) &&
-                  version.Status == ContractVersionStatus.Approved &&
-                  version.ValidFrom <= operationDate &&
-                  (version.ValidTo == null || version.ValidTo >= operationDate) &&
-                  context.Set<ContractVersionStation>().AsNoTracking().Any(link =>
-                      link.ContractVersionId == version.Id && link.StationId == station.Id)
+            from row in ApplicableContracts.For(context, null, station.Id, operationDate)
+            join airline in context.Airlines.AsNoTracking() on row.AirlineId equals airline.Id
+            where airline.IsActive
             orderby airline.Name, airline.PublicId
-            select new { airline.PublicId, airline.IataCode, airline.Name, version.Id })
+            select new { airline.PublicId, airline.IataCode, airline.Name, row.VersionId })
             .ToArrayAsync(cancellationToken);
         var airlines = contracted.GroupBy(item => item.PublicId)
             .Where(group => group.Count() == 1)

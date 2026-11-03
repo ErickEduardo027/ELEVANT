@@ -87,6 +87,8 @@ El modelo dispone de historias explícitas para turnaround, operación y servici
 - Un activo de equipo sólo puede participar en una asignación abierta a la vez.
 - `OperationalPosition` expresa la función/habilitación requerida; `AssignmentRole` es un texto contextual de la asignación y su taxonomía aún no está cerrada.
 - Los intervalos de asignación no pueden terminar antes de empezar, pero el esquema no impide todos los solapamientos entre operaciones o recursos.
+- Un vuelo solo se planifica si un contrato `Active`, firmado y no terminado tiene una versión `Approved` o `Superseded` que cubre esa fecha en esa estación; es una sola regla para Planificación, vuelos manuales y asignación ([ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md)). El vuelo manual guarda esa versión en `contract_version_id`; los vuelos anteriores quedan sin ella.
+- Una posición (`ref.stands`) puede tener latitud y longitud WGS84 que OCC ubicó en el mapa; sin ellas, el mapa usa una referencia interna sin verificar.
 
 ## Servicios e hitos
 

@@ -16,6 +16,7 @@ import { findPositionByQuery } from './positionsMapMappers';
 import { ADMIN_OCC_MODULE_IDS } from '../admin-occ/navigation';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { positionsMapMessages } from './positionsMapMessages';
+import { locateOccStand } from '../../services/occPositionsService';
 
 // Flights that can be brought to a stand: the unassigned ones and those parked elsewhere.
 export function assignCandidates(data) {
@@ -41,6 +42,9 @@ export default function PositionsMapPage({
   const [sidePanelOpen, setSidePanelOpen] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [searchNotFound, setSearchNotFound] = useState(false);
+  // Stand OCC is placing on the map (ADR-0027): the next click on the map saves its location.
+  const [placing, setPlacing] = useState(null);
+  const [placeMessage, setPlaceMessage] = useState({ tone: '', text: '' });
   const mapRef = useRef(null);
   const mapAreaRef = useRef(null);
   const isTablet = useIsTabletBreakpoint();
@@ -100,6 +104,26 @@ export default function PositionsMapPage({
       document.exitFullscreen?.();
     } else {
       mapAreaRef.current?.requestFullscreen?.();
+    }
+  }
+
+  function handleStartPlacing(position) {
+    setSelectedPositionId(null);
+    setPlaceMessage({ tone: '', text: '' });
+    setPlacing({ standId: position.standId, code: position.id, saving: false });
+  }
+
+  async function handleMapClick({ latitude, longitude }) {
+    if (!placing || placing.saving || !data?.operationDate) return;
+    setPlacing(current => ({ ...current, saving: true }));
+    try {
+      await locateOccStand(placing.standId, Number(latitude.toFixed(6)), Number(longitude.toFixed(6)), data.operationDate);
+      setPlaceMessage({ tone: 'success', text: `${placing.code} quedó ubicada en el mapa.` });
+      setPlacing(null);
+      onRetry?.();
+    } catch (failure) {
+      setPlaceMessage({ tone: 'danger', text: failure.message });
+      setPlacing(current => current && { ...current, saving: false });
     }
   }
 
@@ -168,7 +192,14 @@ export default function PositionsMapPage({
         onSelectPosition={setSelectedPositionId}
         theme={theme}
         viewMode={viewMode}
+        placing={Boolean(placing)}
+        onMapClick={placing ? handleMapClick : undefined}
       />
+      {placing && <div role="status" className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-accent-600/40 bg-white/95 px-4 py-2 text-xs shadow dark:bg-surface-dark-card">
+        <span>{placing.saving ? `Guardando la ubicación de ${placing.code}…` : `Haz clic en el mapa donde está ${placing.code}.`}</span>
+        <button type="button" className="font-semibold text-accent-600" disabled={placing.saving}
+          onClick={() => setPlacing(null)}>Cancelar</button>
+      </div>}
       <MapControls
         viewMode={viewMode}
         onToggleViewMode={() => setViewMode(mode => (mode === '3d' ? '2d' : '3d'))}
@@ -197,6 +228,10 @@ export default function PositionsMapPage({
       {data?.source === 'planning' && <p role="status" className="rounded-lg border border-accent-600/25 bg-accent-600/5 px-4 py-3 text-sm text-text-secondary-light dark:text-text-secondary-dark">
         {t('page.planningNote')}
       </p>}
+
+      {placeMessage.text && <p role={placeMessage.tone === 'danger' ? 'alert' : 'status'}
+        className={`rounded-lg px-4 py-2 text-sm ${placeMessage.tone === 'danger' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10 text-status-success'}`}>
+        {placeMessage.text}</p>}
 
       {displayConnection === 'disconnected' && (
         <p
@@ -231,6 +266,8 @@ export default function PositionsMapPage({
         canAssign={Boolean(data?.canAssign)}
         candidates={assignCandidates(data)}
         onChanged={onRetry}
+        onStartPlacing={handleStartPlacing}
+        operationDate={data?.operationDate}
       />
 
       <PositionToastStack toasts={toasts} onDismiss={dismissToast} />

@@ -19670,6 +19670,125 @@
         ]
       }
     },
+    "/api/v1/occ/stands/{standId}/location": {
+      "put": {
+        "tags": [
+          "OccPositions"
+        ],
+        "summary": "Places a stand on the map, or clears it (ADR-0027).",
+        "operationId": "LocateOccStand",
+        "parameters": [
+          {
+            "name": "standId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/LocateOccStandRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/LocateOccStandRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/LocateOccStandRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccPositionBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/turnarounds/{turnaroundId}/stand/release": {
       "post": {
         "tags": [
@@ -19730,6 +19849,79 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/contracts": {
+      "get": {
+        "tags": [
+          "OccReadyContracts"
+        ],
+        "operationId": "ListOccReadyContracts",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccReadyContractsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -35635,6 +35827,29 @@
         },
         "additionalProperties": false
       },
+      "LocateOccStandRequest": {
+        "required": [
+          "operationDate"
+        ],
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": false
+      },
       "LoginChallengeResponse": {
         "required": [
           "challengeId",
@@ -37135,6 +37350,16 @@
             "items": {
               "$ref": "#/components/schemas/OccPositionTurnaroundResponse"
             }
+          },
+          "latitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "longitude": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -37192,6 +37417,121 @@
           },
           "status": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReadyContractResponse": {
+        "required": [
+          "airlineId",
+          "airlineName",
+          "contractCode",
+          "contractId",
+          "flightsOnDate",
+          "services",
+          "validFrom",
+          "versionId",
+          "versionNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "contractId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contractCode": {
+            "type": "string"
+          },
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "airlineIataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "versionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "renewalMode": {
+            "type": "string",
+            "nullable": true
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReadyContractServiceResponse"
+            }
+          },
+          "flightsOnDate": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReadyContractServiceResponse": {
+        "required": [
+          "billingUnit",
+          "code",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "billingUnit": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReadyContractsResponse": {
+        "required": [
+          "contracts",
+          "date",
+          "stationCode",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "contracts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReadyContractResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -43080,6 +43420,9 @@
     },
     {
       "name": "OccPositions"
+    },
+    {
+      "name": "OccReadyContracts"
     },
     {
       "name": "OccReports"

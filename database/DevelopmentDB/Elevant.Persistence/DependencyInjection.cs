@@ -109,6 +109,7 @@ public static class DependencyInjection
         services.AddScoped<IContractDraftStore, EfContractDraftStore>();
         services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
         services.AddScoped<IWorkforceReadinessStore, EfWorkforceReadinessStore>();
+        services.AddScoped<Elevant.Application.Abstractions.Operations.IOccReadyContractsStore, EfOccReadyContractsStore>();
         services.AddScoped<EfContractDocumentStore>();
         services.AddScoped<IContractDocumentStore>(provider => provider.GetRequiredService<EfContractDocumentStore>());
         // The PDF renderer lives in Infrastructure; a factory keeps hosts without it (tools, tests) valid.

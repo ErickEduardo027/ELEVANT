@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   matchesTerminalFilter,
+  mapOccupancyToRampPositions,
   matchesPositionSearch,
   findPositionByQuery,
   computePositionsSummary,
@@ -127,5 +128,24 @@ describe('buildDisabledToast', () => {
       title: 'Posición B30 inhabilitada',
       description: 'Configuración 29-Bravo activa.',
     });
+  });
+});
+describe('mapOccupancyToRampPositions with OCC locations (ADR-0027)', () => {
+  const reference = [{ id: 'A1', terminal: 'A', lat: 18.5641, lon: -68.3602 }];
+  const stand = (code, extra = {}) => ({ standId: `id-${code}`, code, terminalCode: 'A', standType: 'Contact', status: 'available',
+    turnarounds: [], ...extra });
+
+  it('prefers the coordinates OCC saved and marks the source', () => {
+    const [placed] = mapOccupancyToRampPositions(reference, { positions: [stand('A01', { latitude: 18.6, longitude: -68.4 })] });
+    expect(placed).toMatchObject({ id: 'A1', latitude: 18.6, longitude: -68.4, locationSource: 'occ' });
+    const [fallback] = mapOccupancyToRampPositions(reference, { positions: [stand('A01')] });
+    expect(fallback).toMatchObject({ latitude: 18.5641, longitude: -68.3602, locationSource: 'reference' });
+  });
+
+  it('adds stands OCC placed that the reference does not know, and skips unplaced unknown ones', () => {
+    const positions = mapOccupancyToRampPositions(reference, {
+      positions: [stand('A01'), stand('C07', { latitude: 18.57, longitude: -68.37 }), stand('C08')] });
+    expect(positions.map(item => item.id)).toEqual(['A1', 'C7']);
+    expect(positions[1]).toMatchObject({ standId: 'id-C07', locationSource: 'occ' });
   });
 });

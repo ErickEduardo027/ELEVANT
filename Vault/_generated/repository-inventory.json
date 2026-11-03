@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "b01a90235594bbf38491dbcd015920c763529093a504aec1939f13f83e549eeb",
+        "sha256": "d6264092e8d6fc2a1154adfa90d93c4ca1b576ec2fdcdd48d086141e4ba9cd4f",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "d7b8cb4d4f2876ddd0d583b9fbcfda1ede7c979378916ac9cdc6edc95e7ff80e",
+        "sha256": "2d69406df22f87b10738165c7b01716025b33a3a9b8857c43d8de8ad961edc5c",
         "title": null,
         "version": null
       }
@@ -1424,6 +1424,12 @@
         "name": "AddContractValidityAndDrawnSignatures",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261103160948_AddContractValidityAndDrawnSignatures.cs",
         "sha256": "e6650cc046c1373d5fd54c65a18671e5d7aa6c0541d25c1a5170db46ff68f582"
+      },
+      {
+        "id": "20261103165159",
+        "name": "AddTurnaroundContractAndStandLocation",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261103165159_AddTurnaroundContractAndStandLocation.cs",
+        "sha256": "b9bc722ab1fd861942017f0c86c564b276392a6120032e049e05b941c689c407"
       }
     ],
     "manifestContracts": [

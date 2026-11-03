@@ -249,7 +249,15 @@ internal static class IdentityReferenceConfiguration
 
         modelBuilder.Entity<Stand>(builder =>
         {
-            builder.ToTable("stands", "ref");
+            builder.ToTable("stands", "ref", table =>
+            {
+                table.HasCheckConstraint("ck_stands_latitude", "[latitude] IS NULL OR [latitude] BETWEEN -90 AND 90");
+                table.HasCheckConstraint("ck_stands_longitude", "[longitude] IS NULL OR [longitude] BETWEEN -180 AND 180");
+                table.HasCheckConstraint("ck_stands_location_pair", "([latitude] IS NULL AND [longitude] IS NULL) OR ([latitude] IS NOT NULL AND [longitude] IS NOT NULL)");
+            });
+            builder.Property(stand => stand.Latitude).HasPrecision(9, 6);
+            builder.Property(stand => stand.Longitude).HasPrecision(9, 6);
+            builder.Property(stand => stand.LocatedAt).HasPrecision(3);
             builder.Property(stand => stand.Code).HasMaxLength(24).IsRequired();
             builder.Property(stand => stand.StandType).HasMaxLength(32);
             builder.HasIndex(stand => new { stand.StationId, stand.Code }).IsUnique();

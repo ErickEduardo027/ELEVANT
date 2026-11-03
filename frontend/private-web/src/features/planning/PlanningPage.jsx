@@ -7,6 +7,7 @@ import FlightTimeline from './components/FlightTimeline';
 import PlanningDrawer from './components/PlanningDrawer';
 import PlanningSkeleton from './components/PlanningSkeleton';
 import ManualTurnaroundDialog from './components/ManualTurnaroundDialog';
+import PlanningMap from './components/PlanningMap';
 import EmptyPlanningState from './components/EmptyPlanningState';
 import ModulePlaceholder from '../shell/components/ModulePlaceholder';
 import { CalendarIcon } from '../shell/components/icons';
@@ -214,6 +215,9 @@ export default function PlanningPage({
 
           {isLoading ? (
             <PlanningSkeleton />
+          ) : activeView === 'map' ? (
+            <PlanningMap stationId={selectedStationId} date={data?.date ?? selectedDate} flights={flights}
+              timeZone={data?.station?.ianaTimeZone} onSelectFlight={selectFlight} dataRevision={dataRevision} />
           ) : activeView !== 'timeline' ? (
             <ModulePlaceholder icon={CalendarIcon} label={t(activeView === 'table' ? 'page.tableView' : 'page.calendarView')} description={t('page.viewComingSoon')} />
           ) : displayedFlights.length === 0 ? (
