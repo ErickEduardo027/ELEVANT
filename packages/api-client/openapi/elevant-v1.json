@@ -18351,7 +18351,74 @@
             }
           }
         },
-        "deprecated": true,
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "HumanResourcesShifts"
+        ],
+        "summary": "Removes a shift of today or later (ADR-0026); past shifts are history.",
+        "operationId": "RemoveHumanResourcesShift",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
         "security": [
           {
             "Bearer": []
@@ -24520,6 +24587,129 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/human-resources/ramp-profiles/readiness": {
+      "get": {
+        "tags": [
+          "WorkforceReadiness"
+        ],
+        "summary": "«¿Puede operar?» of every active ramp agent, with what is missing.",
+        "operationId": "ListRampAgentReadiness",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RampAgentReadinessData"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/me/schedule": {
+      "get": {
+        "tags": [
+          "WorkforceReadiness"
+        ],
+        "summary": "The ramp agent's shifts (up to 31 days) and current documents.",
+        "operationId": "GetOwnRampSchedule",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampAgentScheduleData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
       }
     }
   },
@@ -38664,6 +38854,173 @@
         },
         "additionalProperties": false
       },
+      "RampAgentDocumentData": {
+        "required": [
+          "expiresOn",
+          "kind",
+          "label",
+          "validity"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "validity": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAgentReadinessData": {
+        "required": [
+          "agentName",
+          "employeeNumber",
+          "items",
+          "rampProfileId",
+          "ready"
+        ],
+        "type": "object",
+        "properties": {
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampAgentReadinessItem"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAgentReadinessItem": {
+        "required": [
+          "key",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAgentScheduleData": {
+        "required": [
+          "agentName",
+          "documents",
+          "from",
+          "rampProfileId",
+          "shifts",
+          "to"
+        ],
+        "type": "object",
+        "properties": {
+          "rampProfileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string",
+            "format": "date"
+          },
+          "to": {
+            "type": "string",
+            "format": "date"
+          },
+          "shifts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampAgentShiftData"
+            }
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampAgentDocumentData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAgentShiftData": {
+        "required": [
+          "block",
+          "endsAtLocal",
+          "id",
+          "startsAtLocal",
+          "stationCode",
+          "terminalCode",
+          "workDate"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "block": {
+            "type": "string"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "terminalCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "RampAircraftResponse": {
         "required": [
           "icaoCode",
@@ -42783,6 +43140,9 @@
     },
     {
       "name": "System"
+    },
+    {
+      "name": "WorkforceReadiness"
     }
   ]
 }

@@ -54,7 +54,8 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
             TestContext.Current.CancellationToken));
         var endpoint = json.RootElement.GetProperty("paths")
             .GetProperty("/api/v1/human-resources/shifts/{id}").GetProperty("put");
-        Assert.True(endpoint.GetProperty("deprecated").GetBoolean());
+        // ADR-0026: no longer transitional; HR and OCC both record shifts.
+        Assert.False(endpoint.TryGetProperty("deprecated", out var deprecated) && deprecated.GetBoolean());
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("200", out _));
         Assert.True(endpoint.GetProperty("responses").TryGetProperty("409", out _));
     }
@@ -336,6 +337,17 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
                 : Conflict
                     ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict)
                     : HumanResourcesShiftWriteResult.Success(shiftId));
+        }
+
+        public Guid? Removed { get; private set; }
+
+        public Task<HumanResourcesShiftWriteResult> RemoveAsync(Guid actorId, Guid shiftId,
+            CancellationToken cancellationToken = default)
+        {
+            Removed = shiftId;
+            return Task.FromResult(Conflict
+                ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict)
+                : HumanResourcesShiftWriteResult.Success(shiftId));
         }
     }
 }

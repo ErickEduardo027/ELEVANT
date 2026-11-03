@@ -76,6 +76,16 @@ El cierre de atención exige un checklist completo en el estado local. Esa regla
 > [!note] Rama `feat/finance-refinement`
 > El detalle de operación añade «Cargos aplicados»: el agente marca solo el tipo de cargo (nocturno, tiempo extra…) en servicios en curso, completados o en excepción, sin ver precios. Usa `GET/POST /api/v1/ramp/operations/{id}/…/charges` con clave idempotente estable por servicio, cargo y acción y conserva la última lista como caché sin conexión. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
 
+## Mis turnos y documentos
+
+Desde el inicio, «Mis turnos» abre una pantalla de solo lectura con los turnos de los
+próximos 14 días que programó Gestión Humana y el vencimiento del carnet, la licencia
+de rampa y las habilitaciones (vigente, vence pronto o vencido). Se lee de
+`GET ramp/me/schedule` con la sesión actual y se actualiza con las señales de
+turnos, carnets y habilitaciones. Fuente:
+[pantalla](../../frontend/mobile-agent/src/app/my-schedule.tsx) y
+[ADR-0026](../../docs/adr/0026-ramp-staff-readiness-and-hr-shifts.md).
+
 ## Estado offline actual
 
 La implementación guarda con AsyncStorage:

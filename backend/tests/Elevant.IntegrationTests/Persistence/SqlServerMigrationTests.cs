@@ -1330,8 +1330,9 @@ public sealed partial class SqlServerMigrationTests
         await using (var scope = provider.CreateAsyncScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
+            // ADR-0026: HR programs shifts too; an account without a scheduling permission does not.
             Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden,
-                (await store.RecordAsync(hrId, Guid.NewGuid(), input,
+                (await store.RecordAsync(Guid.Parse("40000000-0000-7000-8000-000000000002"), Guid.NewGuid(), input,
                     cancellationToken)).Failure);
             Assert.Equal(HumanResourcesShiftWriteFailure.Invalid,
                 (await store.RecordAsync(occId, Guid.NewGuid(), input with

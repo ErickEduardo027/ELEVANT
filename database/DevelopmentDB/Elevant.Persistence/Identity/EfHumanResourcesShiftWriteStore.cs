@@ -158,6 +158,62 @@ internal sealed class EfHumanResourcesShiftWriteStore(
         }
     }
 
+    public async Task<HumanResourcesShiftWriteResult> RemoveAsync(Guid actorId, Guid shiftId,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (!HumanResourcesShiftWritePolicy.CanRecord(actor))
+            return HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Forbidden);
+        if (shiftId == Guid.Empty)
+            return HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Invalid);
+        var row = await (from shift in context.ShiftAssignments
+                         join station in context.Stations on shift.StationId equals station.Id
+                         where shift.PublicId == shiftId
+                         select new { Shift = shift, StationPublicId = station.PublicId, StationKey = station.Id })
+            .SingleOrDefaultAsync(cancellationToken);
+        // Removing twice answers the same: the shift is gone.
+        if (row is null) return HumanResourcesShiftWriteResult.Success(shiftId);
+        if (!HumanResourcesShiftWritePolicy.CanRecord(actor, row.StationPublicId))
+            return HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Forbidden);
+        var actorDatabaseId = await context.Users.AsNoTracking()
+            .Where(user => user.PublicId == actorId).Select(user => user.Id).SingleAsync(cancellationToken);
+        var now = clock.GetUtcNow();
+        if (!await HasActiveStationGrantAsync(actorDatabaseId, row.StationPublicId, now, cancellationToken))
+            return HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Forbidden);
+        if (row.Shift.WorkDate < DateOnly.FromDateTime(now.UtcDateTime))
+            return HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict);
+        context.ShiftAssignments.Remove(row.Shift);
+        context.AuditEntries.Add(new AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+            ActorAccountId = actorDatabaseId, Source = AuditSource.Api, CorrelationId = shiftId,
+            Action = "hr.shift.removed", EntityType = "hr.shift_assignments", EntityPublicId = shiftId,
+            StationId = row.StationKey,
+        });
+        var recipients = await (from link in context.Set<IdentityUserRole<long>>()
+                                join role in context.Roles on link.RoleId equals role.Id
+                                where role.NormalizedName == "SUPERADMIN" || role.NormalizedName == "GESTION_HUMANA"
+                                select link.UserId).Distinct().ToArrayAsync(cancellationToken);
+        foreach (var recipient in recipients)
+            AccountChangeOutboxWriter.Add(context, recipient, null, "hr_shifts", shiftId, now);
+        await OccPlanningChangeWriter.AddForStationAsync(context, row.StationKey, row.StationPublicId, now, cancellationToken);
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 547 })
+        {
+            // Still referenced (e.g. attendance): it stays as history.
+            context.ChangeTracker.Clear();
+            return HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict);
+        }
+        return HumanResourcesShiftWriteResult.Success(shiftId);
+    }
+
     private Task<bool> HasActiveStationGrantAsync(long actorDatabaseId, Guid stationId,
         DateTimeOffset now, CancellationToken cancellationToken) =>
         (from grant in context.AccountStationScopes.AsNoTracking()

@@ -111,6 +111,9 @@ import {
   getDownloadContractDraftPdfUrl,
   getSignContractVersionUrl,
   getSetContractValidityUrl,
+  getRemoveHumanResourcesShiftUrl,
+  getListRampAgentReadinessUrl,
+  getGetOwnRampScheduleUrl,
   getGetOccReportUrl,
   getExportOccReportUrl,
   getValidateHumanResourcesAttendanceUrl,
@@ -222,6 +225,11 @@ import {
   type SignContractRequest,
   type SetContractValidityRequest,
   type ContractValidityResponse,
+  type RampAgentReadinessData,
+  type RampAgentReadinessItem,
+  type RampAgentScheduleData,
+  type RampAgentShiftData,
+  type RampAgentDocumentData,
   type OccReportPageResponse,
   type HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse,
   type HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse,
@@ -625,6 +633,12 @@ export interface ElevantApiClient {
     request: RecordHumanResourcesShiftInput,
     options?: RecordHumanResourcesShiftOptions,
   ): Promise<HumanResourcesShiftRecorded>;
+  /** Removes a shift of today or later (ADR-0026); removing twice answers the same. */
+  removeHumanResourcesShift(id: string, options?: GetHumanResourcesReportOptions): Promise<void>;
+  /** «¿Puede operar?» of every active ramp agent, for Gestión Humana (ADR-0026). */
+  listRampAgentReadiness(options?: GetHumanResourcesReportOptions): Promise<RampAgentReadinessData[]>;
+  /** The signed-in ramp agent's shifts (up to 31 days) and current documents. */
+  getOwnRampSchedule(from: string, to: string, options?: GetHumanResourcesReportOptions): Promise<RampAgentScheduleData>;
   getFinanceReconciliation(
     query: ListFinanceReconciliationParams,
     options?: GetFinanceReconciliationOptions,
@@ -2357,6 +2371,32 @@ function isContractDocument(value: unknown, versionId: string): value is Contrac
 }
 
 const RENEWAL_MODES = new Set<string>(["Manual", "Automatic"]);
+const READINESS_STATUSES = new Set<string>(["Ok", "Expiring", "Missing", "Info"]);
+const DOCUMENT_VALIDITIES = new Set<string>(["Current", "Expiring", "Expired"]);
+
+function isRampAgentReadiness(value: unknown): value is RampAgentReadinessData {
+  return isRecord(value) && hasOnlyKeys(value, ["rampProfileId", "agentName", "employeeNumber", "ready", "items"]) &&
+    isUuid(value.rampProfileId) && typeof value.agentName === "string" && typeof value.employeeNumber === "string" &&
+    typeof value.ready === "boolean" && Array.isArray(value.items) && value.items.every(item => isRecord(item) &&
+      hasOnlyKeys(item, ["key", "status", "detail", "expiresOn"]) && isNonEmptyString(item.key) &&
+      typeof item.status === "string" && READINESS_STATUSES.has(item.status) &&
+      isOptionalNullable(item.detail, (text: unknown) => typeof text === "string") &&
+      isOptionalNullable(item.expiresOn, isDateOnly));
+}
+
+function isRampAgentSchedule(value: unknown): value is RampAgentScheduleData {
+  return isRecord(value) && hasOnlyKeys(value, ["rampProfileId", "agentName", "from", "to", "shifts", "documents"]) &&
+    isUuid(value.rampProfileId) && typeof value.agentName === "string" && isDateOnly(value.from) && isDateOnly(value.to) &&
+    Array.isArray(value.shifts) && value.shifts.every(shift => isRecord(shift) &&
+      hasOnlyKeys(shift, ["id", "workDate", "startsAtLocal", "endsAtLocal", "block", "stationCode", "terminalCode"]) &&
+      isUuid(shift.id) && isDateOnly(shift.workDate) && typeof shift.startsAtLocal === "string" &&
+      typeof shift.endsAtLocal === "string" && typeof shift.block === "string" && typeof shift.stationCode === "string" &&
+      typeof shift.terminalCode === "string") &&
+    Array.isArray(value.documents) && value.documents.every(document => isRecord(document) &&
+      hasOnlyKeys(document, ["kind", "label", "number", "expiresOn", "validity"]) && isNonEmptyString(document.kind) &&
+      typeof document.label === "string" && isOptionalNullable(document.number, (text: unknown) => typeof text === "string") &&
+      isDateOnly(document.expiresOn) && typeof document.validity === "string" && DOCUMENT_VALIDITIES.has(document.validity));
+}
 
 function isContractValidity(value: unknown): boolean {
   return isRecord(value) && hasOnlyKeys(value, ["renewalMode", "renewalTermMonths", "renewalNoticeDays",
@@ -5313,6 +5353,22 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           result.data.id.toLowerCase() !== shiftId)
         throw malformedResponse(result.status);
       return result.data as unknown as HumanResourcesShiftRecorded;
+    },
+    async removeHumanResourcesShift(id: string, options?: GetHumanResourcesReportOptions) {
+      const shiftId = validatedUuid(id, "Shift ID");
+      const result = await execute(getRemoveHumanResourcesShiftUrl(shiftId), { ...options, method: "DELETE" }, true);
+      if (result.status !== 204) throw malformedResponse(result.status);
+    },
+    async listRampAgentReadiness(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getListRampAgentReadinessUrl(), { ...options, method: "GET" }, true);
+      if (!Array.isArray(result.data) || !result.data.every(isRampAgentReadiness)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOwnRampSchedule(from: string, to: string, options?: GetHumanResourcesReportOptions) {
+      if (!isDateOnly(from) || !isDateOnly(to) || to < from) throw new TypeError("Schedule range is invalid.");
+      const result = await execute(getGetOwnRampScheduleUrl({ from, to }), { ...options, method: "GET" }, true);
+      if (!isRampAgentSchedule(result.data)) throw malformedResponse(result.status);
+      return result.data;
     },
     async getFinanceReconciliation(
       query: ListFinanceReconciliationParams,

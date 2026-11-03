@@ -26,4 +26,11 @@ public interface IHumanResourcesShiftWriteStore
 {
     Task<HumanResourcesShiftWriteResult> RecordAsync(Guid actorId, Guid shiftId,
         RecordHumanResourcesShiftInput input, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Removes a shift that has not started its day yet (today or later), with the same
+    /// permission and station scope as recording it. Past shifts are history and stay.
+    /// </summary>
+    Task<HumanResourcesShiftWriteResult> RemoveAsync(Guid actorId, Guid shiftId,
+        CancellationToken cancellationToken = default);
 }

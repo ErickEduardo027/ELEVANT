@@ -3,6 +3,7 @@
 import { HUMAN_RESOURCES_DASHBOARD_READ_ONLY_DEMO } from '../../config/hrDemoMode';
 import HumanResourcesDashboardPage from './dashboard/DashboardPage';
 import RampProfilesPanel from './users/RampProfilesPanel';
+import RampReadinessPanel from './users/RampReadinessPanel';
 import CurrentQualificationsPage from './certifications/CurrentQualificationsPage';
 import CurrentPermitsPage from './permits/CurrentPermitsPage';
 import CurrentShiftsPage from './schedules/CurrentShiftsPage';
@@ -37,7 +38,7 @@ export default function HRModulePage({ moduleId }) {
   if (moduleId === 'employees') return <EmployeesPage />;
   if (moduleId === 'positions') return <PositionsPage />;
   if (moduleId === 'requisitions') return <RequisitionsPage />;
-  if (moduleId === 'users') return <RampProfilesPanel />;
+  if (moduleId === 'users') return <div className="space-y-5"><RampReadinessPanel /><RampProfilesPanel /></div>;
   if (moduleId === 'certifications') return <CurrentQualificationsPage />;
   if (moduleId === 'permits') return <CurrentPermitsPage />;
   if (moduleId === 'schedules') return <CurrentShiftsPage />;

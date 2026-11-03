@@ -400,6 +400,22 @@ y [servicio de sesión](../../frontend/private-web/src/services/humanResourcesVe
 
 En esta rama, **Contratos**, **Servicios pactados** y **Reportes contractuales** comparten `GET /api/v1/contracts/agreements`, que lee versiones aprobadas y reemplazadas, estaciones y tarifas desde SQL con permiso comercial interno. La tabla diferencia los precios históricos y muestra cuatro decimales; los indicadores del reporte se limitan expresamente a la página consultada. Ya no se montan sus adaptadores `/api/contracts/*` ni botones de alta, edición y exportación auditada ficticia. La consulta no sustituye el flujo de borradores ni crea contratos; falta validación de navegador y promoción remota.
 
+## Personal listo: turnos de Gestión Humana y «¿Puede operar?»
+
+Gestión Humana programa la semana de cada agente de rampa desde «Horarios y
+disponibilidad» con el permiso «Programar turnos»: una fila por agente, una celda
+por día, las plantillas horarias de OCC y «Copiar semana anterior», que solo llena
+días libres y futuros. Los turnos de hoy en adelante se pueden quitar; los pasados
+quedan como historial. OCC conserva la creación del turno que necesite un vuelo.
+
+«Agentes de rampa» muestra «¿Puede operar?»: por agente, cuenta de la tablet, rol,
+membresía, estación compartida con la cuenta, terminal, carnet, licencia de rampa y
+habilitaciones, con lo que falta; los vencimientos en 30 días avisan sin bloquear.
+Son las mismas reglas que OCC aplica al asignar. El menú ya no muestra contadores
+fijos de ejemplo. Fuentes: [editor](../../frontend/private-web/src/features/human-resources/schedules/WeeklyShiftEditor.jsx),
+[panel](../../frontend/private-web/src/features/human-resources/users/RampReadinessPanel.jsx) y
+[ADR-0026](../../docs/adr/0026-ramp-staff-readiness-and-hr-shifts.md).
+
 ## Chat con presencia y cierre de sesión confirmado
 
 El PR #156 se fusionó y luego se revirtió su rediseño visual de Admin/OCC: el

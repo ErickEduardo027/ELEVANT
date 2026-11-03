@@ -204,6 +204,7 @@ export default function HomeScreen() {
       <View style={styles.quickActions}>
         <Pressable accessibilityLabel="Abrir chat con OCC" accessibilityRole="button" onPress={() => router.push('/chat')} style={styles.quickAction}><Ionicons name="chatbubbles-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Chat con OCC</Text></Pressable>
         <Pressable accessibilityLabel="Abrir notificaciones" accessibilityRole="button" onPress={() => router.push('/notifications')} style={styles.quickAction}><Ionicons name="notifications-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Notificaciones</Text></Pressable>
+        <Pressable accessibilityLabel="Abrir mis turnos y documentos" accessibilityRole="button" onPress={() => router.push('/my-schedule')} style={styles.quickAction}><Ionicons name="calendar-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Mis turnos</Text></Pressable>
       </View>
 
       <View style={styles.sectionHeader}>
