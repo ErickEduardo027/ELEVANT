@@ -42,8 +42,11 @@ existen. Así, las versiones firmadas antes de este ADR conservan exactamente su
 
 ### Código definitivo
 
-Al confirmar la vigencia, un contrato con código `DRAFT-…` recibe `CTR-{año}-{n:0000}` de la
-secuencia `commercial.contract_code_seq`. Se asigna **antes** de firmar, porque el código forma
+Al confirmar la vigencia, un contrato con código `DRAFT-…` recibe `CTR-{año}-{n:0000}`: el
+siguiente número del año a partir de los códigos ya emitidos. El índice único de `ContractCode`
+convierte un duplicado concurrente en un 409 que se reintenta; no se usa una `SEQUENCE` porque
+los esquemas CRUD no admiten objetos mutables sin una decisión de permisos aparte
+(`verify-development-team-access.sql`). Se asigna **antes** de firmar, porque el código forma
 parte del contenido firmado: cambiarlo después invalidaría la huella de las firmas.
 
 ### Firma dibujada y orden
@@ -85,6 +88,6 @@ paquetes con fecha retroactiva (ADR-0018) y la valoración de prefacturas depend
 
 - Una versión aprobada antes de este ADR y todavía sin firmas necesita que Contratos confirme su
   vigencia antes de poder firmarse.
-- La migración `AddContractValidityAndDrawnSignatures` solo añade columnas, restricciones y la
-  secuencia; no hay datos de negocio en ella.
+- La migración `AddContractValidityAndDrawnSignatures` solo añade columnas y restricciones;
+  no hay datos de negocio en ella.
 - `ContractVersionStatus.Rejected` sigue reservado: ningún flujo lo asigna.

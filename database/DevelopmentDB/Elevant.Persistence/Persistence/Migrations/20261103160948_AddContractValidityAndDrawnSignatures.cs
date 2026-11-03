@@ -11,10 +11,6 @@ namespace Elevant.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.CreateSequence(
-                name: "contract_code_seq",
-                schema: "commercial");
-
             migrationBuilder.AddColumn<string>(
                 name: "attachment_reference",
                 schema: "infra",
@@ -217,10 +213,6 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 name: "signature_image_sha256",
                 schema: "commercial",
                 table: "contract_signatures");
-
-            migrationBuilder.DropSequence(
-                name: "contract_code_seq",
-                schema: "commercial");
         }
     }
 }

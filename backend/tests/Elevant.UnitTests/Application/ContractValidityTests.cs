@@ -75,6 +75,8 @@ public sealed class ContractValidityTests
     {
         Assert.Equal("CTR-2026-0007", ContractValidity.FinalCode(2026, 7));
         Assert.Equal("CTR-2027-12345", ContractValidity.FinalCode(2027, 12345));
+        Assert.Equal(1, ContractValidity.NextSequence([], 2026));
+        Assert.Equal(8, ContractValidity.NextSequence(["CTR-2026-0007", "CTR-2025-0099", "DEV-CONTRACT-0001", "CTR-2026-x"], 2026));
         Assert.True(ContractValidity.IsDraftCode("DRAFT-3f2a"));
         Assert.False(ContractValidity.IsDraftCode("CTR-2026-0007"));
     }

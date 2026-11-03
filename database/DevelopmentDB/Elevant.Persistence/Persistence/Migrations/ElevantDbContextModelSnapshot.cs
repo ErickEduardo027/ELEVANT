@@ -22,8 +22,6 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.HasSequence("contract_code_seq", "commercial");
-
             modelBuilder.Entity("Elevant.Domain.Entities.Audit.AuditChange", b =>
                 {
                     b.Property<long>("Id")

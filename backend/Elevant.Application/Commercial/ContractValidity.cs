@@ -69,5 +69,15 @@ public static class ContractValidity
     public static string FinalCode(int year, long sequence) =>
         string.Create(CultureInfo.InvariantCulture, $"CTR-{year}-{sequence:0000}");
 
+    /// <summary>Next number of the year after the final codes already issued (ignores other formats).</summary>
+    public static long NextSequence(IEnumerable<string> issuedCodes, int year)
+    {
+        var prefix = string.Create(CultureInfo.InvariantCulture, $"CTR-{year}-");
+        return issuedCodes.Where(code => code.StartsWith(prefix, StringComparison.Ordinal))
+            .Select(code => long.TryParse(code[prefix.Length..], NumberStyles.None, CultureInfo.InvariantCulture, out var number)
+                ? number : 0)
+            .DefaultIfEmpty(0).Max() + 1;
+    }
+
     public static bool IsDraftCode(string code) => code.StartsWith("DRAFT-", StringComparison.Ordinal);
 }

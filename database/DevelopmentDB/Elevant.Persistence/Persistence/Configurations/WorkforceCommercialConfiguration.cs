@@ -376,9 +376,6 @@ internal static class WorkforceCommercialConfiguration
             AddNoActionReference<ServiceRequest, Contract>(builder, contract => contract.OriginatingServiceRequestId);
         });
 
-        // Final contract codes CTR-{year}-{n} (ADR-0025); a sequence, never reused.
-        modelBuilder.HasSequence<long>("contract_code_seq", "commercial").StartsAt(1).IncrementsBy(1);
-
         modelBuilder.Entity<ContractVersion>(builder =>
         {
             builder.ToTable("contract_versions", "commercial", table =>

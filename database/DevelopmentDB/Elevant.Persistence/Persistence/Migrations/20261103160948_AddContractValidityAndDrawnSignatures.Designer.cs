@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Elevant.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ElevantDbContext))]
-    [Migration("20261103140129_AddContractValidityAndDrawnSignatures")]
+    [Migration("20261103160948_AddContractValidityAndDrawnSignatures")]
     partial class AddContractValidityAndDrawnSignatures
     {
         /// <inheritdoc />
@@ -24,8 +24,6 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
-
-            modelBuilder.HasSequence("contract_code_seq", "commercial");
 
             modelBuilder.Entity("Elevant.Domain.Entities.Audit.AuditChange", b =>
                 {

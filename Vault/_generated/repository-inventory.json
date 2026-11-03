@@ -1420,10 +1420,10 @@
         "sha256": "40ff26b6e8c0c2d43a9e34f32b70e0b564b317f3b71f91b6238c933cc063de83"
       },
       {
-        "id": "20261103140129",
+        "id": "20261103160948",
         "name": "AddContractValidityAndDrawnSignatures",
-        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261103140129_AddContractValidityAndDrawnSignatures.cs",
-        "sha256": "dfef56b9d756ce7e7f7efb04603b3207165181e4aa4e412452fb8046b0281fbc"
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261103160948_AddContractValidityAndDrawnSignatures.cs",
+        "sha256": "e6650cc046c1373d5fd54c65a18671e5d7aa6c0541d25c1a5170db46ff68f582"
       }
     ],
     "manifestContracts": [

@@ -219,11 +219,13 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         // The final code is printed on what both parties sign, so it is assigned now and never changes.
         if (ContractValidity.IsDraftCode(contract.ContractCode))
         {
-            // NEXT VALUE FOR cannot sit in a subquery, so the raw query is read without composing it.
-            var sequence = (await context.Database
-                .SqlQuery<long>($"SELECT NEXT VALUE FOR [commercial].[contract_code_seq] AS [Value]")
-                .ToArrayAsync(cancellationToken))[0];
-            contract.ContractCode = ContractValidity.FinalCode(now.Year, sequence);
+            // Next number of the year from the codes already issued; the unique index on the code
+            // turns a concurrent duplicate into a conflict the caller retries (CRUD schemas hold no
+            // sequences: verify-development-team-access.sql).
+            var prefix = ContractValidity.FinalCode(now.Year, 0)[..^4];
+            var issued = await context.Contracts.AsNoTracking().Where(item => item.ContractCode.StartsWith(prefix))
+                .Select(item => item.ContractCode).ToArrayAsync(cancellationToken);
+            contract.ContractCode = ContractValidity.FinalCode(now.Year, ContractValidity.NextSequence(issued, now.Year));
         }
         contract.ExpiryNoticeSentAt = null;
         contract.UpdatedAt = now;
@@ -237,6 +239,12 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         }
         catch (DbUpdateConcurrencyException)
         {
+            context.ChangeTracker.Clear();
+            return Failed(ContractDocumentFailure.Conflict, "content_changed");
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // Another contract took the same final code at the same time: read again and retry.
             context.ChangeTracker.Clear();
             return Failed(ContractDocumentFailure.Conflict, "content_changed");
         }
