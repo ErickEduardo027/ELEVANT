@@ -20,11 +20,13 @@ internal sealed class EfEmailOutboxStore(ElevantDbContext context, Application.A
     public const int MaximumAttempts = 5;
     public static readonly TimeSpan Lease = TimeSpan.FromMinutes(2);
 
-    internal static void Add(ElevantDbContext context, EmailMessage message, EmailPurpose purpose, DateTimeOffset now) =>
+    internal static void Add(ElevantDbContext context, EmailMessage message, EmailPurpose purpose, DateTimeOffset now,
+        string? attachmentReference = null) =>
         context.Set<EmailOutboxMessage>().Add(new EmailOutboxMessage
         {
             PublicId = Guid.CreateVersion7(), Recipient = message.To, Subject = message.Subject,
             HtmlBody = message.HtmlBody, TextBody = message.TextBody, Purpose = purpose,
+            AttachmentReference = attachmentReference,
             Status = EmailDeliveryStatus.Pending, NextAttemptAt = now, CreatedAt = now, UpdatedAt = now,
         });
 
@@ -49,7 +51,7 @@ internal sealed class EfEmailOutboxStore(ElevantDbContext context, Application.A
             var message = await context.Set<EmailOutboxMessage>().AsNoTracking()
                 .Where(item => item.Id == candidate.Id)
                 .Select(item => new OutboxEmail(item.Id, item.Recipient, item.Subject, item.HtmlBody ?? string.Empty,
-                    item.TextBody ?? string.Empty)).SingleAsync(cancellationToken);
+                    item.TextBody ?? string.Empty, item.AttachmentReference)).SingleAsync(cancellationToken);
             claimed.Add(message);
         }
         return claimed;

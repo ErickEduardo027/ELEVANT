@@ -56,6 +56,8 @@ public enum EmailPurpose
     LoginCode,
     PasswordReset,
     Test,
+    /// <summary>Signed contract PDF sent when a contract becomes active (ADR-0025).</summary>
+    ContractActivated,
 }
 
 /// <summary>Delivery state of an email in the outbox.</summary>

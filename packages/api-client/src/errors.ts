@@ -1,7 +1,13 @@
 export type ElevantApiErrorKind = "http" | "malformed-response";
 /** Machine-readable Problem Details codes the clients act on. */
-export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated";
-export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy", "invalid_link", "refresh_rotated"];
+/** Contract validity and drawn-signature codes (ADR-0025) the contract screens explain. */
+const CONTRACT_CODES = ["validity_pending", "airline_signature_pending", "signature_image_invalid", "renewal_mode_invalid",
+  "valid_to_required", "dates_invalid", "valid_from_past", "renewal_term_required", "renewal_term_invalid",
+  "renewal_notice_invalid", "termination_notice_invalid", "termination_terms_too_long", "packages_out_of_range"] as const;
+export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
+  (typeof CONTRACT_CODES)[number];
+export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
+  "invalid_link", "refresh_rotated", ...CONTRACT_CODES];
 
 interface ElevantApiErrorOptions {
   readonly kind: ElevantApiErrorKind;

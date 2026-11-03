@@ -71,7 +71,8 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
     }
 
     [HttpPost("signatures", Name = "SignContractVersion")]
-    [RequestSizeLimit(2048)]
+    // Room for the drawn PNG (256 KB, base64) plus the rest of the body.
+    [RequestSizeLimit(400_000)]
     [Consumes("application/json")]
     [ProducesResponseType<ContractDocumentResponse>(200, "application/json")]
     [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
@@ -85,8 +86,34 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
     {
         if (!TryAccount(out var actorId)) return Unauthorized<ContractDocumentResponse>();
         var result = await store.SignAsync(actorId, versionId, new SignContractInput(idempotencyKey,
-            request.SignerName, request.SignerTitle, request.DocumentSha256, request.Accepted), cancellationToken);
-        return result.Failure is { } failure ? Failure<ContractDocumentResponse>(failure) : Ok(Map(result.Document!));
+            request.SignerName, request.SignerTitle, request.DocumentSha256, request.Accepted, request.SignatureImagePng),
+            cancellationToken);
+        return result.Failure is { } failure
+            ? Failure<ContractDocumentResponse>(failure, result.Code) : Ok(Map(result.Document!));
+    }
+
+    /// <summary>
+    /// Contratos confirms validity, renewal and termination of an approved version before anyone
+    /// signs it, and the contract gets its final code (ADR-0025).
+    /// </summary>
+    [HttpPut("validity", Name = "SetContractValidity")]
+    [RequestSizeLimit(16_384)]
+    [Consumes("application/json")]
+    [ProducesResponseType<ContractDocumentResponse>(200, "application/json")]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
+    public async Task<ActionResult<ContractDocumentResponse>> SetValidity([FromRoute] Guid versionId,
+        [FromBody, BindRequired] SetContractValidityRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var actorId)) return Unauthorized<ContractDocumentResponse>();
+        var result = await store.SetValidityAsync(actorId, versionId, new ContractValidityInput(request.ValidFrom,
+            request.ValidTo, request.RenewalMode, request.RenewalTermMonths, request.RenewalNoticeDays,
+            request.TerminationNoticeDays, request.TerminationTerms, request.ExpectedDocumentSha256), cancellationToken);
+        return result.Failure is { } failure
+            ? Failure<ContractDocumentResponse>(failure, result.Code) : Ok(Map(result.Document!));
     }
 
     private static ContractDocumentResponse Map(ContractDocumentData item) => new(item.ContractId, item.VersionId,
@@ -96,8 +123,12 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
             rate.UnitPrice, rate.MinimumQuantity)).ToArray(),
         item.Terms, item.SignedOn,
         item.Signatures.Select(signature => new ContractDocumentSignatureResponse(signature.Party, signature.SignerName,
-            signature.SignerTitle, signature.SignedAt, signature.DocumentSha256)).ToArray(),
-        item.ContentSha256, item.SignableBy);
+            signature.SignerTitle, signature.SignedAt, signature.DocumentSha256, signature.Image is { Length: > 0 })).ToArray(),
+        item.ContentSha256, item.SignableBy,
+        item.Validity is { } validity
+            ? new ContractValidityResponse(validity.RenewalMode, validity.RenewalTermMonths, validity.RenewalNoticeDays,
+                validity.TerminationNoticeDays, validity.TerminationTerms, validity.ConfirmedAt)
+            : null);
 
     private bool TryAccount(out Guid actorId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out actorId) && actorId != Guid.Empty;
@@ -108,11 +139,17 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
         return Problem<T>(401, "Authentication failed.");
     }
 
-    private ActionResult<T> Failure<T>(ContractDocumentFailure failure) => failure switch
+    private ActionResult<T> Failure<T>(ContractDocumentFailure failure, string? code = null) => failure switch
     {
         ContractDocumentFailure.Forbidden => Problem<T>(403, "Contract document access is forbidden."),
         ContractDocumentFailure.NotFound => Problem<T>(404, "The contract version has no document."),
-        ContractDocumentFailure.Invalid => Problem<T>(400, "The signature request is invalid."),
+        ContractDocumentFailure.Invalid => Problem<T>(400, "The request is invalid.", code),
+        ContractDocumentFailure.AirlineSignaturePending =>
+            Problem<T>(409, "AVIAM countersigns after the airline signs.", "airline_signature_pending"),
+        ContractDocumentFailure.ValidityPending =>
+            Problem<T>(409, "Contratos has not confirmed validity and renewal yet.", "validity_pending"),
+        ContractDocumentFailure.Conflict when code is not null =>
+            Problem<T>(409, "The contract changed; read it again.", code),
         ContractDocumentFailure.AlreadySigned => Problem<T>(409, "This party already signed the version.", "already_signed"),
         _ => Problem<T>(409, "The contract changed; read it again before signing.", "content_changed"),
     };

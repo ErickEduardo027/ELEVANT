@@ -58,6 +58,19 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
             (document.ValidTo is { } end ? $"hasta el {Date(end)}." : "sin fecha de vencimiento.") +
             $" Las operaciones se facturan en {document.CurrencyCode}.");
         writer.Paragraph("Estaciones cubiertas: " + (document.Stations.Count == 0 ? "ninguna" : string.Join("; ", document.Stations)) + ".");
+        // ADR-0025: renewal and termination terms Contratos confirmed after Finance approval.
+        if (document.Validity is { } validity)
+        {
+            writer.Paragraph(validity.RenewalMode == "Automatic"
+                ? $"Renovación automática: {validity.RenewalNoticeDays} días antes del vencimiento se inicia una nueva versión por " +
+                  $"{validity.RenewalTermMonths} meses, que requiere la aprobación de Finanzas y la firma de ambas partes."
+                : "Renovación manual: las partes acuerdan una nueva versión antes del vencimiento" +
+                  (validity.RenewalTermMonths is { } months ? $", por períodos de {months} meses." : ".") +
+                  (validity.RenewalNoticeDays > 0 ? $" AVIAM avisa con {validity.RenewalNoticeDays} días de antelación." : string.Empty));
+            writer.Paragraph($"Terminación anticipada: cualquiera de las partes puede terminar el contrato con un preaviso de " +
+                $"{validity.TerminationNoticeDays} días." +
+                (string.IsNullOrWhiteSpace(validity.TerminationTerms) ? string.Empty : " " + validity.TerminationTerms.Trim()));
+        }
 
         writer.Heading("3", "Servicios y tarifas pactadas");
         writer.Table(
@@ -290,7 +303,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
 
         public void Signatures(ContractDocumentData document)
         {
-            Ensure(126);
+            Ensure(162);
             var column = (Width - 20) / 2;
             var top = y;
             var parties = new[] { ("Aviam", "POR AVIAM (EL PRESTADOR)"), ("Airline", $"POR {document.AirlineName.ToUpper(Spanish)} (LA AEROLÍNEA)") };
@@ -299,7 +312,7 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                 var (party, caption) = parties[index];
                 var x = Margin + index * (column + 20);
                 var signature = document.Signatures.FirstOrDefault(item => item.Party == party);
-                graphics.DrawRectangle(new XPen(Rule, 0.8), x, top, column, 108);
+                graphics.DrawRectangle(new XPen(Rule, 0.8), x, top, column, 144);
                 graphics.DrawString(Fit(caption, label, column - 90), label, new XSolidBrush(Muted),
                     new XRect(x + 10, top + 10, column - 90, 10), XStringFormats.TopLeft);
                 var signed = signature is not null;
@@ -307,6 +320,16 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                 var chipWidth = graphics.MeasureString(chip, label).Width + 14;
                 graphics.DrawRoundedRectangle(new XSolidBrush(signed ? Success : Muted), x + column - chipWidth - 10, top + 7, chipWidth, 14, 6, 6);
                 graphics.DrawString(chip, label, XBrushes.White, new XRect(x + column - chipWidth - 10, top + 10, chipWidth, 10), XStringFormats.TopCenter);
+                // ADR-0025: the drawn signature sits above the signer's name.
+                var offset = 0.0;
+                if (signature?.Image is { Length: > 0 } png)
+                {
+                    using var image = XImage.FromStream(new MemoryStream(png));
+                    var height = 34.0;
+                    var width = Math.Min(column - 20, height * image.PixelWidth / Math.Max(1.0, image.PixelHeight));
+                    graphics.DrawImage(image, x + 10, top + 34, width, height);
+                    offset = height + 2;
+                }
                 var lines = signature is null
                     ? new[] { ("Pendiente de firma.", Muted, body) }
                     : new[]
@@ -321,9 +344,9 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                 graphics.DrawLine(new XPen(Rule, 0.6), x + 10, top + 30, x + column - 10, top + 30);
                 for (var line = 0; line < lines.Length; line++)
                     graphics.DrawString(Fit(lines[line].Item1, lines[line].Item3, column - 20), lines[line].Item3,
-                        new XSolidBrush(lines[line].Item2), new XRect(x + 10, top + 40 + line * Line, column - 20, Line), XStringFormats.TopLeft);
+                        new XSolidBrush(lines[line].Item2), new XRect(x + 10, top + 40 + offset + line * Line, column - 20, Line), XStringFormats.TopLeft);
             }
-            y = top + 120;
+            y = top + 156;
             if (document.SignedOn is { } signedOn)
                 Paragraph($"Contrato firmado por ambas partes el {Date(signedOn)}.", Navy);
         }

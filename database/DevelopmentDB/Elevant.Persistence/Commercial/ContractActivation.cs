@@ -1,4 +1,5 @@
 using Elevant.Application.Commercial;
+using Elevant.Application.Identity.AccountEmails;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -55,6 +56,9 @@ internal static class ContractActivation
                     : "Aprobado por Finanzas, firmado por ambas partes y con permiso de operación vigente.",
             });
             await AnnounceAsync(context, contract, "contract_activated", now, cancellationToken);
+            // A resumed contract keeps the PDF it already sent; a newly active one sends the signed copy.
+            if (from != ContractStatus.Suspended)
+                await QueueSignedContractEmailsAsync(context, contract.Id, version.Id, now, cancellationToken);
             activated++;
         }
         if (activated > 0) await context.SaveChangesAsync(cancellationToken);
@@ -81,6 +85,36 @@ internal static class ContractActivation
             .Select(item => item.AccountId).Distinct().ToArrayAsync(cancellationToken);
         foreach (var account in accounts)
             AccountChangeOutboxWriter.Add(context, account, null, "airline_contracts", contract.PublicId, now);
+    }
+
+    /// <summary>
+    /// Queues the activation email with the signed PDF (ADR-0025) for the airline's active portal
+    /// accounts and the AVIAM signer. The PDF is rendered when the email is sent, never stored.
+    /// </summary>
+    public static async Task QueueSignedContractEmailsAsync(ElevantDbContext context, long contractId, long versionId,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var head = await (from version in context.ContractVersions.AsNoTracking()
+                          join contract in context.Contracts.AsNoTracking() on version.ContractId equals contract.Id
+                          join airline in context.Airlines.AsNoTracking() on contract.AirlineId equals airline.Id
+                          where version.Id == versionId && contract.Id == contractId
+                          select new { version.PublicId, version.ValidFrom, version.ValidTo, contract.ContractCode,
+                              airline.Name, airline.OrganizationId })
+            .SingleAsync(cancellationToken);
+        var airlineAccounts = context.OrganizationMemberships.AsNoTracking()
+            .Where(item => item.OrganizationId == head.OrganizationId && item.Kind == MembershipKind.AirlineClient &&
+                item.Status == MembershipStatus.Active)
+            .Select(item => item.AccountId);
+        var signers = context.ContractSignatures.AsNoTracking().Where(item => item.ContractVersionId == versionId)
+            .Select(item => item.SignerAccountId);
+        var emails = await context.Users.AsNoTracking()
+            .Where(user => (airlineAccounts.Contains(user.Id) || signers.Contains(user.Id)) &&
+                user.Status == AccountLifecycleStatus.Active && user.Email != null)
+            .Select(user => user.Email!).ToArrayAsync(cancellationToken);
+        foreach (var email in emails.Distinct(StringComparer.OrdinalIgnoreCase))
+            EfEmailOutboxStore.Add(context,
+                AccountEmailTemplates.ContractActivated(email, head.Name, head.ContractCode, head.ValidFrom, head.ValidTo),
+                EmailPurpose.ContractActivated, now, EfContractDocumentStore.AttachmentPrefix + head.PublicId);
     }
 
     private static async Task<bool> SuspendedForPermitAsync(ElevantDbContext context, long contractId,

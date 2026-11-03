@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Drawer from '../../../components/Drawer';
 import { getContractDocument, signContractVersion } from '../../../services/commercialGovernanceApi';
+import SignaturePad from '../../../components/SignaturePad';
 import ContractLifecyclePanel from './ContractLifecyclePanel';
 import ContractPdfButtons from './ContractPdfButtons';
+import ContractValidityForm from './ContractValidityForm';
 
 const PARTY = { Aviam: 'AVIAM', Airline: 'Aerolínea' };
 
@@ -11,7 +13,21 @@ function date(value) {
     : 'Sin vencimiento';
 }
 
+/** Validity and renewal terms in plain words (ADR-0025). */
+export function validityLines(document) {
+  const validity = document.validity;
+  if (!validity) return [];
+  return [
+    validity.renewalMode === 'Automatic'
+      ? `Renovación automática por ${validity.renewalTermMonths} meses: la nueva versión se inicia ${validity.renewalNoticeDays} días antes del fin.`
+      : `Renovación manual${validity.renewalTermMonths ? ` por períodos de ${validity.renewalTermMonths} meses` : ''}; aviso ${validity.renewalNoticeDays} días antes.`,
+    `Terminación con ${validity.terminationNoticeDays} días de preaviso.${validity.terminationTerms ? ` ${validity.terminationTerms}` : ''}`,
+  ];
+}
+
 function problem(error) {
+  if (error?.code === 'airline_signature_pending') return 'AVIAM contrafirma después de que firme la aerolínea.';
+  if (error?.code === 'validity_pending') return 'Primero confirma la vigencia y la renovación.';
   if (error?.status === 403) return 'Tu acceso no permite consultar o firmar este contrato.';
   if (error?.status === 404) return 'Esta versión ya no tiene documento disponible.';
   if (error?.status === 409) return 'El contrato cambió o ya fue firmado; se volvió a cargar. Revísalo antes de firmar.';
@@ -22,9 +38,10 @@ function problem(error) {
  * Detail of an approved contract version: parties, validity, stations, rates and terms, the
  * printable PDF and the signature of each party over the content hash.
  */
-export default function ContractDetailDrawer({ versionId, canSign = false, canManageLifecycle = false, onClose, onSigned }) {
+export default function ContractDetailDrawer({ versionId, canSign = false, canManageLifecycle = false, canSetValidity = false,
+  onClose, onSigned }) {
   const [state, setState] = useState({ status: 'loading' });
-  const [form, setForm] = useState({ signerName: '', signerTitle: '', accepted: false });
+  const [form, setForm] = useState({ signerName: '', signerTitle: '', accepted: false, signatureImagePng: null });
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const requestId = useRef(null);
@@ -43,8 +60,8 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
 
   async function sign(event) {
     event.preventDefault();
-    if (form.signerName.trim().length < 3 || form.signerTitle.trim().length < 2 || !form.accepted) {
-      setError('Escribe tu nombre completo y cargo, y confirma que aceptas el contrato.');
+    if (form.signerName.trim().length < 3 || form.signerTitle.trim().length < 2 || !form.accepted || !form.signatureImagePng) {
+      setError('Escribe tu nombre completo y cargo, dibuja tu firma y confirma que aceptas el contrato.');
       return;
     }
     setBusy('sign');
@@ -81,7 +98,15 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
             <p>AVIAM (prestador) y {document.airlineLegalName ?? document.airlineName} ({document.airlineCode}).</p>
             <p>Del {date(document.validFrom)} al {date(document.validTo)} · {document.currencyCode} · versión {document.versionStatus === 'Approved' ? 'aprobada' : 'reemplazada'}</p>
             <p className="text-xs text-text-secondary-light">Estaciones: {document.stations.join('; ') || 'ninguna'}</p>
+            {validityLines(document).map(line => <p key={line} className="text-xs">{line}</p>)}
+            {!document.validity && document.versionStatus === 'Approved' && document.signatures.length === 0 && (
+              <p className="text-xs font-semibold text-status-warning">Pendiente: Contratos debe fijar la vigencia y la renovación antes de las firmas.</p>
+            )}
           </section>
+          {canSetValidity && document.versionStatus === 'Approved' && document.signatures.length === 0 && (
+            <ContractValidityForm key={document.contentSha256} document={document}
+              onSaved={saved => { if (saved) setState({ status: 'success', document: saved }); else setRevision(value => value + 1); onSigned?.(); }} />
+          )}
           <section>
             <h3 className="font-semibold">Servicios y tarifas</h3>
             {document.rates.length === 0 ? <p>Sin tarifas pactadas.</p> : (
@@ -107,12 +132,15 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
                 return <li key={party} className="rounded-lg border border-black/10 p-3 dark:border-white/10">
                   <p className="text-xs font-semibold uppercase text-text-secondary-light">{PARTY[party]}</p>
                   {signature ? <><p>{signature.signerName} · {signature.signerTitle}</p>
-                    <p className="text-xs">{new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(signature.signedAt))}</p></>
-                    : <p className="text-text-secondary-light">Pendiente de firma</p>}
+                    <p className="text-xs">{new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(signature.signedAt))}
+                      {signature.hasDrawnSignature ? ' · firma dibujada' : ''}</p></>
+                    : <p className="text-text-secondary-light">{party === 'Aviam' ? 'Contrafirma después de la aerolínea' : 'Pendiente de firma'}</p>}
                 </li>;
               })}
             </ul>
-            {document.signedOn && <p className="font-semibold">Firmado por ambas partes el {date(document.signedOn)}.</p>}
+            {document.signedOn && document.signatures.length === 2 && (
+              <p className="font-semibold">Firmado por ambas partes el {date(document.signedOn)}.</p>
+            )}
           </section>
           {canSign && document.signableBy === 'Aviam' && (
             <form onSubmit={sign} noValidate className="space-y-2 rounded-lg border border-accent-600/30 p-3">
@@ -126,6 +154,8 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
               <label className="flex items-start gap-2"><input type="checkbox" checked={form.accepted}
                 onChange={event => setForm(current => ({ ...current, accepted: event.target.checked }))} className="mt-1" />
                 Acepto este contrato en nombre de AVIAM tal como se muestra (huella SHA-256 indicada arriba).</label>
+              <SignaturePad id={`aviam-signature-${versionId}`} label="Firma"
+                onChange={signatureImagePng => setForm(current => ({ ...current, signatureImagePng }))} />
               <button type="submit" disabled={busy === 'sign'} className="rounded-lg bg-accent-600 px-4 py-2 font-semibold text-white disabled:opacity-50">
                 {busy === 'sign' ? 'Firmando…' : 'Acepto y firmo'}</button>
             </form>

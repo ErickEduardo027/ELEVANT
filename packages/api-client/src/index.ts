@@ -236,6 +236,8 @@ export {
   type ContractTimelineData,
   type ContractTimelineEntry,
   type SignContractRequest,
+  type SetContractValidityRequest,
+  type ContractValidityResponse,
   type OccReportPageResponse,
   type SendOperationMessageRequest,
   type OccReviewServiceResponse,

@@ -988,6 +988,18 @@ export interface ContractDocumentSignatureResponse {
   signerTitle: string;
   signedAt: string;
   documentSha256: string;
+  hasDrawnSignature: boolean;
+}
+
+export interface ContractValidityResponse {
+  renewalMode: string;
+  /** @nullable */
+  renewalTermMonths?: number | null;
+  renewalNoticeDays: number;
+  terminationNoticeDays: number;
+  /** @nullable */
+  terminationTerms?: string | null;
+  confirmedAt: string;
 }
 
 export interface ContractDocumentResponse {
@@ -1015,6 +1027,7 @@ export interface ContractDocumentResponse {
   contentSha256: string;
   /** @nullable */
   signableBy?: string | null;
+  validity?: ContractValidityResponse | null;
 }
 
 export interface ContractDraftChargeData {
@@ -4746,6 +4759,19 @@ export interface SetContractPackagesRequest {
   packageVersionIds: string[];
 }
 
+export interface SetContractValidityRequest {
+  validFrom: string;
+  validTo: string;
+  renewalMode: string;
+  /** @nullable */
+  renewalTermMonths?: number | null;
+  renewalNoticeDays: number;
+  terminationNoticeDays: number;
+  /** @nullable */
+  terminationTerms?: string | null;
+  expectedDocumentSha256: string;
+}
+
 export interface SetDepartmentNotificationReadRequest {
   read: boolean;
 }
@@ -4775,6 +4801,7 @@ export interface SignContractRequest {
   signerTitle: string;
   documentSha256: string;
   accepted: boolean;
+  signatureImagePng: string;
 }
 
 export interface SubmitAirlinePermitInput {
@@ -7269,6 +7296,45 @@ const res = await fetch(getSignContractVersionUrl(versionId),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(signContractRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDocumentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetContractValidityUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/validity`
+}
+
+/**
+ * @summary Contratos confirms validity, renewal and termination of an approved version before anyone
+signs it, and the contract gets its final code (ADR-0025).
+ */
+export const setContractValidity = async (versionId: string,
+    setContractValidityRequest: SetContractValidityRequest, options?: RequestInit): Promise<ContractDocumentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetContractValidityUrl(versionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setContractValidityRequest)
   }
 )
 

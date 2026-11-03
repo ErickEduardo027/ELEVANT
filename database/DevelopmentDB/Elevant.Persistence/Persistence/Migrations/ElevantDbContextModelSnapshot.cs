@@ -1376,6 +1376,17 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("rowversion")
                         .HasColumnName("row_version");
 
+                    b.Property<byte[]>("SignatureImage")
+                        .HasColumnType("varbinary(max)")
+                        .HasColumnName("signature_image");
+
+                    b.Property<string>("SignatureImageSha256")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .HasColumnName("signature_image_sha256")
+                        .IsFixedLength();
+
                     b.Property<DateTimeOffset>("SignedAt")
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)")
@@ -1514,6 +1525,24 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("public_id")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
 
+                    b.Property<string>("RenewalMode")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("renewal_mode");
+
+                    b.Property<int?>("RenewalNoticeDays")
+                        .HasColumnType("int")
+                        .HasColumnName("renewal_notice_days");
+
+                    b.Property<DateTimeOffset?>("RenewalStartedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("renewal_started_at");
+
+                    b.Property<int?>("RenewalTermMonths")
+                        .HasColumnType("int")
+                        .HasColumnName("renewal_term_months");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -1526,6 +1555,15 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)")
                         .HasColumnName("status");
+
+                    b.Property<int?>("TerminationNoticeDays")
+                        .HasColumnType("int")
+                        .HasColumnName("termination_notice_days");
+
+                    b.Property<string>("TerminationTerms")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)")
+                        .HasColumnName("termination_terms");
 
                     b.Property<string>("Terms")
                         .HasColumnType("nvarchar(max)")
@@ -1546,6 +1584,15 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("valid_to");
 
+                    b.Property<DateTimeOffset?>("ValidityConfirmedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("validity_confirmed_at");
+
+                    b.Property<long?>("ValidityConfirmedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("validity_confirmed_by_account_id");
+
                     b.Property<int>("VersionNumber")
                         .HasColumnType("int")
                         .HasColumnName("version_number");
@@ -1556,6 +1603,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("PublicId")
                         .IsUnique();
+
+                    b.HasIndex("ValidityConfirmedByAccountId");
 
                     b.HasIndex("ContractId", "VersionNumber")
                         .IsUnique();
@@ -1569,6 +1618,12 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_contract_version_dates", "[valid_to] IS NULL OR [valid_to] >= [valid_from]");
 
                             t.HasCheckConstraint("ck_contract_version_number", "[version_number] > 0");
+
+                            t.HasCheckConstraint("ck_contract_version_renewal_notice", "[renewal_notice_days] IS NULL OR [renewal_notice_days] BETWEEN 0 AND 180");
+
+                            t.HasCheckConstraint("ck_contract_version_renewal_term", "[renewal_term_months] IS NULL OR [renewal_term_months] BETWEEN 1 AND 60");
+
+                            t.HasCheckConstraint("ck_contract_version_termination_notice", "[termination_notice_days] IS NULL OR [termination_notice_days] BETWEEN 0 AND 180");
                         });
                 });
 
@@ -7298,6 +7353,12 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("AttachmentReference")
+                        .HasMaxLength(80)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(80)")
+                        .HasColumnName("attachment_reference");
+
                     b.Property<int>("Attempts")
                         .HasColumnType("int")
                         .HasColumnName("attempts");
@@ -12425,6 +12486,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("ContractId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ValidityConfirmedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.ContractVersionStation", b =>

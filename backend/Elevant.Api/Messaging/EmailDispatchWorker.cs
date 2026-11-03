@@ -30,8 +30,17 @@ internal sealed partial class EmailDispatchWorker(
                 {
                     try
                     {
-                        await sender.SendAsync(new EmailMessage(email.To, email.Subject, email.HtmlBody, email.TextBody),
-                            stoppingToken);
+                        IReadOnlyList<EmailAttachment>? attachments = null;
+                        if (email.AttachmentReference is { } reference)
+                        {
+                            // Resolved now, from current data; a missing file fails and retries like any send.
+                            var attachment = await scope.ServiceProvider.GetRequiredService<IEmailAttachmentResolver>()
+                                .ResolveAsync(reference, stoppingToken)
+                                ?? throw new InvalidOperationException("The email attachment is no longer available.");
+                            attachments = [attachment];
+                        }
+                        await sender.SendAsync(new EmailMessage(email.To, email.Subject, email.HtmlBody, email.TextBody,
+                            attachments), stoppingToken);
                         await outbox.MarkSentAsync(email.Id, stoppingToken);
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)

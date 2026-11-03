@@ -156,6 +156,10 @@ export async function downloadContractDocument(versionId, fileName) {
 export const signContractVersion = (versionId, request, idempotencyKey) =>
   contractCall(() => contractClient().signContractVersion(versionId, request, idempotencyKey));
 
+/** Contratos confirms validity, renewal and termination before signatures (ADR-0025). */
+export const setContractValidity = (versionId, request) =>
+  contractCall(() => contractClient().setContractValidity(versionId, request));
+
 /** Airline permit dossier for Contratos (ADR-0024); review is Submitted, Verified or Rejected. */
 export const getAirlinePermitsForContracts = (review = '') =>
   commercialApi(`/contracts/permits${review ? `?review=${encodeURIComponent(review)}` : ''}`);

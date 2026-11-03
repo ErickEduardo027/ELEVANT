@@ -107,6 +107,7 @@ export default function ContractApprovalsPage() {
               <div>
                 <h2 className="text-lg font-bold">{detail.summary.airline} · {detail.summary.contractCode}</h2>
                 <p className="text-xs text-text-secondary-light">{currency} · {detail.summary.validFrom}{detail.summary.validTo ? ` a ${detail.summary.validTo}` : ''} · Estaciones {detail.stations.join(', ') || '—'}</p>
+                <p className="text-xs text-text-secondary-light">Vigencia propuesta, solo lectura: Contratos la confirma después de tu aprobación, junto con la renovación, antes de las firmas.</p>
               </div>
               <StackedTable>
                 <table className="table-stack w-full min-w-[640px] text-left text-sm">

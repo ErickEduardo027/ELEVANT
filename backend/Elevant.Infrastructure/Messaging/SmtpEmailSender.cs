@@ -86,6 +86,8 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IEmailSende
                 TransferEncoding = TransferEncoding.Base64,
             });
         mail.AlternateViews.Add(html);
+        foreach (var attachment in message.Attachments ?? [])
+            mail.Attachments.Add(new Attachment(new MemoryStream(attachment.Content), attachment.FileName, attachment.ContentType));
         return mail;
     }
 

@@ -3967,6 +3967,107 @@
         ]
       }
     },
+    "/api/v1/contract-versions/{versionId}/validity": {
+      "put": {
+        "tags": [
+          "ContractDocuments"
+        ],
+        "summary": "Contratos confirms validity, renewal and termination of an approved version before anyone\nsigns it, and the contract gets its final code (ADR-0025).",
+        "operationId": "SetContractValidity",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SetContractValidityRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractDocumentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/contract-drafts": {
       "get": {
         "tags": [
@@ -27677,6 +27778,14 @@
           "signableBy": {
             "type": "string",
             "nullable": true
+          },
+          "validity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContractValidityResponse"
+              }
+            ],
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -27684,6 +27793,7 @@
       "ContractDocumentSignatureResponse": {
         "required": [
           "documentSha256",
+          "hasDrawnSignature",
           "party",
           "signedAt",
           "signerName",
@@ -27706,6 +27816,9 @@
           },
           "documentSha256": {
             "type": "string"
+          },
+          "hasDrawnSignature": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -28203,6 +28316,42 @@
           "actor": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractValidityResponse": {
+        "required": [
+          "confirmedAt",
+          "renewalMode",
+          "renewalNoticeDays",
+          "terminationNoticeDays"
+        ],
+        "type": "object",
+        "properties": {
+          "renewalMode": {
+            "type": "string"
+          },
+          "renewalTermMonths": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "renewalNoticeDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "terminationNoticeDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "terminationTerms": {
+            "type": "string",
+            "nullable": true
+          },
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -41523,6 +41672,51 @@
         },
         "additionalProperties": false
       },
+      "SetContractValidityRequest": {
+        "required": [
+          "expectedDocumentSha256",
+          "renewalMode",
+          "renewalNoticeDays",
+          "terminationNoticeDays",
+          "validFrom",
+          "validTo"
+        ],
+        "type": "object",
+        "properties": {
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          },
+          "validTo": {
+            "type": "string",
+            "format": "date"
+          },
+          "renewalMode": {
+            "type": "string"
+          },
+          "renewalTermMonths": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "renewalNoticeDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "terminationNoticeDays": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "terminationTerms": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedDocumentSha256": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "SetDepartmentNotificationReadRequest": {
         "required": [
           "read"
@@ -41600,6 +41794,7 @@
         "required": [
           "accepted",
           "documentSha256",
+          "signatureImagePng",
           "signerName",
           "signerTitle"
         ],
@@ -41616,6 +41811,9 @@
           },
           "accepted": {
             "type": "boolean"
+          },
+          "signatureImagePng": {
+            "type": "string"
           }
         },
         "additionalProperties": false

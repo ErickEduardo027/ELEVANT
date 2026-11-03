@@ -1,7 +1,8 @@
 namespace Elevant.Application.Abstractions.Messaging;
 
 /// <summary>An email ready to send. Bodies may carry one-time codes: never log them.</summary>
-public sealed record EmailMessage(string To, string Subject, string HtmlBody, string TextBody)
+public sealed record EmailMessage(string To, string Subject, string HtmlBody, string TextBody,
+    IReadOnlyList<EmailAttachment>? Attachments = null)
 {
     public override string ToString() => $"{nameof(EmailMessage)} {{ Subject = {Subject}, Body = [REDACTED] }}";
 }
@@ -15,7 +16,23 @@ public interface IEmailSender
     Task SendAsync(EmailMessage message, CancellationToken cancellationToken = default);
 }
 
-public sealed record OutboxEmail(long Id, string To, string Subject, string HtmlBody, string TextBody)
+/// <summary>A file sent with an email (e.g. the signed contract PDF).</summary>
+public sealed record EmailAttachment(string FileName, string ContentType, byte[] Content)
+{
+    public override string ToString() => $"{nameof(EmailAttachment)} {{ FileName = {FileName}, Length = {Content.Length} }}";
+}
+
+/// <summary>
+/// Builds an outbox attachment from its reference when the email is sent (ADR-0025), so the
+/// outbox never stores the file. Null when the reference no longer points to anything.
+/// </summary>
+public interface IEmailAttachmentResolver
+{
+    Task<EmailAttachment?> ResolveAsync(string reference, CancellationToken cancellationToken = default);
+}
+
+public sealed record OutboxEmail(long Id, string To, string Subject, string HtmlBody, string TextBody,
+    string? AttachmentReference = null)
 {
     public override string ToString() => $"{nameof(OutboxEmail)} {{ Id = {Id}, Body = [REDACTED] }}";
 }

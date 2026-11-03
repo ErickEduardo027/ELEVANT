@@ -67,8 +67,9 @@ interface AirlineSessionContextValue {
   getPermits(): Promise<AirlinePermitData[]>;
   submitPermit(input: SubmitAirlinePermitInput, document?: File | null): Promise<AirlinePermitData>;
   getContractTimeline(versionId: string): Promise<ContractTimelineData>;
+  /** `signatureImagePng` is the drawn signature as a PNG data URL (ADR-0025). */
   signContract(versionId: string, signerName: string, signerTitle: string, documentSha256: string,
-    idempotencyKey: string): Promise<ContractDocumentResponse>;
+    signatureImagePng: string, idempotencyKey: string): Promise<ContractDocumentResponse>;
   getOperations(page?: number): Promise<AirlineOperationPageResponse>;
   getOperation(operationId: string): Promise<AirlinePortalOperationResponse>;
   getApprovedEvidence(operationId: string): Promise<AirlineApprovedOperationEvidenceResponse>;
@@ -467,8 +468,9 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     withContractClient(client => client.getContractTimeline(versionId, { cache: "no-store" })), [withContractClient]);
 
   const signContract = useCallback((versionId: string, signerName: string, signerTitle: string,
-    documentSha256: string, idempotencyKey: string) => withContractClient(client => client.signContractVersion(versionId,
-    { signerName, signerTitle, documentSha256, accepted: true }, idempotencyKey)), [withContractClient]);
+    documentSha256: string, signatureImagePng: string, idempotencyKey: string) => withContractClient(client =>
+    client.signContractVersion(versionId, { signerName, signerTitle, documentSha256, accepted: true, signatureImagePng },
+      idempotencyKey)), [withContractClient]);
 
   const getOperations = useCallback(async (page = 1): Promise<AirlineOperationPageResponse> => {
     const record = stored.current;

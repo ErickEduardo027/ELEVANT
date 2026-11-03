@@ -82,6 +82,7 @@ internal static class DepartmentGovernanceConfiguration
             builder.Property(message => message.Purpose).HasConversion<string>().HasMaxLength(24);
             builder.Property(message => message.Status).HasConversion<string>().HasMaxLength(16);
             builder.Property(message => message.LastError).HasMaxLength(300);
+            builder.Property(message => message.AttachmentReference).HasMaxLength(80).IsUnicode(false);
             builder.Property(message => message.NextAttemptAt).HasPrecision(3);
             builder.Property(message => message.SentAt).HasPrecision(3);
             builder.HasIndex(message => new { message.Status, message.NextAttemptAt });

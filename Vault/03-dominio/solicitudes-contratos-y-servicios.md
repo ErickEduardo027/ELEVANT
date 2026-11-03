@@ -73,7 +73,7 @@ flowchart LR
 
 `CommercialRequestType` sólo contiene `Affiliation` y `AdditionalService`. Sus estados persistibles son `Pending`, `InReview`, `Approved`, `Rejected` y `Cancelled`. Cada ítem puede expresar cantidad estimada, unidad y vigencia solicitadas; fechas invertidas y cantidades no positivas son rechazadas por constraints.
 
-El contrato guarda aerolínea, código y estado general (`Draft`, `Active`, `Suspended`, `Terminated`, `Expired`). Sus versiones tienen número positivo, vigencia, moneda, términos y estado (`Draft`, `Approved`, `Superseded`, `Rejected`). Tarifas y estaciones pertenecen a la versión, no al contrato mutable.
+El contrato guarda aerolínea, código y estado general (`Draft`, `Active`, `Suspended`, `Terminated`, `Expired`). Sus versiones tienen número positivo, vigencia, moneda, términos y estado (`Draft`, `PendingFinanceApproval`, `Approved`, `Superseded`; `Rejected` queda reservado y ningún flujo lo asigna). Tarifas y estaciones pertenecen a la versión, no al contrato mutable.
 
 En la rama `feat/finance-refinement`, el borrador hereda precio y unidad de la tarifa base de Finanzas en su moneda (USD o DOP) y «activar» envía la versión a `PendingFinanceApproval`: solo la aprobación de Finanzas la deja `Approved`; una devolución exige motivo y la regresa a `Draft`. Ver [Finanzas: tarifarios, cargos y cobros](finanzas-tarifas-cargos-y-cobros.md).
 
@@ -83,9 +83,32 @@ El esquema permite enlazar un contrato a una solicitud mediante `OriginatingServ
 
 En la rama de integración de Development, el portal dispone de una lectura
 tenant-scoped y paginada de contratos publicados (`Approved` y versiones luego
-`Superseded`). El historial vencido de la propia aerolínea permanece consultable;
-no se exponen borradores ni se habilita aprobar o editar contratos. Esta lectura
-no implementa todavía el alta de afiliación ni el flujo de aprobación.
+`Superseded`). El historial vencido de la propia aerolínea permanece consultable.
+La aerolínea también ve sus borradores (`Draft` y `PendingFinanceApproval`) como
+copia de revisión con marca de agua, puede comentarlos y firma la versión aprobada
+desde el portal (ADR-0024).
+
+## Vigencia, firmas y código definitivo (ADR-0025)
+
+Después de que Finanzas aprueba las tarifas, Contratos confirma la vigencia
+(inicio, fin), la renovación (manual o automática, con plazo y días de aviso) y
+el preaviso y las condiciones de terminación (`PUT contract-versions/{id}/validity`,
+permiso «Fijar vigencia y renovación»). En ese momento un contrato con código
+`DRAFT-…` recibe su código definitivo `CTR-{año}-{n}`, porque el código forma
+parte del contenido firmado.
+
+Solo entonces se habilitan las firmas, en orden: primero la aerolínea desde el
+portal y después AVIAM desde Contratos, ambas dibujadas en un canvas. El PDF
+imprime cada firma y la sección de renovación. Al activarse el contrato (o al
+completarse la firma de una renovación de un contrato activo) se envía el PDF
+firmado por correo a la aerolínea y a los firmantes de AVIAM.
+
+La renovación automática crea sola la versión siguiente los días de aviso antes
+del fin; esa versión vuelve a pasar por Finanzas, la vigencia y las firmas.
+Nada se prorroga sin firmas. Fuentes:
+[store de documentos](../../database/DevelopmentDB/Elevant.Persistence/Commercial/EfContractDocumentStore.cs),
+[reglas de vigencia](../../backend/Elevant.Application/Commercial/ContractValidity.cs) y
+[ADR-0025](../../docs/adr/0025-contract-validity-and-drawn-signatures.md).
 
 ## Solicitud operativa
 

@@ -297,7 +297,8 @@ internal sealed class EfContractDraftStore(
         var actorDatabaseId = await context.Users.Where(item => item.PublicId == actorId)
             .Select(item => item.Id).SingleAsync(cancellationToken);
         var now = DateTimeOffset.UtcNow;
-        // Finance approval activates the contract; Contracts submits the reviewed draft.
+        // Contratos submits the reviewed draft to Finance. After approval come the validity step and
+        // both signatures (airline first); only then the contract activates (ADR-0024, ADR-0025).
         row.Version.Status = ContractVersionStatus.PendingFinanceApproval;
         row.Version.UpdatedAt = now;
         foreach (var recipient in await CommercialNotificationRecipients.WithPermissionAsync(context,
