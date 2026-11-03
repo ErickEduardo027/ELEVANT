@@ -24,12 +24,13 @@ describe('PlanningHeader', () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it('explains the scope requirement and hides unimplemented import/export', () => {
+  it('keeps every write or export action disabled until its endpoint exists', () => {
     render(<PlanningHeader onRefresh={() => {}} />);
 
-    expect(screen.getByRole('button', { name: 'Nuevo vuelo' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Nuevo vuelo' })).toHaveAttribute('title', 'Seleccione una estación y espere a que termine la carga para crear un vuelo.');
-    expect(screen.queryByRole('button', { name: 'Importar vuelos' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Exportar' })).not.toBeInTheDocument();
+    for (const label of ['Nuevo vuelo', 'Importar vuelos', 'Exportar']) {
+      const button = screen.getByRole('button', { name: label });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('title', 'Próximamente');
+    }
   });
 });

@@ -1,12 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import FlightMonitoringPage from './FlightMonitoringPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 
-beforeEach(() => resetLanguageForTests('es'));
-afterEach(() => { resetLanguageForTests('es'); vi.unstubAllEnvs(); });
+beforeEach(() => vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', ''));
+afterEach(() => vi.unstubAllEnvs());
+
+vi.mock('./components/FlightMap', () => ({
+  default: function FlightMapStub(props) {
+    return <div data-testid="flight-map-stub" data-selected={String(props.selectedFlightId)} />;
+  },
+}));
+
+vi.mock('./components/GoogleFlightMap', () => ({
+  default: () => <div data-testid="google-flight-map-stub" />,
+}));
 
 function flight(overrides) {
   return {
@@ -38,60 +48,192 @@ const DATA = {
   flights: [flight({ id: 1 }), flight({ id: 2, flightNumber: 'AA904', status: 'delayed' })],
 };
 
-const props = { status: 'success', data: DATA, connection: 'connected', onRetry: vi.fn() };
-describe('map-free flight consultation', () => {
-  it('shows loading and sanitized recoverable errors', async () => {
-    const view = render(<FlightMonitoringPage {...props} status="loading" data={null} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Cargando datos operativos');
-    const retry = vi.fn();
-    view.rerender(<FlightMonitoringPage {...props} status="error" error={new Error('private exception')} onRetry={retry} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('No se pudo cargar');
-    expect(screen.queryByText('private exception')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
-    expect(retry).toHaveBeenCalledOnce();
+describe('FlightMonitoringPage', () => {
+  it('shows the skeleton while loading', () => {
+    render(
+      <FlightMonitoringPage status="loading" data={null} error={null} connection="syncing" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    expect(screen.getByTestId('flight-monitoring-skeleton')).toBeInTheDocument();
   });
 
-  it.each(['', 'synthetic-key'])('lists flights without a map with either provider configuration (%s)', key => {
-    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', key);
-    const view = render(<FlightMonitoringPage {...props} />);
+  it('shows the error panel and retries on click', async () => {
+    const onRetry = vi.fn();
+    render(
+      <FlightMonitoringPage
+        status="error"
+        data={null}
+        error={new Error('boom')}
+        connection="disconnected"
+        lastUpdatedAt={null}
+        onRetry={onRetry}
+      />
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('No se pudo cargar el monitoreo de vuelos de la estación.');
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the toolbar, list, and map once data loads', () => {
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt="2026-08-06T14:00:00-04:00" onRetry={() => {}} />
+    );
+    expect(screen.getByText('FlyAware conectado')).toBeInTheDocument();
     expect(screen.getByText('DM161')).toBeInTheDocument();
     expect(screen.getByText('AA904')).toBeInTheDocument();
-    expect(view.container.querySelector('canvas')).toBeNull();
-    expect(screen.getByText('Los mapas operativos están disponibles en Panorama.')).toBeInTheDocument();
+    expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
   });
 
-  it('filters the consultation and opens details with keyboard dismissal', async () => {
-    render(<FlightMonitoringPage {...props} />);
-    await userEvent.type(screen.getByRole('textbox'), 'AA904');
-    expect(screen.queryByText('DM161')).not.toBeInTheDocument();
-    screen.getByTestId('flight-list-item').focus();
-    await userEvent.keyboard('{Enter}');
-    const detail = screen.getByRole('dialog', { name: /Detalle del vuelo/ });
-    expect(within(detail).getByText(/AA904/)).toBeInTheDocument();
-    await userEvent.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('honors linked flight selection and hides stale details during a failed refresh', () => {
-    const view = render(<FlightMonitoringPage {...props} focusFlightId={2} />);
-    expect(within(screen.getByRole('dialog')).getByText(/AA904/)).toBeInTheDocument();
-    view.rerender(<FlightMonitoringPage {...props} status="error" focusFlightId={2} />);
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-  });
-
-  it('preserves empty and disconnected states without recreating cartography', () => {
-    const view = render(<FlightMonitoringPage {...props} forceState="monitoringEmpty" />);
+  it('shows the empty state and explains the absence of telemetry when there are no flights', () => {
+    render(
+      <FlightMonitoringPage
+        status="success"
+        data={{ station: { code: 'PUJ' }, flights: [] }}
+        error={null}
+        connection="connected"
+        lastUpdatedAt={null}
+        onRetry={() => {}}
+      />
+    );
     expect(screen.getByText('Sin vuelos para mostrar')).toBeInTheDocument();
-    view.rerender(<FlightMonitoringPage {...props} forceState="monitoringDisconnected" />);
-    expect(screen.getByText(/desconectado/i)).toBeInTheDocument();
-    expect(view.container.querySelector('canvas')).toBeNull();
+    expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
+    expect(screen.getByText(/Sin posición de aeronaves en vivo/)).toBeInTheDocument();
   });
 
-  it('translates the consultation and its detail drawer', () => {
-    act(() => resetLanguageForTests('en'));
-    render(<LanguageScope><FlightMonitoringPage {...props} focusFlightId={1} /></LanguageScope>);
-    expect(screen.getByRole('heading', { name: 'Flight monitoring' })).toBeInTheDocument();
-    expect(screen.getByRole('dialog', { name: 'Flight details' })).toBeInTheDocument();
-    expect(screen.getByText('Operational maps are available in Overview.')).toBeInTheDocument();
+  it('keeps MapLibre when a local Google key is configured', () => {
+    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
+    render(<FlightMonitoringPage status="success" data={{ station: { code: 'PUJ' }, flights: [] }}
+      error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />);
+    expect(screen.getByTestId('flight-map-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('google-flight-map-stub')).not.toBeInTheDocument();
+  });
+
+  it('does not center another station on PUJ when a local Google key exists', () => {
+    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
+    render(<FlightMonitoringPage status="success" data={{ station: { code: 'SDQ' },
+      source: 'planning', flights: [] }} error={null} connection="connected"
+      lastUpdatedAt={null} onRetry={() => {}} />);
+    expect(screen.getByText(/La posición en vivo no está disponible/)).toBeInTheDocument();
+    expect(screen.queryByText(/el mapa muestra PUJ/)).not.toBeInTheDocument();
+  });
+
+  it('selects a flight when its list item is clicked, opening the detail popover and passing the id to the map', async () => {
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    await userEvent.click(screen.getByText('DM161'));
+    expect(screen.getByRole('dialog', { name: /DM161/ })).toBeInTheDocument();
+    expect(screen.getByTestId('flight-map-stub')).toHaveAttribute('data-selected', '1');
+  });
+
+  it('honors the monitoringEmpty forceState override from the dev preview panel', () => {
+    render(
+      <FlightMonitoringPage
+        status="success"
+        data={DATA}
+        error={null}
+        connection="connected"
+        lastUpdatedAt={null}
+        onRetry={() => {}}
+        forceState="monitoringEmpty"
+      />
+    );
+    expect(screen.getByText('Sin vuelos para mostrar')).toBeInTheDocument();
+  });
+
+  it('shows disconnected when forceState is monitoringDisconnected, overriding the real connection prop', () => {
+    render(
+      <FlightMonitoringPage
+        status="success"
+        data={DATA}
+        error={null}
+        connection="connected"
+        lastUpdatedAt={null}
+        onRetry={() => {}}
+        forceState="monitoringDisconnected"
+      />
+    );
+    expect(screen.getByText('FlyAware desconectado')).toBeInTheDocument();
+  });
+});
+
+function mockMatchMedia(matchingQueries) {
+  window.matchMedia = vi.fn().mockImplementation(query => ({
+    matches: matchingQueries.includes(query),
+    media: query,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+}
+
+describe('FlightMonitoringPage — tablet layout', () => {
+  const originalMatchMedia = window.matchMedia;
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  it('renders the full inline split with no toggle on desktop', () => {
+    mockMatchMedia([]);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    expect(screen.getByTestId('flight-list-panel')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Ver vuelos/ })).not.toBeInTheDocument();
+  });
+
+  it('hides the inline list panel and shows a "Ver vuelos" toggle on tablet', () => {
+    mockMatchMedia(['(max-width: 1023.98px)']);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+    expect(screen.queryByTestId('flight-list-panel')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Ver vuelos/ })).toBeInTheDocument();
+  });
+
+  it('opens the list drawer when the toggle is clicked, and closes it via the backdrop', async () => {
+    mockMatchMedia(['(max-width: 1023.98px)']);
+    render(
+      <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt={null} onRetry={() => {}} />
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /^Ver vuelos/ }));
+    expect(screen.getByTestId('flight-list-drawer')).toBeInTheDocument();
+    expect(screen.getByText('DM161')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('flight-list-drawer-backdrop'));
+    expect(screen.queryByTestId('flight-list-drawer')).not.toBeInTheDocument();
+  });
+});
+
+describe('FlightMonitoringPage in English', () => {
+  beforeEach(() => act(() => resetLanguageForTests('en')));
+  afterEach(() => act(() => resetLanguageForTests('es')));
+
+  it('renders the toolbar, list, legend and statuses in English', () => {
+    render(
+      <LanguageScope>
+        <FlightMonitoringPage status="success" data={DATA} error={null} connection="connected" lastUpdatedAt="2026-08-06T14:00:00-04:00" onRetry={() => {}} />
+      </LanguageScope>
+    );
+    expect(screen.getByText('FlyAware connected')).toBeInTheDocument();
+    expect(screen.getByText(/^Last update \d{2}:\d{2}$/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Search flight')).toHaveAttribute('placeholder', 'Number, airline, registration or supervisor');
+    expect(screen.getByText('Only flights related to PUJ')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delayed' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Legend' })).toBeInTheDocument();
+    expect(screen.getAllByText('Approaching').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
+  });
+
+  it('renders the error state in English', () => {
+    render(
+      <LanguageScope>
+        <FlightMonitoringPage status="error" data={null} error={null} connection="disconnected" lastUpdatedAt={null} onRetry={() => {}} />
+      </LanguageScope>
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('Station flight monitoring could not be loaded.');
+    expect(screen.getByText('Check the connection and try again.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 });

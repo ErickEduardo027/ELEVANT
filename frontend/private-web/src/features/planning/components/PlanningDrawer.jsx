@@ -249,6 +249,11 @@ export default function PlanningDrawer({
           </Section>
         </div>
 
+        <div className="mt-5 flex flex-wrap gap-2">
+          {['editPlanning', 'workOrder'].map(key => (
+            <button key={key} type="button" disabled title={t('drawer.comingSoon')} className="cursor-not-allowed rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-text-secondary-light/50 dark:border-white/10 dark:text-text-secondary-dark/50">{t(`drawer.${key}`)}</button>
+          ))}
+        </div>
       </aside>
     </>
   );

@@ -1,55 +1,205 @@
 import { useEffect, useState } from 'react';
 import FlightToolbar from './components/FlightToolbar';
 import FlightListPanel from './components/FlightListPanel';
+import FlightListDrawer from './components/FlightListDrawer';
+import FlightMap from './components/FlightMap';
+import FlightLegend from './components/FlightLegend';
 import FlightDetailPopover from './components/FlightDetailPopover';
 import FlightToastStack from './components/FlightToast';
+import FlightMonitoringSkeleton from './components/FlightMonitoringSkeleton';
 import { useFlightMonitoringFilters } from './useFlightMonitoringFilters';
 import { useFlightAlerts } from './useFlightAlerts';
+import { useIsTabletBreakpoint } from './useIsTabletBreakpoint';
 import { getFilterOptions } from './flightMonitoringMappers';
-import Drawer from '../../components/Drawer';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { flightMonitoringMessages } from './flightMonitoringMessages';
-import { occUiMessages } from '../admin-occ/ui/occUiMessages';
 
-/** Existing read capabilities, without duplicating Panorama's maps. */
-export default function FlightMonitoringPage({ status, data, error, connection, lastUpdatedAt,
-  onRetry, forceState = 'default', focusFlightId = null, onStatusChange }) {
+function MonitoringMapArea({
+  stationCode,
+  flights,
+  selectedFlightId,
+  onSelectFlight,
+  theme,
+  onPopoverPosition,
+  popoverPosition,
+  selectedFlight,
+  now,
+  onClosePopover,
+  onStatusChange,
+}) {
   const { t } = useTranslation(flightMonitoringMessages);
-  const { t: ui } = useTranslation(occUiMessages);
+  const geolocatedFlights = flights.filter(flight =>
+    Number.isFinite(flight.latitude) && Number.isFinite(flight.longitude));
+  // Only PUJ has reviewed coordinates; do not center a different station on PUJ.
+  return (
+    <div className="relative min-h-[420px] flex-1">
+      {stationCode === 'PUJ' ? <>
+        <FlightMap
+          flights={geolocatedFlights}
+          selectedFlightId={selectedFlightId}
+          onSelectFlight={onSelectFlight}
+          theme={theme}
+          onPopoverPosition={onPopoverPosition}
+        />
+        <FlightLegend />
+        {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-3 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
+          {t('page.noLivePositions')}
+        </p>}
+      </> : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
+        {t('page.noLiveSource')}
+      </div>}
+      <FlightDetailPopover flight={selectedFlight} now={now} style={popoverPosition ?? {}} onClose={onClosePopover} onStatusChange={onStatusChange} />
+    </div>
+  );
+}
+
+export default function FlightMonitoringPage({
+  status,
+  data,
+  error,
+  connection,
+  lastUpdatedAt,
+  onRetry,
+  forceState = 'default',
+  theme = 'light',
+  focusFlightId = null,
+  onStatusChange,
+}) {
+  const { t } = useTranslation(flightMonitoringMessages);
   const [selectedFlightId, setSelectedFlightId] = useState(focusFlightId);
+  const [popoverPosition, setPopoverPosition] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
+  const [listDrawerOpen, setListDrawerOpen] = useState(false);
+  const isTablet = useIsTabletBreakpoint();
+
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date().toISOString()), 30_000);
-    return () => window.clearInterval(timer);
+    const id = setInterval(() => setNow(new Date().toISOString()), 30000);
+    return () => clearInterval(id);
   }, []);
-  useEffect(() => { if (focusFlightId) setSelectedFlightId(focusFlightId); }, [focusFlightId]);
-  const denied = status === 'forbidden' || error?.status === 403;
-  const expired = status === 'unauthorized' || error?.status === 401;
+
+  useEffect(() => {
+    if (!isTablet) setListDrawerOpen(false);
+  }, [isTablet]);
+
+  useEffect(() => {
+    if (focusFlightId) setSelectedFlightId(focusFlightId);
+  }, [focusFlightId]);
+
   const isLoading = status === 'loading' || forceState === 'loading';
-  const isError = denied || expired || (status === 'error' && forceState === 'default') || forceState === 'monitoringError';
+  const isError = (status === 'error' && forceState === 'default') || forceState === 'monitoringError';
+
   const flights = forceState === 'monitoringEmpty' ? [] : data?.flights ?? [];
   const displayConnection = forceState === 'monitoringDisconnected' ? 'disconnected' : connection;
-  const { filters, setFilter, activeChip, setActiveChip, onlyStationRelated, setOnlyStationRelated,
-    filteredFlights } = useFlightMonitoringFilters(flights, data?.station.code);
+
+  const {
+    filters,
+    setFilter,
+    activeChip,
+    setActiveChip,
+    onlyStationRelated,
+    setOnlyStationRelated,
+    filteredFlights,
+  } = useFlightMonitoringFilters(flights, data?.station.code);
   const { toasts, dismissToast } = useFlightAlerts(flights, displayConnection);
-  const selectedFlight = !isLoading && !isError ? flights.find(flight => flight.id === selectedFlightId) ?? null : null;
+
+  const options = getFilterOptions(flights);
+  const selectedFlight = flights.find(flight => flight.id === selectedFlightId) ?? null;
   const emptyReason = flights.length === 0 ? 'no-flights' : filteredFlights.length === 0 ? 'no-results' : null;
-  return <section className="space-y-5">
-    <header data-occ-header><div><h1>{ui('flights')}</h1><p className="mt-2 text-sm text-occ-muted">{ui('flightsHint')}</p></div>
-      <p className="text-xs text-occ-muted">{ui('mapsInPanorama')}</p></header>
-    {!isError && !isLoading && <FlightToolbar stationCode={data?.station.code} source={data?.source} connection={displayConnection}
-      lastUpdatedAt={lastUpdatedAt} onRefresh={onRetry} filters={filters} onFilterChange={setFilter}
-      options={getFilterOptions(flights)} onlyStationRelated={onlyStationRelated} onToggleStationRelated={setOnlyStationRelated} />}
-    {isLoading ? <p role="status" data-occ-surface>{ui('loading')}</p> : isError ?
-      <div role="alert" data-occ-surface><h2 className="font-semibold text-status-danger">{denied ? ui('forbidden') : expired ? ui('sessionExpired') : t('page.errorTitle')}</h2>
-        {!denied && !expired && <><p className="mt-2 text-sm">{t('page.errorFallback')}</p><button type="button" onClick={onRetry}
-          className="mt-4 rounded-md bg-accent-600 px-4 text-sm font-semibold text-white">{t('page.retry')}</button></>}</div> :
-      <FlightListPanel flights={filteredFlights} emptyReason={emptyReason} search={filters.search}
-        onSearchChange={value => setFilter('search', value)} activeChip={activeChip} onChipChange={setActiveChip}
-        selectedFlightId={selectedFlightId} onSelectFlight={setSelectedFlightId} />}
-    <Drawer open={Boolean(selectedFlight)} onClose={() => setSelectedFlightId(null)} title={ui('flightDetails')}>
-      <FlightDetailPopover flight={selectedFlight} now={now} inline onClose={() => setSelectedFlightId(null)} onStatusChange={onStatusChange} />
-    </Drawer>
-    {!isLoading && !isError && <FlightToastStack toasts={toasts} onDismiss={dismissToast} />}
-  </section>;
+
+  if (isError) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-start gap-3 rounded-2xl border border-status-danger/30 bg-white/70 p-6 backdrop-blur-md dark:bg-surface-dark-card"
+      >
+        <p className="text-sm font-semibold text-status-danger">
+          {t('page.errorTitle')}
+        </p>
+        <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
+          {error?.message ?? t('page.errorFallback')}
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-accent-600/90"
+        >
+          {t('page.retry')}
+        </button>
+      </div>
+    );
+  }
+
+  const listPanel = (
+    <FlightListPanel
+      flights={filteredFlights}
+      emptyReason={emptyReason}
+      search={filters.search}
+      onSearchChange={value => setFilter('search', value)}
+      activeChip={activeChip}
+      onChipChange={setActiveChip}
+      selectedFlightId={selectedFlightId}
+      onSelectFlight={setSelectedFlightId}
+    />
+  );
+
+  const mapArea = (
+    <MonitoringMapArea
+      stationCode={data?.station.code}
+      flights={filteredFlights}
+      selectedFlightId={selectedFlightId}
+      onSelectFlight={setSelectedFlightId}
+      theme={theme}
+      onPopoverPosition={setPopoverPosition}
+      popoverPosition={popoverPosition}
+      selectedFlight={selectedFlight}
+      now={now}
+      onClosePopover={() => setSelectedFlightId(null)}
+      onStatusChange={onStatusChange}
+    />
+  );
+
+  return (
+    <div className="mx-auto flex h-full max-w-[1440px] 3xl:max-w-[1760px] flex-col gap-4">
+      <h1 className="sr-only">{t('page.title')}</h1>
+      <FlightToolbar
+        stationCode={data?.station.code}
+        source={data?.source}
+        connection={displayConnection}
+        lastUpdatedAt={lastUpdatedAt}
+        onRefresh={onRetry}
+        filters={filters}
+        onFilterChange={setFilter}
+        options={options}
+        onlyStationRelated={onlyStationRelated}
+        onToggleStationRelated={setOnlyStationRelated}
+      />
+
+      {isLoading ? (
+        <FlightMonitoringSkeleton />
+      ) : isTablet ? (
+        <div className="relative flex min-h-0 flex-1 flex-col gap-3">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setListDrawerOpen(true)}
+              className="rounded-lg border border-black/10 bg-white/90 px-3 py-2 text-xs font-semibold text-ink-900 shadow-sm dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"
+            >
+              {t('page.viewFlights', { count: filteredFlights.length })}
+            </button>
+          </div>
+          {mapArea}
+          <FlightListDrawer open={listDrawerOpen} onClose={() => setListDrawerOpen(false)}>
+            {listPanel}
+          </FlightListDrawer>
+        </div>
+      ) : (
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(16rem,3fr)_7fr] 2xl:grid-cols-[minmax(20rem,2fr)_7fr]">
+          {listPanel}
+          {mapArea}
+        </div>
+      )}
+
+      <FlightToastStack toasts={toasts} onDismiss={dismissToast} />
+    </div>
+  );
 }

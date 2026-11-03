@@ -49,7 +49,7 @@ export default function PlanningFilters({
 }) {
   const { t, language } = useTranslation(planningMessages);
   return (
-    <div data-occ-surface data-occ-filter-layout className="overflow-hidden rounded-2xl border border-black/5 bg-white/70 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
+    <div className="overflow-hidden rounded-2xl border border-black/5 bg-white/70 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <div className="flex flex-wrap items-end gap-3 border-b border-accent-600/10 bg-accent-600/[0.04] p-4 dark:bg-accent-600/[0.08]">
         <div className="mr-auto min-w-[200px]">
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-accent-600">{t('filters.scope')}</p>

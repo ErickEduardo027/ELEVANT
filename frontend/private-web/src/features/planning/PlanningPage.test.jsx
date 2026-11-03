@@ -312,11 +312,11 @@ describe('PlanningPage', () => {
     }
   );
 
-  it('shows the canonical table instead of the timeline', async () => {
+  it('keeps alternative views explicitly unavailable instead of inventing data', async () => {
     renderPage();
 
     await userEvent.click(screen.getByRole('button', { name: 'Tabla' }));
-    expect(screen.getByRole('table', { name: 'Tabla de planificación' })).toBeInTheDocument();
+    expect(screen.getByText('Vista de tabla')).toBeInTheDocument();
     expect(screen.queryByTestId('flight-timeline')).not.toBeInTheDocument();
   });
 
@@ -349,7 +349,7 @@ describe('PlanningPage in English', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Delayed' }));
     await userEvent.click(screen.getByRole('button', { name: 'Table' }));
-    expect(screen.getByRole('table', { name: 'Planning table' })).toBeInTheDocument();
+    expect(screen.getByText('Table view')).toBeInTheDocument();
   });
 
   it('renders the empty state in English', () => {

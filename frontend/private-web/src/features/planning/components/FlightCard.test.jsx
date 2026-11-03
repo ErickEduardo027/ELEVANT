@@ -54,11 +54,13 @@ describe('FlightCard', () => {
     expect(onSelect).toHaveBeenCalledWith(FLIGHT.id);
   });
 
-  it('hides unimplemented write quick actions and keeps real detail available', () => {
+  it('keeps all write quick actions disabled', () => {
     render(<FlightCard flight={FLIGHT} now="2026-08-19T11:45:00-04:00" onSelect={() => {}} />);
 
     for (const label of ['Editar', 'Asignar recursos', 'Crear Work Order']) {
-      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+      const button = screen.getByRole('button', { name: label });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('title', 'Próximamente');
     }
     expect(screen.getByRole('button', { name: 'Ver detalle' })).toBeEnabled();
   });

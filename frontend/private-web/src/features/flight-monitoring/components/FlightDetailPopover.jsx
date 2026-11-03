@@ -12,7 +12,7 @@ const EDITABLE_STATUSES = [
   'arrived', 'gateArrival', 'cancelled', 'diverted', 'unknown',
 ];
 
-export default function FlightDetailPopover({ flight, now, style, inline = false, onClose, onStatusChange }) {
+export default function FlightDetailPopover({ flight, now, style, onClose, onStatusChange }) {
   const { t, language, locale } = useTranslation(flightMonitoringMessages);
   const [selectedStatus, setSelectedStatus] = useState(flight?.status ?? 'scheduled');
   const [saving, setSaving] = useState(false);
@@ -26,10 +26,10 @@ export default function FlightDetailPopover({ flight, now, style, inline = false
   return (
     <div
       data-testid="flight-detail-popover"
-      role={inline ? undefined : 'dialog'}
-      aria-label={inline ? undefined : t('detail.dialog', { flight: flight.flightNumber })}
+      role="dialog"
+      aria-label={t('detail.dialog', { flight: flight.flightNumber })}
       style={style}
-      className={inline ? 'space-y-4 text-sm' : 'absolute z-20 w-72 space-y-2 rounded-2xl border border-black/10 bg-white/95 p-4 text-sm shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card'}
+      className="absolute z-20 w-72 space-y-2 rounded-2xl border border-black/10 bg-white/95 p-4 text-sm shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card"
     >
       <div className="flex items-start justify-between">
         <div>
@@ -38,14 +38,14 @@ export default function FlightDetailPopover({ flight, now, style, inline = false
           </p>
           <StatusBadge tone={meta.color} label={getStatusLabel('flight', flight.status, language)} />
         </div>
-        {!inline && <button
+        <button
           type="button"
           aria-label={t('detail.close')}
           onClick={onClose}
           className="rounded-md p-1 text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5"
         >
           <XIcon className="h-4 w-4" />
-        </button>}
+        </button>
       </div>
 
       <p className="text-text-secondary-light dark:text-text-secondary-dark">
