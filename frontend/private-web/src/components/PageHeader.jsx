@@ -2,7 +2,7 @@
 // Las acciones bajan bajo el título cuando no caben en la misma fila.
 export default function PageHeader({ eyebrow, title, description, actions, children, className = '' }) {
   return (
-    <header data-occ-header className={`flex flex-wrap items-end justify-between gap-x-4 gap-y-3 ${className}`}>
+    <header className={`flex flex-wrap items-end justify-between gap-x-4 gap-y-3 ${className}`}>
       <div className="min-w-0 max-w-3xl">
         {eyebrow && (
           <p className="text-xs font-bold uppercase tracking-[.18em] text-signal-500">{eyebrow}</p>

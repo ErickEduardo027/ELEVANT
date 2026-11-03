@@ -41,7 +41,7 @@ function SummaryStrip({ summary, department }) {
     [t('summary.activeProfiles'), summary.activeProfiles],
   ];
   return (
-    <dl data-occ-summary className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
+    <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7">
       {items.map(([label, value, tone]) => (
         <div key={label} className="rounded-xl border border-black/5 bg-white px-3 py-2.5 dark:border-white/5 dark:bg-surface-dark-card">
           <dt className="text-[11px] font-semibold uppercase tracking-wide text-text-secondary-light dark:text-text-secondary-dark">{label}</dt>
@@ -58,7 +58,7 @@ function UsersTable({ users, catalog, canManage, onEdit, onReset, onToggle }) {
     return <EmptyState icon={UsersIcon} title={t('table.emptyTitle')} description={t('table.emptyDescription')} />;
   }
   return (
-    <StackedTable className="occ-ui-surface rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
+    <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
       <table className="table-stack w-full min-w-[640px] text-left text-sm">
         <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03] dark:text-text-secondary-dark">
           <tr><th className="p-3">{t('table.user')}</th><th className="p-3">{t('common.type')}</th><th className="p-3">{t('table.permissions')}</th><th className="p-3">{t('common.stations')}</th><th className="p-3">{t('common.status')}</th><th className="p-3">{t('table.actions')}</th></tr>
@@ -153,7 +153,7 @@ export default function DepartmentUsersPage({ department }) {
   );
 
   return (
-    <div data-occ-directory className="mx-auto w-full max-w-[1400px] space-y-5 3xl:max-w-[1760px]">
+    <div className="mx-auto w-full max-w-[1400px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow={superAdministrator ? t('page.superEyebrow') : label} title={superAdministrator ? label : t('page.title')}
         description={superAdministrator ? t('page.superDescription') : t('page.description')}
         actions={actions} />
@@ -169,7 +169,6 @@ export default function DepartmentUsersPage({ department }) {
       {data.status === 'ready' && (
         <>
           <SummaryStrip summary={data.summary} department={department} />
-          <div data-occ-directory-layout className="space-y-5">
           <Tabs activeId={tab} onChange={setTab} tabs={[
             { id: 'users', label: t('tabs.users'), count: data.users.total },
             { id: 'requests', label: t('tabs.requests'), count: pendingRequests.length },
@@ -179,7 +178,6 @@ export default function DepartmentUsersPage({ department }) {
             { id: 'requisitions', label: t('tabs.requisitions') },
             { id: 'activity', label: t('tabs.activity') },
           ]} />
-          <div data-occ-directory-body>
           {tab === 'users' && (
             <section className="space-y-3">
               <FilterBar>
@@ -229,7 +227,6 @@ export default function DepartmentUsersPage({ department }) {
           {tab === 'profiles' && (
             <ProfilesPanel department={department} profiles={data.profiles} catalog={data.catalog} onChanged={done} />
           )}
-          </div></div>
         </>
       )}
       <AccountFormDrawer open={Boolean(drawer)} mode={drawer?.mode} user={drawer?.user} department={department}

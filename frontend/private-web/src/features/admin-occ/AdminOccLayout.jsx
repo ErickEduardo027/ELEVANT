@@ -1,51 +1,47 @@
 import AppShell from '../shell/AppShell';
+import DevPreviewPanel from '../dashboard/components/DevPreviewPanel';
 import { useMemo } from 'react';
+import { useTheme } from '../shell/useTheme';
 import { allowedNavigation, useDepartmentAccess } from '../access/DepartmentAccessContext';
 import { useNavigationGuard } from '../access/useNavigationGuard';
 import NoModulesNotice from '../access/NoModulesNotice';
 import { LanguageScope } from '../../i18n/LanguageScope';
+import { useAdminOccPreview } from './AdminOccPreviewContext';
 import { ADMIN_OCC_NAVIGATION, ADMIN_OCC_BASE_PATH } from './navigation';
 import { CURRENT_USER_MOCK } from './mockData';
-import OccWorkspace from './ui/OccWorkspace';
-import { OperationalNotificationProvider, useOperationalNotificationCenter } from './notifications/OperationalNotificationCenter';
-import OccAccessNotice from './OccAccessNotice';
-import OccHorizontalHeader, { NoOccSidebar } from './shell/OccHorizontalHeader';
-import refinement from './ui/OccRefinement.module.css';
+import OccSidebar from './shell/OccSidebar';
+import OccTopbar from './shell/OccTopbar';
 
-// One shared chrome instance for every OCC route; Panorama keeps its own content.
+// Marco propio del Centro de Operaciones: riel navy, barra contextual PUJ y
+// tokens `occ-*`. Comparte con los demás departamentos solo ShellFrame/AppShell.
 const OCC_FRAME = {
   department: 'occ',
-  SidebarComponent: NoOccSidebar,
-  TopbarComponent: OccHorizontalHeader,
-  rootClassName: 'bg-occ-canvas text-occ-text ' + refinement.frame,
+  SidebarComponent: OccSidebar,
+  TopbarComponent: OccTopbar,
+  rootClassName: 'bg-occ-canvas text-occ-text',
 };
 
-function OperationalShell(props) {
-  const notificationCenter = useOperationalNotificationCenter();
-  return <AppShell {...props} notificationCenter={notificationCenter} />;
-}
-
 export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout, children }) {
+  const { theme, toggleTheme } = useTheme();
+  const { forceState, setForceState } = useAdminOccPreview();
   const { access } = useDepartmentAccess();
   const navigation = useMemo(() => allowedNavigation(ADMIN_OCC_NAVIGATION, access), [access]);
-  const { permitted, empty, homeDenied } = useNavigationGuard(ADMIN_OCC_NAVIGATION, navigation, {
-    homePath: `${ADMIN_OCC_BASE_PATH}/dashboard`, basePath: ADMIN_OCC_BASE_PATH,
-  });
+  const { permitted, empty } = useNavigationGuard(ADMIN_OCC_NAVIGATION, navigation);
 
   return (
     <LanguageScope>
-      <OperationalNotificationProvider navigation={navigation} enabled={navigation.some(item => item.id === 'notifications')}>
-      <OperationalShell
+      <AppShell
         navigation={navigation}
         roleLabel="Administrador / OCC"
         user={user}
         onLogout={onLogout}
         notificationsPath={`${ADMIN_OCC_BASE_PATH}/notifications`}
         notificationsSource="operational"
-        notificationsEnabled={navigation.some(item => item.id === 'notifications')}
         frameProps={OCC_FRAME}
-      ><OccWorkspace>{homeDenied ? <OccAccessNotice navigation={navigation} /> : empty ? <NoModulesNotice /> : permitted ? children : null}</OccWorkspace></OperationalShell>
-      </OperationalNotificationProvider>
+      >{empty ? <NoModulesNotice /> : permitted ? children : null}</AppShell>
+      {process.env.NODE_ENV === 'development' && (
+        <DevPreviewPanel theme={theme} forceState={forceState} onToggleTheme={toggleTheme} onSetForceState={setForceState} defaultOpen={false} />
+      )}
     </LanguageScope>
   );
 }

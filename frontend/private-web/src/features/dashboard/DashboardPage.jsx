@@ -19,7 +19,7 @@ const IDLE_TRAFFIC = { status: 'loading', data: null, refresh: () => {} };
 // neither planned turnarounds nor satellite pixels become live aircraft telemetry.
 export default function DashboardPage({
   status, data, refreshing = false, refreshFailed = false, fetchedAt = null, theme = 'light',
-  weather = IDLE_WEATHER, traffic = IDLE_TRAFFIC, notices = null, onRetry = () => {}, onRefresh = onRetry,
+  weather = IDLE_WEATHER, traffic = IDLE_TRAFFIC, onRetry = () => {}, onRefresh = onRetry,
 }) {
   const { t, language, locale } = useTranslation(dashboardMessages);
   const model = useMemo(() => (status === 'success' && data ? buildDashboardModel(data) : null), [status, data]);
@@ -61,7 +61,7 @@ export default function DashboardPage({
               isLowerBound={model.pendingReviewsIsLowerBound} needsResources={model.turnarounds.needsResources}
               className="max-h-[480px]" />
             <RecentNotices t={t} language={language} locale={locale} timeZone={timeZone}
-              notices={notices?.items ?? model.notices} hasMore={notices ? notices.hasMore : data.notificationsHasMore} />
+              notices={model.notices} hasMore={data.notificationsHasMore} />
           </div>
         </div>
       </>}

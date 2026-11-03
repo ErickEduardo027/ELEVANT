@@ -14,10 +14,7 @@ export default function PositionSearchBar({ value, onChange, onSubmit, notFound 
           value={value}
           onChange={event => onChange(event.target.value)}
           onKeyDown={event => {
-            if (event.key === 'Enter') {
-              event.preventDefault();
-              onSubmit?.(value);
-            }
+            if (event.key === 'Enter') onSubmit?.(value);
           }}
           placeholder={t('search.placeholder')}
           className="w-full rounded-lg border border-black/10 bg-white/80 py-1.5 pl-7 pr-2 text-sm text-ink-900 dark:border-white/10 dark:bg-surface-dark-card dark:text-text-primary-dark"

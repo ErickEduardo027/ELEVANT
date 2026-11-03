@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useAuth } from '../auth/AuthContext';
+import { useCallback, useEffect, useState } from 'react';
 import { OccStationBadge } from '../admin-occ/OccQueueState';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { downloadOccReport, getOccReport, listOccReports } from '../../services/occReportsService';
 import { reportsMessages } from './reportsMessages';
-import layouts from '../admin-occ/ui/OccModuleLayouts.module.css';
 
 const PAGE_SIZE = 25;
 const FORMATS = [{ id: 'xlsx', label: 'Excel' }, { id: 'pdf', label: 'PDF' }, { id: 'csv', label: 'CSV' }];
@@ -26,57 +24,34 @@ export function defaultPeriod(today = new Date()) {
  */
 export default function CanonicalReportsRoute() {
   const { t, locale } = useTranslation(reportsMessages);
-  const { session } = useAuth();
   const station = useOccStation();
-  const accountKey = JSON.stringify([session?.accountId ?? session?.email ?? null, session?.token ?? null]);
-  const scopeKey = `${accountKey}|${station.stationId ?? ''}`;
   const access = useOptionalDepartmentAccess();
   const canExport = access ? Boolean(access.can('operations.reports.export')) : true;
   const [catalog, setCatalog] = useState({ status: 'loading', reports: [] });
-  const [catalogRevision, setCatalogRevision] = useState(0);
   const [filters, setFilters] = useState(() => ({ key: 'operations', ...defaultPeriod() }));
   const [query, setQuery] = useState(null);
   const [page, setPage] = useState(1);
   const [report, setReport] = useState({ status: 'idle' });
   const [exporting, setExporting] = useState('');
   const [exportError, setExportError] = useState('');
-  const exportAttempt = useRef(null);
-  const currentCatalog = catalog.accountKey === accountKey ? catalog : { status: 'loading', reports: [] };
-  const catalogReady = currentCatalog.status === 'success';
-  const currentReport = report.scopeKey === scopeKey && report.query === query && report.page === page
-    ? report : { status: query && catalogReady ? 'loading' : 'idle' };
 
   useEffect(() => {
     const controller = new AbortController();
-    setCatalog({ status: 'loading', reports: [], accountKey });
-    setQuery(null);
-    setPage(1);
     listOccReports({ signal: controller.signal })
-      .then(result => {
-        if (controller.signal.aborted) return;
-        setCatalog({ status: 'success', reports: result.reports, accountKey });
-        setFilters(current => ({ ...current, key: result.reports.some(item => item.key === current.key) ? current.key : result.reports[0]?.key ?? '' }));
-      })
-      .catch(error => { if (!controller.signal.aborted && error?.name !== 'AbortError') setCatalog({ status: 'error', reports: [], error, accountKey }); });
+      .then(result => setCatalog({ status: 'success', reports: result.reports }))
+      .catch(error => { if (error?.name !== 'AbortError') setCatalog({ status: 'error', reports: [], error }); });
     return () => controller.abort();
-  }, [accountKey, catalogRevision]);
+  }, []);
 
   useEffect(() => {
-    exportAttempt.current = null;
-    setExporting('');
-    setExportError('');
-  }, [scopeKey]);
-
-  useEffect(() => {
-    if (!query || !station.stationId || !catalogReady) return undefined;
+    if (!query || !station.stationId) return undefined;
     const controller = new AbortController();
-    setReport({ status: 'loading', scopeKey, query, page });
     getOccReport(query.key, { stationId: station.stationId, from: query.from, to: query.to, page, limit: PAGE_SIZE },
       { signal: controller.signal })
-      .then(data => { if (!controller.signal.aborted) setReport({ status: 'success', data, scopeKey, query, page }); })
-      .catch(error => { if (!controller.signal.aborted && error?.name !== 'AbortError') setReport({ status: 'error', error, scopeKey, query, page }); });
+      .then(data => setReport({ status: 'success', data }))
+      .catch(error => { if (error?.name !== 'AbortError') setReport({ status: 'error', error }); });
     return () => controller.abort();
-  }, [query, page, station.stationId, scopeKey, catalogReady]);
+  }, [query, page, station.stationId]);
 
   const generate = useCallback(event => {
     event.preventDefault();
@@ -87,38 +62,32 @@ export default function CanonicalReportsRoute() {
   }, [filters]);
 
   async function exportAs(format) {
-    if (exportAttempt.current) return;
-    const attempt = {};
-    exportAttempt.current = attempt;
     setExporting(format);
     setExportError('');
     try {
       await downloadOccReport(query.key, { stationId: station.stationId, from: query.from, to: query.to }, format, station.stationCode);
     } catch (error) {
-      if (exportAttempt.current === attempt) setExportError(t(error?.status === 403 ? 'forbidden' : 'exportFailed'));
+      setExportError(t('exportFailed', { message: error.message }));
     } finally {
-      if (exportAttempt.current === attempt) {
-        exportAttempt.current = null;
-        setExporting('');
-      }
+      setExporting('');
     }
   }
 
-  const selected = currentCatalog.reports.find(item => item.key === filters.key);
-  const data = currentReport.status === 'success' ? currentReport.data : null;
+  const selected = catalog.reports.find(item => item.key === filters.key);
+  const data = report.status === 'success' ? report.data : null;
 
   return (
     <section className="mx-auto max-w-[1440px] space-y-5 text-ink-900 dark:text-text-primary-dark 3xl:max-w-[1760px]">
-      <header data-occ-header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/80 p-5 dark:border-white/10 dark:bg-surface-dark-card">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-black/10 bg-white/80 p-5 dark:border-white/10 dark:bg-surface-dark-card">
         <div><h1 className="text-xl font-semibold">{t('title')}</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{t('subtitle')}</p></div>
         <OccStationBadge />
       </header>
-      {!station.stationId ? <p role="alert" className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">{t('noStation')}</p> : <div className={layouts.reportLayout}>
-        <form data-occ-toolbar onSubmit={generate} noValidate className={layouts.reportFilters}>
+      {!station.stationId ? <p role="alert" className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">{t('noStation')}</p> : <>
+        <form onSubmit={generate} noValidate className="grid gap-3 rounded-2xl border border-black/10 bg-white/80 p-4 dark:border-white/10 dark:bg-surface-dark-card md:grid-cols-[2fr_1fr_1fr_auto] md:items-end">
           <label className="grid gap-1 text-sm font-semibold">{t('report')}
-            <select className={inputClass} value={filters.key} disabled={!catalogReady}
+            <select className={inputClass} value={filters.key} disabled={catalog.status !== 'success'}
               onChange={event => setFilters(current => ({ ...current, key: event.target.value }))}>
-              {currentCatalog.reports.map(item => <option key={item.key} value={item.key}>{item.title}</option>)}
+              {catalog.reports.map(item => <option key={item.key} value={item.key}>{item.title}</option>)}
             </select>
           </label>
           <label className="grid gap-1 text-sm font-semibold">{t('from')}
@@ -129,20 +98,16 @@ export default function CanonicalReportsRoute() {
             <input type="date" className={inputClass} value={filters.to} min={filters.from}
               onChange={event => setFilters(current => ({ ...current, to: event.target.value }))} />
           </label>
-          <button type="submit" disabled={!catalogReady || !filters.key || !filters.from || !filters.to}
+          <button type="submit" disabled={catalog.status !== 'success' || !filters.from || !filters.to}
             className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{t('generate')}</button>
           {selected && <p className="text-xs text-text-secondary-light md:col-span-4">{selected.description}</p>}
         </form>
-        <div className={layouts.reportResults}>
-        {currentReport.status === 'idle' && <section data-occ-surface className={layouts.reportIntro}><h2>{selected?.title ?? t('report')}</h2></section>}
-        {currentCatalog.status === 'loading' && <p role="status">{t('catalogLoading')}</p>}
-        {catalogReady && currentCatalog.reports.length === 0 && <p role="status">{t('catalogEmpty')}</p>}
-        {currentCatalog.status === 'error' && <div role="alert" className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card"><p>{t('catalogFailed')}</p><button type="button" className="mt-3 font-semibold text-accent-600 underline" onClick={() => setCatalogRevision(value => value + 1)}>{t('retry')}</button></div>}
-        {currentReport.status === 'loading' && <p role="status" className="text-sm">{t('loading')}</p>}
-        {currentReport.status === 'error' && (
+        {catalog.status === 'error' && <p role="alert" className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">{catalog.error.message}</p>}
+        {report.status === 'loading' && <p role="status" className="text-sm">{t('loading')}</p>}
+        {report.status === 'error' && (
           <div role="alert" className="flex flex-wrap items-center gap-3 rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">
-            <span>{t(currentReport.error.status === 403 ? 'forbidden' : 'reportFailed')}</span>
-            {currentReport.error.status !== 403 && <button type="button" className="font-semibold text-accent-600 underline" onClick={() => { setReport({ status: 'loading' }); setQuery(current => ({ ...current })); }}>{t('retry')}</button>}
+            <span>{report.error.message}</span>
+            {report.error.status !== 403 && <button type="button" className="font-semibold text-accent-600 underline" onClick={() => { setReport({ status: 'loading' }); setQuery(current => ({ ...current })); }}>{t('retry')}</button>}
           </div>
         )}
         {data && (
@@ -150,7 +115,6 @@ export default function CanonicalReportsRoute() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold">{data.title}</h2>
-                <p className="text-xs text-text-secondary-light">{t('appliedPeriod', { from: data.from, to: data.to, station: data.stationCode })}</p>
                 <p className="text-xs text-text-secondary-light">
                   {t('rows', { page: data.page, count: data.rows.length })} · {t('generatedAt', { date: new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.asOf)) })}
                 </p>
@@ -167,7 +131,7 @@ export default function CanonicalReportsRoute() {
             </div>
             {exportError && <p role="alert" className="text-sm text-status-danger">{exportError}</p>}
             {data.rows.length === 0 ? <p className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">{t('empty')}</p> : (
-              <div data-occ-surface className="overflow-x-auto rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-surface-dark-card">
+              <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-surface-dark-card">
                 <table className="w-full min-w-[760px] text-left text-sm">
                   <thead className="border-b border-black/10 dark:border-white/10">
                     <tr>{data.columns.map(column => <th key={column} scope="col" className="p-3">{column}</th>)}</tr>
@@ -190,8 +154,7 @@ export default function CanonicalReportsRoute() {
             </div>
           </div>
         )}
-        </div>
-      </div>}
+      </>}
     </section>
   );
 }

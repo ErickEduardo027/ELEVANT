@@ -8,7 +8,8 @@ import PlanningDrawer from './components/PlanningDrawer';
 import PlanningSkeleton from './components/PlanningSkeleton';
 import ManualTurnaroundDialog from './components/ManualTurnaroundDialog';
 import EmptyPlanningState from './components/EmptyPlanningState';
-import { PlanningTable, PlanningCalendar } from './components/PlanningViews';
+import ModulePlaceholder from '../shell/components/ModulePlaceholder';
+import { CalendarIcon } from '../shell/components/icons';
 import { usePlanningFilters } from './usePlanningFilters';
 import { usePlanningOptions } from './usePlanningOptions';
 import { usePlanningAssignment } from './usePlanningAssignment';
@@ -21,7 +22,6 @@ import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { planningMessages } from './planningMessages';
-import styles from './PlanningPage.module.css';
 
 const EMPTY_OPTIONS_STATE = {
   status: 'idle',
@@ -85,7 +85,6 @@ export default function PlanningPage({
   hasStationScope = true,
   forceState = 'default',
   dataRevision = 0,
-  refreshing = false,
 }) {
   const [activeView, setActiveView] = useState('timeline');
   const [selectedFlightId, setSelectedFlightId] = useState(null);
@@ -182,7 +181,7 @@ export default function PlanningPage({
   }
 
   return (
-    <div className={`${styles.planning} mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4`}>
+    <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
       <PlanningHeader onRefresh={onRetry} onCreate={() => setShowCreate(true)} canCreate={canCreate} />
 
       {!hasStationScope ? (
@@ -195,7 +194,6 @@ export default function PlanningPage({
         <StatePanel kind="error" onRetry={onRetry} />
       ) : (
         <>
-          <div className={styles.operationalBar} data-occ-planning-console>
           <PlanningFilters
             filters={filters}
             onFilterChange={setFilter}
@@ -212,23 +210,12 @@ export default function PlanningPage({
           />
 
           <PlanningKPIs kpis={kpis} loading={isLoading} />
-          </div>
-          <section className={styles.stage}>
-          <div className={styles.viewBar}>
           <ViewSwitcher active={activeView} onChange={setActiveView} />
-          {refreshing && <p role="status" className="text-xs text-occ-muted">{t('states.refreshing')}</p>}
-          </div>
 
           {isLoading ? (
             <PlanningSkeleton />
-          ) : activeView === 'table' ? (
-            <PlanningTable flights={displayedFlights} timeZone={data?.station?.ianaTimeZone}
-              onSelectFlight={selectFlight} selectedFlightId={selectedFlightId}
-              scopeKey={`${stableFilterScopeKey}|${JSON.stringify(filters)}|${quickFilter}`} />
-          ) : activeView === 'calendar' ? (
-            <PlanningCalendar flights={displayedFlights} timeZone={data?.station?.ianaTimeZone}
-              selectedDate={selectedDate || data?.date} onDateChange={onDateChange}
-              onSelectFlight={selectFlight} selectedFlightId={selectedFlightId} />
+          ) : activeView !== 'timeline' ? (
+            <ModulePlaceholder icon={CalendarIcon} label={t(activeView === 'table' ? 'page.tableView' : 'page.calendarView')} description={t('page.viewComingSoon')} />
           ) : displayedFlights.length === 0 ? (
             <EmptyPlanningState reason={flights.length === 0 ? 'no-flights' : 'no-results'} />
           ) : (
@@ -239,7 +226,6 @@ export default function PlanningPage({
               onSelectFlight={selectFlight}
             />
           )}
-          </section>
         </>
       )}
 
@@ -256,7 +242,6 @@ export default function PlanningPage({
         onShiftProgrammed={() => {
           assignment.reset();
           setOptionsRetryToken(token => token + 1);
-          onRetry();
           showToast(t('page.shiftProgrammed'), 'success');
         }}
       />

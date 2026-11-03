@@ -1,3 +1,4 @@
+import { forwardRef, useImperativeHandle } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -5,8 +6,25 @@ import PositionsMapPage from './PositionsMapPage';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 
-beforeEach(() => resetLanguageForTests('es'));
-afterEach(() => { resetLanguageForTests('es'); vi.unstubAllEnvs(); });
+beforeEach(() => vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', ''));
+afterEach(() => vi.unstubAllEnvs());
+
+vi.mock('./components/PositionMap', () => ({
+  default: forwardRef(function PositionMapStub(props, ref) {
+    useImperativeHandle(ref, () => ({
+      flyToPosition: vi.fn(),
+      flyToBounds: vi.fn(),
+      flyToAll: vi.fn(),
+      flyToPuj: vi.fn(),
+      resetNorth: vi.fn(),
+    }));
+    return <div data-testid="position-map-stub" />;
+  }),
+}));
+
+vi.mock('./components/GooglePositionMap', () => ({
+  default: () => <div data-testid="google-position-map-stub" />,
+}));
 
 function position(overrides) {
   return {
@@ -47,78 +65,184 @@ const POSITIONS = [
 
 const SNAPSHOT = { station: { code: 'PUJ' }, positions: POSITIONS };
 
-const props = { status: 'success', data: SNAPSHOT, connection: 'connected', onRetry: vi.fn() };
-describe('map-free position operations', () => {
-  it('keeps unauthorized data and write actions out of the view', () => {
-    render(<PositionsMapPage {...props} error={{ status: 403 }} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('Tu acceso no permite consultar');
-    expect(screen.queryByTestId('position-list-item')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Actualizar' })).toBeDisabled();
+describe('PositionsMapPage', () => {
+  it('shows the skeleton while loading', () => {
+    render(<PositionsMapPage status="loading" data={null} error={null} connection="syncing" onRetry={() => {}} />);
+    expect(screen.getByTestId('positions-map-skeleton')).toBeInTheDocument();
   });
-  it('shows loading and a recoverable error without internal exception text', async () => {
-    const view = render(<PositionsMapPage {...props} status="loading" data={null} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Cargando datos operativos');
-    const retry = vi.fn();
-    view.rerender(<PositionsMapPage {...props} status="error" error={new Error('private exception')} onRetry={retry} />);
+
+  it('shows a recoverable error state with a retry action', async () => {
+    const onRetry = vi.fn();
+    render(<PositionsMapPage status="error" data={null} error={new Error('network down')} connection="disconnected" onRetry={onRetry} />);
+
     expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.queryByText('private exception')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
-    expect(retry).toHaveBeenCalledOnce();
+    expect(screen.getByText('network down')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['', 'synthetic-key'])('shows all positions without a map (%s)', key => {
-    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', key);
-    const view = render(<PositionsMapPage {...props} />);
-    expect(screen.getByRole('heading', { name: 'Posiciones operativas' })).toBeInTheDocument();
-    expect(screen.getAllByTestId('position-list-item')).toHaveLength(3);
-    expect(view.container.querySelector('canvas')).toBeNull();
+  it('renders the toolbar title/subtitle and the map', () => {
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    expect(screen.getByRole('heading', { name: 'Mapa de posiciones' })).toBeInTheDocument();
+    expect(screen.getByText('PUJ · Aeropuerto Internacional de Punta Cana')).toBeInTheDocument();
+    expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
   });
 
-  it('searches positions and preserves the not-found message', async () => {
-    render(<PositionsMapPage {...props} />);
-    const search = screen.getByPlaceholderText('Buscar posición, vuelo o matrícula...');
-    await userEvent.type(search, 'ZZZ99{enter}');
-    expect(screen.getByText('No se encontró la posición.')).toBeInTheDocument();
-    await userEvent.clear(search);
-    await userEvent.type(search, 'A5{enter}');
-    expect(await screen.findByTestId('position-detail-drawer')).toHaveTextContent('AC1876');
+  it('keeps MapLibre when a local Google key is configured', () => {
+    vi.stubEnv('NEXT_PUBLIC_GOOGLE_MAPS_API_KEY', 'synthetic-test-key');
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null}
+      connection="connected" onRetry={() => {}} />);
+    expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('google-position-map-stub')).not.toBeInTheDocument();
   });
 
-  it('preserves disabled stand configuration details', async () => {
-    render(<PositionsMapPage {...props} />);
-    screen.getAllByTestId('position-list-item')[2].focus();
-    await userEvent.keyboard('{Enter}');
-    const drawer = screen.getByTestId('position-detail-drawer');
-    expect(within(drawer).getByTestId('combined-position-banner')).toHaveTextContent('9-Alfa');
-    expect(drawer).toHaveTextContent('A9');
-    await userEvent.keyboard('{Escape}');
-    expect(screen.queryByTestId('position-detail-drawer')).not.toBeInTheDocument();
-  });
-
-  it('retains contextual flight navigation and independent write capability', async () => {
-    const navigate = vi.fn();
-    render(<PositionsMapPage {...props} onNavigateToResource={navigate} />);
-    await userEvent.click(screen.getByText('A5'));
-    const drawer = screen.getByTestId('position-detail-drawer');
-    expect(drawer).toHaveTextContent('Air Canada');
-    expect(within(drawer).queryByRole('button', { name: 'Registrar llegada' })).not.toBeInTheDocument();
-    await userEvent.click(within(drawer).getByRole('button', { name: /ver vuelo en monitoreo/i }));
-    expect(navigate).toHaveBeenCalledWith('flight-monitoring', 6);
-  });
-
-  it('keeps planned assignments without inventing geometry or availability', () => {
-    render(<PositionsMapPage {...props} data={{ station: { code: 'SDQ' }, source: 'planning-no-map',
-      positions: [{ id: 'G1', terminal: 'T1', status: 'planned', latitude: null, longitude: null, plannedFlights: ['EV311'] }] }} />);
-    expect(screen.getByText('SDQ')).toBeInTheDocument();
-    expect(screen.getByText(/Vuelos planificados: EV311/)).toBeInTheDocument();
+  it('shows a real planned-stand list for another station without drawing PUJ', () => {
+    render(<PositionsMapPage status="success" data={{
+      station: { code: 'SDQ', name: 'Santo Domingo' }, source: 'planning-no-map',
+      positions: [{ id: 'G1', terminal: 'T1', status: 'planned',
+        latitude: null, longitude: null, plannedFlights: ['EV311'] }],
+    }} error={null} connection="connected" onRetry={() => {}} />);
+    expect(screen.getByText(/SDQ/)).toBeInTheDocument();
     expect(screen.getByText('G1')).toBeInTheDocument();
+    expect(screen.getByText(/Vuelos planificados: EV311/)).toBeInTheDocument();
+    expect(screen.queryByTestId('position-map-stub')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Aeropuerto Internacional de Punta Cana/)).not.toBeInTheDocument();
   });
 
-  it('retains disconnected feedback and translated labels', () => {
-    act(() => resetLanguageForTests('en'));
-    render(<LanguageScope><PositionsMapPage {...props} forceState="positionsMapDisconnected" /></LanguageScope>);
-    expect(screen.getByRole('heading', { name: 'Operational positions' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
-    expect(screen.getByText('Operational maps are available in Overview.')).toBeInTheDocument();
+  it('shows "No se encontró la posición." when a search does not match any position', async () => {
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    const input = screen.getByPlaceholderText('Buscar posición, vuelo o matrícula...');
+    await userEvent.type(input, 'ZZZ99{enter}');
+    expect(screen.getByText('No se encontró la posición.')).toBeInTheDocument();
+  });
+
+  it('opens the side panel via the toolbar button and shows every position', async () => {
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: /lista de posiciones/i }));
+
+    const panel = screen.getByTestId('positions-side-panel');
+    expect(within(panel).getAllByTestId('position-list-item')).toHaveLength(3);
+  });
+
+  it('selecting a position from the side panel opens its detail drawer with the combined-configuration banner when disabled', async () => {
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: /lista de posiciones/i }));
+    await userEvent.click(within(screen.getByTestId('positions-side-panel')).getByText('A10'));
+
+    const drawer = screen.getByTestId('position-detail-drawer');
+    expect(within(drawer).getByTestId('combined-position-banner')).toBeInTheDocument();
+    expect(within(drawer).getByText('Configuración 9-Alfa activa.')).toBeInTheDocument();
+    expect(within(drawer).getByText('Esta configuración utiliza A9 y bloquea temporalmente A10.')).toBeInTheDocument();
+  });
+
+  it('shows flight fields and navigates to Flight Monitoring for an occupied position', async () => {
+    const onNavigateToResource = vi.fn();
+    render(
+      <PositionsMapPage
+        status="success"
+        data={SNAPSHOT}
+        error={null}
+        connection="connected"
+        onRetry={() => {}}
+        onNavigateToResource={onNavigateToResource}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: /lista de posiciones/i }));
+    await userEvent.click(within(screen.getByTestId('positions-side-panel')).getByText('A5'));
+
+    const drawer = screen.getByTestId('position-detail-drawer');
+    expect(within(drawer).getByText('AC1876')).toBeInTheDocument();
+    expect(within(drawer).getByText('Air Canada')).toBeInTheDocument();
+
+    await userEvent.click(within(drawer).getByRole('button', { name: /ver vuelo en monitoreo/i }));
+    expect(onNavigateToResource).toHaveBeenCalledWith('flight-monitoring', 6);
+  });
+
+  it('shows the "sin vuelo asignado" message for a position with no flight', async () => {
+    render(<PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: /lista de posiciones/i }));
+    await userEvent.click(within(screen.getByTestId('positions-side-panel')).getByText('A1'));
+
+    expect(within(screen.getByTestId('position-detail-drawer')).getByText('Sin vuelo asignado')).toBeInTheDocument();
+  });
+
+  it('shows a disconnected banner when forced disconnected', () => {
+    render(
+      <PositionsMapPage
+        status="success"
+        data={SNAPSHOT}
+        error={null}
+        connection="connected"
+        onRetry={() => {}}
+        forceState="positionsMapDisconnected"
+      />
+    );
+    expect(screen.getByRole('status')).toHaveTextContent(/datos desactualizados/i);
+  });
+
+  it('shows the empty state when forced empty', () => {
+    render(
+      <PositionsMapPage
+        status="success"
+        data={SNAPSHOT}
+        error={null}
+        connection="connected"
+        onRetry={() => {}}
+        forceState="positionsMapEmpty"
+      />
+    );
+    // Summary panel still renders with all-zero totals; the side panel empty state only shows once opened.
+    expect(screen.getByTestId('position-map-stub')).toBeInTheDocument();
+  });
+});
+
+describe('PositionsMapPage in English', () => {
+  beforeEach(() => act(() => resetLanguageForTests('en')));
+  afterEach(() => act(() => resetLanguageForTests('es')));
+
+  function renderEnglish(props = {}) {
+    return render(
+      <LanguageScope>
+        <PositionsMapPage status="success" data={SNAPSHOT} error={null} connection="connected" onRetry={() => {}} {...props} />
+      </LanguageScope>
+    );
+  }
+
+  it('renders the toolbar, controls, legend and summary in English', () => {
+    renderEnglish();
+    expect(screen.getByRole('heading', { name: 'Positions map' })).toBeInTheDocument();
+    expect(screen.getByText('PUJ · Punta Cana International Airport')).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: 'Filter by terminal' })).toHaveTextContent('All');
+    expect(screen.getByPlaceholderText('Search stand, flight or registration...')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Switch to 3D view' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Center on PUJ' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Full screen' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Legend' })).toBeInTheDocument();
+    expect(screen.getByText('Combined configuration')).toBeInTheDocument();
+    expect(screen.getByText('Stands')).toBeInTheDocument();
+    expect(screen.getAllByText('Available').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Leyenda')).not.toBeInTheDocument();
+  });
+
+  it('shows the side panel and the combined-configuration drawer in English', async () => {
+    renderEnglish();
+    await userEvent.click(screen.getByRole('button', { name: 'Stand list' }));
+    const panel = screen.getByTestId('positions-side-panel');
+    expect(within(panel).getAllByText('Terminal A')).toHaveLength(3);
+    expect(within(panel).getAllByText('No flight assigned').length).toBeGreaterThan(0);
+
+    await userEvent.click(within(panel).getByText('A10'));
+    const drawer = screen.getByTestId('position-detail-drawer');
+    expect(within(drawer).getByText('Stand disabled')).toBeInTheDocument();
+    expect(within(drawer).getByText('Configuration 9-Alfa active.')).toBeInTheDocument();
+    expect(within(drawer).getByText('This configuration uses A9 and temporarily blocks A10.')).toBeInTheDocument();
+    expect(within(drawer).getByRole('button', { name: 'Close details' })).toBeInTheDocument();
+  });
+
+  it('shows the not-found search message and the disconnected banner in English', async () => {
+    renderEnglish({ forceState: 'positionsMapDisconnected' });
+    expect(screen.getByText('Stale data — no connection with the positions provider.')).toBeInTheDocument();
+    await userEvent.type(screen.getByPlaceholderText('Search stand, flight or registration...'), 'ZZZ99{enter}');
+    expect(screen.getByText('Stand not found.')).toBeInTheDocument();
   });
 });

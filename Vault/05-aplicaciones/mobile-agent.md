@@ -195,9 +195,8 @@ No persiste heartbeats ni los incorpora a la outbox; ante almacenamiento
 incierto suspende actividad hasta comprobar la cuenta.
 
 El [layout](../../frontend/mobile-agent/src/app/_layout.tsx) inicia y detiene
-el servicio; los indicadores se muestran en OCC. La retención es transitoria
-en la API, sin migraciones. Las pruebas, bundles y validación Android real
-se describen por separado en la
-[auditoría](../../frontend/private-web/docs/design/admin-occ/audit.md).
+el servicio; los indicadores se muestran en el chat de OCC. La retención es
+transitoria en la API, sin migraciones. La validación en un Android real
+sigue pendiente.
 No se afirma una publicación de APK ni se actualizan aquí los metadatos de
 verificación de las secciones históricas anteriores.

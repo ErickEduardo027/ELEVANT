@@ -1,6 +1,7 @@
 import StatusBadge from '../../../components/StatusBadge';
 import { STATUS_COLORS } from '../../dashboard/statusMeta';
-import { EyeIcon } from './icons';
+import { UsersIcon } from '../../dashboard/components/icons';
+import { PencilIcon, EyeIcon, ClipboardIcon } from './icons';
 import { formatCountdown } from '../planningMappers';
 import { getPlanningStatusMeta } from '../planningStatus';
 import { formatPlanningClock } from '../planningTime';
@@ -9,7 +10,10 @@ import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
 
 const QUICK_ACTIONS = [
+  { id: 'edit', icon: PencilIcon, enabled: false },
+  { id: 'assign', icon: UsersIcon, enabled: false },
   { id: 'detail', icon: EyeIcon, enabled: true },
+  { id: 'workOrder', icon: ClipboardIcon, enabled: false },
 ];
 
 function LegSummary({ kind, leg, timeZone }) {
@@ -75,7 +79,7 @@ export default function FlightCard({ flight, now, onSelect }) {
           {formatCountdown(flight.timelineTime, now, language)}
         </span>
         <div className="flex items-center gap-1" onClick={event => event.stopPropagation()}>
-          {QUICK_ACTIONS.filter(action => action.enabled).map(({ id, icon: ActionIcon, enabled }) => (
+          {QUICK_ACTIONS.map(({ id, icon: ActionIcon, enabled }) => (
             <button
               key={id}
               type="button"

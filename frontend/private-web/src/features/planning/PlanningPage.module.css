@@ -1,9 +1,0 @@
-.planning { min-width: 0; }
-.operationalBar { display: grid; gap: 16px; padding: 20px; border: 1px solid var(--occ-ui-line); border-radius: 28px; background: linear-gradient(120deg, var(--occ-ui-glass), var(--occ-ui-soft)); box-shadow: var(--occ-ui-shadow); }
-.operationalBar :global([data-occ-summary]) { background: var(--occ-ui-solid); }
-.stage { min-width: 0; display: grid; gap: 16px; }
-.viewBar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-.planning :global([data-testid='flight-card']) { border-radius: 20px; background: var(--occ-ui-solid); box-shadow: 0 4px 18px rgb(11 31 63 / 5%); backdrop-filter: none; }
-.planning :global([data-testid='flight-card']):hover { box-shadow: 0 8px 28px rgb(11 31 63 / 10%); }
-@media (max-width: 767px) { .operationalBar { padding: 12px; border-radius: 24px; } }
-@media (prefers-reduced-motion: reduce) { .planning * { transition: none !important; } }

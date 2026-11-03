@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useDialogFocus } from '../../../hooks/useDialogFocus';
 import StatusBadge from '../../../components/StatusBadge';
 import { getStatusLabel, getStatusMeta } from '../../dashboard/statusMeta';
 import { formatClockTime } from '../../dashboard/mappers';
@@ -21,7 +20,6 @@ function Field({ label, children }) {
 
 export default function PositionDetailDrawer({ position, onClose, onViewFlightInMonitoring, canAssign = false, candidates = [], onChanged }) {
   const { t, language, locale } = useTranslation(positionsMapMessages);
-  const dialogRef = useDialogFocus(Boolean(position));
   useEffect(() => {
     if (!position) return undefined;
     function handleKeyDown(event) {
@@ -39,7 +37,7 @@ export default function PositionDetailDrawer({ position, onClose, onViewFlightIn
   return (
     <>
       <div className="fixed inset-0 z-40 bg-ink-900/40 backdrop-blur-sm transition-opacity duration-200" onClick={onClose} />
-      <aside ref={dialogRef}
+      <aside
         data-testid="position-detail-drawer"
         role="dialog"
         aria-modal="true"

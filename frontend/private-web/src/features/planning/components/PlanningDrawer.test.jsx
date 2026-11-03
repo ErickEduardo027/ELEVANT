@@ -214,14 +214,16 @@ describe('PlanningDrawer', () => {
     expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
   });
 
-  it('hides unimplemented actions and blocks conflicting reassignment', () => {
+  it('keeps unavailable drawer actions disabled and blocks reassignment', () => {
     renderDrawer({ flight: ASSIGNED_FLIGHT });
 
     expect(screen.getByRole('button', { name: 'Asignar operación' })).toBeDisabled();
     expect(within(optionsSection()).getByRole('status')).toHaveTextContent('ya tiene un agente activo');
 
     for (const label of ['Editar planificación', 'Crear Work Order']) {
-      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
+      const button = screen.getByRole('button', { name: label });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('title', 'Próximamente');
     }
   });
 
