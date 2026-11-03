@@ -376,6 +376,9 @@ internal static class WorkforceCommercialConfiguration
             AddNoActionReference<ServiceRequest, Contract>(builder, contract => contract.OriginatingServiceRequestId);
         });
 
+        // Final contract codes CTR-{year}-{n} (ADR-0025); a sequence, never reused.
+        modelBuilder.HasSequence<long>("contract_code_seq", "commercial").StartsAt(1).IncrementsBy(1);
+
         modelBuilder.Entity<ContractVersion>(builder =>
         {
             builder.ToTable("contract_versions", "commercial", table =>
@@ -383,7 +386,17 @@ internal static class WorkforceCommercialConfiguration
                 table.HasCheckConstraint("ck_contract_version_number", "[version_number] > 0");
                 table.HasCheckConstraint("ck_contract_version_dates", "[valid_to] IS NULL OR [valid_to] >= [valid_from]");
                 table.HasCheckConstraint("ck_contract_version_currency", "LEN([currency_code]) = 3");
+                table.HasCheckConstraint("ck_contract_version_renewal_term",
+                    "[renewal_term_months] IS NULL OR [renewal_term_months] BETWEEN 1 AND 60");
+                table.HasCheckConstraint("ck_contract_version_renewal_notice",
+                    "[renewal_notice_days] IS NULL OR [renewal_notice_days] BETWEEN 0 AND 180");
+                table.HasCheckConstraint("ck_contract_version_termination_notice",
+                    "[termination_notice_days] IS NULL OR [termination_notice_days] BETWEEN 0 AND 180");
             });
+            builder.Property(version => version.RenewalMode).HasConversion<string>().HasMaxLength(16);
+            builder.Property(version => version.TerminationTerms).HasMaxLength(4000);
+            builder.Property(version => version.ValidityConfirmedAt).HasPrecision(3);
+            builder.Property(version => version.RenewalStartedAt).HasPrecision(3);
             builder.Property(version => version.Status).HasConversion<string>().HasMaxLength(32);
             builder.Property(version => version.ValidFrom).HasColumnType("date");
             builder.Property(version => version.ValidTo).HasColumnType("date");
@@ -394,6 +407,7 @@ internal static class WorkforceCommercialConfiguration
             builder.HasIndex(version => new { version.ContractId, version.Status, version.ValidFrom });
             AddNoActionReference<Contract, ContractVersion>(builder, version => version.ContractId);
             AddNoActionReference<ApplicationUser, ContractVersion>(builder, version => version.ApprovedByAccountId);
+            AddNoActionReference<ApplicationUser, ContractVersion>(builder, version => version.ValidityConfirmedByAccountId);
         });
 
         modelBuilder.Entity<ContractVersionStation>(builder =>
@@ -413,6 +427,8 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(signature => signature.SignerTitle).HasMaxLength(120).IsRequired();
             builder.Property(signature => signature.DocumentSha256).HasMaxLength(64).IsUnicode(false).IsFixedLength().IsRequired();
             builder.Property(signature => signature.SignedAt).HasPrecision(3);
+            builder.Property(signature => signature.SignatureImage).HasColumnType("varbinary(max)");
+            builder.Property(signature => signature.SignatureImageSha256).HasMaxLength(64).IsUnicode(false).IsFixedLength();
             // One acceptance per party and version; the request id makes a retry idempotent.
             builder.HasIndex(signature => new { signature.ContractVersionId, signature.Party }).IsUnique();
             builder.HasIndex(signature => signature.RequestId).IsUnique();

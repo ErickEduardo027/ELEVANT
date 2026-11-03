@@ -58,7 +58,18 @@ public enum ContractVersionStatus
     PendingFinanceApproval,
     Approved,
     Superseded,
+    /// <summary>Reserved: no flow assigns it; Finance returns a version to Draft instead.</summary>
     Rejected,
+}
+
+/// <summary>
+/// How a contract is renewed (ADR-0025). Automatic starts the renewal draft by itself
+/// <c>RenewalNoticeDays</c> before the end; it still goes through Finance and both signatures.
+/// </summary>
+public enum ContractRenewalMode
+{
+    Manual,
+    Automatic,
 }
 
 /// <summary>Party that accepts a contract version.</summary>

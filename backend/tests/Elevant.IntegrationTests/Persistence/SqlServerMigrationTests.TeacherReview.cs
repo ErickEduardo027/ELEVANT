@@ -248,8 +248,20 @@ public sealed partial class SqlServerMigrationTests
 
         var read = await documents.ReadAsync(ContractsAccount, versionId, ct);
         Assert.Null(read.Failure);
-        var document = read.Document!;
-        Assert.Equal("Aviam", document.SignableBy);
+        // ADR-0025: until Contratos confirms validity nobody can sign.
+        Assert.Null(read.Document!.SignableBy);
+        Assert.Null(read.Document.Validity);
+        // A contract still carrying its draft code gets the final CTR- code when validity is confirmed.
+        var contractKey = await context.ContractVersions.Where(version => version.PublicId == versionId)
+            .Select(version => version.ContractId).SingleAsync(ct);
+        await context.Contracts.Where(contract => contract.Id == contractKey)
+            .ExecuteUpdateAsync(update => update.SetProperty(contract => contract.ContractCode, "DRAFT-" + Guid.NewGuid().ToString("N")), ct);
+        await ConfirmValidityAsync(documents, versionId, DateOnly.FromDateTime(DateTime.UtcNow), ct);
+        var document = (await documents.ReadAsync(ContractsAccount, versionId, ct)).Document!;
+        Assert.NotNull(document.Validity);
+        Assert.Matches(@"^CTR-\d{4}-\d{4,}$", document.ContractCode);
+        // The airline signs first; AVIAM waits for it.
+        Assert.Null(document.SignableBy);
         Assert.Equal(64, document.ContentSha256.Length);
         Assert.Empty(document.Signatures);
         Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(
@@ -259,29 +271,38 @@ public sealed partial class SqlServerMigrationTests
         var finance = await documents.ReadAsync(FinanceAccount, versionId, ct);
         Assert.Null(finance.Document!.SignableBy);
         Assert.Equal(ContractDocumentFailure.Forbidden, (await documents.SignAsync(FinanceAccount, versionId,
-            new SignContractInput(Guid.NewGuid(), "Marta Gómez", "Analista", document.ContentSha256, true), ct)).Failure);
+            new SignContractInput(Guid.NewGuid(), "Marta Gómez", "Analista", document.ContentSha256, true, SignaturePng), ct)).Failure);
         Assert.Equal(ContractDocumentFailure.Conflict, (await documents.SignAsync(ContractsAccount, versionId,
-            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", new string('0', 64), true), ct)).Failure);
+            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", new string('0', 64), true, SignaturePng), ct)).Failure);
         Assert.Equal(ContractDocumentFailure.Invalid, (await documents.SignAsync(ContractsAccount, versionId,
-            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", document.ContentSha256, false), ct)).Failure);
-
-        var aviamRequest = new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", document.ContentSha256, true);
-        var aviam = await documents.SignAsync(ContractsAccount, versionId, aviamRequest, ct);
-        Assert.Null(aviam.Failure);
-        Assert.True((await documents.SignAsync(ContractsAccount, versionId, aviamRequest, ct)).Replayed);
-        Assert.Equal(ContractDocumentFailure.AlreadySigned, (await documents.SignAsync(ContractsAccount, versionId,
-            aviamRequest with { RequestId = Guid.NewGuid() }, ct)).Failure);
+            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", document.ContentSha256, false, SignaturePng), ct)).Failure);
+        Assert.Equal("signature_image_invalid", (await documents.SignAsync(airlineAccount, versionId,
+            new SignContractInput(Guid.NewGuid(), "Luis Marte", "Director", document.ContentSha256, true), ct)).Code);
+        Assert.Equal(ContractDocumentFailure.AirlineSignaturePending, (await documents.SignAsync(ContractsAccount, versionId,
+            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", document.ContentSha256, true, SignaturePng), ct)).Failure);
 
         var portal = await documents.ReadAsync(airlineAccount, versionId, ct);
         Assert.Equal("Airline", portal.Document!.SignableBy);
-        var airline = await documents.SignAsync(airlineAccount, versionId,
-            new SignContractInput(Guid.NewGuid(), "Luis Marte", "Director de estación", document.ContentSha256, true), ct);
-        Assert.Null(airline.Failure);
-        Assert.Equal(["Aviam", "Airline"], airline.Document!.Signatures.Select(item => item.Party));
-        Assert.All(airline.Document.Signatures, item => Assert.Equal(document.ContentSha256, item.DocumentSha256));
-        Assert.NotNull(airline.Document.SignedOn);
+        var airlineRequest = new SignContractInput(Guid.NewGuid(), "Luis Marte", "Director de estación",
+            document.ContentSha256, true, SignaturePng);
+        Assert.Null((await documents.SignAsync(airlineAccount, versionId, airlineRequest, ct)).Failure);
+        Assert.True((await documents.SignAsync(airlineAccount, versionId, airlineRequest, ct)).Replayed);
+        Assert.Equal(ContractDocumentFailure.AlreadySigned, (await documents.SignAsync(airlineAccount, versionId,
+            airlineRequest with { RequestId = Guid.NewGuid() }, ct)).Failure);
         Assert.Contains(await notificationsFor(ContractsAccount), item => item.Kind == "contract_signed");
 
+        Assert.Equal("Aviam", (await documents.ReadAsync(ContractsAccount, versionId, ct)).Document!.SignableBy);
+        var aviam = await documents.SignAsync(ContractsAccount, versionId,
+            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", document.ContentSha256, true, SignaturePng), ct);
+        Assert.Null(aviam.Failure);
+        Assert.Equal(["Airline", "Aviam"], aviam.Document!.Signatures.Select(item => item.Party));
+        Assert.All(aviam.Document.Signatures, item => Assert.Equal(document.ContentSha256, item.DocumentSha256));
+        Assert.All(aviam.Document.Signatures, item => Assert.NotNull(item.Image));
+        Assert.NotNull(aviam.Document.SignedOn);
+
+        // The activation email (ADR-0025) has its own rollback guard on the outbox; empty it so
+        // this check reaches the signatures guard it is about.
+        await context.EmailOutbox.ExecuteDeleteAsync(ct);
         var chain = context.Database.GetMigrations().ToArray();
         var previous = chain[Array.IndexOf(chain, ContractSignaturesMigration) - 1];
         var failure = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(previous, ct));

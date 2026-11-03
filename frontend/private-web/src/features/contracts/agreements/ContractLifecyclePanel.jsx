@@ -17,7 +17,7 @@ const ACTIONS = {
   Terminate: { label: 'Terminar', from: ['Active', 'Suspended', 'Expired'], danger: true },
 };
 const KIND_DOT = {
-  request: 'bg-sky-500', draft: 'bg-slate-400', finance: 'bg-violet-500', signature: 'bg-accent-600',
+  request: 'bg-sky-500', draft: 'bg-slate-400', finance: 'bg-violet-500', validity: 'bg-blue-600', signature: 'bg-accent-600',
   permit: 'bg-amber-500', status: 'bg-emerald-600', upcoming: 'border-2 border-dashed border-slate-400 bg-transparent',
 };
 const MESSAGES = {

@@ -190,7 +190,50 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
             contractNotices++;
         }
         await context.SaveChangesAsync(cancellationToken);
+        await StartAutomaticRenewalsAsync(today, now, cancellationToken);
         return new ContractLifecycleSweep(activated, expired, suspended, permitNotices, contractNotices);
+    }
+
+    /// <summary>
+    /// ADR-0025: a version with automatic renewal starts its renewal draft by itself
+    /// <c>RenewalNoticeDays</c> before it ends, once. The draft copies rates and terms with the
+    /// next period and still needs Finance, the validity step and both signatures: nothing is
+    /// extended silently, because signed content and prices are immutable.
+    /// </summary>
+    private async Task StartAutomaticRenewalsAsync(DateOnly today, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var due = await (from version in context.ContractVersions
+                         join contract in context.Contracts on version.ContractId equals contract.Id
+                         where version.Status == ContractVersionStatus.Approved &&
+                               version.RenewalMode == ContractRenewalMode.Automatic && version.RenewalStartedAt == null &&
+                               version.RenewalTermMonths != null && version.ValidTo != null && version.ValidTo >= today &&
+                               contract.Status == ContractStatus.Active
+                         select new { Version = version, Contract = contract }).ToArrayAsync(cancellationToken);
+        foreach (var item in due)
+        {
+            var end = item.Version.ValidTo!.Value;
+            if (end.AddDays(-(item.Version.RenewalNoticeDays ?? 0)) > today) continue;
+            // Only the latest approved version renews; a later one means the cycle already moved on.
+            if (await context.ContractVersions.AnyAsync(other => other.ContractId == item.Contract.Id &&
+                    other.Id != item.Version.Id && other.ValidFrom > item.Version.ValidFrom &&
+                    other.Status != ContractVersionStatus.Superseded, cancellationToken))
+            {
+                item.Version.RenewalStartedAt = now;
+                continue;
+            }
+            var from = end.AddDays(1);
+            var input = new ContractLifecycleInput(nameof(ContractLifecycleAction.Renew), "Renovación automática",
+                item.Contract.Status.ToString(), from, from.AddMonths(item.Version.RenewalTermMonths!.Value).AddDays(-1));
+            var renewal = await RenewAsync(item.Contract, input, now, cancellationToken);
+            item.Version.RenewalStartedAt = now;
+            item.Version.UpdatedAt = now;
+            if (renewal.Failure is null)
+            {
+                // Contratos and the airline hear about it; Finance does when Contratos submits the draft.
+                await ContractActivation.AnnounceAsync(context, item.Contract, "contract_renewal_started", now, cancellationToken);
+            }
+            await context.SaveChangesAsync(cancellationToken);
+        }
     }
 
     private void Change(Contract contract, ContractStatus target, string reason, DateTimeOffset now)
@@ -247,6 +290,11 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
             if (version.ApprovedAt is { } approved)
                 entries.Add(new(approved, "finance", $"Finanzas aprobó la versión {version.VersionNumber}", null,
                     await Name(version.ApprovedByAccountId)));
+            if (version.ValidityConfirmedAt is { } confirmed)
+                entries.Add(new(confirmed, "validity", $"Contratos fijó la vigencia de la versión {version.VersionNumber}",
+                    $"{version.ValidFrom:dd/MM/yyyy} – {version.ValidTo:dd/MM/yyyy} · renovación " +
+                    (version.RenewalMode == ContractRenewalMode.Automatic ? $"automática ({version.RenewalTermMonths} meses)" : "manual"),
+                    await Name(version.ValidityConfirmedByAccountId)));
         }
         foreach (var review in await context.ContractFinanceReviews.AsNoTracking()
                      .Where(item => versionIds.Contains(item.ContractVersionId) && item.Decision == ContractFinanceDecision.Returned)

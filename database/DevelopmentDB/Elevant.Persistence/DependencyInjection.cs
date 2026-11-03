@@ -108,7 +108,12 @@ public static class DependencyInjection
         services.AddScoped<ICommercialProvisioningStore, EfCommercialProvisioningStore>();
         services.AddScoped<IContractDraftStore, EfContractDraftStore>();
         services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
-        services.AddScoped<IContractDocumentStore, EfContractDocumentStore>();
+        services.AddScoped<EfContractDocumentStore>();
+        services.AddScoped<IContractDocumentStore>(provider => provider.GetRequiredService<EfContractDocumentStore>());
+        // The PDF renderer lives in Infrastructure; a factory keeps hosts without it (tools, tests) valid.
+        services.AddScoped<Elevant.Application.Abstractions.Messaging.IEmailAttachmentResolver>(provider =>
+            new EfContractAttachmentResolver(provider.GetRequiredService<EfContractDocumentStore>(),
+                provider.GetRequiredService<Elevant.Application.Abstractions.Commercial.IContractPdfRenderer>()));
         services.AddScoped<IAirlinePermitStore, EfAirlinePermitStore>();
         services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();

@@ -2,6 +2,7 @@ using Elevant.Application.Abstractions.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -16,6 +17,23 @@ public sealed partial class SqlServerMigrationTests
     private static readonly Guid SeededContractVersion = Guid.Parse("60000000-0000-7000-8000-000000000003");
     private static readonly Guid PortalAirlineAccount = Guid.Parse("40000000-0000-7000-8000-000000000003");
     private static readonly Guid ContractsAdministrator = Guid.Parse("40000000-0000-7000-8000-000000000005");
+
+    // 1×1 PNG standing in for a drawn signature (ADR-0025).
+    private const string SignaturePng =
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+
+    /// <summary>Contratos confirms a year of validity with automatic renewal and returns the hash to sign.</summary>
+    private static async Task<string> ConfirmValidityAsync(IContractDocumentStore documents, Guid versionId, DateOnly from,
+        CancellationToken ct)
+    {
+        var current = (await documents.ReadAsync(ContractsAdministrator, versionId, ct)).Document!;
+        var result = await documents.SetValidityAsync(ContractsAdministrator, versionId, new ContractValidityInput(
+            from, from.AddYears(1).AddDays(-1), "Automatic", 12, 30, 60, "Incumplimiento grave de pago.",
+            current.ContentSha256), ct);
+        Assert.Null(result.Code);
+        Assert.Null(result.Failure);
+        return result.Document!.ContentSha256;
+    }
 
     [Fact]
     public async Task ContractsBecomeActiveAfterFinanceSignaturesAndAPermitAndFollowTheirDatedLifecycle()
@@ -42,11 +60,16 @@ public sealed partial class SqlServerMigrationTests
         // Start from an approved, unsigned contract.
         await context.Contracts.Where(item => item.Id == contractId).ExecuteUpdateAsync(update => update
             .SetProperty(item => item.Status, ContractStatus.Draft).SetProperty(item => item.SignedOn, (DateOnly?)null), ct);
-        var hash = (await documents.ReadAsync(ContractsAdministrator, SeededContractVersion, ct)).Document!.ContentSha256;
-        Assert.Null((await documents.SignAsync(ContractsAdministrator, SeededContractVersion,
-            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", hash, true), ct)).Failure);
+        var unconfirmed = (await documents.ReadAsync(ContractsAdministrator, SeededContractVersion, ct)).Document!;
+        // ADR-0025: nobody signs before Contratos confirms validity and renewal.
+        Assert.Equal(ContractDocumentFailure.ValidityPending, (await documents.SignAsync(PortalAirlineAccount,
+            SeededContractVersion, new SignContractInput(Guid.NewGuid(), "Casey Airline", "Director",
+                unconfirmed.ContentSha256, true, SignaturePng), ct)).Failure);
+        var hash = await ConfirmValidityAsync(documents, SeededContractVersion, today, ct);
         Assert.Null((await documents.SignAsync(PortalAirlineAccount, SeededContractVersion,
-            new SignContractInput(Guid.NewGuid(), "Casey Airline", "Director", hash, true), ct)).Failure);
+            new SignContractInput(Guid.NewGuid(), "Casey Airline", "Director", hash, true, SignaturePng), ct)).Failure);
+        Assert.Null((await documents.SignAsync(ContractsAdministrator, SeededContractVersion,
+            new SignContractInput(Guid.NewGuid(), "Ana Pérez", "Gerente comercial", hash, true, SignaturePng), ct)).Failure);
         // Signed by both but without a verified operating permit: still a draft.
         Assert.Equal(ContractStatus.Draft, (await ContractAsync()).Status);
 
@@ -67,6 +90,19 @@ public sealed partial class SqlServerMigrationTests
         var active = await ContractAsync();
         Assert.Equal(ContractStatus.Active, active.Status);
         Assert.NotNull(active.SignedOn);
+        // ADR-0025: the final code was assigned with the validity, and activation queued the signed PDF.
+        Assert.False(Elevant.Application.Commercial.ContractValidity.IsDraftCode(active.ContractCode));
+        var emails = await context.EmailOutbox.AsNoTracking()
+            .Where(item => item.Purpose == EmailPurpose.ContractActivated).ToArrayAsync(ct);
+        Assert.NotEmpty(emails);
+        Assert.All(emails, item => Assert.Equal("contract-version:" + SeededContractVersion, item.AttachmentReference));
+        var resolver = new EfContractAttachmentResolver(
+            scope.ServiceProvider.GetRequiredService<EfContractDocumentStore>(),
+            new Elevant.Infrastructure.Commercial.ContractPdfRenderer());
+        var pdf = (await resolver.ResolveAsync(emails[0].AttachmentReference!, ct))!;
+        Assert.Equal("application/pdf", pdf.ContentType);
+        Assert.Equal("%PDF", System.Text.Encoding.ASCII.GetString(pdf.Content[..4]));
+        Assert.Null(await resolver.ResolveAsync("contract-version:" + Guid.NewGuid(), ct));
 
         // The 30-day notice of the permit goes out once.
         Assert.Equal(1, (await lifecycle.SweepAsync(ct)).PermitNotices);
@@ -110,7 +146,8 @@ public sealed partial class SqlServerMigrationTests
 
         // Past its last approved validity the contract expires; it can still be terminated.
         await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion)
-            .ExecuteUpdateAsync(update => update.SetProperty(item => item.ValidTo, today.AddDays(-1)), ct);
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.ValidFrom, today.AddDays(-30))
+                .SetProperty(item => item.ValidTo, today.AddDays(-1)), ct);
         Assert.Equal(1, (await lifecycle.SweepAsync(ct)).Expired);
         Assert.Equal("Terminated", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
             new ContractLifecycleInput("Terminate", "Fin de la relación comercial", "Expired"), ct)).Status);
@@ -132,5 +169,47 @@ public sealed partial class SqlServerMigrationTests
         var previous = chain[Array.IndexOf(chain, LifecycleMigration) - 1];
         var failure = await Assert.ThrowsAsync<SqlException>(() => context.GetService<IMigrator>().MigrateAsync(previous, ct));
         Assert.Equal(52333, failure.Number);
+    }
+}
+
+public sealed partial class SqlServerMigrationTests
+{
+    [Fact]
+    public async Task AutomaticRenewalStartsItsDraftOnceWithinTheNoticeWindow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
+        var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var contractId = await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion)
+            .Select(item => item.ContractId).SingleAsync(ct);
+
+        // The seeded active contract gets validity with automatic renewal (12 months, 30 days' notice).
+        await ConfirmValidityAsync(documents, SeededContractVersion, today, ct);
+        Assert.Equal(0, await context.ContractVersions.CountAsync(item => item.ContractId == contractId &&
+            item.Status == ContractVersionStatus.Draft, ct));
+
+        // Outside the notice window nothing happens; inside it, one renewal draft starts and only once.
+        await lifecycle.SweepAsync(ct);
+        Assert.Equal(0, await context.ContractVersions.CountAsync(item => item.ContractId == contractId &&
+            item.Status == ContractVersionStatus.Draft, ct));
+        await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.ValidTo, today.AddDays(10)), ct);
+        context.ChangeTracker.Clear();
+        await lifecycle.SweepAsync(ct);
+        await lifecycle.SweepAsync(ct);
+        var drafts = await context.ContractVersions.AsNoTracking()
+            .Where(item => item.ContractId == contractId && item.Status == ContractVersionStatus.Draft).ToArrayAsync(ct);
+        var draft = Assert.Single(drafts);
+        Assert.Equal((today.AddDays(11), today.AddDays(11).AddMonths(12).AddDays(-1)), (draft.ValidFrom, draft.ValidTo));
+        Assert.Null(draft.ValidityConfirmedAt);
+        Assert.NotNull((await context.ContractVersions.AsNoTracking()
+            .SingleAsync(item => item.PublicId == SeededContractVersion, ct)).RenewalStartedAt);
     }
 }

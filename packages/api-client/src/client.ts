@@ -110,6 +110,7 @@ import {
   getDownloadContractDocumentUrl,
   getDownloadContractDraftPdfUrl,
   getSignContractVersionUrl,
+  getSetContractValidityUrl,
   getGetOccReportUrl,
   getExportOccReportUrl,
   getValidateHumanResourcesAttendanceUrl,
@@ -219,6 +220,8 @@ import {
   type SubmitAirlinePermitInput,
   type ContractTimelineData,
   type SignContractRequest,
+  type SetContractValidityRequest,
+  type ContractValidityResponse,
   type OccReportPageResponse,
   type HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse,
   type HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse,
@@ -855,6 +858,9 @@ export interface ElevantApiClient {
   /** History of the contract of a version, oldest first (request, Finance, signatures, permits, status). */
   getContractTimeline(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractTimelineData>;
   signContractVersion(versionId: string, request: SignContractRequest, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
+  /** Contratos confirms validity, renewal and termination before signatures (ADR-0025). */
+  setContractValidity(versionId: string, request: SetContractValidityRequest,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
   getOccReport(key: OccReportKey, query: OccReportQuery,
     options?: GetHumanResourcesReportOptions): Promise<OccReportPageResponse>;
@@ -2327,7 +2333,7 @@ function validatedPermitInput(input: SubmitAirlinePermitInput): SubmitAirlinePer
 function isContractDocument(value: unknown, versionId: string): value is ContractDocumentResponse {
   return isRecord(value) && hasOnlyKeys(value, ["contractId", "versionId", "contractCode", "contractStatus", "airlineName",
       "airlineCode", "airlineLegalName", "versionNumber", "versionStatus", "validFrom", "validTo", "currencyCode",
-      "stations", "rates", "terms", "signedOn", "signatures", "contentSha256", "signableBy"]) &&
+      "stations", "rates", "terms", "signedOn", "signatures", "contentSha256", "signableBy", "validity"]) &&
     isUuid(value.contractId) && isUuid(value.versionId) && value.versionId.toLowerCase() === versionId &&
     isNonEmptyString(value.contractCode) && isNonEmptyString(value.contractStatus) && isNonEmptyString(value.airlineName) &&
     typeof value.airlineCode === "string" && isOptionalNullable(value.airlineLegalName, isNonEmptyString) &&
@@ -2340,12 +2346,38 @@ function isContractDocument(value: unknown, versionId: string): value is Contrac
       isFiniteNumber(rate.unitPrice) && isFiniteNumber(rate.minimumQuantity)) &&
     isOptionalNullable(value.terms, (text: unknown) => typeof text === "string") && isOptionalNullable(value.signedOn, isDateOnly) &&
     Array.isArray(value.signatures) && value.signatures.length <= 2 && value.signatures.every(signature => isRecord(signature) &&
-      hasOnlyKeys(signature, ["party", "signerName", "signerTitle", "signedAt", "documentSha256"]) &&
+      hasOnlyKeys(signature, ["party", "signerName", "signerTitle", "signedAt", "documentSha256", "hasDrawnSignature"]) &&
+      typeof signature.hasDrawnSignature === "boolean" &&
       typeof signature.party === "string" && CONTRACT_PARTIES.has(signature.party) && isNonEmptyString(signature.signerName) &&
       isNonEmptyString(signature.signerTitle) && isDateTimeOffset(signature.signedAt) &&
       typeof signature.documentSha256 === "string" && /^[0-9a-f]{64}$/.test(signature.documentSha256)) &&
     typeof value.contentSha256 === "string" && /^[0-9a-f]{64}$/.test(value.contentSha256) &&
-    isOptionalNullable(value.signableBy, (party: unknown) => typeof party === "string" && CONTRACT_PARTIES.has(party));
+    isOptionalNullable(value.signableBy, (party: unknown) => typeof party === "string" && CONTRACT_PARTIES.has(party)) &&
+    isOptionalNullable(value.validity, isContractValidity);
+}
+
+const RENEWAL_MODES = new Set<string>(["Manual", "Automatic"]);
+
+function isContractValidity(value: unknown): boolean {
+  return isRecord(value) && hasOnlyKeys(value, ["renewalMode", "renewalTermMonths", "renewalNoticeDays",
+      "terminationNoticeDays", "terminationTerms", "confirmedAt"]) &&
+    typeof value.renewalMode === "string" && RENEWAL_MODES.has(value.renewalMode) &&
+    isOptionalNullable(value.renewalTermMonths, (months: unknown) => Number.isInteger(months)) &&
+    Number.isInteger(value.renewalNoticeDays) && Number.isInteger(value.terminationNoticeDays) &&
+    isOptionalNullable(value.terminationTerms, (text: unknown) => typeof text === "string") &&
+    isDateTimeOffset(value.confirmedAt);
+}
+
+/** Largest drawn signature the API accepts (ADR-0025): a PNG of 256 KB at most. */
+export const MAX_SIGNATURE_PNG_BYTES = 256 * 1024;
+
+function validatedSignaturePng(value: unknown): string {
+  if (typeof value !== "string") throw new TypeError("The drawn signature is missing.");
+  const base64 = value.replace(/^data:image\/png;base64,/i, "");
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64) || base64.length < 32 || base64.length > Math.ceil(MAX_SIGNATURE_PNG_BYTES / 3) * 4 ||
+      !base64.startsWith("iVBORw0KGgo"))
+    throw new TypeError("The drawn signature must be a PNG of up to 256 KB.");
+  return base64;
 }
 
 const OCC_REPORT_KEYS = new Set<string>(["operations", "turnaround-times", "services-by-airline", "reviews", "agent-productivity"]);
@@ -6065,12 +6097,39 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           typeof request.documentSha256 !== "string" || !/^[0-9a-f]{64}$/i.test(request.documentSha256) ||
           request.accepted !== true)
         throw new TypeError("The contract signature is invalid.");
+      const signatureImagePng = validatedSignaturePng(request.signatureImagePng);
       const headers = headersFrom(options?.headers, "Request headers");
       headers.set("content-type", "application/json");
       headers.set("idempotency-key", key);
       const result = await execute(getSignContractVersionUrl(version), { ...options, method: "POST", headers,
         body: JSON.stringify({ signerName: name, signerTitle: title, documentSha256: request.documentSha256.toLowerCase(),
-          accepted: true }) }, true);
+          accepted: true, signatureImagePng }) }, true);
+      if (!isContractDocument(result.data, version)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async setContractValidity(versionId: string, request: SetContractValidityRequest,
+      options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      if (!isRecord(request) || !isDateOnly(request.validFrom) || !isDateOnly(request.validTo) ||
+          request.validTo <= request.validFrom || !RENEWAL_MODES.has(request.renewalMode) ||
+          (request.renewalTermMonths != null && (!Number.isInteger(request.renewalTermMonths) ||
+            request.renewalTermMonths < 1 || request.renewalTermMonths > 60)) ||
+          (request.renewalMode === "Automatic" && request.renewalTermMonths == null) ||
+          !Number.isInteger(request.renewalNoticeDays) || request.renewalNoticeDays < 0 || request.renewalNoticeDays > 180 ||
+          !Number.isInteger(request.terminationNoticeDays) || request.terminationNoticeDays < 0 ||
+          request.terminationNoticeDays > 180 ||
+          (request.terminationTerms != null && (typeof request.terminationTerms !== "string" ||
+            request.terminationTerms.length > 4000)) ||
+          typeof request.expectedDocumentSha256 !== "string" || !/^[0-9a-f]{64}$/i.test(request.expectedDocumentSha256))
+        throw new TypeError("The contract validity is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSetContractValidityUrl(version), { ...options, method: "PUT", headers,
+        body: JSON.stringify({ validFrom: request.validFrom, validTo: request.validTo, renewalMode: request.renewalMode,
+          renewalTermMonths: request.renewalTermMonths ?? null, renewalNoticeDays: request.renewalNoticeDays,
+          terminationNoticeDays: request.terminationNoticeDays,
+          terminationTerms: request.terminationTerms?.trim() || null,
+          expectedDocumentSha256: request.expectedDocumentSha256.toLowerCase() }) }, true);
       if (!isContractDocument(result.data, version)) throw malformedResponse(result.status);
       return result.data;
     },

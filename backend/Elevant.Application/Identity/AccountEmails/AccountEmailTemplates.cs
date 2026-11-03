@@ -60,6 +60,23 @@ public static class AccountEmailTemplates
         action: ("Crear una contraseña nueva", link),
         security: "Si no lo pediste, ignora este correo: tu contraseña no cambia.");
 
+    /// <summary>Both parties signed and the contract is active; the signed PDF travels attached (ADR-0025).</summary>
+    public static EmailMessage ContractActivated(string to, string airline, string contractCode, DateOnly validFrom,
+        DateOnly? validTo) => Build(to,
+        subject: $"Contrato {contractCode} activo · ELEVANT",
+        preheader: $"El contrato de {airline} con AVIAM ya está en vigor.",
+        kicker: "Contratos",
+        title: "Tu contrato está activo",
+        greeting: null,
+        paragraphs: [$"El contrato {contractCode} entre AVIAM y {airline} quedó firmado por ambas partes y está en vigor.",
+            $"Vigencia: del {validFrom.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} " +
+            (validTo is { } end ? $"al {end.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}." : "sin fecha de fin."),
+            "Adjuntamos el PDF firmado. También puedes consultarlo en el portal de aerolíneas."],
+        validity: "Documento firmado por ambas partes",
+        code: null,
+        action: null,
+        security: "Guarda este documento: su huella SHA-256 identifica el contenido que firmaron ambas partes.");
+
     public static EmailMessage Test(string to, DateTimeOffset? sentAt = null) => Build(to,
         subject: "Prueba de correo ELEVANT",
         preheader: "El remitente no-reply de ELEVANT funciona.",

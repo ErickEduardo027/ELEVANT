@@ -26,6 +26,12 @@ public sealed class EmailOutboxMessage : AuditableEntity
 
     public DateTimeOffset? SentAt { get; set; }
 
+    /// <summary>
+    /// Attachment resolved when sending, e.g. <c>contract-version:{publicId}</c> for the signed
+    /// contract PDF; the outbox never stores the file itself.
+    /// </summary>
+    public string? AttachmentReference { get; set; }
+
     /// <summary>Short, non-sensitive reason of the last failure.</summary>
     public string? LastError { get; set; }
 }

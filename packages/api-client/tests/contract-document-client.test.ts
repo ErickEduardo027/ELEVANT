@@ -4,17 +4,22 @@ import { createElevantApiClient } from "../src";
 const versionId = "60000000-0000-7000-8000-000000000001";
 const key = "a0000000-0000-7000-8000-000000000009";
 const sha = "a".repeat(64);
+// 1×1 PNG standing in for a drawn signature (ADR-0025).
+const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+const validity = { renewalMode: "Automatic", renewalTermMonths: 12, renewalNoticeDays: 30, terminationNoticeDays: 60,
+  terminationTerms: "Incumplimiento grave.", confirmedAt: "2026-11-03T12:00:00.000Z" };
 const document = { contractId: "61000000-0000-7000-8000-000000000001", versionId, contractCode: "CT-001",
   contractStatus: "Active", airlineName: "Demo Air", airlineCode: "DM", airlineLegalName: null, versionNumber: 1,
   versionStatus: "Approved", validFrom: "2026-01-01", validTo: null, currencyCode: "USD", stations: ["PUJ · Punta Cana"],
   rates: [{ serviceCode: "RAMP", serviceName: "Rampa", billingUnit: "operación", unitPrice: 150, minimumQuantity: 1 }],
-  terms: "Pago a 30 días.", signedOn: null, signatures: [], contentSha256: sha, signableBy: "Airline" };
+  terms: "Pago a 30 días.", signedOn: null, signatures: [], contentSha256: sha, signableBy: "Airline", validity };
 
 describe("contract document client", () => {
   it("reads, signs with an idempotency key and downloads the PDF", async () => {
     const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];
     const answers = [Response.json(document), Response.json({ ...document, signableBy: null, signatures: [
-      { party: "Airline", signerName: "Luis Marte", signerTitle: "Director", signedAt: "2026-10-26T12:00:00.000Z", documentSha256: sha }] }),
+      { party: "Airline", signerName: "Luis Marte", signerTitle: "Director", signedAt: "2026-10-26T12:00:00.000Z", documentSha256: sha,
+        hasDrawnSignature: true }] }),
       new Response(new Uint8Array([37, 80, 68, 70, 45, 49, 46, 55, 10]), { headers: { "content-type": "application/pdf" } })];
     const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async (input, init) => {
       requests.push({ url: String(input), method: init?.method ?? "GET", headers: new Headers(init?.headers), body: String(init?.body ?? "") });
@@ -22,7 +27,8 @@ describe("contract document client", () => {
     } });
     await expect(client.getContractDocument(versionId)).resolves.toMatchObject({ signableBy: "Airline" });
     await expect(client.signContractVersion(versionId, { signerName: " Luis Marte ", signerTitle: "Director",
-      documentSha256: sha.toUpperCase(), accepted: true }, key)).resolves.toMatchObject({ signableBy: null });
+      documentSha256: sha.toUpperCase(), accepted: true, signatureImagePng: "data:image/png;base64," + png }, key))
+      .resolves.toMatchObject({ signableBy: null });
     expect((await client.downloadContractDocument(versionId)).type).toBe("application/pdf");
     expect(requests.map(item => [item.method, item.url])).toEqual([
       ["GET", `https://api.example.test/api/v1/contract-versions/${versionId}/document`],
@@ -30,7 +36,29 @@ describe("contract document client", () => {
       ["GET", `https://api.example.test/api/v1/contract-versions/${versionId}/document/pdf`],
     ]);
     expect(requests[1]!.headers.get("idempotency-key")).toBe(key);
-    expect(JSON.parse(requests[1]!.body)).toEqual({ signerName: "Luis Marte", signerTitle: "Director", documentSha256: sha, accepted: true });
+    expect(JSON.parse(requests[1]!.body)).toEqual({ signerName: "Luis Marte", signerTitle: "Director", documentSha256: sha,
+      accepted: true, signatureImagePng: png });
+  });
+
+  it("confirms validity and renewal with the hash the form was built from", async () => {
+    const requests: Array<{ method: string; url: string; body: string }> = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async (input, init) => {
+      requests.push({ method: init?.method ?? "GET", url: String(input), body: String(init?.body ?? "") });
+      return Response.json({ ...document, validity: { ...validity, renewalMode: "Manual", renewalTermMonths: null } });
+    } });
+    await expect(client.setContractValidity(versionId, { validFrom: "2026-11-03", validTo: "2027-11-02",
+      renewalMode: "Manual", renewalTermMonths: null, renewalNoticeDays: 30, terminationNoticeDays: 60,
+      terminationTerms: "  ", expectedDocumentSha256: sha.toUpperCase() }))
+      .resolves.toMatchObject({ validity: { renewalMode: "Manual" } });
+    expect(requests[0]).toMatchObject({ method: "PUT",
+      url: `https://api.example.test/api/v1/contract-versions/${versionId}/validity` });
+    expect(JSON.parse(requests[0]!.body)).toEqual({ validFrom: "2026-11-03", validTo: "2027-11-02", renewalMode: "Manual",
+      renewalTermMonths: null, renewalNoticeDays: 30, terminationNoticeDays: 60, terminationTerms: null,
+      expectedDocumentSha256: sha });
+    await expect(client.setContractValidity(versionId, { validFrom: "2026-11-03", validTo: "2027-11-02",
+      renewalMode: "Automatic", renewalTermMonths: null, renewalNoticeDays: 30, terminationNoticeDays: 60,
+      terminationTerms: null, expectedDocumentSha256: sha })).rejects.toThrow(TypeError);
+    expect(requests).toHaveLength(1);
   });
 
   it("downloads the watermarked draft PDF from its own route", async () => {
@@ -48,7 +76,10 @@ describe("contract document client", () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => Response.json({ ...document, signableBy: "Notary" }) });
     await expect(client.signContractVersion(versionId, { signerName: "Luis Marte", signerTitle: "Director",
-      documentSha256: sha, accepted: false }, key)).rejects.toThrow(TypeError);
+      documentSha256: sha, accepted: false, signatureImagePng: png }, key)).rejects.toThrow(TypeError);
+    await expect(client.signContractVersion(versionId, { signerName: "Luis Marte", signerTitle: "Director",
+      documentSha256: sha, accepted: true, signatureImagePng: "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" }, key))
+      .rejects.toThrow(TypeError);
     await expect(client.getContractDocument(versionId)).rejects.toMatchObject({ kind: "malformed-response" });
   });
 });

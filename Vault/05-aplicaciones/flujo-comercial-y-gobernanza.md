@@ -68,8 +68,17 @@ flowchart LR
     C -->|aprueba| U[Superadministrador crea acceso]
     C -->|declina| X[Solicitud rechazada]
     U --> B[Aerolínea revisa borrador]
-    B --> T[Contratos ajusta y activa]
+    B --> T[Contratos ajusta y envía a Finanzas]
+    T --> F[Finanzas aprueba tarifas]
+    F --> G[Contratos fija vigencia y renovación]
+    G --> H[Firma dibujada de la aerolínea]
+    H --> I[Contrafirma de AVIAM]
+    I --> J[Contrato activo y PDF firmado por correo]
 ```
+
+La fase pre-operativa (ADR-0025) añade el paso de vigencia después de Finanzas, el código
+definitivo `CTR-{año}-{n}`, la firma dibujada en orden (aerolínea y después AVIAM) y el correo con
+el PDF firmado. Ver [solicitudes, contratos y servicios](../03-dominio/solicitudes-contratos-y-servicios.md).
 
 El catálogo público recibe nombres, textos y medios controlados por Contratos. La lista inicial de aerolíneas conserva 51 nombres históricos de AVIAM, países y enlaces de investigación, con seis identidades cotejadas contra IATA. Cinco iconos de sitios oficiales se sirven localmente en ambas webs; los demás usan monogramas. Los campos no corroborados permanecen como «Sin dato confirmado». Superadministración administra las fichas y puede completar las filas de fixture aún intactas; el seed no actualiza datos existentes. Cada ficha se puede verificar en un registro público («Verificar en registro»: Wikidata y, si no responde, una copia de OpenFlights). Solo se publica para el paso 2 con el check verde o con la verificación manual con su fuente, y el asistente muestra el sello «Verificada en registro público» ([ADR-0023](../../docs/adr/0023-airline-public-registry-check.md)). El representante puede añadir datos opcionales y revisa un cuarto paso antes del envío. No elige contraseña. Contratos verifica y decide; la aprobación crea un contrato en borrador. El superadministrador crea la cuenta y la API envía al correo un enlace de activación de 72 horas; la contraseña temporal con entrega manual queda como alternativa explícita ([ADR-0022](../../docs/adr/0022-portal-email-verification.md)). Si el enlace vence, «Clientes» ofrece «Reenviar invitación». La aerolínea puede comentar el borrador; cada tarifa pendiente aparece «por definir» hasta que Contratos la confirme. La activación exige todas las tarifas confirmadas, además de vigencia, servicios y estaciones. Desde la segunda ronda de revisión (noviembre de 2026), la aprobación de Finanzas ya no activa el contrato. Pasa a activo cuando ambas partes firmaron la versión aprobada y la aerolínea tiene un permiso de operación verificado y vigente. La aerolínea envía sus permisos desde el portal y Contratos los verifica en «Permisos de aerolíneas». Contratos puede suspender, reactivar, terminar o renovar el contrato con motivo. Un barrido horario vence los contratos sin versión vigente, suspende los de permiso vencido y avisa 30 días antes de cada vencimiento. La línea de tiempo del contrato reúne todo el ciclo ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
 

@@ -23,4 +23,9 @@ public sealed class ContractSignature : AuditableEntity
     public string DocumentSha256 { get; set; } = string.Empty;
 
     public Guid RequestId { get; set; }
+
+    /// <summary>Drawn signature as PNG (ADR-0025); null for signatures recorded before it existed.</summary>
+    public byte[]? SignatureImage { get; set; }
+
+    public string? SignatureImageSha256 { get; set; }
 }
