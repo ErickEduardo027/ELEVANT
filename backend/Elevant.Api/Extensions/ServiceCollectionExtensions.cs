@@ -62,6 +62,7 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<AccountChangeDispatchWorker>();
         services.AddHostedService<Elevant.Api.Messaging.EmailDispatchWorker>();
         services.AddHostedService<Elevant.Api.Commercial.ContractLifecycleWorker>();
+        services.AddHostedService<Elevant.Api.Integration.FlightFeedSyncWorker>();
         if (!string.IsNullOrWhiteSpace(configuration["MediaStorage:Endpoint"]))
             services.AddHostedService<CommercialMediaCleanupWorker>();
         services.AddExceptionHandler<GlobalExceptionHandler>();

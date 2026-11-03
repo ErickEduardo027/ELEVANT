@@ -7502,6 +7502,196 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("outbox_messages", "infra");
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Integration.ExternalFlightProposal", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AircraftModel")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("aircraft_model");
+
+                    b.Property<string>("AircraftRegistration")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("aircraft_registration");
+
+                    b.Property<long>("AirlineId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("airline_id");
+
+                    b.Property<long?>("CounterpartAirportId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("counterpart_airport_id");
+
+                    b.Property<string>("CounterpartIata")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)")
+                        .HasColumnName("counterpart_iata");
+
+                    b.Property<string>("CounterpartName")
+                        .HasMaxLength(180)
+                        .HasColumnType("nvarchar(180)")
+                        .HasColumnName("counterpart_name");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset?>("DecidedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("decided_at");
+
+                    b.Property<long?>("DecidedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("decided_by_account_id");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("direction");
+
+                    b.Property<string>("ExternalReference")
+                        .IsRequired()
+                        .HasMaxLength(96)
+                        .HasColumnType("nvarchar(96)")
+                        .HasColumnName("external_reference");
+
+                    b.Property<DateTimeOffset>("FirstSeenAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("first_seen_at");
+
+                    b.Property<long?>("FlightLegId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("flight_leg_id");
+
+                    b.Property<string>("FlightNumber")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("flight_number");
+
+                    b.Property<string>("Gate")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("gate");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<DateOnly>("OperationDate")
+                        .HasColumnType("date")
+                        .HasColumnName("operation_date");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<string>("ProviderStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("provider_status");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset?>("RevisedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("revised_at");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset?>("RunwayAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("runway_at");
+
+                    b.Property<DateTimeOffset>("ScheduledAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("scheduled_at");
+
+                    b.Property<long>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Terminal")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("terminal");
+
+                    b.Property<long?>("TurnaroundId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("turnaround_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AirlineId");
+
+                    b.HasIndex("CounterpartAirportId");
+
+                    b.HasIndex("DecidedByAccountId");
+
+                    b.HasIndex("FlightLegId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("TurnaroundId");
+
+                    b.HasIndex("Provider", "ExternalReference")
+                        .IsUnique();
+
+                    b.HasIndex("StationId", "OperationDate", "Status");
+
+                    b.ToTable("external_flight_proposals", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_flight_proposal_confirmed", "[status] <> 'Confirmed' OR ([turnaround_id] IS NOT NULL AND [flight_leg_id] IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_flight_proposal_decision", "([status] = 'Proposed' AND [decided_at] IS NULL) OR ([status] <> 'Proposed' AND [decided_at] IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_flight_proposal_seen", "[last_seen_at] >= [first_seen_at]");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Integration.MobileCommandReceipt", b =>
                 {
                     b.Property<long>("Id")
@@ -7755,6 +7945,203 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("mobile_device_account_bindings", "integration", t =>
                         {
                             t.HasCheckConstraint("ck_device_binding_dates", "[unbound_at] IS NULL OR [unbound_at] >= [bound_at]");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Integration.ProviderSyncLease", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("ConsecutiveFailures")
+                        .HasColumnType("int")
+                        .HasColumnName("consecutive_failures");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<Guid?>("HolderId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("holder_id");
+
+                    b.Property<string>("LastError")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTimeOffset?>("LeasedUntil")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("leased_until");
+
+                    b.Property<DateTimeOffset?>("PausedUntil")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("paused_until");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Provider")
+                        .IsUnique();
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.ToTable("provider_sync_leases", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_provider_lease_failures", "[consecutive_failures] >= 0");
+
+                            t.HasCheckConstraint("ck_provider_lease_holder", "([holder_id] IS NULL AND [leased_until] IS NULL) OR ([holder_id] IS NOT NULL AND [leased_until] IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Integration.ProviderUsageEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<int>("FlightsReceived")
+                        .HasColumnType("int")
+                        .HasColumnName("flights_received");
+
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("int")
+                        .HasColumnName("http_status");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("Operation")
+                        .IsRequired()
+                        .HasMaxLength(48)
+                        .HasColumnType("nvarchar(48)")
+                        .HasColumnName("operation");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("outcome");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("provider");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<long?>("RequestedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("requested_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long?>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("trigger");
+
+                    b.Property<int>("Units")
+                        .HasColumnType("int")
+                        .HasColumnName("units");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset?>("WindowFrom")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("window_from");
+
+                    b.Property<DateTimeOffset?>("WindowTo")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("window_to");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestedByAccountId");
+
+                    b.HasIndex("Provider", "OccurredAt");
+
+                    b.HasIndex("StationId", "OccurredAt");
+
+                    b.ToTable("provider_usage_entries", "integration", t =>
+                        {
+                            t.HasCheckConstraint("ck_provider_usage_flights", "[flights_received] >= 0");
+
+                            t.HasCheckConstraint("ck_provider_usage_units", "[units] >= 0");
+
+                            t.HasCheckConstraint("ck_provider_usage_window", "([window_from] IS NULL AND [window_to] IS NULL) OR ([window_from] IS NOT NULL AND [window_to] > [window_from])");
                         });
                 });
 
@@ -10095,6 +10482,104 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Reference.AirlineRegistryEntry", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset>("FirstSeenAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("first_seen_at");
+
+                    b.Property<string>("IataCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasColumnName("iata_code");
+
+                    b.Property<string>("IcaoCode")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)")
+                        .HasColumnName("icao_code");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("last_seen_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(180)
+                        .HasColumnType("nvarchar(180)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("RegistryKey")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)")
+                        .HasColumnName("registry_key");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("source");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IataCode");
+
+                    b.HasIndex("IcaoCode");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RegistryKey")
+                        .IsUnique();
+
+                    b.ToTable("airline_registry_entries", "ref", t =>
+                        {
+                            t.HasCheckConstraint("ck_airline_registry_codes", "[iata_code] IS NOT NULL OR [icao_code] IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_airline_registry_iata", "[iata_code] IS NULL OR LEN([iata_code]) = 2");
+
+                            t.HasCheckConstraint("ck_airline_registry_icao", "[icao_code] IS NULL OR LEN([icao_code]) = 3");
+
+                            t.HasCheckConstraint("ck_airline_registry_seen", "[last_seen_at] >= [first_seen_at]");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Reference.Airport", b =>
                 {
                     b.Property<long>("Id")
@@ -10122,6 +10607,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
+                    b.Property<string>("IanaTimeZone")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)")
+                        .HasColumnName("iana_time_zone");
+
                     b.Property<string>("IataCode")
                         .IsRequired()
                         .HasColumnType("char(3)")
@@ -10131,6 +10621,16 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("char(4)")
                         .HasColumnName("icao_code");
+
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)")
+                        .HasColumnName("latitude");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)")
+                        .HasColumnName("longitude");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -10176,6 +10676,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_airport_iata", "LEN([iata_code]) = 3");
 
                             t.HasCheckConstraint("ck_airport_icao", "LEN([icao_code]) = 4");
+
+                            t.HasCheckConstraint("ck_airport_latitude", "[latitude] IS NULL OR [latitude] BETWEEN -90 AND 90");
+
+                            t.HasCheckConstraint("ck_airport_longitude", "[longitude] IS NULL OR [longitude] BETWEEN -180 AND 180");
                         });
                 });
 
@@ -13584,6 +14088,41 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Integration.ExternalFlightProposal", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Reference.Airline", null)
+                        .WithMany()
+                        .HasForeignKey("AirlineId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Airport", null)
+                        .WithMany()
+                        .HasForeignKey("CounterpartAirportId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("DecidedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.FlightLeg", null)
+                        .WithMany()
+                        .HasForeignKey("FlightLegId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.Turnaround", null)
+                        .WithMany()
+                        .HasForeignKey("TurnaroundId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Integration.MobileCommandReceipt", b =>
                 {
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
@@ -13612,6 +14151,19 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("MobileDeviceId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Integration.ProviderUsageEntry", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RequestedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction);
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.ChecklistAnswer", b =>

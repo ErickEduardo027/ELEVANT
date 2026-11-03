@@ -121,6 +121,8 @@ Los incidentes registran tipo, severidad, descripción y tiempos de ocurrencia, 
 
 `OperationalDataSource` admite `Internal`, `Manual`, `AirlineClient` y `ExternalProvider`. Turnaround, tramo, hito y eventos relevantes conservan fuente y, cuando corresponde, referencia/observación externa. El enum no decide precedencia, reconciliación ni confianza entre fuentes; esa política sigue abierta.
 
+Los vuelos que informa el proveedor (AeroDataBox) entran como **propuestas**, nunca como escalas. Una escala importada guarda `Source = ExternalProvider`, `ExternalProvider = AeroDataBox` y la referencia del tramo; sus tramos reciben después las horas revisadas y reales del proveedor. La escala solo se crea cuando OCC confirma la llegada con su salida ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)).
+
 ## Estado de disponibilidad
 
 En el commit histórico indicado en el frontmatter, Mobile Agent y Private Web presentaban recorridos prototípicos y la API todavía no ofrecía esos casos de uso. Esa observación no describe por sí sola la rama de integración posterior ni certifica un ciclo end-to-end desplegado.

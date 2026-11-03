@@ -104,6 +104,10 @@ import {
   getReleaseOccStandUrl,
   getLocateOccStandUrl,
   getListOccReadyContractsUrl,
+  getGetOccFlightFeedUrl,
+  getRefreshOccFlightFeedUrl,
+  getImportOccFlightUrl,
+  getDismissOccFlightProposalUrl,
   getGetContractDocumentUrl,
   getGetAirlinePermitsUrl,
   getSubmitAirlinePermitUrl,
@@ -221,6 +225,9 @@ import {
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
   type OccReadyContractsResponse,
+  type OccFlightFeedResponse,
+  type RefreshOccFlightFeedResponse,
+  type ImportOccFlightResponse,
   type ContractDocumentResponse,
   type AirlinePermitData,
   type SubmitAirlinePermitInput,
@@ -866,6 +873,14 @@ export interface ElevantApiClient {
   /** Places a stand on the map (WGS84) or clears it with both coordinates null (ADR-0027). */
   locateOccStand(standId: string, request: { latitude: number | null; longitude: number | null; operationDate: string },
     options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  /** Flights the paid provider proposed for contracted airlines, and the unit budget (ADR-0028). */
+  getOccFlightFeed(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccFlightFeedResponse>;
+  /** «Actualizar ahora»: one provider read, at most every ten minutes per station. */
+  refreshOccFlightFeed(stationId: string, options?: GetHumanResourcesReportOptions): Promise<RefreshOccFlightFeedResponse>;
+  /** Creates the turnaround of a proposed arrival and its departure; repeating it returns the same one. */
+  importOccFlight(arrivalProposalId: string, departureProposalId: string,
+    options?: GetHumanResourcesReportOptions): Promise<ImportOccFlightResponse>;
+  dismissOccFlightProposal(proposalId: string, options?: GetHumanResourcesReportOptions): Promise<void>;
   /** Contracts OCC can plan flights for at a station on a date (ADR-0027). */
   listOccReadyContracts(stationId: string, date: string,
     options?: GetHumanResourcesReportOptions): Promise<OccReadyContractsResponse>;
@@ -2348,6 +2363,54 @@ function isOccReadyContracts(value: unknown, stationId: string, date: string): v
       Array.isArray(contract.services) && contract.services.every(service => isRecord(service) &&
         hasOnlyKeys(service, ["code", "name", "billingUnit"]) && isNonEmptyString(service.code) &&
         isNonEmptyString(service.name) && isNonEmptyString(service.billingUnit)));
+}
+
+const FLIGHT_PROPOSAL_STATUSES = new Set<string>(["Proposed", "Confirmed"]);
+const FLIGHT_FEED_REFRESH_STATUSES = new Set<string>(["Refreshed", "Reused", "Throttled", "BudgetExhausted", "Paused",
+  "NotConfigured", "NoContracts", "Busy", "Failed"]);
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function isOccFlightProposal(value: unknown): boolean {
+  return isRecord(value) && hasOnlyKeys(value, ["proposalId", "direction", "flightNumber", "airlineId", "airlineName",
+    "airlineIataCode", "counterpartIata", "counterpartName", "counterpartKnown", "scheduledAt", "revisedAt", "runwayAt",
+    "providerStatus", "aircraftRegistration", "aircraftModel", "terminal", "gate", "status", "turnaroundId",
+    "suggestedDepartureId", "lastSeenAt"]) &&
+    isUuid(value.proposalId) && (value.direction === "Arrival" || value.direction === "Departure") &&
+    isNonEmptyString(value.flightNumber) && isUuid(value.airlineId) && isNonEmptyString(value.airlineName) &&
+    isOptionalNullable(value.airlineIataCode, isNonEmptyString) && isOptionalNullable(value.counterpartIata, isNonEmptyString) &&
+    isOptionalNullable(value.counterpartName, isNonEmptyString) && typeof value.counterpartKnown === "boolean" &&
+    isDateTimeOffset(value.scheduledAt) && isOptionalNullable(value.revisedAt, isDateTimeOffset) &&
+    isOptionalNullable(value.runwayAt, isDateTimeOffset) && isNonEmptyString(value.providerStatus) &&
+    isOptionalNullable(value.aircraftRegistration, isNonEmptyString) && isOptionalNullable(value.aircraftModel, isNonEmptyString) &&
+    isOptionalNullable(value.terminal, isNonEmptyString) && isOptionalNullable(value.gate, isNonEmptyString) &&
+    typeof value.status === "string" && FLIGHT_PROPOSAL_STATUSES.has(value.status) &&
+    isOptionalNullable(value.turnaroundId, isUuid) && isOptionalNullable(value.suggestedDepartureId, isUuid) &&
+    isDateTimeOffset(value.lastSeenAt);
+}
+
+function isOccFlightFeed(value: unknown, stationId: string, date: string): value is OccFlightFeedResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["stationId", "stationCode", "date", "budget", "lastReadAt",
+      "nextManualRefreshAt", "canImport", "proposals"])) return false;
+  const budget = value.budget;
+  return isUuid(value.stationId) && value.stationId.toLowerCase() === stationId && isNonEmptyString(value.stationCode) &&
+    value.date === date && isRecord(budget) && hasOnlyKeys(budget, ["configured", "provider", "unitsToday", "dailyUnits",
+      "unitsThisMonth", "monthlyUnits", "pausedUntil", "pauseReason"]) &&
+    typeof budget.configured === "boolean" && isNonEmptyString(budget.provider) && isNonNegativeInteger(budget.unitsToday) &&
+    isNonNegativeInteger(budget.dailyUnits) && isNonNegativeInteger(budget.unitsThisMonth) &&
+    isNonNegativeInteger(budget.monthlyUnits) && isOptionalNullable(budget.pausedUntil, isDateTimeOffset) &&
+    isOptionalNullable(budget.pauseReason, isNonEmptyString) && isOptionalNullable(value.lastReadAt, isDateTimeOffset) &&
+    isOptionalNullable(value.nextManualRefreshAt, isDateTimeOffset) && typeof value.canImport === "boolean" &&
+    Array.isArray(value.proposals) && value.proposals.every(isOccFlightProposal);
+}
+
+function isRefreshOccFlightFeed(value: unknown): value is RefreshOccFlightFeedResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["status", "retryAt", "flightsReceived", "contractedLegs", "newProposals"]) &&
+    typeof value.status === "string" && FLIGHT_FEED_REFRESH_STATUSES.has(value.status) &&
+    isOptionalNullable(value.retryAt, isDateTimeOffset) && isOptionalNullable(value.flightsReceived, isNonNegativeInteger) &&
+    isOptionalNullable(value.contractedLegs, isNonNegativeInteger) && isOptionalNullable(value.newProposals, isNonNegativeInteger);
 }
 
 const CONTRACT_PARTIES = new Set<string>(["Aviam", "Airline"]);
@@ -6264,6 +6327,39 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw new TypeError("The stand location is invalid.");
       return positionCommand(getLocateOccStandUrl(stand),
         { latitude, longitude, operationDate: request.operationDate }, options, "PUT");
+    },
+    async getOccFlightFeed(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
+      const result = await execute(getGetOccFlightFeedUrl({ stationId: station, date }), { ...options, method: "GET" }, true);
+      if (!isOccFlightFeed(result.data, station, date)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async refreshOccFlightFeed(stationId: string, options?: GetHumanResourcesReportOptions) {
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getRefreshOccFlightFeedUrl(), { ...options, method: "POST", headers,
+        body: JSON.stringify({ stationId: validatedUuid(stationId, "stationId") }) }, true);
+      if (!isRefreshOccFlightFeed(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async importOccFlight(arrivalProposalId: string, departureProposalId: string, options?: GetHumanResourcesReportOptions) {
+      const arrival = validatedUuid(arrivalProposalId, "arrivalProposalId");
+      const departure = validatedUuid(departureProposalId, "departureProposalId");
+      if (arrival === departure) throw new TypeError("An arrival and a departure are required.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getImportOccFlightUrl(), { ...options, method: "POST", headers,
+        body: JSON.stringify({ arrivalProposalId: arrival, departureProposalId: departure }) }, true);
+      const data = result.data;
+      if (!isRecord(data) || !hasOnlyKeys(data, ["turnaroundId", "operationCode", "replayed"]) || !isUuid(data.turnaroundId) ||
+          !isNonEmptyString(data.operationCode) || typeof data.replayed !== "boolean") throw malformedResponse(result.status);
+      return data as unknown as ImportOccFlightResponse;
+    },
+    async dismissOccFlightProposal(proposalId: string, options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getDismissOccFlightProposalUrl(validatedUuid(proposalId, "proposalId")),
+        { ...options, method: "POST" }, true);
+      if (result.status !== 204) throw malformedResponse(result.status);
     },
     async listOccReadyContracts(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
       const station = validatedUuid(stationId, "stationId");

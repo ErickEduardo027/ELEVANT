@@ -432,6 +432,21 @@ los vuelos sin posición; un clic abre el vuelo en el panel de asignación. Fuen
 [mapa de Planificación](../../frontend/private-web/src/features/planning/components/PlanningMap.jsx) y
 [ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md).
 
+## Importar vuelos del proveedor en Planificación
+
+«Importar vuelos» de Planificación abre los vuelos que AeroDataBox informó para las
+aerolíneas con contrato en la fecha. Muestra:
+- cada llegada con su salida sugerida (misma aerolínea y matrícula o la siguiente salida);
+- las horas revisadas y reales, la terminal y la puerta;
+- las unidades gastadas hoy y en el mes.
+
+Con «Crear escalas», OCC importa la escala o descarta un tramo. «Actualizar ahora» pide una
+lectura al servidor, que decide si se permite: como mucho cada 10 minutos, reutiliza una
+lectura reciente y respeta el presupuesto. Abrir el diálogo nunca gasta unidades. Sin clave
+configurada, el diálogo lo dice y no hay llamadas. Fuentes:
+[diálogo](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx) y
+[ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md).
+
 ## Chat con presencia y cierre de sesión confirmado
 
 El PR #156 se fusionó y luego se revirtió su rediseño visual de Admin/OCC: el

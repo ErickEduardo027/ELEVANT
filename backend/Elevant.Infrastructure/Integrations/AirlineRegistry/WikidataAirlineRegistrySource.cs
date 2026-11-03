@@ -18,6 +18,8 @@ public sealed partial class WikidataAirlineRegistrySource(HttpClient httpClient)
 
     public string Name => "Wikidata";
 
+    public int Order => 10;
+
     public async Task<IReadOnlyList<AirlineRegistryCandidate>?> FindAsync(string? iataCode, string? icaoCode,
         CancellationToken cancellationToken = default)
     {

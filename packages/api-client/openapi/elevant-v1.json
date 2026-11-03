@@ -18591,6 +18591,311 @@
         ]
       }
     },
+    "/api/v1/occ/flight-feed": {
+      "get": {
+        "tags": [
+          "OccFlightFeed"
+        ],
+        "operationId": "GetOccFlightFeed",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccFlightFeedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/flight-feed/refresh": {
+      "post": {
+        "tags": [
+          "OccFlightFeed"
+        ],
+        "summary": "«Actualizar ahora»: one provider read of the active window, at most every ten minutes per\nstation, reusing a read of the last five minutes and counted in the budget.",
+        "operationId": "RefreshOccFlightFeed",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RefreshOccFlightFeedRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshOccFlightFeedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/flight-feed/turnarounds": {
+      "post": {
+        "tags": [
+          "OccFlightFeed"
+        ],
+        "summary": "Creates the turnaround of a proposed arrival and its departure; repeating it returns the same turnaround.",
+        "operationId": "ImportOccFlight",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ImportOccFlightRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportOccFlightResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/flight-feed/proposals/{proposalId}/dismiss": {
+      "post": {
+        "tags": [
+          "OccFlightFeed"
+        ],
+        "summary": "Hides a proposal OCC will not operate.",
+        "operationId": "DismissOccFlightProposal",
+        "parameters": [
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/planning": {
       "get": {
         "tags": [
@@ -35652,6 +35957,45 @@
         },
         "additionalProperties": false
       },
+      "ImportOccFlightRequest": {
+        "required": [
+          "arrivalProposalId",
+          "departureProposalId"
+        ],
+        "type": "object",
+        "properties": {
+          "arrivalProposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "departureProposalId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ImportOccFlightResponse": {
+        "required": [
+          "operationCode",
+          "replayed",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "IssueCreditNoteInput": {
         "required": [
           "amount",
@@ -37030,6 +37374,102 @@
         },
         "additionalProperties": false
       },
+      "OccFlightFeedBudgetResponse": {
+        "required": [
+          "configured",
+          "dailyUnits",
+          "monthlyUnits",
+          "provider",
+          "unitsThisMonth",
+          "unitsToday"
+        ],
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "unitsToday": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "dailyUnits": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unitsThisMonth": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "monthlyUnits": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "pausedUntil": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "pauseReason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccFlightFeedResponse": {
+        "required": [
+          "budget",
+          "canImport",
+          "date",
+          "proposals",
+          "stationCode",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "budget": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccFlightFeedBudgetResponse"
+              }
+            ]
+          },
+          "lastReadAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "nextManualRefreshAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "canImport": {
+            "type": "boolean"
+          },
+          "proposals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccFlightProposalResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "OccFlightLegResponse": {
         "required": [
           "destination",
@@ -37074,6 +37514,106 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccFlightProposalResponse": {
+        "required": [
+          "airlineId",
+          "airlineName",
+          "counterpartKnown",
+          "direction",
+          "flightNumber",
+          "lastSeenAt",
+          "proposalId",
+          "providerStatus",
+          "scheduledAt",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "flightNumber": {
+            "type": "string"
+          },
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "airlineIataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "counterpartIata": {
+            "type": "string",
+            "nullable": true
+          },
+          "counterpartName": {
+            "type": "string",
+            "nullable": true
+          },
+          "counterpartKnown": {
+            "type": "boolean"
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revisedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "runwayAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "providerStatus": {
+            "type": "string"
+          },
+          "aircraftRegistration": {
+            "type": "string",
+            "nullable": true
+          },
+          "aircraftModel": {
+            "type": "string",
+            "nullable": true
+          },
+          "terminal": {
+            "type": "string",
+            "nullable": true
+          },
+          "gate": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string"
+          },
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "suggestedDepartureId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -40923,6 +41463,51 @@
         },
         "additionalProperties": false
       },
+      "RefreshOccFlightFeedRequest": {
+        "required": [
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RefreshOccFlightFeedResponse": {
+        "required": [
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "retryAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "flightsReceived": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "contractedLegs": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "newProposals": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RefreshSessionRequest": {
         "required": [
           "refreshToken"
@@ -43414,6 +43999,9 @@
     },
     {
       "name": "MobileDevices"
+    },
+    {
+      "name": "OccFlightFeed"
     },
     {
       "name": "OccPlanning"

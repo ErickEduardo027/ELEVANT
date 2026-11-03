@@ -28,6 +28,11 @@ services:
       Smtp__Password: "${ELEVANT_SMTP_PASSWORD:-}"
       Smtp__FromAddress: "${ELEVANT_SMTP_FROM_ADDRESS:-}"
       Smtp__FromName: "${ELEVANT_SMTP_FROM_NAME:-ELEVANT}"
+      # Paid flight feed (ADR-0028): off unless the key is set; the worker spends within these limits.
+      AeroDataBox__Enabled: "${ELEVANT_AERODATABOX_ENABLED:-false}"
+      AeroDataBox__ApiKey: "${ELEVANT_AERODATABOX_API_KEY}"
+      AeroDataBox__DailyUnitLimit: "${ELEVANT_AERODATABOX_DAILY_UNITS:-1200}"
+      AeroDataBox__MonthlyUnitLimit: "${ELEVANT_AERODATABOX_MONTHLY_UNITS:-38000}"
       AccountEmail__PublicWebBaseUrl: "${ELEVANT_API_PUBLIC_WEB_ORIGIN:?Set the exact public-web HTTPS origin without a trailing slash}"
       Cors__AllowedOrigins__0: "${ELEVANT_API_PRIVATE_WEB_ORIGIN:?Set the exact private-web HTTPS origin without a trailing slash}"
       Cors__AllowedOrigins__1: "${ELEVANT_API_PUBLIC_WEB_ORIGIN:?Set the exact public-web HTTPS origin without a trailing slash}"

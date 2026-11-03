@@ -110,6 +110,12 @@ public static class DependencyInjection
         services.AddScoped<IManagedContractReadStore, EfManagedContractReadStore>();
         services.AddScoped<IWorkforceReadinessStore, EfWorkforceReadinessStore>();
         services.AddScoped<Elevant.Application.Abstractions.Operations.IOccReadyContractsStore, EfOccReadyContractsStore>();
+        services.AddScoped<Elevant.Application.Abstractions.Integration.IFlightFeedSyncStore, Elevant.Persistence.Integration.EfFlightFeedSyncStore>();
+        services.AddScoped<Elevant.Application.Abstractions.Operations.IOccFlightFeedStore, Elevant.Persistence.Integration.EfOccFlightFeedStore>();
+        // Defaults when Infrastructure is not composed (tests, database tool); its registrations win.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services, Elevant.Application.Integration.FlightFeedBudget.Default);
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed, Elevant.Application.Abstractions.Integrations.UnconfiguredAirportFlightFeed>(services);
+        services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource, Elevant.Persistence.Integration.ObservedAirlineRegistrySource>();
         services.AddScoped<EfContractDocumentStore>();
         services.AddScoped<IContractDocumentStore>(provider => provider.GetRequiredService<EfContractDocumentStore>());
         // The PDF renderer lives in Infrastructure; a factory keeps hosts without it (tools, tests) valid.

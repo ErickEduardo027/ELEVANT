@@ -46,6 +46,19 @@ public static class DependencyInjection
         services.AddSingleton<IFiscalCallbackAuthenticator, FinanceFiscalRejectCallbacks>();
         services.AddSingleton<IFiscalArtifactBuilder, FinanceFiscalArtifactBuilder>();
         services.AddFlightAwareShell(configuration);
+        // Paid flight feed (ADR-0028): only the synchronizer calls it, within the unit budget.
+        var aeroDataBox = configuration.GetSection(Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxOptions.SectionName)
+            .Get<Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxOptions>() ?? new();
+        services.AddSingleton(new Elevant.Application.Integration.FlightFeedBudget(
+            Math.Max(0, aeroDataBox.DailyUnitLimit), Math.Max(0, aeroDataBox.MonthlyUnitLimit)));
+        if (aeroDataBox.Enabled && !string.IsNullOrWhiteSpace(aeroDataBox.ApiKey))
+            services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed>(_ =>
+                new Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxAirportFlightFeed(
+                    new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) },
+                    aeroDataBox));
+        else
+            services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed,
+                Elevant.Infrastructure.Integrations.AeroDataBox.DisabledAirportFlightFeed>();
         var openSky = configuration.GetSection(OpenSkyOptions.SectionName).Get<OpenSkyOptions>() ?? new OpenSkyOptions();
         services.AddSingleton<IOccAircraftTrafficSource>(provider =>
             new OpenSkyAircraftTrafficSource(

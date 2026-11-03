@@ -28,6 +28,7 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton(TimeProvider.System);
+        services.AddScoped<Elevant.Application.Integration.FlightFeedSynchronizer>();
         services.AddScoped<CreateSessionHandler>();
         services.AddScoped<Elevant.Application.Identity.RefreshSession.RefreshSessionHandler>();
         services.AddScoped<Elevant.Application.Identity.ChangePassword.ChangePasswordHandler>();

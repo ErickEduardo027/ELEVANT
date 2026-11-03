@@ -13,6 +13,8 @@ public sealed class OpenFlightsAirlineRegistrySource : IAirlineRegistrySource
 
     public string Name => "OpenFlights";
 
+    public int Order => 20;
+
     public Task<IReadOnlyList<AirlineRegistryCandidate>?> FindAsync(string? iataCode, string? icaoCode,
         CancellationToken cancellationToken = default)
     {

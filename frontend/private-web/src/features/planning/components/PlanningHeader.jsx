@@ -23,7 +23,7 @@ function ActionButton({ icon: ActionIcon, label, onClick, disabled }) {
   );
 }
 
-export default function PlanningHeader({ onRefresh, onCreate, canCreate = false }) {
+export default function PlanningHeader({ onRefresh, onCreate, canCreate = false, onImport, canImport = false }) {
   const { t } = useTranslation(planningMessages);
   return (
     <div className="space-y-3">
@@ -39,7 +39,7 @@ export default function PlanningHeader({ onRefresh, onCreate, canCreate = false 
         </div>
         <div className="flex flex-wrap gap-2">
           <ActionButton icon={PlusIcon} label={t('header.newFlight')} onClick={onCreate} disabled={!canCreate} />
-          <ActionButton icon={UploadIcon} label={t('header.importFlights')} disabled />
+          <ActionButton icon={UploadIcon} label={t('header.importFlights')} onClick={onImport} disabled={!canImport} />
           <ActionButton icon={RefreshCwIcon} label={t('header.refresh')} onClick={onRefresh} />
           <ActionButton icon={DownloadIcon} label={t('header.export')} disabled />
         </div>
