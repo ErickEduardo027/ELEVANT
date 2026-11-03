@@ -11,4 +11,11 @@ public sealed class Stand : AuditableEntity
     public string? StandType { get; set; }
 
     public bool IsActive { get; set; }
+
+    /// <summary>WGS84 location OCC places on the map (ADR-0027); null until someone places it.</summary>
+    public decimal? Latitude { get; set; }
+
+    public decimal? Longitude { get; set; }
+
+    public DateTimeOffset? LocatedAt { get; set; }
 }

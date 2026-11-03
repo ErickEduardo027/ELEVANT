@@ -118,20 +118,8 @@ internal sealed class EfManualTurnaroundStore(
             .SingleOrDefaultAsync(cancellationToken);
         if (airline is null) return (NotFound(), null);
 
-        var applicableContracts = await (
-            from contract in context.Contracts.AsNoTracking()
-            join version in context.ContractVersions.AsNoTracking()
-                on contract.Id equals version.ContractId
-            where contract.AirlineId == airline.Id &&
-                  contract.Status == ContractStatus.Active &&
-                  (contract.SignedOn == null || contract.SignedOn <= request.OperationDate) &&
-                  (contract.TerminatedOn == null || contract.TerminatedOn >= request.OperationDate) &&
-                  version.Status == ContractVersionStatus.Approved &&
-                  version.ValidFrom <= request.OperationDate &&
-                  (version.ValidTo == null || version.ValidTo >= request.OperationDate) &&
-                  context.Set<ContractVersionStation>().AsNoTracking().Any(link =>
-                      link.ContractVersionId == version.Id && link.StationId == scope.StationId)
-            select version.Id).Take(2).ToArrayAsync(cancellationToken);
+        var applicableContracts = await ApplicableContracts.For(context, airline.Id, scope.StationId, request.OperationDate)
+            .Select(row => row.VersionId).Take(2).ToArrayAsync(cancellationToken);
         if (applicableContracts.Length != 1) return (Conflict(), null);
 
         var stand = await (
@@ -172,6 +160,7 @@ internal sealed class EfManualTurnaroundStore(
             AirlineId = airline.Id,
             StationId = scope.StationId,
             OperationDate = request.OperationDate,
+            ContractVersionId = applicableContracts[0],
             CurrentStatus = TurnaroundStatus.Confirmed,
             Source = OperationalDataSource.Manual,
             CreatedAt = now,

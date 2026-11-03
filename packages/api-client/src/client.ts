@@ -102,6 +102,8 @@ import {
   getRecordOccArrivalUrl,
   getAssignOccStandUrl,
   getReleaseOccStandUrl,
+  getLocateOccStandUrl,
+  getListOccReadyContractsUrl,
   getGetContractDocumentUrl,
   getGetAirlinePermitsUrl,
   getSubmitAirlinePermitUrl,
@@ -218,6 +220,7 @@ import {
   type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
+  type OccReadyContractsResponse,
   type ContractDocumentResponse,
   type AirlinePermitData,
   type SubmitAirlinePermitInput,
@@ -860,6 +863,12 @@ export interface ElevantApiClient {
   assignOccStand(turnaroundId: string, request: { standId: string; reason?: string | null },
     options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
   releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  /** Places a stand on the map (WGS84) or clears it with both coordinates null (ADR-0027). */
+  locateOccStand(standId: string, request: { latitude: number | null; longitude: number | null; operationDate: string },
+    options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  /** Contracts OCC can plan flights for at a station on a date (ADR-0027). */
+  listOccReadyContracts(stationId: string, date: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccReadyContractsResponse>;
   getContractDocument(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
   downloadContractDocument(versionId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
   /** Watermarked review PDF of a draft version (never signable). */
@@ -2309,10 +2318,36 @@ function isOccPositionBoard(value: unknown, stationId?: string): value is OccPos
     isNonEmptyString(value.stationCode) && isDateOnly(value.operationDate) && isDateTimeOffset(value.asOf) &&
     typeof value.canAssign === "boolean" && Array.isArray(value.unassigned) && value.unassigned.every(isOccPositionTurnaround) &&
     Array.isArray(value.positions) && value.positions.every(position => isRecord(position) &&
-      hasOnlyKeys(position, ["standId", "code", "terminalCode", "standType", "status", "turnarounds"]) &&
+      hasOnlyKeys(position, ["standId", "code", "terminalCode", "standType", "status", "turnarounds", "latitude", "longitude"]) &&
+      isOptionalNullable(position.latitude, isLatitude) && isOptionalNullable(position.longitude, isLongitude) &&
+      (position.latitude == null) === (position.longitude == null) &&
       isUuid(position.standId) && isNonEmptyString(position.code) && isOptionalNullable(position.terminalCode, isNonEmptyString) &&
       isOptionalNullable(position.standType, isNonEmptyString) && typeof position.status === "string" &&
       OCC_POSITION_STATUSES.has(position.status) && Array.isArray(position.turnarounds) && position.turnarounds.every(isOccPositionTurnaround));
+}
+
+function isLatitude(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= -90 && value <= 90;
+}
+
+function isLongitude(value: unknown): value is number {
+  return isFiniteNumber(value) && value >= -180 && value <= 180;
+}
+
+function isOccReadyContracts(value: unknown, stationId: string, date: string): value is OccReadyContractsResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["stationId", "stationCode", "date", "contracts"]) &&
+    isUuid(value.stationId) && value.stationId.toLowerCase() === stationId && isNonEmptyString(value.stationCode) &&
+    value.date === date && Array.isArray(value.contracts) && value.contracts.every(contract => isRecord(contract) &&
+      hasOnlyKeys(contract, ["contractId", "contractCode", "airlineId", "airlineName", "airlineIataCode", "versionId",
+        "versionNumber", "validFrom", "validTo", "renewalMode", "services", "flightsOnDate"]) &&
+      isUuid(contract.contractId) && isNonEmptyString(contract.contractCode) && isUuid(contract.airlineId) &&
+      isNonEmptyString(contract.airlineName) && isOptionalNullable(contract.airlineIataCode, isNonEmptyString) &&
+      isUuid(contract.versionId) && Number.isInteger(contract.versionNumber) && isDateOnly(contract.validFrom) &&
+      isOptionalNullable(contract.validTo, isDateOnly) && isOptionalNullable(contract.renewalMode, isNonEmptyString) &&
+      Number.isInteger(contract.flightsOnDate) && (contract.flightsOnDate as number) >= 0 &&
+      Array.isArray(contract.services) && contract.services.every(service => isRecord(service) &&
+        hasOnlyKeys(service, ["code", "name", "billingUnit"]) && isNonEmptyString(service.code) &&
+        isNonEmptyString(service.name) && isNonEmptyString(service.billingUnit)));
 }
 
 const CONTRACT_PARTIES = new Set<string>(["Aviam", "Airline"]);
@@ -4686,10 +4721,11 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return new Blob([bytes], { type: mime });
   };
 
-  const positionCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions) => {
+  const positionCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions,
+    method: "POST" | "PUT" = "POST") => {
     const headers = headersFrom(options?.headers, "Request headers");
     if (body !== undefined) headers.set("content-type", "application/json");
-    const result = await execute(path, { ...options, method: "POST", headers,
+    const result = await execute(path, { ...options, method, headers,
       ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
     if (!isOccPositionBoard(result.data)) throw malformedResponse(result.status);
     return result.data;
@@ -6216,6 +6252,25 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     },
     async releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
       return positionCommand(getReleaseOccStandUrl(validatedUuid(turnaroundId, "turnaroundId")), undefined, options);
+    },
+    async locateOccStand(standId: string,
+      request: { latitude: number | null; longitude: number | null; operationDate: string },
+      options?: GetHumanResourcesReportOptions) {
+      const stand = validatedUuid(standId, "standId");
+      const latitude = request?.latitude ?? null;
+      const longitude = request?.longitude ?? null;
+      if ((latitude === null) !== (longitude === null) || (latitude !== null && !isLatitude(latitude)) ||
+          (longitude !== null && !isLongitude(longitude)) || !isDateOnly(request?.operationDate))
+        throw new TypeError("The stand location is invalid.");
+      return positionCommand(getLocateOccStandUrl(stand),
+        { latitude, longitude, operationDate: request.operationDate }, options, "PUT");
+    },
+    async listOccReadyContracts(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
+      const result = await execute(getListOccReadyContractsUrl({ stationId: station, date }), { ...options, method: "GET" }, true);
+      if (!isOccReadyContracts(result.data, station, date)) throw malformedResponse(result.status);
+      return result.data;
     },
     async listOccReports(options?: GetHumanResourcesReportOptions) {
       const result = await execute(getListOccReportsUrl(), { ...options, method: "GET" }, true);

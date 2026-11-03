@@ -58,8 +58,21 @@ export const planningMessages = {
     views: {
       label: 'Vistas de planificación',
       timeline: 'Timeline',
+      map: 'Mapa',
       table: 'Tabla',
       calendar: 'Calendario',
+    },
+    map: {
+      label: 'Mapa de planificación',
+      loading: 'Cargando el mapa de posiciones…',
+      located: '{located} de {total} posiciones ubicadas por OCC; el resto usa la referencia interna sin verificar.',
+      stand: 'Posición {code}',
+      showAll: 'Ver todas',
+      standFree: 'Sin vuelos asignados a esta posición ese día.',
+      standsWithFlights: 'Posiciones con vuelos ({count})',
+      noStands: 'Aún no hay vuelos con posición asignada ese día.',
+      unassigned: 'Vuelos sin posición ({count})',
+      allAssigned: 'Todos los vuelos del día tienen posición.',
     },
     empty: {
       noFlightsTitle: 'Sin vuelos programados',
@@ -338,8 +351,21 @@ export const planningMessages = {
     views: {
       label: 'Planning views',
       timeline: 'Timeline',
+      map: 'Map',
       table: 'Table',
       calendar: 'Calendar',
+    },
+    map: {
+      label: 'Planning map',
+      loading: 'Loading the positions map…',
+      located: '{located} of {total} stands placed by OCC; the rest use the unverified internal reference.',
+      stand: 'Stand {code}',
+      showAll: 'Show all',
+      standFree: 'No flights assigned to this stand that day.',
+      standsWithFlights: 'Stands with flights ({count})',
+      noStands: 'No flights have a stand that day yet.',
+      unassigned: 'Flights without a stand ({count})',
+      allAssigned: 'Every flight of the day has a stand.',
     },
     empty: {
       noFlightsTitle: 'No scheduled flights',

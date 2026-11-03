@@ -3182,6 +3182,14 @@ export interface LegacyRoleData {
   activeUsers: number;
 }
 
+export interface LocateOccStandRequest {
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
+  operationDate: string;
+}
+
 export interface LoginChallengeResponse {
   challengeId: string;
   emailHint: string;
@@ -3622,6 +3630,10 @@ export interface OccPositionResponse {
   standType?: string | null;
   status: string;
   turnarounds: OccPositionTurnaroundResponse[];
+  /** @nullable */
+  latitude?: number | null;
+  /** @nullable */
+  longitude?: number | null;
 }
 
 export interface OccPositionBoardResponse {
@@ -3632,6 +3644,37 @@ export interface OccPositionBoardResponse {
   positions: OccPositionResponse[];
   unassigned: OccPositionTurnaroundResponse[];
   canAssign: boolean;
+}
+
+export interface OccReadyContractServiceResponse {
+  code: string;
+  name: string;
+  billingUnit: string;
+}
+
+export interface OccReadyContractResponse {
+  contractId: string;
+  contractCode: string;
+  airlineId: string;
+  airlineName: string;
+  /** @nullable */
+  airlineIataCode?: string | null;
+  versionId: string;
+  versionNumber: number;
+  validFrom: string;
+  /** @nullable */
+  validTo?: string | null;
+  /** @nullable */
+  renewalMode?: string | null;
+  services: OccReadyContractServiceResponse[];
+  flightsOnDate: number;
+}
+
+export interface OccReadyContractsResponse {
+  stationId: string;
+  stationCode: string;
+  date: string;
+  contracts: OccReadyContractResponse[];
 }
 
 export interface OccReportDefinitionResponse {
@@ -5492,6 +5535,11 @@ date: string;
 export type GetOccPositionsParams = {
 stationId: string;
 date: string;
+};
+
+export type ListOccReadyContractsParams = {
+stationId?: string;
+date?: string;
 };
 
 export type GetOccReportParams = {
@@ -14469,6 +14517,44 @@ const res = await fetch(getAssignOccStandUrl(turnaroundId),
 
 
 
+export const getLocateOccStandUrl = (standId: string,) => {
+
+
+
+
+  return `/api/v1/occ/stands/${standId}/location`
+}
+
+/**
+ * @summary Places a stand on the map, or clears it (ADR-0027).
+ */
+export const locateOccStand = async (standId: string,
+    locateOccStandRequest: LocateOccStandRequest, options?: RequestInit): Promise<OccPositionBoardResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getLocateOccStandUrl(standId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(locateOccStandRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccPositionBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getReleaseOccStandUrl = (turnaroundId: string,) => {
 
 
@@ -14492,6 +14578,41 @@ export const releaseOccStand = async (turnaroundId: string, options?: RequestIni
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccPositionBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListOccReadyContractsUrl = (params?: ListOccReadyContractsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/contracts?${stringifiedParams}` : `/api/v1/occ/contracts`
+}
+
+export const listOccReadyContracts = async (params?: ListOccReadyContractsParams, options?: RequestInit): Promise<OccReadyContractsResponse> => {
+
+  const res = await fetch(getListOccReadyContractsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReadyContractsResponse = body ? JSON.parse(body) : {}
   return data
 }
 

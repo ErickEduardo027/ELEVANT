@@ -416,6 +416,22 @@ fijos de ejemplo. Fuentes: [editor](../../frontend/private-web/src/features/huma
 [panel](../../frontend/private-web/src/features/human-resources/users/RampReadinessPanel.jsx) y
 [ADR-0026](../../docs/adr/0026-ramp-staff-readiness-and-hr-shifts.md).
 
+## OCC listo: contratos listos, posiciones ubicadas y mapa en Planificación
+
+Admin OCC suma «Contratos listos»: por fecha, las aerolíneas con contrato activo y
+firmado cuya versión aprobada cubre esa fecha en PUJ, con código, versión, vigencia,
+renovación, servicios (sin precios) y vuelos planificados ese día. Es la misma regla
+que usan Planificación, los vuelos manuales y la asignación de agentes.
+
+En el Mapa de posiciones, OCC ubica cada posición con «Ubicar en el mapa» y un clic
+en el punto real, o la quita. Las coordenadas guardadas en `ref.stands` reemplazan a
+la referencia interna; las demás siguen marcadas como referencia sin verificar.
+Planificación tiene la vista «Mapa» (MapLibre) con las posiciones, los vuelos del día y
+los vuelos sin posición; un clic abre el vuelo en el panel de asignación. Fuentes:
+[contratos listos](../../frontend/private-web/src/features/ready-contracts/ReadyContractsRoute.jsx),
+[mapa de Planificación](../../frontend/private-web/src/features/planning/components/PlanningMap.jsx) y
+[ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md).
+
 ## Chat con presencia y cierre de sesión confirmado
 
 El PR #156 se fusionó y luego se revirtió su rediseño visual de Admin/OCC: el

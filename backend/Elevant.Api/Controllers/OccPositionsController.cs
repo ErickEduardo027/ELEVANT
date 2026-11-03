@@ -66,6 +66,23 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
         return Map(await store.AssignAsync(actorId, turnaroundId, request.StandId, request.Reason, cancellationToken));
     }
 
+    /// <summary>Places a stand on the map, or clears it (ADR-0027).</summary>
+    [HttpPut("stands/{standId:guid}/location", Name = "LocateOccStand")]
+    [RequestSizeLimit(2048)]
+    [ProducesResponseType<OccPositionBoardResponse>(200, "application/json")]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
+    public async Task<ActionResult<OccPositionBoardResponse>> Locate([FromRoute] Guid standId,
+        [FromBody, BindRequired] LocateOccStandRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var actorId)) return Unauthorized<OccPositionBoardResponse>();
+        return Map(await store.LocateStandAsync(actorId, standId, request.Latitude, request.Longitude, request.OperationDate,
+            cancellationToken));
+    }
+
     [HttpPost("turnarounds/{turnaroundId:guid}/stand/release", Name = "ReleaseOccStand")]
     [ProducesResponseType<OccPositionBoardResponse>(200, "application/json")]
     [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
@@ -91,7 +108,8 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
     private static OccPositionBoardResponse Board(OccPositionBoardData board) => new(board.StationId, board.StationCode,
         board.OperationDate, board.AsOf,
         board.Positions.Select(position => new OccPositionResponse(position.StandId, position.Code, position.TerminalCode,
-            position.StandType, position.Status, position.Turnarounds.Select(Turnaround).ToArray())).ToArray(),
+            position.StandType, position.Status, position.Turnarounds.Select(Turnaround).ToArray(), position.Latitude,
+            position.Longitude)).ToArray(),
         board.Unassigned.Select(Turnaround).ToArray(), board.CanAssign);
 
     private static OccPositionTurnaroundResponse Turnaround(OccPositionTurnaroundData item) => new(item.TurnaroundId,

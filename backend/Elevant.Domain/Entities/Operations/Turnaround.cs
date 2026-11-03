@@ -25,4 +25,7 @@ public sealed class Turnaround : AuditableEntity
     public string? ExternalReference { get; set; }
 
     public DateTimeOffset? SourceObservedAt { get; set; }
+
+    /// <summary>Contract version that covered the flight when it was planned (ADR-0027); null for older flights.</summary>
+    public long? ContractVersionId { get; set; }
 }

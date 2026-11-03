@@ -140,13 +140,22 @@ function occupancyTurnaround(item) {
 // `unverified` a map position with no stand registered for the station.
 export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new Date().toISOString()) {
   const byCode = new Map((board?.positions ?? []).map(position => [mapStandCode(position.code), position]));
-  return rampPositions.map(coords => {
-    const stand = byCode.get(coords.id);
+  const referenceCodes = new Set(rampPositions.map(coords => coords.id));
+  // Stands OCC placed on the map that the internal reference does not know (ADR-0027).
+  const placedOnly = (board?.positions ?? [])
+    .filter(stand => stand.latitude != null && stand.longitude != null && !referenceCodes.has(mapStandCode(stand.code)))
+    .map(stand => ({ id: mapStandCode(stand.code), terminal: stand.terminalCode ?? null, lat: stand.latitude, lon: stand.longitude }));
+  return [...rampPositions, ...placedOnly].map(reference => {
+    const stand = byCode.get(reference.id);
+    // Coordinates saved by OCC replace the unverified internal reference.
+    const located = stand?.latitude != null && stand?.longitude != null;
+    const coords = located ? { ...reference, lat: stand.latitude, lon: stand.longitude } : reference;
     const parked = stand?.turnarounds ?? [];
     const current = parked.find(item => item.arrivedAt) ?? parked[0];
     return {
       id: coords.id, terminal: coords.terminal, latitude: coords.lat, longitude: coords.lon,
       standId: stand?.standId ?? null,
+      locationSource: located ? 'occ' : 'reference',
       status: stand ? stand.status : 'unverified',
       // Monitoring is keyed by flight leg, which the occupancy board does not carry.
       flightId: null,

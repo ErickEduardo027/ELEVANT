@@ -10,8 +10,9 @@ public sealed record OccPositionTurnaroundData(Guid TurnaroundId, string Operati
     DateTimeOffset? ArrivalScheduledAt, DateTimeOffset? ArrivedAt, DateTimeOffset? DepartureScheduledAt,
     DateTimeOffset? AssignedFrom, string Status);
 
+/// <param name="Latitude">WGS84 location OCC placed (ADR-0027); null until placed.</param>
 public sealed record OccPositionData(Guid StandId, string Code, string? TerminalCode, string? StandType, string Status,
-    IReadOnlyList<OccPositionTurnaroundData> Turnarounds);
+    IReadOnlyList<OccPositionTurnaroundData> Turnarounds, decimal? Latitude = null, decimal? Longitude = null);
 
 public sealed record OccPositionBoardData(Guid StationId, string StationCode, DateOnly OperationDate, DateTimeOffset AsOf,
     IReadOnlyList<OccPositionData> Positions, IReadOnlyList<OccPositionTurnaroundData> Unassigned, bool CanAssign);
@@ -31,6 +32,13 @@ public interface IOccPositionStore
     /// <summary>Records the actual arrival (on block) and registration; needs «Asignar posiciones».</summary>
     Task<OccPositionResult> RecordArrivalAsync(Guid actorId, Guid turnaroundId, RecordArrivalInput input,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Places a stand on the map (WGS84), or clears it with both values null; needs «Asignar posiciones»
+    /// and the stand's station in scope. Returns that station's board for <paramref name="operationDate"/>.
+    /// </summary>
+    Task<OccPositionResult> LocateStandAsync(Guid actorId, Guid standId, decimal? latitude, decimal? longitude,
+        DateOnly operationDate, CancellationToken cancellationToken = default);
 
     /// <summary>Assigns or reassigns the turnaround's stand; an overlapping assignment is a conflict.</summary>
     Task<OccPositionResult> AssignAsync(Guid actorId, Guid turnaroundId, Guid standId, string? reason,

@@ -399,30 +399,10 @@ internal sealed class EfOccPlanningReadStore(
             scheduledAt ??
             GetUtcInstantAtLocalMidnight(scope.OperationDate, scope.Station.IanaTimeZone);
 
-        var applicableContracts = await (
-                from contractItem in context.Contracts.AsNoTracking()
-                join version in context.ContractVersions.AsNoTracking()
-                    on contractItem.Id equals version.ContractId
-                where contractItem.AirlineId == scope.AirlineId &&
-                      contractItem.Status == ContractStatus.Active &&
-                      (contractItem.SignedOn == null || contractItem.SignedOn <= scope.OperationDate) &&
-                      (contractItem.TerminatedOn == null || contractItem.TerminatedOn >= scope.OperationDate) &&
-                      version.Status == ContractVersionStatus.Approved &&
-                      version.ValidFrom <= scope.OperationDate &&
-                      (version.ValidTo == null || version.ValidTo >= scope.OperationDate) &&
-                      context.Set<ContractVersionStation>().AsNoTracking().Any(link =>
-                          link.ContractVersionId == version.Id &&
-                          link.StationId == scope.StationInternalId)
-                orderby version.VersionNumber descending, version.PublicId
-                select new ContractProjection(
-                    version.Id,
-                    new OccContractOptionData(
-                        contractItem.PublicId,
-                        contractItem.ContractCode,
-                        version.VersionNumber,
-                        version.ValidFrom,
-                        version.ValidTo,
-                        version.CurrencyCode)))
+        var applicableContracts = await ApplicableContracts.For(context, scope.AirlineId, scope.StationInternalId, scope.OperationDate)
+            .OrderByDescending(row => row.VersionNumber).ThenBy(row => row.VersionPublicId)
+            .Select(row => new ContractProjection(row.VersionId, new OccContractOptionData(row.ContractPublicId,
+                row.ContractCode, row.VersionNumber, row.ValidFrom, row.ValidTo, row.CurrencyCode)))
             .Take(2)
             .ToArrayAsync(cancellationToken);
         if (applicableContracts.Length > 1)

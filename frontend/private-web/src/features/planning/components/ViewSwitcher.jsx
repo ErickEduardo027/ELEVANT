@@ -1,7 +1,7 @@
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
 
-const VIEWS = ['timeline', 'table', 'calendar'];
+const VIEWS = ['timeline', 'map', 'table', 'calendar'];
 
 export default function ViewSwitcher({ active, onChange }) {
   const { t } = useTranslation(planningMessages);

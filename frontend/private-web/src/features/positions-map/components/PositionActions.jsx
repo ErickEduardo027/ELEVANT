@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { assignOccStand, recordOccArrival, releaseOccStand } from '../../../services/occPositionsService';
+import { assignOccStand, locateOccStand, recordOccArrival, releaseOccStand } from '../../../services/occPositionsService';
 
 const inputClass = 'w-full rounded-lg border border-black/10 px-2 py-1.5 text-xs dark:border-white/10 dark:bg-surface-dark-card';
 const buttonClass = 'rounded-lg border border-accent-600/40 px-3 py-1.5 text-xs font-semibold text-accent-600 disabled:opacity-50';
@@ -13,7 +13,7 @@ function time(value) {
  * parked here, release the stand when it leaves, or bring a flight of the day to this stand.
  * Every command returns the refreshed board, which the map re-reads.
  */
-export default function PositionActions({ position, candidates = [], onChanged }) {
+export default function PositionActions({ position, candidates = [], onChanged, onStartPlacing, operationDate }) {
   const [registration, setRegistration] = useState({});
   const [turnaroundId, setTurnaroundId] = useState('');
   const [busy, setBusy] = useState('');
@@ -39,6 +39,21 @@ export default function PositionActions({ position, candidates = [], onChanged }
   return (
     <section aria-label="Acciones de la posición" className="space-y-3 rounded-lg border border-black/10 p-3 text-xs dark:border-white/10">
       <h3 className="text-sm font-semibold">Acciones OCC</h3>
+      <div className="space-y-2 border-b border-black/5 pb-3 dark:border-white/5">
+        <p className="text-text-secondary-light dark:text-text-secondary-dark">
+          {position.locationSource === 'occ'
+            ? `Ubicación registrada por OCC (${Number(position.latitude).toFixed(5)}, ${Number(position.longitude).toFixed(5)}).`
+            : 'Ubicación de referencia interna, sin verificar. Ubícala en el mapa para que OCC y Planificación usen la real.'}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {onStartPlacing && <button type="button" className={buttonClass} disabled={Boolean(busy)}
+            onClick={() => onStartPlacing(position)}>Ubicar en el mapa</button>}
+          {position.locationSource === 'occ' && operationDate && <button type="button" className={buttonClass} disabled={Boolean(busy)}
+            onClick={() => void run('clear-location', () => locateOccStand(position.standId, null, null, operationDate),
+              `Se quitó la ubicación de ${position.id}.`)}>
+            {busy === 'clear-location' ? 'Quitando…' : 'Quitar ubicación'}</button>}
+        </div>
+      </div>
       {parked.map(item => (
         <div key={item.turnaroundId} className="space-y-2 border-b border-black/5 pb-3 last:border-0 dark:border-white/5">
           <p><strong>{item.arrivalFlightNumber ?? item.operationCode}</strong> · {item.airlineName}

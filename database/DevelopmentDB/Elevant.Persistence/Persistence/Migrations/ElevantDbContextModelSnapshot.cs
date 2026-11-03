@@ -9790,6 +9790,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("airline_id");
 
+                    b.Property<long?>("ContractVersionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("contract_version_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(3)
@@ -9861,6 +9865,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AircraftTypeId");
+
+                    b.HasIndex("ContractVersionId");
 
                     b.HasIndex("OperationCode")
                         .IsUnique();
@@ -10513,6 +10519,21 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("is_active");
 
+                    b.Property<decimal?>("Latitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)")
+                        .HasColumnName("latitude");
+
+                    b.Property<DateTimeOffset?>("LocatedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("located_at");
+
+                    b.Property<decimal?>("Longitude")
+                        .HasPrecision(9, 6)
+                        .HasColumnType("decimal(9,6)")
+                        .HasColumnName("longitude");
+
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier")
@@ -10556,7 +10577,14 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("StationId", "Code")
                         .IsUnique();
 
-                    b.ToTable("stands", "ref");
+                    b.ToTable("stands", "ref", t =>
+                        {
+                            t.HasCheckConstraint("ck_stands_latitude", "[latitude] IS NULL OR [latitude] BETWEEN -90 AND 90");
+
+                            t.HasCheckConstraint("ck_stands_location_pair", "([latitude] IS NULL AND [longitude] IS NULL) OR ([latitude] IS NOT NULL AND [longitude] IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_stands_longitude", "[longitude] IS NULL OR [longitude] BETWEEN -180 AND 180");
+                        });
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Reference.Station", b =>
@@ -14015,6 +14043,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("AirlineId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.ContractVersion", null)
+                        .WithMany()
+                        .HasForeignKey("ContractVersionId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
                         .WithMany()

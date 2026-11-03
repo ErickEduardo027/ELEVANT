@@ -32,3 +32,17 @@ export const assignOccStand = (turnaroundId, standId, reason = null) =>
   guarded(() => client().assignOccStand(turnaroundId, { standId, reason }));
 
 export const releaseOccStand = turnaroundId => guarded(() => client().releaseOccStand(turnaroundId));
+
+async function located(request) {
+  try { return await request(); } catch (error) {
+    if (error instanceof TypeError) throw new Error('La ubicación no es válida: elige un punto dentro del mapa.');
+    const translated = translate(error);
+    if (translated.status === 403) translated.message = 'Tu acceso no permite ubicar posiciones en el mapa.';
+    if (translated.status === 400) translated.message = 'La ubicación no es válida: elige un punto dentro del mapa.';
+    throw translated;
+  }
+}
+
+/** Places a stand (WGS84) or clears it with null coordinates (ADR-0027). */
+export const locateOccStand = (standId, latitude, longitude, operationDate) =>
+  located(() => client().locateOccStand(standId, { latitude, longitude, operationDate }));

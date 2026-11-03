@@ -41,6 +41,46 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             cancellationToken), null);
     }
 
+    public async Task<OccPositionResult> LocateStandAsync(Guid actorId, Guid standId, decimal? latitude, decimal? longitude,
+        DateOnly operationDate, CancellationToken cancellationToken = default)
+    {
+        if (latitude is null != longitude is null || latitude is < -90 or > 90 || longitude is < -180 or > 180)
+            return new(null, OccPositionFailure.Invalid);
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (!Allowed(actor, AssignPermission)) return new(null, OccPositionFailure.Forbidden);
+        var row = await (from stand in context.Stands
+                         // Tracked: an AsNoTracking source would make the whole query untracked.
+                         join station in context.Stations on stand.StationId equals station.Id
+                         where stand.PublicId == standId && stand.IsActive && station.IsActive
+                         select new { Stand = stand, station.PublicId, station.Code }).SingleOrDefaultAsync(cancellationToken);
+        if (row is null) return new(null, OccPositionFailure.NotFound);
+        if (!actor!.StationScopes.Any(scope => scope.StationId == row.PublicId)) return new(null, OccPositionFailure.Forbidden);
+        var now = Now();
+        row.Stand.Latitude = latitude is { } lat ? Math.Round(lat, 6) : null;
+        row.Stand.Longitude = longitude is { } lon ? Math.Round(lon, 6) : null;
+        row.Stand.LocatedAt = latitude is null ? null : now;
+        row.Stand.UpdatedAt = now;
+        var accountId = await context.Users.AsNoTracking().Where(user => user.PublicId == actorId)
+            .Select(user => user.Id).SingleAsync(cancellationToken);
+        context.AuditEntries.Add(new Domain.Entities.Audit.AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account, ActorAccountId = accountId,
+            Source = AuditSource.Api, CorrelationId = standId, Action = "occ.stand.located", EntityType = "ref.stands",
+            EntityPublicId = standId, StationId = row.Stand.StationId,
+        });
+        await OccPlanningChangeWriter.AddForStationAsync(context, row.Stand.StationId, row.PublicId, now, cancellationToken);
+        try
+        {
+            await context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            return new(null, OccPositionFailure.Conflict);
+        }
+        return new(await BoardAsync(row.Stand.StationId, row.PublicId, row.Code, operationDate,
+            actor.HasPermission(AssignPermission), cancellationToken), null);
+    }
+
     public async Task<OccPositionResult> RecordArrivalAsync(Guid actorId, Guid turnaroundId, RecordArrivalInput input,
         CancellationToken cancellationToken = default)
     {
@@ -228,7 +268,8 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                             from terminal in terminals.DefaultIfEmpty()
                             where stand.StationId == stationId && stand.IsActive
                             orderby stand.Code
-                            select new { stand.Id, stand.PublicId, stand.Code, Terminal = terminal == null ? null : terminal.Code, stand.StandType })
+                            select new { stand.Id, stand.PublicId, stand.Code, Terminal = terminal == null ? null : terminal.Code, stand.StandType,
+                                stand.Latitude, stand.Longitude })
             .ToArrayAsync(cancellationToken);
         // The day's turnarounds plus any aircraft still parked from an earlier day.
         var turnarounds = await (from turnaround in context.Turnarounds.AsNoTracking()
@@ -267,7 +308,8 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             var parked = assignments.Where(item => item.StandId == stand.Id).Select(item => Map(item.TurnaroundId))
                 .OrderBy(item => item.ArrivalScheduledAt).ToArray();
             var status = parked.Any(item => item.ArrivedAt is not null) ? "occupied" : parked.Length > 0 ? "planned" : "available";
-            return new OccPositionData(stand.PublicId, stand.Code, stand.Terminal, stand.StandType, status, parked);
+            return new OccPositionData(stand.PublicId, stand.Code, stand.Terminal, stand.StandType, status, parked,
+                stand.Latitude, stand.Longitude);
         }).ToArray();
         var unassigned = turnarounds.Where(item => !assignmentOf.ContainsKey(item.Id) &&
                 item.CurrentStatus is not (TurnaroundStatus.Completed or TurnaroundStatus.Diverted))
