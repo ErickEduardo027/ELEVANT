@@ -4028,6 +4028,51 @@ export interface RampAgentAssignmentResponse {
   assignedAt: string;
 }
 
+export interface RampAgentDocumentData {
+  kind: string;
+  label: string;
+  /** @nullable */
+  number?: string | null;
+  expiresOn: string;
+  validity: string;
+}
+
+export interface RampAgentReadinessItem {
+  key: string;
+  status: string;
+  /** @nullable */
+  detail?: string | null;
+  /** @nullable */
+  expiresOn?: string | null;
+}
+
+export interface RampAgentReadinessData {
+  rampProfileId: string;
+  agentName: string;
+  employeeNumber: string;
+  ready: boolean;
+  items: RampAgentReadinessItem[];
+}
+
+export interface RampAgentShiftData {
+  id: string;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  block: string;
+  stationCode: string;
+  terminalCode: string;
+}
+
+export interface RampAgentScheduleData {
+  rampProfileId: string;
+  agentName: string;
+  from: string;
+  to: string;
+  shifts: RampAgentShiftData[];
+  documents: RampAgentDocumentData[];
+}
+
 export interface RampAircraftResponse {
   id: string;
   icaoCode: string;
@@ -5520,6 +5565,11 @@ DepartmentOnly?: boolean;
 
 export type GetFinanceSupplierOptionsParams = {
 scopeStationId?: string;
+};
+
+export type GetOwnRampScheduleParams = {
+from?: string;
+to?: string;
 };
 
 export const getGetAccountChangesUrl = (params?: GetAccountChangesParams,) => {
@@ -13957,9 +14007,6 @@ export const getRecordHumanResourcesShiftUrl = (id: string,) => {
   return `/api/v1/human-resources/shifts/${id}`
 }
 
-/**
- * @deprecated
- */
 export const recordHumanResourcesShift = async (id: string,
     recordHumanResourcesShiftInput?: RecordHumanResourcesShiftInput, options?: RequestInit): Promise<HumanResourcesShiftRecorded> => {
 
@@ -13982,6 +14029,37 @@ const res = await fetch(getRecordHumanResourcesShiftUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesShiftRecorded = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRemoveHumanResourcesShiftUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/shifts/${id}`
+}
+
+/**
+ * @summary Removes a shift of today or later (ADR-0026); past shifts are history.
+ */
+export const removeHumanResourcesShift = async (id: string, options?: RequestInit): Promise<void> => {
+
+  const res = await fetch(getRemoveHumanResourcesShiftUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
   return data
 }
 
@@ -16315,5 +16393,74 @@ export const getSystemPing = async ( options?: RequestInit): Promise<SystemPingR
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: SystemPingResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListRampAgentReadinessUrl = () => {
+
+
+
+
+  return `/api/v1/human-resources/ramp-profiles/readiness`
+}
+
+/**
+ * @summary «¿Puede operar?» of every active ramp agent, with what is missing.
+ */
+export const listRampAgentReadiness = async ( options?: RequestInit): Promise<RampAgentReadinessData[]> => {
+
+  const res = await fetch(getListRampAgentReadinessUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampAgentReadinessData[] = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOwnRampScheduleUrl = (params?: GetOwnRampScheduleParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/ramp/me/schedule?${stringifiedParams}` : `/api/v1/ramp/me/schedule`
+}
+
+/**
+ * @summary The ramp agent's shifts (up to 31 days) and current documents.
+ */
+export const getOwnRampSchedule = async (params?: GetOwnRampScheduleParams, options?: RequestInit): Promise<RampAgentScheduleData> => {
+
+  const res = await fetch(getGetOwnRampScheduleUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampAgentScheduleData = body ? JSON.parse(body) : {}
   return data
 }

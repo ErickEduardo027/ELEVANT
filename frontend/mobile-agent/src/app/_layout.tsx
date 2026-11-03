@@ -25,6 +25,7 @@ export default function RootLayout() {
       <Stack.Screen name="sync" options={{ title: 'Sincronización' }} />
       <Stack.Screen name="chat" options={{ title: 'Chat con OCC' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notificaciones' }} />
+      <Stack.Screen name="my-schedule" options={{ title: 'Mis turnos' }} />
     </Stack>
   </View>;
 }

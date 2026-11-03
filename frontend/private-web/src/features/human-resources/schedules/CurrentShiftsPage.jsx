@@ -6,6 +6,8 @@ import { getRosterRange, shiftRosterAnchor } from './rosterRange';
 import AvailabilityRequestsPanel from './AvailabilityRequestsPanel';
 import ScheduleWarningsPanel from './ScheduleWarningsPanel';
 import { useAuth } from '../../auth/AuthContext';
+import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
+import WeeklyShiftEditor from './WeeklyShiftEditor';
 
 const PAGE_LIMIT = 20;
 const BLOCK_LABELS = { Morning: 'Mañana', Afternoon: 'Tarde', Night: 'Noche' };
@@ -17,6 +19,8 @@ const VIEWS = [
 
 export default function CurrentShiftsPage({ initialDate = new Date() }) {
   const { session } = useAuth();
+  const access = useOptionalDepartmentAccess();
+  const canWrite = Boolean(access?.can('human_resources.schedules.write'));
   const [anchor, setAnchor] = useState(() => initialDate);
   const [mode, setMode] = useState('week');
   const [page, setPage] = useState(1);
@@ -89,7 +93,9 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Gestión Humana</p>
         <h1 className="mt-1 text-2xl font-bold">Turnos de rampa</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          OCC programa los turnos de rampa. Gestión Humana los consulta y gestiona solicitudes de disponibilidad.
+          {canWrite
+            ? 'Gestión Humana programa la semana de cada agente; OCC puede añadir el turno que un vuelo necesite.'
+            : 'Consulta los turnos de rampa y gestiona las solicitudes de disponibilidad.'}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -116,6 +122,10 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
         className="rounded-lg border px-3 py-2 text-sm">
         {mode === 'week' ? 'Semana actual' : 'Período actual'}</button>
     </nav>
+
+    {canWrite && mode === 'week' && <WeeklyShiftEditor weekStart={anchorWeek} revision={revision}
+      onChanged={() => setRevision(value => value + 1)} />}
+    {canWrite && mode !== 'week' && <p className="text-sm text-text-secondary-light">Cambia a la vista «Semana» para programar turnos.</p>}
 
     {shown.status === 'loading' && <p role="status"
       className="rounded-xl bg-white/70 p-5 text-sm dark:bg-surface-dark-card">Cargando turnos…</p>}

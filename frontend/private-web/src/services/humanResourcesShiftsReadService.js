@@ -41,3 +41,29 @@ export async function recordHumanResourcesShift(id, request, options = {}) {
     throw error;
   }
 }
+
+async function authenticated(call) {
+  try {
+    return await call(createPrivateWebApiClient({ getAccessToken: () => readSession()?.token }));
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
+
+/** Removes a shift of today or later (ADR-0026). */
+export const removeHumanResourcesShift = id => authenticated(client => client.removeHumanResourcesShift(id));
+
+/** «¿Puede operar?» of every active ramp agent (ADR-0026). */
+export const listRampAgentReadiness = () => authenticated(client => client.listRampAgentReadiness());
+
+/** Every shift of a range (the editor needs the whole week, not one page). */
+export async function getAllHumanResourcesShifts(from, to, { signal } = {}) {
+  const shifts = [];
+  for (let page = 1; page <= 20; page++) {
+    const result = await getHumanResourcesShifts({ from, to, page, limit: 100 }, { signal });
+    shifts.push(...result.shifts);
+    if (!result.hasMore) break;
+  }
+  return shifts;
+}

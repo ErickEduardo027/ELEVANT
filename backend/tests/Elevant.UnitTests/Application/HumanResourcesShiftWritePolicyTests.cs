@@ -34,10 +34,11 @@ public sealed class HumanResourcesShiftWritePolicyTests
 
     [Theory]
     [InlineData("ADMIN_OCC", true, true)]
-    [InlineData("GESTION_HUMANA", true, false)]
-    [InlineData("SUPERADMIN", true, false)]
+    [InlineData("GESTION_HUMANA", true, true)]
+    [InlineData("SUPERADMIN", true, true)]
+    [InlineData("FINANZAS", true, false)]
     [InlineData("ADMIN_OCC", false, false)]
-    public void OnlyInternalOccMayRecordRampShifts(string roleCode,
+    public void OccAndHumanResourcesSchedulersMayRecordRampShifts(string roleCode,
         bool hasInternalMembership, bool expected)
     {
         var stationId = Guid.NewGuid();

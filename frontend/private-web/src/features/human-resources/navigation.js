@@ -9,12 +9,6 @@ import {
   ShieldCheckIcon,
   UsersIcon,
 } from '../shell/components/icons';
-import {
-  CERTIFICATIONS_STATUS_MOCK,
-  NOTIFICATIONS_STATUS_MOCK,
-  PERMITS_STATUS_MOCK,
-  SCHEDULES_STATUS_MOCK,
-} from './mockData';
 
 export const HUMAN_RESOURCES_BASE_PATH = '/gestion-humana';
 
@@ -35,12 +29,6 @@ export const HUMAN_RESOURCES_MODULE_IDS = {
   DEPARTMENT_USERS: 'department-users',
   EXPENSES: 'expenses',
 };
-
-function badgeFromStatus(status) {
-  if (status.expired > 0) return { count: status.expired, tone: 'critical' };
-  if (status.expiringSoon > 0) return { count: status.expiringSoon, tone: 'warning' };
-  return null;
-}
 
 export const HUMAN_RESOURCES_NAVIGATION = [
   { id: HUMAN_RESOURCES_MODULE_IDS.EXPENSES, label: 'Mis gastos', path: HUMAN_RESOURCES_BASE_PATH + '/expenses', icon: BriefcaseIcon, description: 'Gastos propios y revisiones del departamento.' },
@@ -85,7 +73,6 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     path: `${HUMAN_RESOURCES_BASE_PATH}/certifications`,
     icon: ShieldCheckIcon,
     description: 'Habilitaciones, certificaciones y equipos autorizados.',
-    badge: badgeFromStatus(CERTIFICATIONS_STATUS_MOCK),
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.PERMITS, permission: 'human_resources.permits.read',
@@ -93,7 +80,6 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     path: `${HUMAN_RESOURCES_BASE_PATH}/permits`,
     icon: IdCardIcon,
     description: 'Carnet aeroportuario y licencias en rampa.',
-    badge: badgeFromStatus(PERMITS_STATUS_MOCK),
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.SCHEDULES, permission: 'human_resources.schedules.read',
@@ -101,7 +87,6 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     path: `${HUMAN_RESOURCES_BASE_PATH}/schedules`,
     icon: CalendarIcon,
     description: 'Turnos, disponibilidad y cobertura de personal.',
-    badge: SCHEDULES_STATUS_MOCK.coverageAlerts > 0 ? { count: SCHEDULES_STATUS_MOCK.coverageAlerts, tone: 'warning' } : null,
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.ATTENDANCE, permission: 'human_resources.attendance.read',
@@ -130,7 +115,6 @@ export const HUMAN_RESOURCES_NAVIGATION = [
     path: `${HUMAN_RESOURCES_BASE_PATH}/notifications`,
     icon: BellIcon,
     description: 'Historial de alertas y avisos del sistema.',
-    badge: { count: NOTIFICATIONS_STATUS_MOCK.unreadCount, tone: 'default' },
   },
   {
     id: HUMAN_RESOURCES_MODULE_IDS.ACCESS_REQUESTS,

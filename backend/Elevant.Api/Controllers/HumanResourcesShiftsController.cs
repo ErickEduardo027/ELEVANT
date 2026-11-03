@@ -55,7 +55,6 @@ public sealed class HumanResourcesShiftsController(
     }
 
     [HttpPut("{id:guid}", Name = "RecordHumanResourcesShift")]
-    [Obsolete("Transitional OCC-only shift write; migrate to OCC scheduling when available.")]
     [RequestSizeLimit(32768)]
     [ProducesResponseType<HumanResourcesShiftRecorded>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -79,6 +78,27 @@ public sealed class HumanResourcesShiftsController(
             HumanResourcesShiftWriteFailure.Conflict => Problem(statusCode: 409,
                 title: "Shift conflicts with current state."),
             _ => throw new InvalidOperationException(),
+        };
+    }
+
+    /// <summary>Removes a shift of today or later (ADR-0026); past shifts are history.</summary>
+    [HttpDelete("{id:guid}", Name = "RemoveHumanResourcesShift")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    public async Task<IActionResult> Remove(Guid id, CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
+            actorId == Guid.Empty) return Unauthorized();
+        var result = await writeStore.RemoveAsync(actorId, id, cancellationToken);
+        return result.Failure switch
+        {
+            null => NoContent(),
+            HumanResourcesShiftWriteFailure.Forbidden => Forbid(),
+            HumanResourcesShiftWriteFailure.Invalid => Problem(statusCode: 400, title: "Invalid shift identifier."),
+            _ => Problem(statusCode: 409, title: "Past or referenced shifts cannot be removed."),
         };
     }
 }
