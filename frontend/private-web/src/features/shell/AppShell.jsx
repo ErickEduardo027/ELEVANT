@@ -18,6 +18,7 @@ export default function AppShell({
   observeNotifications = process.env.NODE_ENV !== 'test',
   profileActionsEnabled = true,
   frameProps,
+  notificationCenter,
   children,
 }) {
   const pathname = usePathname();
@@ -28,7 +29,7 @@ export default function AppShell({
   const fallbackCount = typeof notification?.badge === 'number' ? notification.badge : notification?.badge?.count ?? 0;
   // 'department' alerts pop up on screen and open in a drawer; the other sources keep their page.
   const department = notificationsSource === 'department';
-  const notifications = useNotificationBadge({ fallback: fallbackCount, enabled: notificationsEnabled && !department, source: notificationsSource });
+  const notifications = useNotificationBadge({ fallback: fallbackCount, enabled: notificationsEnabled && !department && !notificationCenter, source: notificationsSource });
   const center = useDepartmentNotificationCenter({
     enabled: notificationsEnabled && department && observeNotifications,
     onOpen: target => target.path && router.push(target.path),
@@ -44,7 +45,8 @@ export default function AppShell({
         overlayOpen: sidebar.overlayOpen, onToggle: sidebar.toggle, onCloseOverlay: sidebar.closeOverlay,
       }}
       topbarProps={{
-        roleLabel, station, notificationsCount: department ? center.count : notifications.count, notificationsEnabled, profileActionsEnabled,
+        roleLabel, station, notificationsCount: notificationCenter ? notificationCenter.count : department ? center.count : notifications.count, notificationsEnabled, profileActionsEnabled,
+        notificationCenter,
         theme, onToggleTheme: toggleTheme, user, onOpenMenu: sidebar.toggle, onLogout, navigation,
         onOpenNotifications: () => (department ? center.openPanel()
           : notificationsPath ? router.push(notificationsPath) : notifications.refresh()),
@@ -52,6 +54,7 @@ export default function AppShell({
     >
       {children}
       {center.ui}
+      {notificationCenter?.ui}
     </ShellFrame>
   );
 }

@@ -8350,6 +8350,19 @@ public sealed partial class SqlServerMigrationTests
                 agentMessages.Value!.Messages.Select(message => message.Id));
             var occMessages = await store.GetMessagesAsync(occAccess, operationId, cancellationToken);
             Assert.Equal(2, occMessages.Value!.Messages.Count);
+            var participants = await store.GetPresenceParticipantsAsync(occAccess, [operationId], cancellationToken);
+            Assert.True(participants.IsSuccess);
+            var roster = Assert.Single(participants.Value!.Operations);
+            Assert.Equal(operationId, roster.OperationId);
+            Assert.Contains(roster.Participants, person => person.AccountId == first.Value!.SenderAccountId);
+            Assert.All(roster.Participants, person => Assert.False(string.IsNullOrWhiteSpace(person.Name)));
+            var inaccessible = await store.GetPresenceParticipantsAsync(occAccess, [Guid.NewGuid()], cancellationToken);
+            Assert.Empty(inaccessible.Value!.Operations);
+            var olderMessages = await store.GetMessagesAsync(occAccess, operationId, cancellationToken: cancellationToken, offset: 1);
+            Assert.Equal(first.Value!.Id, Assert.Single(olderMessages.Value!.Messages).Id);
+            Assert.False(olderMessages.Value.HasMore);
+            var exhaustedMessages = await store.GetMessagesAsync(occAccess, operationId, cancellationToken: cancellationToken, offset: 2);
+            Assert.Empty(exhaustedMessages.Value!.Messages);
             var occConversations = await store.GetConversationsAsync(occAccess, stationId, cancellationToken);
             Assert.Contains(occConversations.Value!.Conversations, conversation =>
                 conversation.OperationId == operationId &&

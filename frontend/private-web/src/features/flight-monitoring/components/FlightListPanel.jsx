@@ -16,6 +16,7 @@ export default function FlightListPanel({
   return (
     <div
       data-testid="flight-list-panel"
+      data-occ-surface=""
       className="flex h-full flex-col gap-3 overflow-y-auto rounded-2xl border border-black/5 bg-white/70 p-3 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card"
     >
       <FlightSearch value={search} onChange={onSearchChange} />

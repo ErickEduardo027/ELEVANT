@@ -29,7 +29,7 @@ sources:
   - frontend/private-web/src/features/finance/shell/FinanceShell.jsx
   - frontend/private-web/src/services/financeHomeService.js
   - frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx
-  - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
+  - frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
   - frontend/private-web/src/config/securityHeaders.mjs
 tags:
@@ -103,6 +103,8 @@ La validación local se hizo con capturas a 360, 390, 768, 1024, 1280, 1440 y
 
 Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/package.json) y `package-lock.json`; esta nota no sustituye esos manifests.
 
+En esta rama local, el servidor de desarrollo usa Webpack para evitar el bloqueo observado del proceso PostCSS de Turbopack en Windows. El ajuste solo afecta al desarrollo; el build conserva su compilador. El [README de Private Web](../../frontend/private-web/README.md#ejecutar-y-validar) documenta el arranque y la reproducción con Turbopack.
+
 ## Estructura útil para desarrollar
 
 | Ruta | Responsabilidad observada |
@@ -128,9 +130,9 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vuelos, mapa de posiciones, revisión, reportes, notificaciones y chat. Las interfaces representan planificación y asignaciones, seguimiento de vuelos/turnarounds, contraste de ejecución, aprobación o devolución, cierre/reportes y coordinación interna.
 
-En la rama `feat/adminocc-redesign`, el espacio OCC tiene marco propio: un riel de navegación navy colapsable agrupado en Monitoreo, Operación, Comunicación y Administración, con la marca oficial completa, y una barra contextual con el módulo activo, la hora UTC del reloj del equipo, el idioma (español/inglés), el tema y los avisos. Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
+El espacio OCC tiene marco propio: una cabecera horizontal con la marca oficial y la navegación agrupada en Panorama, Operación, Comunicación y Administración (menús desplegables; en pantallas estrechas pasa a un menú compacto), junto con la hora UTC del reloj del equipo, el idioma (español/inglés), el tema, los avisos y la cuenta. Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [cabecera](../../frontend/private-web/src/features/admin-occ/shell/OccHorizontalHeader.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
 
-En el árbol local posterior al commit verificado, «Operación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
+En el árbol local posterior al commit verificado, «Operación → Mis gastos» aparece en la navegación OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [cabecera OCC](../../frontend/private-web/src/features/admin-occ/shell/OccHorizontalHeader.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
 
 OCC opera solo Punta Cana: todas sus rutas toman el alcance `PUJ` que trae la sesión y ya no ofrecen selector de estación. Si la cuenta no tiene ese alcance, cada módulo muestra su estado sin estación autorizada y no consulta la API; la autorización sigue en el servidor. Fuente: [alcance PUJ](../../frontend/private-web/src/features/admin-occ/useOccStation.js).
 
@@ -165,25 +167,13 @@ Fuentes de implementación local: [vista](../../frontend/private-web/src/feature
 La validación del rediseño anterior (27/27 pruebas enfocadas, test:delivery 22/22, lint, typecheck y build; navegador 375–1440 px) precede a esta integración. Sus resultados no acreditan las pruebas ni una conexión OpenSky real de esta rama. Los controles nuevos se registran en el handoff; la metadata de verificación superior conserva su commit histórico. Ninguno de estos cambios locales se ha desplegado.
 Monitoreo OCC usa el alcance PUJ de la sesión e ignora un enlace a otra estación. La lectura inicial y el refresco de 30 segundos consultan esa misma estación; el refresco reemplaza la lista completa y una falla retira los vuelos antiguos hasta recuperación o reintento. Las horas provienen de planificación; no se presentan coordenadas de aeronaves no verificadas. Solo PUJ tiene coordenadas cartográficas revisadas, por lo que otra estación no muestra un mapa de PUJ. Esto no acredita datos aeronáuticos en vivo ni promoción remota. Fuentes: [servicio de monitoreo](../../frontend/private-web/src/services/flightMonitoringService.js) y [ruta](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringRoute.jsx).
 
-En esta rama, las vistas de PUJ usan MapLibre sin cambiar a Google por una
-variable local. El mapa base de Monitoreo se monta aunque ningún vuelo tenga
-coordenadas verificadas, con un aviso que distingue cartografía de telemetría.
-El worker y su importación compartida se copian juntos desde la dependencia
-fijada antes de desarrollo y build; la certificación comprueba que la imagen
-sirve ambos módulos. Esta evidencia es local y de CI; la disponibilidad remota
-requiere la promoción y comprobación del operador. Fuentes: [vista de
-Monitoreo](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx),
-[mapa de posiciones](../../frontend/private-web/src/features/positions-map/components/PositionMap.jsx),
-[script de copia](../../frontend/private-web/scripts/copy-maplibre-worker.mjs) y
-[certificación](../../frontend/private-web/scripts/certify-image.sh).
+En el cambio local de `feat/adminocc-redesignall`, Panorama conserva sus tres mapas y sus dependencias sin edición. El marco global conserva la cabecera de 56 px y el sidebar de 248/72 px; la extensión visual OCC excluye expresamente el contenido de Panorama. Los mapas siguen usando sus estilos, geometrías, filtros, cámara y actualización existentes.
 
-En la rama de integración, Monitoreo y Mapa releen la estación autorizada
-cuando reciben `occ_planning` tras una asignación OCC. También refrescan al
-recuperar foco/conexión y cada 25 segundos con la pestaña visible; los sondeos
-de snapshot existentes continúan. La señal no sustituye la lectura REST ni
-acredita latencia o promoción remota.
+Monitoreo y Posiciones salen de las agrupaciones visibles del sidebar, manteniendo URLs y permisos. Planificación ofrece enlaces contextuales solo con el permiso de cada consulta. Monitoreo conserva filtros, procedencia, conexión, actualización y detalle lateral mediante `flightId`. Posiciones conserva búsqueda, terminal, detalle, llegada con matrícula, liberación y asignación con `canAssign` y validación autoritativa de la API. Ambas vistas funcionan sin mapas ni teselas. Se retira exclusivamente su código cartográfico sin consumidores; el mapa de posiciones compartido por Panorama y sus mapeadores permanecen intactos. Fuentes locales: [navegación](../../frontend/private-web/src/features/admin-occ/navigation.js), [monitoreo](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx) y [posiciones](../../frontend/private-web/src/features/positions-map/PositionsMapPage.jsx).
 
-El Mapa de posiciones también usa el alcance PUJ. Representa geometría local revisada y superpone únicamente asignaciones planificadas, sin inferir disponibilidad física. En otra estación muestra una lista de posiciones asignadas desde planificación, sin reutilizar coordenadas de PUJ; si no hay asignaciones, el vacío es explícito. Refresca el snapshot entero cada 30 segundos, oculta resultados previos ante fallos y conserva la estación al abrir un vuelo en Monitoreo. Faltan coordenadas y ocupación física verificadas de otras estaciones, así como prueba remota. Fuentes: [adaptador de posiciones](../../frontend/private-web/src/services/positionsMapService.js), [ruta](../../frontend/private-web/src/features/positions-map/PositionsMapRoute.jsx) y [vista](../../frontend/private-web/src/features/positions-map/PositionsMapPage.jsx).
+La cabecera OCC, los toasts y el historial comparten un feed por cuenta y permiso: lectura inicial sin avisos, IDs nuevos sin leer anunciados una vez, cancelación al cambiar de cuenta y recibos sincronizados. Mantiene observador, foco/reconexión y sondeo visible, sin cambiar contratos. El contador describe avisos recientes; no un total histórico. Los toasts duran ocho segundos, pausan durante interacción y agrupan excedentes para mostrar hasta tres. El popover admite cierre exterior, Escape y retorno de foco. Fuentes locales: [estado](../../frontend/private-web/src/features/notifications/useOperationalNotifications.js) y [centro](../../frontend/private-web/src/features/admin-occ/notifications/OperationalNotificationCenter.jsx).
+
+La extensión visual usa CSS Modules para Planificación, Revisión, Reportes, Notificaciones, Chat, Usuarios y Gastos dentro de OCC. Los componentes compartidos mantienen su presentación predeterminada en otros departamentos. Esta descripción corresponde a cambios locales sin commit ni despliegue; no actualiza la metadata histórica de verificación ni acredita validación remota. [Límites y comandos](../../frontend/private-web/README.md#adminocc-presentación-y-mapas-operativos).
 
 En la rama de integración de Development, planificación incorpora el alta manual de una escala OCC. La pantalla obtiene de la API las aerolíneas con contrato vigente, aeropuertos y posiciones activas para una estación autorizada; envía llegada, salida, fecha, posición y un UUID de intención estable para un reintento ambiguo. La API vuelve a comprobar alcance, contrato, ruta y disponibilidad de posición. Crear una escala deja su operación planificada. OCC puede programar después un turno local para un agente cuyo único impedimento sea la cobertura; el panel refresca opciones y ETag antes de asignar. Ninguno de esos comandos factura ni demuestra por sí solo promoción o prueba de navegador contra el VPS.
 
@@ -528,3 +518,77 @@ Cada feature debe consumir un endpoint versionado a través de un adaptador remo
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [API compartida](api-compartida.md)
 - [Mapa de aplicaciones](README.md)
+
+## Rediseño integral OCC y salida manual (rama local)
+
+La rama `feat/adminocc-redesignall` mantiene su dirección visual en el
+[sistema OCC](../../frontend/private-web/docs/design/admin-occ/system.md) y el
+[inventario de acciones](../../frontend/private-web/docs/design/admin-occ/audit.md).
+La presentación usa cristal azulado y marco navy, con superficies sólidas para
+formularios y tablas, sin modificar las variables globales. Revisión combina
+cola y detalle contextual; Reportes separa configuración y resultados y permite
+recuperar el catálogo. Los resultados identifican el período aplicado y se retiran
+al cambiar de cuenta o estación, descartando respuestas anteriores.
+Notificaciones conserva una cronología y el proveedor compartido. Directorio y
+gastos usan composiciones optativas dentro de OCC, manteniendo la presentación
+predeterminada en otros departamentos.
+
+Panorama conserva sus archivos y dependencias cartográficas compartidas, tres
+mapas, filtros, cámara y comportamiento. El contenedor visual excluye su ruta.
+El marco autorizado mantiene
+cabecera de 56 px, riel de 248/72 px y breakpoints. Monitoreo y Posiciones conservan
+URLs, permisos, detalles y operaciones como consultas sin mapas fuera del sidebar;
+los enlaces contextuales exigen sus permisos independientes.
+
+La entrada OCC utiliza `/admin-occ/dashboard` como destino inicial separado de
+los prefijos de autorización. Una cuenta sin acceso a Panorama ve los módulos
+concedidos, sin redirección automática a Mis gastos. El cierre manual de todos
+los roles abre una confirmación accesible con Cancelar como foco inicial; la
+confirmación pendiente bloquea pulsaciones repetidas y la limpieza fallida muestra
+un error. Cancelar conserva el estado de trabajo. La expiración automática y las
+respuestas 401 conservan sus mecanismos propios. Es una limpieza local de la
+credencial; no representa una revocación remota del JWT ni añade un endpoint.
+
+La localización de los formularios de gastos se habilita mediante un contexto
+optativo de presentación: traduce etiquetas, validación y controles, conservando
+los textos introducidos por el usuario, valores y contratos. No monta otro scope
+de idioma ni cambia el idioma global al abrir el flujo.
+
+Los resultados de ejecución de esta rama se registran en la auditoría, sin
+actualizar las marcas históricas de verificación de esta nota. Los recorridos con
+respuestas interceptadas no acreditan persistencia SQL ni conversación remota
+entre dos cuentas. Una prueba real de Chat requiere cuentas QA autorizadas y no
+debe enviar mensajes a personal operativo. Esta tarea no realiza commits, pushes,
+merges ni despliegues; la documentación describe cambios locales.
+
+## Refinamiento OCC v2 en la rama local
+
+Esta ampliación posterior a la verificación histórica de la nota implementa
+una cabecera horizontal fuera de Panorama, materiales más ligeros y controles
+compactos. El marco de Panorama permanece intacto; únicamente su campana adopta
+la bandeja de pendientes confirmados por servidor. El historial se conserva.
+
+El Chat sigue por operación y consulta presencia autorizada desde la API.
+Las identidades proceden de asignaciones y mensajes reales; la actividad se
+recibe de Web y Mobile Agent, sin inferir disponibilidad desde una conversación
+abierta. La [auditoría local](../../frontend/private-web/docs/design/admin-occ/audit.md)
+distingue pruebas con fixtures, compilación e integración real pendiente.
+Esta sección no acredita un despliegue ni actualiza la verificación histórica.
+
+### Verificación local y límites de la segunda iteración
+
+Al 30 de octubre de 2026 la implementación local incorpora el marco horizontal fuera de Panorama, pendientes compartidos y presencia compatible en API/Web/Agent. El emisor no publica actividad antigua después de cinco minutos y comprueba la cuenta antes de escribir; no modifica autenticación ni permisos.
+
+La [auditoría local](../../frontend/private-web/docs/design/admin-occ/audit.md) distingue las veinte pruebas enfocadas del frontend, las comprobaciones del cliente, delivery, lint, Vault y secretos que pasaron de los controles pendientes. El usuario confirmó que no dispone ahora de SQL/cuentas/Android QA ni puede liberar más memoria. No se acredita suite integral, build oficial, matriz visual final o integración real. La restauración móvil falló por red; las dependencias siguen fijadas por el mismo lockfile.
+
+La comparación funcional completa de Panorama sigue pendiente; sus archivos de mapas y dependencias protegidas no se editaron. Se preservó el marco legacy previo y la única excepción funcional es retirar de la campana los avisos leídos/abiertos. Sin commits, pushes, merges o despliegues; los metadatos globales de verificación de esta nota no se actualizaron.
+
+### Unificación final del marco OCC
+
+La iteración local del 30 de octubre de 2026 sustituye la excepción anterior del sidebar de Panorama: todas las rutas OCC comparten una barra flotante con Panorama, Operación, Comunicación y Administración. El contenido de Panorama aprovecha el ancho liberado; sus mapas, estilos internos, datos, controles y breakpoints permanecen protegidos. No cambia la navegación de otros departamentos.
+
+Se reutilizan los logos originales del login, el estado global de idioma/tema y el flujo de salida confirmado. Chat conserva conversaciones por operación, presencia real e idempotencia; su compositor se adapta de 44 a 144 px sin perder borradores al fallar. Esta iteración no modifica API, cliente compartido, Mobile Agent, autenticación ni permisos.
+
+Refinamientos del 2 de noviembre de 2026: la barra conserva su estructura con un cristal algo más saturado y un estado activo diferenciado; la hora UTC sale de la barra y queda solo en el menú de perfil; el idioma se cambia con un switch ES/EN de dos posiciones (radiogroup, flechas de teclado). «Avisos recientes» de Panorama lee el mismo centro de notificaciones del shell (por estación, sin duplicados, más recientes primero, máx. 5), así que llegadas y lecturas coinciden con la bandeja. El Chat muestra estados tipo Teams resueltos desde la API y un selector compacto del estado propio; sin datos de presencia se ve un indicador neutro. Mobile Agent todavía no permite elegir estado.
+
+La [auditoría](../../frontend/private-web/docs/design/admin-occ/audit.md) distingue los 135 hashes protegidos, referencias visuales, pruebas ejecutadas y controles pendientes. Un ENOSPC interrumpió la regresión completa; se limpiaron únicamente artefactos Next regenerables del workspace y se recuperó la documentación interrumpida. No hay publicación ni despliegue; los metadatos globales de verificación histórica de esta nota permanecen sin cambios.

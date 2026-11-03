@@ -6,6 +6,7 @@ export const planningMessages = {
       subtitle: 'Consulte las escalas, sus tramos y los recursos operativos autorizados para cada estación.',
       comingSoon: 'Próximamente',
       newFlight: 'Nuevo vuelo',
+      createUnavailable: 'Seleccione una estación y espere a que termine la carga para crear un vuelo.',
       importFlights: 'Importar vuelos',
       refresh: 'Actualizar',
       export: 'Exportar',
@@ -21,6 +22,7 @@ export const planningMessages = {
       noScopeTitle: 'Sin estaciones habilitadas',
       noScopeHint: 'Su cuenta no tiene un alcance de estación activo. Solicite al administrador que revise sus permisos antes de consultar la operación.',
       loading: 'Cargando planificación operativa',
+      refreshing: 'Actualizando planificación…',
     },
     page: {
       tableView: 'Vista de tabla',
@@ -286,6 +288,7 @@ export const planningMessages = {
       subtitle: 'Review turnarounds, their flight legs, and the operational resources authorized for each station.',
       comingSoon: 'Coming soon',
       newFlight: 'New flight',
+      createUnavailable: 'Select a station and wait for planning to load before creating a flight.',
       importFlights: 'Import flights',
       refresh: 'Refresh',
       export: 'Export',
@@ -301,6 +304,7 @@ export const planningMessages = {
       noScopeTitle: 'No stations enabled',
       noScopeHint: 'Your account has no active station scope. Ask your administrator to review your permissions before viewing operations.',
       loading: 'Loading operational planning',
+      refreshing: 'Updating planning…',
     },
     page: {
       tableView: 'Table view',

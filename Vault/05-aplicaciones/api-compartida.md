@@ -152,3 +152,30 @@ No existen pruebas de autenticación ni endpoints de negocio porque esas capacid
 - [DevelopmentDB compartida](developmentdb-compartida.md)
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [Mapa de aplicaciones](README.md)
+
+
+## Presencia operativa local
+
+La ampliación añade un [controlador autorizado](../../backend/Elevant.Api/Controllers/OperationalPresenceController.cs)
+para leer presencia por operaciones y actualizar el lease del propio sujeto JWT.
+Los participantes se consultan después del filtro de estación/asignación del
+lector; no existe una consulta libre de presencia por identificador de usuario.
+
+El [registro transitorio](../../backend/Elevant.Application/Operations/OperationalPresence.cs)
+combina clientes con secuencias crecientes. Usa 90 s de expiración, 5 min de
+actividad y 24 h de retención observable; ausencia de datos o reinicio significa
+estado desconocido. Presupone una instancia API y no crea entidades ni migraciones.
+El contrato OpenAPI se recaptura desde el backend compilado y se regenera su cliente.
+Una futura publicación requiere API antes de clientes.
+
+El 2 de noviembre de 2026 se añadió, también en memoria, el estado elegido por la
+propia cuenta (`GET`/`PUT /api/v1/chat/presence/status`): disponible, ocupado, no
+molestar, vuelvo enseguida, ausente o mostrar como desconectado, más un mensaje
+opcional de hasta 80 caracteres. La conexión derivada del lease y el estado elegido
+son campos distintos: el estado elegido solo se publica a otros participantes
+mientras la cuenta tiene un lease vivo, «mostrar como desconectado» oculta la
+conexión real y el mensaje nunca se infiere. Se pierde al reiniciar la API y caduca
+a las 24 h. Las peticiones de presencia usan atributos de validación sobre los
+parámetros del record; los atributos `[property:]` previos hacían que MVC
+devolviera 500 en vez de 400/204. Esta modificación local
+no acredita despliegue ni sustituye la verificación histórica de esta nota.

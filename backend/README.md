@@ -543,3 +543,27 @@ que conserva expediente, auditoría, pistas internas y visibilidad pública. La
 respuesta del hub público es una invalidación posterior al commit. El
 [recorrido comercial](../docs/workflows/commercial-intake-and-governance.md#clausura-comercial-solicitada-por-occ-rama-de-implementación)
 detalla el efecto sobre nuevas solicitudes, sin atribuirle un despliegue.
+
+### Paginacion del Chat operativo
+
+Los dos GET de `/api/v1/chat/conversations` y `/api/v1/chat/conversations/{operationId}/messages` aceptan `offset` opcional, entero no negativo y predeterminado en cero. Los limites siguen siendo 100/200 y las respuestas conservan `hasMore` y su orden. La consulta aplica permisos/estacion/asignacion antes de paginar; no hay cambios de modelo, entidades ni migraciones. Desplegar la API compatible antes que sus consumidores; esta tarea no despliega.
+
+
+## Presencia operativa: implementación local
+
+El chat conserva los hilos por operación. La presencia añade
+`PUT /api/v1/chat/presence` y `GET /api/v1/chat/presence?operationIds=...`.
+La identidad emisora se obtiene del JWT; la lectura filtra primero las operaciones
+autorizadas y devuelve agentes asignados y autores reales de mensajes.
+
+El PUT recibe `clientId`, `sequence` (entero seguro de JavaScript),
+`mode` (`foreground`, `background`, `closed`) y `activityObserved`.
+Cada cliente tiene una secuencia creciente; los paquetes anteriores y las
+reaperturas de un cliente cerrado no restauran presencia.
+
+El registro es transitorio y presupone una instancia API, sin nuevas entidades,
+migraciones ni infraestructura. Heartbeat: 30 s; actividad reciente: 5 min;
+expiración: 90 s; retención observable: 24 h. Varias sesiones se combinan por
+cuenta. Un reinicio o la falta de información produce `unknown`, no `offline`.
+Los estados describen actividad en la aplicación, no disponibilidad operativa.
+Una futura publicación requiere API antes que los clientes. No se desplegó nada.

@@ -1,3 +1,5 @@
+import { PRESENCE_AVAILABILITIES, PRESENCE_MESSAGE_MAX_LENGTH } from "./presence";
+import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
   getGetAccountChangesUrl,
   getGetAirlineContractsUrl,
@@ -385,6 +387,14 @@ export type GetManualTurnaroundOptionsOptions = Omit<ElevantRequestInit, "body" 
 export type CreateManualTurnaroundOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ProgramOccShiftOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetOperationalChatOptions = GetOperationalCommunicationOptions & { offset?: number };
+
+function validatedChatOffset(value: number | undefined): number | undefined {
+  if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > 2_147_483_647))
+    throw new RangeError("offset must be a non-negative 32-bit integer.");
+  return value;
+}
+
 export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method"> & {
   installationId?: string;
@@ -722,13 +732,17 @@ export interface ElevantApiClient {
     operationId: string,
     options?: GetOccReviewOptions,
   ): Promise<OccReviewSubmissionHistoryResponse>;
+  getOperationalPresence(operationIds: string[], options?: GetOperationalCommunicationOptions): Promise<OperationalPresenceList>;
+  putOperationalPresence(heartbeat: PresenceHeartbeat, options?: GetOperationalCommunicationOptions): Promise<void>;
+  getOwnOperationalPresence(options?: GetOperationalCommunicationOptions): Promise<OwnPresence>;
+  putOwnOperationalPresenceStatus(status: PresenceStatusUpdate, options?: GetOperationalCommunicationOptions): Promise<OwnPresence>;
   getOperationalConversations(
     stationId?: string,
-    options?: GetOperationalCommunicationOptions,
+    options?: GetOperationalChatOptions,
   ): Promise<OperationConversationListResponse>;
   getOperationalMessages(
     operationId: string,
-    options?: GetOperationalCommunicationOptions,
+    options?: GetOperationalChatOptions,
   ): Promise<OperationMessageListResponse>;
   sendOperationalMessage(
     operationId: string,
@@ -1148,6 +1162,19 @@ function isInt32(value: unknown): value is number {
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]) {
   return Object.keys(value).every((key) => allowed.includes(key));
+}
+
+// Missing availability/message fields are tolerated so a server without chosen status stays readable.
+function isPresenceStatus(value: Record<string, unknown>) {
+  return ["active", "away", "offline", "unknown"].includes(String(value.state)) &&
+    (value.availability === undefined || value.availability === null ||
+      (PRESENCE_AVAILABILITIES as readonly unknown[]).includes(value.availability)) &&
+    (value.message === undefined || value.message === null ||
+      (typeof value.message === "string" && value.message.length <= PRESENCE_MESSAGE_MAX_LENGTH));
+}
+
+function isOwnPresence(value: unknown): value is OwnPresence {
+  return isRecord(value) && hasOnlyKeys(value, ["state", "availability", "message"]) && isPresenceStatus(value);
 }
 
 function isOptionalNullable(
@@ -5593,22 +5620,78 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw malformedResponse(result.status);
       return result.data;
     },
+    async getOperationalPresence(operationIds: string[], options?: GetOperationalCommunicationOptions) {
+      if (!Array.isArray(operationIds) || operationIds.length < 1 || operationIds.length > 100)
+        throw new TypeError("Presence requires between 1 and 100 operations.");
+      const ids = [...new Set(operationIds.map(id => validatedUuid(id, "operationId")))];
+      const query = new URLSearchParams();
+      ids.forEach(id => query.append("operationIds", id));
+      const result = await execute("/api/v1/chat/presence?" + query.toString(), { ...options, method: "GET" }, true);
+      const body = result.data;
+      if (!isRecord(body) || !hasOnlyKeys(body, ["asOf", "operations"]) || !isDateTimeOffset(body.asOf) ||
+          !Array.isArray(body.operations) || !body.operations.every(operation =>
+            isRecord(operation) && hasOnlyKeys(operation, ["operationId", "participants"]) &&
+            isUuid(operation.operationId) && ids.includes(operation.operationId.toLowerCase()) &&
+            Array.isArray(operation.participants) && operation.participants.every(person =>
+              isRecord(person) && hasOnlyKeys(person, ["accountId", "name", "role", "state", "lastActivityAt", "availability", "message"]) &&
+              isUuid(person.accountId) && typeof person.name === "string" &&
+              (person.role === "agent" || person.role === "occ") &&
+              isPresenceStatus(person) &&
+              (person.lastActivityAt === null || isDateTimeOffset(person.lastActivityAt)))))
+        throw malformedResponse(result.status);
+      return body as unknown as OperationalPresenceList;
+    },
+    async getOwnOperationalPresence(options?: GetOperationalCommunicationOptions) {
+      const result = await execute("/api/v1/chat/presence/status", { ...options, method: "GET" }, true);
+      if (!isOwnPresence(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async putOwnOperationalPresenceStatus(status: PresenceStatusUpdate, options?: GetOperationalCommunicationOptions) {
+      const message = typeof status.message === "string" && status.message.trim() ? status.message.trim() : null;
+      if (!(status.availability === null || PRESENCE_AVAILABILITIES.includes(status.availability)) ||
+          (message !== null && (message.length > PRESENCE_MESSAGE_MAX_LENGTH || /[\u0000-\u001f\u007f-\u009f]/.test(message))))
+        throw new TypeError("Presence status is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute("/api/v1/chat/presence/status", { ...options, method: "PUT", headers,
+        body: JSON.stringify({ availability: status.availability, message }) }, true);
+      if (!isOwnPresence(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async putOperationalPresence(heartbeat: PresenceHeartbeat, options?: GetOperationalCommunicationOptions) {
+      const clientId = validatedUuid(heartbeat.clientId, "clientId");
+      if (!Number.isSafeInteger(heartbeat.sequence) || heartbeat.sequence < 0 ||
+          !["foreground", "background", "closed"].includes(heartbeat.mode) || typeof heartbeat.activityObserved !== "boolean")
+        throw new TypeError("Presence heartbeat is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      await execute("/api/v1/chat/presence", { ...options, method: "PUT", headers,
+        body: JSON.stringify({ ...heartbeat, clientId }) }, true);
+    },
     async getOperationalConversations(
-      stationId?: string, options?: GetOperationalCommunicationOptions,
+      stationId?: string, options?: GetOperationalChatOptions,
     ) {
       const station = stationId === undefined ? undefined : validatedUuid(stationId, "stationId");
-      const result = await execute(getGetOperationalConversationsUrl(
-        station ? { stationId: station } : undefined,
-      ), { ...options, method: "GET" }, true);
+      const { offset: requestedOffset, ...requestOptions } = options ?? {};
+      const offset = validatedChatOffset(requestedOffset);
+      const parameters = station === undefined && offset === undefined ? undefined : {
+        ...(station === undefined ? {} : { stationId: station }),
+        ...(offset === undefined ? {} : { offset }),
+      };
+      const result = await execute(getGetOperationalConversationsUrl(parameters),
+        { ...requestOptions, method: "GET" }, true);
       if (!isOperationConversationListResponse(result.data)) throw malformedResponse(result.status);
       return result.data;
     },
     async getOperationalMessages(
-      operationId: string, options?: GetOperationalCommunicationOptions,
+      operationId: string, options?: GetOperationalChatOptions,
     ) {
       const operation = validatedUuid(operationId, "operationId");
-      const result = await execute(getGetOperationalMessagesUrl(operation),
-        { ...options, method: "GET" }, true);
+      const { offset: requestedOffset, ...requestOptions } = options ?? {};
+      const offset = validatedChatOffset(requestedOffset);
+      const result = await execute(getGetOperationalMessagesUrl(operation,
+        offset === undefined ? undefined : { offset }),
+        { ...requestOptions, method: "GET" }, true);
       if (!isOperationMessageListResponse(result.data, operation)) throw malformedResponse(result.status);
       return result.data;
     },

@@ -29,8 +29,8 @@ export const ADMIN_OCC_NAVIGATION = [
   { id: ADMIN_OCC_MODULE_IDS.EXPENSES, label: 'Mis gastos', path: `${ADMIN_OCC_BASE_PATH}/expenses`, icon: BarChartIcon, description: 'Gastos propios y revisiones del departamento.' },
   { id: ADMIN_OCC_MODULE_IDS.DASHBOARD, permission: 'operations.dashboard.read', label: 'Dashboard', path: `${ADMIN_OCC_BASE_PATH}/dashboard`, icon: LayoutGridIcon, description: 'Vista general en tiempo real de vuelos, servicios, agentes y aprobaciones del día.' },
   { id: ADMIN_OCC_MODULE_IDS.PLANNING, permission: 'operations.planning.read', label: 'Planificación operativa', path: `${ADMIN_OCC_BASE_PATH}/planning`, icon: CalendarIcon, description: 'Consulta de itinerarios y asignación de agentes y posiciones para las operaciones del día.' },
-  { id: ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, permission: 'operations.flight_monitoring.read', label: 'Monitoreo de vuelos', path: `${ADMIN_OCC_BASE_PATH}/flight-monitoring`, icon: RadarIcon, description: 'Mapa interactivo en vivo con el estado de cada vuelo en tránsito hacia o desde la estación.' },
-  { id: ADMIN_OCC_MODULE_IDS.POSITIONS_MAP, permission: 'operations.positions_map.read', label: 'Mapa de posiciones', path: `${ADMIN_OCC_BASE_PATH}/positions-map`, icon: MapPinIcon, description: 'Mapa georreferenciado completo de las posiciones de Terminal A, Terminal B y el área FBO.' },
+  { id: ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, permission: 'operations.flight_monitoring.read', label: 'Monitoreo de vuelos', path: `${ADMIN_OCC_BASE_PATH}/flight-monitoring`, icon: RadarIcon, description: 'Consulta filtrable de vuelos de la estación, horarios y detalles operativos.' },
+  { id: ADMIN_OCC_MODULE_IDS.POSITIONS_MAP, permission: 'operations.positions_map.read', label: 'Posiciones', path: `${ADMIN_OCC_BASE_PATH}/positions-map`, icon: MapPinIcon, description: 'Consulta de posiciones, asignaciones, llegadas y liberaciones de la estación.' },
   { id: ADMIN_OCC_MODULE_IDS.APPROVALS, permission: 'operations.review.read', label: 'Revisión', path: `${ADMIN_OCC_BASE_PATH}/review`, icon: ShieldCheckIcon, description: 'Centro de control para validar operaciones de ground handling antes de enviarlas a Finanzas.' },
   { id: ADMIN_OCC_MODULE_IDS.REPORTS, permission: 'operations.reports.read', label: 'Reportes', path: `${ADMIN_OCC_BASE_PATH}/reports`, icon: BarChartIcon, description: 'Cierre operacional del día, indicadores clave y búsqueda histórica de operaciones.' },
   { id: ADMIN_OCC_MODULE_IDS.NOTIFICATIONS, permission: 'operations.notifications.read', label: 'Notificaciones', path: `${ADMIN_OCC_BASE_PATH}/notifications`, icon: BellIcon, description: 'Historial completo de alertas y avisos del sistema, más allá del resumen del Dashboard.' },
@@ -41,7 +41,7 @@ export const ADMIN_OCC_NAVIGATION = [
 // Agrupación visual del riel OCC. Solo ordena los módulos ya permitidos por
 // `allowedNavigation`; no concede ni oculta acceso.
 export const OCC_NAV_SECTIONS = [
-  { id: 'monitoring', items: [ADMIN_OCC_MODULE_IDS.DASHBOARD, ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, ADMIN_OCC_MODULE_IDS.POSITIONS_MAP] },
+  { id: 'monitoring', items: [ADMIN_OCC_MODULE_IDS.DASHBOARD] },
   { id: 'operations', items: [ADMIN_OCC_MODULE_IDS.PLANNING, ADMIN_OCC_MODULE_IDS.APPROVALS, ADMIN_OCC_MODULE_IDS.REPORTS, ADMIN_OCC_MODULE_IDS.EXPENSES] },
   { id: 'communication', items: [ADMIN_OCC_MODULE_IDS.NOTIFICATIONS, ADMIN_OCC_MODULE_IDS.CHAT] },
   { id: 'administration', items: [ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS] },

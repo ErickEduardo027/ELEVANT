@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.ComponentModel.DataAnnotations;
 using Asp.Versioning;
 using Elevant.Api.Configuration;
 using Elevant.Application.Operations;
@@ -24,10 +25,10 @@ public sealed class OperationalChatController(OperationalCommunicationHandler ha
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     public async Task<ActionResult<OperationConversationListResponse>> GetConversations(
-        [FromQuery] Guid? stationId, CancellationToken cancellationToken)
+        [FromQuery] Guid? stationId, [FromQuery, Range(0, int.MaxValue)] int offset = 0, CancellationToken cancellationToken = default)
     {
         if (!TryAccountId(out var accountId)) return UnauthorizedResult<OperationConversationListResponse>();
-        var result = await handler.GetConversationsAsync(accountId, stationId, cancellationToken);
+        var result = await handler.GetConversationsAsync(accountId, stationId, offset, cancellationToken);
         return result.IsSuccess
             ? Ok(new OperationConversationListResponse(
                 result.Value!.Conversations.Select(item => new OperationConversationResponse(
@@ -44,10 +45,10 @@ public sealed class OperationalChatController(OperationalCommunicationHandler ha
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     public async Task<ActionResult<OperationMessageListResponse>> GetMessages(
-        [FromRoute] Guid operationId, CancellationToken cancellationToken)
+        [FromRoute] Guid operationId, [FromQuery, Range(0, int.MaxValue)] int offset = 0, CancellationToken cancellationToken = default)
     {
         if (!TryAccountId(out var accountId)) return UnauthorizedResult<OperationMessageListResponse>();
-        var result = await handler.GetMessagesAsync(accountId, operationId, cancellationToken);
+        var result = await handler.GetMessagesAsync(accountId, operationId, offset, cancellationToken);
         return result.IsSuccess
             ? Ok(new OperationMessageListResponse(operationId,
                 result.Value!.Messages.Select(Map).ToArray(), result.Value.HasMore))

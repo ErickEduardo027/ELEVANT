@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { getPlanningSnapshot } from '../../services/planningService';
 import { mapOccPlanningSnapshot } from './planningMappers';
 import { abortForEffectCleanup } from '../../lib/abort';
 
-const INITIAL_STATE = { status: 'loading', data: null, error: null };
-const IDLE_STATE = { status: 'idle', data: null, error: null };
+const INITIAL_STATE = { status: 'loading', data: null, error: null, refreshing: false };
+const IDLE_STATE = { status: 'idle', data: null, error: null, refreshing: false };
 const GENERIC_LOAD_ERROR = 'No fue posible cargar la planificación operativa.';
 const UNAUTHORIZED_ERROR = 'La sesión expiró. Inicia sesión nuevamente.';
 const FORBIDDEN_ERROR = 'Su cuenta no tiene permiso para consultar esta planificación.';
@@ -21,27 +21,20 @@ function safeViewError(message, error) {
   return safeError;
 }
 
-export function usePlanningData({ stationId, date, refreshToken = 0, enabled = true } = {}) {
+export function usePlanningData({ stationId, date, accountId, refreshToken = 0, enabled = true } = {}) {
   const [state, setState] = useState(() => (enabled ? INITIAL_STATE : IDLE_STATE));
-  const previousScope = useRef(null);
+  const scope = JSON.stringify([accountId ?? null, stationId ?? null, date ?? null]);
 
   useEffect(() => {
     if (!enabled) {
-      previousScope.current = null;
       setState(IDLE_STATE);
       return undefined;
     }
 
     const controller = new AbortController();
-    const sameScope = previousScope.current !== null &&
-      previousScope.current.stationId === stationId &&
-      previousScope.current.date === date;
-    previousScope.current = { stationId, date };
-    setState(previous => ({
-      status: 'loading',
-      data: sameScope ? previous.data : null,
-      error: null,
-    }));
+    setState(previous => previous.scope === scope && previous.data
+      ? { ...previous, refreshing: true, error: null }
+      : { ...INITIAL_STATE, scope });
 
     const request = {
       ...(stationId === undefined ? {} : { stationId }),
@@ -57,6 +50,8 @@ export function usePlanningData({ stationId, date, refreshToken = 0, enabled = t
           status: data.flights.length === 0 ? 'empty' : 'success',
           data,
           error: null,
+          scope,
+          refreshing: false,
         });
       })
       .catch(error => {
@@ -66,6 +61,8 @@ export function usePlanningData({ stationId, date, refreshToken = 0, enabled = t
             status: 'unauthorized',
             data: null,
             error: safeViewError(UNAUTHORIZED_ERROR, error),
+            scope,
+            refreshing: false,
           });
           return;
         }
@@ -74,6 +71,8 @@ export function usePlanningData({ stationId, date, refreshToken = 0, enabled = t
             status: 'forbidden',
             data: null,
             error: safeViewError(FORBIDDEN_ERROR, error),
+            scope,
+            refreshing: false,
           });
           return;
         }
@@ -81,11 +80,14 @@ export function usePlanningData({ stationId, date, refreshToken = 0, enabled = t
           status: 'error',
           data: null,
           error: safeViewError(GENERIC_LOAD_ERROR, error),
+          scope,
+          refreshing: false,
         });
       });
 
     return () => abortForEffectCleanup(controller);
-  }, [stationId, date, refreshToken, enabled]);
+  }, [stationId, date, refreshToken, enabled, scope]);
 
-  return state;
+  if (!enabled) return IDLE_STATE;
+  return state.scope === scope ? state : INITIAL_STATE;
 }

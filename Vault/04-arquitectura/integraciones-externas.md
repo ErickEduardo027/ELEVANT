@@ -18,7 +18,7 @@ sources:
   - backend/Elevant.Infrastructure/Integrations/FlightAware/FlightAwareServiceCollectionExtensions.cs
   - backend/Elevant.Infrastructure/DependencyInjection.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
-  - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
+  - frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
   - frontend/private-web/src/config/securityHeaders.mjs
   - frontend/mobile-agent/README.md
@@ -117,7 +117,7 @@ Esas reglas necesitan un caso de uso y pruebas; no se deducen de columnas.
 
 ## Mapas en Private Web
 
-Dos componentes MapLibre usan estilos públicos:
+En el commit histórico verificado, dos componentes MapLibre usaban estilos públicos:
 
 - el mapa de monitoreo utiliza un estilo demo de MapLibre;
 - el mapa de posiciones utiliza estilos de OpenFreeMap/OpenMapTiles y atribución de OpenStreetMap;
@@ -125,6 +125,8 @@ Dos componentes MapLibre usan estilos públicos:
 - la CSP del runtime autoriza explícitamente los orígenes revisados de styles/tiles.
 
 Esta integración ocurre directamente desde el navegador porque entrega cartografía visual pública, no credenciales ni datos operacionales de un proveedor de aviación. Aun así introduce disponibilidad, términos de uso, privacidad de red del navegador y licenciamiento que deben revisarse antes de Production. Los styles demo no son una selección de proveedor productivo.
+
+En el árbol local de `feat/adminocc-redesignall`, Monitoreo y Posiciones conservan sus consultas y operaciones sin montar mapas. Panorama concentra los tres mapas operativos y permanece protegido. La vista `FlightMonitoringPage` sustituye la referencia de código retirado; la metadata superior conserva su alcance histórico. Véase [Private Web](../05-aplicaciones/private-web-aviam.md) para las capacidades actuales de esta rama sin despliegue.
 
 ## Evidencia binaria y object storage
 

@@ -1,15 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '../src/features/auth/AuthContext';
 import LoginPage from '../src/features/auth/LoginPage';
 import PasswordChangePage from '../src/features/auth/PasswordChangePage';
 import { PasswordChangeRequiredError } from '../src/features/auth/authService';
 import { getRoleHomePath, normalizeRole, ROUTE_PATHS } from '../src/features/auth/roleRouting';
+import { useLogoutConfirmation } from '../src/features/auth/useLogoutConfirmation';
+import LogoutConfirmation from '../src/features/auth/LogoutConfirmation';
+import { getLanguage, subscribeLanguage } from '../src/i18n/languageStore';
+import { useWebPresence } from '../src/features/chat/useWebPresence';
 
 function SessionLoading() {
-  return <main className="min-h-screen bg-surface-light p-8 text-ink-900 dark:bg-surface-dark dark:text-text-primary-dark" role="status">Comprobando sesión…</main>;
+  const language = useSyncExternalStore(subscribeLanguage, getLanguage, () => 'es');
+  return <main className="min-h-screen bg-surface-light p-8 text-ink-900 dark:bg-surface-dark dark:text-text-primary-dark" role="status">{language === 'en' ? 'Checking session…' : 'Comprobando sesión…'}</main>;
 }
 
 function useRouteHydration() {
@@ -33,6 +38,8 @@ export function ProtectedRole({ role, children }) {
   const hydrated = useRouteHydration();
   const normalizedRole = normalizeRole(session?.role);
   const allowed = normalizedRole === role;
+  useWebPresence(session, ready && allowed);
+  const confirmation = useLogoutConfirmation(session, logout);
 
   useEffect(() => {
     if (ready && !session) router.replace(ROUTE_PATHS.LOGIN);
@@ -40,13 +47,10 @@ export function ProtectedRole({ role, children }) {
   }, [allowed, ready, router, session]);
 
   if (!hydrated || !ready || !session || !allowed) return <SessionLoading />;
-  return children({
+  return <>{children({
     user: { name: session.name, role: session.roleLabel },
-    onLogout: () => {
-      logout();
-      router.replace(ROUTE_PATHS.LOGIN);
-    },
-  });
+    onLogout: confirmation.request,
+  })}<LogoutConfirmation {...confirmation} /></>;
 }
 
 export function LoginRoute() {
@@ -77,8 +81,7 @@ export function LoginRoute() {
 
   return <LoginPage notice={notice} onSubmit={async credentials => {
     try {
-      const nextSession = await login(credentials);
-      router.replace(nextSession.homePath);
+      await login(credentials);
     } catch (error) {
       if (error instanceof PasswordChangeRequiredError) {
         setActivationEmail(credentials.email.trim());

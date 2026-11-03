@@ -1,15 +1,20 @@
-import { Stack } from 'expo-router';
+import { View } from 'react-native';
+import { startMobilePresence, stopMobilePresence, refreshMobilePresenceSession, recordMobilePresenceActivity } from '../services/mobile-presence';
+import { Stack, usePathname } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { startMobileChangeFeed, stopMobileChangeFeed } from '../services/mobile-change-feed';
 import { colors } from '../theme/colors';
 
 export default function RootLayout() {
+  const pathname = usePathname();
+  useEffect(() => { void refreshMobilePresenceSession(); }, [pathname]);
   useEffect(() => {
     startMobileChangeFeed();
-    return stopMobileChangeFeed;
+    startMobilePresence();
+    return () => { stopMobileChangeFeed(); stopMobilePresence(); };
   }, []);
-  return <>
+  return <View style={{ flex: 1 }} accessible={false} onTouchStart={recordMobilePresenceActivity}>
     <StatusBar style="dark" />
     <Stack screenOptions={{ headerStyle: { backgroundColor: colors.white }, headerTintColor: colors.navy, headerTitleStyle: { fontWeight: '800' }, contentStyle: { backgroundColor: colors.background } }}>
       <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -21,5 +26,5 @@ export default function RootLayout() {
       <Stack.Screen name="chat" options={{ title: 'Chat con OCC' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notificaciones' }} />
     </Stack>
-  </>;
+  </View>;
 }

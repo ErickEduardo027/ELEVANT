@@ -3,7 +3,7 @@
 // línea. Los hijos deben ser etiquetas/controles sin anchos mínimos propios.
 export default function FilterBar({ children, actions, className = '' }) {
   return (
-    <div className={`flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end ${className}`}>
+    <div data-occ-toolbar className={`flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end ${className}`}>
       <div className="grid min-w-0 flex-1 grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 lg:flex lg:flex-wrap lg:items-end [&>*]:min-w-0 lg:[&>*]:min-w-[10rem] lg:[&>*]:flex-1">
         {children}
       </div>

@@ -19,8 +19,55 @@ internal sealed class EfOperationalCommunicationStore(
     private const int PageLimit = 100;
     private const int MessageLimit = 200;
 
+    public async Task<CommunicationResult<OperationPresenceContactsList>> GetPresenceParticipantsAsync(
+        OperationalAccess access, IReadOnlyCollection<Guid> operationIds, CancellationToken cancellationToken = default)
+    {
+        var actor = await ResolveActorAsync(access, null, cancellationToken);
+        if (actor is null)
+            return CommunicationResults.Failed<OperationPresenceContactsList>(OperationalCommunicationFailure.Forbidden);
+        var query = from operation in context.GroundOperations.AsNoTracking()
+            join turnaround in context.Turnarounds.AsNoTracking() on operation.TurnaroundId equals turnaround.Id
+            join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+            where station.IsActive && access.AllowedStationIds.Contains(station.PublicId) && operationIds.Contains(operation.PublicId)
+            select new { InternalId = operation.Id, PublicId = operation.PublicId, StationId = station.Id, turnaround.OperationDate };
+        if (access.Role == "agent")
+        {
+            var agentId = actor.AgentId!.Value;
+            query = query.Where(row => context.OperationAgentAssignments.Any(assignment =>
+                assignment.GroundOperationId == row.InternalId && assignment.RampAgentId == agentId && assignment.ReleasedAt == null) &&
+                context.Set<RampAgentStationScope>().Any(scope => scope.RampAgentId == agentId && scope.StationId == row.StationId &&
+                    scope.ValidFrom <= row.OperationDate && (scope.ValidTo == null || scope.ValidTo >= row.OperationDate)));
+        }
+        else
+        {
+            var now = timeProvider.GetUtcNow();
+            query = query.Where(row => context.AccountStationScopes.Any(scope => scope.AccountId == actor.AccountId &&
+                scope.StationId == row.StationId && scope.GrantedAt <= now && scope.RevokedAt == null));
+        }
+        var visible = await query.ToArrayAsync(cancellationToken);
+        var ids = visible.Select(row => row.InternalId).ToArray();
+        var authors = await (from message in context.OperationMessages.AsNoTracking()
+            join user in context.Users.AsNoTracking() on message.SenderAccountId equals user.Id
+            join person in context.Persons.AsNoTracking() on user.PersonId equals person.Id
+            where ids.Contains(message.GroundOperationId)
+            select new { OperationId = message.GroundOperationId, AccountId = user.PublicId,
+                Name = person.FirstName + " " + person.LastName, Role = message.SenderRole }).Distinct().ToArrayAsync(cancellationToken);
+        var assigned = await (from assignment in context.OperationAgentAssignments.AsNoTracking()
+            join agent in context.RampAgents.AsNoTracking() on assignment.RampAgentId equals agent.Id
+            join user in context.Users.AsNoTracking() on agent.PersonId equals user.PersonId
+            join person in context.Persons.AsNoTracking() on user.PersonId equals person.Id
+            where ids.Contains(assignment.GroundOperationId) && assignment.ReleasedAt == null && agent.IsActive
+            select new { OperationId = assignment.GroundOperationId, AccountId = user.PublicId,
+                Name = person.FirstName + " " + person.LastName, Role = "agent" }).Distinct().ToArrayAsync(cancellationToken);
+        var contacts = authors.Concat(assigned).GroupBy(row => row.OperationId)
+            .ToDictionary(group => group.Key, group => group.DistinctBy(row => row.AccountId)
+                .OrderBy(row => row.Name).Select(row => new PresenceIdentity(row.AccountId, row.Name, row.Role)).ToArray());
+        return CommunicationResults.Success(new OperationPresenceContactsList(visible.Select(row =>
+            new OperationPresenceContacts(row.PublicId, contacts.GetValueOrDefault(row.InternalId) ?? [])).ToArray()));
+    }
+
     public async Task<CommunicationResult<OperationConversationListData>> GetConversationsAsync(
-        OperationalAccess access, Guid? stationId, CancellationToken cancellationToken = default)
+        OperationalAccess access, Guid? stationId, int offset, CancellationToken cancellationToken = default)
     {
         var actor = await ResolveActorAsync(access, null, cancellationToken);
         if (actor is null)
@@ -62,7 +109,7 @@ internal sealed class EfOperationalCommunicationStore(
         }
         var rows = await query.OrderByDescending(row => row.OperationDate)
             .ThenByDescending(row => row.OperationInternalId)
-            .Take(PageLimit + 1).ToArrayAsync(cancellationToken);
+            .Skip(offset).Take(PageLimit + 1).ToArrayAsync(cancellationToken);
         var visible = rows.Take(PageLimit).ToArray();
         var operationIds = visible.Select(row => row.OperationInternalId).ToArray();
         var latestIds = context.OperationMessages.AsNoTracking()
@@ -96,7 +143,7 @@ internal sealed class EfOperationalCommunicationStore(
     }
 
     public async Task<CommunicationResult<OperationMessageListData>> GetMessagesAsync(
-        OperationalAccess access, Guid operationId, CancellationToken cancellationToken = default)
+        OperationalAccess access, Guid operationId, int offset, CancellationToken cancellationToken = default)
     {
         var scope = await ResolveOperationAsync(access, operationId, null, cancellationToken);
         if (scope is null)
@@ -115,7 +162,7 @@ internal sealed class EfOperationalCommunicationStore(
                 message.SenderRole, SenderName = person.FirstName + " " + person.LastName,
                 message.Content, message.SentAt,
             })
-            .Take(MessageLimit + 1).ToArrayAsync(cancellationToken);
+            .Skip(offset).Take(MessageLimit + 1).ToArrayAsync(cancellationToken);
         return CommunicationResults.Success(new OperationMessageListData(
             operationId, rows.Take(MessageLimit).Reverse().Select(row =>
                 new OperationMessageData(row.PublicId, operationId, row.senderAccountId,

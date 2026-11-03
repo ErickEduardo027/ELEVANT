@@ -1,7 +1,8 @@
 export const chatMessages = {
   es: {
-    title: 'Chat operativo',
-    subtitle: 'Mensajes persistentes por operación entre OCC y agentes asignados. Los cambios se recuperan al reconectar; la consulta periódica sigue activa.',
+    title: 'Chat operativo', readOnly: 'Su acceso a esta conversación es de solo lectura.',
+    loadConversations: 'Cargar más operaciones', loadMessages: 'Cargar mensajes anteriores', noProgress: 'No se pudieron recuperar más registros. La información actual se conserva.', newMessages: 'Ver mensajes nuevos', sendError: 'No fue posible confirmar el envío.',
+    subtitle: 'Conversaciones con los agentes asignados, organizadas por operación.',
     emptyScope: 'Tu cuenta no tiene una estación OCC autorizada.',
     loadingConversations: 'Cargando conversaciones…',
     conversationsError: 'No fue posible cargar las conversaciones.',
@@ -28,8 +29,9 @@ export const chatMessages = {
     send: 'Enviar mensaje',
   },
   en: {
-    title: 'Operational chat',
-    subtitle: 'Persistent per-operation messages between OCC and assigned agents. Changes are recovered on reconnect; periodic polling stays active.',
+    title: 'Operational chat', readOnly: 'You have read-only access to this conversation.',
+    loadConversations: 'Load more operations', loadMessages: 'Load earlier messages', noProgress: 'More records could not be retrieved. Your current information is preserved.', newMessages: 'See new messages', sendError: 'The message could not be confirmed.',
+    subtitle: 'Conversations with assigned agents, grouped by operation.',
     emptyScope: 'Your account has no authorized OCC station.',
     loadingConversations: 'Loading conversations…',
     conversationsError: 'Conversations could not be loaded.',

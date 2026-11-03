@@ -162,3 +162,18 @@ El servidor registra la combinación dispositivo + clave y devuelve el mismo res
 Antes de una APK compartida se deben fijar application ID, perfil Development, custodia de claves, versión, permisos, URL API y estrategia de actualización. Las claves de firma nunca se suben a Git. Un build Development no comparte URL, credenciales, storage ni firma con Production.
 
 Play Store/App Store será una fase posterior con identificadores estables, políticas de privacidad, ficha, firma administrada, pruebas internas/cerradas y promoción controlada. La URL privada del tailnet no se usará como endpoint de una app pública de Production.
+
+
+## Emisión de presencia operativa
+
+La ampliación local de OCC incorpora un emisor efímero en el layout raíz.
+Utiliza la identidad atómica de la sesión y el cliente compartido, observa
+interacciones táctiles y AppState, y cierra el lease anterior al cambiar de cuenta.
+En segundo plano se pausa; al recuperar primer plano se comprueba la identidad
+antes de reanudar. Los fallos transitorios de almacenamiento suspenden el envío
+y evitan atribuir actividad a una cuenta posiblemente sustituida.
+
+Los heartbeats no se guardan en la outbox ni alteran autenticación, comandos,
+idempotencia o esquema. Los indicadores se presentan en Private Web/OCC.
+Su comprobación real exige dos cuentas QA, API/SQL de pruebas y un Android de QA;
+las pruebas de adaptador o bundles no sustituyen ese recorrido. No se publicó APK.

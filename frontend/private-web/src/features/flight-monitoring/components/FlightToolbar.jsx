@@ -38,7 +38,7 @@ export default function FlightToolbar({
 }) {
   const { t, language } = useTranslation(flightMonitoringMessages);
   return (
-    <div className="space-y-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
+    <div data-occ-toolbar="" className="space-y-3 rounded-2xl border border-black/5 bg-white/70 p-4 backdrop-blur-md dark:border-white/5 dark:bg-surface-dark-card">
       <FlightConnectionStatus source={source} connection={connection} lastUpdatedAt={lastUpdatedAt} onRefresh={onRefresh} />
 
       <div className="flex flex-wrap items-end gap-3">

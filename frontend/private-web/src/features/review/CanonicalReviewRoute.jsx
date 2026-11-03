@@ -10,6 +10,7 @@ import {
   loadOccReviewSubmissionDetail, loadOccReviewSubmissionHistory,
 } from '../../services/occReviewService';
 import { reviewMessages } from './reviewMessages';
+import layouts from '../admin-occ/ui/OccModuleLayouts.module.css';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -166,10 +167,10 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
 
   useEffect(() => () => decisionAbort.current?.abort(), []);
 
-  // El detalle se muestra debajo de la cola; al elegir una operación se lleva a
-  // la vista para que en teléfono y tablet no quede fuera de pantalla.
+  // En teléfono y tablet el detalle se apila bajo la cola; al seleccionar se
+  // lleva a la vista y se respeta la preferencia de movimiento reducido.
   useEffect(() => {
-    if (selectedId) detailRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+    if (selectedId) detailRef.current?.scrollIntoView?.({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
   }, [selectedId]);
 
   useEffect(() => {
@@ -245,7 +246,8 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
   const timeZone = queue.data?.ianaTimeZone ?? 'UTC';
 
   return (
-    <div className="space-y-5">
+    <div className={selectedId ? layouts.reviewLayout : 'space-y-5'}>
+      <section className={layouts.reviewQueue}>
       {message && <div role={message.kind === 'error' ? 'alert' : 'status'} className="rounded-xl border border-accent-600/25 bg-accent-600/10 px-4 py-3 text-sm">{message.text}</div>}
       {queue.status === 'loading' && <div role="status" className="rounded-xl bg-white/80 p-5 dark:bg-surface-dark-card">{t('queue.loading')}</div>}
       {queue.status === 'error' && <Notice title={t('queue.error')} onRetry={() => setRefreshVersion(value => value + 1)}>{queue.error?.message}</Notice>}
@@ -257,23 +259,18 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
         </div>
         {queue.data.hasMore && <Notice title={t('queue.hasMore')}>{t('queue.hasMoreHint')}</Notice>}
         {rows.length === 0 ? <Notice title={t('queue.empty')} /> : (
-          <div className="overflow-x-auto rounded-2xl border border-black/10 bg-white/80 dark:border-white/10 dark:bg-surface-dark-card">
-            <table className="table-stack w-full min-w-[720px] text-left text-sm">
-              <thead className="border-b border-black/10 text-xs uppercase dark:border-white/10"><tr><th className="p-3">{t('queue.operation')}</th><th className="p-3">{t('queue.agent')}</th><th className="p-3">{t('queue.submitted')}</th><th className="p-3">{t('queue.status')}</th><th className="p-3">{t('queue.review')}</th></tr></thead>
-              <tbody>{rows.map(row => (
-                <tr key={row.operationId} className="border-b border-black/5 dark:border-white/5">
-                  <td className="p-3"><strong>{row.operationCode}</strong><br />{row.airlineName} · {row.operationDate}</td>
-                  <td className="p-3">{row.agentName}</td>
-                  <td className="p-3">{dateTime(row.submittedAt, timeZone, locale)}</td>
-                  <td className="p-3">{statusLabel(row.status)}<br /><span className="text-xs">{t('queue.counts', { services: row.serviceCount, incidents: row.incidentCount })}</span></td>
-                  <td className="p-3"><button type="button" onClick={() => onSelectOperation(row.operationId)} className="min-h-11 rounded-lg border border-accent-600 px-4 py-2 font-semibold text-accent-600 hover:bg-accent-600/10">{t('queue.viewDetail')}</button></td>
-                </tr>
-              ))}</tbody>
-            </table>
-          </div>
+          <ul className={layouts.reviewQueueList}>{rows.map(row => <li key={row.operationId}>
+            <article className={layouts.reviewCard} data-selected={selectedId === row.operationId}>
+              <div className="flex flex-wrap items-start justify-between gap-2"><h2 id={`review-operation-${row.operationId}`} className="text-base font-semibold">{row.operationCode}</h2><span className={layouts.reviewStatus}>{statusLabel(row.status)}</span></div>
+              <p className="mt-1 text-sm">{row.airlineName} · {row.operationDate}</p>
+              <dl className="mt-4 grid gap-3 text-sm"><div><dt className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('queue.agent')}</dt><dd>{row.agentName}</dd></div><div><dt className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('queue.submitted')}</dt><dd>{dateTime(row.submittedAt, timeZone, locale)}</dd></div></dl>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-xs">{t('queue.counts', { services: row.serviceCount, incidents: row.incidentCount })}</p><button type="button" onClick={() => onSelectOperation(row.operationId)} aria-pressed={selectedId === row.operationId} className="min-h-11 rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600 hover:bg-accent-600/10">{t('queue.viewDetail')}</button></div>
+            </article>
+          </li>)}</ul>
         )}
       </>}
-      {selectedId && <section ref={detailRef} aria-label={t('detail.title')} className="scroll-mt-4 space-y-4 rounded-2xl border border-accent-600/20 bg-white/90 p-4 dark:bg-surface-dark-card sm:p-5">
+      </section>
+      {selectedId && <section data-occ-surface data-occ-detail ref={detailRef} aria-label={t('detail.title')} className={`${layouts.reviewDetail} scroll-mt-4 space-y-4`}>
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{t('detail.title')}</h2><button type="button" onClick={() => onSelectOperation(null)} className="min-h-11 rounded-lg border px-4 py-2">{t('detail.close')}</button></div>
         {detail.status === 'loading' && <p role="status">{t('detail.loading')}</p>}
         {detail.status === 'error' && <Notice title={t('detail.error')} onRetry={() => setRefreshVersion(value => value + 1)}>{detail.error?.message}</Notice>}
@@ -325,7 +322,7 @@ export default function CanonicalReviewRoute() {
 
   return (
     <section className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5 text-ink-900 dark:text-text-primary-dark">
-      <header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-accent-600">{t('eyebrow')}</p><h1 className="text-2xl font-bold">{t('title')}</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{t('subtitle')}</p></div>
+      <header data-occ-header className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-widest text-accent-600">{t('eyebrow')}</p><h1 className="text-2xl font-bold">{t('title')}</h1><p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">{t('subtitle')}</p></div>
         <OccStationBadge />
       </header>
       {stationScopes.length === 0 ? <Notice title={t('noStations')}>{t('noStationsHint')}</Notice> : (

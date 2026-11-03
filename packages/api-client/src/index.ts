@@ -1,3 +1,4 @@
+export * from "./presence";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -60,6 +61,7 @@ export {
   type ProgramOccShiftOptions,
   type GetOccReviewOptions,
   type GetOperationalCommunicationOptions,
+  type GetOperationalChatOptions,
   type DecideOccReviewOptions,
   type GetRampAssignedOperationsOptions,
   type GetRampOperationChecklistOptions,
