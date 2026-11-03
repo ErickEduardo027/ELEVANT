@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "d6264092e8d6fc2a1154adfa90d93c4ca1b576ec2fdcdd48d086141e4ba9cd4f",
+        "sha256": "dc5e155862deade5acca6cbfeeb42eef1b088041753a09a80c3c49dc066fb273",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "2d69406df22f87b10738165c7b01716025b33a3a9b8857c43d8de8ad961edc5c",
+        "sha256": "0bbdd34d102dfc2688975cf83a0ecb3cc25bb691e5d46535db8800b60f64787a",
         "title": null,
         "version": null
       }
@@ -1430,6 +1430,12 @@
         "name": "AddTurnaroundContractAndStandLocation",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261103165159_AddTurnaroundContractAndStandLocation.cs",
         "sha256": "b9bc722ab1fd861942017f0c86c564b276392a6120032e049e05b941c689c407"
+      },
+      {
+        "id": "20261103175725",
+        "name": "AddAeronauticalFlightFeed",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261103175725_AddAeronauticalFlightFeed.cs",
+        "sha256": "68e6c3ce08e6b41059bdad1c315938daec5f9d9c02c7d1f97dc08be4e659e1e4"
       }
     ],
     "manifestContracts": [

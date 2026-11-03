@@ -211,12 +211,17 @@ internal static class IdentityReferenceConfiguration
                 table.HasCheckConstraint("ck_airport_iata", "LEN([iata_code]) = 3");
                 table.HasCheckConstraint("ck_airport_icao", "LEN([icao_code]) = 4");
                 table.HasCheckConstraint("ck_airport_country", "LEN([country_code]) = 2");
+                table.HasCheckConstraint("ck_airport_latitude", "[latitude] IS NULL OR [latitude] BETWEEN -90 AND 90");
+                table.HasCheckConstraint("ck_airport_longitude", "[longitude] IS NULL OR [longitude] BETWEEN -180 AND 180");
             });
             builder.Property(airport => airport.IataCode).HasColumnType("char(3)").IsRequired();
             builder.Property(airport => airport.IcaoCode).HasColumnType("char(4)").IsRequired();
             builder.Property(airport => airport.CountryCode).HasColumnType("char(2)").IsRequired();
             builder.Property(airport => airport.Name).HasMaxLength(180).IsRequired();
             builder.Property(airport => airport.City).HasMaxLength(120).IsRequired();
+            builder.Property(airport => airport.IanaTimeZone).HasMaxLength(64);
+            builder.Property(airport => airport.Latitude).HasPrecision(9, 6);
+            builder.Property(airport => airport.Longitude).HasPrecision(9, 6);
             builder.HasIndex(airport => airport.IataCode).IsUnique();
             builder.HasIndex(airport => airport.IcaoCode).IsUnique();
         });

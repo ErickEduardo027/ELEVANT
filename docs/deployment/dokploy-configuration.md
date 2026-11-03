@@ -68,6 +68,37 @@ La cuenta Gmail no-reply ya tiene la verificación en 2 pasos y una contraseña 
 
 Las credenciales nunca entran al repositorio, al chat ni a los logs.
 
+## Cambio pendiente: feed de vuelos AeroDataBox (ADR-0028)
+
+La API lee los vuelos de las estaciones con contrato desde AeroDataBox (plan Starter directo, 40 000 unidades al mes, FIDS a 2 unidades por llamada).
+- Solo el worker `FlightFeedSyncWorker` y el botón «Actualizar ahora» de OCC llaman al proveedor; las pantallas leen lo guardado en la base.
+- Sin `ELEVANT_AERODATABOX_ENABLED=true` y una clave, la API arranca igual y **no hace ninguna llamada**: OCC ve «proveedor no configurado».
+- El presupuesto se corta solo: 1 200 unidades por día UTC y 38 000 por mes UTC. Al 80 % las actualizaciones se espacian al doble; al límite se detienen.
+
+**Checklist del VPS.** El operador lo aplica en orden, sin mostrar la clave en pantalla, logs ni capturas.
+
+1. **Salida a internet de la API.** Con la misma imagen de curl del checklist de correo:
+   `docker run --rm --network elevant-dev-api-runtime curlimages/curl:8.22.0@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777 -s -o /dev/null -w '%{http_code}\n' --max-time 10 https://api.aerodatabox.com/health/services/feeds/FlightSchedules`.
+   Debe responder un código HTTP (por ejemplo `200` o `401`), no `000`. Ese endpoint es gratuito y no gasta unidades.
+2. **Variables en el Environment root-only del proyecto API**, sin comillas:
+   - `ELEVANT_AERODATABOX_ENABLED=true`
+   - `ELEVANT_AERODATABOX_API_KEY`: la clave del panel de AeroDataBox (API directa, cabecera `X-Api-Key`).
+   - Opcionales: `ELEVANT_AERODATABOX_DAILY_UNITS=1200` y `ELEVANT_AERODATABOX_MONTHLY_UNITS=38000`. Bajarlos nunca gasta más.
+3. **Antes del merge**, igual que con el correo: pausar `api-cd`, guardar en Raw el Compose de `backend/compose.development.api.yml` del PR (añade las entradas `AeroDataBox__*`), verificar Preview Compose y ejecutar `--dry-run`. No pulsar **Deploy**.
+4. **Merge y promoción** en el orden habitual (Database Release → API → webs). La migración `AddAeronauticalFlightFeed` solo añade tablas y columnas.
+5. **Prueba de humo:**
+   - En los logs de la API debe aparecer `Flight feed AeroDataBox: 1 call(s) this pass` en el primer minuto si PUJ tiene un contrato vigente; si no hay contratos, no llama.
+   - En AVIAM Web, **Planificación → Importar vuelos** muestra las unidades gastadas hoy y en el mes.
+6. **Si algo falla**, el mismo diálogo muestra la pausa y su motivo:
+
+   | Motivo | Acción |
+   |---|---|
+   | `unauthorized` | Revisar la clave del paso 2; la API espera 6 h antes de reintentar |
+   | `quota_exceeded` | Se reanuda sola al día UTC siguiente; revisar el consumo en el panel de AeroDataBox |
+   | `rate_limited` o `failed_*` | Se reintenta sola con espera creciente, como máximo cada hora |
+
+   Para apagar el feed de inmediato: `ELEVANT_AERODATABOX_ENABLED=false` y recrear el contenedor.
+
 Esta guía registra cómo se convirtió el VPS Development en un plano de control
 privado, cómo se desplegaron DB v1, la API y las dos webs, y cómo se habilitaron
 sus carriles CD pull-based. También define los runbooks de reconstrucción y el

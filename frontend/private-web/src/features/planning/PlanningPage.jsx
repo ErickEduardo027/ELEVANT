@@ -8,6 +8,7 @@ import PlanningDrawer from './components/PlanningDrawer';
 import PlanningSkeleton from './components/PlanningSkeleton';
 import ManualTurnaroundDialog from './components/ManualTurnaroundDialog';
 import PlanningMap from './components/PlanningMap';
+import ProviderFlightsDialog from './components/ProviderFlightsDialog';
 import EmptyPlanningState from './components/EmptyPlanningState';
 import ModulePlaceholder from '../shell/components/ModulePlaceholder';
 import { CalendarIcon } from '../shell/components/icons';
@@ -92,6 +93,7 @@ export default function PlanningPage({
   const [now, setNow] = useState(() => new Date().toISOString());
   const [optionsRetryToken, setOptionsRetryToken] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const assignment = usePlanningAssignment();
   const { toasts, showToast, dismissToast } = useToast();
   const { t } = useTranslation(planningMessages);
@@ -183,7 +185,8 @@ export default function PlanningPage({
 
   return (
     <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-4">
-      <PlanningHeader onRefresh={onRetry} onCreate={() => setShowCreate(true)} canCreate={canCreate} />
+      <PlanningHeader onRefresh={onRetry} onCreate={() => setShowCreate(true)} canCreate={canCreate}
+        onImport={() => setShowImport(true)} canImport={hasStationScope && Boolean(selectedStationId) && Boolean(data?.date ?? selectedDate)} />
 
       {!hasStationScope ? (
         <NoStationScope />
@@ -258,6 +261,10 @@ export default function PlanningPage({
             else onDateChange?.(date);
             showToast(t('page.flightCreated', { code: operationCode }), 'success');
           }} />
+      )}
+      {showImport && selectedStationId && (data?.date ?? selectedDate) && (
+        <ProviderFlightsDialog stationId={selectedStationId} date={data?.date ?? selectedDate} timeZone={data?.station?.ianaTimeZone}
+          onClose={() => setShowImport(false)} onImported={onRetry} />
       )}
       <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>

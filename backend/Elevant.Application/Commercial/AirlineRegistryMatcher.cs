@@ -104,7 +104,7 @@ public static class AirlineRegistryMatcher
 }
 
 /// <summary>
-/// Asks the registries in order (Wikidata, then the offline OpenFlights copy) and keeps the first
+/// Asks the registries in order (the local registry of airlines seen in flight data, Wikidata, then the offline OpenFlights copy) and keeps the first
 /// answer that finds the airline; otherwise the most informative answer. Unavailable only when no
 /// registry could answer.
 /// </summary>
@@ -119,7 +119,7 @@ public sealed class AirlineRegistryLookup(IEnumerable<IAirlineRegistrySource> so
         CancellationToken cancellationToken = default)
     {
         var answers = new List<AirlineRegistryCheck>();
-        foreach (var source in sources)
+        foreach (var source in sources.OrderBy(source => source.Order))
         {
             var candidates = await source.FindAsync(iataCode, icaoCode, cancellationToken);
             if (candidates is null) continue;

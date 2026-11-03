@@ -14,6 +14,9 @@ public interface IAirlineRegistrySource
 {
     string Name { get; }
 
+    /// <summary>Lower answers first; the local registry of observed airlines (ADR-0028) is 0.</summary>
+    int Order => 100;
+
     Task<IReadOnlyList<AirlineRegistryCandidate>?> FindAsync(string? iataCode, string? icaoCode,
         CancellationToken cancellationToken = default);
 }

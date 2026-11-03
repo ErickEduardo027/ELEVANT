@@ -156,6 +156,11 @@ services:
       Smtp__Password: "${Smtp__Password:-}"
       Smtp__FromAddress: "${Smtp__FromAddress:-no-reply@elevant.local}"
       Smtp__FromName: "${Smtp__FromName:-ELEVANT}"
+      # Paid flight feed (ADR-0028): off by default so local runs never spend units.
+      AeroDataBox__Enabled: "${ELEVANT_AERODATABOX_ENABLED:-false}"
+      AeroDataBox__ApiKey: "${ELEVANT_AERODATABOX_API_KEY}"
+      AeroDataBox__DailyUnitLimit: "${ELEVANT_AERODATABOX_DAILY_UNITS:-1200}"
+      AeroDataBox__MonthlyUnitLimit: "${ELEVANT_AERODATABOX_MONTHLY_UNITS:-38000}"
       AccountEmail__PublicWebBaseUrl: "${AccountEmail__PublicWebBaseUrl:-http://localhost:3000}"
       Cors__AllowedOrigins__0: "${CORS_ALLOWED_ORIGIN_0:-http://localhost:5173}"
       Cors__AllowedOrigins__1: "${CORS_ALLOWED_ORIGIN_1:-http://localhost:3000}"

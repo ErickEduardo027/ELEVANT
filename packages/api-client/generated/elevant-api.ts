@@ -3155,6 +3155,17 @@ export interface HumanResourcesStaffDistributionResponseHumanResourcesReportPage
   validity?: string | null;
 }
 
+export interface ImportOccFlightRequest {
+  arrivalProposalId: string;
+  departureProposalId: string;
+}
+
+export interface ImportOccFlightResponse {
+  turnaroundId: string;
+  operationCode: string;
+  replayed: boolean;
+}
+
 export interface IssueCreditNoteInput {
   requestId: string;
   amount: number;
@@ -3537,6 +3548,67 @@ export interface OccContractOptionResponse {
   /** @nullable */
   validTo?: string | null;
   currencyCode: string;
+}
+
+export interface OccFlightFeedBudgetResponse {
+  configured: boolean;
+  provider: string;
+  unitsToday: number;
+  dailyUnits: number;
+  unitsThisMonth: number;
+  monthlyUnits: number;
+  /** @nullable */
+  pausedUntil?: string | null;
+  /** @nullable */
+  pauseReason?: string | null;
+}
+
+export interface OccFlightProposalResponse {
+  proposalId: string;
+  direction: string;
+  flightNumber: string;
+  airlineId: string;
+  airlineName: string;
+  /** @nullable */
+  airlineIataCode?: string | null;
+  /** @nullable */
+  counterpartIata?: string | null;
+  /** @nullable */
+  counterpartName?: string | null;
+  counterpartKnown: boolean;
+  scheduledAt: string;
+  /** @nullable */
+  revisedAt?: string | null;
+  /** @nullable */
+  runwayAt?: string | null;
+  providerStatus: string;
+  /** @nullable */
+  aircraftRegistration?: string | null;
+  /** @nullable */
+  aircraftModel?: string | null;
+  /** @nullable */
+  terminal?: string | null;
+  /** @nullable */
+  gate?: string | null;
+  status: string;
+  /** @nullable */
+  turnaroundId?: string | null;
+  /** @nullable */
+  suggestedDepartureId?: string | null;
+  lastSeenAt: string;
+}
+
+export interface OccFlightFeedResponse {
+  stationId: string;
+  stationCode: string;
+  date: string;
+  budget: OccFlightFeedBudgetResponse;
+  /** @nullable */
+  lastReadAt?: string | null;
+  /** @nullable */
+  nextManualRefreshAt?: string | null;
+  canImport: boolean;
+  proposals: OccFlightProposalResponse[];
 }
 
 export interface OccFlightLegResponse {
@@ -4482,6 +4554,22 @@ export interface RecordOccArrivalRequest {
   aircraftRegistration: string;
   /** @nullable */
   arrivedAt?: string | null;
+}
+
+export interface RefreshOccFlightFeedRequest {
+  stationId: string;
+}
+
+export interface RefreshOccFlightFeedResponse {
+  status: string;
+  /** @nullable */
+  retryAt?: string | null;
+  /** @nullable */
+  flightsReceived?: number | null;
+  /** @nullable */
+  contractedLegs?: number | null;
+  /** @nullable */
+  newProposals?: number | null;
 }
 
 export interface RefreshSessionRequest {
@@ -5516,6 +5604,11 @@ limit?: number;
 export type ListManagedContractsParams = {
 page?: number;
 limit?: number;
+};
+
+export type GetOccFlightFeedParams = {
+stationId: string;
+date: string;
 };
 
 export type GetOccPlanningSnapshotParams = {
@@ -14180,6 +14273,147 @@ const res = await fetch(getRegisterMobileDeviceUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RegisterMobileDeviceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccFlightFeedUrl = (params: GetOccFlightFeedParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/flight-feed?${stringifiedParams}` : `/api/v1/occ/flight-feed`
+}
+
+export const getOccFlightFeed = async (params: GetOccFlightFeedParams, options?: RequestInit): Promise<OccFlightFeedResponse> => {
+
+  const res = await fetch(getGetOccFlightFeedUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccFlightFeedResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRefreshOccFlightFeedUrl = () => {
+
+
+
+
+  return `/api/v1/occ/flight-feed/refresh`
+}
+
+/**
+ * @summary «Actualizar ahora»: one provider read of the active window, at most every ten minutes per
+station, reusing a read of the last five minutes and counted in the budget.
+ */
+export const refreshOccFlightFeed = async (refreshOccFlightFeedRequest: RefreshOccFlightFeedRequest, options?: RequestInit): Promise<RefreshOccFlightFeedResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRefreshOccFlightFeedUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(refreshOccFlightFeedRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RefreshOccFlightFeedResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getImportOccFlightUrl = () => {
+
+
+
+
+  return `/api/v1/occ/flight-feed/turnarounds`
+}
+
+/**
+ * @summary Creates the turnaround of a proposed arrival and its departure; repeating it returns the same turnaround.
+ */
+export const importOccFlight = async (importOccFlightRequest: ImportOccFlightRequest, options?: RequestInit): Promise<ImportOccFlightResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getImportOccFlightUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(importOccFlightRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ImportOccFlightResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDismissOccFlightProposalUrl = (proposalId: string,) => {
+
+
+
+
+  return `/api/v1/occ/flight-feed/proposals/${proposalId}/dismiss`
+}
+
+/**
+ * @summary Hides a proposal OCC will not operate.
+ */
+export const dismissOccFlightProposal = async (proposalId: string, options?: RequestInit): Promise<void> => {
+
+  const res = await fetch(getDismissOccFlightProposalUrl(proposalId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
   return data
 }
 
