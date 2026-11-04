@@ -14,7 +14,8 @@ public sealed record CreateManualTurnaroundRequest(
     DateTimeOffset ArrivalScheduledAt,
     string DepartureFlightNumber,
     string DepartureDestinationIata,
-    DateTimeOffset DepartureScheduledAt);
+    DateTimeOffset DepartureScheduledAt,
+    bool Charter = false);
 
 public sealed record ManualTurnaroundResponse(
     Guid TurnaroundId,

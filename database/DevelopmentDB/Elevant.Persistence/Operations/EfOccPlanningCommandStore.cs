@@ -238,49 +238,11 @@ internal sealed class EfOccPlanningCommandStore(
             return Conflict();
         }
 
-        // A flight planned under a version keeps it while that version still covers the date (ADR-0027).
-        var storedVersionId = await context.Turnarounds.AsNoTracking()
-            .Where(item => item.Id == scope.TurnaroundInternalId).Select(item => item.ContractVersionId)
-            .SingleAsync(cancellationToken);
-        var applicableContracts = await ApplicableContracts.For(context, scope.AirlineId, scope.StationInternalId, scope.OperationDate)
-            .OrderByDescending(row => row.VersionNumber).ThenBy(row => row.VersionPublicId)
-            .Where(row => storedVersionId == null || row.VersionId == storedVersionId)
-            .Select(row => new ApplicableContractProjection(row.ContractPublicId, row.VersionId, row.VersionNumber,
-                row.CurrencyCode))
-            .Take(2)
-            .ToArrayAsync(cancellationToken);
-        if (applicableContracts.Length != 1)
-        {
-            return Conflict();
-        }
-
-        var applicableContract = applicableContracts[0];
-        var contractedServices = await (
-                from rate in context.ContractServiceRates.AsNoTracking()
-                join definition in context.ServiceDefinitions.AsNoTracking()
-                    on rate.ServiceDefinitionId equals definition.Id
-                where rate.ContractVersionId == applicableContract.ContractVersionId &&
-                      definition.IsActive
-                orderby definition.Name, definition.Code, definition.PublicId
-                select new ContractedServiceProjection(
-                    rate.Id,
-                    rate.PublicId,
-                    definition.Id,
-                    definition.PublicId,
-                    definition.Code,
-                    definition.Name,
-                    rate.BillingUnit,
-                    rate.MinimumQuantity,
-                    rate.UnitPrice,
-                    applicableContract.CurrencyCode))
-            .ToArrayAsync(cancellationToken);
-        if (contractedServices.Length == 0 ||
-            options.Contract is null ||
-            options.Contract.Id != applicableContract.ContractPublicId ||
-            options.Contract.Version != applicableContract.VersionNumber ||
-            options.Services.Count != contractedServices.Length ||
-            !options.Services.Select(item => item.Id)
-                .SequenceEqual(contractedServices.Select(item => item.RatePublicId)))
+        // A charter flight has no contract (ADR-0033): its services are added on the ramp at the base tariff.
+        var isCharter = await context.Set<CharterAgreement>().AsNoTracking()
+            .AnyAsync(item => item.TurnaroundId == scope.TurnaroundInternalId, cancellationToken);
+        ContractedServiceProjection[]? contractedServices = isCharter ? [] : await ContractedServicesAsync(scope, options, cancellationToken);
+        if (contractedServices is null || (isCharter && (options.Contract is not null || options.Services.Count != 0)))
         {
             return Conflict();
         }
@@ -301,25 +263,33 @@ internal sealed class EfOccPlanningCommandStore(
             .Where(service => service.GroundOperationId == operation.Id)
             .OrderBy(service => service.LineNumber)
             .ToArrayAsync(cancellationToken);
-        var materializedServices = ReconcileServices(
-            operation.Id,
-            contractedServices,
-            existingServices,
-            now);
+        var materializedServices = isCharter
+            ? await CharterServicesAsync(existingServices, cancellationToken)
+            : ReconcileServices(
+                operation.Id,
+                contractedServices,
+                existingServices,
+                now);
         if (materializedServices is null)
         {
             return Conflict();
         }
 
         // Every operation carries one execution checklist (ADR-0031): the bridge checklist when the
-        // contract includes the boarding bridge, otherwise the Flight Report's arrival and push-back
-        // checklist (when the station has it published).
-        MaterializedChecklist? materializedChecklist;
-        if (contractedServices.Any(service =>
+        // contract includes the boarding bridge (a charter: when its stand has one), otherwise the
+        // Flight Report's arrival and push-back checklist (when the station has it published).
+        var usesBridge = isCharter
+            ? await (from standAssignment in context.Set<StandAssignment>().AsNoTracking()
+                     join stand in context.Stands.AsNoTracking() on standAssignment.StandId equals stand.Id
+                     where standAssignment.TurnaroundId == scope.TurnaroundInternalId && standAssignment.AssignedTo == null
+                     select stand.HasBoardingBridge).FirstOrDefaultAsync(cancellationToken)
+            : contractedServices.Any(service =>
                 string.Equals(
                     service.ServiceCode,
                     PassengerBridgeServiceCode,
-                    StringComparison.Ordinal)))
+                    StringComparison.Ordinal));
+        MaterializedChecklist? materializedChecklist;
+        if (usesBridge)
         {
             materializedChecklist = await MaterializeChecklistAsync(
                 operation.Id,
@@ -563,6 +533,77 @@ internal sealed class EfOccPlanningCommandStore(
             checklist,
             applicableVersion.VersionNumber,
             itemCount);
+    }
+
+    private async Task<ContractedServiceProjection[]?> ContractedServicesAsync(AssignmentScope scope,
+        OccPlanningOptionsSourceData options, CancellationToken cancellationToken)
+    {
+        // A flight planned under a version keeps it while that version still covers the date (ADR-0027).
+        var storedVersionId = await context.Turnarounds.AsNoTracking()
+            .Where(item => item.Id == scope.TurnaroundInternalId).Select(item => item.ContractVersionId)
+            .SingleAsync(cancellationToken);
+        var applicableContracts = await ApplicableContracts.For(context, scope.AirlineId, scope.StationInternalId, scope.OperationDate)
+            .OrderByDescending(row => row.VersionNumber).ThenBy(row => row.VersionPublicId)
+            .Where(row => storedVersionId == null || row.VersionId == storedVersionId)
+            .Select(row => new ApplicableContractProjection(row.ContractPublicId, row.VersionId, row.VersionNumber,
+                row.CurrencyCode))
+            .Take(2)
+            .ToArrayAsync(cancellationToken);
+        if (applicableContracts.Length != 1)
+        {
+            return null;
+        }
+
+        var applicableContract = applicableContracts[0];
+        var contractedServices = await (
+                from rate in context.ContractServiceRates.AsNoTracking()
+                join definition in context.ServiceDefinitions.AsNoTracking()
+                    on rate.ServiceDefinitionId equals definition.Id
+                where rate.ContractVersionId == applicableContract.ContractVersionId &&
+                      definition.IsActive
+                orderby definition.Name, definition.Code, definition.PublicId
+                select new ContractedServiceProjection(
+                    rate.Id,
+                    rate.PublicId,
+                    definition.Id,
+                    definition.PublicId,
+                    definition.Code,
+                    definition.Name,
+                    rate.BillingUnit,
+                    rate.MinimumQuantity,
+                    rate.UnitPrice,
+                    applicableContract.CurrencyCode))
+            .ToArrayAsync(cancellationToken);
+        if (contractedServices.Length == 0 ||
+            options.Contract is null ||
+            options.Contract.Id != applicableContract.ContractPublicId ||
+            options.Contract.Version != applicableContract.VersionNumber ||
+            options.Services.Count != contractedServices.Length ||
+            !options.Services.Select(item => item.Id)
+                .SequenceEqual(contractedServices.Select(item => item.RatePublicId)))
+        {
+            return null;
+        }
+
+        return contractedServices;
+    }
+
+    /// <summary>A charter keeps the lines the agent added on the ramp (ADR-0033); nothing is materialized.</summary>
+    private async Task<List<MaterializedService>> CharterServicesAsync(OperationService[] existingServices,
+        CancellationToken cancellationToken)
+    {
+        var definitionIds = existingServices.Select(service => service.ServiceDefinitionId).Distinct().ToArray();
+        var definitions = await context.ServiceDefinitions.AsNoTracking()
+            .Where(definition => definitionIds.Contains(definition.Id))
+            .ToDictionaryAsync(definition => definition.Id, cancellationToken);
+        return existingServices.Select(service =>
+        {
+            var definition = definitions[service.ServiceDefinitionId];
+            return new MaterializedService(service, new ContractedServiceProjection(0, Guid.Empty, definition.Id,
+                definition.PublicId, definition.Code, definition.Name, service.BillingUnitSnapshot,
+                service.ContractedQuantity, service.UnitPriceSnapshot ?? 0m, service.CurrencyCodeSnapshot ?? string.Empty),
+                IsNew: false);
+        }).ToList();
     }
 
     private List<MaterializedService>? ReconcileServices(

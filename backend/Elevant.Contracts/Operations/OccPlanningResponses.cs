@@ -106,7 +106,8 @@ public sealed record OccPlanningOptionsResponse(
     OccPlanningTurnaroundContextResponse Turnaround,
     OccContractOptionResponse? Contract,
     IReadOnlyList<OccServiceOptionResponse> Services,
-    IReadOnlyList<OccAgentOptionResponse> Agents);
+    IReadOnlyList<OccAgentOptionResponse> Agents,
+    bool IsCharter = false);
 
 public sealed record OccPlanningTurnaroundContextResponse(
     Guid Id,

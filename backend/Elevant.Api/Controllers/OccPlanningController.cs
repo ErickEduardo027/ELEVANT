@@ -142,7 +142,7 @@ public sealed class OccPlanningController(
             request.OperationDate, request.ArrivalFlightNumber, request.ArrivalOriginIata,
             request.ArrivalScheduledAt, request.DepartureFlightNumber,
             request.DepartureDestinationIata, request.DepartureScheduledAt,
-            Guid.NewGuid(), HttpContext.TraceIdentifier), cancellationToken);
+            Guid.NewGuid(), HttpContext.TraceIdentifier, request.Charter), cancellationToken);
         if (!result.IsSuccess)
             return FailureResult<ManualTurnaroundResponse>(result.Failure!.Value);
 
@@ -425,7 +425,8 @@ public sealed class OccPlanningController(
             agent.DisplayName,
             agent.EmployeeNumber,
             agent.Eligible,
-            agent.EligibilityReasons)).ToArray());
+            agent.EligibilityReasons)).ToArray(),
+        options.IsCharter);
 
     private static ManualTurnaroundOptionsResponse Map(ManualTurnaroundOptionsData options) => new(
         Map(options.Station), options.Date,

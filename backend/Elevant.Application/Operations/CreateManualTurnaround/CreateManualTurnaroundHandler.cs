@@ -62,7 +62,8 @@ public sealed class CreateManualTurnaroundHandler(
             destinationIata,
             command.DepartureScheduledAt,
             command.CorrelationId,
-            command.RequestId), cancellationToken);
+            command.RequestId,
+            command.Charter), cancellationToken);
 
         return result.IsSuccess
             ? CreateManualTurnaroundResult.Success(result.TurnaroundId!.Value, result.OperationCode!, result.Replayed)

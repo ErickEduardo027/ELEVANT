@@ -14,4 +14,5 @@ public sealed record CreateManualTurnaroundCommand(
     string DepartureDestinationIata,
     DateTimeOffset DepartureScheduledAt,
     Guid CorrelationId,
-    string RequestId);
+    string RequestId,
+    bool Charter = false);

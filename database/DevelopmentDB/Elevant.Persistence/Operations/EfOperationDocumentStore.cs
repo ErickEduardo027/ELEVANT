@@ -25,11 +25,7 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
 {
     private const string SignCommand = "ramp.operation.document.sign.v1";
     private const string DamageCommand = "ramp.operation.damage_mark.record.v1";
-    private static readonly TimeSpan ReceiptRetention = TimeSpan.FromDays(30);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
-    private sealed record Scope(RampExecutionActorAccess Actor, RampOperationExecutionScope Operation,
-        MobileCommandReceipt Receipt, DateTimeOffset Now);
 
     public async Task<OperationDocumentsView?> ReadForAgentAsync(Guid accountId, IReadOnlyCollection<Guid> stations,
         Guid operationId, CancellationToken cancellationToken = default)
@@ -46,7 +42,7 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
         RunAsync(SignCommand, request.ActorAccountId, request.AllowedStationIds, request.OperationId, request.InstallationId,
             request.IdempotencyKey,
             Hash(new { command = SignCommand, operationId = request.OperationId, kind = request.Kind.ToString(),
-                role = request.Role.ToString(), request.SignerName, request.DocumentSha256,
+                role = request.Role.ToString(), request.SignerName, request.SignerIdentification, request.DocumentSha256,
                 strokes = OperationDocumentRules.StrokesJson(request.Strokes) }),
             async (scope, ct) =>
             {
@@ -79,7 +75,8 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
                 context.Add(new OperationDocumentSignature
                 {
                     PublicId = Guid.CreateVersion7(), OperationDocumentVersionId = version.Id, Role = request.Role,
-                    SignerName = request.SignerName, CapturedByAccountId = scope.Actor.AccountInternalId,
+                    SignerName = request.SignerName, SignerIdentification = request.SignerIdentification,
+                    CapturedByAccountId = scope.Actor.AccountInternalId,
                     MobileDeviceId = scope.Actor.Device!.Id, SignedAt = scope.Now, DocumentSha256 = sha,
                     StrokesJson = strokes, StrokesSha256 = OperationDocumentRules.Sha256Of(strokes),
                     RequestId = request.IdempotencyKey, CreatedAt = scope.Now, UpdatedAt = scope.Now,
@@ -268,144 +265,29 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
             .Where(item => versionIds.Contains(item.OperationDocumentVersionId))
             .OrderBy(item => item.SignedAt)
             .Select(item => new { item.OperationDocumentVersionId, item.Role, item.SignerName, item.SignedAt,
-                item.DocumentSha256, item.StrokesJson }).ToArrayAsync(cancellationToken);
+                item.DocumentSha256, item.StrokesJson, item.SignerIdentification }).ToArrayAsync(cancellationToken);
         return rows.GroupBy(item => item.OperationDocumentVersionId).ToDictionary(group => group.Key, group => group
             .Select(item => new OperationDocumentSignatureData(item.Role, item.SignerName, item.SignedAt, item.DocumentSha256,
-                OperationDocumentRules.ParseStrokes(item.StrokesJson))).ToArray());
+                OperationDocumentRules.ParseStrokes(item.StrokesJson), item.SignerIdentification)).ToArray());
     }
 
     private async Task<OperationDocumentWriteResult> RunAsync(string commandType, Guid accountId,
         IReadOnlyCollection<Guid> stations, Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
-        Func<Scope, CancellationToken, Task<bool>> apply, CancellationToken cancellationToken)
+        Func<RampReceiptScope, CancellationToken, Task<bool>> apply, CancellationToken cancellationToken)
     {
-        OperationDocumentWriteResult? attempt = null;
-        try
-        {
-            return await context.Database.CreateExecutionStrategy().ExecuteInTransactionAsync(
-                async ct =>
-                {
-                    context.ChangeTracker.Clear();
-                    attempt = await InsideAsync(commandType, accountId, stations, operationId, installationId,
-                        idempotencyKey, payloadHash, apply, ct);
-                    if (attempt.CommitReceiptId is null) context.ChangeTracker.Clear();
-                    return attempt;
-                },
-                async ct =>
-                {
-                    context.ChangeTracker.Clear();
-                    return attempt?.CommitReceiptId is not Guid receiptId
-                        ? attempt is not null
-                        : await context.MobileCommandReceipts.AsNoTracking().AnyAsync(item => item.PublicId == receiptId, ct);
-                },
-                IsolationLevel.Serializable, cancellationToken);
-        }
-        catch (Exception exception) when (exception is DbUpdateConcurrencyException ||
-            (exception is RetryLimitExceededException or DbUpdateException or SqlException &&
-             exception.GetBaseException() is SqlException { Number: 1205 or 1222 or 3960 or 2601 or 2627 or 547 }))
-        {
-            context.ChangeTracker.Clear();
-            return OperationDocumentWriteResult.Failed(RampExecutionWriteFailure.Conflict);
-        }
+        var outcome = await new RampReceiptRunner(context, timeProvider).RunAsync(commandType, accountId, stations,
+            operationId, installationId, idempotencyKey, payloadHash, apply, cancellationToken);
+        return outcome.IsSuccess
+            ? OperationDocumentWriteResult.Success(
+                await ViewAsync(outcome.OperationId, outcome.OperationPublicId, cancellationToken), outcome.ReceiptId)
+            : OperationDocumentWriteResult.Failed(outcome.Failure!.Value, outcome.ReceiptId);
     }
 
-    private async Task<OperationDocumentWriteResult> InsideAsync(string commandType, Guid accountId,
-        IReadOnlyCollection<Guid> stations, Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
-        Func<Scope, CancellationToken, Task<bool>> apply, CancellationToken cancellationToken)
-    {
-        var authorization = new EfRampExecutionAuthorization(context, timeProvider);
-        var actorResult = await authorization.ResolveActorAsync(accountId, stations, installationId, cancellationToken);
-        if (!actorResult.IsSuccess)
-            return OperationDocumentWriteResult.Failed(actorResult.Failure == RampExecutionAuthorizationFailure.Forbidden
-                ? RampExecutionWriteFailure.Forbidden : RampExecutionWriteFailure.NotFound);
-        var actor = actorResult.Access!;
-        var device = actor.Device!;
-        var now = Truncate(timeProvider.GetUtcNow());
-        var key = idempotencyKey.ToString("D");
-        var existing = await context.MobileCommandReceipts.FromSqlInterpolated($"""
-                SELECT * FROM [integration].[mobile_command_receipts] WITH (UPDLOCK, HOLDLOCK)
-                WHERE [mobile_device_id] = {device.Id} AND [idempotency_key] = {key}
-                """).SingleOrDefaultAsync(cancellationToken);
-        if (existing is not null) return await ReplayAsync(existing, commandType, actor.AccountInternalId, payloadHash,
-            cancellationToken);
+    private void Audit(RampReceiptScope scope, string? requestId, string action, object metadata) =>
+        new RampReceiptRunner(context, timeProvider).Audit(scope, requestId, action,
+            "Assigned ramp agent captured an AVIAM form on the tablet.", metadata);
 
-        var receipt = new MobileCommandReceipt
-        {
-            PublicId = Guid.CreateVersion7(), MobileDeviceId = device.Id, AccountId = actor.AccountInternalId,
-            IdempotencyKey = key, CommandType = commandType, PayloadHash = payloadHash, Status = MobileCommandStatus.Received,
-            ReceivedAt = now, ExpiresAt = now.Add(ReceiptRetention), CreatedAt = now, UpdatedAt = now,
-        };
-        context.MobileCommandReceipts.Add(receipt);
-        var operation = await authorization.ResolveOperationAsync(actor, operationId, lockForUpdate: true, cancellationToken);
-        if (operation is null) return await RejectAsync(receipt, "not_found", now, cancellationToken);
+    private static string Hash(object canonical) => RampReceiptRunner.Hash(canonical);
 
-        var scope = new Scope(actor, operation, receipt, now);
-        if (!await apply(scope, cancellationToken)) return await RejectAsync(receipt, "conflict", now, cancellationToken);
-        await RampOperationChangeWriter.AnnounceAsync(context, operation.Operation.Id, now, false, cancellationToken);
-        await context.SaveChangesAsync(cancellationToken);
-
-        receipt.Status = MobileCommandStatus.Processed;
-        receipt.ProcessedAt = now;
-        // The view is re-read on replay instead of stored: forms keep changing after the write.
-        receipt.ResultJson = JsonSerializer.Serialize(new { operationId = operation.Operation.PublicId }, Json);
-        receipt.UpdatedAt = now;
-        device.LastSeenAt = now;
-        device.UpdatedAt = now;
-        await context.SaveChangesAsync(cancellationToken);
-        return OperationDocumentWriteResult.Success(
-            await ViewAsync(operation.Operation.Id, operation.Operation.PublicId, cancellationToken), receipt.PublicId);
-    }
-
-    private void Audit(Scope scope, string? requestId, string action, object metadata) =>
-        context.AuditEntries.Add(new AuditEntry
-        {
-            PublicId = Guid.CreateVersion7(), OccurredAt = scope.Now, ActorType = AuditActorType.Account,
-            ActorAccountId = scope.Actor.AccountInternalId, ActorDisplay = scope.Actor.DisplayName, Action = action,
-            EntityType = nameof(GroundOperation), EntityPublicId = scope.Operation.Operation.PublicId,
-            OrganizationId = scope.Operation.AirlineOrganizationInternalId, StationId = scope.Operation.StationInternalId,
-            Source = AuditSource.MobileSync, CorrelationId = Guid.CreateVersion7(), RequestId = requestId,
-            Reason = "Assigned ramp agent captured an AVIAM form on the tablet.",
-            MetadataJson = JsonSerializer.Serialize(metadata, Json),
-        });
-
-    private async Task<OperationDocumentWriteResult> RejectAsync(MobileCommandReceipt receipt, string errorCode,
-        DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        context.ChangeTracker.Entries().Where(entry => entry.Entity != receipt && entry.State != EntityState.Unchanged)
-            .ToList().ForEach(entry => entry.State = entry.State == EntityState.Added ? EntityState.Detached : EntityState.Unchanged);
-        receipt.Status = MobileCommandStatus.Rejected;
-        receipt.ProcessedAt = now;
-        receipt.ErrorCode = errorCode;
-        receipt.ErrorMessage = errorCode == "not_found"
-            ? "The ramp operation was not found." : "The form changed or the entry conflicts with the operation.";
-        receipt.UpdatedAt = now;
-        await context.SaveChangesAsync(cancellationToken);
-        return OperationDocumentWriteResult.Failed(errorCode == "not_found"
-            ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict, receipt.PublicId);
-    }
-
-    private async Task<OperationDocumentWriteResult> ReplayAsync(MobileCommandReceipt receipt, string commandType,
-        long accountId, string payloadHash, CancellationToken cancellationToken)
-    {
-        if (receipt.AccountId != accountId || receipt.CommandType != commandType || receipt.PayloadHash != payloadHash)
-            return OperationDocumentWriteResult.Failed(RampExecutionWriteFailure.IdempotencyKeyConflict);
-        if (receipt.Status == MobileCommandStatus.Rejected)
-            return OperationDocumentWriteResult.Failed(receipt.ErrorCode == "not_found"
-                ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict, receipt.PublicId);
-        if (receipt.Status != MobileCommandStatus.Processed || string.IsNullOrWhiteSpace(receipt.ResultJson))
-            return OperationDocumentWriteResult.Failed(RampExecutionWriteFailure.Conflict);
-        var operationPublicId = JsonDocument.Parse(receipt.ResultJson).RootElement.GetProperty("operationId").GetGuid();
-        var operationId = await context.GroundOperations.AsNoTracking().Where(item => item.PublicId == operationPublicId)
-            .Select(item => item.Id).SingleAsync(cancellationToken);
-        return OperationDocumentWriteResult.Success(await ViewAsync(operationId, operationPublicId, cancellationToken),
-            receipt.PublicId);
-    }
-
-    private static string Hash(object canonical) =>
-        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(canonical, Json))));
-
-    private static DateTimeOffset Truncate(DateTimeOffset value)
-    {
-        var utc = value.ToUniversalTime();
-        return new DateTimeOffset(utc.Ticks - utc.Ticks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
-    }
+    private static DateTimeOffset Truncate(DateTimeOffset value) => RampReceiptRunner.Truncate(value);
 }

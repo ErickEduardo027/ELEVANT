@@ -120,7 +120,9 @@ internal sealed class EfManualTurnaroundStore(
 
         var applicableContracts = await ApplicableContracts.For(context, airline.Id, scope.StationId, request.OperationDate)
             .Select(row => row.VersionId).Take(2).ToArrayAsync(cancellationToken);
-        if (applicableContracts.Length != 1) return (Conflict(), null);
+        // A charter is a flight without a contract (ADR-0033); a carrier with one flies under it.
+        if (request.Charter ? applicableContracts.Length != 0 : applicableContracts.Length != 1)
+            return (Conflict(), null);
 
         var stand = await (
             from item in context.Stands.AsNoTracking()
@@ -160,7 +162,7 @@ internal sealed class EfManualTurnaroundStore(
             AirlineId = airline.Id,
             StationId = scope.StationId,
             OperationDate = request.OperationDate,
-            ContractVersionId = applicableContracts[0],
+            ContractVersionId = request.Charter ? null : applicableContracts[0],
             CurrentStatus = TurnaroundStatus.Confirmed,
             Source = OperationalDataSource.Manual,
             CreatedAt = now,
@@ -168,6 +170,19 @@ internal sealed class EfManualTurnaroundStore(
         };
         context.Turnarounds.Add(turnaround);
         await context.SaveChangesAsync(cancellationToken);
+
+        if (request.Charter)
+            context.Set<CharterAgreement>().Add(new CharterAgreement
+            {
+                PublicId = Guid.CreateVersion7(),
+                TurnaroundId = turnaround.Id,
+                AirlineId = airline.Id,
+                CurrencyCode = CharterRules.CurrencyCode,
+                PrepaymentStatus = CharterPrepaymentStatus.Pending,
+                CreatedByAccountId = scope.ActorAccountId,
+                CreatedAt = now,
+                UpdatedAt = now,
+            });
 
         context.FlightLegs.AddRange(
             NewLeg(turnaround.Id, FlightDirection.Arrival, request.ArrivalFlightNumber,
@@ -224,6 +239,7 @@ internal sealed class EfManualTurnaroundStore(
             MetadataJson = JsonSerializer.Serialize(new
             {
                 source = "manual",
+                charter = request.Charter,
                 standId = request.StandId,
                 operationDate = request.OperationDate,
                 arrivalFlightNumber = request.ArrivalFlightNumber,
@@ -275,7 +291,10 @@ internal sealed class EfManualTurnaroundStore(
             select (Guid?)stand.PublicId).SingleOrDefaultAsync(cancellationToken);
         var arrival = legs.SingleOrDefault(item => item.Direction == FlightDirection.Arrival);
         var departure = legs.SingleOrDefault(item => item.Direction == FlightDirection.Departure);
+        var isCharter = await context.Set<CharterAgreement>().AsNoTracking()
+            .AnyAsync(item => item.TurnaroundId == existing.Id, cancellationToken);
         return airlineId == request.AirlineId && assignedStandId == request.StandId &&
+            isCharter == request.Charter &&
             existing.OperationDate == request.OperationDate &&
             arrival is not null && departure is not null &&
             arrival.FlightNumber == request.ArrivalFlightNumber &&

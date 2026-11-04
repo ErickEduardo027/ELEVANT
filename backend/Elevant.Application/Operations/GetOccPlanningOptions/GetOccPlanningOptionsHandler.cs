@@ -75,6 +75,7 @@ public sealed class GetOccPlanningOptionsHandler(
             source.Turnaround,
             source.Contract,
             source.Services,
-            agents));
+            agents,
+            source.IsCharter));
     }
 }

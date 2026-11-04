@@ -8145,6 +8145,120 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.CharterAgreement", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AirlineId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("airline_id");
+
+                    b.Property<string>("CarrierAddress")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)")
+                        .HasColumnName("carrier_address");
+
+                    b.Property<string>("ChargesPayableBy")
+                        .HasMaxLength(160)
+                        .HasColumnType("nvarchar(160)")
+                        .HasColumnName("charges_payable_by");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("CreatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by_account_id");
+
+                    b.Property<string>("CurrencyCode")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nchar(3)")
+                        .HasColumnName("currency_code")
+                        .IsFixedLength();
+
+                    b.Property<decimal?>("PrepaymentAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)")
+                        .HasColumnName("prepayment_amount");
+
+                    b.Property<DateTimeOffset?>("PrepaymentConfirmedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("prepayment_confirmed_at");
+
+                    b.Property<long?>("PrepaymentConfirmedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("prepayment_confirmed_by_account_id");
+
+                    b.Property<string>("PrepaymentReference")
+                        .HasMaxLength(80)
+                        .HasColumnType("nvarchar(80)")
+                        .HasColumnName("prepayment_reference");
+
+                    b.Property<string>("PrepaymentStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("prepayment_status");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long>("TurnaroundId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("turnaround_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AirlineId");
+
+                    b.HasIndex("CreatedByAccountId");
+
+                    b.HasIndex("PrepaymentConfirmedByAccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("TurnaroundId")
+                        .IsUnique();
+
+                    b.HasIndex("PrepaymentStatus", "CreatedAt");
+
+                    b.ToTable("charter_agreements", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_charter_agreement_currency", "LEN([currency_code]) = 3");
+
+                            t.HasCheckConstraint("ck_charter_agreement_prepayment", "([prepayment_status] = 'Pending' AND [prepayment_confirmed_at] IS NULL) OR ([prepayment_status] = 'Confirmed' AND [prepayment_confirmed_at] IS NOT NULL AND [prepayment_amount] > 0 AND [prepayment_confirmed_by_account_id] IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.ChecklistAnswer", b =>
                 {
                     b.Property<long>("Id")
@@ -9405,6 +9519,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("signed_at");
+
+                    b.Property<string>("SignerIdentification")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)")
+                        .HasColumnName("signer_identification");
 
                     b.Property<string>("SignerName")
                         .IsRequired()
@@ -14797,6 +14916,32 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("StationId")
                         .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.CharterAgreement", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Reference.Airline", null)
+                        .WithMany()
+                        .HasForeignKey("AirlineId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("PrepaymentConfirmedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.Turnaround", null)
+                        .WithMany()
+                        .HasForeignKey("TurnaroundId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.ChecklistAnswer", b =>
