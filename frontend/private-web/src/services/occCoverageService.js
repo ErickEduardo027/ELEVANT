@@ -37,7 +37,8 @@ export function translateCoverageError(error) {
   if (error instanceof TypeError) return Object.assign(new Error('Revisa los datos del formulario.'), { status: 400 });
   if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
   const status = Number.isInteger(error?.status) ? error.status : null;
-  const reasons = describeReasons(error?.reasons);
+  // Keep the rule codes: screens explain each one with describeReasons.
+  const reasons = (error?.reasons ?? []).filter(reason => reason in COVERAGE_REASON_MESSAGES);
   const message = reasons.length ? 'La cobertura no cumple las reglas de asignación.'
     : status === 403 ? 'Tu acceso no permite gestionar la cobertura de posiciones.'
       : status === 404 ? 'El agente, la terminal o la posición ya no está disponible.'
