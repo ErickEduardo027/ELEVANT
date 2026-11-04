@@ -155,12 +155,12 @@ function ServiceOrderCard({ operationId, revision }: { operationId: string; revi
     }
   }
 
-  return <div>
+  return <div className={styles.contractVersion}>
     <h3>Orden de Servicio firmada</h3>
     {!current && <p role="status">Cargando Orden de Servicio…</p>}
     {current?.status === "missing" && <p className={styles.note}>Aún no hay una Orden de Servicio firmada por su representante para este vuelo.</p>}
     {current?.status === "error" && <div role="alert"><p>No se pudo cargar la Orden de Servicio.</p>
-      <button type="button" onClick={() => setRetryKey(value => value + 1)}>Reintentar</button></div>}
+      <button className={styles.loadMore} type="button" onClick={() => setRetryKey(value => value + 1)}>Reintentar</button></div>}
     {current?.status === "ready" && current.order && <>
       <dl className={styles.details}>
         <div><dt>Número</dt><dd>{current.order.number}</dd></div>
@@ -169,7 +169,7 @@ function ServiceOrderCard({ operationId, revision }: { operationId: string; revi
           <dt>{SIGNERS[signature.role] ?? signature.role}</dt><dd>{signature.signerName} · {operationTime(signature.signedAt)}</dd></div>)}
       </dl>
       <p className={styles.note}>Huella SHA-256 {current.order.contentSha256.slice(0, 16)}…</p>
-      <button type="button" disabled={downloading} onClick={() => void download(current.order!.number)}>
+      <button className={styles.loadMore} type="button" disabled={downloading} onClick={() => void download(current.order!.number)}>
         {downloading ? "Generando PDF…" : "Descargar PDF firmado"}</button>
       {downloadError && <p role="alert">No se pudo descargar el PDF. Intente nuevamente.</p>}
     </>}

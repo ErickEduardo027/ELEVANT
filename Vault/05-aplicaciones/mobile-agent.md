@@ -22,6 +22,11 @@ sources:
   - frontend/mobile-agent/src/components/flight-report/flight-report-panel.tsx
   - frontend/mobile-agent/src/app/sync.tsx
   - frontend/mobile-agent/tests/flight-report.test.js
+  - docs/adr/0032-aviam-forms-signatures-and-walkaround.md
+  - frontend/mobile-agent/src/components/documents/operation-documents.tsx
+  - frontend/mobile-agent/src/components/documents/signature-pad.tsx
+  - frontend/mobile-agent/src/storage/walkaround-photos.ts
+  - frontend/mobile-agent/tests/operation-documents.test.js
 tags:
   - aplicaciones
   - mobile-agent
@@ -244,4 +249,35 @@ Las [pruebas](../../frontend/mobile-agent/tests/flight-report.test.js) cubren cu
 - la falta de señal;
 - el rechazo del servidor.
 
-Las fotos del walk-around no están en este bloque.
+Las fotos del walk-around no estaban en ese bloque; llegan en el bloque 4.
+
+## Fase 3, bloque 4: formularios, firmas y walk-around
+
+En la rama de la fase 3 ([ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)), la pantalla de operación suma dos tarjetas.
+
+**Walk-around 360°** ([componente](../../frontend/mobile-agent/src/components/documents/operation-documents.tsx))
+
+- Silueta del avión vista desde arriba, dibujada con `react-native-svg`; se toca donde está la anomalía.
+- Nota obligatoria y foto opcional con la cámara (`expo-image-picker`).
+- La foto se copia a la carpeta de documentos de la app ([almacenamiento](../../frontend/mobile-agent/src/storage/walkaround-photos.ts), `expo-file-system`) y se borra solo cuando ELEVANT la confirma.
+- Cada marca muestra si está en el dispositivo o confirmada.
+
+**Formularios y firmas**
+
+- Orden de Servicio, Reporte de Vuelo y, si la operación tiene puente, el Check-List del puente, generados en el servidor con lo ya capturado.
+- Cada formulario muestra sus firmantes: firmado, en el dispositivo, rechazado o «firmar de nuevo» si cambió un dato facturable después de firmar.
+- La hoja de firma enseña al firmante los datos del vuelo, los servicios con su monto, el total y la huella del documento.
+- La firma se dibuja con el dedo en un [pad 3:1](../../frontend/mobile-agent/src/components/documents/signature-pad.tsx) y se guarda como trazos normalizados.
+- Para los roles de AVIAM, el nombre del agente viene precargado.
+
+**Sin conexión.** Firmas, marcas y fotos viajan en la misma cola persistente del Reporte de Vuelo, en orden; la foto siempre va detrás de su marca. Una firma rechazada porque el formulario cambió queda en «Sincronización».
+
+Las [pruebas](../../frontend/mobile-agent/tests/operation-documents.test.js) cubren:
+
+- la firma con su huella;
+- el orden marca → foto y el borrado de la foto confirmada;
+- el formulario que cambió, que queda retenido;
+- el almacenamiento de fotos caído, que deja la foto pendiente;
+- la última vista del servidor guardada por operación.
+
+El formulario de charter sin contrato no está en este bloque: falta el formulario literal de AVIAM.
