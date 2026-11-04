@@ -3447,6 +3447,8 @@ export interface ManualTurnaroundOptionsResponse {
   airlines: ManualTurnaroundAirlineResponse[];
   airports: OccAirportResponse[];
   stands: OccStandResponse[];
+  /** @nullable */
+  charterAirlines?: ManualTurnaroundAirlineResponse[] | null;
 }
 
 export interface ManualTurnaroundResponse {

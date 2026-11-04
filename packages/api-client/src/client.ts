@@ -1705,16 +1705,21 @@ function isOccAircraftTrafficResponse(value: unknown): value is OccAircraftTraff
       isOptionalNullable(item.category, isInt32));
 }
 
+const isManualAirline = (airline: unknown) =>
+  isRecord(airline) && hasOnlyKeys(airline, ["id", "iataCode", "name"]) &&
+  isUuid(airline.id) && isString(airline.iataCode) && isString(airline.name);
+
 function isManualTurnaroundOptionsResponse(
   value: unknown,
 ): value is ManualTurnaroundOptionsResponse {
   return isRecord(value) &&
-    hasOnlyKeys(value, ["station", "date", "stationAirport", "airlines", "airports", "stands"]) &&
+    hasOnlyKeys(value, ["station", "date", "stationAirport", "airlines", "airports", "stands", "charterAirlines"]) &&
     isOccStationResponse(value.station) && isDateOnly(value.date) &&
     isOccAirportResponse(value.stationAirport) &&
-    Array.isArray(value.airlines) && value.airlines.every((airline: unknown) =>
-      isRecord(airline) && hasOnlyKeys(airline, ["id", "iataCode", "name"]) &&
-      isUuid(airline.id) && isString(airline.iataCode) && isString(airline.name)) &&
+    Array.isArray(value.airlines) && value.airlines.every(isManualAirline) &&
+    // Carriers without a contract that day, enterable only as charters (ADR-0033).
+    (value.charterAirlines === undefined || value.charterAirlines === null ||
+      (Array.isArray(value.charterAirlines) && value.charterAirlines.every(isManualAirline))) &&
     Array.isArray(value.airports) && value.airports.every(isOccAirportResponse) &&
     Array.isArray(value.stands) && value.stands.every(isOccStandResponse);
 }

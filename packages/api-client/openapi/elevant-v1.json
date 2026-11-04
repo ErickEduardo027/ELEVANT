@@ -39431,6 +39431,13 @@
             "items": {
               "$ref": "#/components/schemas/OccStandResponse"
             }
+          },
+          "charterAirlines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualTurnaroundAirlineResponse"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
