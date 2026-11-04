@@ -1,0 +1,127 @@
+import * as Crypto from 'expo-crypto';
+import type { RampExecutionResponse } from '@elevant/api-client';
+import { createMobileAgentApiClient } from '../config/elevant-api';
+import {
+  enqueueFlightReportCommand,
+  readFlightReportOutbox,
+  updateFlightReportItem,
+  type FlightReportCommand,
+  type FlightReportOutboxItem,
+} from '../synchronization/flight-report-outbox';
+import { getMobileSessionRequestContext, rejectMobileSessionRequest } from './mobile-auth';
+import { registerCurrentMobileDevice } from './mobile-device';
+import { asMobileServiceError, MobileServiceError } from './mobile-service-error';
+
+export type FlightReportSnapshot = Readonly<{
+  items: readonly FlightReportOutboxItem[];
+  syncing: boolean;
+  /** Last server answer per operation, so the screen shows confirmed data before re-reading. */
+  confirmed: Readonly<Record<string, RampExecutionResponse>>;
+  issue?: MobileServiceError;
+}>;
+
+type Listener = (snapshot: FlightReportSnapshot) => void;
+const listeners = new Set<Listener>();
+let snapshot: FlightReportSnapshot = { items: [], syncing: false, confirmed: {} };
+let running: Promise<void> | null = null;
+let again = false;
+
+function publish(change: Partial<FlightReportSnapshot>) {
+  snapshot = { ...snapshot, ...change };
+  for (const listener of listeners) listener(snapshot);
+}
+
+/** The queue and its sync state; the listener gets the current value at once. */
+export function subscribeFlightReport(listener: Listener) {
+  listeners.add(listener);
+  listener(snapshot);
+  return () => { listeners.delete(listener); };
+}
+
+export async function refreshFlightReportQueue() {
+  const context = await getMobileSessionRequestContext();
+  publish({ items: await readFlightReportOutbox(context.session.actor.accountId) });
+}
+
+async function enqueue(command: FlightReportCommand) {
+  const context = await getMobileSessionRequestContext();
+  const items = await enqueueFlightReportCommand(context.session.actor.accountId, command, Crypto.randomUUID());
+  publish({ items });
+  void flushFlightReport();
+}
+
+/** «Ahora» on a milestone: saved on the device at once, sent when there is signal (ADR-0031). */
+export const recordMilestone = (operationId: string, code: string, occurredAt: Date) =>
+  enqueue({ kind: 'milestone', operationId, code, occurredAt: occurredAt.toISOString() });
+
+export const saveFlightData = (operationId: string, data: Omit<Extract<FlightReportCommand, { kind: 'flightData' }>,
+  'kind' | 'operationId'>) => enqueue({ kind: 'flightData', operationId, ...data });
+
+/** Sends pending commands in order; a single run at a time, re-run if something arrived meanwhile. */
+export function flushFlightReport(): Promise<void> {
+  if (running) { again = true; return running; }
+  running = (async () => {
+    do {
+      again = false;
+      await flushOnce();
+    } while (again);
+  })().finally(() => { running = null; });
+  return running;
+}
+
+async function flushOnce() {
+  let context;
+  try { context = await getMobileSessionRequestContext(); } catch { return; }
+  const accountId = context.session.actor.accountId;
+  const pending = (await readFlightReportOutbox(accountId)).filter(item => item.state === 'pending');
+  if (pending.length === 0) { publish({ syncing: false, issue: undefined }); return; }
+  publish({ syncing: true });
+  let installationId: string;
+  try {
+    installationId = (await registerCurrentMobileDevice({ accessToken: context.accessToken })).installationId;
+  } catch (error) {
+    publish({ syncing: false, issue: await revoked(context.sessionId, error) });
+    return;
+  }
+  const client = createMobileAgentApiClient({ getAccessToken: () => context.accessToken });
+  for (const item of pending) {
+    try {
+      const command = item.command;
+      const result = command.kind === 'milestone'
+        ? await client.recordRampMilestone(command.operationId, command.code, command.occurredAt, installationId,
+          item.idempotencyKey)
+        : await client.updateRampFlightData(command.operationId, {
+          passengersIn: command.passengersIn, passengersOut: command.passengersOut, mtowKg: command.mtowKg,
+          aircraftRegistration: command.aircraftRegistration }, installationId, item.idempotencyKey);
+      const items = await updateFlightReportItem(accountId, item.idempotencyKey, 'remove');
+      publish({ items, confirmed: { ...snapshot.confirmed, [command.operationId]: result } });
+    } catch (error) {
+      const issue = await revoked(context.sessionId, error);
+      // The server answered «no» (closed operation, impossible time): keep it visible to review, never retry blindly.
+      const rejected = issue.code === 'not_found' || issue.code === 'conflict' || issue.status === 400;
+      const items = await updateFlightReportItem(accountId, item.idempotencyKey, rejected ? 'block' : 'attempt',
+        issue.message);
+      publish({ items, syncing: false, issue });
+      if (!rejected) return;
+    }
+  }
+  publish({ syncing: false, issue: undefined });
+}
+
+async function revoked(sessionId: string, error: unknown) {
+  const issue = asMobileServiceError(error);
+  if (issue.code === 'unauthenticated' || issue.code === 'forbidden') await rejectMobileSessionRequest(sessionId);
+  return issue;
+}
+
+/** The agent discards a command the server rejected, after reviewing it in «Sincronización». */
+export async function discardFlightReportItem(idempotencyKey: string) {
+  const context = await getMobileSessionRequestContext();
+  publish({ items: await updateFlightReportItem(context.session.actor.accountId, idempotencyKey, 'remove') });
+}
+
+export async function retryFlightReportItem(idempotencyKey: string) {
+  const context = await getMobileSessionRequestContext();
+  publish({ items: await updateFlightReportItem(context.session.actor.accountId, idempotencyKey, 'retry') });
+  await flushFlightReport();
+}

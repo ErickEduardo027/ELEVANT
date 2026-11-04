@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "7880a85f5a5a0bf0cef855ffc9066d066551ca25573c932f73dbbc0f993e1835",
+        "sha256": "e426cc0e195b34a102986a609962275e56b7fd1bbf82944817e3f6b06f2dc392",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "11b3600bb9bd935a66da9c80effb30ce29b3a7c97b0c9a88288dfd792e4eb974",
+        "sha256": "7ccb30c3cad7ee8e9f1ae798c00d6295150cd2da60701fee894ba8cd8e9a06dd",
         "title": null,
         "version": null
       }
@@ -1448,6 +1448,12 @@
         "name": "AddPositionCoverage",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261104163350_AddPositionCoverage.cs",
         "sha256": "11af1043d0875fb69574b5ed8a15a5df8a441fccee5542bcb28f23c486156b25"
+      },
+      {
+        "id": "20261104173101",
+        "name": "AddFlightReportCapture",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261104173101_AddFlightReportCapture.cs",
+        "sha256": "7ab0f818d95561ff2dd41dcaba60df9d0c3b0c620631b4d2b1cd8f34f3e4939a"
       }
     ],
     "manifestContracts": [

@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-16"
-verified_commit: "0ce3355ded1251cebdbe8050f33218c3e27416ae"
+last_verified: "2026-11-04"
+verified_commit: "7e451f73572081756f637aa718cc726f6bf9fc9e"
 sources:
   - frontend/AGENTS.md
   - frontend/mobile-agent/README.md
@@ -16,6 +16,12 @@ sources:
   - frontend/mobile-agent/app.json
   - .github/workflows/mobile-ci.yml
   - frontend/mobile-agent/src/services/mobile-auth.ts
+  - docs/adr/0031-flight-report-capture-on-the-tablet.md
+  - frontend/mobile-agent/src/synchronization/flight-report-outbox.ts
+  - frontend/mobile-agent/src/services/flight-report.ts
+  - frontend/mobile-agent/src/components/flight-report/flight-report-panel.tsx
+  - frontend/mobile-agent/src/app/sync.tsx
+  - frontend/mobile-agent/tests/flight-report.test.js
 tags:
   - aplicaciones
   - mobile-agent
@@ -210,3 +216,32 @@ transitoria en la API, sin migraciones. La validación en un Android real
 sigue pendiente.
 No se afirma una publicación de APK ni se actualizan aquí los metadatos de
 verificación de las secciones históricas anteriores.
+
+## Fase 3, bloque 3: Reporte de Vuelo sin conexión
+
+En la rama de la fase 3 ([ADR-0031](../../docs/adr/0031-flight-report-capture-on-the-tablet.md)), la pantalla de operación incluye el «Reporte de Vuelo» de AVIAM, con los hitos literales del formulario.
+
+**Pantalla de operación**
+
+- Cuatro fases con progreso: llegada, en posición, salida y retroempuje.
+- Botones «Ahora» de al menos 72 dp, que vibran al confirmar.
+- Ajuste de la hora por minutos.
+- Tarjeta de datos del vuelo (pasajeros, MTOW y matrícula), que se escriben una sola vez.
+- Acción rápida «Desviación», con código IATA de demora.
+
+**Cola sin conexión**
+
+- La [cola persistente](../../frontend/mobile-agent/src/synchronization/flight-report-outbox.ts) guarda cada toque en el dispositivo antes de enviarlo.
+- El [servicio](../../frontend/mobile-agent/src/services/flight-report.ts) envía los elementos en orden, con su clave idempotente estable y el dispositivo registrado.
+- El envío se repite en cuanto vuelve la señal.
+- Lo que el servidor rechaza queda «por revisar» en la pantalla [Sincronización](../../frontend/mobile-agent/src/app/sync.tsx).
+- Cada valor muestra si está en el dispositivo, confirmado o rechazado.
+
+Las [pruebas](../../frontend/mobile-agent/tests/flight-report.test.js) cubren cuatro casos:
+
+- la sustitución del toque que aún no se envió;
+- la confirmación;
+- la falta de señal;
+- el rechazo del servidor.
+
+Las fotos del walk-around no están en este bloque.

@@ -18,6 +18,7 @@ const assignedOperations: RampAssignedOperationsResponse = {
         assignmentRole: "primary",
         assignedAt: "2026-08-19T12:00:00Z",
       },
+      milestones: [{ code: "BLOCK_ON", actualAt: "2026-08-19T16:20:00Z" }],
       operation: {
         id: "70000000-0000-7000-8000-000000000016",
         status: "Assigned",

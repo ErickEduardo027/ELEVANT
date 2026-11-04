@@ -13,7 +13,6 @@ internal sealed class EfRampOperationChecklistReadStore(
     ElevantDbContext context,
     TimeProvider timeProvider) : IRampOperationChecklistReadStore
 {
-    private const string TurnaroundChecklistCode = "TURNAROUND-BASE";
 
     public async Task<RampOperationChecklistReadResult> GetChecklistAsync(
         RampOperationChecklistReadRequest request,
@@ -71,7 +70,7 @@ internal sealed class EfRampOperationChecklistReadStore(
                 join template in context.Set<ChecklistTemplate>().AsNoTracking()
                     on version.ChecklistTemplateId equals template.Id
                 where operationChecklist.GroundOperationId == scope.Operation.Id &&
-                      template.Code == TurnaroundChecklistCode
+                      RampChecklists.Execution.Contains(template.Code)
                 orderby operationChecklist.RevisionNumber descending,
                     version.VersionNumber descending
                 select new ChecklistProjection(

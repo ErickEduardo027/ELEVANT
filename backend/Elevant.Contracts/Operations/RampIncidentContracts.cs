@@ -19,7 +19,7 @@ public sealed record ReportRampIncidentRequest
     }
 
     [Required(AllowEmptyStrings = false)]
-    [RegularExpression("^(Operational|Safety|Equipment|Documentation)$")]
+    [RegularExpression("^(Operational|Safety|Equipment|Documentation|Deviation)$")]
     public string IncidentType { get; init; }
 
     [Required(AllowEmptyStrings = false)]
@@ -32,6 +32,10 @@ public sealed record ReportRampIncidentRequest
 
     [Required]
     public DateTimeOffset OccurredAt { get; init; }
+
+    /// <summary>IATA delay code (two digits); required for a Deviation, absent otherwise (ADR-0031).</summary>
+    [RegularExpression("^[0-9]{2}$")]
+    public string? DelayCode { get; init; }
 }
 
 public sealed record RampIncidentResponse(
@@ -41,7 +45,8 @@ public sealed record RampIncidentResponse(
     string Status,
     string Description,
     DateTimeOffset OccurredAt,
-    DateTimeOffset ReportedAt);
+    DateTimeOffset ReportedAt,
+    string? DelayCode);
 
 public sealed record GetRampIncidentsResponse(
     Guid OperationId,

@@ -5,14 +5,18 @@ import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
 import { startMobileChangeFeed, stopMobileChangeFeed } from '../services/mobile-change-feed';
 import { colors } from '../theme/colors';
+import { startFlightReportSync } from '../components/flight-report/connection-badge';
+import { refreshFlightReportQueue } from '../services/flight-report';
 
 export default function RootLayout() {
   const pathname = usePathname();
-  useEffect(() => { void refreshMobilePresenceSession(); }, [pathname]);
+  useEffect(() => { void refreshMobilePresenceSession(); void refreshFlightReportQueue().catch(() => {}); }, [pathname]);
   useEffect(() => {
     startMobileChangeFeed();
     startMobilePresence();
-    return () => { stopMobileChangeFeed(); stopMobilePresence(); };
+    // The Flight Report queue goes out on its own when the tablet recovers signal (ADR-0031).
+    const stopFlightReportSync = startFlightReportSync();
+    return () => { stopMobileChangeFeed(); stopMobilePresence(); stopFlightReportSync(); };
   }, []);
   return <View style={{ flex: 1 }} accessible={false} onTouchStart={recordMobilePresenceActivity}>
     <StatusBar style="dark" />

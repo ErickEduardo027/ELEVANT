@@ -159,7 +159,10 @@ public sealed class RampOperationsController(
             operation.Operation.PlannedStartAt,
             operation.Operation.PlannedEndAt,
             operation.Operation.ActualStartAt,
-            operation.Operation.ActualEndAt),
+            operation.Operation.ActualEndAt,
+            operation.Operation.PassengersIn,
+            operation.Operation.PassengersOut,
+            operation.Operation.MtowKg),
         Map(operation.Turnaround),
         operation.Services.Select(service => new RampOperationServiceResponse(
             service.Id,
@@ -175,7 +178,8 @@ public sealed class RampOperationsController(
             operation.Review.SubmissionId,
             operation.Review.RevisionNumber,
             operation.Review.Status,
-            operation.Review.ReturnReason));
+            operation.Review.ReturnReason),
+        (operation.Milestones ?? []).Select(item => new RampMilestoneResponse(item.Code, item.ActualAt)).ToArray());
 
     private static RampGroundOperationResponse Map(RampGroundOperationData operation) => new(
         operation.Id,
@@ -183,7 +187,10 @@ public sealed class RampOperationsController(
         operation.PlannedStartAt,
         operation.PlannedEndAt,
         operation.ActualStartAt,
-        operation.ActualEndAt);
+        operation.ActualEndAt,
+        operation.PassengersIn,
+        operation.PassengersOut,
+        operation.MtowKg);
 
     private static RampTurnaroundResponse Map(RampTurnaroundData turnaround) => new(
         turnaround.Id,

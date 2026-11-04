@@ -21,7 +21,6 @@ internal sealed class EfOccPlanningCommandStore(
     TimeProvider timeProvider) : IOccPlanningCommandStore
 {
     private const string PrimaryAssignmentRole = "primary";
-    private const string TurnaroundChecklistCode = "TURNAROUND-BASE";
     private const string PassengerBridgeServiceCode = "PASSENGER-BRIDGE";
 
     public async Task<OccAssignmentWriteResult> AssignOperationAsync(
@@ -312,7 +311,10 @@ internal sealed class EfOccPlanningCommandStore(
             return Conflict();
         }
 
-        MaterializedChecklist? materializedChecklist = null;
+        // Every operation carries one execution checklist (ADR-0031): the bridge checklist when the
+        // contract includes the boarding bridge, otherwise the Flight Report's arrival and push-back
+        // checklist (when the station has it published).
+        MaterializedChecklist? materializedChecklist;
         if (contractedServices.Any(service =>
                 string.Equals(
                     service.ServiceCode,
@@ -323,11 +325,21 @@ internal sealed class EfOccPlanningCommandStore(
                 operation.Id,
                 scope.OperationDate,
                 now,
+                RampChecklists.Bridge,
                 cancellationToken);
             if (materializedChecklist is null)
             {
                 return Conflict();
             }
+        }
+        else
+        {
+            materializedChecklist = await MaterializeChecklistAsync(
+                operation.Id,
+                scope.OperationDate,
+                now,
+                RampChecklists.FlightReport,
+                cancellationToken);
         }
 
         var assignment = new OperationAgentAssignment
@@ -481,13 +493,14 @@ internal sealed class EfOccPlanningCommandStore(
         long operationId,
         DateOnly operationDate,
         DateTimeOffset now,
+        string templateCode,
         CancellationToken cancellationToken)
     {
         var applicableVersion = await (
                 from template in context.Set<ChecklistTemplate>().AsNoTracking()
                 join version in context.Set<ChecklistTemplateVersion>().AsNoTracking()
                     on template.Id equals version.ChecklistTemplateId
-                where template.Code == TurnaroundChecklistCode &&
+                where template.Code == templateCode &&
                       template.IsActive &&
                       version.Status == ChecklistVersionStatus.Published &&
                       version.EffectiveFrom <= operationDate &&

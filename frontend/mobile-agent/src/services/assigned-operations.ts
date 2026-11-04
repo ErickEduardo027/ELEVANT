@@ -168,13 +168,20 @@ function isGroundOperation(value: unknown) {
       'plannedEndAt',
       'actualStartAt',
       'actualEndAt',
+      'passengersIn',
+      'passengersOut',
+      'mtowKg',
     ]) &&
     isUuid(value.id) &&
     isString(value.status) &&
     isOptionalNullable(value.plannedStartAt, isDateTimeOffset) &&
     isOptionalNullable(value.plannedEndAt, isDateTimeOffset) &&
     isOptionalNullable(value.actualStartAt, isDateTimeOffset) &&
-    isOptionalNullable(value.actualEndAt, isDateTimeOffset)
+    isOptionalNullable(value.actualEndAt, isDateTimeOffset) &&
+    // Flight data typed once on the ramp (ADR-0031).
+    isOptionalNullable(value.passengersIn, isPassengerCount) &&
+    isOptionalNullable(value.passengersOut, isPassengerCount) &&
+    isOptionalNullable(value.mtowKg, isMtow)
   );
 }
 
@@ -327,12 +334,23 @@ function isOperationService(value: unknown) {
   );
 }
 
+const isPassengerCount = (value: unknown) => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 999;
+const isMtow = (value: unknown) => Number.isInteger(value) && (value as number) >= 1000 && (value as number) <= 700000;
+
+/** Flight Report milestones recorded on the ramp (ADR-0031). */
+function isMilestones(value: unknown) {
+  return Array.isArray(value) && value.length <= 50 && value.every(item =>
+    isRecord(item) && hasOnlyKeys(item, ['code', 'actualAt']) &&
+    isString(item.code) && /^[A-Z_]{2,48}$/.test(item.code) && isDateTimeOffset(item.actualAt));
+}
+
 function isAssignedOperation(
   value: unknown,
 ): value is RampAssignedOperationResponse {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ['assignment', 'operation', 'turnaround', 'services', 'review']) &&
+    hasOnlyKeys(value, ['assignment', 'operation', 'turnaround', 'services', 'review', 'milestones']) &&
+    (value.milestones === undefined || isMilestones(value.milestones)) &&
     isAssignment(value.assignment) &&
     isGroundOperation(value.operation) &&
     isTurnaround(value.turnaround) &&

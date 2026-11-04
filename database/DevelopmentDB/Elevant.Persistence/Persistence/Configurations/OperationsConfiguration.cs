@@ -121,6 +121,7 @@ internal static class OperationsConfiguration
             {
                 table.HasCheckConstraint("ck_ground_operation_planned_dates", "[planned_end_at] IS NULL OR [planned_start_at] IS NULL OR [planned_end_at] >= [planned_start_at]");
                 table.HasCheckConstraint("ck_ground_operation_actual_dates", "[actual_end_at] IS NULL OR [actual_start_at] IS NULL OR [actual_end_at] >= [actual_start_at]");
+                table.HasCheckConstraint("ck_ground_operation_flight_data", "([passengers_in] IS NULL OR [passengers_in] BETWEEN 0 AND 999) AND ([passengers_out] IS NULL OR [passengers_out] BETWEEN 0 AND 999) AND ([mtow_kg] IS NULL OR [mtow_kg] BETWEEN 1000 AND 700000)");
             });
             builder.Property(operation => operation.CurrentStatus).HasConversion<string>().HasMaxLength(24);
             SetPrecision(builder, operation => operation.PlannedStartAt);
@@ -378,6 +379,7 @@ internal static class OperationsConfiguration
                 table.HasCheckConstraint("ck_incident_reported", "[reported_at] >= [occurred_at]");
                 table.HasCheckConstraint("ck_incident_resolved", "[resolved_at] IS NULL OR [resolved_at] >= [reported_at]");
             });
+            builder.Property(incident => incident.DelayCode).HasMaxLength(4);
             builder.Property(incident => incident.IncidentType).HasMaxLength(80).IsRequired();
             builder.Property(incident => incident.Severity).HasConversion<string>().HasMaxLength(16);
             builder.Property(incident => incident.Status).HasConversion<string>().HasMaxLength(16);

@@ -9,7 +9,8 @@ public sealed record RampIncidentData(
     string Status,
     string Description,
     DateTimeOffset OccurredAt,
-    DateTimeOffset ReportedAt);
+    DateTimeOffset ReportedAt,
+    string? DelayCode = null);
 
 public sealed record RampIncidentReadRequest(
     Guid ActorAccountId,
@@ -38,7 +39,8 @@ public sealed record RampIncidentWriteRequest(
     Guid InstallationId,
     Guid IdempotencyKey,
     Guid CorrelationId,
-    string? RequestId);
+    string? RequestId,
+    string? DelayCode = null);
 
 public sealed record RampIncidentReceiptData(
     Guid ReceiptId,

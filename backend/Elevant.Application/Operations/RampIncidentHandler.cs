@@ -37,12 +37,13 @@ public sealed class RampIncidentHandler(
         Guid installationId,
         Guid idempotencyKey,
         string? requestId,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string? delayCode = null)
     {
         if (operationId == Guid.Empty ||
             installationId == Guid.Empty ||
             idempotencyKey == Guid.Empty ||
-            !RampIncidentPolicy.IsValid(incidentType, severity, description, occurredAt))
+            !RampIncidentPolicy.IsValid(incidentType, severity, description, occurredAt, delayCode))
         {
             return RampIncidentWriteResult.Failed(RampOperationsFailure.InvalidRequest);
         }
@@ -64,7 +65,8 @@ public sealed class RampIncidentHandler(
             installationId,
             idempotencyKey,
             idempotencyKey,
-            requestId), cancellationToken);
+            requestId,
+            delayCode), cancellationToken);
     }
 
     private async Task<AccessResult> ResolveAccessAsync(

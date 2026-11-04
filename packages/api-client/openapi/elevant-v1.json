@@ -23606,6 +23606,252 @@
         }
       }
     },
+    "/api/v1/ramp/operations/{operationId}/milestones/{code}": {
+      "put": {
+        "tags": [
+          "RampExecution"
+        ],
+        "summary": "Records (or corrects) the time of one Flight Report milestone.",
+        "operationId": "RecordRampMilestone",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordRampMilestoneRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampExecutionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/flight-data": {
+      "put": {
+        "tags": [
+          "RampExecution"
+        ],
+        "summary": "Saves passengers, MTOW and the registration correction typed once on the ramp.",
+        "operationId": "UpdateRampFlightData",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateRampFlightDataRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampExecutionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/ramp/operations/{operationId}/incidents": {
       "get": {
         "tags": [
@@ -41317,6 +41563,7 @@
       "RampAssignedOperationResponse": {
         "required": [
           "assignment",
+          "milestones",
           "operation",
           "services",
           "turnaround"
@@ -41357,6 +41604,12 @@
               }
             ],
             "nullable": true
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampMilestoneResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -41632,6 +41885,50 @@
         },
         "additionalProperties": false
       },
+      "RampExecutionResponse": {
+        "required": [
+          "milestones",
+          "operationId",
+          "receiptId"
+        ],
+        "type": "object",
+        "properties": {
+          "receiptId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampMilestoneResponse"
+            }
+          },
+          "passengersIn": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "passengersOut": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "mtowKg": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "aircraftRegistration": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "RampFlightLegResponse": {
         "required": [
           "destination",
@@ -41713,6 +42010,21 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "passengersIn": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "passengersOut": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "mtowKg": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -41787,6 +42099,27 @@
             "format": "date-time"
           },
           "reportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delayCode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampMilestoneResponse": {
+        "required": [
+          "actualAt",
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "actualAt": {
             "type": "string",
             "format": "date-time"
           }
@@ -42827,6 +43160,19 @@
         },
         "additionalProperties": false
       },
+      "RecordRampMilestoneRequest": {
+        "required": [
+          "occurredAt"
+        ],
+        "type": "object",
+        "properties": {
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "RefreshOccFlightFeedRequest": {
         "required": [
           "stationId"
@@ -43045,7 +43391,7 @@
         "properties": {
           "incidentType": {
             "minLength": 1,
-            "pattern": "^(Operational|Safety|Equipment|Documentation)$",
+            "pattern": "^(Operational|Safety|Equipment|Documentation|Deviation)$",
             "type": "string"
           },
           "severity": {
@@ -43061,6 +43407,11 @@
           "occurredAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "delayCode": {
+            "pattern": "^[0-9]{2}$",
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -45175,6 +45526,31 @@
         },
         "additionalProperties": false
       },
+      "UpdateRampFlightDataRequest": {
+        "type": "object",
+        "properties": {
+          "passengersIn": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "passengersOut": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "mtowKg": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "aircraftRegistration": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ValidateAttendanceRequest": {
         "required": [
           "endSource",
@@ -45456,6 +45832,9 @@
     },
     {
       "name": "PublicCommercialRequests"
+    },
+    {
+      "name": "RampExecution"
     },
     {
       "name": "RampIncidents"

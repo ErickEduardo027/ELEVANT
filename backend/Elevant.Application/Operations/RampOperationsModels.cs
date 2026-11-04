@@ -57,7 +57,10 @@ public sealed record RampGroundOperationData(
     DateTimeOffset? PlannedStartAt,
     DateTimeOffset? PlannedEndAt,
     DateTimeOffset? ActualStartAt,
-    DateTimeOffset? ActualEndAt);
+    DateTimeOffset? ActualEndAt,
+    int? PassengersIn = null,
+    int? PassengersOut = null,
+    int? MtowKg = null);
 
 public sealed record RampOperationalPositionData(Guid Id, string Code, string Name);
 
@@ -84,7 +87,8 @@ public sealed record RampAssignedOperationData(
     RampGroundOperationData Operation,
     RampTurnaroundData Turnaround,
     IReadOnlyList<RampOperationServiceData> Services,
-    RampReviewFeedbackData? Review = null);
+    RampReviewFeedbackData? Review = null,
+    IReadOnlyList<RampMilestoneData>? Milestones = null);
 
 public sealed record RampReviewFeedbackData(
     Guid SubmissionId,

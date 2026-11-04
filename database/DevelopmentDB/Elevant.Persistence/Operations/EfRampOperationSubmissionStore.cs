@@ -21,7 +21,6 @@ internal sealed class EfRampOperationSubmissionStore(
     TimeProvider timeProvider) : IRampOperationSubmissionStore
 {
     private const string CommandType = "ramp.operation.submit.v1";
-    private const string ChecklistCode = "TURNAROUND-BASE";
     private static readonly TimeSpan ReceiptRetention = TimeSpan.FromDays(30);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -157,7 +156,7 @@ internal sealed class EfRampOperationSubmissionStore(
                 join template in context.Set<ChecklistTemplate>().AsNoTracking()
                     on version.ChecklistTemplateId equals template.Id
                 where operationChecklist.GroundOperationId == scope.Operation.Id &&
-                      template.Code == ChecklistCode
+                      RampChecklists.Execution.Contains(template.Code)
                 orderby operationChecklist.RevisionNumber descending,
                     version.VersionNumber descending
                 select new

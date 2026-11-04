@@ -2689,6 +2689,8 @@ export interface RampIncidentResponse {
   description: string;
   occurredAt: string;
   reportedAt: string;
+  /** @nullable */
+  delayCode?: string | null;
 }
 
 export interface GetRampIncidentsResponse {
@@ -4354,6 +4356,12 @@ export interface RampGroundOperationResponse {
   actualStartAt?: string | null;
   /** @nullable */
   actualEndAt?: string | null;
+  /** @nullable */
+  passengersIn?: number | null;
+  /** @nullable */
+  passengersOut?: number | null;
+  /** @nullable */
+  mtowKg?: number | null;
 }
 
 export interface RampStationResponse {
@@ -4420,12 +4428,18 @@ export interface RampReviewFeedbackResponse {
   returnReason?: string | null;
 }
 
+export interface RampMilestoneResponse {
+  code: string;
+  actualAt: string;
+}
+
 export interface RampAssignedOperationResponse {
   assignment: RampAgentAssignmentResponse;
   operation: RampGroundOperationResponse;
   turnaround: RampTurnaroundResponse;
   services: RampOperationServiceResponse[];
   review?: RampReviewFeedbackResponse | null;
+  milestones: RampMilestoneResponse[];
 }
 
 export interface RampAssignedOperationsResponse {
@@ -4468,6 +4482,20 @@ export interface RampChecklistSubmissionSummaryResponse {
 export interface RampChecklistSubmissionResponse {
   receiptId: string;
   checklist: RampChecklistSubmissionSummaryResponse;
+}
+
+export interface RampExecutionResponse {
+  receiptId: string;
+  operationId: string;
+  milestones: RampMilestoneResponse[];
+  /** @nullable */
+  passengersIn?: number | null;
+  /** @nullable */
+  passengersOut?: number | null;
+  /** @nullable */
+  mtowKg?: number | null;
+  /** @nullable */
+  aircraftRegistration?: string | null;
 }
 
 export interface RampIncidentReceiptResponse {
@@ -4696,6 +4724,10 @@ export interface RecordOccArrivalRequest {
   arrivedAt?: string | null;
 }
 
+export interface RecordRampMilestoneRequest {
+  occurredAt: string;
+}
+
 export interface RefreshOccFlightFeedRequest {
   stationId: string;
 }
@@ -4782,7 +4814,7 @@ export interface ReopenServiceRequest {
 export interface ReportRampIncidentRequest {
   /**
      * @minLength 1
-     * @pattern ^(Operational|Safety|Equipment|Documentation)$
+     * @pattern ^(Operational|Safety|Equipment|Documentation|Deviation)$
      */
   incidentType: string;
   /**
@@ -4796,6 +4828,11 @@ export interface ReportRampIncidentRequest {
      */
   description: string;
   occurredAt: string;
+  /**
+     * @nullable
+     * @pattern ^[0-9]{2}$
+     */
+  delayCode?: string | null;
 }
 
 export interface RequestUserAccessInput {
@@ -5335,6 +5372,17 @@ export interface UpdateOccTerminalRulesRequest {
   /** @nullable */
   maxStandsPerAgent?: number | null;
   requiresBridgeQualification: boolean;
+}
+
+export interface UpdateRampFlightDataRequest {
+  /** @nullable */
+  passengersIn?: number | null;
+  /** @nullable */
+  passengersOut?: number | null;
+  /** @nullable */
+  mtowKg?: number | null;
+  /** @nullable */
+  aircraftRegistration?: string | null;
 }
 
 export interface ValidateAttendanceRequest {
@@ -16352,6 +16400,84 @@ const res = await fetch(getLookupCommercialRequestReceiptUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: SubmitCommercialRequestResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordRampMilestoneUrl = (operationId: string,
+    code: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/milestones/${code}`
+}
+
+/**
+ * @summary Records (or corrects) the time of one Flight Report milestone.
+ */
+export const recordRampMilestone = async (operationId: string,
+    code: string,
+    recordRampMilestoneRequest: RecordRampMilestoneRequest, options?: RequestInit): Promise<RampExecutionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordRampMilestoneUrl(operationId,code),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordRampMilestoneRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampExecutionResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateRampFlightDataUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/flight-data`
+}
+
+/**
+ * @summary Saves passengers, MTOW and the registration correction typed once on the ramp.
+ */
+export const updateRampFlightData = async (operationId: string,
+    updateRampFlightDataRequest: UpdateRampFlightDataRequest, options?: RequestInit): Promise<RampExecutionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateRampFlightDataUrl(operationId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateRampFlightDataRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampExecutionResponse = body ? JSON.parse(body) : {}
   return data
 }
 
