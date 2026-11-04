@@ -1,5 +1,6 @@
 export * from "./presence";
 export * from "./flightReport";
+export * from "./operationDocuments";
 export {
   createElevantApiClient,
   type CreateSessionOptions,

@@ -1,5 +1,17 @@
 import { PRESENCE_AVAILABILITIES, PRESENCE_MESSAGE_MAX_LENGTH } from "./presence";
 import { isFlightReportMilestoneCode, isIataDelayCode } from "./flightReport";
+import {
+  isAirlineServiceOrderResponse,
+  isOperationDocumentKind,
+  isOperationDocumentsResponse,
+  isOperationSignatureRole,
+  isValidDamageMark,
+  normalizedSignature,
+  type OperationDocumentKind,
+  type OperationSignatureRole,
+  type RecordDamageMarkCommand,
+  type SignOperationDocumentCommand,
+} from "./operationDocuments";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
   getGetAccountChangesUrl,
@@ -140,6 +152,14 @@ import {
   getReopenRampOperationCorrectionUrl,
   getReportRampIncidentUrl,
   getRecordRampMilestoneUrl,
+  getGetRampOperationDocumentsUrl,
+  getSignRampOperationDocumentUrl,
+  getRecordRampDamageMarkUrl,
+  getAttachRampDamagePhotoUrl,
+  getGetOccOperationDocumentsUrl,
+  getGetOccOperationDocumentPdfUrl,
+  getGetAirlineServiceOrderUrl,
+  getGetAirlineServiceOrderPdfUrl,
   getUpdateRampFlightDataUrl,
   getSubmitRampOperationUrl,
   getStartRampOperationUrl,
@@ -293,6 +313,8 @@ import {
   type RampOperationCorrectionResponse,
   type ReportRampIncidentRequest,
   type RampExecutionResponse,
+  type OperationDocumentsResponse,
+  type AirlineServiceOrderResponse,
   type SubmitRampOperationRequest,
   type RampOperationServiceTransitionResponse,
   type RampOperationChargesResponse,
@@ -994,6 +1016,44 @@ export interface ElevantApiClient {
     idempotencyKey: string,
     options?: ReportRampIncidentOptions,
   ): Promise<RampExecutionResponse>;
+  /** AVIAM forms of the operation with what each still needs signed (ADR-0032). */
+  getRampOperationDocuments(operationId: string, options?: ReportRampIncidentOptions): Promise<OperationDocumentsResponse>;
+  /** Records a drawn signature against the content hash the signer saw; a 409 means the form changed. */
+  signRampOperationDocument(
+    operationId: string,
+    kind: OperationDocumentKind,
+    role: OperationSignatureRole,
+    command: SignOperationDocumentCommand,
+    installationId: string,
+    idempotencyKey: string,
+    options?: ReportRampIncidentOptions,
+  ): Promise<OperationDocumentsResponse>;
+  /** Marks a damage of the 360° walk-around on the silhouette; the id comes from the tablet. */
+  recordRampDamageMark(
+    operationId: string,
+    markId: string,
+    command: RecordDamageMarkCommand,
+    installationId: string,
+    idempotencyKey: string,
+    options?: ReportRampIncidentOptions,
+  ): Promise<OperationDocumentsResponse>;
+  /** Attaches the JPEG or PNG photo of a marked damage; the same bytes again are a retry. */
+  attachRampDamagePhoto(
+    operationId: string,
+    markId: string,
+    photo: Blob,
+    contentType: "image/jpeg" | "image/png",
+    installationId: string,
+    options?: ReportRampIncidentOptions,
+  ): Promise<OperationDocumentsResponse>;
+  /** OCC: forms of an operation of its stations. */
+  getOccOperationDocuments(operationId: string, options?: GetHumanResourcesReportOptions): Promise<OperationDocumentsResponse>;
+  /** OCC: the current form as PDF, signatures and walk-around photos included. */
+  downloadOccOperationDocument(operationId: string, kind: OperationDocumentKind,
+    options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** Airline portal: the latest Service Order its representative signed. */
+  getAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<AirlineServiceOrderResponse>;
+  downloadAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
   /** Saves passengers, MTOW and the registration correction typed once on the ramp. */
   updateRampFlightData(
     operationId: string,
@@ -4987,6 +5047,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return result.data;
   };
 
+  const documentWrite = async (path: string, operation: string, body: unknown, installationId: string,
+    idempotencyKey: string, options?: ReportRampIncidentOptions) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("x-elevant-installation-id", validatedUuid(installationId, "installationId"));
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+    if (!isOperationDocumentsResponse(result.data, operation)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
   const executeOccAssignment = async (
     turnaroundId: string,
     request: AssignOccOperationRequest,
@@ -6690,6 +6761,70 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw new TypeError("The Flight Report milestone is invalid.");
       return rampExecution(getRecordRampMilestoneUrl(operation, code), operation, { occurredAt },
         installationId, idempotencyKey, options);
+    },
+    async getRampOperationDocuments(operationId: string, options?: ReportRampIncidentOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(getGetRampOperationDocumentsUrl(operation), { ...options, method: "GET" }, true);
+      if (!isOperationDocumentsResponse(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async signRampOperationDocument(
+      operationId: string, kind: OperationDocumentKind, role: OperationSignatureRole, command: SignOperationDocumentCommand,
+      installationId: string, idempotencyKey: string, options?: ReportRampIncidentOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const body = normalizedSignature(command);
+      if (!isOperationDocumentKind(kind) || !isOperationSignatureRole(role) || body === null)
+        throw new TypeError("The signature is invalid.");
+      return documentWrite(getSignRampOperationDocumentUrl(operation, kind, role), operation, body, installationId,
+        idempotencyKey, options);
+    },
+    async recordRampDamageMark(
+      operationId: string, markId: string, command: RecordDamageMarkCommand, installationId: string, idempotencyKey: string,
+      options?: ReportRampIncidentOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const mark = validatedUuid(markId, "markId");
+      if (!isValidDamageMark(command)) throw new TypeError("The damage mark is invalid.");
+      return documentWrite(getRecordRampDamageMarkUrl(operation, mark), operation, {
+        x: command.x, y: command.y, note: command.note.trim(), reportedAt: command.reportedAt }, installationId,
+        idempotencyKey, options);
+    },
+    async attachRampDamagePhoto(
+      operationId: string, markId: string, photo: Blob, contentType: "image/jpeg" | "image/png", installationId: string,
+      options?: ReportRampIncidentOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const mark = validatedUuid(markId, "markId");
+      if (contentType !== "image/jpeg" && contentType !== "image/png") throw new TypeError("The photo type is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", contentType);
+      headers.set("x-elevant-installation-id", validatedUuid(installationId, "installationId"));
+      const result = await execute(getAttachRampDamagePhotoUrl(operation, mark),
+        { ...options, method: "PUT", headers, body: photo }, true);
+      if (!isOperationDocumentsResponse(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccOperationDocuments(operationId: string, options?: GetHumanResourcesReportOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(getGetOccOperationDocumentsUrl(operation), { ...options, method: "GET" }, true);
+      if (!isOperationDocumentsResponse(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    downloadOccOperationDocument(operationId: string, kind: OperationDocumentKind, options?: GetHumanResourcesReportOptions) {
+      if (!isOperationDocumentKind(kind)) throw new TypeError("The form kind is invalid.");
+      return executeReportDocument(getGetOccOperationDocumentPdfUrl(validatedUuid(operationId, "operationId"), kind),
+        "pdf", options);
+    },
+    async getAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(getGetAirlineServiceOrderUrl(operation), { ...options, method: "GET" }, true);
+      if (!isAirlineServiceOrderResponse(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    downloadAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions) {
+      return executeReportDocument(getGetAirlineServiceOrderPdfUrl(validatedUuid(operationId, "operationId")), "pdf",
+        options);
     },
     async updateRampFlightData(
       operationId: string, request: RampFlightDataCommand, installationId: string, idempotencyKey: string,
