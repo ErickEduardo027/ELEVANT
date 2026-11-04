@@ -12,6 +12,17 @@ import {
   type RecordDamageMarkCommand,
   type SignOperationDocumentCommand,
 } from "./operationDocuments";
+import {
+  isFinanceCharterListResponse,
+  isFinanceCharterResponse,
+  isRampCharterResponse,
+  normalizedCharterDetails,
+  normalizedCharterService,
+  normalizedPrepayment,
+  type AddCharterServiceCommand,
+  type CharterDetailsCommand,
+  type ConfirmCharterPrepaymentCommand,
+} from "./charters";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
   getGetAccountChangesUrl,
@@ -160,6 +171,11 @@ import {
   getGetOccOperationDocumentPdfUrl,
   getGetAirlineServiceOrderUrl,
   getGetAirlineServiceOrderPdfUrl,
+  getGetRampCharterUrl,
+  getAddRampCharterServiceUrl,
+  getUpdateRampCharterDetailsUrl,
+  getGetFinanceChartersUrl,
+  getConfirmFinanceCharterPrepaymentUrl,
   getUpdateRampFlightDataUrl,
   getSubmitRampOperationUrl,
   getStartRampOperationUrl,
@@ -315,6 +331,9 @@ import {
   type RampExecutionResponse,
   type OperationDocumentsResponse,
   type AirlineServiceOrderResponse,
+  type RampCharterResponse,
+  type FinanceCharterListResponse,
+  type FinanceCharterResponse,
   type SubmitRampOperationRequest,
   type RampOperationServiceTransitionResponse,
   type RampOperationChargesResponse,
@@ -1054,6 +1073,16 @@ export interface ElevantApiClient {
   /** Airline portal: the latest Service Order its representative signed. */
   getAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<AirlineServiceOrderResponse>;
   downloadAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /** A charter on the tablet (ADR-0033): carrier data and the services it can add at the base tariff. */
+  getRampCharter(operationId: string, options?: ReportRampIncidentOptions): Promise<RampCharterResponse>;
+  addRampCharterService(operationId: string, command: AddCharterServiceCommand, installationId: string,
+    idempotencyKey: string, options?: ReportRampIncidentOptions): Promise<RampCharterResponse>;
+  updateRampCharterDetails(operationId: string, command: CharterDetailsCommand, installationId: string,
+    idempotencyKey: string, options?: ReportRampIncidentOptions): Promise<RampCharterResponse>;
+  /** Finance: charters of its stations and their prepayment. */
+  getFinanceCharters(options?: GetHumanResourcesReportOptions): Promise<FinanceCharterListResponse>;
+  confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand,
+    options?: GetHumanResourcesReportOptions): Promise<FinanceCharterResponse>;
   /** Saves passengers, MTOW and the registration correction typed once on the ramp. */
   updateRampFlightData(
     operationId: string,
@@ -1792,7 +1821,8 @@ function isOccPlanningOptionsResponse(
 ): value is OccPlanningOptionsResponse {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["turnaround", "contract", "services", "agents"]) &&
+    hasOnlyKeys(value, ["turnaround", "contract", "services", "agents", "isCharter"]) &&
+    (value.isCharter === undefined || typeof value.isCharter === "boolean") &&
     isOccPlanningTurnaroundContextResponse(value.turnaround) &&
     isOptionalNullable(value.contract, isOccContractOptionResponse) &&
     Array.isArray(value.services) &&
@@ -4373,8 +4403,9 @@ function validatedManualTurnaroundRequest(
 ): CreateManualTurnaroundRequest {
   const keys = ["turnaroundId", "stationId", "airlineId", "standId", "operationDate",
     "arrivalFlightNumber", "arrivalOriginIata", "arrivalScheduledAt",
-    "departureFlightNumber", "departureDestinationIata", "departureScheduledAt"];
-  if (!isRecord(request) || !hasOnlyKeys(request, keys))
+    "departureFlightNumber", "departureDestinationIata", "departureScheduledAt", "charter"];
+  if (!isRecord(request) || !hasOnlyKeys(request, keys) ||
+      (request.charter !== undefined && typeof request.charter !== "boolean"))
     throw new TypeError("manual turnaround request has unknown or invalid fields.");
   if (!isUuid(request.turnaroundId) || !isUuid(request.stationId) ||
       !isUuid(request.airlineId) || !isUuid(request.standId) ||
@@ -4408,7 +4439,7 @@ function validatedManualTurnaroundRequest(
     operationDate: request.operationDate,
     arrivalFlightNumber, arrivalOriginIata, arrivalScheduledAt: request.arrivalScheduledAt,
     departureFlightNumber, departureDestinationIata,
-    departureScheduledAt: request.departureScheduledAt };
+    departureScheduledAt: request.departureScheduledAt, charter: request.charter === true };
 }
 
 function validatedOccShiftRequest(request: ProgramOccShiftRequest): ProgramOccShiftRequest {
@@ -5055,6 +5086,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
     const result = await execute(path, { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
     if (!isOperationDocumentsResponse(result.data, operation)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  const charterWrite = async (path: string, method: "POST" | "PUT", operation: string, body: unknown,
+    installationId: string, idempotencyKey: string, options?: ReportRampIncidentOptions) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("x-elevant-installation-id", validatedUuid(installationId, "installationId"));
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
+    if (!isRampCharterResponse(result.data, operation)) throw malformedResponse(result.status);
     return result.data;
   };
 
@@ -6825,6 +6867,45 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     downloadAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions) {
       return executeReportDocument(getGetAirlineServiceOrderPdfUrl(validatedUuid(operationId, "operationId")), "pdf",
         options);
+    },
+    async getRampCharter(operationId: string, options?: ReportRampIncidentOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(getGetRampCharterUrl(operation), { ...options, method: "GET" }, true);
+      if (!isRampCharterResponse(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async addRampCharterService(operationId: string, command: AddCharterServiceCommand, installationId: string,
+      idempotencyKey: string, options?: ReportRampIncidentOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const body = normalizedCharterService(command);
+      if (body === null) throw new TypeError("The charter service is invalid.");
+      return charterWrite(getAddRampCharterServiceUrl(operation), "POST", operation, body, installationId,
+        idempotencyKey, options);
+    },
+    async updateRampCharterDetails(operationId: string, command: CharterDetailsCommand, installationId: string,
+      idempotencyKey: string, options?: ReportRampIncidentOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const body = normalizedCharterDetails(command);
+      if (body === null) throw new TypeError("The charter details are invalid.");
+      return charterWrite(getUpdateRampCharterDetailsUrl(operation), "PUT", operation, body, installationId,
+        idempotencyKey, options);
+    },
+    async getFinanceCharters(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getGetFinanceChartersUrl(), { ...options, method: "GET" }, true);
+      if (!isFinanceCharterListResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand,
+      options?: GetHumanResourcesReportOptions) {
+      const charter = validatedUuid(charterId, "charterId");
+      const body = normalizedPrepayment(command);
+      if (body === null) throw new TypeError("The prepayment is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getConfirmFinanceCharterPrepaymentUrl(charter),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (!isFinanceCharterResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
     },
     async updateRampFlightData(
       operationId: string, request: RampFlightDataCommand, installationId: string, idempotencyKey: string,

@@ -149,6 +149,11 @@ export interface ActivityPageData {
   nextCursor?: string | null;
 }
 
+export interface AddCharterServiceRequest {
+  serviceDefinitionId: string;
+  quantity: number;
+}
+
 export interface AddOccStandConstraintRequest {
   date: string;
   standId: string;
@@ -836,6 +841,15 @@ export interface ChargeTariffVersionData {
   rates: ChargeRateData[];
 }
 
+export interface CharterCatalogItemResponse {
+  serviceDefinitionId: string;
+  code: string;
+  name: string;
+  billingUnit: string;
+  unitPrice: number;
+  minimumQuantity: number;
+}
+
 export interface ClientAirlineData {
   organizationId: string;
   name: string;
@@ -923,6 +937,11 @@ export interface CommercialStationData {
   id: string;
   code: string;
   name: string;
+}
+
+export interface ConfirmCharterPrepaymentRequest {
+  amount: number;
+  reference: string;
 }
 
 export interface ContractApprovalSummaryData {
@@ -1270,6 +1289,7 @@ export interface CreateManualTurnaroundRequest {
   departureFlightNumber: string;
   departureDestinationIata: string;
   departureScheduledAt: string;
+  charter: boolean;
 }
 
 export interface CreateOccCoverageRequest {
@@ -1886,6 +1906,30 @@ export interface FinanceCalculationStepResponse {
   unit?: string | null;
   /** @nullable */
   currency?: string | null;
+}
+
+export interface FinanceCharterResponse {
+  id: string;
+  operationId: string;
+  operationCode: string;
+  operationDate: string;
+  stationCode: string;
+  airlineName: string;
+  currencyCode: string;
+  /** @nullable */
+  servicesTotal?: number | null;
+  requestSigned: boolean;
+  prepaymentStatus: string;
+  /** @nullable */
+  prepaymentAmount?: number | null;
+  /** @nullable */
+  prepaymentReference?: string | null;
+  /** @nullable */
+  prepaymentConfirmedAt?: string | null;
+}
+
+export interface FinanceCharterListResponse {
+  charters: FinanceCharterResponse[];
 }
 
 export interface FinanceCreditNoteData {
@@ -3785,6 +3829,7 @@ export interface OccPlanningOptionsResponse {
   contract?: OccContractOptionResponse | null;
   services: OccServiceOptionResponse[];
   agents: OccAgentOptionResponse[];
+  isCharter: boolean;
 }
 
 export interface OccTurnaroundResponse {
@@ -4539,6 +4584,20 @@ export interface RampChargeOptionResponse {
   allowMultiple: boolean;
 }
 
+export interface RampCharterResponse {
+  operationId: string;
+  charterId: string;
+  currencyCode: string;
+  /** @nullable */
+  carrierAddress?: string | null;
+  /** @nullable */
+  chargesPayableBy?: string | null;
+  prepaymentStatus: string;
+  /** @nullable */
+  prepaymentAmount?: number | null;
+  catalog: CharterCatalogItemResponse[];
+}
+
 export interface RampChecklistAnswerRequest {
   itemId: string;
   /**
@@ -5251,6 +5310,8 @@ export interface SignOperationDocumentRequest {
   signerName: string;
   documentSha256: string;
   strokes: number[][];
+  /** @nullable */
+  signerIdentification?: string | null;
 }
 
 export interface SubmitAirlinePermitInput {
@@ -5400,6 +5461,13 @@ export interface UnregisteredPersonData {
   /** @nullable */
   employeeNumber?: string | null;
   stations: GovernanceStationData[];
+}
+
+export interface UpdateCharterDetailsRequest {
+  /** @nullable */
+  carrierAddress?: string | null;
+  /** @nullable */
+  chargesPayableBy?: string | null;
 }
 
 export interface UpdateDraftRateInput {
@@ -9867,6 +9935,72 @@ export const getFinanceApprovedServices = async (params?: GetFinanceApprovedServ
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: FinanceApprovedServicesResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceChartersUrl = () => {
+
+
+
+
+  return `/api/v1/finance/charters`
+}
+
+export const getFinanceCharters = async ( options?: RequestInit): Promise<FinanceCharterListResponse> => {
+
+  const res = await fetch(getGetFinanceChartersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceCharterListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getConfirmFinanceCharterPrepaymentUrl = (charterId: string,) => {
+
+
+
+
+  return `/api/v1/finance/charters/${charterId}/prepayment`
+}
+
+/**
+ * @summary Confirms the prepayment; the same amount and reference again are a retry.
+ */
+export const confirmFinanceCharterPrepayment = async (charterId: string,
+    confirmCharterPrepaymentRequest?: ConfirmCharterPrepaymentRequest, options?: RequestInit): Promise<FinanceCharterResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getConfirmFinanceCharterPrepaymentUrl(charterId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(confirmCharterPrepaymentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceCharterResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -16640,6 +16774,113 @@ const res = await fetch(getLookupCommercialRequestReceiptUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: SubmitCommercialRequestResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetRampCharterUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/charter`
+}
+
+/**
+ * @summary The charter of the operation; 404 when the flight has a contract.
+ */
+export const getRampCharter = async (operationId: string, options?: RequestInit): Promise<RampCharterResponse> => {
+
+  const res = await fetch(getGetRampCharterUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampCharterResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAddRampCharterServiceUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/charter/services`
+}
+
+/**
+ * @summary Adds a service to the charter at the base tariff; one line per service.
+ */
+export const addRampCharterService = async (operationId: string,
+    addCharterServiceRequest: AddCharterServiceRequest, options?: RequestInit): Promise<RampCharterResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAddRampCharterServiceUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(addCharterServiceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampCharterResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateRampCharterDetailsUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/charter/details`
+}
+
+/**
+ * @summary Records the carrier's address and who pays, as the representative gives them.
+ */
+export const updateRampCharterDetails = async (operationId: string,
+    updateCharterDetailsRequest: UpdateCharterDetailsRequest, options?: RequestInit): Promise<RampCharterResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateRampCharterDetailsUrl(operationId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateCharterDetailsRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampCharterResponse = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -7784,6 +7784,161 @@
         ]
       }
     },
+    "/api/v1/finance/charters": {
+      "get": {
+        "tags": [
+          "FinanceCharters"
+        ],
+        "operationId": "GetFinanceCharters",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceCharterListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/charters/{charterId}/prepayment": {
+      "put": {
+        "tags": [
+          "FinanceCharters"
+        ],
+        "summary": "Confirms the prepayment; the same amount and reference again are a retry.",
+        "operationId": "ConfirmFinanceCharterPrepayment",
+        "parameters": [
+          {
+            "name": "charterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ConfirmCharterPrepaymentRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceCharterResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/preinvoices/{preinvoiceId}/resolution": {
       "post": {
         "tags": [
@@ -24013,6 +24168,311 @@
         }
       }
     },
+    "/api/v1/ramp/operations/{operationId}/charter": {
+      "get": {
+        "tags": [
+          "RampCharters"
+        ],
+        "summary": "The charter of the operation; 404 when the flight has a contract.",
+        "operationId": "GetRampCharter",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampCharterResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/charter/services": {
+      "post": {
+        "tags": [
+          "RampCharters"
+        ],
+        "summary": "Adds a service to the charter at the base tariff; one line per service.",
+        "operationId": "AddRampCharterService",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AddCharterServiceRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampCharterResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/charter/details": {
+      "put": {
+        "tags": [
+          "RampCharters"
+        ],
+        "summary": "Records the carrier's address and who pays, as the representative gives them.",
+        "operationId": "UpdateRampCharterDetails",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateCharterDetailsRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampCharterResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/ramp/operations/{operationId}/documents": {
       "get": {
         "tags": [
@@ -27570,6 +28030,24 @@
         },
         "additionalProperties": false
       },
+      "AddCharterServiceRequest": {
+        "required": [
+          "quantity",
+          "serviceDefinitionId"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceDefinitionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "AddOccStandConstraintRequest": {
         "required": [
           "affectedStandId",
@@ -29910,6 +30388,41 @@
         },
         "additionalProperties": false
       },
+      "CharterCatalogItemResponse": {
+        "required": [
+          "billingUnit",
+          "code",
+          "minimumQuantity",
+          "name",
+          "serviceDefinitionId",
+          "unitPrice"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceDefinitionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "unitPrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "minimumQuantity": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "ClientAirlineData": {
         "required": [
           "activeUsers",
@@ -30181,6 +30694,23 @@
             "type": "string"
           },
           "name": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfirmCharterPrepaymentRequest": {
+        "required": [
+          "amount",
+          "reference"
+        ],
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "reference": {
             "type": "string"
           }
         },
@@ -31252,6 +31782,7 @@
           "arrivalFlightNumber",
           "arrivalOriginIata",
           "arrivalScheduledAt",
+          "charter",
           "departureDestinationIata",
           "departureFlightNumber",
           "departureScheduledAt",
@@ -31301,6 +31832,9 @@
           "departureScheduledAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "charter": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -32894,6 +33428,87 @@
           },
           "currency": {
             "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceCharterListResponse": {
+        "required": [
+          "charters"
+        ],
+        "type": "object",
+        "properties": {
+          "charters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceCharterResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceCharterResponse": {
+        "required": [
+          "airlineName",
+          "currencyCode",
+          "id",
+          "operationCode",
+          "operationDate",
+          "operationId",
+          "prepaymentStatus",
+          "requestSigned",
+          "stationCode"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "servicesTotal": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "requestSigned": {
+            "type": "boolean"
+          },
+          "prepaymentStatus": {
+            "type": "string"
+          },
+          "prepaymentAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "prepaymentReference": {
+            "type": "string",
+            "nullable": true
+          },
+          "prepaymentConfirmedAt": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         },
@@ -40100,6 +40715,7 @@
       "OccPlanningOptionsResponse": {
         "required": [
           "agents",
+          "isCharter",
           "services",
           "turnaround"
         ],
@@ -40131,6 +40747,9 @@
             "items": {
               "$ref": "#/components/schemas/OccAgentOptionResponse"
             }
+          },
+          "isCharter": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -42808,6 +43427,52 @@
           },
           "allowMultiple": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampCharterResponse": {
+        "required": [
+          "catalog",
+          "charterId",
+          "currencyCode",
+          "operationId",
+          "prepaymentStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "charterId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "carrierAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "chargesPayableBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "prepaymentStatus": {
+            "type": "string"
+          },
+          "prepaymentAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "catalog": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CharterCatalogItemResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -46015,6 +46680,10 @@
                 "format": "double"
               }
             }
+          },
+          "signerIdentification": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -46500,6 +47169,20 @@
         },
         "additionalProperties": false
       },
+      "UpdateCharterDetailsRequest": {
+        "type": "object",
+        "properties": {
+          "carrierAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "chargesPayableBy": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "UpdateContractDraftInput": {
         "required": [
           "currencyCode",
@@ -46906,6 +47589,9 @@
       "name": "FinanceApprovedServices"
     },
     {
+      "name": "FinanceCharters"
+    },
+    {
       "name": "FinanceDisputeResolutions"
     },
     {
@@ -47042,6 +47728,9 @@
     },
     {
       "name": "PublicCommercialRequests"
+    },
+    {
+      "name": "RampCharters"
     },
     {
       "name": "RampDocuments"
