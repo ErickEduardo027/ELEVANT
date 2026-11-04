@@ -251,6 +251,11 @@ export default function PlanningPage({
           setOptionsRetryToken(token => token + 1);
           showToast(t('page.shiftProgrammed'), 'success');
         }}
+        onAgentReleased={() => {
+          assignment.reset();
+          setOptionsRetryToken(token => token + 1);
+          showToast('Agente liberado. Ya puedes asignar a otro.', 'success');
+        }}
       />
       {showCreate && canCreate && (
         <ManualTurnaroundDialog key={selectedStationId} stationId={selectedStationId}

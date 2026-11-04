@@ -10068,6 +10068,144 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.PositionCoverage", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AssignedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("assigned_by_account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<DateTimeOffset>("EndsAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("ends_at");
+
+                    b.Property<bool>("IsReinforcement")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_reinforcement");
+
+                    b.Property<long?>("MentorRampAgentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("mentor_ramp_agent_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<long>("RampAgentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ramp_agent_id");
+
+                    b.Property<DateTimeOffset?>("ReleasedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("released_at");
+
+                    b.Property<long?>("ReleasedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("released_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("StartsAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("starts_at");
+
+                    b.Property<long>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<long>("TerminalId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("terminal_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("VehicleCode")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("vehicle_code");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedByAccountId");
+
+                    b.HasIndex("MentorRampAgentId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("ReleasedByAccountId");
+
+                    b.HasIndex("TerminalId");
+
+                    b.HasIndex("RampAgentId", "StartsAt", "EndsAt");
+
+                    b.HasIndex("StationId", "StartsAt", "EndsAt");
+
+                    b.ToTable("position_coverages", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_position_coverage_mentor", "[mentor_ramp_agent_id] IS NULL OR [mentor_ramp_agent_id] <> [ramp_agent_id]");
+
+                            t.HasCheckConstraint("ck_position_coverage_release", "[released_at] IS NULL OR [released_at] >= [created_at]");
+
+                            t.HasCheckConstraint("ck_position_coverage_window", "[ends_at] > [starts_at]");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.PositionCoverageStand", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("PositionCoverageId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("position_coverage_id");
+
+                    b.Property<long>("StandId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("stand_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("StandId");
+
+                    b.HasIndex("PositionCoverageId", "StandId")
+                        .IsUnique();
+
+                    b.ToTable("position_coverage_stands", "ops");
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.ReviewDecision", b =>
                 {
                     b.Property<long>("Id")
@@ -10446,6 +10584,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion")
                         .HasColumnName("row_version");
+
+                    b.Property<string>("SizeCategory")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("size_category");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -11087,9 +11230,17 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
+                    b.Property<bool>("HasBoardingBridge")
+                        .HasColumnType("bit")
+                        .HasColumnName("has_boarding_bridge");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit")
                         .HasColumnName("is_active");
+
+                    b.Property<bool>("IsRemote")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_remote");
 
                     b.Property<decimal?>("Latitude")
                         .HasPrecision(9, 6)
@@ -11105,6 +11256,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasPrecision(9, 6)
                         .HasColumnType("decimal(9,6)")
                         .HasColumnName("longitude");
+
+                    b.Property<string>("MaxAircraftSize")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("max_aircraft_size");
 
                     b.Property<Guid>("PublicId")
                         .ValueGeneratedOnAdd()
@@ -11156,6 +11312,89 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_stands_location_pair", "([latitude] IS NULL AND [longitude] IS NULL) OR ([latitude] IS NOT NULL AND [longitude] IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_stands_longitude", "[longitude] IS NULL OR [longitude] BETWEEN -180 AND 180");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Reference.StandConstraint", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AffectedStandId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("affected_stand_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long?>("CreatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by_account_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<long>("StandId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("stand_id");
+
+                    b.Property<long>("StationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("station_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AffectedStandId");
+
+                    b.HasIndex("CreatedByAccountId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("StationId", "IsActive");
+
+                    b.HasIndex("StandId", "AffectedStandId", "Kind")
+                        .IsUnique()
+                        .HasFilter("[is_active] = 1");
+
+                    b.ToTable("stand_constraints", "ref", t =>
+                        {
+                            t.HasCheckConstraint("ck_stand_constraint_distinct", "[stand_id] <> [affected_stand_id]");
                         });
                 });
 
@@ -11261,6 +11500,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("bit")
                         .HasColumnName("is_active");
 
+                    b.Property<int?>("MaxStandsPerAgent")
+                        .HasColumnType("int")
+                        .HasColumnName("max_stands_per_agent");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(120)
@@ -11272,6 +11515,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("public_id")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<bool>("RequiresBridgeQualification")
+                        .HasColumnType("bit")
+                        .HasColumnName("requires_bridge_qualification");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
@@ -11299,7 +11546,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("StationId", "Code")
                         .IsUnique();
 
-                    b.ToTable("terminals", "ref");
+                    b.ToTable("terminals", "ref", t =>
+                        {
+                            t.HasCheckConstraint("ck_terminals_max_stands_per_agent", "[max_stands_per_agent] IS NULL OR [max_stands_per_agent] BETWEEN 1 AND 6");
+                        });
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Workforce.AirportPermitCycle", b =>
@@ -14637,6 +14887,58 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.NoAction);
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.PositionCoverage", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AssignedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
+                        .WithMany()
+                        .HasForeignKey("MentorRampAgentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
+                        .WithMany()
+                        .HasForeignKey("RampAgentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReleasedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Terminal", null)
+                        .WithMany()
+                        .HasForeignKey("TerminalId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.PositionCoverageStand", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Operations.PositionCoverage", null)
+                        .WithMany()
+                        .HasForeignKey("PositionCoverageId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Stand", null)
+                        .WithMany()
+                        .HasForeignKey("StandId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.ReviewDecision", b =>
                 {
                     b.HasOne("Elevant.Domain.Entities.Operations.OperationSubmission", null)
@@ -14755,6 +15057,32 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("TerminalId")
                         .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Reference.StandConstraint", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Reference.Stand", null)
+                        .WithMany()
+                        .HasForeignKey("AffectedStandId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Stand", null)
+                        .WithMany()
+                        .HasForeignKey("StandId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
+                        .WithMany()
+                        .HasForeignKey("StationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Reference.Station", b =>

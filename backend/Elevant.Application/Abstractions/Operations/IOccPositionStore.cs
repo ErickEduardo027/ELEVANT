@@ -11,8 +11,13 @@ public sealed record OccPositionTurnaroundData(Guid TurnaroundId, string Operati
     DateTimeOffset? AssignedFrom, string Status);
 
 /// <param name="Latitude">WGS84 location OCC placed (ADR-0027); null until placed.</param>
+/// <param name="CancelledBy">Code of the occupied stand that cancels this one right now (ADR-0030), an alert to OCC.</param>
+/// <param name="NarrowbodyOnly">Limited to narrow-body now, by its own size or an occupied neighbour.</param>
+/// <param name="CoveredBy">Agents covering the stand on the board's date.</param>
 public sealed record OccPositionData(Guid StandId, string Code, string? TerminalCode, string? StandType, string Status,
-    IReadOnlyList<OccPositionTurnaroundData> Turnarounds, decimal? Latitude = null, decimal? Longitude = null);
+    IReadOnlyList<OccPositionTurnaroundData> Turnarounds, decimal? Latitude = null, decimal? Longitude = null,
+    bool HasBoardingBridge = false, bool IsRemote = false, string? MaxAircraftSize = null, string? CancelledBy = null,
+    bool NarrowbodyOnly = false, IReadOnlyList<string>? CoveredBy = null);
 
 public sealed record OccPositionBoardData(Guid StationId, string StationCode, DateOnly OperationDate, DateTimeOffset AsOf,
     IReadOnlyList<OccPositionData> Positions, IReadOnlyList<OccPositionTurnaroundData> Unassigned, bool CanAssign);
@@ -21,7 +26,9 @@ public sealed record RecordArrivalInput(string? AircraftRegistration, DateTimeOf
 
 public enum OccPositionFailure { Forbidden, NotFound, Invalid, Conflict }
 
-public sealed record OccPositionResult(OccPositionBoardData? Board, OccPositionFailure? Failure);
+/// <param name="Reasons">Combined-stand rules a rejected assignment breaks (ADR-0030).</param>
+public sealed record OccPositionResult(OccPositionBoardData? Board, OccPositionFailure? Failure,
+    IReadOnlyList<string>? Reasons = null);
 
 public interface IOccPositionStore
 {

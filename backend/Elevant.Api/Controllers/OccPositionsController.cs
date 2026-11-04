@@ -101,6 +101,7 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
         OccPositionFailure.Forbidden => Problem<OccPositionBoardResponse>(403, "OCC positions access is forbidden."),
         OccPositionFailure.NotFound => Problem<OccPositionBoardResponse>(404, "The station, turnaround or stand was not found."),
         OccPositionFailure.Invalid => Problem<OccPositionBoardResponse>(400, "The position request is invalid."),
+        OccPositionFailure.Conflict when result.Reasons is { Count: > 0 } reasons => Rejected(reasons),
         OccPositionFailure.Conflict => Problem<OccPositionBoardResponse>(409, "The stand is not available for this turnaround."),
         _ => Ok(Board(result.Board!)),
     };
@@ -109,12 +110,21 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
         board.OperationDate, board.AsOf,
         board.Positions.Select(position => new OccPositionResponse(position.StandId, position.Code, position.TerminalCode,
             position.StandType, position.Status, position.Turnarounds.Select(Turnaround).ToArray(), position.Latitude,
-            position.Longitude)).ToArray(),
+            position.Longitude, position.HasBoardingBridge, position.IsRemote, position.MaxAircraftSize, position.CancelledBy,
+            position.NarrowbodyOnly, position.CoveredBy ?? [])).ToArray(),
         board.Unassigned.Select(Turnaround).ToArray(), board.CanAssign);
 
     private static OccPositionTurnaroundResponse Turnaround(OccPositionTurnaroundData item) => new(item.TurnaroundId,
         item.OperationCode, item.AirlineName, item.AircraftRegistration, item.ArrivalFlightNumber, item.DepartureFlightNumber,
         item.ArrivalScheduledAt, item.ArrivedAt, item.DepartureScheduledAt, item.AssignedFrom, item.Status);
+
+    /// <summary>A combined-stand rule blocks the stand (ADR-0030); the codes go in <c>reasons</c>.</summary>
+    private ActionResult<OccPositionBoardResponse> Rejected(IReadOnlyList<string> reasons)
+    {
+        var problem = new ProblemDetails { Status = 409, Title = "The stand combination is not allowed.", Instance = HttpContext.Request.Path };
+        problem.Extensions["reasons"] = reasons;
+        return new ObjectResult(problem) { StatusCode = 409 };
+    }
 
     private bool TryAccount(out Guid actorId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out actorId) && actorId != Guid.Empty;

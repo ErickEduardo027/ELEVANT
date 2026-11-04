@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "5bfc73ed864144ab2fa36eca6eb63e1e1c4311ef2e42d94f1508d38ab0d7d188",
+        "sha256": "7880a85f5a5a0bf0cef855ffc9066d066551ca25573c932f73dbbc0f993e1835",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "3617b567005b98d54c5340bd0b9be8592dc07ec2215f06eff6adc092fdf562b7",
+        "sha256": "11b3600bb9bd935a66da9c80effb30ce29b3a7c97b0c9a88288dfd792e4eb974",
         "title": null,
         "version": null
       }
@@ -1442,6 +1442,12 @@
         "name": "AddOperationMessageReads",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261104152618_AddOperationMessageReads.cs",
         "sha256": "c913f5ffb84f44871a09166c486bdab79fed8f5e263c1b504c5073bba176231c"
+      },
+      {
+        "id": "20261104163350",
+        "name": "AddPositionCoverage",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261104163350_AddPositionCoverage.cs",
+        "sha256": "11af1043d0875fb69574b5ed8a15a5df8a441fccee5542bcb28f23c486156b25"
       }
     ],
     "manifestContracts": [

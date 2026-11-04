@@ -9,7 +9,8 @@ const turnaround = { turnaroundId, operationCode: "DEV-TAT-0001", airlineName: "
   arrivedAt: "2026-08-18T12:05:00.000Z", departureScheduledAt: "2026-08-18T14:00:00.000Z",
   assignedFrom: "2026-08-18T11:00:00.000Z", status: "InProgress" };
 const board = { stationId, stationCode: "PUJ", operationDate: "2026-08-18", asOf: "2026-08-18T12:06:00.000Z", canAssign: true,
-  positions: [{ standId, code: "A01", terminalCode: "A", standType: "Contact", status: "occupied", turnarounds: [turnaround] }],
+  positions: [{ standId, code: "A01", terminalCode: "A", standType: "Contact", status: "occupied", turnarounds: [turnaround],
+    hasBoardingBridge: false, isRemote: false, maxAircraftSize: null, cancelledBy: null, narrowbodyOnly: false, coveredBy: ["Riley Ramp"] }],
   unassigned: [] };
 
 describe("OCC positions client", () => {

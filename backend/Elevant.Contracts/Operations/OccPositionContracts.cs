@@ -7,7 +7,9 @@ public sealed record OccPositionTurnaroundResponse(Guid TurnaroundId, string Ope
 
 /// <param name="Latitude">WGS84 location OCC placed on the map (ADR-0027); null until placed.</param>
 public sealed record OccPositionResponse(Guid StandId, string Code, string? TerminalCode, string? StandType, string Status,
-    IReadOnlyList<OccPositionTurnaroundResponse> Turnarounds, decimal? Latitude, decimal? Longitude);
+    IReadOnlyList<OccPositionTurnaroundResponse> Turnarounds, decimal? Latitude, decimal? Longitude,
+    bool HasBoardingBridge, bool IsRemote, string? MaxAircraftSize, string? CancelledBy, bool NarrowbodyOnly,
+    IReadOnlyList<string> CoveredBy);
 
 /// <summary>Both null clears the stand's location.</summary>
 public sealed record LocateOccStandRequest(decimal? Latitude, decimal? Longitude, DateOnly OperationDate);

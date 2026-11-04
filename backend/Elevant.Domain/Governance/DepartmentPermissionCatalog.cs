@@ -50,6 +50,8 @@ public static class DepartmentPermissionCatalog
                     Other("assign", "Registrar llegadas y asignar o liberar posiciones")),
                 Module("operations", "planning", "Planificación operativa", "Operación", null,
                     Read(), Create("Crear escalas"), Other("assign", "Asignar agentes, posiciones y turnos")),
+                Module("operations", "coverage", "Cobertura de posiciones", "Operación", null, Read(),
+                    Other("assign", "Asignar posiciones por turno"), Update("Configurar posiciones y combinaciones")),
                 Module("operations", "attendance", "Asistencia OCC", "Operación", "planning",
                     Read(), Create("Registrar observaciones")),
                 Module("operations", "review", "Revisión", "Operación", null, Read(), Other("decide", "Aprobar o devolver entregas")),

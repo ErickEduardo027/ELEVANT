@@ -16,6 +16,7 @@ export const ADMIN_OCC_BASE_PATH = '/admin-occ';
 export const ADMIN_OCC_MODULE_IDS = {
   DASHBOARD: 'dashboard',
   PLANNING: 'planning',
+  COVERAGE: 'coverage',
   READY_CONTRACTS: 'contracts',
   FLIGHT_MONITORING: 'flight-monitoring',
   POSITIONS_MAP: 'positions-map',
@@ -31,6 +32,7 @@ export const ADMIN_OCC_NAVIGATION = [
   { id: ADMIN_OCC_MODULE_IDS.EXPENSES, label: 'Mis gastos', path: `${ADMIN_OCC_BASE_PATH}/expenses`, icon: BarChartIcon, description: 'Gastos propios y revisiones del departamento.' },
   { id: ADMIN_OCC_MODULE_IDS.DASHBOARD, permission: 'operations.dashboard.read', label: 'Dashboard', path: `${ADMIN_OCC_BASE_PATH}/dashboard`, icon: LayoutGridIcon, description: 'Vista general en tiempo real de vuelos, servicios, agentes y aprobaciones del día.' },
   { id: ADMIN_OCC_MODULE_IDS.PLANNING, permission: 'operations.planning.read', label: 'Planificación operativa', path: `${ADMIN_OCC_BASE_PATH}/planning`, icon: CalendarIcon, description: 'Consulta de itinerarios y asignación de agentes y posiciones para las operaciones del día.' },
+  { id: ADMIN_OCC_MODULE_IDS.COVERAGE, permission: 'operations.coverage.read', label: 'Cobertura de posiciones', path: `${ADMIN_OCC_BASE_PATH}/position-coverage`, icon: UsersIcon, description: 'Qué agente cubre cada posición durante su turno, con las reglas de asignación y las posiciones combinadas.' },
   { id: ADMIN_OCC_MODULE_IDS.READY_CONTRACTS, permission: 'operations.planning.read', label: 'Contratos listos', path: `${ADMIN_OCC_BASE_PATH}/contracts`, icon: FileTextIcon, description: 'Aerolíneas con contrato activo, firmado y aprobado por Finanzas que OCC puede planificar.' },
   { id: ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, permission: 'operations.flight_monitoring.read', label: 'Monitoreo de vuelos', path: `${ADMIN_OCC_BASE_PATH}/flight-monitoring`, icon: RadarIcon, description: 'Mapa interactivo en vivo con el estado de cada vuelo en tránsito hacia o desde la estación.' },
   { id: ADMIN_OCC_MODULE_IDS.POSITIONS_MAP, permission: 'operations.positions_map.read', label: 'Mapa de posiciones', path: `${ADMIN_OCC_BASE_PATH}/positions-map`, icon: MapPinIcon, description: 'Mapa georreferenciado completo de las posiciones de Terminal A, Terminal B y el área FBO.' },
@@ -45,7 +47,7 @@ export const ADMIN_OCC_NAVIGATION = [
 // `allowedNavigation`; no concede ni oculta acceso.
 export const OCC_NAV_SECTIONS = [
   { id: 'monitoring', items: [ADMIN_OCC_MODULE_IDS.DASHBOARD, ADMIN_OCC_MODULE_IDS.FLIGHT_MONITORING, ADMIN_OCC_MODULE_IDS.POSITIONS_MAP] },
-  { id: 'operations', items: [ADMIN_OCC_MODULE_IDS.PLANNING, ADMIN_OCC_MODULE_IDS.READY_CONTRACTS, ADMIN_OCC_MODULE_IDS.APPROVALS, ADMIN_OCC_MODULE_IDS.REPORTS, ADMIN_OCC_MODULE_IDS.EXPENSES] },
+  { id: 'operations', items: [ADMIN_OCC_MODULE_IDS.PLANNING, ADMIN_OCC_MODULE_IDS.COVERAGE, ADMIN_OCC_MODULE_IDS.READY_CONTRACTS, ADMIN_OCC_MODULE_IDS.APPROVALS, ADMIN_OCC_MODULE_IDS.REPORTS, ADMIN_OCC_MODULE_IDS.EXPENSES] },
   { id: 'communication', items: [ADMIN_OCC_MODULE_IDS.NOTIFICATIONS, ADMIN_OCC_MODULE_IDS.CHAT] },
   { id: 'administration', items: [ADMIN_OCC_MODULE_IDS.DEPARTMENT_USERS] },
 ];

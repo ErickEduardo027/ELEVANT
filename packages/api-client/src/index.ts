@@ -90,8 +90,10 @@ export {
   type GetRampOperationChargesOptions,
   type ApplyRampServiceChargeOptions,
   type SessionStart,
+  type OccCoverageCommand,
+  type OccStandAttributesCommand,
 } from "./client";
-export { ElevantApiError, type ElevantApiErrorKind, type ElevantApiErrorCode } from "./errors";
+export { ElevantApiError, ELEVANT_RULE_REASONS, type ElevantApiErrorKind, type ElevantApiErrorCode, type ElevantRuleReason } from "./errors";
 export {
   DOMINICAN_AREA_CODES,
   DOMINICAN_PASSPORT_PREFIX,
@@ -230,6 +232,14 @@ export {
   type DepartmentNotificationListResponse,
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
+  type OccCoverageBoardResponse,
+  type OccCoverageResponse,
+  type OccCoverageAgentResponse,
+  type OccCoverageStandResponse,
+  type OccCoverageTerminalResponse,
+  type OccStandConstraintResponse,
+  type RampOwnCoverageListResponse,
+  type RampOwnCoverageResponse,
   type OccReadyContractsResponse,
   type OccFlightFeedResponse,
   type OccFlightProposalResponse,

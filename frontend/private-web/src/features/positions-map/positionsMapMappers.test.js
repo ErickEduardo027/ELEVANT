@@ -149,3 +149,17 @@ describe('mapOccupancyToRampPositions with OCC locations (ADR-0027)', () => {
     expect(positions[1]).toMatchObject({ standId: 'id-C07', locationSource: 'occ' });
   });
 });
+
+describe('mapOccupancyToRampPositions with coverage and combined stands (ADR-0030)', () => {
+  const reference = [{ id: 'A1', terminal: 'A', lat: 18.5641, lon: -68.3602 }, { id: 'A2', terminal: 'A', lat: 18.5642, lon: -68.3603 }];
+  const stand = (code, extra = {}) => ({ standId: `id-${code}`, code, terminalCode: 'A', standType: 'Contact', status: 'available',
+    turnarounds: [], hasBoardingBridge: false, isRemote: false, maxAircraftSize: null, cancelledBy: null, narrowbodyOnly: false,
+    coveredBy: [], ...extra });
+
+  it('disables a free stand cancelled by an occupied combined stand and names the covering agent', () => {
+    const [a1, a2] = mapOccupancyToRampPositions(reference, { positions: [
+      stand('A01', { status: 'occupied', coveredBy: ['Riley Ramp'] }), stand('A02', { cancelledBy: 'A01' })] });
+    expect(a1).toMatchObject({ status: 'occupied', assignedAgent: 'Riley Ramp' });
+    expect(a2).toMatchObject({ status: 'disabled', combinedConfiguration: 'A01', linkedPositionId: 'A1' });
+  });
+});

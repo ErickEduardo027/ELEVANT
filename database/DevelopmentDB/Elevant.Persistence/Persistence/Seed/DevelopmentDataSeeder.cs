@@ -166,6 +166,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 Code = "A",
                 Name = "Terminal A",
                 IsActive = true,
+                MaxStandsPerAgent = 3,
             }, "20000000-0000-7000-8000-000000000004"),
             cancellationToken);
 
@@ -257,8 +258,11 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 Manufacturer = "Airbus",
                 Model = "A320 Development",
                 IsActive = true,
+                SizeCategory = AircraftSizeCategory.Narrowbody,
             }, "20000000-0000-7000-8000-000000000009"),
             cancellationToken);
+
+        await SeedPositionCoverageExampleAsync(station.Id, cancellationToken);
 
         var airline = await GetOrAddAsync(
             context.Airlines,
@@ -1539,4 +1543,68 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         string Code,
         string Section,
         string Label);
+
+    /// <summary>
+    /// Synthetic coverage example (ADR-0030): a bridge terminal limited to two stands per agent, its
+    /// bridge qualification and a wide-body type. The real PUJ layout is configured by OCC, not seeded.
+    /// </summary>
+    private async Task SeedPositionCoverageExampleAsync(long stationId, CancellationToken cancellationToken)
+    {
+        var terminalB = await GetOrAddAsync(
+            context.Terminals,
+            item => item.StationId == stationId && item.Code == "B",
+            () => Stamp(new Terminal
+            {
+                StationId = stationId,
+                Code = "B",
+                Name = "Terminal B",
+                IsActive = true,
+                MaxStandsPerAgent = 2,
+                RequiresBridgeQualification = true,
+            }, DeterministicGuid("terminal:PUJ:B").ToString("D")),
+            cancellationToken);
+        foreach (var code in new[] { "B01", "B02" })
+        {
+            await GetOrAddAsync(
+                context.Stands,
+                item => item.StationId == stationId && item.Code == code,
+                () => Stamp(new Stand
+                {
+                    StationId = stationId,
+                    TerminalId = terminalB.Id,
+                    Code = code,
+                    StandType = "Contact",
+                    IsActive = true,
+                    HasBoardingBridge = true,
+                }, DeterministicGuid($"stand:PUJ:{code}").ToString("D")),
+                cancellationToken);
+        }
+
+        await GetOrAddAsync(
+            context.EquipmentTypes,
+            equipment => equipment.Code == Elevant.Persistence.Operations.EfPositionCoverageStore.BridgeEquipmentTypeCode,
+            () => Stamp(new EquipmentType
+            {
+                Code = Elevant.Persistence.Operations.EfPositionCoverageStore.BridgeEquipmentTypeCode,
+                Name = "Boarding bridge",
+                RequiresQualification = true,
+                IsActive = true,
+            }, DeterministicGuid("equipment-type:BOARDING-BRIDGE").ToString("D")),
+            cancellationToken);
+
+        await GetOrAddAsync(
+            context.AircraftTypes,
+            type => type.IcaoCode == "A333",
+            () => Stamp(new AircraftType
+            {
+                IcaoCode = "A333",
+                IataCode = "333",
+                Manufacturer = "Airbus",
+                Model = "A330-300 Development",
+                IsActive = true,
+                SizeCategory = AircraftSizeCategory.Widebody,
+            }, DeterministicGuid("aircraft-type:A333").ToString("D")),
+            cancellationToken);
+    }
+
 }

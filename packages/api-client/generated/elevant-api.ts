@@ -149,6 +149,13 @@ export interface ActivityPageData {
   nextCursor?: string | null;
 }
 
+export interface AddOccStandConstraintRequest {
+  date: string;
+  standId: string;
+  affectedStandId: string;
+  kind: string;
+}
+
 export interface AddPreinvoiceAdjustmentInput {
   description: string;
   amount: number;
@@ -1246,6 +1253,23 @@ export interface CreateManualTurnaroundRequest {
   departureFlightNumber: string;
   departureDestinationIata: string;
   departureScheduledAt: string;
+}
+
+export interface CreateOccCoverageRequest {
+  stationId: string;
+  date: string;
+  agentId: string;
+  terminalId: string;
+  standIds: string[];
+  /** @nullable */
+  startsAt?: string | null;
+  /** @nullable */
+  endsAt?: string | null;
+  /** @nullable */
+  mentorAgentId?: string | null;
+  /** @nullable */
+  vehicleCode?: string | null;
+  isReinforcement: boolean;
 }
 
 export interface CreatePreinvoiceDraftRequest {
@@ -3554,6 +3578,87 @@ export interface OccContractOptionResponse {
   currencyCode: string;
 }
 
+export interface OccCoverageAgentResponse {
+  agentId: string;
+  name: string;
+  employeeNumber: string;
+  terminalId: string;
+  terminalCode: string;
+  shiftStartsAt: string;
+  shiftEndsAt: string;
+  isJunior: boolean;
+  hasAirportPermit: boolean;
+  hasDriverLicense: boolean;
+  hasBridgeQualification: boolean;
+  isAbsent: boolean;
+}
+
+export interface OccCoverageTerminalResponse {
+  terminalId: string;
+  code: string;
+  name: string;
+  maxStandsPerAgent: number;
+  requiresBridgeQualification: boolean;
+}
+
+export interface OccCoverageStandResponse {
+  standId: string;
+  code: string;
+  /** @nullable */
+  terminalId?: string | null;
+  isActive: boolean;
+  hasBoardingBridge: boolean;
+  isRemote: boolean;
+  /** @nullable */
+  maxAircraftSize?: string | null;
+  coveredBy: string[];
+}
+
+export interface OccStandConstraintResponse {
+  id: string;
+  standId: string;
+  standCode: string;
+  affectedStandId: string;
+  affectedStandCode: string;
+  kind: string;
+}
+
+export interface OccCoverageStandRefResponse {
+  standId: string;
+  code: string;
+}
+
+export interface OccCoverageResponse {
+  id: string;
+  agentId: string;
+  agentName: string;
+  terminalId: string;
+  terminalCode: string;
+  stands: OccCoverageStandRefResponse[];
+  startsAt: string;
+  endsAt: string;
+  /** @nullable */
+  mentorAgentId?: string | null;
+  /** @nullable */
+  mentorName?: string | null;
+  /** @nullable */
+  vehicleCode?: string | null;
+  isReinforcement: boolean;
+}
+
+export interface OccCoverageBoardResponse {
+  stationId: string;
+  stationCode: string;
+  date: string;
+  terminals: OccCoverageTerminalResponse[];
+  stands: OccCoverageStandResponse[];
+  constraints: OccStandConstraintResponse[];
+  agents: OccCoverageAgentResponse[];
+  coverages: OccCoverageResponse[];
+  canAssign: boolean;
+  canConfigure: boolean;
+}
+
 export interface OccFlightFeedBudgetResponse {
   configured: boolean;
   provider: string;
@@ -3710,6 +3815,14 @@ export interface OccPositionResponse {
   latitude?: number | null;
   /** @nullable */
   longitude?: number | null;
+  hasBoardingBridge: boolean;
+  isRemote: boolean;
+  /** @nullable */
+  maxAircraftSize?: string | null;
+  /** @nullable */
+  cancelledBy?: string | null;
+  narrowbodyOnly: boolean;
+  coveredBy: string[];
 }
 
 export interface OccPositionBoardResponse {
@@ -4435,6 +4548,24 @@ export interface RampOperationSubmissionResponse {
   actualEndAt: string;
   /** @nullable */
   agentNote?: string | null;
+}
+
+export interface RampOwnCoverageResponse {
+  id: string;
+  stationCode: string;
+  terminalCode: string;
+  stands: string[];
+  startsAt: string;
+  endsAt: string;
+  /** @nullable */
+  partner?: string | null;
+  /** @nullable */
+  vehicleCode?: string | null;
+  isReinforcement: boolean;
+}
+
+export interface RampOwnCoverageListResponse {
+  coverages: RampOwnCoverageResponse[];
 }
 
 export interface RampProfileStation {
@@ -5190,6 +5321,22 @@ export interface UpdateGovernanceUserInput {
   avatarMediaUrl?: string | null;
 }
 
+export interface UpdateOccStandAttributesRequest {
+  date: string;
+  hasBoardingBridge: boolean;
+  isRemote: boolean;
+  /** @nullable */
+  maxAircraftSize?: string | null;
+  isActive: boolean;
+}
+
+export interface UpdateOccTerminalRulesRequest {
+  date: string;
+  /** @nullable */
+  maxStandsPerAgent?: number | null;
+  requiresBridgeQualification: boolean;
+}
+
 export interface ValidateAttendanceRequest {
   expectedOccRevision: number;
   expectedRampAgentRevision: number;
@@ -5613,6 +5760,19 @@ limit?: number;
 export type ListManagedContractsParams = {
 page?: number;
 limit?: number;
+};
+
+export type GetOccCoverageParams = {
+stationId: string;
+date: string;
+};
+
+export type ReleaseOccCoverageParams = {
+date: string;
+};
+
+export type RemoveOccStandConstraintParams = {
+date: string;
 };
 
 export type GetOccFlightFeedParams = {
@@ -14282,6 +14442,315 @@ const res = await fetch(getRegisterMobileDeviceUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RegisterMobileDeviceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccCoverageUrl = (params: GetOccCoverageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/coverage?${stringifiedParams}` : `/api/v1/occ/coverage`
+}
+
+export const getOccCoverage = async (params: GetOccCoverageParams, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
+
+  const res = await fetch(getGetOccCoverageUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCoverageBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateOccCoverageUrl = () => {
+
+
+
+
+  return `/api/v1/occ/coverage`
+}
+
+export const createOccCoverage = async (createOccCoverageRequest: CreateOccCoverageRequest, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateOccCoverageUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOccCoverageRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCoverageBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReleaseOccCoverageUrl = (coverageId: string,
+    params: ReleaseOccCoverageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/coverage/${coverageId}/release?${stringifiedParams}` : `/api/v1/occ/coverage/${coverageId}/release`
+}
+
+export const releaseOccCoverage = async (coverageId: string,
+    params: ReleaseOccCoverageParams, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
+
+  const res = await fetch(getReleaseOccCoverageUrl(coverageId,params),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCoverageBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateOccStandAttributesUrl = (standId: string,) => {
+
+
+
+
+  return `/api/v1/occ/stands/${standId}/attributes`
+}
+
+export const updateOccStandAttributes = async (standId: string,
+    updateOccStandAttributesRequest: UpdateOccStandAttributesRequest, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateOccStandAttributesUrl(standId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOccStandAttributesRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCoverageBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateOccTerminalRulesUrl = (terminalId: string,) => {
+
+
+
+
+  return `/api/v1/occ/terminals/${terminalId}/coverage-rules`
+}
+
+export const updateOccTerminalRules = async (terminalId: string,
+    updateOccTerminalRulesRequest: UpdateOccTerminalRulesRequest, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateOccTerminalRulesUrl(terminalId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateOccTerminalRulesRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCoverageBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAddOccStandConstraintUrl = () => {
+
+
+
+
+  return `/api/v1/occ/stand-constraints`
+}
+
+export const addOccStandConstraint = async (addOccStandConstraintRequest: AddOccStandConstraintRequest, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAddOccStandConstraintUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(addOccStandConstraintRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCoverageBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRemoveOccStandConstraintUrl = (constraintId: string,
+    params: RemoveOccStandConstraintParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/stand-constraints/${constraintId}?${stringifiedParams}` : `/api/v1/occ/stand-constraints/${constraintId}`
+}
+
+export const removeOccStandConstraint = async (constraintId: string,
+    params: RemoveOccStandConstraintParams, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
+
+  const res = await fetch(getRemoveOccStandConstraintUrl(constraintId,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCoverageBoardResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReleaseOccOperationAgentUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/release`
+}
+
+/**
+ * @summary Releases the agent of an operation not yet started so OCC can assign another (ADR-0030).
+ */
+export const releaseOccOperationAgent = async (turnaroundId: string, options?: RequestInit): Promise<void> => {
+
+  const res = await fetch(getReleaseOccOperationAgentUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getGetOwnRampCoverageUrl = () => {
+
+
+
+
+  return `/api/v1/ramp/me/coverage`
+}
+
+/**
+ * @summary «Mis posiciones de hoy»: the signed-in ramp agent's stand coverages for the next hours.
+ */
+export const getOwnRampCoverage = async ( options?: RequestInit): Promise<RampOwnCoverageListResponse> => {
+
+  const res = await fetch(getGetOwnRampCoverageUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampOwnCoverageListResponse = body ? JSON.parse(body) : {}
   return data
 }
 

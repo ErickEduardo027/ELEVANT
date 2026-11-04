@@ -18591,6 +18591,763 @@
         ]
       }
     },
+    "/api/v1/occ/coverage": {
+      "get": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "operationId": "GetOccCoverage",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "operationId": "CreateOccCoverage",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateOccCoverageRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/coverage/{coverageId}/release": {
+      "post": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "operationId": "ReleaseOccCoverage",
+        "parameters": [
+          {
+            "name": "coverageId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/stands/{standId}/attributes": {
+      "put": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "operationId": "UpdateOccStandAttributes",
+        "parameters": [
+          {
+            "name": "standId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateOccStandAttributesRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/terminals/{terminalId}/coverage-rules": {
+      "put": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "operationId": "UpdateOccTerminalRules",
+        "parameters": [
+          {
+            "name": "terminalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateOccTerminalRulesRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/stand-constraints": {
+      "post": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "operationId": "AddOccStandConstraint",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AddOccStandConstraintRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/stand-constraints/{constraintId}": {
+      "delete": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "operationId": "RemoveOccStandConstraint",
+        "parameters": [
+          {
+            "name": "constraintId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/assignment/release": {
+      "post": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "summary": "Releases the agent of an operation not yet started so OCC can assign another (ADR-0030).",
+        "operationId": "ReleaseOccOperationAgent",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/me/coverage": {
+      "get": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "summary": "«Mis posiciones de hoy»: the signed-in ramp agent's stand coverages for the next hours.",
+        "operationId": "GetOwnRampCoverage",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampOwnCoverageListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/flight-feed": {
       "get": {
         "tags": [
@@ -25715,6 +26472,33 @@
         },
         "additionalProperties": false
       },
+      "AddOccStandConstraintRequest": {
+        "required": [
+          "affectedStandId",
+          "date",
+          "kind",
+          "standId"
+        ],
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "standId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "affectedStandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "AddPreinvoiceAdjustmentInput": {
         "required": [
           "amount",
@@ -29382,6 +30166,65 @@
           "departureScheduledAt": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateOccCoverageRequest": {
+        "required": [
+          "agentId",
+          "date",
+          "isReinforcement",
+          "standIds",
+          "stationId",
+          "terminalId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "terminalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "standIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "mentorAgentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "vehicleCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isReinforcement": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -37471,6 +38314,288 @@
         },
         "additionalProperties": false
       },
+      "OccCoverageAgentResponse": {
+        "required": [
+          "agentId",
+          "employeeNumber",
+          "hasAirportPermit",
+          "hasBridgeQualification",
+          "hasDriverLicense",
+          "isAbsent",
+          "isJunior",
+          "name",
+          "shiftEndsAt",
+          "shiftStartsAt",
+          "terminalCode",
+          "terminalId"
+        ],
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "terminalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "terminalCode": {
+            "type": "string"
+          },
+          "shiftStartsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "shiftEndsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isJunior": {
+            "type": "boolean"
+          },
+          "hasAirportPermit": {
+            "type": "boolean"
+          },
+          "hasDriverLicense": {
+            "type": "boolean"
+          },
+          "hasBridgeQualification": {
+            "type": "boolean"
+          },
+          "isAbsent": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccCoverageBoardResponse": {
+        "required": [
+          "agents",
+          "canAssign",
+          "canConfigure",
+          "constraints",
+          "coverages",
+          "date",
+          "stands",
+          "stationCode",
+          "stationId",
+          "terminals"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCoverageTerminalResponse"
+            }
+          },
+          "stands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCoverageStandResponse"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccStandConstraintResponse"
+            }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCoverageAgentResponse"
+            }
+          },
+          "coverages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCoverageResponse"
+            }
+          },
+          "canAssign": {
+            "type": "boolean"
+          },
+          "canConfigure": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccCoverageResponse": {
+        "required": [
+          "agentId",
+          "agentName",
+          "endsAt",
+          "id",
+          "isReinforcement",
+          "stands",
+          "startsAt",
+          "terminalCode",
+          "terminalId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentName": {
+            "type": "string"
+          },
+          "terminalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "terminalCode": {
+            "type": "string"
+          },
+          "stands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccCoverageStandRefResponse"
+            }
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mentorAgentId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "mentorName": {
+            "type": "string",
+            "nullable": true
+          },
+          "vehicleCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isReinforcement": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccCoverageStandRefResponse": {
+        "required": [
+          "code",
+          "standId"
+        ],
+        "type": "object",
+        "properties": {
+          "standId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccCoverageStandResponse": {
+        "required": [
+          "code",
+          "coveredBy",
+          "hasBoardingBridge",
+          "isActive",
+          "isRemote",
+          "standId"
+        ],
+        "type": "object",
+        "properties": {
+          "standId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "terminalId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "hasBoardingBridge": {
+            "type": "boolean"
+          },
+          "isRemote": {
+            "type": "boolean"
+          },
+          "maxAircraftSize": {
+            "type": "string",
+            "nullable": true
+          },
+          "coveredBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccCoverageTerminalResponse": {
+        "required": [
+          "code",
+          "maxStandsPerAgent",
+          "name",
+          "requiresBridgeQualification",
+          "terminalId"
+        ],
+        "type": "object",
+        "properties": {
+          "terminalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "maxStandsPerAgent": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "requiresBridgeQualification": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "OccFlightFeedBudgetResponse": {
         "required": [
           "configured",
@@ -37958,6 +39083,10 @@
       "OccPositionResponse": {
         "required": [
           "code",
+          "coveredBy",
+          "hasBoardingBridge",
+          "isRemote",
+          "narrowbodyOnly",
           "standId",
           "status",
           "turnarounds"
@@ -37997,6 +39126,29 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          },
+          "hasBoardingBridge": {
+            "type": "boolean"
+          },
+          "isRemote": {
+            "type": "boolean"
+          },
+          "maxAircraftSize": {
+            "type": "string",
+            "nullable": true
+          },
+          "cancelledBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "narrowbodyOnly": {
+            "type": "boolean"
+          },
+          "coveredBy": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false
@@ -38746,6 +39898,41 @@
             "format": "double"
           },
           "currencyCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccStandConstraintResponse": {
+        "required": [
+          "affectedStandCode",
+          "affectedStandId",
+          "id",
+          "kind",
+          "standCode",
+          "standId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "standId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "standCode": {
+            "type": "string"
+          },
+          "affectedStandId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "affectedStandCode": {
+            "type": "string"
+          },
+          "kind": {
             "type": "string"
           }
         },
@@ -40915,6 +42102,71 @@
           },
           "name": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampOwnCoverageListResponse": {
+        "required": [
+          "coverages"
+        ],
+        "type": "object",
+        "properties": {
+          "coverages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampOwnCoverageResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampOwnCoverageResponse": {
+        "required": [
+          "endsAt",
+          "id",
+          "isReinforcement",
+          "stands",
+          "startsAt",
+          "stationCode",
+          "terminalCode"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "terminalCode": {
+            "type": "string"
+          },
+          "stands": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "partner": {
+            "type": "string",
+            "nullable": true
+          },
+          "vehicleCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "isReinforcement": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -43872,6 +45124,57 @@
         },
         "additionalProperties": false
       },
+      "UpdateOccStandAttributesRequest": {
+        "required": [
+          "date",
+          "hasBoardingBridge",
+          "isActive",
+          "isRemote"
+        ],
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "hasBoardingBridge": {
+            "type": "boolean"
+          },
+          "isRemote": {
+            "type": "boolean"
+          },
+          "maxAircraftSize": {
+            "type": "string",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateOccTerminalRulesRequest": {
+        "required": [
+          "date",
+          "requiresBridgeQualification"
+        ],
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "maxStandsPerAgent": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "requiresBridgeQualification": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "ValidateAttendanceRequest": {
         "required": [
           "endSource",
@@ -44111,6 +45414,9 @@
     },
     {
       "name": "MobileDevices"
+    },
+    {
+      "name": "OccCoverage"
     },
     {
       "name": "OccFlightFeed"
