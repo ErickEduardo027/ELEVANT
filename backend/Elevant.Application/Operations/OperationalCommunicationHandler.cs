@@ -40,6 +40,17 @@ public sealed class OperationalCommunicationHandler(
         return await store.GetMessagesAsync(access.Value!, operationId, offset, cancellationToken);
     }
 
+    public async Task<CommunicationResult<OperationConversationReadData>> MarkReadAsync(
+        Guid accountId, Guid operationId, Guid messageId, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveAccessAsync(accountId, "operations.chat.read", cancellationToken);
+        if (access.Failure is { } failure)
+            return CommunicationResults.Failed<OperationConversationReadData>(failure);
+        if (operationId == Guid.Empty || messageId == Guid.Empty)
+            return CommunicationResults.Failed<OperationConversationReadData>(OperationalCommunicationFailure.InvalidRequest);
+        return await store.MarkReadAsync(access.Value!, operationId, messageId, cancellationToken);
+    }
+
     public async Task<CommunicationResult<OperationMessageData>> SendMessageAsync(
         Guid accountId, Guid operationId, Guid clientMessageId, Guid? installationId,
         string? content, CancellationToken cancellationToken = default)

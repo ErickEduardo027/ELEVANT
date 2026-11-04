@@ -12,6 +12,7 @@ vi.mock('../chat/chatService', () => ({
   readConversations: mocks.loadConversations,
   readMessages: mocks.loadMessages,
   sendMessage: mocks.sendMessage,
+  markConversationRead: () => Promise.resolve(),
 }));
 vi.mock('../access/DepartmentAccessContext', () => ({ useOptionalDepartmentAccess: () => ({ can: () => true }) }));
 vi.mock('../../services/operationalCommunicationService', () => ({
@@ -99,7 +100,8 @@ describe('OCC canonical read surfaces', () => {
     await waitFor(() => expect(mocks.loadMessages).toHaveBeenCalledTimes(1));
     mocks.observe.mock.calls[0][0](['operation_messages']);
     await waitFor(() => expect(mocks.loadMessages).toHaveBeenCalledTimes(2));
-    expect(mocks.loadConversations).toHaveBeenCalledTimes(2);
+    // Initial read, the feed refresh and the refresh after marking the open thread read (ADR-0029).
+    await waitFor(() => expect(mocks.loadConversations).toHaveBeenCalledTimes(3));
   });
 
   it('never requests a station outside the authenticated scope', async () => {

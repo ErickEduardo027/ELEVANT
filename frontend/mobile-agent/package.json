@@ -16,6 +16,7 @@
   "dependencies": {
     "@elevant/api-client": "file:../../packages/api-client",
     "@expo/vector-icons": "^15.0.3",
+    "@microsoft/signalr": "^10.0.11",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",

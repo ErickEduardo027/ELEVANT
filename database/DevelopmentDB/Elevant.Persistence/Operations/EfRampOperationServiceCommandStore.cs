@@ -248,6 +248,7 @@ internal sealed class EfRampOperationServiceCommandStore(
         };
         context.AuditEntries.Add(auditEntry);
 
+        await RampOperationChangeWriter.AnnounceAsync(context, service.GroundOperationId, now, false, cancellationToken);
         var transition = new RampOperationServiceTransitionData(
             receipt.PublicId,
             new RampOperationServiceExecutionData(

@@ -31,7 +31,8 @@ export default function MyScheduleScreen() {
   const [revision, setRevision] = useState(0);
 
   useFocusEffect(useCallback(() => subscribeMobileChanges(resources => {
-    if (resources.includes('hr_shifts') || resources.includes('hr_permits') || resources.includes('hr_qualifications'))
+    if (resources.includes('ramp_schedule') || resources.includes('hr_shifts') || resources.includes('hr_permits') ||
+        resources.includes('hr_qualifications'))
       setRevision(value => value + 1);
   }), []));
 

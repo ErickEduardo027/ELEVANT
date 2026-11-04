@@ -59,7 +59,8 @@ export function useChatPages(scope, loader, { messages = false, interval = 20_00
         const items = mergeChatPage(base, page, { older, messages });
         const noProgress = older ? items.length === base.length : Boolean(value.noProgress && items.length === base.length);
         const hasMore = older || !base.length || base.length <= page.length ? data.hasMore : value.hasMore;
-        const next = { scope, status: 'success', items, hasMore: noProgress ? false : hasMore, busy: false, error: false, noProgress };
+        const next = { scope, status: 'success', items, hasMore: noProgress ? false : hasMore, busy: false, error: false, noProgress,
+          othersReadUpTo: messages ? data.othersReadUpTo ?? null : null };
         snapshot.current = next;
         return next;
       });

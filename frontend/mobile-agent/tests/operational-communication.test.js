@@ -1,6 +1,6 @@
 const mockApi = { getOperationalConversations: jest.fn(), getOperationalMessages: jest.fn(),
   getOperationalNotifications: jest.fn(), setOperationalNotificationRead: jest.fn(),
-  sendOperationalMessage: jest.fn() };
+  sendOperationalMessage: jest.fn(), markOperationalConversationRead: jest.fn() };
 const mockContext = jest.fn();
 const mockReject = jest.fn();
 const mockReserve = jest.fn();
@@ -32,7 +32,7 @@ jest.mock('../src/services/mobile-device', () => ({
 }));
 
 const { ElevantApiError } = require('@elevant/api-client');
-const { sendOperationalMessage, getOperationalMessages,
+const { sendOperationalMessage, getOperationalMessages, markOperationalConversationRead,
   getOperationalNotifications, setOperationalNotificationRead } = require('../src/services/operational-communication');
 const accountId = '20000000-0000-4000-8000-000000000001';
 const sessionId = '30000000-0000-4000-8000-000000000001';
@@ -81,4 +81,12 @@ test('reads messages and notifications through the authenticated API and clears 
   mockApi.getOperationalMessages.mockRejectedValueOnce(new ElevantApiError({ status: 401 }));
   await expect(getOperationalMessages(operationId)).rejects.toMatchObject({ code: 'unauthenticated' });
   expect(mockReject).toHaveBeenCalledWith(sessionId);
+});
+
+test('moves the read cursor through the authenticated API', async () => {
+  mockApi.markOperationalConversationRead.mockResolvedValue(undefined);
+  await expect(markOperationalConversationRead(operationId, key)).resolves.toBeUndefined();
+  expect(mockApi.markOperationalConversationRead).toHaveBeenCalledWith(operationId, key, { signal: undefined });
+  mockApi.markOperationalConversationRead.mockRejectedValueOnce(new ElevantApiError({ status: 401 }));
+  await expect(markOperationalConversationRead(operationId, key)).rejects.toMatchObject({ code: 'unauthenticated' });
 });

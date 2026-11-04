@@ -27,6 +27,10 @@ export const chatMessages = {
     sending: 'Enviando…',
     retrySend: 'Reintentar envío',
     send: 'Enviar mensaje',
+    unread: '{count} mensajes sin leer',
+    agent: 'Agente: {name}',
+    seen: '✓✓ Visto',
+    delivered: '✓ Enviado',
   },
   en: {
     title: 'Operational chat', readOnly: 'You have read-only access to this conversation.',
@@ -56,5 +60,9 @@ export const chatMessages = {
     sending: 'Sending…',
     retrySend: 'Retry send',
     send: 'Send message',
+    unread: '{count} unread messages',
+    agent: 'Agent: {name}',
+    seen: '✓✓ Seen',
+    delivered: '✓ Sent',
   },
 };

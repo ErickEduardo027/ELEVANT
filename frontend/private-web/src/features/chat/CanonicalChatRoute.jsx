@@ -6,7 +6,7 @@ import { OccStationBadge } from '../admin-occ/OccQueueState';
 import { selectOccStationScopes } from '../admin-occ/useOccStation';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { useChatPages } from './useChatPages';
-import { readConversations, readMessages, sendMessage } from './chatService';
+import { markConversationRead, readConversations, readMessages, sendMessage } from './chatService';
 import styles from './ChatWorkspace.module.css';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
 import { useTranslation } from '../../i18n/LanguageScope';
@@ -21,6 +21,14 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function formatInstant(value, locale) {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString(locale);
+}
+
+/** «Visto» once the other side's read cursor reaches the message (ADR-0029). */
+export function isSeen(message, othersReadUpTo) {
+  if (!othersReadUpTo) return false;
+  const sent = Date.parse(message.sentAt);
+  const read = Date.parse(othersReadUpTo);
+  return Number.isFinite(sent) && Number.isFinite(read) && sent <= read;
 }
 
 function ChatWorkspace() {
@@ -51,6 +59,7 @@ function ChatWorkspace() {
   const lastTail = useRef(null);
   const [unseen, setUnseen] = useState(false);
   const refreshFeeds = useRef(null);
+  const lastMarked = useRef({});
   const updateCommand = (id, changes) => setCommands(value => ({ ...value, [id]: { ...value[id], ...changes } }));
   const setDraft = value => updateCommand(operationId, { draft: value });
   const setListRevision = () => { void conversations.refresh(); };
@@ -78,6 +87,16 @@ function ChatWorkspace() {
     else if (lastTail.current !== messages.items.at(-1)?.id) setUnseen(true);
     lastTail.current = messages.items.at(-1)?.id;
   }, [messages.items, operationId]);
+  const newestId = messages.status === 'success' ? messages.items.at(-1)?.id : undefined;
+  useEffect(() => {
+    if (!operationId || !newestId || lastMarked.current[operationId] === newestId) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+    if (!atEnd.current) return;
+    lastMarked.current[operationId] = newestId;
+    markConversationRead(operationId, newestId)
+      .then(() => { if (alive.current) void refreshFeeds.current?.conversations(); })
+      .catch(() => { delete lastMarked.current[operationId]; });
+  }, [operationId, newestId, unseen]);
   const loadOlder = async () => {
     const element = history.current;
     if (element) anchor.current = { operationId, height: element.scrollHeight, top: element.scrollTop };
@@ -114,14 +133,14 @@ function ChatWorkspace() {
             <section data-occ-surface aria-label={t('conversations')} className={`min-w-0 rounded-2xl border border-black/10 bg-white/80 p-3 dark:border-white/10 dark:bg-surface-dark-card ${selectedOperation ? 'hidden lg:block' : ''}`}>
               <div className="mb-3 flex items-center justify-between gap-2 px-2"><h2 className="font-semibold">{t('operations')}</h2><button type="button" onClick={() => setListRevision(value => value + 1)} className="min-h-11 rounded-lg px-3 text-sm text-accent-600">{t('refresh')}</button></div>
               {conversations.error && <div role="alert"><p>{t('conversationsError')}</p><button type="button" disabled={conversations.busy} onClick={() => void conversations.refresh()}>{t('retry')}</button></div>}{conversations.items.length === 0 ? <p className="p-3 text-sm">{t('noConversations')}</p> :
-                <ul className="space-y-1">{conversations.items.map(item => <li key={item.operationId}><button type="button" onClick={() => selectConversation(item.operationId)} aria-current={selectedOperation?.operationId === item.operationId ? 'true' : undefined} className="min-h-14 w-full rounded-lg border border-transparent p-3 text-left hover:border-accent-600/40 aria-[current=true]:bg-accent-600/10"><strong>{item.operationCode}</strong><span className="ml-2 text-xs">{item.stationCode}</span><p className="truncate text-sm">{item.lastMessage?.content ?? t('noMessagesPreview', { airline: item.airlineName })}</p><PresencePeople participants={presence[item.operationId]} compact /></button></li>)}</ul>}
+                <ul className="space-y-1">{conversations.items.map(item => <li key={item.operationId}><button type="button" onClick={() => selectConversation(item.operationId)} aria-current={selectedOperation?.operationId === item.operationId ? 'true' : undefined} className="min-h-14 w-full rounded-lg border border-transparent p-3 text-left hover:border-accent-600/40 aria-[current=true]:bg-accent-600/10"><span className="flex items-center gap-2"><strong>{item.operationCode}</strong><span className="text-xs">{item.stationCode}</span>{item.unreadCount > 0 && selectedOperation?.operationId !== item.operationId && <span data-unread-badge aria-label={t('unread', { count: item.unreadCount })} className="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-accent-600 px-2 py-0.5 text-xs font-bold text-white">{item.unreadCount > 99 ? '99+' : item.unreadCount}</span>}</span>{item.agentName && <span className="block truncate text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('agent', { name: item.agentName })}</span>}<p className="truncate text-sm">{item.lastMessage?.content ?? t('noMessagesPreview', { airline: item.airlineName })}</p><PresencePeople participants={presence[item.operationId]} compact /></button></li>)}</ul>}
               {conversations.hasMore && <button type="button" disabled={conversations.busy} onClick={() => void conversations.loadMore()}>{t('loadConversations')}</button>}{conversations.noProgress && <p role="status">{t('noProgress')}</p>}
             </section>
             <section data-occ-surface aria-label={t('messages')} className={`min-w-0 flex-col rounded-2xl border border-black/10 bg-white/80 p-4 dark:border-white/10 dark:bg-surface-dark-card ${selectedOperation ? 'flex' : 'hidden lg:flex'}`}>
               {!selectedOperation ? <p className="m-auto text-sm">{t('selectOperation')}</p> : <>
                 <div className="flex items-center justify-between gap-2 border-b border-black/10 pb-3"><div className="flex min-w-0 items-center gap-2"><button type="button" onClick={() => { setParams({}); }} aria-label={t('back')} className="-ml-1 rounded-lg px-2 py-1 text-lg leading-none text-accent-600 hover:bg-black/5 disabled:opacity-40 dark:hover:bg-white/5 lg:hidden">←</button><div className="min-w-0"><h2 className="truncate font-semibold">{selectedOperation.operationCode}</h2><p className="truncate text-xs">{selectedOperation.airlineName}{selectedOperation.agentName ? ` · ${selectedOperation.agentName}` : ''}</p></div></div>{access?.can('operations.review.read') && <Link className="shrink-0 text-sm text-accent-600" to={`/admin-occ/review?operationId=${selectedOperation.operationId}`}>{t('viewOperation')}</Link>}</div>
                 <PresencePeople participants={presence[operationId]} />
-                <div data-chat-scroll ref={history} className={styles.history} role="log" aria-label={t('messages')} aria-live="polite" onScroll={event => { const el = event.currentTarget; atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; if (atEnd.current) setUnseen(false); }}>{messages.error && messages.status === 'success' && <div role="alert"><p>{t('messagesError')}</p><button type="button" disabled={messages.busy} onClick={() => void messages.refresh()}>{t('retry')}</button></div>}{messages.hasMore && <button type="button" disabled={messages.busy} onClick={() => void loadOlder()}>{t('loadMessages')}</button>}{messages.status === 'loading' ? <p>{t('loadingMessages')}</p> : messages.status === 'error' ? <div role="alert"><p>{t('messagesError')}</p><button type="button" onClick={() => setMessageRevision(value => value + 1)}>{t('retry')}</button></div> : messages.items.length === 0 ? <p>{t('noMessages')}</p> : messages.items.map(item => <article key={item.id} data-message-id={item.id} data-own={item.senderAccountId === session?.accountId} className="rounded-xl border border-black/10 p-3 dark:border-white/10"><p className="text-xs font-semibold">{item.senderName} · {item.senderRole === 'agent' ? t('roles.agent') : t('roles.occ')} · <time dateTime={item.sentAt}>{formatInstant(item.sentAt, locale)}</time></p><p className="whitespace-pre-wrap break-words text-sm">{item.content}</p></article>)}{messages.noProgress && <p role="status">{t('noProgress')}</p>}</div>
+                <div data-chat-scroll ref={history} className={styles.history} role="log" aria-label={t('messages')} aria-live="polite" onScroll={event => { const el = event.currentTarget; atEnd.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40; if (atEnd.current) setUnseen(false); }}>{messages.error && messages.status === 'success' && <div role="alert"><p>{t('messagesError')}</p><button type="button" disabled={messages.busy} onClick={() => void messages.refresh()}>{t('retry')}</button></div>}{messages.hasMore && <button type="button" disabled={messages.busy} onClick={() => void loadOlder()}>{t('loadMessages')}</button>}{messages.status === 'loading' ? <p>{t('loadingMessages')}</p> : messages.status === 'error' ? <div role="alert"><p>{t('messagesError')}</p><button type="button" onClick={() => setMessageRevision(value => value + 1)}>{t('retry')}</button></div> : messages.items.length === 0 ? <p>{t('noMessages')}</p> : messages.items.map(item => <article key={item.id} data-message-id={item.id} data-own={item.senderAccountId === session?.accountId} className="rounded-xl border border-black/10 p-3 dark:border-white/10"><p className="text-xs font-semibold">{item.senderName} · {item.senderRole === 'agent' ? t('roles.agent') : t('roles.occ')} · <time dateTime={item.sentAt}>{formatInstant(item.sentAt, locale)}</time></p><p className="whitespace-pre-wrap break-words text-sm">{item.content}</p>{item.senderAccountId === session?.accountId && <p data-receipt className="mt-1 text-right text-[11px] text-text-secondary-light dark:text-text-secondary-dark">{isSeen(item, messages.othersReadUpTo) ? t('seen') : t('delivered')}</p>}</article>)}{messages.noProgress && <p role="status">{t('noProgress')}</p>}</div>
                 {unseen && <button type="button" onClick={() => { atEnd.current = true; setUnseen(false); if (history.current) history.current.scrollTop = history.current.scrollHeight; }}>{t('newMessages')}</button>}{access?.can('operations.chat.create') ? <form onSubmit={submit} className="space-y-2 border-t border-black/10 pt-3"><label htmlFor="occ-chat-draft" className="text-sm font-semibold">{t('message')}</label><ChatComposerInput id="occ-chat-draft" scope={operationId} value={pendingCommand?.content ?? draft} maxLength={2000} disabled={Boolean(pendingCommand)} onChange={event => setDraft(event.target.value)} />{sendError && <p role="alert" className="text-sm text-status-danger">{sendError}{t('retryKeepsId')}</p>}<button type="submit" disabled={messages.status !== 'success' || sending || (!pendingCommand && !draft.trim())} className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{sending ? t('sending') : pendingCommand ? t('retrySend') : t('send')}</button></form> : <p>{t('readOnly')}</p>}
               </>}
             </section>

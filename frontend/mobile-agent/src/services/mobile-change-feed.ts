@@ -1,3 +1,4 @@
+import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
 import { AppState } from 'react-native';
 import { createMobileAgentApiClient } from '../config/elevant-api';
 import { getMobileSessionRequestContext, rejectMobileSessionRequest } from './mobile-auth';
@@ -8,8 +9,19 @@ import { readOrCreateMobileInstallationId } from '../storage/mobile-session';
 type ChangeListener = (resources: readonly string[]) => void;
 const listeners = new Set<ChangeListener>();
 
+// Same hubs as the web; native clients send no Origin and authenticate with the session JWT.
+const hubBase = process.env.EXPO_PUBLIC_ELEVANT_API_URL?.trim().replace(/\/$/, '');
+const hubs = hubBase ? ['/hubs/operations', '/hubs/notifications'].map(path => new HubConnectionBuilder()
+  .withUrl(`${hubBase}${path}`, {
+    accessTokenFactory: async () => (await getMobileSessionRequestContext()).accessToken,
+  })
+  .configureLogging(LogLevel.None)
+  .withAutomaticReconnect([0, 2_000, 10_000, 30_000])
+  .build()) : [];
+
 const observer = createMobileChangeObserver({
   appState: AppState,
+  hubs,
   getContext: async () => {
     const context = await getMobileSessionRequestContext();
     return { sessionId: context.sessionId, accountId: context.session.actor.accountId,

@@ -14,6 +14,14 @@ internal static class OperationalNotificationWriter
         Guid sourceId, string kind, DateTimeOffset occurredAt,
         long? exceptAccountId, CancellationToken cancellationToken)
     {
+        var recipients = await OccRecipientsAsync(context, stationId, occurredAt, exceptAccountId, cancellationToken);
+        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+    }
+
+    /// <summary>Active internal ADMIN_OCC accounts with the station in scope.</summary>
+    public static async Task<long[]> OccRecipientsAsync(ElevantDbContext context, long stationId,
+        DateTimeOffset occurredAt, long? exceptAccountId, CancellationToken cancellationToken)
+    {
         var today = DateOnly.FromDateTime(occurredAt.UtcDateTime);
         var recipients = await context.Users.AsNoTracking()
             .Where(account => account.Status == AccountLifecycleStatus.Active &&
@@ -37,13 +45,22 @@ internal static class OperationalNotificationWriter
             .Select(account => account.Id)
             .Distinct()
             .ToArrayAsync(cancellationToken);
-        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+        return recipients;
     }
 
     public static async Task NotifyAssignedAgentsAsync(
         ElevantDbContext context, long stationId, long operationId,
         Guid sourceId, string kind, DateTimeOffset occurredAt,
         long? exceptAccountId, CancellationToken cancellationToken)
+    {
+        var recipients = await AssignedAgentRecipientsAsync(context, stationId, operationId, occurredAt, exceptAccountId,
+            cancellationToken);
+        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+    }
+
+    /// <summary>Mobile accounts of the agents actively assigned to the operation.</summary>
+    public static async Task<long[]> AssignedAgentRecipientsAsync(ElevantDbContext context, long stationId,
+        long operationId, DateTimeOffset occurredAt, long? exceptAccountId, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(occurredAt.UtcDateTime);
         var recipients = await (
@@ -76,12 +93,20 @@ internal static class OperationalNotificationWriter
             select account.Id)
             .Distinct()
             .ToArrayAsync(cancellationToken);
-        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+        return recipients;
     }
 
     public static async Task NotifyAgentAsync(
         ElevantDbContext context, long rampAgentId, long stationId,
         long operationId, Guid sourceId, string kind,
+        DateTimeOffset occurredAt, CancellationToken cancellationToken)
+    {
+        var recipients = await AgentRecipientsAsync(context, rampAgentId, stationId, occurredAt, cancellationToken);
+        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+    }
+
+    /// <summary>Mobile accounts of one ramp agent with the station in scope.</summary>
+    public static async Task<long[]> AgentRecipientsAsync(ElevantDbContext context, long rampAgentId, long stationId,
         DateTimeOffset occurredAt, CancellationToken cancellationToken)
     {
         var today = DateOnly.FromDateTime(occurredAt.UtcDateTime);
@@ -111,7 +136,7 @@ internal static class OperationalNotificationWriter
             select account.Id)
             .Distinct()
             .ToArrayAsync(cancellationToken);
-        AddForRecipients(context, recipients, stationId, operationId, sourceId, kind, occurredAt);
+        return recipients;
     }
 
     internal static void AddForRecipients(ElevantDbContext context, IEnumerable<long> recipients,

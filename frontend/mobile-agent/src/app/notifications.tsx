@@ -18,6 +18,12 @@ const titles: Record<string, string> = {
   operation_returned: 'OCC devolvió tu operación',
   agent_message: 'Mensaje del agente',
   occ_message: 'Nuevo mensaje de OCC',
+  operation_assigned: 'Te asignaron una operación',
+  assignment_released: 'Se liberó tu asignación',
+  operation_started: 'Operación iniciada',
+  incident_reported: 'Incidencia reportada',
+  deviation_reported: 'Desviación reportada',
+  flight_changed: 'Cambió tu vuelo: revisa posición y horario',
 };
 
 export default function NotificationsScreen() {

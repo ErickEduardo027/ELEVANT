@@ -6,6 +6,7 @@ import type {
 } from '@elevant/api-client';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { subscribeMobileChanges } from '../../services/mobile-change-feed';
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import {
@@ -210,6 +211,10 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       if (!request.signal.aborted) setRefreshing(false);
     }
   }, [id]);
+
+  useFocusEffect(useCallback(() => subscribeMobileChanges(resources => {
+    if (resources.includes('ramp_operations')) void load('silent');
+  }), [load]));
 
   useFocusEffect(useCallback(() => {
     setFocused(true);

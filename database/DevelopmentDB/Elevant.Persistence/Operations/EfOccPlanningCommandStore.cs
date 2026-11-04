@@ -386,8 +386,9 @@ internal sealed class EfOccPlanningCommandStore(
 
         await AirlineOperationChangeWriter.AddAsync(context,
             scope.AirlineOrganizationId, operation.PublicId, now, cancellationToken);
-        await OccPlanningChangeWriter.AddForStationAsync(context,
-            scope.StationInternalId, scope.StationPublicId, now, cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, false, cancellationToken, agent.Id);
+        await OperationalNotificationWriter.NotifyAgentAsync(context, agent.Id, scope.StationInternalId, operation.Id,
+            assignment.PublicId, "operation_assigned", now, cancellationToken);
 
         await context.SaveChangesAsync(cancellationToken);
 

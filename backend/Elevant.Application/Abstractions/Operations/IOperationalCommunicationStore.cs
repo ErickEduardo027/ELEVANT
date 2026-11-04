@@ -22,6 +22,9 @@ public interface IOperationalCommunicationStore
         OperationalAccess access, IReadOnlyCollection<Guid> operationIds, CancellationToken cancellationToken = default) =>
         Task.FromResult(CommunicationResults.Success(new OperationPresenceContactsList(Array.Empty<OperationPresenceContacts>())));
 
+    Task<CommunicationResult<OperationConversationReadData>> MarkReadAsync(
+        OperationalAccess access, Guid operationId, Guid messageId, CancellationToken cancellationToken = default);
+
     Task<CommunicationResult<OperationMessageData>> SendMessageAsync(
         SendOperationMessageCommand command, CancellationToken cancellationToken = default);
 

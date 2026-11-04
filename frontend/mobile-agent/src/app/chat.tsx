@@ -7,16 +7,24 @@ import { PrimaryButton } from '../components/ui';
 import { MobileServiceError } from '../services/mobile-service-error';
 import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import {
-  getOperationalConversations, getOperationalMessages,
+  getOperationalConversations, getOperationalMessages, markOperationalConversationRead,
   readPendingOperationMessage, sendOperationalMessage,
 } from '../services/operational-communication';
 import { colors } from '../theme/colors';
 import { resetToLogin } from '../utils/session-navigation';
 import { formatLocalDateTime } from '../utils/date-format';
 import { startForegroundInterval } from '../utils/foreground-interval';
+import { getMobileSession } from '../services/mobile-auth';
 
 const messageKey = (item: OperationMessageResponse) => item.id;
-const renderMessage = ({ item }: { item: OperationMessageResponse }) => <View style={styles.bubble}><Text style={styles.byline}>{item.senderName} · {item.senderRole === 'occ' ? 'OCC' : 'Agente'} · {formatLocalDateTime(item.sentAt)}</Text><Text style={styles.messageText}>{item.content}</Text></View>;
+
+/** «Visto» once OCC's read cursor reaches the message (ADR-0029). */
+export function isSeenByOthers(message: Pick<OperationMessageResponse, 'sentAt'>, othersReadUpTo?: string | null) {
+  if (!othersReadUpTo) return false;
+  const sent = Date.parse(message.sentAt);
+  const read = Date.parse(othersReadUpTo);
+  return Number.isFinite(sent) && Number.isFinite(read) && sent <= read;
+}
 
 function messageError(error: unknown) {
   if (error instanceof MobileServiceError) {
@@ -35,6 +43,9 @@ export default function ChatScreen() {
   const [listStatus, setListStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [selected, setSelected] = useState<string | null>(null);
   const [messages, setMessages] = useState<readonly OperationMessageResponse[]>([]);
+  const [othersReadUpTo, setOthersReadUpTo] = useState<string | null>(null);
+  const [accountId, setAccountId] = useState<string | null>(null);
+  const markedRef = useRef<Record<string, string>>({});
   const [messagesStatus, setMessagesStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState<{ content: string; idempotencyKey: string } | null>(null);
@@ -81,7 +92,10 @@ export default function ChatScreen() {
     const load = async () => {
       try {
         const result = await getOperationalMessages(selected, controller.signal);
-        if (!controller.signal.aborted) { setMessages(result.messages); setMessagesStatus('ready'); loadedConversationRef.current = selected; }
+        if (!controller.signal.aborted) {
+          setMessages(result.messages); setOthersReadUpTo(result.othersReadUpTo ?? null);
+          setMessagesStatus('ready'); loadedConversationRef.current = selected;
+        }
       } catch (error) {
         if (!controller.signal.aborted) { messageError(error); setMessagesStatus('error'); }
       }
@@ -93,6 +107,27 @@ export default function ChatScreen() {
     // A retry changes messageRevision to restart this focus-scoped request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, messageRevision]));
+
+  useEffect(() => {
+    let active = true;
+    getMobileSession().then(session => { if (active) setAccountId(session?.actor.accountId ?? null); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  // The open thread counts as read up to its newest message; the list then drops its badge.
+  const newestId = messagesStatus === 'ready' ? messages.at(-1)?.id : undefined;
+  useEffect(() => {
+    if (!selected || !newestId || markedRef.current[selected] === newestId) return;
+    markedRef.current[selected] = newestId;
+    markOperationalConversationRead(selected, newestId)
+      .then(() => setConversations(items => items.map(item => item.operationId === selected ? { ...item, unreadCount: 0 } : item)))
+      .catch(() => { delete markedRef.current[selected]; });
+  }, [selected, newestId]);
+
+  const renderMessage = useCallback(({ item }: { item: OperationMessageResponse }) => {
+    const own = accountId !== null && item.senderAccountId === accountId;
+    return <View style={[styles.bubble, own && styles.ownBubble]}><Text style={styles.byline}>{item.senderName} · {item.senderRole === 'occ' ? 'OCC' : 'Agente'} · {formatLocalDateTime(item.sentAt)}</Text><Text style={styles.messageText}>{item.content}</Text>{own ? <Text style={styles.receipt}>{isSeenByOthers(item, othersReadUpTo) ? '✓✓ Visto por OCC' : '✓ Enviado'}</Text> : null}</View>;
+  }, [accountId, othersReadUpTo]);
 
   useEffect(() => {
     if (!selected) { setPending(null); setDraft(''); return; }
@@ -129,7 +164,7 @@ export default function ChatScreen() {
     {listStatus === 'loading' ? <ActivityIndicator color={colors.navy} /> : listStatus === 'error' ? <View style={styles.notice}><Text>No fue posible cargar tus conversaciones.</Text><PrimaryButton title="REINTENTAR" onPress={() => setListRevision(value => value + 1)} secondary /></View> :
       conversations.length === 0 ? <View style={styles.notice}><Text>No tienes operaciones con conversación disponible.</Text></View> : <>
         <ScrollView horizontal style={styles.conversationStrip} contentContainerStyle={styles.conversationItems} accessibilityLabel="Operaciones con chat">
-          {conversations.map(item => <Pressable key={item.operationId} accessibilityRole="button" accessibilityState={{ selected: selected === item.operationId, disabled: Boolean(pending) }} disabled={Boolean(pending)} onPress={() => setSelected(item.operationId)} style={[styles.conversation, selected === item.operationId && styles.selectedConversation]}><Text style={styles.conversationTitle}>{item.operationCode}</Text><Text style={styles.conversationStation}>{item.stationCode}</Text></Pressable>)}
+          {conversations.map(item => <Pressable key={item.operationId} accessibilityRole="button" accessibilityState={{ selected: selected === item.operationId, disabled: Boolean(pending) }} disabled={Boolean(pending)} onPress={() => setSelected(item.operationId)} style={[styles.conversation, selected === item.operationId && styles.selectedConversation]}><View style={styles.conversationRow}><Text style={styles.conversationTitle}>{item.operationCode}</Text>{item.unreadCount > 0 && selected !== item.operationId ? <View accessibilityLabel={`${item.unreadCount} mensajes sin leer`} style={styles.unreadBadge}><Text style={styles.unreadText}>{item.unreadCount > 99 ? '99+' : item.unreadCount}</Text></View> : null}</View><Text style={styles.conversationStation}>{item.stationCode}</Text></Pressable>)}
         </ScrollView>
         {current && <><View style={styles.operationHeader}><Text style={styles.operationTitle}>{current.operationCode}</Text><Text>{current.airlineName} · {current.agentName ?? 'Agente de rampa'}</Text></View>
           {messagesStatus === 'loading' ? <ActivityIndicator color={colors.navy} style={styles.messages} /> : messagesStatus === 'error' ? <View style={[styles.notice, styles.messages]}><Text>No fue posible cargar los mensajes.</Text><PrimaryButton title="REINTENTAR" onPress={() => setMessageRevision(value => value + 1)} secondary /></View> :
@@ -142,6 +177,11 @@ export default function ChatScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
+  conversationRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  unreadBadge: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.navy },
+  unreadText: { color: colors.white, fontSize: 12, fontWeight: '900' },
+  ownBubble: { alignSelf: 'flex-end' },
+  receipt: { marginTop: 4, textAlign: 'right', fontSize: 11, color: colors.muted },
   header: { padding: 18, backgroundColor: colors.navy },
   title: { color: colors.white, fontSize: 22, fontWeight: '900' },
   subtitle: { color: '#D5E2F5', fontSize: 12, marginTop: 4 },

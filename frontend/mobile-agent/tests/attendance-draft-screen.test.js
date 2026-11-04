@@ -11,6 +11,7 @@ jest.mock('expo-router', () => ({
   useFocusEffect: callback => require('react').useEffect(callback, [callback]),
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+jest.mock('../src/services/mobile-change-feed', () => ({ subscribeMobileChanges: () => () => {} }));
 jest.mock('../src/components/attendance-draft-card', () => ({
   AttendanceDraftCard: props => mockCard(props),
 }));

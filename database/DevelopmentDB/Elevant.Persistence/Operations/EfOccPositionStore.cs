@@ -226,14 +226,26 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
         CancellationToken cancellationToken, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? commit = null)
     {
         var now = Now();
+        // Each change has its own audit id, so a flight moved twice notifies twice (notices are unique per source).
+        var changeId = Guid.CreateVersion7();
         context.AuditEntries.Add(new AuditEntry
         {
-            PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+            PublicId = changeId, OccurredAt = now, ActorType = AuditActorType.Account,
             ActorAccountId = current.AccountId, Action = action, EntityType = nameof(Turnaround),
             EntityPublicId = current.Turnaround.PublicId, StationId = current.StationId, Source = AuditSource.Api,
             CorrelationId = Guid.CreateVersion7(), Reason = reason,
         });
         await OccPlanningChangeWriter.AddForStationAsync(context, current.StationId, current.StationPublicId, now, cancellationToken);
+        // ADR-0029: the assigned agent learns at once when the airport moves the flight to another stand.
+        var operationId = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == current.TurnaroundId)
+            .Select(item => (long?)item.Id).FirstOrDefaultAsync(cancellationToken);
+        if (operationId is { } groundOperationId)
+        {
+            await RampOperationChangeWriter.AnnounceAsync(context, groundOperationId, now, false, cancellationToken);
+            if (action != "occ.turnaround.arrived")
+                await OperationalNotificationWriter.NotifyAssignedAgentsAsync(context, current.StationId, groundOperationId,
+                    changeId, "flight_changed", now, current.AccountId, cancellationToken);
+        }
         try
         {
             await context.SaveChangesAsync(cancellationToken);

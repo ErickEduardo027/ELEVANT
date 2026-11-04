@@ -127,6 +127,7 @@ internal sealed class EfHumanResourcesShiftWriteStore(
                 foreach (var recipient in recipients)
                     AccountChangeOutboxWriter.Add(context, recipient, null,
                         "hr_shifts", shiftId, now);
+                await Elevant.Persistence.Operations.RampOperationChangeWriter.AnnounceScheduleAsync(context, agent.Id, shiftId, now, cancellationToken);
                 await OccPlanningChangeWriter.AddForStationAsync(context, station.Id,
                     station.PublicId, now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
@@ -196,6 +197,7 @@ internal sealed class EfHumanResourcesShiftWriteStore(
                                 select link.UserId).Distinct().ToArrayAsync(cancellationToken);
         foreach (var recipient in recipients)
             AccountChangeOutboxWriter.Add(context, recipient, null, "hr_shifts", shiftId, now);
+        await Elevant.Persistence.Operations.RampOperationChangeWriter.AnnounceScheduleAsync(context, row.Shift.RampAgentId, shiftId, now, cancellationToken);
         await OccPlanningChangeWriter.AddForStationAsync(context, row.StationKey, row.StationPublicId, now, cancellationToken);
         try
         {

@@ -2,11 +2,11 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  useAuth: vi.fn(), conversations: vi.fn(), messages: vi.fn(), send: vi.fn(), observer: vi.fn(),
+  useAuth: vi.fn(), conversations: vi.fn(), messages: vi.fn(), send: vi.fn(), observer: vi.fn(), read: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../auth/AuthContext', () => ({ useAuth: mocks.useAuth }));
 vi.mock('../access/DepartmentAccessContext', () => ({ useOptionalDepartmentAccess: () => ({ can: () => true }) }));
-vi.mock('./chatService', () => ({ readConversations: mocks.conversations, readMessages: mocks.messages, sendMessage: mocks.send }));
+vi.mock('./chatService', () => ({ readConversations: mocks.conversations, readMessages: mocks.messages, sendMessage: mocks.send, markConversationRead: mocks.read }));
 vi.mock('../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: mocks.observer,
 }));
@@ -14,7 +14,7 @@ vi.mock('../../components/AppLink', () => ({
   default: ({ to, children, ...props }) => <a href={to} {...props}>{children}</a>,
 }));
 
-import CanonicalChatRoute from './CanonicalChatRoute';
+import CanonicalChatRoute, { isSeen } from './CanonicalChatRoute';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 
@@ -115,4 +115,35 @@ it('renders conversations and messages in English inside the OCC scope', async (
   expect(screen.getByRole('link', { name: 'View operation' })).toBeInTheDocument();
   expect(screen.getByLabelText('Message')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
+});
+
+it('marks «visto» only once the other side read up to the message', () => {
+  const sent = { sentAt: '2026-09-01T12:00:00Z' };
+  expect(isSeen(sent, null)).toBe(false);
+  expect(isSeen(sent, '2026-09-01T11:59:59Z')).toBe(false);
+  expect(isSeen(sent, '2026-09-01T12:00:00Z')).toBe(true);
+});
+
+it('shows unread counts and the agent, marks the open thread read and shows seen receipts', async () => {
+  const accountId = '10000000-0000-0000-0000-000000000001';
+  mocks.useAuth.mockReturnValue({ session: { token: 'token', accountId,
+    stationScopes: [{ stationId: operation.stationId, stationCode: 'PUJ' }] } });
+  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
+  mocks.read.mockClear();
+  mocks.conversations.mockReset().mockResolvedValue({ conversations: [{ ...operation, unreadCount: 3 }], hasMore: false });
+  const own = { ...message('80000000-0000-0000-0000-000000000001', 'Recibido'), senderAccountId: accountId, sentAt: '2026-09-01T12:00:00Z' };
+  const later = { ...message('80000000-0000-0000-0000-000000000002', 'Pendiente'), senderAccountId: accountId, sentAt: '2026-09-01T12:05:00Z' };
+  mocks.messages.mockReset().mockResolvedValue({ messages: [own, later], hasMore: false, othersReadUpTo: '2026-09-01T12:01:00Z' });
+  window.history.replaceState({}, '', '/admin-occ/chat');
+  act(() => resetLanguageForTests('es'));
+
+  render(<LanguageScope><CanonicalChatRoute /></LanguageScope>);
+  expect(await screen.findByLabelText('3 mensajes sin leer')).toHaveTextContent('3');
+  expect(screen.getByText('Agente: Ramp')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /DEV-CHAT-01/ }));
+  expect(await screen.findByText('Recibido')).toBeInTheDocument();
+  const receipts = screen.getAllByText(/✓/).map(item => item.textContent);
+  expect(receipts).toEqual(['✓✓ Visto', '✓ Enviado']);
+  await waitFor(() => expect(mocks.read).toHaveBeenCalledWith(operation.operationId, later.id));
+  expect(mocks.read).toHaveBeenCalledTimes(1);
 });

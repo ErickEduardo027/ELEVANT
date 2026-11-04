@@ -368,6 +368,9 @@ internal sealed class EfRampOperationsCommandStore(
         await AirlineOperationChangeWriter.AddAsync(context,
             scope.AirlineOrganizationInternalId, operation.PublicId, now,
             cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, false, cancellationToken);
+        await OperationalNotificationWriter.NotifyOccAsync(context, scope.StationInternalId, operation.Id,
+            operation.PublicId, "operation_started", now, null, cancellationToken);
 
         var start = new RampOperationStartData(
             receipt.PublicId,

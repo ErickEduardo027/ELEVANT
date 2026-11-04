@@ -16,16 +16,20 @@ public sealed record OperationMessageData(
     Guid Id, Guid OperationId, Guid SenderAccountId, string SenderRole,
     string SenderName, string Content, DateTimeOffset SentAt);
 
+/// <param name="UnreadCount">Messages from others after the reader's cursor (ADR-0029).</param>
+/// <param name="OthersReadUpTo">Latest message time the other participants have read («visto»).</param>
 public sealed record OperationConversationData(
     Guid OperationId, string OperationCode, DateOnly OperationDate,
     string StationCode, string AirlineName, string? AgentName,
-    string Status, OperationMessageData? LastMessage);
+    string Status, OperationMessageData? LastMessage, int UnreadCount = 0, DateTimeOffset? OthersReadUpTo = null);
 
 public sealed record OperationConversationListData(
     IReadOnlyList<OperationConversationData> Conversations, bool HasMore);
 
 public sealed record OperationMessageListData(
-    Guid OperationId, IReadOnlyList<OperationMessageData> Messages, bool HasMore);
+    Guid OperationId, IReadOnlyList<OperationMessageData> Messages, bool HasMore, DateTimeOffset? OthersReadUpTo = null);
+
+public sealed record OperationConversationReadData(Guid OperationId, Guid MessageId, DateTimeOffset ReadAt);
 
 public sealed record OperationalNotificationData(
     Guid Id, Guid OperationId, string OperationCode, string StationCode,

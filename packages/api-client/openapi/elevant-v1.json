@@ -21400,6 +21400,90 @@
         ]
       }
     },
+    "/api/v1/chat/conversations/{operationId}/read": {
+      "put": {
+        "tags": [
+          "OperationalChat"
+        ],
+        "summary": "Marks the conversation read up to a message (ADR-0029); used for unread counts and «visto».",
+        "operationId": "MarkOperationalConversationRead",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/MarkOperationalConversationReadRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/notifications": {
       "get": {
         "tags": [
@@ -36743,6 +36827,19 @@
         },
         "additionalProperties": false
       },
+      "MarkOperationalConversationReadRequest": {
+        "required": [
+          "messageId"
+        ],
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
       "MediaAssetData": {
         "required": [
           "contentType",
@@ -38846,7 +38943,8 @@
           "operationDate",
           "operationId",
           "stationCode",
-          "status"
+          "status",
+          "unreadCount"
         ],
         "type": "object",
         "properties": {
@@ -38881,6 +38979,15 @@
               }
             ],
             "nullable": true
+          },
+          "unreadCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "othersReadUpTo": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -38905,6 +39012,11 @@
           },
           "hasMore": {
             "type": "boolean"
+          },
+          "othersReadUpTo": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "additionalProperties": false

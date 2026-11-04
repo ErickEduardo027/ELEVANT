@@ -394,6 +394,8 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         context.AuditEntries.Add(audit);
         await AirlineOperationChangeWriter.AddAsync(context,
             scope.AirlineOrganizationId, operation.PublicId, now, cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, true, cancellationToken,
+            latest.SubmittedByRampAgentId);
         if (outcome == ReviewOutcome.Approved)
             await FinanceApprovedServiceChangeWriter.AddAsync(context,
                 scope.StationId, operation.PublicId, now, cancellationToken);

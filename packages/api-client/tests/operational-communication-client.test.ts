@@ -24,8 +24,9 @@ describe("durable operational communication client", () => {
     const answers = [
       { conversations: [{ operationId, operationCode: "OP-101", operationDate: "2026-09-24",
         stationCode: "PUJ", airlineName: "Demo Air", agentName: "Agente Demo",
-        status: "InProgress", lastMessage: message }], hasMore: false },
-      { operationId, messages: [message], hasMore: false }, message,
+        status: "InProgress", lastMessage: message, unreadCount: 2, othersReadUpTo: null }], hasMore: false },
+      { operationId, messages: [message], hasMore: false, othersReadUpTo: sentAt }, message,
+      null,
       { notifications: [notification], hasMore: false },
       { ...notification, readAt: sentAt },
     ];
@@ -33,12 +34,14 @@ describe("durable operational communication client", () => {
       getAccessToken: () => "token", fetch: async (input, init) => {
         requests.push({ url: String(input), method: String(init?.method),
           headers: new Headers(init?.headers), body: String(init?.body ?? "") });
-        return json(answers[requests.length - 1]);
+        const answer = answers[requests.length - 1];
+        return answer === null ? new Response(null, { status: 204 }) : json(answer);
       } });
     await expect(client.getOperationalConversations()).resolves.toMatchObject({ hasMore: false });
     await expect(client.getOperationalMessages(operationId)).resolves.toMatchObject({ messages: [message] });
     await expect(client.sendOperationalMessage(operationId, { content: " Puente listo " }, key, installationId))
       .resolves.toEqual(message);
+    await expect(client.markOperationalConversationRead(operationId, messageId)).resolves.toBeUndefined();
     await expect(client.getOperationalNotifications()).resolves.toMatchObject({ notifications: [notification] });
     await expect(client.setOperationalNotificationRead(notificationId, true))
       .resolves.toMatchObject({ id: notificationId, readAt: sentAt });
@@ -46,6 +49,7 @@ describe("durable operational communication client", () => {
       ["GET", "https://api.example.test/api/v1/chat/conversations"],
       ["GET", `https://api.example.test/api/v1/chat/conversations/${operationId}/messages`],
       ["POST", `https://api.example.test/api/v1/chat/conversations/${operationId}/messages`],
+      ["PUT", `https://api.example.test/api/v1/chat/conversations/${operationId}/read`],
       ["GET", "https://api.example.test/api/v1/notifications"],
       ["PUT", `https://api.example.test/api/v1/notifications/${notificationId}/read`],
     ]);
@@ -53,7 +57,14 @@ describe("durable operational communication client", () => {
     expect(requests[2]!.headers.get("idempotency-key")).toBe(key);
     expect(requests[2]!.headers.get("x-elevant-installation-id")).toBe(installationId);
     expect(JSON.parse(requests[2]!.body)).toEqual({ content: "Puente listo" });
-    expect(JSON.parse(requests[4]!.body)).toEqual({ read: true });
+    expect(JSON.parse(requests[3]!.body)).toEqual({ messageId });
+    expect(JSON.parse(requests[5]!.body)).toEqual({ read: true });
+  });
+
+  it("rejects a malformed read cursor before calling the API", async () => {
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      getAccessToken: () => "token", fetch: async () => { throw new Error("must not call"); } });
+    await expect(client.markOperationalConversationRead(operationId, "nope")).rejects.toThrow(TypeError);
   });
 
   it("rejects malformed scope, oversized content and contradictory read receipts", async () => {

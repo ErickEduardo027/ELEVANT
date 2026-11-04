@@ -71,3 +71,39 @@ test('does not publish a response from a session that was replaced in flight', a
   expect(f.onChanges).not.toHaveBeenCalled();
   await f.observer.stop();
 });
+
+function hub() {
+  const handlers = {};
+  return {
+    state: 'Disconnected', handlers,
+    start: jest.fn(function start() { this.state = 'Connected'; return Promise.resolve(); }),
+    stop: jest.fn(function stop() { this.state = 'Disconnected'; return Promise.resolve(); }),
+    on: jest.fn((event, listener) => { handlers[event] = listener; }),
+    onreconnected: jest.fn(listener => { handlers.reconnected = listener; }),
+  };
+}
+
+test('a SignalR ChangedV1 wakes the REST cursor at once and hubs sleep in background', async () => {
+  const listeners = [];
+  const appState = { currentState: 'active', addEventListener: jest.fn((name, listener) => {
+    listeners.push(listener);
+    return { remove: jest.fn() };
+  }) };
+  const operations = hub();
+  const getChanges = jest.fn().mockResolvedValue({ changes: [], nextCursor: null, hasMore: false });
+  const onChanges = jest.fn();
+  const observer = createMobileChangeObserver({ appState, hubs: [operations],
+    getContext: jest.fn().mockResolvedValue(context()), getChanges, onChanges });
+  await observer.start();
+  expect(operations.start).toHaveBeenCalledTimes(1);
+  getChanges.mockResolvedValueOnce({ changes: [change('ramp_operations', 'c1')], nextCursor: 'c1', hasMore: false });
+  operations.handlers.ChangedV1();
+  await observer.reconcile();
+  expect(onChanges).toHaveBeenCalledWith(['ramp_operations']);
+  listeners[0]('background');
+  expect(operations.stop).toHaveBeenCalled();
+  listeners[0]('active');
+  expect(operations.start).toHaveBeenCalledTimes(2);
+  await observer.stop();
+  expect(operations.stop).toHaveBeenCalledTimes(2);
+});
