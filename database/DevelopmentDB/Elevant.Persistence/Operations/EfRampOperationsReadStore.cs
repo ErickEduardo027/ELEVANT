@@ -146,7 +146,10 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                         operation.PlannedStartAt,
                         operation.PlannedEndAt,
                         operation.ActualStartAt,
-                        operation.ActualEndAt),
+                        operation.ActualEndAt,
+                        operation.PassengersIn,
+                        operation.PassengersOut,
+                        operation.MtowKg),
                     TurnaroundInternalId = turnaround.Id,
                     turnaround.PublicId,
                     turnaround.OperationCode,
@@ -298,6 +301,14 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
         var servicesByOperation = services.ToLookup(
             item => item.GroundOperationId,
             item => item.Service);
+        // Flight Report milestones recorded on the ramp (ADR-0031), in the form's order.
+        var milestoneOrder = FlightReportMilestones.All.ToDictionary(item => item.Code, item => item.SortOrder);
+        var milestones = (await context.Set<OperationMilestone>().AsNoTracking()
+                .Where(item => operationIds.Contains(item.GroundOperationId) && item.ActualAt != null)
+                .Select(item => new { item.GroundOperationId, item.Code, item.ActualAt })
+                .ToArrayAsync(cancellationToken))
+            .ToLookup(item => item.GroundOperationId,
+                item => new RampMilestoneData(item.Code, item.ActualAt!.Value));
         var result = operations.Select(item =>
         {
             var turnaroundLegs = legsByTurnaround[item.TurnaroundInternalId];
@@ -318,7 +329,9 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                     turnaroundLegs.SingleOrDefault(
                         leg => leg.Direction == FlightDirection.Departure)?.Leg),
                 servicesByOperation[item.OperationInternalId].ToArray(),
-                reviews.GetValueOrDefault(item.OperationInternalId));
+                reviews.GetValueOrDefault(item.OperationInternalId),
+                milestones[item.OperationInternalId]
+                    .OrderBy(milestone => milestoneOrder.GetValueOrDefault(milestone.Code, int.MaxValue)).ToArray());
         }).ToArray();
 
         return RampOperationsReadResult.Success(result);

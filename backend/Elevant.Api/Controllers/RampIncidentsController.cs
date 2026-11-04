@@ -43,7 +43,8 @@ public sealed class RampIncidentsController(RampIncidentHandler handler) : Contr
                 incident.Status,
                 incident.Description,
                 incident.OccurredAt,
-                incident.ReportedAt)).ToArray()));
+                incident.ReportedAt,
+                incident.DelayCode)).ToArray()));
     }
 
     /// <summary>Atomically reports one incident without duplicating offline retries.</summary>
@@ -84,7 +85,8 @@ public sealed class RampIncidentsController(RampIncidentHandler handler) : Contr
             installationId,
             idempotencyKey,
             HttpContext.TraceIdentifier,
-            cancellationToken);
+            cancellationToken,
+            request.DelayCode);
         if (!result.IsSuccess) return FailureResult<RampIncidentReceiptResponse>(result.Failure!.Value);
         var receipt = result.Receipt!;
         return Ok(new RampIncidentReceiptResponse(

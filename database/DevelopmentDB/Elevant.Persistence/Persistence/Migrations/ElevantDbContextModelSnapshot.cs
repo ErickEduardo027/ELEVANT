@@ -8602,6 +8602,18 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(24)")
                         .HasColumnName("current_status");
 
+                    b.Property<int?>("MtowKg")
+                        .HasColumnType("int")
+                        .HasColumnName("mtow_kg");
+
+                    b.Property<int?>("PassengersIn")
+                        .HasColumnType("int")
+                        .HasColumnName("passengers_in");
+
+                    b.Property<int?>("PassengersOut")
+                        .HasColumnType("int")
+                        .HasColumnName("passengers_out");
+
                     b.Property<DateTimeOffset?>("PlannedEndAt")
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)")
@@ -8649,6 +8661,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("ground_operations", "ops", t =>
                         {
                             t.HasCheckConstraint("ck_ground_operation_actual_dates", "[actual_end_at] IS NULL OR [actual_start_at] IS NULL OR [actual_end_at] >= [actual_start_at]");
+
+                            t.HasCheckConstraint("ck_ground_operation_flight_data", "([passengers_in] IS NULL OR [passengers_in] BETWEEN 0 AND 999) AND ([passengers_out] IS NULL OR [passengers_out] BETWEEN 0 AND 999) AND ([mtow_kg] IS NULL OR [mtow_kg] BETWEEN 1000 AND 700000)");
 
                             t.HasCheckConstraint("ck_ground_operation_planned_dates", "[planned_end_at] IS NULL OR [planned_start_at] IS NULL OR [planned_end_at] >= [planned_start_at]");
                         });
@@ -8716,6 +8730,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("DelayCode")
+                        .HasMaxLength(4)
+                        .HasColumnType("nvarchar(4)")
+                        .HasColumnName("delay_code");
 
                     b.Property<string>("Description")
                         .IsRequired()

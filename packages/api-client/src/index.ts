@@ -1,4 +1,5 @@
 export * from "./presence";
+export * from "./flightReport";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -91,6 +92,7 @@ export {
   type ApplyRampServiceChargeOptions,
   type SessionStart,
   type OccCoverageCommand,
+  type RampFlightDataCommand,
   type OccStandAttributesCommand,
 } from "./client";
 export { ElevantApiError, ELEVANT_RULE_REASONS, type ElevantApiErrorKind, type ElevantApiErrorCode, type ElevantRuleReason } from "./errors";
@@ -240,6 +242,8 @@ export {
   type OccStandConstraintResponse,
   type RampOwnCoverageListResponse,
   type RampOwnCoverageResponse,
+  type RampExecutionResponse,
+  type RampMilestoneResponse,
   type OccReadyContractsResponse,
   type OccFlightFeedResponse,
   type OccFlightProposalResponse,

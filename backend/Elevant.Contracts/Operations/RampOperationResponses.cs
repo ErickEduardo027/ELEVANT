@@ -12,7 +12,21 @@ public sealed record RampAssignedOperationResponse(
     RampGroundOperationResponse Operation,
     RampTurnaroundResponse Turnaround,
     IReadOnlyList<RampOperationServiceResponse> Services,
-    RampReviewFeedbackResponse? Review = null);
+    RampReviewFeedbackResponse? Review,
+    IReadOnlyList<RampMilestoneResponse> Milestones);
+
+/// <summary>A recorded Flight Report milestone (ADR-0031).</summary>
+public sealed record RampMilestoneResponse(string Code, DateTimeOffset ActualAt);
+
+/// <summary>Milestones and flight data after a Flight Report write from the tablet (ADR-0031).</summary>
+public sealed record RampExecutionResponse(Guid ReceiptId, Guid OperationId, IReadOnlyList<RampMilestoneResponse> Milestones,
+    int? PassengersIn, int? PassengersOut, int? MtowKg, string? AircraftRegistration);
+
+public sealed record RecordRampMilestoneRequest(DateTimeOffset OccurredAt);
+
+/// <param name="AircraftRegistration">Correction typed once on the ramp; null keeps the current one.</param>
+public sealed record UpdateRampFlightDataRequest(int? PassengersIn, int? PassengersOut, int? MtowKg,
+    string? AircraftRegistration);
 
 public sealed record RampReviewFeedbackResponse(
     Guid SubmissionId,
@@ -38,7 +52,10 @@ public sealed record RampGroundOperationResponse(
     DateTimeOffset? PlannedStartAt,
     DateTimeOffset? PlannedEndAt,
     DateTimeOffset? ActualStartAt,
-    DateTimeOffset? ActualEndAt);
+    DateTimeOffset? ActualEndAt,
+    int? PassengersIn,
+    int? PassengersOut,
+    int? MtowKg);
 
 public sealed record RampTurnaroundResponse(
     Guid Id,

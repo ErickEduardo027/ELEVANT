@@ -25,4 +25,7 @@ public sealed class Incident : AuditableEntity
     public long? ResolvedByAccountId { get; set; }
 
     public string? ResolutionNote { get; set; }
+
+    /// <summary>IATA delay code of a deviation (ADR-0031); null for other incident types.</summary>
+    public string? DelayCode { get; set; }
 }

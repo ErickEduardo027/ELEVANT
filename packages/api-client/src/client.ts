@@ -1,4 +1,5 @@
 import { PRESENCE_AVAILABILITIES, PRESENCE_MESSAGE_MAX_LENGTH } from "./presence";
+import { isFlightReportMilestoneCode, isIataDelayCode } from "./flightReport";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
   getGetAccountChangesUrl,
@@ -138,6 +139,8 @@ import {
   getRegisterMobileDeviceUrl,
   getReopenRampOperationCorrectionUrl,
   getReportRampIncidentUrl,
+  getRecordRampMilestoneUrl,
+  getUpdateRampFlightDataUrl,
   getSubmitRampOperationUrl,
   getStartRampOperationUrl,
   getSubmitRampOperationChecklistUrl,
@@ -289,6 +292,7 @@ import {
   type RampOperationSubmissionResponse,
   type RampOperationCorrectionResponse,
   type ReportRampIncidentRequest,
+  type RampExecutionResponse,
   type SubmitRampOperationRequest,
   type RampOperationServiceTransitionResponse,
   type RampOperationChargesResponse,
@@ -483,6 +487,13 @@ export type SaveAttendanceDraftOptions = Omit<ElevantRequestInit, "body" | "meth
 export type GetHumanResourcesAttendanceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ValidateHumanResourcesAttendanceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReportRampIncidentOptions = Omit<ElevantRequestInit, "body" | "method">;
+
+export interface RampFlightDataCommand {
+  passengersIn: number | null;
+  passengersOut: number | null;
+  mtowKg: number | null;
+  aircraftRegistration: string | null;
+}
 export type SubmitRampOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReopenRampOperationCorrectionOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitRampOperationChecklistOptions = Omit<
@@ -974,6 +985,23 @@ export interface ElevantApiClient {
     idempotencyKey: string,
     options?: ReportRampIncidentOptions,
   ): Promise<RampIncidentReceiptResponse>;
+  /** Records the time of one Flight Report milestone (ADR-0031); idempotent per device. */
+  recordRampMilestone(
+    operationId: string,
+    code: string,
+    occurredAt: string,
+    installationId: string,
+    idempotencyKey: string,
+    options?: ReportRampIncidentOptions,
+  ): Promise<RampExecutionResponse>;
+  /** Saves passengers, MTOW and the registration correction typed once on the ramp. */
+  updateRampFlightData(
+    operationId: string,
+    request: RampFlightDataCommand,
+    installationId: string,
+    idempotencyKey: string,
+    options?: ReportRampIncidentOptions,
+  ): Promise<RampExecutionResponse>;
   submitRampOperation(
     operationId: string,
     request: SubmitRampOperationRequest,
@@ -1418,13 +1446,19 @@ function isOccGroundOperationResponse(
       "plannedEndAt",
       "actualStartAt",
       "actualEndAt",
+      "passengersIn",
+      "passengersOut",
+      "mtowKg",
     ]) &&
     isUuid(value.id) &&
     isString(value.status) &&
     isOptionalNullable(value.plannedStartAt, isDateTimeOffset) &&
     isOptionalNullable(value.plannedEndAt, isDateTimeOffset) &&
     isOptionalNullable(value.actualStartAt, isDateTimeOffset) &&
-    isOptionalNullable(value.actualEndAt, isDateTimeOffset)
+    isOptionalNullable(value.actualEndAt, isDateTimeOffset) &&
+    isOptionalNullable(value.passengersIn, isPassengerCount) &&
+    isOptionalNullable(value.passengersOut, isPassengerCount) &&
+    isOptionalNullable(value.mtowKg, isMtow)
   );
 }
 
@@ -1776,10 +1810,26 @@ function isRampTurnaroundResponse(value: unknown) {
   );
 }
 
+const isPassengerCount = (value: unknown) => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 999;
+const isMtow = (value: unknown) => Number.isInteger(value) && (value as number) >= 1_000 && (value as number) <= 700_000;
+const isMilestoneList = (value: unknown) => Array.isArray(value) && value.length <= 50 && value.every(item =>
+  isRecord(item) && hasOnlyKeys(item, ["code", "actualAt"]) && isFlightReportMilestoneCode(item.code) &&
+  isDateTimeOffset(item.actualAt));
+
+function isRampExecutionResponse(value: unknown, operationId: string): value is RampExecutionResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["receiptId", "operationId", "milestones", "passengersIn", "passengersOut",
+      "mtowKg", "aircraftRegistration"]) &&
+    isUuid(value.receiptId) && isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
+    isMilestoneList(value.milestones) && isOptionalNullable(value.passengersIn, isPassengerCount) &&
+    isOptionalNullable(value.passengersOut, isPassengerCount) && isOptionalNullable(value.mtowKg, isMtow) &&
+    isOptionalNullable(value.aircraftRegistration, isNonEmptyString);
+}
+
 function isRampAssignedOperationResponse(value: unknown) {
   return (
     isRecord(value) &&
-    hasOnlyKeys(value, ["assignment", "operation", "turnaround", "services", "review"]) &&
+    hasOnlyKeys(value, ["assignment", "operation", "turnaround", "services", "review", "milestones"]) &&
+    (value.milestones === undefined || isMilestoneList(value.milestones)) &&
     isRampAgentAssignmentResponse(value.assignment) &&
     isOccGroundOperationResponse(value.operation) &&
     isRampTurnaroundResponse(value.turnaround) &&
@@ -1836,7 +1886,7 @@ function isRampOperationStartResponse(
 }
 
 const rampChecklistStatuses = ["NotStarted", "InProgress", "Submitted"] as const;
-const rampIncidentTypes = ["Operational", "Safety", "Equipment", "Documentation"] as const;
+const rampIncidentTypes = ["Operational", "Safety", "Equipment", "Documentation", "Deviation"] as const;
 const rampIncidentSeverities = ["Low", "Medium", "High", "Critical"] as const;
 const rampIncidentStatuses = ["Open", "InReview", "Resolved", "Closed"] as const;
 const rampChecklistAnswerValues = ["Ok", "NotApplicable", "NotOk"] as const;
@@ -2078,8 +2128,9 @@ function isRampIncidentResponse(value: unknown) {
   return (
     isRecord(value) &&
     hasOnlyKeys(value, [
-      "id", "incidentType", "severity", "status", "description", "occurredAt", "reportedAt",
+      "id", "incidentType", "severity", "status", "description", "occurredAt", "reportedAt", "delayCode",
     ]) &&
+    isOptionalNullable(value.delayCode, isIataDelayCode) &&
     isUuid(value.id) &&
     typeof value.incidentType === "string" &&
     value.incidentType.length > 0 &&
@@ -4512,7 +4563,9 @@ function validatedIncidentReportRequest(
 ): ReportRampIncidentRequest {
   if (
     !isRecord(request) ||
-    !hasOnlyKeys(request, ["incidentType", "severity", "description", "occurredAt"]) ||
+    !hasOnlyKeys(request, ["incidentType", "severity", "description", "occurredAt", "delayCode"]) ||
+    // A deviation carries its IATA delay code (ADR-0031); other incidents never do.
+    (request.incidentType === "Deviation" ? !isIataDelayCode(request.delayCode) : request.delayCode != null) ||
     !isOneOf(request.incidentType, rampIncidentTypes) ||
     !isOneOf(request.severity, rampIncidentSeverities) ||
     typeof request.description !== "string" ||
@@ -4527,6 +4580,7 @@ function validatedIncidentReportRequest(
     severity: request.severity,
     description: request.description.trim(),
     occurredAt: request.occurredAt,
+    ...(request.incidentType === "Deviation" ? { delayCode: request.delayCode } : {}),
   };
 }
 
@@ -4919,6 +4973,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     const result = await execute(path, { ...options, method, headers,
       ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
     if (!isOccCoverageBoard(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  const rampExecution = async (path: string, operation: string, body: unknown, installationId: string,
+    idempotencyKey: string, options?: ReportRampIncidentOptions) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("x-elevant-installation-id", validatedUuid(installationId, "installationId"));
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+    if (!isRampExecutionResponse(result.data, operation)) throw malformedResponse(result.status);
     return result.data;
   };
 
@@ -6615,6 +6680,32 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isAttendanceValidationWriteResult(result.data, assignment, body))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async recordRampMilestone(
+      operationId: string, code: string, occurredAt: string, installationId: string, idempotencyKey: string,
+      options?: ReportRampIncidentOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      if (!isFlightReportMilestoneCode(code) || !isDateTimeOffset(occurredAt))
+        throw new TypeError("The Flight Report milestone is invalid.");
+      return rampExecution(getRecordRampMilestoneUrl(operation, code), operation, { occurredAt },
+        installationId, idempotencyKey, options);
+    },
+    async updateRampFlightData(
+      operationId: string, request: RampFlightDataCommand, installationId: string, idempotencyKey: string,
+      options?: ReportRampIncidentOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const registration = typeof request?.aircraftRegistration === "string" && request.aircraftRegistration.trim()
+        ? request.aircraftRegistration.trim().toUpperCase() : null;
+      if (!isRecord(request) || (request.passengersIn !== null && !isPassengerCount(request.passengersIn)) ||
+          (request.passengersOut !== null && !isPassengerCount(request.passengersOut)) ||
+          (request.mtowKg !== null && !isMtow(request.mtowKg)) ||
+          (registration !== null && !/^[A-Z0-9-]{2,10}$/.test(registration)))
+        throw new TypeError("The flight data is invalid.");
+      return rampExecution(getUpdateRampFlightDataUrl(operation), operation, {
+        passengersIn: request.passengersIn, passengersOut: request.passengersOut, mtowKg: request.mtowKg,
+        aircraftRegistration: registration }, installationId, idempotencyKey, options);
     },
     async reportRampIncident(
       operationId: string,

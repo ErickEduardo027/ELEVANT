@@ -60,6 +60,8 @@ import {
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
 import { dateTimeFormat } from '../../utils/date-format';
+import { ConnectionBadge } from '../../components/flight-report/connection-badge';
+import { DeviationAction, FlightDataCard, FlightReportPanel } from '../../components/flight-report/flight-report-panel';
 
 type DetailState = 'loading' | 'ready' | 'not-found' | 'offline' | 'unavailable';
 type StartNotice = Readonly<{
@@ -646,9 +648,9 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const { assignment, turnaround } = operation;
   const timeZone = turnaround.station.ianaTimeZone;
   const pendingServiceId = Object.keys(pendingServiceCommands)[0] ?? null;
-  const hasOperationalChecklist = operation.services.some(
-    service => service.code === 'PASSENGER-BRIDGE',
-  );
+  // Every operation carries an execution checklist (ADR-0031): the bridge one or the Flight Report.
+  const hasOperationalChecklist = true;
+  const executing = !cached && operation.operation.status === 'InProgress';
 
   return (
     <ScrollView
@@ -699,6 +701,15 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         starting={starting}
         timeZone={timeZone}
       />
+
+      <ConnectionBadge />
+      {operation.operation.status !== 'Assigned' && (
+        <>
+          <FlightReportPanel operation={operation} timeZone={timeZone} editable={executing} />
+          <DeviationAction operationId={operation.operation.id} editable={executing} />
+          <FlightDataCard key={operation.operation.id} operation={operation} editable={executing} />
+        </>
+      )}
 
       {operation.operation.id && assignment.id && (
         <AttendanceDraftCard

@@ -172,6 +172,7 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationChecklistReadStore, EfRampOperationChecklistReadStore>();
         services.AddScoped<IRampOperationChecklistCommandStore, EfRampOperationChecklistCommandStore>();
         services.AddScoped<IRampOperationServiceCommandStore, EfRampOperationServiceCommandStore>();
+        services.AddScoped<Elevant.Application.Operations.IRampExecutionCommandStore, EfRampExecutionCommandStore>();
         services.AddScoped<IRampServiceChargeStore, EfRampServiceChargeStore>();
         services.AddScoped<IRampIncidentStore, EfRampIncidentStore>();
         services.AddScoped<IAttendanceDraftStore, EfAttendanceDraftStore>();

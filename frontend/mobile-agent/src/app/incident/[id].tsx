@@ -44,6 +44,7 @@ function handleSessionError(error: unknown) {
 }
 
 function labelFor(value: string) {
+  if (value === 'Deviation') return 'Desviación';
   return types.find(item => item.value === value)?.label ??
     severities.find(item => item.value === value)?.label ?? value;
 }

@@ -65,7 +65,8 @@ internal sealed class EfRampIncidentStore(
                     incident.Status.ToString(),
                     incident.Description,
                     incident.OccurredAt,
-                    incident.ReportedAt))
+                    incident.ReportedAt,
+                    incident.DelayCode))
                 .ToArrayAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return RampIncidentReadResult.Success(incidents);
@@ -190,6 +191,7 @@ internal sealed class EfRampIncidentStore(
                 priorIncident.IncidentType != request.IncidentType ||
                 priorIncident.Severity != request.Severity ||
                 priorIncident.Description != request.Description ||
+                priorIncident.DelayCode != request.DelayCode ||
                 priorIncident.OccurredAt != occurredAt)
             {
                 return await RejectAsync(receipt, RampOperationsFailure.Conflict, "conflict", now, cancellationToken);
@@ -218,6 +220,7 @@ internal sealed class EfRampIncidentStore(
             Severity = request.Severity,
             Status = IncidentStatus.Open,
             Description = request.Description,
+            DelayCode = request.DelayCode,
             OccurredAt = occurredAt,
             ReportedAt = now,
             CreatedAt = now,
@@ -252,7 +255,8 @@ internal sealed class EfRampIncidentStore(
         });
         await RampOperationChangeWriter.AnnounceAsync(context, scope.Operation.Id, now, false, cancellationToken);
         await OperationalNotificationWriter.NotifyOccAsync(context, scope.StationInternalId, scope.Operation.Id,
-            incident.PublicId, "incident_reported", now, actor.AccountInternalId, cancellationToken);
+            // A deviation from the normal process is its own alert kind for OCC (ADR-0031).
+            incident.PublicId, incident.IncidentType == RampIncidentPolicy.Deviation ? "deviation_reported" : "incident_reported", now, actor.AccountInternalId, cancellationToken);
         return await CompleteReceiptAsync(receipt, incident, request.OperationId, now, device, cancellationToken);
     }
 
@@ -343,6 +347,7 @@ internal sealed class EfRampIncidentStore(
             severity = request.Severity.ToString(),
             description = request.Description,
             occurredAt,
+            delayCode = request.DelayCode,
         }, JsonOptions);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
     }

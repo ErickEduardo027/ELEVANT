@@ -19,6 +19,32 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
     private static readonly DateTimeOffset FixtureInstant = new(2026, 8, 17, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateOnly FixtureDate = new(2026, 8, 18);
     private static readonly DateOnly SecondFixtureDate = new(2026, 8, 19);
+    /// <summary>Checklist rows of AVIAM's «Reporte de Vuelo» (F-OCC-AVL-6.2.12/A9, rev. 2), literal (ADR-0031).</summary>
+    private static readonly ChecklistFixtureItem[] FlightReportChecklistItems =
+    [
+        new("ARR-01", "Llegada de aeronave", "Limpieza del área de estacionamiento antes de la llegada de la aeronave"),
+        new("ARR-02", "Llegada de aeronave", "Recogida de objetos extraños (FOD) en el área"),
+        new("ARR-03", "Llegada de aeronave", "Puntualidad del personal asignado antes de la llegada de la aeronave"),
+        new("ARR-04", "Llegada de aeronave", "Calzos, varas y focos de señales direccionales disponibles en el área"),
+        new("ARR-05", "Llegada de aeronave", "Mínimo 1 escalera de embarque y desembarque disponible en el área"),
+        new("ARR-06", "Llegada de aeronave", "Conos de seguridad disponibles en el área"),
+        new("ARR-07", "Llegada de aeronave", "Uso del uniforme, chaleco reflectivo, calzado y protector de oídos de los agentes de rampa"),
+        new("ARR-08", "Llegada de aeronave", "Calzos y frenos puestos correctamente a los vehículos y equipos de rampa"),
+        new("ARR-09", "Llegada de aeronave", "Cumplimiento a las tres paradas de seguridad, control de velocidad y uso de guía y procedimientos círculo de seguridad"),
+        new("ARR-10", "Llegada de aeronave", "Los extintores están libres de obstáculos y en buen estado"),
+        new("PUSH-11", "Retroempuje de aeronave", "Puntualidad del personal asignado para el retroempuje de la aeronave"),
+        new("PUSH-12", "Retroempuje de aeronave", "Los paneles y puertas de la aeronave están cerradas y aseguradas"),
+        new("PUSH-13", "Retroempuje de aeronave", "Área libre de personal, equipos y FOD antes del encendido de los motores"),
+        new("PUSH-14", "Retroempuje de aeronave", "Tractor de retroempuje disponible en el área"),
+        new("PUSH-15", "Retroempuje de aeronave", "Inspección de la barra de remolque"),
+        new("PUSH-16", "Retroempuje de aeronave", "El pasador de seguridad esté insertado en el tren delantero"),
+        new("PUSH-17", "Retroempuje de aeronave", "Inserción de la barra de remolque"),
+        new("PUSH-18", "Retroempuje de aeronave", "Retiro de los calzos"),
+        new("PUSH-19", "Retroempuje de aeronave", "Retiro de los conos"),
+        new("PUSH-20", "Retroempuje de aeronave", "Retiro del pasador de seguridad por el mecánico en el área de carreteo"),
+        new("PUSH-21", "Retroempuje de aeronave", "Colocación de conos y calzos en su posición correspondiente"),
+    ];
+
     private static readonly ChecklistFixtureItem[] TurnaroundChecklistV2Items =
     [
         new("PREUSE-EXTERIOR", "Chequeo preuso", "Exterior completo del puente"),
@@ -658,6 +684,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 CurrentStatus = ServiceExecutionStatus.Planned,
             }, DeterministicGuid("operation-service:DEV-TAT-0001:PASSENGER-BRIDGE").ToString("D")),
             cancellationToken);
+
+        await SeedFlightReportTemplateAsync(adminAccount.Id, cancellationToken);
 
         var template = await GetOrAddAsync(
             context.Set<ChecklistTemplate>(),
@@ -1605,6 +1633,56 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 SizeCategory = AircraftSizeCategory.Widebody,
             }, DeterministicGuid("aircraft-type:A333").ToString("D")),
             cancellationToken);
+    }
+
+
+    /// <summary>
+    /// The Flight Report checklist every operation without a boarding bridge carries (ADR-0031):
+    /// 10 arrival and 11 push-back rows, answered SÍ/NO, taken literally from AVIAM's form.
+    /// </summary>
+    private async Task SeedFlightReportTemplateAsync(long publishedByAccountId, CancellationToken cancellationToken)
+    {
+        var template = await GetOrAddAsync(
+            context.Set<ChecklistTemplate>(),
+            item => item.Code == "FLIGHT-REPORT",
+            () => Stamp(new ChecklistTemplate
+            {
+                Code = "FLIGHT-REPORT",
+                Name = "Reporte de Vuelo (F-OCC-AVL-6.2.12/A9)",
+                IsActive = true,
+            }, DeterministicGuid("checklist:FLIGHT-REPORT").ToString("D")),
+            cancellationToken);
+        var version = await GetOrAddAsync(
+            context.Set<ChecklistTemplateVersion>(),
+            item => item.ChecklistTemplateId == template.Id && item.VersionNumber == 1,
+            () => Stamp(new ChecklistTemplateVersion
+            {
+                ChecklistTemplateId = template.Id,
+                VersionNumber = 1,
+                Status = ChecklistVersionStatus.Published,
+                EffectiveFrom = new DateOnly(2026, 1, 1),
+                PublishedAt = FixtureInstant,
+                PublishedByAccountId = publishedByAccountId,
+            }, DeterministicGuid("checklist:FLIGHT-REPORT:v1").ToString("D")),
+            cancellationToken);
+        for (var index = 0; index < FlightReportChecklistItems.Length; index++)
+        {
+            var fixtureItem = FlightReportChecklistItems[index];
+            await GetOrAddAsync(
+                context.Set<ChecklistTemplateItem>(),
+                item => item.ChecklistTemplateVersionId == version.Id && item.ItemCode == fixtureItem.Code,
+                () => Stamp(new ChecklistTemplateItem
+                {
+                    ChecklistTemplateVersionId = version.Id,
+                    ItemCode = fixtureItem.Code,
+                    SectionName = fixtureItem.Section,
+                    Label = fixtureItem.Label,
+                    SortOrder = index + 1,
+                    RequiresNoteWhenNotOk = true,
+                    IsRequired = true,
+                }, DeterministicGuid($"checklist:FLIGHT-REPORT:v1:{fixtureItem.Code}").ToString("D")),
+                cancellationToken);
+        }
     }
 
 }

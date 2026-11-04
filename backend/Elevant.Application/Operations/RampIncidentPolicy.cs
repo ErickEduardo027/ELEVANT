@@ -4,12 +4,17 @@ namespace Elevant.Application.Operations;
 
 public static class RampIncidentPolicy
 {
+    /// <summary>A deviation from the normal process carries its IATA delay code (ADR-0031).</summary>
+    public const string Deviation = "Deviation";
+
     public static bool IsValid(
         string? incidentType,
         IncidentSeverity severity,
         string? description,
-        DateTimeOffset occurredAt) =>
-        incidentType is "Operational" or "Safety" or "Equipment" or "Documentation" &&
+        DateTimeOffset occurredAt,
+        string? delayCode = null) =>
+        incidentType is "Operational" or "Safety" or "Equipment" or "Documentation" or Deviation &&
+        (incidentType == Deviation ? IataDelayCodes.IsKnown(delayCode) : delayCode is null) &&
         Enum.IsDefined(severity) &&
         description is not null &&
         description.Trim().Length is >= 8 and <= 2000 &&

@@ -2,6 +2,7 @@ import type {
   RampIncidentResponse as ApiRampIncidentResponse,
   ReportRampIncidentRequest as ApiReportRampIncidentRequest,
 } from '@elevant/api-client';
+import { isIataDelayCode } from '@elevant/api-client';
 import { createMobileAgentApiClient } from '../config/elevant-api';
 import {
   readRampIncidentOutboxIfCurrent,
@@ -20,7 +21,7 @@ import { asMobileServiceError } from './mobile-service-error';
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type RampIncidentType = 'Operational' | 'Safety' | 'Equipment' | 'Documentation';
+export type RampIncidentType = 'Operational' | 'Safety' | 'Equipment' | 'Documentation' | 'Deviation';
 export type RampIncidentSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
 export type ReportRampIncidentRequest = Readonly<Omit<
   ApiReportRampIncidentRequest, 'incidentType' | 'severity'
@@ -56,11 +57,13 @@ function isUuid(value: unknown): value is string {
 function parseRequest(value: unknown): ReportRampIncidentRequest | null {
   if (
     !isRecord(value) ||
-    Object.keys(value).length !== 4 ||
+    !Object.keys(value).every(key => ['incidentType', 'severity', 'description', 'occurredAt', 'delayCode'].includes(key)) ||
     !['incidentType', 'severity', 'description', 'occurredAt']
       .every(key => key in value) ||
-    !(['Operational', 'Safety', 'Equipment', 'Documentation'] as const)
+    !(['Operational', 'Safety', 'Equipment', 'Documentation', 'Deviation'] as const)
       .some(item => item === value.incidentType) ||
+    // A deviation carries its IATA delay code (ADR-0031); other incidents never do.
+    (value.incidentType === 'Deviation' ? !isIataDelayCode(value.delayCode) : value.delayCode != null) ||
     !(['Low', 'Medium', 'High', 'Critical'] as const)
       .some(item => item === value.severity) ||
     typeof value.description !== 'string' ||
@@ -76,6 +79,7 @@ function parseRequest(value: unknown): ReportRampIncidentRequest | null {
     severity: value.severity as RampIncidentSeverity,
     description: value.description,
     occurredAt: value.occurredAt,
+    ...(value.incidentType === 'Deviation' ? { delayCode: value.delayCode as string } : {}),
   };
 }
 
@@ -112,6 +116,7 @@ function sameReport(incident: ApiRampIncidentResponse, request: ReportRampIncide
   return incident.incidentType === request.incidentType &&
     incident.severity === request.severity &&
     incident.description === request.description &&
+    (incident.delayCode ?? null) === (request.delayCode ?? null) &&
     Date.parse(incident.occurredAt) === Date.parse(request.occurredAt);
 }
 
