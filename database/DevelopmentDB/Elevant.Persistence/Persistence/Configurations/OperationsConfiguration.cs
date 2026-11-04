@@ -418,6 +418,51 @@ internal static class OperationsConfiguration
             AddReference<ApplicationUser, ReviewDecision>(builder, decision => decision.ReviewerAccountId);
         });
 
+        modelBuilder.Entity<StandConstraint>(builder =>
+        {
+            builder.ToTable("stand_constraints", "ref", table =>
+                table.HasCheckConstraint("ck_stand_constraint_distinct", "[stand_id] <> [affected_stand_id]"));
+            builder.Property(constraint => constraint.Kind).HasConversion<string>().HasMaxLength(24);
+            builder.HasIndex(constraint => new { constraint.StandId, constraint.AffectedStandId, constraint.Kind })
+                .HasFilter("[is_active] = 1").IsUnique();
+            builder.HasIndex(constraint => new { constraint.StationId, constraint.IsActive });
+            AddReference<Station, StandConstraint>(builder, constraint => constraint.StationId);
+            AddReference<Stand, StandConstraint>(builder, constraint => constraint.StandId);
+            AddReference<Stand, StandConstraint>(builder, constraint => constraint.AffectedStandId);
+            AddReference<ApplicationUser, StandConstraint>(builder, constraint => constraint.CreatedByAccountId);
+        });
+
+        modelBuilder.Entity<PositionCoverage>(builder =>
+        {
+            builder.ToTable("position_coverages", "ops", table =>
+            {
+                table.HasCheckConstraint("ck_position_coverage_window", "[ends_at] > [starts_at]");
+                table.HasCheckConstraint("ck_position_coverage_release", "[released_at] IS NULL OR [released_at] >= [created_at]");
+                table.HasCheckConstraint("ck_position_coverage_mentor", "[mentor_ramp_agent_id] IS NULL OR [mentor_ramp_agent_id] <> [ramp_agent_id]");
+            });
+            builder.Property(coverage => coverage.VehicleCode).HasMaxLength(32);
+            builder.Property(coverage => coverage.StartsAt).HasPrecision(3);
+            builder.Property(coverage => coverage.EndsAt).HasPrecision(3);
+            builder.Property(coverage => coverage.ReleasedAt).HasPrecision(3);
+            builder.HasIndex(coverage => new { coverage.StationId, coverage.StartsAt, coverage.EndsAt });
+            builder.HasIndex(coverage => new { coverage.RampAgentId, coverage.StartsAt, coverage.EndsAt });
+            AddReference<Station, PositionCoverage>(builder, coverage => coverage.StationId);
+            AddReference<Terminal, PositionCoverage>(builder, coverage => coverage.TerminalId);
+            AddReference<RampAgent, PositionCoverage>(builder, coverage => coverage.RampAgentId);
+            AddReference<RampAgent, PositionCoverage>(builder, coverage => coverage.MentorRampAgentId);
+            AddReference<ApplicationUser, PositionCoverage>(builder, coverage => coverage.AssignedByAccountId);
+            AddReference<ApplicationUser, PositionCoverage>(builder, coverage => coverage.ReleasedByAccountId);
+        });
+
+        modelBuilder.Entity<PositionCoverageStand>(builder =>
+        {
+            builder.ToTable("position_coverage_stands", "ops");
+            builder.HasIndex(item => new { item.PositionCoverageId, item.StandId }).IsUnique();
+            builder.HasIndex(item => item.StandId);
+            AddReference<PositionCoverage, PositionCoverageStand>(builder, item => item.PositionCoverageId);
+            AddReference<Stand, PositionCoverageStand>(builder, item => item.StandId);
+        });
+
         modelBuilder.Entity<OperationMessageRead>(builder =>
         {
             builder.ToTable("operation_message_reads", "ops");

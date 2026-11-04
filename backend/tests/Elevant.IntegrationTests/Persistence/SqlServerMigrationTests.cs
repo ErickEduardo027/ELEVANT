@@ -4175,8 +4175,8 @@ public sealed partial class SqlServerMigrationTests
         {
             PublicId = Guid.Parse("90000000-0000-7000-8000-000000000030"),
             StationId = station.Id,
-            Code = "B",
-            Name = "Development terminal B",
+            Code = "Z",
+            Name = "Development terminal Z",
             IsActive = true,
             CreatedAt = testInstant,
             UpdatedAt = testInstant,

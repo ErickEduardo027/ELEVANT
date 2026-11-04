@@ -100,6 +100,15 @@ import {
   getExportHumanResourcesReportUrl,
   getListOccReportsUrl,
   getGetOccPositionsUrl,
+  getGetOccCoverageUrl,
+  getCreateOccCoverageUrl,
+  getReleaseOccCoverageUrl,
+  getUpdateOccStandAttributesUrl,
+  getUpdateOccTerminalRulesUrl,
+  getAddOccStandConstraintUrl,
+  getRemoveOccStandConstraintUrl,
+  getReleaseOccOperationAgentUrl,
+  getGetOwnRampCoverageUrl,
   getRecordOccArrivalUrl,
   getAssignOccStandUrl,
   getReleaseOccStandUrl,
@@ -225,6 +234,8 @@ import {
   type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
+  type OccCoverageBoardResponse,
+  type RampOwnCoverageListResponse,
   type OccReadyContractsResponse,
   type OccFlightFeedResponse,
   type RefreshOccFlightFeedResponse,
@@ -336,6 +347,28 @@ export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "m
 export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinancialDocumentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesReportOptions = Omit<ElevantRequestInit, "body" | "method">;
+
+/** A stand coverage OCC hands an agent (ADR-0030); both times null take the agent's shift. */
+export interface OccCoverageCommand {
+  stationId: string;
+  date: string;
+  agentId: string;
+  terminalId: string;
+  standIds: string[];
+  startsAt?: string | null;
+  endsAt?: string | null;
+  mentorAgentId?: string | null;
+  vehicleCode?: string | null;
+  isReinforcement: boolean;
+}
+
+export interface OccStandAttributesCommand {
+  date: string;
+  hasBoardingBridge: boolean;
+  isRemote: boolean;
+  maxAircraftSize: "Narrowbody" | "Widebody" | null;
+  isActive: boolean;
+}
 export type HumanResourcesReportKind = "expirations" | "account-movements" |
   "staff-distribution" | "qualification-coverage";
 export type HumanResourcesReportQuery = {
@@ -877,6 +910,22 @@ export interface ElevantApiClient {
   assignOccStand(turnaroundId: string, request: { standId: string; reason?: string | null },
     options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
   releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  /** Position coverage per shift (ADR-0030). A rejected coverage throws 422 with `reasons`. */
+  getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  createOccCoverage(request: OccCoverageCommand, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  releaseOccCoverage(coverageId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  updateOccStandAttributes(standId: string, request: OccStandAttributesCommand,
+    options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  updateOccTerminalRules(terminalId: string, request: { date: string; maxStandsPerAgent: number | null; requiresBridgeQualification: boolean },
+    options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  addOccStandConstraint(request: { date: string; standId: string; affectedStandId: string; kind: "Cancels" | "NarrowbodyOnly" },
+    options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  removeOccStandConstraint(constraintId: string, date: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  /** Releases the agent of an operation not yet started so OCC can assign another. */
+  releaseOccOperationAgent(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<void>;
+  /** «Mis posiciones de hoy» of the signed-in ramp agent. */
+  getOwnRampCoverage(options?: GetOperationalCommunicationOptions): Promise<RampOwnCoverageListResponse>;
   /** Places a stand on the map (WGS84) or clears it with both coordinates null (ADR-0027). */
   locateOccStand(standId: string, request: { latitude: number | null; longitude: number | null; operationDate: string },
     options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
@@ -979,6 +1028,7 @@ interface ProblemMetadata {
   readonly title?: string;
   readonly traceId?: string;
   readonly code?: ElevantApiErrorCode;
+  readonly reasons?: readonly unknown[];
 }
 
 function validatedBaseUrl(input: string) {
@@ -1085,6 +1135,7 @@ function problemMetadata(value: unknown): ProblemMetadata {
     ...(typeof record.title === "string" ? { title: record.title } : {}),
     ...(typeof record.traceId === "string" ? { traceId: record.traceId } : {}),
     ...(ELEVANT_API_ERROR_CODES.includes(record.code as ElevantApiErrorCode) ? { code: record.code as ElevantApiErrorCode } : {}),
+    ...(Array.isArray(record.reasons) ? { reasons: record.reasons.slice(0, 32) } : {}),
   };
 }
 
@@ -2343,12 +2394,68 @@ function isOccPositionBoard(value: unknown, stationId?: string): value is OccPos
     isNonEmptyString(value.stationCode) && isDateOnly(value.operationDate) && isDateTimeOffset(value.asOf) &&
     typeof value.canAssign === "boolean" && Array.isArray(value.unassigned) && value.unassigned.every(isOccPositionTurnaround) &&
     Array.isArray(value.positions) && value.positions.every(position => isRecord(position) &&
-      hasOnlyKeys(position, ["standId", "code", "terminalCode", "standType", "status", "turnarounds", "latitude", "longitude"]) &&
+      hasOnlyKeys(position, ["standId", "code", "terminalCode", "standType", "status", "turnarounds", "latitude", "longitude",
+        "hasBoardingBridge", "isRemote", "maxAircraftSize", "cancelledBy", "narrowbodyOnly", "coveredBy"]) &&
+      typeof position.hasBoardingBridge === "boolean" && typeof position.isRemote === "boolean" &&
+      (position.maxAircraftSize == null || AIRCRAFT_SIZES.has(position.maxAircraftSize as string)) &&
+      isOptionalNullable(position.cancelledBy, isNonEmptyString) && typeof position.narrowbodyOnly === "boolean" &&
+      isStringList(position.coveredBy) &&
       isOptionalNullable(position.latitude, isLatitude) && isOptionalNullable(position.longitude, isLongitude) &&
       (position.latitude == null) === (position.longitude == null) &&
       isUuid(position.standId) && isNonEmptyString(position.code) && isOptionalNullable(position.terminalCode, isNonEmptyString) &&
       isOptionalNullable(position.standType, isNonEmptyString) && typeof position.status === "string" &&
       OCC_POSITION_STATUSES.has(position.status) && Array.isArray(position.turnarounds) && position.turnarounds.every(isOccPositionTurnaround));
+}
+
+const AIRCRAFT_SIZES = new Set<string>(["Narrowbody", "Widebody"]);
+const STAND_CONSTRAINT_KINDS = new Set<string>(["Cancels", "NarrowbodyOnly"]);
+const isStringList = (value: unknown) => Array.isArray(value) && value.length <= 50 && value.every(isNonEmptyString);
+
+function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCoverageBoardResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["stationId", "stationCode", "date", "terminals", "stands", "constraints",
+      "agents", "coverages", "canAssign", "canConfigure"]) &&
+    isUuid(value.stationId) && (stationId === undefined || value.stationId.toLowerCase() === stationId) &&
+    isNonEmptyString(value.stationCode) && isDateOnly(value.date) &&
+    typeof value.canAssign === "boolean" && typeof value.canConfigure === "boolean" &&
+    Array.isArray(value.terminals) && value.terminals.every(item => isRecord(item) &&
+      hasOnlyKeys(item, ["terminalId", "code", "name", "maxStandsPerAgent", "requiresBridgeQualification"]) &&
+      isUuid(item.terminalId) && isNonEmptyString(item.code) && isNonEmptyString(item.name) &&
+      Number.isInteger(item.maxStandsPerAgent) && typeof item.requiresBridgeQualification === "boolean") &&
+    Array.isArray(value.stands) && value.stands.every(item => isRecord(item) &&
+      hasOnlyKeys(item, ["standId", "code", "terminalId", "isActive", "hasBoardingBridge", "isRemote", "maxAircraftSize", "coveredBy"]) &&
+      isUuid(item.standId) && isNonEmptyString(item.code) && isOptionalNullable(item.terminalId, isUuid) &&
+      typeof item.isActive === "boolean" && typeof item.hasBoardingBridge === "boolean" && typeof item.isRemote === "boolean" &&
+      (item.maxAircraftSize == null || AIRCRAFT_SIZES.has(item.maxAircraftSize as string)) && isStringList(item.coveredBy)) &&
+    Array.isArray(value.constraints) && value.constraints.every(item => isRecord(item) &&
+      hasOnlyKeys(item, ["id", "standId", "standCode", "affectedStandId", "affectedStandCode", "kind"]) &&
+      isUuid(item.id) && isUuid(item.standId) && isNonEmptyString(item.standCode) && isUuid(item.affectedStandId) &&
+      isNonEmptyString(item.affectedStandCode) && STAND_CONSTRAINT_KINDS.has(item.kind as string)) &&
+    Array.isArray(value.agents) && value.agents.every(item => isRecord(item) &&
+      hasOnlyKeys(item, ["agentId", "name", "employeeNumber", "terminalId", "terminalCode", "shiftStartsAt", "shiftEndsAt",
+        "isJunior", "hasAirportPermit", "hasDriverLicense", "hasBridgeQualification", "isAbsent"]) &&
+      isUuid(item.agentId) && isNonEmptyString(item.name) && isNonEmptyString(item.employeeNumber) && isUuid(item.terminalId) &&
+      isNonEmptyString(item.terminalCode) && isDateTimeOffset(item.shiftStartsAt) && isDateTimeOffset(item.shiftEndsAt) &&
+      ["isJunior", "hasAirportPermit", "hasDriverLicense", "hasBridgeQualification", "isAbsent"]
+        .every(key => typeof item[key] === "boolean")) &&
+    Array.isArray(value.coverages) && value.coverages.every(item => isRecord(item) &&
+      hasOnlyKeys(item, ["id", "agentId", "agentName", "terminalId", "terminalCode", "stands", "startsAt", "endsAt",
+        "mentorAgentId", "mentorName", "vehicleCode", "isReinforcement"]) &&
+      isUuid(item.id) && isUuid(item.agentId) && isNonEmptyString(item.agentName) && isUuid(item.terminalId) &&
+      isNonEmptyString(item.terminalCode) && Array.isArray(item.stands) && item.stands.every(stand => isRecord(stand) &&
+        hasOnlyKeys(stand, ["standId", "code"]) && isUuid(stand.standId) && isNonEmptyString(stand.code)) &&
+      isDateTimeOffset(item.startsAt) && isDateTimeOffset(item.endsAt) && isOptionalNullable(item.mentorAgentId, isUuid) &&
+      isOptionalNullable(item.mentorName, isNonEmptyString) && isOptionalNullable(item.vehicleCode, isNonEmptyString) &&
+      typeof item.isReinforcement === "boolean");
+}
+
+function isOwnRampCoverage(value: unknown): value is RampOwnCoverageListResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["coverages"]) && Array.isArray(value.coverages) &&
+    value.coverages.length <= 20 && value.coverages.every(item => isRecord(item) &&
+      hasOnlyKeys(item, ["id", "stationCode", "terminalCode", "stands", "startsAt", "endsAt", "partner", "vehicleCode",
+        "isReinforcement"]) &&
+      isUuid(item.id) && isNonEmptyString(item.stationCode) && isNonEmptyString(item.terminalCode) && isStringList(item.stands) &&
+      isDateTimeOffset(item.startsAt) && isDateTimeOffset(item.endsAt) && isOptionalNullable(item.partner, isNonEmptyString) &&
+      isOptionalNullable(item.vehicleCode, isNonEmptyString) && typeof item.isReinforcement === "boolean");
 }
 
 function isLatitude(value: unknown): value is number {
@@ -4729,6 +4836,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         title: metadata.title,
         traceId: metadata.traceId,
         code: metadata.code,
+        reasons: metadata.reasons,
       });
     }
 
@@ -4801,6 +4909,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     const result = await execute(path, { ...options, method, headers,
       ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
     if (!isOccPositionBoard(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  const coverageCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions,
+    method: "POST" | "PUT" | "DELETE" = "POST") => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    if (body !== undefined) headers.set("content-type", "application/json");
+    const result = await execute(path, { ...options, method, headers,
+      ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
+    if (!isOccCoverageBoard(result.data)) throw malformedResponse(result.status);
     return result.data;
   };
 
@@ -6347,6 +6465,78 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw new TypeError("The stand location is invalid.");
       return positionCommand(getLocateOccStandUrl(stand),
         { latitude, longitude, operationDate: request.operationDate }, options, "PUT");
+    },
+    async getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
+      const result = await execute(getGetOccCoverageUrl({ stationId: station, date }), { ...options, method: "GET" }, true);
+      if (!isOccCoverageBoard(result.data, station)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createOccCoverage(request: OccCoverageCommand, options?: GetHumanResourcesReportOptions) {
+      const standIds = Array.isArray(request?.standIds) ? request.standIds.map(id => validatedUuid(id, "standId")) : [];
+      const vehicleCode = typeof request?.vehicleCode === "string" && request.vehicleCode.trim() ? request.vehicleCode.trim() : null;
+      const startsAt = request?.startsAt ?? null;
+      const endsAt = request?.endsAt ?? null;
+      if (standIds.length === 0 || standIds.length > 6 || new Set(standIds).size !== standIds.length ||
+          !isDateOnly(request?.date) || (startsAt === null) !== (endsAt === null) ||
+          (startsAt !== null && !isDateTimeOffset(startsAt)) || (endsAt !== null && !isDateTimeOffset(endsAt)) ||
+          (vehicleCode !== null && vehicleCode.length > 32) || typeof request.isReinforcement !== "boolean")
+        throw new TypeError("The coverage is invalid.");
+      return coverageCommand(getCreateOccCoverageUrl(), {
+        stationId: validatedUuid(request.stationId, "stationId"), date: request.date,
+        agentId: validatedUuid(request.agentId, "agentId"), terminalId: validatedUuid(request.terminalId, "terminalId"),
+        standIds, startsAt, endsAt,
+        mentorAgentId: request.mentorAgentId ? validatedUuid(request.mentorAgentId, "mentorAgentId") : null,
+        vehicleCode, isReinforcement: request.isReinforcement }, options);
+    },
+    async releaseOccCoverage(coverageId: string, date: string, options?: GetHumanResourcesReportOptions) {
+      if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
+      return coverageCommand(getReleaseOccCoverageUrl(validatedUuid(coverageId, "coverageId"), { date }), undefined, options);
+    },
+    async updateOccStandAttributes(standId: string, request: OccStandAttributesCommand,
+      options?: GetHumanResourcesReportOptions) {
+      if (!isDateOnly(request?.date) || typeof request.hasBoardingBridge !== "boolean" || typeof request.isRemote !== "boolean" ||
+          typeof request.isActive !== "boolean" ||
+          (request.maxAircraftSize !== null && !AIRCRAFT_SIZES.has(request.maxAircraftSize)))
+        throw new TypeError("The stand attributes are invalid.");
+      return coverageCommand(getUpdateOccStandAttributesUrl(validatedUuid(standId, "standId")), {
+        date: request.date, hasBoardingBridge: request.hasBoardingBridge, isRemote: request.isRemote,
+        maxAircraftSize: request.maxAircraftSize, isActive: request.isActive }, options, "PUT");
+    },
+    async updateOccTerminalRules(terminalId: string,
+      request: { date: string; maxStandsPerAgent: number | null; requiresBridgeQualification: boolean },
+      options?: GetHumanResourcesReportOptions) {
+      const max = request?.maxStandsPerAgent ?? null;
+      if (!isDateOnly(request?.date) || (max !== null && (!Number.isInteger(max) || max < 1 || max > 6)) ||
+          typeof request.requiresBridgeQualification !== "boolean")
+        throw new TypeError("The terminal rules are invalid.");
+      return coverageCommand(getUpdateOccTerminalRulesUrl(validatedUuid(terminalId, "terminalId")), {
+        date: request.date, maxStandsPerAgent: max, requiresBridgeQualification: request.requiresBridgeQualification },
+        options, "PUT");
+    },
+    async addOccStandConstraint(request: { date: string; standId: string; affectedStandId: string; kind: "Cancels" | "NarrowbodyOnly" },
+      options?: GetHumanResourcesReportOptions) {
+      const standId = validatedUuid(request?.standId, "standId");
+      const affectedStandId = validatedUuid(request?.affectedStandId, "affectedStandId");
+      if (!isDateOnly(request.date) || !STAND_CONSTRAINT_KINDS.has(request.kind) || standId === affectedStandId)
+        throw new TypeError("The stand rule is invalid.");
+      return coverageCommand(getAddOccStandConstraintUrl(), { date: request.date, standId, affectedStandId, kind: request.kind },
+        options);
+    },
+    async removeOccStandConstraint(constraintId: string, date: string, options?: GetHumanResourcesReportOptions) {
+      if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
+      return coverageCommand(getRemoveOccStandConstraintUrl(validatedUuid(constraintId, "constraintId"), { date }),
+        undefined, options, "DELETE");
+    },
+    async releaseOccOperationAgent(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+      await execute(getReleaseOccOperationAgentUrl(validatedUuid(turnaroundId, "turnaroundId")),
+        { ...options, method: "POST" }, true);
+    },
+    async getOwnRampCoverage(options?: GetOperationalCommunicationOptions) {
+      const result = await execute(getGetOwnRampCoverageUrl(), { ...options, method: "GET" }, true);
+      if (!isOwnRampCoverage(result.data)) throw malformedResponse(result.status);
+      return result.data;
     },
     async getOccFlightFeed(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
       const station = validatedUuid(stationId, "stationId");

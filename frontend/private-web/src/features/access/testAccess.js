@@ -5,7 +5,7 @@ const codes = (department, modules) => Object.entries(modules)
 
 export const DepartmentPermissionCodes = {
   operations: codes('operations', {
-    dashboard: ['read'], flight_monitoring: ['read'], positions_map: ['read', 'assign'],
+    dashboard: ['read'], flight_monitoring: ['read'], positions_map: ['read', 'assign'], coverage: ['read', 'assign', 'update'],
     planning: ['read', 'create', 'assign'], attendance: ['read', 'create'], review: ['read', 'decide'],
     service_closures: ['read', 'create'], reports: ['read', 'export'], notifications: ['read'], chat: ['read', 'create'],
   }),

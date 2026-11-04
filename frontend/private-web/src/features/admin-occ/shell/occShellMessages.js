@@ -14,6 +14,7 @@ export const occShellMessages = {
     nav: {
       dashboard: 'Panorama',
       planning: 'Planificación',
+      coverage: 'Cobertura de posiciones',
       contracts: 'Contratos listos',
       'flight-monitoring': 'Monitoreo de vuelos',
       'positions-map': 'Mapa de posiciones',
@@ -54,6 +55,7 @@ export const occShellMessages = {
     nav: {
       dashboard: 'Overview',
       planning: 'Planning',
+      coverage: 'Stand coverage',
       contracts: 'Ready contracts',
       'flight-monitoring': 'Flight monitoring',
       'positions-map': 'Positions map',

@@ -2,8 +2,10 @@ using System.Text.RegularExpressions;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Identity;
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Operations;
+using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Realtime;
@@ -129,10 +131,35 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             return new(null, OccPositionFailure.Conflict);
         var stand = await context.Stands.AsNoTracking()
             .Where(item => item.PublicId == standId && item.StationId == current.StationId && item.IsActive)
-            .Select(item => new { item.Id, item.Code }).SingleOrDefaultAsync(cancellationToken);
+            .Select(item => new { item.Id, item.Code, item.MaxAircraftSize }).SingleOrDefaultAsync(cancellationToken);
         if (stand is null) return new(null, OccPositionFailure.NotFound);
         var window = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == current.TurnaroundId)
             .Select(item => new { item.PlannedStartAt, item.PlannedEndAt }).FirstOrDefaultAsync(cancellationToken);
+        // Combined stands (ADR-0030): an impossible combination is rejected with the rule it breaks.
+        var occupied = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
+                              join operation in context.GroundOperations.AsNoTracking() on assignment.TurnaroundId equals operation.TurnaroundId
+                              join parked in context.Stands.AsNoTracking() on assignment.StandId equals parked.Id
+                              join turnaround in context.Turnarounds.AsNoTracking() on assignment.TurnaroundId equals turnaround.Id
+                              from type in context.AircraftTypes.AsNoTracking().Where(type => type.Id == turnaround.AircraftTypeId).DefaultIfEmpty()
+                              where parked.StationId == current.StationId && assignment.AssignedTo == null &&
+                                    assignment.TurnaroundId != current.TurnaroundId &&
+                                    operation.CurrentStatus != GroundOperationStatus.Cancelled &&
+                                    (window == null || window.PlannedStartAt == null || window.PlannedEndAt == null ||
+                                     operation.PlannedStartAt == null || operation.PlannedEndAt == null ||
+                                     (operation.PlannedStartAt < window.PlannedEndAt && window.PlannedStartAt < operation.PlannedEndAt))
+                              select new { parked.Id, parked.Code, Size = type == null ? null : type.SizeCategory })
+            .ToArrayAsync(cancellationToken);
+        var rules = await context.Set<StandConstraint>().AsNoTracking()
+            .Where(item => item.StationId == current.StationId && item.IsActive)
+            .Select(item => new { item.StandId, item.AffectedStandId, item.Kind }).ToArrayAsync(cancellationToken);
+        var aircraftSize = current.Turnaround.AircraftTypeId is { } aircraftTypeId
+            ? await context.AircraftTypes.AsNoTracking().Where(item => item.Id == aircraftTypeId)
+                .Select(item => item.SizeCategory).SingleOrDefaultAsync(cancellationToken)
+            : null;
+        var broken = StandConstraintPolicy.Evaluate(new StandPlacement(stand.Id, stand.Code, stand.MaxAircraftSize, aircraftSize),
+            occupied.Select(item => new OccupiedStand(item.Id, item.Code, item.Size)).ToArray(),
+            rules.Select(item => new StandRule(item.StandId, item.AffectedStandId, item.Kind)).ToArray());
+        if (broken.Count > 0) return new(null, OccPositionFailure.Conflict, broken);
         // Same rule as manual planning: no other active assignment whose window overlaps this one.
         var overlaps = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
                               join operation in context.GroundOperations.AsNoTracking() on assignment.TurnaroundId equals operation.TurnaroundId
@@ -174,6 +201,9 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 Reason = string.IsNullOrEmpty(note) ? (active is null ? "Asignada por OCC." : "Reasignada por OCC.") : note,
                 CreatedAt = now, UpdatedAt = now,
             });
+            // The flight follows the agent covering the new stand (ADR-0030).
+            await CoverageReassignment.FollowStandAsync(context, current.TurnaroundId, current.StationId, stand.Id,
+                current.AccountId, now, cancellationToken);
             var result = await SaveAsync(current, active is null ? "occ.stand.assigned" : "occ.stand.reassigned",
                 stand.Code, cancellationToken, commit: transaction);
             return result;
@@ -281,8 +311,24 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                             where stand.StationId == stationId && stand.IsActive
                             orderby stand.Code
                             select new { stand.Id, stand.PublicId, stand.Code, Terminal = terminal == null ? null : terminal.Code, stand.StandType,
-                                stand.Latitude, stand.Longitude })
+                                stand.Latitude, stand.Longitude, stand.HasBoardingBridge, stand.IsRemote, stand.MaxAircraftSize })
             .ToArrayAsync(cancellationToken);
+        var rules = (await context.Set<StandConstraint>().AsNoTracking()
+                .Where(item => item.StationId == stationId && item.IsActive)
+                .Select(item => new { item.StandId, item.AffectedStandId, item.Kind }).ToArrayAsync(cancellationToken))
+            .Select(item => new StandRule(item.StandId, item.AffectedStandId, item.Kind)).ToArray();
+        var zone = TimeZoneInfo.FindSystemTimeZoneById(await context.Stations.AsNoTracking().Where(item => item.Id == stationId)
+            .Select(item => item.IanaTimeZone).SingleAsync(cancellationToken));
+        var dayStart = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(operationDate.ToDateTime(TimeOnly.MinValue), zone), TimeSpan.Zero);
+        var dayEnd = dayStart.AddDays(1);
+        var coverage = (await (from item in context.Set<PositionCoverage>().AsNoTracking()
+                               join coveredStand in context.Set<PositionCoverageStand>().AsNoTracking() on item.Id equals coveredStand.PositionCoverageId
+                               join agent in context.RampAgents.AsNoTracking() on item.RampAgentId equals agent.Id
+                               join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
+                               where item.StationId == stationId && item.ReleasedAt == null && item.StartsAt < dayEnd && dayStart < item.EndsAt
+                               select new { coveredStand.StandId, Name = (person.FirstName + " " + person.LastName).Trim() })
+                .ToArrayAsync(cancellationToken))
+            .ToLookup(item => item.StandId, item => item.Name);
         // The day's turnarounds plus any aircraft still parked from an earlier day.
         var turnarounds = await (from turnaround in context.Turnarounds.AsNoTracking()
                                  join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
@@ -315,13 +361,20 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 turnaround.CurrentStatus.ToString());
         }
 
+        var occupiedNow = assignments.Select(item => new OccupiedStand(item.StandId,
+            stands.FirstOrDefault(stand => stand.Id == item.StandId)?.Code ?? "", null)).ToArray();
+        var cancelled = StandConstraintPolicy.CancelledStands(occupiedNow, rules);
+        var limited = StandConstraintPolicy.NarrowbodyLimited(occupiedNow, rules);
         var positions = stands.Select(stand =>
         {
             var parked = assignments.Where(item => item.StandId == stand.Id).Select(item => Map(item.TurnaroundId))
                 .OrderBy(item => item.ArrivalScheduledAt).ToArray();
             var status = parked.Any(item => item.ArrivedAt is not null) ? "occupied" : parked.Length > 0 ? "planned" : "available";
             return new OccPositionData(stand.PublicId, stand.Code, stand.Terminal, stand.StandType, status, parked,
-                stand.Latitude, stand.Longitude);
+                stand.Latitude, stand.Longitude, stand.HasBoardingBridge, stand.IsRemote, stand.MaxAircraftSize?.ToString(),
+                cancelled.GetValueOrDefault(stand.Id),
+                stand.MaxAircraftSize == AircraftSizeCategory.Narrowbody || limited.Contains(stand.Id),
+                coverage[stand.Id].Distinct().ToArray());
         }).ToArray();
         var unassigned = turnarounds.Where(item => !assignmentOf.ContainsKey(item.Id) &&
                 item.CurrentStatus is not (TurnaroundStatus.Completed or TurnaroundStatus.Diverted))

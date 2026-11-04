@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AssignedOperationCard } from '../components/assigned-operation-card';
+import { MyPositionsCard } from '../components/my-positions-card';
 import { PrimaryButton } from '../components/ui';
 import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import {
@@ -212,6 +213,8 @@ export default function HomeScreen() {
         <Pressable accessibilityLabel="Abrir notificaciones" accessibilityRole="button" onPress={() => router.push('/notifications')} style={styles.quickAction}><Ionicons name="notifications-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Notificaciones</Text></Pressable>
         <Pressable accessibilityLabel="Abrir mis turnos y documentos" accessibilityRole="button" onPress={() => router.push('/my-schedule')} style={styles.quickAction}><Ionicons name="calendar-outline" size={19} color={colors.navy} /><Text style={styles.quickActionText}>Mis turnos</Text></Pressable>
       </View>
+
+      <MyPositionsCard />
 
       <View style={styles.sectionHeader}>
         <View style={styles.sectionCopy}>

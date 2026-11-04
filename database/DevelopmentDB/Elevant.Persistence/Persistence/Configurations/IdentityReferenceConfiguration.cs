@@ -242,9 +242,10 @@ internal static class IdentityReferenceConfiguration
 
         modelBuilder.Entity<Terminal>(builder =>
         {
-            builder.ToTable("terminals", "ref");
             builder.Property(terminal => terminal.Code).HasMaxLength(16).IsRequired();
             builder.Property(terminal => terminal.Name).HasMaxLength(120).IsRequired();
+            builder.ToTable("terminals", "ref", table => table.HasCheckConstraint("ck_terminals_max_stands_per_agent",
+                "[max_stands_per_agent] IS NULL OR [max_stands_per_agent] BETWEEN 1 AND 6"));
             builder.HasIndex(terminal => new { terminal.StationId, terminal.Code }).IsUnique();
             builder.HasOne<Station>()
                 .WithMany()
@@ -265,6 +266,7 @@ internal static class IdentityReferenceConfiguration
             builder.Property(stand => stand.LocatedAt).HasPrecision(3);
             builder.Property(stand => stand.Code).HasMaxLength(24).IsRequired();
             builder.Property(stand => stand.StandType).HasMaxLength(32);
+            builder.Property(stand => stand.MaxAircraftSize).HasConversion<string>().HasMaxLength(16);
             builder.HasIndex(stand => new { stand.StationId, stand.Code }).IsUnique();
             builder.HasOne<Station>()
                 .WithMany()
@@ -294,6 +296,7 @@ internal static class IdentityReferenceConfiguration
             builder.Property(type => type.IataCode).HasColumnType("char(3)");
             builder.Property(type => type.Manufacturer).HasMaxLength(100).IsRequired();
             builder.Property(type => type.Model).HasMaxLength(100).IsRequired();
+            builder.Property(type => type.SizeCategory).HasConversion<string>().HasMaxLength(16);
             builder.HasIndex(type => type.IcaoCode).IsUnique();
         });
 

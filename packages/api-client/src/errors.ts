@@ -9,12 +9,20 @@ export type ElevantApiErrorCode = "password_change_required" | "password_policy"
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES];
 
+/** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
+export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",
+  "too_many_stands", "driver_license_required", "vehicle_required", "agent_inactive", "airport_permit_required",
+  "bridge_qualification_required", "shift_not_covering", "absent", "agent_overlap", "mentor_required",
+  "mentor_not_eligible", "stand_taken", "stand_cancelled", "stand_narrowbody_only", "neighbour_widebody"] as const;
+export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
+
 interface ElevantApiErrorOptions {
   readonly kind: ElevantApiErrorKind;
   readonly status: number;
   readonly title?: string | null | undefined;
   readonly traceId?: string | null | undefined;
   readonly code?: ElevantApiErrorCode | undefined;
+  readonly reasons?: readonly unknown[] | undefined;
 }
 
 function safeMetadata(value: string | null | undefined, maximumLength: number) {
@@ -38,6 +46,8 @@ export class ElevantApiError extends Error {
   readonly title: string;
   readonly traceId: string | undefined;
   readonly code: ElevantApiErrorCode | undefined;
+  /** Known rule codes only; anything else the server sent is dropped. */
+  readonly reasons: readonly ElevantRuleReason[];
 
   constructor(options: ElevantApiErrorOptions) {
     const message =
@@ -54,6 +64,8 @@ export class ElevantApiError extends Error {
       (options.kind === "http" ? "API request failed" : "Malformed API response");
     this.traceId = safeMetadata(options.traceId, 128);
     this.code = options.code;
+    this.reasons = [...new Set((options.reasons ?? []).filter((reason): reason is ElevantRuleReason =>
+      ELEVANT_RULE_REASONS.includes(reason as ElevantRuleReason)))];
     Object.setPrototypeOf(this, new.target.prototype);
   }
 }

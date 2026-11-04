@@ -156,21 +156,24 @@ export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new D
       id: coords.id, terminal: coords.terminal, latitude: coords.lat, longitude: coords.lon,
       standId: stand?.standId ?? null,
       locationSource: located ? 'occ' : 'reference',
-      status: stand ? stand.status : 'unverified',
+      // A free stand cancelled by an occupied combined stand (ADR-0030) is shown disabled, as an alert to OCC.
+      status: !stand ? 'unverified' : stand.cancelledBy && stand.status === 'available' ? 'disabled' : stand.status,
       // Monitoring is keyed by flight leg, which the occupancy board does not carry.
       flightId: null,
       flightNumber: current?.arrivalFlightNumber ?? current?.departureFlightNumber ?? null,
       airline: current?.airlineName ?? null,
       aircraftRegistration: current?.aircraftRegistration ?? null,
       aircraftType: null,
-      assignedAgent: null,
+      assignedAgent: stand?.coveredBy?.length ? stand.coveredBy.join(', ') : null,
+      hasBoardingBridge: stand?.hasBoardingBridge ?? false,
+      narrowbodyOnly: stand?.narrowbodyOnly ?? false,
       arrivedAt: current?.arrivedAt ?? null,
       turnarounds: parked,
       plannedTurnarounds: parked.map(occupancyTurnaround),
       estimatedReleaseTime: current?.departureScheduledAt ?? null,
       updatedAt: board?.asOf ?? nowIso,
-      combinedConfiguration: null,
-      linkedPositionId: null,
+      combinedConfiguration: stand?.cancelledBy ?? null,
+      linkedPositionId: stand?.cancelledBy ? mapStandCode(stand.cancelledBy) : null,
     };
   });
 }

@@ -5,6 +5,7 @@ import { getPlanningStatusMeta } from '../planningStatus';
 import { isInitialAssignmentCandidate } from '../planningMappers';
 import { formatPlanningClock, formatPlanningDate } from '../planningTime';
 import OccAssignmentPanel from './OccAssignmentPanel';
+import { releaseOccOperationAgent } from '../../../services/occCoverageService';
 import OccShiftPanel from './OccShiftPanel';
 import OccAttendancePanel from './OccAttendancePanel';
 import { useTranslation } from '../../../i18n/LanguageScope';
@@ -52,6 +53,29 @@ function FlightLegDetail({ kind, leg, timeZone }) {
   );
 }
 
+/** OCC frees the agent of an operation not yet started to hand it to someone else (ADR-0030). */
+function ReleaseAgent({ flight, onReleased }) {
+  const [state, setState] = useState({ status: 'idle', error: null });
+  if (flight.operationStatus !== 'Assigned' || !(flight.assignedAgents ?? []).length || !onReleased) return null;
+  const release = async () => {
+    if (!window.confirm('¿Liberar al agente de esta operación? Podrás asignar a otro desde aquí mismo.')) return;
+    setState({ status: 'submitting', error: null });
+    try {
+      await releaseOccOperationAgent(flight.turnaroundId);
+      setState({ status: 'idle', error: null });
+      onReleased();
+    } catch (error) { setState({ status: 'idle', error }); }
+  };
+  return (
+    <div className="mt-2 space-y-1">
+      <button type="button" onClick={() => void release()} disabled={state.status === 'submitting'}
+        className="min-h-11 rounded-lg border border-status-danger/40 px-3 text-xs font-semibold text-status-danger disabled:opacity-50">
+        {state.status === 'submitting' ? 'Liberando…' : 'Liberar agente'}</button>
+      {state.error && <p role="alert" className="text-xs text-status-danger">{state.error.message}</p>}
+    </div>
+  );
+}
+
 function ResourceList({ items, emptyLabel, children }) {
   if (!items?.length) return <EmptyValue>{emptyLabel}</EmptyValue>;
   return <ul className="space-y-2">{items.map(children)}</ul>;
@@ -65,6 +89,7 @@ export default function PlanningDrawer({
   onAssign,
   onRetryOptions,
   onShiftProgrammed,
+  onAgentReleased,
 }) {
   const { t, language, locale } = useTranslation(planningMessages);
   const dialogRef = useRef(null);
@@ -203,6 +228,7 @@ export default function PlanningDrawer({
             <ResourceList items={flight.assignedAgents ?? []} emptyLabel={t('drawer.noAgents')}>
               {agent => <li key={agent.assignmentId}>{agent.displayName} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{agent.employeeNumber}{agent.positionCode ? ` · ${agent.positionCode}` : ''}</span></li>}
             </ResourceList>
+            <ReleaseAgent flight={flight} onReleased={onAgentReleased} />
           </Section>
 
           {flight.operation?.id && attendanceAgent && <Section title={t('drawer.attendance')}>

@@ -1,3 +1,5 @@
+using Elevant.Domain.Enumerations;
+
 namespace Elevant.Domain.Entities.Reference;
 
 public sealed class Stand : AuditableEntity
@@ -18,4 +20,12 @@ public sealed class Stand : AuditableEntity
     public decimal? Longitude { get; set; }
 
     public DateTimeOffset? LocatedAt { get; set; }
+
+    /// <summary>The stand has a passenger boarding bridge: covering it needs the bridge qualification (ADR-0030).</summary>
+    public bool HasBoardingBridge { get; set; }
+
+    public bool IsRemote { get; set; }
+
+    /// <summary>Largest aircraft the stand admits; null admits any size.</summary>
+    public AircraftSizeCategory? MaxAircraftSize { get; set; }
 }

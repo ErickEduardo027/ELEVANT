@@ -7,7 +7,7 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
+last_verified: "2026-11-04"
 verified_commit: "0c392571a9a235ff5e75846d14b2a127b6c25c73"
 sources:
   - docs/architecture/database-v1.md
@@ -22,6 +22,12 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
   - database/DevelopmentDB/scripts/bootstrap/provision-development.sql
   - frontend/mobile-agent/README.md
+  - docs/adr/0030-position-coverage-per-shift-and-combined-stands.md
+  - backend/Elevant.Application/Operations/PositionCoveragePolicy.cs
+  - backend/Elevant.Application/Operations/StandConstraintPolicy.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfPositionCoverageStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/CoverageReassignment.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs
 tags:
   - turnaround
   - operaciones
@@ -130,6 +136,42 @@ En el commit histórico indicado en el frontmatter, Mobile Agent y Private Web p
 ### Cambio en la rama de integración de Development
 
 La rama `feat/integrated-cycle-realtime` añade un caso de uso para que OCC cree una escala manual desde planificación. La API deriva el alcance de estación de la cuenta vigente, exige una única versión contractual aprobada y vigente para aerolínea/estación/fecha, valida ruta y fecha local, reserva una posición activa sin solapamiento y registra llegada, salida, operación planificada, historia, auditoría y aviso recuperable para la aerolínea en una transacción. El UUID de intención permite repetir el mismo cuerpo sin duplicar la escala. Un segundo comando OCC programa un turno local de agente para la estación y terminal derivadas de la escala; exige cobertura de toda la operación, aptitud vigente y ausencia de otro turno para el día. Después OCC refresca elegibilidad y usa el ETag nuevo para el despacho habitual. Programar el turno no asigna por sí solo, no factura y no debe confundirse con una promoción al VPS; el resto del ciclo continúa en implementación.
+
+## Cobertura de posiciones por turno
+
+En la rama de la fase 3, bloque 2 ([ADR-0030](../../docs/adr/0030-position-coverage-per-shift-and-combined-stands.md)), OCC asigna a cada agente **las posiciones que cubre durante una ventana de su turno**, en lugar de asignar vuelo a vuelo.
+
+**Reglas.** Las aplica [PositionCoveragePolicy](../../backend/Elevant.Application/Operations/PositionCoveragePolicy.cs):
+- máximo de posiciones por terminal (3 por defecto; la Terminal B del ejemplo, 2);
+- licencia de conducir y vehículo para más de 2 posiciones;
+- habilitación de puente en la Terminal B y en las posiciones con puente;
+- mentor para agentes con menos de 3 meses;
+- turno que cubra toda la ventana;
+- sin ausencias aprobadas ni solapes.
+
+Cada rechazo devuelve el código de la regla incumplida.
+
+**Posiciones combinadas.** Son reglas entre posiciones que OCC configura y aplica [StandConstraintPolicy](../../backend/Elevant.Application/Operations/StandConstraintPolicy.cs):
+- «X ocupada anula Y»;
+- «X ocupada limita Y a estrecho».
+
+Una colocación imposible se rechaza. En el mapa, la posición anulada aparece inhabilitada con la posición que la anula.
+
+**El vuelo sigue a la posición.** Cuando la posición de una escala cambia antes de iniciar la operación, [CoverageReassignment](../../database/DevelopmentDB/Elevant.Persistence/Operations/CoverageReassignment.cs) mueve la operación al agente que cubre la nueva posición a la hora del bloqueo:
+- libera la asignación anterior;
+- avisa a los dos agentes;
+- respeta el máximo de 3 operaciones simultáneas.
+
+OCC también puede liberar al agente manualmente; la operación vuelve a `Planned`.
+
+**Verificación.** La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs) cubre:
+- reglas;
+- configuración;
+- liberación;
+- reasignación por cambio de posición;
+- rechazo por posición anulada.
+
+No se ha verificado en el VPS.
 
 ## Relacionados
 
