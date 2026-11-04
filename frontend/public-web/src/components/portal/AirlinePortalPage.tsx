@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse,
+import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse, type AirlineServiceOrderResponse,
   type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
   type AirlinePortalOperationResponse } from "@elevant/api-client";
@@ -107,6 +107,75 @@ function AirlineFlightsPage({ airlineName }: {
   </div>;
 }
 
+const SIGNERS: Record<string, string> = { AirlineRepresentative: "Representante de la aerolínea", AviamAgent: "AVIAM" };
+
+/**
+ * The Service Order signed on the ramp (ADR-0032): what the airline's representative accepted,
+ * drawn from the stored, signed version with its SHA-256 fingerprint.
+ */
+function ServiceOrderCard({ operationId, revision }: { operationId: string; revision: number }) {
+  const { getServiceOrder, downloadServiceOrder } = useAirlineSession();
+  const [retryKey, setRetryKey] = useState(0);
+  const key = `${operationId}:${revision}:${retryKey}`;
+  const [state, setState] = useState<{ key: string; status: "ready" | "missing" | "error";
+    order?: AirlineServiceOrderResponse } | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(false);
+  const generation = useRef(0);
+  const current = state?.key === key ? state : null;
+
+  useEffect(() => {
+    const request = ++generation.current;
+    void getServiceOrder(operationId).then(order => {
+      if (request === generation.current) setState({ key, status: "ready", order });
+    }).catch(error => {
+      if (request === generation.current)
+        setState({ key, status: error instanceof ElevantApiError && error.status === 404 ? "missing" : "error" });
+    });
+    return () => { generation.current += 1; };
+  }, [getServiceOrder, operationId, key]);
+
+  async function download(number: string) {
+    setDownloading(true);
+    setDownloadError(false);
+    try {
+      const url = URL.createObjectURL(await downloadServiceOrder(operationId));
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `orden-de-servicio-${number}.pdf`;
+      anchor.hidden = true;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch {
+      setDownloadError(true);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  return <div className={styles.contractVersion}>
+    <h3>Orden de Servicio firmada</h3>
+    {!current && <p role="status">Cargando Orden de Servicio…</p>}
+    {current?.status === "missing" && <p className={styles.note}>Aún no hay una Orden de Servicio firmada por su representante para este vuelo.</p>}
+    {current?.status === "error" && <div role="alert"><p>No se pudo cargar la Orden de Servicio.</p>
+      <button className={styles.loadMore} type="button" onClick={() => setRetryKey(value => value + 1)}>Reintentar</button></div>}
+    {current?.status === "ready" && current.order && <>
+      <dl className={styles.details}>
+        <div><dt>Número</dt><dd>{current.order.number}</dd></div>
+        {current.order.totalAmount != null && <div><dt>Monto</dt><dd>{current.order.currencyCode ?? "USD"} {current.order.totalAmount.toLocaleString("es-DO", { minimumFractionDigits: 2 })}</dd></div>}
+        {current.order.signatures.map(signature => <div key={signature.role}>
+          <dt>{SIGNERS[signature.role] ?? signature.role}</dt><dd>{signature.signerName} · {operationTime(signature.signedAt)}</dd></div>)}
+      </dl>
+      <p className={styles.note}>Huella SHA-256 {current.order.contentSha256.slice(0, 16)}…</p>
+      <button className={styles.loadMore} type="button" disabled={downloading} onClick={() => void download(current.order!.number)}>
+        {downloading ? "Generando PDF…" : "Descargar PDF firmado"}</button>
+      {downloadError && <p role="alert">No se pudo descargar el PDF. Intente nuevamente.</p>}
+    </>}
+  </div>;
+}
+
 function AirlineFlightDetail({ operationId }: { operationId: string }) {
   const { getOperation, getApprovedEvidence, operationRevision } = useAirlineSession();
   const [retryKey, setRetryKey] = useState(0);
@@ -183,6 +252,7 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
             <span>{service.executedQuantity} / {service.contractedQuantity} {service.billingUnit}</span></div>
         </li>)}</ul>
       </div> : evidenceResult?.status === "ready" && <p className={styles.note}>La evidencia aprobada aún no está disponible para esta operación.</p>}
+      <ServiceOrderCard operationId={operationId} revision={operationRevision} />
     </section>}
     <Link href="/portal/vuelos">Volver a vuelos</Link>
   </div>;

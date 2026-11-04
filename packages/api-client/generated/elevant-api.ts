@@ -507,6 +507,23 @@ export interface AirlineRegistryCheckResult {
   check: AirlineRegistryCheck;
 }
 
+export interface OperationDocumentSignatureResponse {
+  role: string;
+  signerName: string;
+  signedAt: string;
+}
+
+export interface AirlineServiceOrderResponse {
+  operationId: string;
+  number: string;
+  contentSha256: string;
+  signatures: OperationDocumentSignatureResponse[];
+  /** @nullable */
+  currencyCode?: string | null;
+  /** @nullable */
+  totalAmount?: number | null;
+}
+
 export interface AirlineTreasuryAdjustmentLineResponse {
   invoiceLineId: string;
   quantity: number;
@@ -1382,6 +1399,15 @@ export interface SessionActorResponse {
 
 export interface CurrentSessionResponse {
   actor: SessionActorResponse;
+}
+
+export interface DamageMarkResponse {
+  id: string;
+  x: number;
+  y: number;
+  note: string;
+  reportedAt: string;
+  hasPhoto: boolean;
 }
 
 export interface DecideContractApprovalInput {
@@ -4036,6 +4062,63 @@ export interface OperationConversationListResponse {
   hasMore: boolean;
 }
 
+export interface OperationDocumentServiceLineResponse {
+  code: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  /** @nullable */
+  amount?: number | null;
+}
+
+export interface OperationDocumentSummaryResponse {
+  /** @nullable */
+  flightIn?: string | null;
+  /** @nullable */
+  flightOut?: string | null;
+  /** @nullable */
+  registration?: string | null;
+  /** @nullable */
+  aircraftType?: string | null;
+  /** @nullable */
+  position?: string | null;
+  /** @nullable */
+  passengersIn?: number | null;
+  /** @nullable */
+  passengersOut?: number | null;
+  /** @nullable */
+  mtowKg?: number | null;
+  services: OperationDocumentServiceLineResponse[];
+  surcharges: string[];
+  /** @nullable */
+  currencyCode?: string | null;
+  /** @nullable */
+  totalAmount?: number | null;
+  milestoneCount: number;
+  checklistAnswered: number;
+  checklistTotal: number;
+  damageCount: number;
+}
+
+export interface OperationDocumentResponse {
+  kind: string;
+  number: string;
+  title: string;
+  formCode: string;
+  contentSha256: string;
+  requiredRoles: string[];
+  signatures: OperationDocumentSignatureResponse[];
+  staleRoles: string[];
+  isFullySigned: boolean;
+  summary: OperationDocumentSummaryResponse;
+}
+
+export interface OperationDocumentsResponse {
+  operationId: string;
+  documents: OperationDocumentResponse[];
+  damageMarks: DamageMarkResponse[];
+}
+
 export interface OperationMessageListResponse {
   operationId: string;
   messages: OperationMessageResponse[];
@@ -4646,6 +4729,13 @@ export interface RampServiceChargeCommandResponse {
   service: RampServiceChargesResponse;
 }
 
+export interface RecordDamageMarkRequest {
+  x: number;
+  y: number;
+  note: string;
+  reportedAt: string;
+}
+
 export interface RecordExchangeRateInput {
   rateDate: string;
   fromCurrency: string;
@@ -5155,6 +5245,12 @@ export interface SignContractRequest {
   documentSha256: string;
   accepted: boolean;
   signatureImagePng: string;
+}
+
+export interface SignOperationDocumentRequest {
+  signerName: string;
+  documentSha256: string;
+  strokes: number[][];
 }
 
 export interface SubmitAirlinePermitInput {
@@ -6494,6 +6590,61 @@ export const getAirlinePortalBootstrap = async ( options?: RequestInit): Promise
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlinePortalBootstrapResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineServiceOrderUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/operations/${operationId}/service-order`
+}
+
+export const getAirlineServiceOrder = async (operationId: string, options?: RequestInit): Promise<AirlineServiceOrderResponse> => {
+
+  const res = await fetch(getGetAirlineServiceOrderUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlineServiceOrderResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineServiceOrderPdfUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/operations/${operationId}/service-order/pdf`
+}
+
+export const getAirlineServiceOrderPdf = async (operationId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineServiceOrderPdfUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 
@@ -14945,6 +15096,95 @@ export const dismissOccFlightProposal = async (proposalId: string, options?: Req
 
 
 
+export const getGetOccOperationDocumentsUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/operations/${operationId}/documents`
+}
+
+export const getOccOperationDocuments = async (operationId: string, options?: RequestInit): Promise<OperationDocumentsResponse> => {
+
+  const res = await fetch(getGetOccOperationDocumentsUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationDocumentsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccOperationDocumentPdfUrl = (operationId: string,
+    kind: string,) => {
+
+
+
+
+  return `/api/v1/occ/operations/${operationId}/documents/${kind}/pdf`
+}
+
+/**
+ * @summary The current form as PDF, with its signatures and content hash.
+ */
+export const getOccOperationDocumentPdf = async (operationId: string,
+    kind: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetOccOperationDocumentPdfUrl(operationId,kind),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetOccDamagePhotoUrl = (operationId: string,
+    markId: string,) => {
+
+
+
+
+  return `/api/v1/occ/operations/${operationId}/damage-marks/${markId}/photo`
+}
+
+export const getOccDamagePhoto = async (operationId: string,
+    markId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetOccDamagePhotoUrl(operationId,markId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
 export const getGetOccPlanningSnapshotUrl = (params?: GetOccPlanningSnapshotParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -16400,6 +16640,152 @@ const res = await fetch(getLookupCommercialRequestReceiptUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: SubmitCommercialRequestResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetRampOperationDocumentsUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/documents`
+}
+
+/**
+ * @summary Forms of the operation with what each still needs signed.
+ */
+export const getRampOperationDocuments = async (operationId: string, options?: RequestInit): Promise<OperationDocumentsResponse> => {
+
+  const res = await fetch(getGetRampOperationDocumentsUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationDocumentsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSignRampOperationDocumentUrl = (operationId: string,
+    kind: string,
+    role: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/documents/${kind}/signatures/${role}`
+}
+
+/**
+ * @summary Records a drawn signature on the form whose content hash the signer saw.
+ */
+export const signRampOperationDocument = async (operationId: string,
+    kind: string,
+    role: string,
+    signOperationDocumentRequest: SignOperationDocumentRequest, options?: RequestInit): Promise<OperationDocumentsResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSignRampOperationDocumentUrl(operationId,kind,role),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(signOperationDocumentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationDocumentsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRecordRampDamageMarkUrl = (operationId: string,
+    markId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/damage-marks/${markId}`
+}
+
+/**
+ * @summary Marks a damage found in the 360° walk-around; the id comes from the tablet.
+ */
+export const recordRampDamageMark = async (operationId: string,
+    markId: string,
+    recordDamageMarkRequest: RecordDamageMarkRequest, options?: RequestInit): Promise<OperationDocumentsResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRecordRampDamageMarkUrl(operationId,markId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(recordDamageMarkRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationDocumentsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAttachRampDamagePhotoUrl = (operationId: string,
+    markId: string,) => {
+
+
+
+
+  return `/api/v1/ramp/operations/${operationId}/damage-marks/${markId}/photo`
+}
+
+/**
+ * @summary Attaches the photo of a marked damage: JPEG or PNG, one per mark; the same bytes again are a retry.
+ */
+export const attachRampDamagePhoto = async (operationId: string,
+    markId: string, options?: RequestInit): Promise<OperationDocumentsResponse> => {
+
+  const res = await fetch(getAttachRampDamagePhotoUrl(operationId,markId),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OperationDocumentsResponse = body ? JSON.parse(body) : {}
   return data
 }
 

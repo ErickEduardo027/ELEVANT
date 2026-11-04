@@ -10,6 +10,7 @@ import {
   loadOccReviewSubmissionDetail, loadOccReviewSubmissionHistory,
 } from '../../services/occReviewService';
 import { reviewMessages } from './reviewMessages';
+import OperationDocumentsSection from './components/OperationDocumentsSection';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -285,6 +286,7 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
           <div className="grid gap-2 text-sm sm:grid-cols-2"><p>{t('detail.plannedStart', { date: dateTime(detail.data.plannedStartAt, detail.data.ianaTimeZone, locale) })}<br />{t('detail.actualStart', { date: dateTime(detail.data.actualStartAt, detail.data.ianaTimeZone, locale) })}</p><p>{t('detail.plannedEnd', { date: dateTime(detail.data.plannedEndAt, detail.data.ianaTimeZone, locale) })}<br />{t('detail.actualEnd', { date: dateTime(detail.data.actualEndAt, detail.data.ianaTimeZone, locale) })}</p></div>
           {detail.data.agentNote && <p className="rounded-xl bg-accent-600/10 p-3 text-sm"><strong>{t('detail.agentNote')}</strong> {detail.data.agentNote}</p>}
           <ReviewEvidence detail={detail.data} />
+          <OperationDocumentsSection key={detail.data.operationId} operationId={detail.data.operationId} />
           <HistoricalSubmissions operationId={detail.data.operationId} currentSubmissionId={detail.data.submissionId} timeZone={detail.data.ianaTimeZone} />
           {detail.data.decision && <p className="rounded-xl bg-accent-600/10 p-3 text-sm">{t('detail.decision')}<strong>{statusLabel(detail.data.decision.outcome)}</strong> · {dateTime(detail.data.decision.decidedAt, detail.data.ianaTimeZone, locale)}{detail.data.decision.reason ? ` — ${detail.data.decision.reason}` : ''}</p>}
           {detail.data.status === 'PendingReview' && <div className="space-y-3 border-t border-black/10 pt-4 dark:border-white/10">

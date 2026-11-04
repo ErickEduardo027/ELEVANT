@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-11-04"
-verified_commit: "9baafdd7e4dac64c9d1f207c104dbcdf17f5e2c2"
+verified_commit: "b175e2963dad77fe7a621bc1ccff6dd710830971"
 sources:
   - docs/architecture/database-v1.md
   - docs/database/schema-v1.md
@@ -28,6 +28,12 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Operations/EfPositionCoverageStore.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/CoverageReassignment.cs
   - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs
+  - docs/adr/0032-aviam-forms-signatures-and-walkaround.md
+  - backend/Elevant.Application/Operations/OperationDocuments.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/OperationDocumentAssembler.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfOperationDocumentStore.cs
+  - backend/Elevant.Infrastructure/Operations/OperationDocumentPdfRenderer.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Documents.cs
 tags:
   - turnaround
   - operaciones
@@ -172,6 +178,27 @@ OCC también puede liberar al agente manualmente; la operación vuelve a `Planne
 - rechazo por posición anulada.
 
 No se ha verificado en el VPS.
+
+## Formularios AVIAM y firmas
+
+Los formularios de AVIAM ya no se transcriben: se generan desde el registro de la operación ([ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)).
+
+- **Orden de Servicio en Rampa** (F-RAM-AVL-MAG 04): firman el representante de la aerolínea y AVIAM.
+- **Reporte de Vuelo** (F-OCC-AVL-6.2.12/A9): firma el coordinador.
+- **Check-List y Reporte Diario del Puente** (F-MGO-AVL 8.14.1/A1-A2): firma el operador; solo existe si la operación tiene el checklist del puente.
+
+**Contenido y huella.**
+- El [ensamblador](../../database/DevelopmentDB/Elevant.Persistence/Operations/OperationDocumentAssembler.cs) arma un contenido determinista; su JSON canónico se hashea con SHA-256.
+- Las tres hojas comparten un número: estación + id interno con 9 dígitos (`PUJ000000123`).
+- Una firma solo se acepta contra la huella que vio el firmante; si el contenido cambió, la API responde 409.
+- Solo se guarda la versión firmada (`ops.operation_document_versions`, inmutable). Las firmas (`ops.operation_document_signatures`) son de solo inserción, una por rol y versión.
+- Si cambia un dato facturable, ese formulario tiene otra huella y pide firmar de nuevo; los demás conservan sus firmas.
+
+**PDF.** El [renderizador](../../backend/Elevant.Infrastructure/Operations/OperationDocumentPdfRenderer.cs) dibuja cada hoja como el papel, con la firma en trazos y la huella en el pie. OCC los descarga desde la revisión; la aerolínea ve y descarga en su portal solo la última Orden de Servicio firmada por completo.
+
+**Walk-around.** `ops.operation_damage_marks` guarda la posición en la silueta (0–1), la nota y, opcionalmente, una foto JPEG o PNG en almacenamiento privado con su SHA-256. Las fotos no entran en la huella: se anexan al PDF del Reporte de Vuelo.
+
+**Fuera de este bloque:** el formulario de charter sin contrato (falta el formulario literal) y la valoración de recargos (bloque 5).
 
 ## Relacionados
 

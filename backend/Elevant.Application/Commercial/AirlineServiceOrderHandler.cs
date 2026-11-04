@@ -1,0 +1,34 @@
+using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Operations;
+
+namespace Elevant.Application.Commercial;
+
+/// <summary>
+/// The airline portal sees the Service Order its representative signed on the ramp (ADR-0032):
+/// only the latest fully signed version, drawn from the stored snapshot, scoped to its organization.
+/// </summary>
+public sealed class AirlineServiceOrderHandler(IActorContextResolver actors, IOperationDocumentStore documents,
+    IOperationDocumentPdfRenderer renderer)
+{
+    public async Task<(SignedOperationDocument? Document, AirlinePortalFailure? Failure)> GetAsync(Guid accountId,
+        Guid operationId, CancellationToken cancellationToken = default)
+    {
+        if (operationId == Guid.Empty) return (null, AirlinePortalFailure.NotFound);
+        var actor = await actors.ResolveAsync(accountId, cancellationToken);
+        var (organizationId, failure) = AirlinePortalAccess.Resolve(actor, accountId);
+        if (failure is not null) return (null, failure);
+        var document = await documents.ReadSignedServiceOrderForAirlineAsync(organizationId!.Value, operationId,
+            cancellationToken);
+        return document is null ? (null, AirlinePortalFailure.NotFound) : (document, null);
+    }
+
+    public async Task<(byte[]? Pdf, string? FileName, AirlinePortalFailure? Failure)> RenderAsync(Guid accountId,
+        Guid operationId, CancellationToken cancellationToken = default)
+    {
+        var (document, failure) = await GetAsync(accountId, operationId, cancellationToken);
+        return document is null
+            ? (null, null, failure)
+            : (renderer.Render(document.Content, document.ContentSha256, document.Signatures,
+                new Dictionary<Guid, DamagePhoto>()), OperationDocumentHandler.FileName(document.Content), null);
+    }
+}

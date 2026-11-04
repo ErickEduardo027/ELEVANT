@@ -1338,6 +1338,139 @@
         ]
       }
     },
+    "/api/v1/airline/portal/operations/{operationId}/service-order": {
+      "get": {
+        "tags": [
+          "AirlineServiceOrder"
+        ],
+        "operationId": "GetAirlineServiceOrder",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlineServiceOrderResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/airline/portal/operations/{operationId}/service-order/pdf": {
+      "get": {
+        "tags": [
+          "AirlineServiceOrder"
+        ],
+        "operationId": "GetAirlineServiceOrderPdf",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/treasury/statements": {
       "get": {
         "tags": [
@@ -19653,6 +19786,280 @@
         ]
       }
     },
+    "/api/v1/occ/operations/{operationId}/documents": {
+      "get": {
+        "tags": [
+          "OccOperationDocuments"
+        ],
+        "operationId": "GetOccOperationDocuments",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDocumentsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/operations/{operationId}/documents/{kind}/pdf": {
+      "get": {
+        "tags": [
+          "OccOperationDocuments"
+        ],
+        "summary": "The current form as PDF, with its signatures and content hash.",
+        "operationId": "GetOccOperationDocumentPdf",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/operations/{operationId}/damage-marks/{markId}/photo": {
+      "get": {
+        "tags": [
+          "OccOperationDocuments"
+        ],
+        "operationId": "GetOccDamagePhoto",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "markId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "image/jpeg": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/planning": {
       "get": {
         "tags": [
@@ -23604,6 +24011,451 @@
             }
           }
         }
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/documents": {
+      "get": {
+        "tags": [
+          "RampDocuments"
+        ],
+        "summary": "Forms of the operation with what each still needs signed.",
+        "operationId": "GetRampOperationDocuments",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDocumentsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/documents/{kind}/signatures/{role}": {
+      "put": {
+        "tags": [
+          "RampDocuments"
+        ],
+        "summary": "Records a drawn signature on the form whose content hash the signer saw.",
+        "operationId": "SignRampOperationDocument",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "role",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SignOperationDocumentRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDocumentsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/damage-marks/{markId}": {
+      "put": {
+        "tags": [
+          "RampDocuments"
+        ],
+        "summary": "Marks a damage found in the 360° walk-around; the id comes from the tablet.",
+        "operationId": "RecordRampDamageMark",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "markId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RecordDamageMarkRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDocumentsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/operations/{operationId}/damage-marks/{markId}/photo": {
+      "put": {
+        "tags": [
+          "RampDocuments"
+        ],
+        "summary": "Attaches the photo of a marked damage: JPEG or PNG, one per mark; the same bytes again are a retry.",
+        "operationId": "AttachRampDamagePhoto",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "markId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "X-Elevant-Installation-Id",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationDocumentsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
       }
     },
     "/api/v1/ramp/operations/{operationId}/milestones/{code}": {
@@ -27903,6 +28755,43 @@
         },
         "additionalProperties": false
       },
+      "AirlineServiceOrderResponse": {
+        "required": [
+          "contentSha256",
+          "number",
+          "operationId",
+          "signatures"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "signatures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationDocumentSignatureResponse"
+            }
+          },
+          "currencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "AirlineTreasuryAdjustmentLineResponse": {
         "required": [
           "amount",
@@ -30648,6 +31537,42 @@
                 "$ref": "#/components/schemas/SessionActorResponse"
               }
             ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "DamageMarkResponse": {
+        "required": [
+          "hasPhoto",
+          "id",
+          "note",
+          "reportedAt",
+          "x",
+          "y"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          },
+          "note": {
+            "type": "string"
+          },
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "hasPhoto": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -40425,6 +41350,231 @@
         },
         "additionalProperties": false
       },
+      "OperationDocumentResponse": {
+        "required": [
+          "contentSha256",
+          "formCode",
+          "isFullySigned",
+          "kind",
+          "number",
+          "requiredRoles",
+          "signatures",
+          "staleRoles",
+          "summary",
+          "title"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "formCode": {
+            "type": "string"
+          },
+          "contentSha256": {
+            "type": "string"
+          },
+          "requiredRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "signatures": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationDocumentSignatureResponse"
+            }
+          },
+          "staleRoles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "isFullySigned": {
+            "type": "boolean"
+          },
+          "summary": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OperationDocumentSummaryResponse"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false
+      },
+      "OperationDocumentServiceLineResponse": {
+        "required": [
+          "code",
+          "name",
+          "quantity",
+          "unit"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "quantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OperationDocumentSignatureResponse": {
+        "required": [
+          "role",
+          "signedAt",
+          "signerName"
+        ],
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "signerName": {
+            "type": "string"
+          },
+          "signedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OperationDocumentSummaryResponse": {
+        "required": [
+          "checklistAnswered",
+          "checklistTotal",
+          "damageCount",
+          "milestoneCount",
+          "services",
+          "surcharges"
+        ],
+        "type": "object",
+        "properties": {
+          "flightIn": {
+            "type": "string",
+            "nullable": true
+          },
+          "flightOut": {
+            "type": "string",
+            "nullable": true
+          },
+          "registration": {
+            "type": "string",
+            "nullable": true
+          },
+          "aircraftType": {
+            "type": "string",
+            "nullable": true
+          },
+          "position": {
+            "type": "string",
+            "nullable": true
+          },
+          "passengersIn": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "passengersOut": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "mtowKg": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationDocumentServiceLineResponse"
+            }
+          },
+          "surcharges": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "currencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "milestoneCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "checklistAnswered": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "checklistTotal": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "damageCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OperationDocumentsResponse": {
+        "required": [
+          "damageMarks",
+          "documents",
+          "operationId"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationDocumentResponse"
+            }
+          },
+          "damageMarks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DamageMarkResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "OperationMessageListResponse": {
         "required": [
           "hasMore",
@@ -42883,6 +44033,33 @@
         },
         "additionalProperties": false
       },
+      "RecordDamageMarkRequest": {
+        "required": [
+          "note",
+          "reportedAt",
+          "x",
+          "y"
+        ],
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "number",
+            "format": "double"
+          },
+          "y": {
+            "type": "number",
+            "format": "double"
+          },
+          "note": {
+            "type": "string"
+          },
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "RecordExchangeRateInput": {
         "required": [
           "fromCurrency",
@@ -44815,6 +45992,33 @@
         },
         "additionalProperties": false
       },
+      "SignOperationDocumentRequest": {
+        "required": [
+          "documentSha256",
+          "signerName",
+          "strokes"
+        ],
+        "type": "object",
+        "properties": {
+          "signerName": {
+            "type": "string"
+          },
+          "documentSha256": {
+            "type": "string"
+          },
+          "strokes": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "number",
+                "format": "double"
+              }
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "SubmitAirlinePermitInput": {
         "required": [
           "expiresOn",
@@ -45654,6 +46858,9 @@
       "name": "AirlinePortal"
     },
     {
+      "name": "AirlineServiceOrder"
+    },
+    {
       "name": "AirlineTreasury"
     },
     {
@@ -45798,6 +47005,9 @@
       "name": "OccFlightFeed"
     },
     {
+      "name": "OccOperationDocuments"
+    },
+    {
       "name": "OccPlanning"
     },
     {
@@ -45832,6 +47042,9 @@
     },
     {
       "name": "PublicCommercialRequests"
+    },
+    {
+      "name": "RampDocuments"
     },
     {
       "name": "RampExecution"

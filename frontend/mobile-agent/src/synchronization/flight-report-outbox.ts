@@ -4,13 +4,23 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * Persistent queue of Flight Report commands (ADR-0031). A tap is saved on the device first and
  * sent later, in order, with its stable idempotency key: signal on the ramp is poor and a lost
  * timestamp cannot be typed again. The queue belongs to one account; local data is only a cache.
+ * Signatures and walk-around marks (ADR-0032) travel in the same ordered queue: a photo always
+ * follows its mark, and a signature carries the content hash the signer saw.
  */
 export type FlightReportCommand =
   | Readonly<{ kind: 'milestone'; operationId: string; code: string; occurredAt: string }>
   | Readonly<{
     kind: 'flightData'; operationId: string; passengersIn: number | null; passengersOut: number | null;
     mtowKg: number | null; aircraftRegistration: string | null;
-  }>;
+  }>
+  | Readonly<{
+    kind: 'signature'; operationId: string; documentKind: string; role: string; signerName: string;
+    documentSha256: string; strokes: readonly (readonly number[])[];
+  }>
+  | Readonly<{ kind: 'damageMark'; operationId: string; markId: string; x: number; y: number; note: string; reportedAt: string }>
+  | Readonly<{ kind: 'damagePhoto'; operationId: string; markId: string; fileUri: string; contentType: 'image/jpeg' | 'image/png' }>;
+
+const KINDS = new Set(['milestone', 'flightData', 'signature', 'damageMark', 'damagePhoto']);
 
 export type FlightReportOutboxItem = Readonly<{
   idempotencyKey: string;
@@ -35,7 +45,7 @@ function isItem(value: unknown): value is FlightReportOutboxItem {
     typeof item.createdAt === 'string' && (item.state === 'pending' || item.state === 'blocked') &&
     typeof item.attempts === 'number' && typeof command === 'object' && command !== null &&
     typeof command.operationId === 'string' && uuid.test(command.operationId) &&
-    (command.kind === 'milestone' || command.kind === 'flightData');
+    typeof command.kind === 'string' && KINDS.has(command.kind);
 }
 
 export async function readFlightReportOutbox(accountId: string): Promise<readonly FlightReportOutboxItem[]> {
@@ -71,7 +81,12 @@ export async function enqueueFlightReportCommand(accountId: string, command: Fli
 
 function sameTarget(left: FlightReportCommand, right: FlightReportCommand) {
   if (left.operationId !== right.operationId || left.kind !== right.kind) return false;
-  return left.kind !== 'milestone' || right.kind !== 'milestone' || left.code === right.code;
+  if (left.kind === 'milestone' && right.kind === 'milestone') return left.code === right.code;
+  if (left.kind === 'signature' && right.kind === 'signature')
+    return left.documentKind === right.documentKind && left.role === right.role;
+  if ((left.kind === 'damageMark' && right.kind === 'damageMark') || (left.kind === 'damagePhoto' && right.kind === 'damagePhoto'))
+    return left.markId === right.markId;
+  return true;
 }
 
 export async function updateFlightReportItem(accountId: string, idempotencyKey: string,
@@ -96,7 +111,7 @@ export function pendingFor(items: readonly FlightReportOutboxItem[], operationId
   for (const item of items) {
     if (item.command.operationId !== operationId) continue;
     if (item.command.kind === 'milestone') milestones.set(item.command.code, item);
-    else flightData = item;
+    else if (item.command.kind === 'flightData') flightData = item;
   }
   return { milestones, flightData };
 }

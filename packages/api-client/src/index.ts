@@ -1,5 +1,6 @@
 export * from "./presence";
 export * from "./flightReport";
+export * from "./operationDocuments";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -243,6 +244,11 @@ export {
   type RampOwnCoverageListResponse,
   type RampOwnCoverageResponse,
   type RampExecutionResponse,
+  type OperationDocumentsResponse,
+  type OperationDocumentResponse,
+  type OperationDocumentSignatureResponse,
+  type DamageMarkResponse,
+  type AirlineServiceOrderResponse,
   type RampMilestoneResponse,
   type OccReadyContractsResponse,
   type OccFlightFeedResponse,

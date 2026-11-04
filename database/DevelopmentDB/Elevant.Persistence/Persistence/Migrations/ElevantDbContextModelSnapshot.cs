@@ -9236,6 +9236,302 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationDamageMark", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("GroundOperationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ground_operation_id");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("note");
+
+                    b.Property<string>("PhotoContentType")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("photo_content_type");
+
+                    b.Property<int?>("PhotoLength")
+                        .HasColumnType("int")
+                        .HasColumnName("photo_length");
+
+                    b.Property<string>("PhotoObjectKey")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)")
+                        .HasColumnName("photo_object_key");
+
+                    b.Property<string>("PhotoSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .HasColumnName("photo_sha256")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset?>("PhotoUploadedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("photo_uploaded_at");
+
+                    b.Property<decimal>("PositionX")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("position_x");
+
+                    b.Property<decimal>("PositionY")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("decimal(5,4)")
+                        .HasColumnName("position_y");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset>("ReportedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("reported_at");
+
+                    b.Property<long>("ReportedByRampAgentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reported_by_ramp_agent_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("ReportedByRampAgentId");
+
+                    b.HasIndex("GroundOperationId", "ReportedAt");
+
+                    b.ToTable("operation_damage_marks", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_operation_damage_mark_photo", "([photo_object_key] IS NULL AND [photo_sha256] IS NULL AND [photo_uploaded_at] IS NULL) OR ([photo_object_key] IS NOT NULL AND LEN([photo_sha256]) = 64 AND [photo_uploaded_at] IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_operation_damage_mark_position", "[position_x] BETWEEN 0 AND 1 AND [position_y] BETWEEN 0 AND 1");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationDocumentSignature", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("CapturedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("captured_by_account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("DocumentSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .HasColumnName("document_sha256")
+                        .IsFixedLength();
+
+                    b.Property<long?>("MobileDeviceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("mobile_device_id");
+
+                    b.Property<long>("OperationDocumentVersionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("operation_document_version_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<Guid>("RequestId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("request_id");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)")
+                        .HasColumnName("role");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("SignedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("signed_at");
+
+                    b.Property<string>("SignerName")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("signer_name");
+
+                    b.Property<string>("StrokesJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("strokes_json");
+
+                    b.Property<string>("StrokesSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .HasColumnName("strokes_sha256")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CapturedByAccountId");
+
+                    b.HasIndex("MobileDeviceId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RequestId")
+                        .IsUnique();
+
+                    b.HasIndex("OperationDocumentVersionId", "Role")
+                        .IsUnique();
+
+                    b.ToTable("operation_document_signatures", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_operation_document_signature_sha", "LEN([document_sha256]) = 64 AND LEN([strokes_sha256]) = 64");
+
+                            t.HasCheckConstraint("ck_operation_document_signature_signer", "LEN([signer_name]) BETWEEN 2 AND 120");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationDocumentVersion", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("content_json");
+
+                    b.Property<string>("ContentSha256")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nchar(64)")
+                        .HasColumnName("content_sha256")
+                        .IsFixedLength();
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<string>("DocumentNumber")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("document_number");
+
+                    b.Property<long>("GroundOperationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ground_operation_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("nvarchar(24)")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("GroundOperationId", "Kind", "ContentSha256")
+                        .IsUnique();
+
+                    b.ToTable("operation_document_versions", "ops", t =>
+                        {
+                            t.HasCheckConstraint("ck_operation_document_version_sha", "LEN([content_sha256]) = 64");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationEquipmentAssignment", b =>
                 {
                     b.Property<long>("Id")
@@ -14696,6 +14992,50 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("SubmittedByRampAgentId")
                         .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationDamageMark", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Operations.GroundOperation", null)
+                        .WithMany()
+                        .HasForeignKey("GroundOperationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
+                        .WithMany()
+                        .HasForeignKey("ReportedByRampAgentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationDocumentSignature", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CapturedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Integration.MobileDevice", null)
+                        .WithMany()
+                        .HasForeignKey("MobileDeviceId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationDocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("OperationDocumentVersionId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationDocumentVersion", b =>
+                {
+                    b.HasOne("Elevant.Domain.Entities.Operations.GroundOperation", null)
+                        .WithMany()
+                        .HasForeignKey("GroundOperationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationEquipmentAssignment", b =>
