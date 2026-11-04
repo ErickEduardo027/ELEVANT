@@ -502,6 +502,62 @@ internal static class OperationsConfiguration
             AddReference<Station, OperationalNotification>(builder, notification => notification.StationId);
             AddReference<GroundOperation, OperationalNotification>(builder, notification => notification.GroundOperationId);
         });
+
+        modelBuilder.Entity<OperationDocumentVersion>(builder =>
+        {
+            builder.ToTable("operation_document_versions", "ops", table =>
+                table.HasCheckConstraint("ck_operation_document_version_sha", "LEN([content_sha256]) = 64"));
+            builder.Property(version => version.Kind).HasConversion<string>().HasMaxLength(24);
+            builder.Property(version => version.DocumentNumber).HasMaxLength(24).IsRequired();
+            builder.Property(version => version.ContentJson).IsRequired();
+            builder.Property(version => version.ContentSha256).HasMaxLength(64).IsFixedLength().IsRequired();
+            builder.HasIndex(version => new { version.GroundOperationId, version.Kind, version.ContentSha256 }).IsUnique();
+            AddReference<GroundOperation, OperationDocumentVersion>(builder, version => version.GroundOperationId);
+        });
+
+        modelBuilder.Entity<OperationDocumentSignature>(builder =>
+        {
+            builder.ToTable("operation_document_signatures", "ops", table =>
+            {
+                table.HasCheckConstraint("ck_operation_document_signature_sha",
+                    "LEN([document_sha256]) = 64 AND LEN([strokes_sha256]) = 64");
+                table.HasCheckConstraint("ck_operation_document_signature_signer", "LEN([signer_name]) BETWEEN 2 AND 120");
+            });
+            builder.Property(signature => signature.Role).HasConversion<string>().HasMaxLength(32);
+            builder.Property(signature => signature.SignerName).HasMaxLength(120).IsRequired();
+            builder.Property(signature => signature.SignedAt).HasPrecision(3);
+            builder.Property(signature => signature.DocumentSha256).HasMaxLength(64).IsFixedLength().IsRequired();
+            builder.Property(signature => signature.StrokesJson).IsRequired();
+            builder.Property(signature => signature.StrokesSha256).HasMaxLength(64).IsFixedLength().IsRequired();
+            builder.HasIndex(signature => new { signature.OperationDocumentVersionId, signature.Role }).IsUnique();
+            builder.HasIndex(signature => signature.RequestId).IsUnique();
+            AddReference<OperationDocumentVersion, OperationDocumentSignature>(builder, signature => signature.OperationDocumentVersionId);
+            AddReference<ApplicationUser, OperationDocumentSignature>(builder, signature => signature.CapturedByAccountId);
+            AddReference<MobileDevice, OperationDocumentSignature>(builder, signature => signature.MobileDeviceId);
+        });
+
+        modelBuilder.Entity<OperationDamageMark>(builder =>
+        {
+            builder.ToTable("operation_damage_marks", "ops", table =>
+            {
+                table.HasCheckConstraint("ck_operation_damage_mark_position",
+                    "[position_x] BETWEEN 0 AND 1 AND [position_y] BETWEEN 0 AND 1");
+                table.HasCheckConstraint("ck_operation_damage_mark_photo",
+                    "([photo_object_key] IS NULL AND [photo_sha256] IS NULL AND [photo_uploaded_at] IS NULL) OR " +
+                    "([photo_object_key] IS NOT NULL AND LEN([photo_sha256]) = 64 AND [photo_uploaded_at] IS NOT NULL)");
+            });
+            builder.Property(mark => mark.PositionX).HasPrecision(5, 4);
+            builder.Property(mark => mark.PositionY).HasPrecision(5, 4);
+            builder.Property(mark => mark.Note).HasMaxLength(500).IsRequired();
+            builder.Property(mark => mark.ReportedAt).HasPrecision(3);
+            builder.Property(mark => mark.PhotoObjectKey).HasMaxLength(200);
+            builder.Property(mark => mark.PhotoContentType).HasMaxLength(32);
+            builder.Property(mark => mark.PhotoSha256).HasMaxLength(64).IsFixedLength();
+            builder.Property(mark => mark.PhotoUploadedAt).HasPrecision(3);
+            builder.HasIndex(mark => new { mark.GroundOperationId, mark.ReportedAt });
+            AddReference<GroundOperation, OperationDamageMark>(builder, mark => mark.GroundOperationId);
+            AddReference<RampAgent, OperationDamageMark>(builder, mark => mark.ReportedByRampAgentId);
+        });
     }
 
     private static void AddReference<TPrincipal, TDependent>(

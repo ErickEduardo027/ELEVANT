@@ -95,7 +95,8 @@ VALUES
     (N'20261103175725_AddAeronauticalFlightFeed'),
     (N'20261104152618_AddOperationMessageReads'),
     (N'20261104163350_AddPositionCoverage'),
-    (N'20261104173101_AddFlightReportCapture');
+    (N'20261104173101_AddFlightReportCapture'),
+    (N'20261104195729_AddOperationDocuments');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')
