@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ElevantApiError, type AirlineContractPageResponse, type ContractDocumentResponse,
-  type AirlineApprovedOperationEvidenceResponse,
+  type AirlineApprovedOperationEvidenceResponse, type AirlineServiceOrderResponse,
   type AirlineOperationalRequestPageResponse, type AirlineOperationPageResponse,
   type AirlinePreinvoicePageResponse,
   type AirlinePreinvoiceDetailResponse,
@@ -73,6 +73,9 @@ interface AirlineSessionContextValue {
   getOperations(page?: number): Promise<AirlineOperationPageResponse>;
   getOperation(operationId: string): Promise<AirlinePortalOperationResponse>;
   getApprovedEvidence(operationId: string): Promise<AirlineApprovedOperationEvidenceResponse>;
+  /** The Service Order the airline's representative signed on the ramp (ADR-0032). */
+  getServiceOrder(operationId: string): Promise<AirlineServiceOrderResponse>;
+  downloadServiceOrder(operationId: string): Promise<Blob>;
   getRequests(page?: number): Promise<AirlineOperationalRequestPageResponse>;
   getPreinvoices(page?: number): Promise<AirlinePreinvoicePageResponse>;
   getPreinvoice(preinvoiceId: string): Promise<AirlinePreinvoiceDetailResponse>;
@@ -464,6 +467,10 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     withContractClient(async client => client.submitAirlinePermit({
       ...input, documentUrl: document ? await client.uploadAirlinePermitDocument(document) : null,
     })), [withContractClient]);
+  const getServiceOrder = useCallback((operationId: string) =>
+    withContractClient(client => client.getAirlineServiceOrder(operationId, { cache: "no-store" })), [withContractClient]);
+  const downloadServiceOrder = useCallback((operationId: string) =>
+    withContractClient(client => client.downloadAirlineServiceOrder(operationId, { cache: "no-store" })), [withContractClient]);
   const getContractTimeline = useCallback((versionId: string) =>
     withContractClient(client => client.getContractTimeline(versionId, { cache: "no-store" })), [withContractClient]);
 
@@ -770,7 +777,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [draftRequest]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, submitPermit, getContractTimeline, signContract, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, submitPermit, getContractTimeline, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

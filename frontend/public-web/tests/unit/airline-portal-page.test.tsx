@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse,
   type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
@@ -41,6 +41,8 @@ const emptyEvidence: AirlineApprovedOperationEvidenceResponse = {
 };
 let approvedEvidence = emptyEvidence;
 const getApprovedEvidence = vi.fn(async () => approvedEvidence);
+const getServiceOrder = vi.fn(async (): Promise<never> => { throw new ElevantApiError({ kind: "http", status: 404 }); });
+const downloadServiceOrder = vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" }));
 const initialRequestPage: AirlineOperationalRequestPageResponse = {
   page: 1, limit: 20, hasMore: false,
   requests: [{ id: "73000000-0000-7000-8000-000000000001",
@@ -111,7 +113,7 @@ const getTreasuryInvoice = vi.fn(async (id: string) => ({ invoice: { id, preinvo
 const getTreasuryReceipt = vi.fn(async () => { throw new ElevantApiError({ kind: "http", status: 404 }); });
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
@@ -217,6 +219,26 @@ it("does not show an old approved snapshot beside a newer unapproved status", as
   expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
   expect(await screen.findByText(/evidencia aprobada aún no está disponible/i)).toBeInTheDocument();
   expect(screen.queryByText("Baggage handling")).not.toBeInTheDocument();
+});
+
+it("shows the Service Order the representative signed and downloads its PDF (ADR-0032)", async () => {
+  getServiceOrder.mockResolvedValueOnce({ operationId: emptyEvidence.operationId, number: "PUJ000000002",
+    contentSha256: "a".repeat(64), currencyCode: "USD", totalAmount: 180,
+    signatures: [{ role: "AirlineRepresentative", signerName: "Ana Pérez", signedAt: "2026-09-25T15:50:00Z" },
+      { role: "AviamAgent", signerName: "Riley Ramp", signedAt: "2026-09-25T15:51:00Z" }] } as never);
+  const createObjectURL = vi.fn(() => "blob:order");
+  Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+  render(<AirlinePortalPage view="flightDetail" operationId={emptyEvidence.operationId} />);
+  expect(await screen.findByText("PUJ000000002")).toBeInTheDocument();
+  expect(screen.getByText(/Ana Pérez/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Descargar PDF firmado" }));
+  await waitFor(() => expect(downloadServiceOrder).toHaveBeenCalledWith(emptyEvidence.operationId));
+  expect(createObjectURL).toHaveBeenCalled();
+});
+
+it("says plainly when the flight has no signed Service Order yet", async () => {
+  render(<AirlinePortalPage view="flightDetail" operationId={emptyEvidence.operationId} />);
+  expect(await screen.findByText(/Aún no hay una Orden de Servicio firmada/)).toBeInTheDocument();
 });
 
 it("keeps the flight detail readable when only approved evidence fails", async () => {

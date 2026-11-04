@@ -546,11 +546,12 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         private static string ItemNumber(string code) => code[(code.IndexOf('-') + 1)..].TrimStart('0') is { Length: > 0 } number
             ? number : code;
 
-        private static string Unit(string unit) => unit switch
+        private static string Unit(string unit) => unit.ToLowerInvariant() switch
         {
-            "PerHour" or "Hour" => "h",
-            "PerService" or "Service" or "PerOperation" or "Operation" => "serv.",
-            _ => unit.ToLowerInvariant(),
+            "perhour" or "hour" or "hours" => "h",
+            "perservice" or "service" or "peroperation" or "operation" or "turnaround" => "serv.",
+            "unit" or "perunit" or "each" => "unid.",
+            var other => other,
         };
     }
 }

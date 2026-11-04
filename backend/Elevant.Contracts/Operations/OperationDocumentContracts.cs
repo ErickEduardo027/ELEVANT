@@ -28,16 +28,16 @@ public sealed record DamageMarkResponse(Guid Id, decimal X, decimal Y, string No
 
 /// <param name="Strokes">Strokes drawn on a 3:1 pad, each a flat list of normalized points [x0, y0, x1, y1, …].</param>
 public sealed record SignOperationDocumentRequest(
-    [property: Required, StringLength(120, MinimumLength = 2)] string SignerName,
-    [property: Required, RegularExpression("^[0-9a-f]{64}$")] string DocumentSha256,
-    [property: Required, MinLength(1), MaxLength(64)] decimal[][] Strokes);
+    [Required, StringLength(120, MinimumLength = 2)] string SignerName,
+    [Required, RegularExpression("^[0-9a-f]{64}$")] string DocumentSha256,
+    [Required, MinLength(1), MaxLength(64)] decimal[][] Strokes);
 
 /// <param name="X">Horizontal position on the silhouette box, 0–1 (nose at the left).</param>
 /// <param name="Y">Vertical position on the silhouette box, 0–1.</param>
 public sealed record RecordDamageMarkRequest(
-    [property: Range(0, 1)] decimal X,
-    [property: Range(0, 1)] decimal Y,
-    [property: Required, StringLength(500, MinimumLength = 3)] string Note,
+    [Range(0, 1)] decimal X,
+    [Range(0, 1)] decimal Y,
+    [Required, StringLength(500, MinimumLength = 3)] string Note,
     DateTimeOffset ReportedAt);
 
 /// <summary>The latest Service Order the airline's representative signed, for the airline portal.</summary>
