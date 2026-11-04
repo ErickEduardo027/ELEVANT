@@ -29,6 +29,9 @@ jest.mock('../src/services/mobile-auth', () => ({
   getMobileSessionRequestContext: (...args) => mockContext(...args),
   rejectMobileSessionRequest: (...args) => mockReject(...args),
 }));
+jest.mock('../src/storage/walkaround-photos', () => ({
+  keepWalkaroundPhoto: jest.fn(), readWalkaroundPhoto: jest.fn(), forgetWalkaroundPhoto: jest.fn(),
+}));
 jest.mock('../src/services/mobile-device', () => ({
   registerCurrentMobileDevice: (...args) => mockRegister(...args),
 }));

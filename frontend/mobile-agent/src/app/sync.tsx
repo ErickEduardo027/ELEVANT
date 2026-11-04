@@ -19,10 +19,15 @@ import { radius, space, syncTone, type } from '../theme/tokens';
 import { formatLocalDateTime } from '../utils/date-format';
 
 const labels = new Map(FLIGHT_REPORT_MILESTONES.map(item => [item.code, item.label]));
+const documentTitle = (kind: string) =>
+  kind === 'ServiceOrder' ? 'Orden de Servicio' : kind === 'FlightReport' ? 'Reporte de Vuelo' : 'Check-List del puente';
 
 function describe(item: FlightReportOutboxItem) {
   const command = item.command;
   if (command.kind === 'milestone') return `${labels.get(command.code) ?? command.code} · ${formatLocalDateTime(command.occurredAt)}`;
+  if (command.kind === 'signature') return `Firma de ${command.signerName} · ${documentTitle(command.documentKind)}`;
+  if (command.kind === 'damageMark') return `Daño marcado en el walk-around · ${command.note}`;
+  if (command.kind === 'damagePhoto') return 'Foto de un daño del walk-around';
   const parts = [command.passengersIn != null && `${command.passengersIn} pax llegan`,
     command.passengersOut != null && `${command.passengersOut} salen`, command.mtowKg != null && `MTOW ${command.mtowKg} kg`,
     command.aircraftRegistration].filter(Boolean);
