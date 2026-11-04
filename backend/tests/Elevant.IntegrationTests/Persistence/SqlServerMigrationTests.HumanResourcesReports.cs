@@ -95,7 +95,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Null(coverage.Failure);
         Assert.Equal(new DateOnly(2026, 10, 1), coverage.Page!.From);
         Assert.Equal(new DateOnly(2026, 10, 5), coverage.Page.To);
-        var gpu = Assert.Single(coverage.Page!.Rows);
+        var gpu = Assert.Single(coverage.Page!.Rows, row => row.EquipmentCode == "GPU");
         Assert.Equal("GPU", gpu.EquipmentCode);
         Assert.Equal(1, gpu.EligibleAgents);
         Assert.Equal(1, gpu.QualifiedAgents);

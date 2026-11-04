@@ -2274,7 +2274,7 @@ public sealed partial class SqlServerMigrationTests
         var humanResourcesId = Guid.Parse("40000000-0000-7000-8000-000000000004");
         var station = await context.Stations.SingleAsync(item => item.Code == "PUJ",
             cancellationToken);
-        var terminal = await context.Terminals.SingleAsync(item =>
+        var terminal = await context.Terminals.SingleAsync(item => item.Code == "A" &&
             item.StationId == station.Id && item.IsActive, cancellationToken);
         var input = new SaveRampProfileInput("Lucia", "Ramos", "SYNTHETIC-INACTIVE-TERMINAL",
             "Ramp agent", DateOnly.FromDateTime(DateTime.UtcNow), true, [station.PublicId]) with
