@@ -44043,20 +44043,14 @@
         "type": "object",
         "properties": {
           "x": {
-            "maximum": 1,
-            "minimum": 0,
             "type": "number",
             "format": "double"
           },
           "y": {
-            "maximum": 1,
-            "minimum": 0,
             "type": "number",
             "format": "double"
           },
           "note": {
-            "maxLength": 500,
-            "minLength": 3,
             "type": "string"
           },
           "reportedAt": {
@@ -46007,18 +46001,12 @@
         "type": "object",
         "properties": {
           "signerName": {
-            "maxLength": 120,
-            "minLength": 2,
             "type": "string"
           },
           "documentSha256": {
-            "minLength": 1,
-            "pattern": "^[0-9a-f]{64}$",
             "type": "string"
           },
           "strokes": {
-            "maxItems": 64,
-            "minItems": 1,
             "type": "array",
             "items": {
               "type": "array",

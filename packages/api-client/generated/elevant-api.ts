@@ -4730,20 +4730,8 @@ export interface RampServiceChargeCommandResponse {
 }
 
 export interface RecordDamageMarkRequest {
-  /**
-     * @minimum 0
-     * @maximum 1
-     */
   x: number;
-  /**
-     * @minimum 0
-     * @maximum 1
-     */
   y: number;
-  /**
-     * @minLength 3
-     * @maxLength 500
-     */
   note: string;
   reportedAt: string;
 }
@@ -5260,20 +5248,8 @@ export interface SignContractRequest {
 }
 
 export interface SignOperationDocumentRequest {
-  /**
-     * @minLength 2
-     * @maxLength 120
-     */
   signerName: string;
-  /**
-     * @minLength 1
-     * @pattern ^[0-9a-f]{64}$
-     */
   documentSha256: string;
-  /**
-     * @minItems 1
-     * @maxItems 64
-     */
   strokes: number[][];
 }
 
