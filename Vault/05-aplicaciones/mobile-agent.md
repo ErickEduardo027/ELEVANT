@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-11-04"
-verified_commit: "7e451f73572081756f637aa718cc726f6bf9fc9e"
+verified_commit: "b175e2963dad77fe7a621bc1ccff6dd710830971"
 sources:
   - frontend/AGENTS.md
   - frontend/mobile-agent/README.md
