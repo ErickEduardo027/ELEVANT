@@ -320,6 +320,16 @@ public sealed class OperationalCommunicationEndpointsTests(ElevantApiFactory fac
                 operationIds.Contains(OperationId) ? new[] { new OperationPresenceContacts(OperationId,
                     new[] { new PresenceIdentity(access.AccountId, "OCC Test", access.Role) }) } : Array.Empty<OperationPresenceContacts>())));
 
+        public (Guid OperationId, Guid MessageId)? Read { get; private set; }
+
+        public Task<CommunicationResult<OperationConversationReadData>> MarkReadAsync(OperationalAccess access,
+            Guid operationId, Guid messageId, CancellationToken cancellationToken = default)
+        {
+            Read = (operationId, messageId);
+            return Task.FromResult(CommunicationResults.Success(new OperationConversationReadData(operationId, messageId,
+                Instant)));
+        }
+
         public Task<CommunicationResult<OperationMessageData>> SendMessageAsync(
             SendOperationMessageCommand command, CancellationToken cancellationToken = default)
         {

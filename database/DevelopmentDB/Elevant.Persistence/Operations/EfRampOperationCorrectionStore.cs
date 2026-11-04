@@ -212,6 +212,7 @@ internal sealed class EfRampOperationCorrectionStore(
         };
         context.AuditEntries.Add(audit);
 
+        await RampOperationChangeWriter.AnnounceAsync(context, scope.Operation.Id, now, true, cancellationToken);
         var result = new RampOperationCorrectionData(
             receipt.PublicId, scope.Operation.PublicId, previous.PublicId,
             checklist.PublicId, revision, GroundOperationStatus.InProgress.ToString(),

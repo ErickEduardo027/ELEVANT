@@ -418,6 +418,17 @@ internal static class OperationsConfiguration
             AddReference<ApplicationUser, ReviewDecision>(builder, decision => decision.ReviewerAccountId);
         });
 
+        modelBuilder.Entity<OperationMessageRead>(builder =>
+        {
+            builder.ToTable("operation_message_reads", "ops");
+            builder.Property(read => read.ReadAt).HasPrecision(3);
+            builder.HasIndex(read => new { read.AccountId, read.GroundOperationId }).IsUnique();
+            builder.HasIndex(read => read.GroundOperationId);
+            AddReference<ApplicationUser, OperationMessageRead>(builder, read => read.AccountId);
+            AddReference<GroundOperation, OperationMessageRead>(builder, read => read.GroundOperationId);
+            AddReference<OperationMessage, OperationMessageRead>(builder, read => read.LastReadMessageId);
+        });
+
         modelBuilder.Entity<OperationMessage>(builder =>
         {
             builder.ToTable("operation_messages", "ops", table =>

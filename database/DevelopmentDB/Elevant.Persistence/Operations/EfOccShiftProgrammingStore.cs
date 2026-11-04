@@ -220,6 +220,7 @@ internal sealed class EfOccShiftProgrammingStore(
         foreach (var recipient in hrRecipients)
             AccountChangeOutboxWriter.Add(context, recipient, null,
                 "hr_shifts", shift.PublicId, now);
+        await RampOperationChangeWriter.AnnounceScheduleAsync(context, shift.RampAgentId, shift.PublicId, now, cancellationToken);
         await OccPlanningChangeWriter.AddForStationAsync(context, target.StationId,
             target.PublicId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);

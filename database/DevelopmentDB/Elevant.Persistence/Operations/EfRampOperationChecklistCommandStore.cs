@@ -285,6 +285,7 @@ internal sealed class EfRampOperationChecklistCommandStore(
         };
         context.AuditEntries.Add(auditEntry);
 
+        await RampOperationChangeWriter.AnnounceAsync(context, checklist.GroundOperationId, now, false, cancellationToken);
         var submission = new RampChecklistSubmissionData(
             receipt.PublicId,
             new RampChecklistSubmissionSummaryData(

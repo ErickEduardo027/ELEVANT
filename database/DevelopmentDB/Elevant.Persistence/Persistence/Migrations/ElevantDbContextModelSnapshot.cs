@@ -9381,6 +9381,74 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationMessageRead", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("AccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("account_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("GroundOperationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ground_operation_id");
+
+                    b.Property<long>("LastReadMessageId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_read_message_id");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset>("ReadAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("read_at");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GroundOperationId");
+
+                    b.HasIndex("LastReadMessageId");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("AccountId", "GroundOperationId")
+                        .IsUnique();
+
+                    b.ToTable("operation_message_reads", "ops");
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationMilestone", b =>
                 {
                     b.Property<long>("Id")
@@ -14397,6 +14465,27 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("SenderAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationMessageRead", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.GroundOperation", null)
+                        .WithMany()
+                        .HasForeignKey("GroundOperationId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationMessage", null)
+                        .WithMany()
+                        .HasForeignKey("LastReadMessageId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });

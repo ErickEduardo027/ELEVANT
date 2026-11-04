@@ -59,6 +59,7 @@ internal sealed class EfAccountChangeReadStore(
             access.Has("operations.planning.read");
         var hasRampAccess = hasInternalMembership && actor.Roles.Any(role =>
             role.Code == "RAMP_AGENT" && role.Portal == PortalKind.RampMobileApp);
+        var hasOccReviewAccess = access?.Department == Department.Operations && access.Has("operations.review.read");
         var hasCatalogAccess = access?.Has("contracts.catalog.read") == true || access?.Has("finance.tariffs.read") == true;
         var hasRequestsAccess = access?.Has("contracts.requests.read") == true;
         var hasClosureAccess = access?.Has("contracts.service_closures.read") == true ||
@@ -76,6 +77,9 @@ internal sealed class EfAccountChangeReadStore(
                 ((change.Resource != "hr_qualifications" && change.Resource != "hr_shifts" &&
                   change.Resource != "hr_permits" && change.Resource != "hr_absences") ||
                     hasHumanResourcesAccess) &&
+                // ADR-0029: a ramp agent reads hints about their own operations and schedule; OCC about its review queue.
+                ((change.Resource != "ramp_operations" && change.Resource != "ramp_schedule") || hasRampAccess) &&
+                (change.Resource != "occ_review" || (hasOccReviewAccess && change.StationId != null)) &&
                 (change.Resource != "occ_planning" ||
                     (hasOccPlanningAccess && change.StationId != null &&
                      context.Stations.Any(station => station.Id == change.StationId &&

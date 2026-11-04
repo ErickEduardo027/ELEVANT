@@ -6,6 +6,7 @@ using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Realtime;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -128,17 +129,28 @@ internal sealed class EfOperationalCommunicationStore(
                 message.SenderRole, message.Content, message.SentAt,
             }).ToArrayAsync(cancellationToken);
         var latestByOperation = latestMessages.ToDictionary(message => message.GroundOperationId);
+        var reading = await ReadStateAsync(operationIds, actor.AccountId, cancellationToken);
+        var agentNames = (await (from assignment in context.OperationAgentAssignments.AsNoTracking()
+                                 join agent in context.RampAgents.AsNoTracking() on assignment.RampAgentId equals agent.Id
+                                 join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
+                                 where operationIds.Contains(assignment.GroundOperationId) && assignment.ReleasedAt == null
+                                 select new { assignment.GroundOperationId, Name = person.FirstName + " " + person.LastName })
+                .ToArrayAsync(cancellationToken))
+            .GroupBy(item => item.GroundOperationId)
+            .ToDictionary(group => group.Key, group => string.Join(", ", group.Select(item => item.Name.Trim()).Distinct()));
         return CommunicationResults.Success(new OperationConversationListData(
             visible.Select(row =>
             {
                 latestByOperation.TryGetValue(row.OperationInternalId, out var last);
+                var state = reading.GetValueOrDefault(row.OperationInternalId);
                 return new OperationConversationData(
                     row.OperationId, row.OperationCode, row.OperationDate,
-                    row.StationCode, row.AirlineName, null, row.Status.ToString(),
+                    row.StationCode, row.AirlineName, agentNames.GetValueOrDefault(row.OperationInternalId),
+                    row.Status.ToString(),
                     last is null ? null : new OperationMessageData(
                         last.PublicId, row.OperationId, last.SenderAccountId, last.SenderRole,
                         last.SenderRole == "agent" ? "Agente" : "OCC", last.Content,
-                        last.SentAt));
+                        last.SentAt), state.Unread, state.OthersReadUpTo);
             }).ToArray(), rows.Length > PageLimit));
     }
 
@@ -163,11 +175,94 @@ internal sealed class EfOperationalCommunicationStore(
                 message.Content, message.SentAt,
             })
             .Skip(offset).Take(MessageLimit + 1).ToArrayAsync(cancellationToken);
+        var state = (await ReadStateAsync([scope.OperationInternalId], scope.AccountInternalId, cancellationToken))
+            .GetValueOrDefault(scope.OperationInternalId);
         return CommunicationResults.Success(new OperationMessageListData(
             operationId, rows.Take(MessageLimit).Reverse().Select(row =>
                 new OperationMessageData(row.PublicId, operationId, row.senderAccountId,
                     row.SenderRole, row.SenderName.Trim(), row.Content, row.SentAt)).ToArray(),
-            rows.Length > MessageLimit));
+            rows.Length > MessageLimit, state.OthersReadUpTo));
+    }
+
+    /// <summary>
+    /// Per operation: messages from others after the reader's cursor, and the time of the newest
+    /// message the other participants have read.
+    /// </summary>
+    private async Task<Dictionary<long, (int Unread, DateTimeOffset? OthersReadUpTo)>> ReadStateAsync(
+        IReadOnlyCollection<long> operationIds, long readerAccountId, CancellationToken cancellationToken)
+    {
+        var cursors = await context.Set<OperationMessageRead>().AsNoTracking()
+            .Where(read => operationIds.Contains(read.GroundOperationId))
+            .Select(read => new { read.GroundOperationId, read.AccountId, read.LastReadMessageId })
+            .ToArrayAsync(cancellationToken);
+        var messages = await context.OperationMessages.AsNoTracking()
+            .Where(message => operationIds.Contains(message.GroundOperationId))
+            .Select(message => new { message.Id, message.GroundOperationId, message.SenderAccountId, message.SentAt })
+            .ToArrayAsync(cancellationToken);
+        var result = new Dictionary<long, (int, DateTimeOffset?)>();
+        foreach (var operationId in operationIds)
+        {
+            var mine = cursors.Where(item => item.GroundOperationId == operationId && item.AccountId == readerAccountId)
+                .Select(item => (long?)item.LastReadMessageId).FirstOrDefault() ?? 0;
+            var othersCursor = cursors.Where(item => item.GroundOperationId == operationId && item.AccountId != readerAccountId)
+                .Select(item => (long?)item.LastReadMessageId).Max();
+            var thread = messages.Where(item => item.GroundOperationId == operationId).ToArray();
+            var unread = thread.Count(item => item.Id > mine && item.SenderAccountId != readerAccountId);
+            var othersReadUpTo = othersCursor is { } cursor
+                ? thread.Where(item => item.Id <= cursor).Select(item => (DateTimeOffset?)item.SentAt).Max()
+                : null;
+            result[operationId] = (unread, othersReadUpTo);
+        }
+        return result;
+    }
+
+    public async Task<CommunicationResult<OperationConversationReadData>> MarkReadAsync(
+        OperationalAccess access, Guid operationId, Guid messageId, CancellationToken cancellationToken = default)
+    {
+        var scope = await ResolveOperationAsync(access, operationId, null, cancellationToken);
+        if (scope is null)
+            return CommunicationResults.Failed<OperationConversationReadData>(OperationalCommunicationFailure.NotFound);
+        var message = await context.OperationMessages.AsNoTracking()
+            .Where(item => item.PublicId == messageId && item.GroundOperationId == scope.OperationInternalId)
+            .Select(item => new { item.Id, item.SentAt }).SingleOrDefaultAsync(cancellationToken);
+        if (message is null)
+            return CommunicationResults.Failed<OperationConversationReadData>(OperationalCommunicationFailure.NotFound);
+        var now = TruncateMilliseconds(timeProvider.GetUtcNow());
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var cursor = await context.Set<OperationMessageRead>().SingleOrDefaultAsync(item =>
+                item.AccountId == scope.AccountInternalId && item.GroundOperationId == scope.OperationInternalId,
+                cancellationToken);
+            if (cursor is not null && cursor.LastReadMessageId >= message.Id)
+                return CommunicationResults.Success(new OperationConversationReadData(operationId, messageId, cursor.ReadAt));
+            if (cursor is null)
+                context.Set<OperationMessageRead>().Add(cursor = new OperationMessageRead
+                {
+                    PublicId = Guid.CreateVersion7(), AccountId = scope.AccountInternalId,
+                    GroundOperationId = scope.OperationInternalId, CreatedAt = now,
+                });
+            cursor.LastReadMessageId = message.Id;
+            cursor.ReadAt = now;
+            cursor.UpdatedAt = now;
+            // The other participants see «visto» without polling.
+            var others = new HashSet<long>(await OperationalNotificationWriter.OccRecipientsAsync(context,
+                scope.StationInternalId, now, scope.AccountInternalId, cancellationToken));
+            others.UnionWith(await OperationalNotificationWriter.AssignedAgentRecipientsAsync(context, scope.StationInternalId,
+                scope.OperationInternalId, now, scope.AccountInternalId, cancellationToken));
+            foreach (var account in others)
+                AccountChangeOutboxWriter.Add(context, account, scope.StationInternalId, "operation_messages", messageId, now);
+            try
+            {
+                await context.SaveChangesAsync(cancellationToken);
+                return CommunicationResults.Success(new OperationConversationReadData(operationId, messageId, now));
+            }
+            catch (DbUpdateException) when (attempt == 0)
+            {
+                // Another device of the same account created the cursor first: read it again.
+                context.ChangeTracker.Clear();
+            }
+        }
+        return CommunicationResults.Failed<OperationConversationReadData>(OperationalCommunicationFailure.Conflict);
     }
 
     public async Task<CommunicationResult<OperationMessageData>> SendMessageAsync(
@@ -229,6 +324,8 @@ internal sealed class EfOperationalCommunicationStore(
             context, scope.OperationInternalId, scope.StationInternalId,
             scope.AccountInternalId, scope.DeviceInternalId,
             command.ClientMessageId, command.Access.Role, command.Content, now);
+        await OperationMessageChangeWriter.AnnounceToParticipantsAsync(context, message, scope.StationInternalId,
+            cancellationToken);
         if (command.Access.Role == "agent")
             await OperationalNotificationWriter.NotifyOccAsync(
                 context, scope.StationInternalId, scope.OperationInternalId,

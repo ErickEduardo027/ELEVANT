@@ -263,6 +263,7 @@ internal sealed class EfRampOperationSubmissionStore(
         await AirlineOperationChangeWriter.AddAsync(context,
             scope.AirlineOrganizationInternalId, scope.Operation.PublicId, now,
             cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, scope.Operation.Id, now, true, cancellationToken);
 
         var result = await CompleteReceiptAsync(
             receipt, submission, checklist.PublicId, now, request.OperationId,

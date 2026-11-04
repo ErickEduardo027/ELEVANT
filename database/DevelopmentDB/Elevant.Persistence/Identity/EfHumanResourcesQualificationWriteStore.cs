@@ -122,6 +122,7 @@ internal sealed class EfHumanResourcesQualificationWriteStore(
                 foreach (var recipient in recipients)
                     AccountChangeOutboxWriter.Add(context, recipient, null,
                         "hr_qualifications", qualificationId, now);
+                await Elevant.Persistence.Operations.RampOperationChangeWriter.AnnounceScheduleAsync(context, agent.Id, qualificationId, now, cancellationToken);
                 await OccPlanningChangeWriter.AddForAgentAsync(context, agent.Id,
                     today, DateOnly.MaxValue, now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);

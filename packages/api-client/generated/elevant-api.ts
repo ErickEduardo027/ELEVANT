@@ -3359,6 +3359,10 @@ export interface ManualTurnaroundResponse {
   replayed: boolean;
 }
 
+export interface MarkOperationalConversationReadRequest {
+  messageId: string;
+}
+
 export interface MediaAssetData {
   id: string;
   url: string;
@@ -3907,6 +3911,9 @@ export interface OperationConversationResponse {
   agentName?: string | null;
   status: string;
   lastMessage?: OperationMessageResponse | null;
+  unreadCount: number;
+  /** @nullable */
+  othersReadUpTo?: string | null;
 }
 
 export interface OperationConversationListResponse {
@@ -3918,6 +3925,8 @@ export interface OperationMessageListResponse {
   operationId: string;
   messages: OperationMessageResponse[];
   hasMore: boolean;
+  /** @nullable */
+  othersReadUpTo?: string | null;
 }
 
 export interface ParticipantPresenceResponse {
@@ -15261,6 +15270,44 @@ const res = await fetch(getSendOperationalMessageUrl(operationId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OperationMessageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getMarkOperationalConversationReadUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/chat/conversations/${operationId}/read`
+}
+
+/**
+ * @summary Marks the conversation read up to a message (ADR-0029); used for unread counts and «visto».
+ */
+export const markOperationalConversationRead = async (operationId: string,
+    markOperationalConversationReadRequest: MarkOperationalConversationReadRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getMarkOperationalConversationReadUrl(operationId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(markOperationalConversationReadRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
   return data
 }
 

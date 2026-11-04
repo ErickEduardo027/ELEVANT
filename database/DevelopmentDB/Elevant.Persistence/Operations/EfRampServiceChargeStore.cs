@@ -212,6 +212,7 @@ internal sealed class EfRampServiceChargeStore(
                 installationId = device.InstallationId,
             }, JsonOptions),
         });
+        await RampOperationChangeWriter.AnnounceAsync(context, scope.Operation.Id, now, false, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
 
         var data = new RampServiceChargeCommandData(receipt.PublicId,

@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AssignedOperationCard } from '../components/assigned-operation-card';
 import { PrimaryButton } from '../components/ui';
+import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import {
   getAssignedOperations,
   type AssignedOperationsSnapshot,
@@ -124,6 +125,11 @@ export default function HomeScreen() {
     void load();
     return () => requestRef.current?.abort();
   }, [load]));
+
+  // A new assignment, a stand change or OCC's decision shows up without pulling to refresh.
+  useFocusEffect(useCallback(() => subscribeMobileChanges(resources => {
+    if (resources.includes('ramp_operations') || resources.includes('notifications')) void load();
+  }), [load]));
 
   const closeSession = useCallback(async () => {
     requestRef.current?.abort();

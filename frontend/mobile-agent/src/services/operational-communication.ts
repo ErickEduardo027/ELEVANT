@@ -46,6 +46,12 @@ export function getOperationalMessages(operationId: string, signal?: AbortSignal
     .getOperationalMessages(operationId, { signal }), signal);
 }
 
+/** Moves this account's read cursor to that message; the server never moves it backwards. */
+export function markOperationalConversationRead(operationId: string, messageId: string, signal?: AbortSignal): Promise<void> {
+  return authenticated(token => createMobileAgentApiClient({ getAccessToken: () => token })
+    .markOperationalConversationRead(operationId, messageId, { signal }), signal);
+}
+
 export function getOperationalNotifications(signal?: AbortSignal): Promise<OperationalNotificationListResponse> {
   return authenticated(token => createMobileAgentApiClient({ getAccessToken: () => token })
     .getOperationalNotifications({ signal }), signal);

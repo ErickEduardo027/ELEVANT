@@ -7,13 +7,16 @@ public sealed record OperationMessageResponse(
 public sealed record OperationConversationResponse(
     Guid OperationId, string OperationCode, DateOnly OperationDate,
     string StationCode, string AirlineName, string? AgentName,
-    string Status, OperationMessageResponse? LastMessage);
+    string Status, OperationMessageResponse? LastMessage, int UnreadCount, DateTimeOffset? OthersReadUpTo);
 
 public sealed record OperationConversationListResponse(
     IReadOnlyList<OperationConversationResponse> Conversations, bool HasMore);
 
 public sealed record OperationMessageListResponse(
-    Guid OperationId, IReadOnlyList<OperationMessageResponse> Messages, bool HasMore);
+    Guid OperationId, IReadOnlyList<OperationMessageResponse> Messages, bool HasMore, DateTimeOffset? OthersReadUpTo);
+
+/// <summary>Moves the reader's cursor up to this message; it never goes back.</summary>
+public sealed record MarkOperationalConversationReadRequest(Guid MessageId);
 
 public sealed record SendOperationMessageRequest(string Content);
 

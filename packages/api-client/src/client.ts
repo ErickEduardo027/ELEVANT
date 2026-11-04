@@ -80,6 +80,7 @@ import {
   getGetOperationalConversationsUrl,
   getGetOperationalMessagesUrl,
   getSendOperationalMessageUrl,
+  getMarkOperationalConversationReadUrl,
   getGetOperationalNotificationsUrl,
   getGetDepartmentNotificationsUrl,
   getSetDepartmentNotificationReadUrl,
@@ -778,6 +779,12 @@ export interface ElevantApiClient {
     installationId?: string,
     options?: GetOperationalCommunicationOptions,
   ): Promise<OperationMessageResponse>;
+  /** Moves the caller's read cursor forward to that message (ADR-0029); never backwards. */
+  markOperationalConversationRead(
+    operationId: string,
+    messageId: string,
+    options?: GetOperationalCommunicationOptions,
+  ): Promise<void>;
   getOperationalNotifications(
     options?: GetOperationalCommunicationOptions,
   ): Promise<OperationalNotificationListResponse>;
@@ -2270,18 +2277,21 @@ function isOperationConversationListResponse(value: unknown): value is Operation
     typeof value.hasMore === "boolean" && Array.isArray(value.conversations) &&
     value.conversations.length <= 100 && value.conversations.every((item: unknown) =>
       isRecord(item) && hasOnlyKeys(item, ["operationId", "operationCode", "operationDate",
-        "stationCode", "airlineName", "agentName", "status", "lastMessage"]) &&
+        "stationCode", "airlineName", "agentName", "status", "lastMessage", "unreadCount", "othersReadUpTo"]) &&
       isUuid(item.operationId) && isNonEmptyString(item.operationCode) &&
       isDateOnly(item.operationDate) && isNonEmptyString(item.stationCode) &&
       isNonEmptyString(item.airlineName) &&
       isOptionalNullable(item.agentName, isString) && isNonEmptyString(item.status) &&
+      Number.isInteger(item.unreadCount) && (item.unreadCount as number) >= 0 &&
+      isOptionalNullable(item.othersReadUpTo, isDateTimeOffset) &&
       isOptionalNullable(item.lastMessage, candidate =>
         isOperationMessageResponse(candidate, (item.operationId as string).toLowerCase())));
 }
 
 function isOperationMessageListResponse(value: unknown, operationId: string): value is OperationMessageListResponse {
-  return isRecord(value) && hasOnlyKeys(value, ["operationId", "messages", "hasMore"]) &&
+  return isRecord(value) && hasOnlyKeys(value, ["operationId", "messages", "hasMore", "othersReadUpTo"]) &&
     isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
+    isOptionalNullable(value.othersReadUpTo, isDateTimeOffset) &&
     typeof value.hasMore === "boolean" && Array.isArray(value.messages) &&
     value.messages.length <= 200 && value.messages.every((item: unknown) =>
       isOperationMessageResponse(item, operationId));
@@ -5903,6 +5913,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         { ...options, method: "POST", headers, body: JSON.stringify({ content: request.content.trim() }) }, true);
       if (!isOperationMessageResponse(result.data, operation)) throw malformedResponse(result.status);
       return result.data;
+    },
+    async markOperationalConversationRead(
+      operationId: string, messageId: string, options?: GetOperationalCommunicationOptions,
+    ) {
+      const operation = validatedUuid(operationId, "operationId");
+      const message = validatedUuid(messageId, "messageId");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      await execute(getMarkOperationalConversationReadUrl(operation),
+        { ...options, method: "PUT", headers, body: JSON.stringify({ messageId: message }) }, true);
     },
     async getOperationalNotifications(options?: GetOperationalCommunicationOptions) {
       const result = await execute(getGetOperationalNotificationsUrl(),

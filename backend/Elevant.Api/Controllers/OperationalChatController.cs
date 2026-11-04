@@ -34,7 +34,8 @@ public sealed class OperationalChatController(OperationalCommunicationHandler ha
                 result.Value!.Conversations.Select(item => new OperationConversationResponse(
                     item.OperationId, item.OperationCode, item.OperationDate,
                     item.StationCode, item.AirlineName, item.AgentName,
-                    item.Status, item.LastMessage is null ? null : Map(item.LastMessage))).ToArray(),
+                    item.Status, item.LastMessage is null ? null : Map(item.LastMessage), item.UnreadCount,
+                    item.OthersReadUpTo)).ToArray(),
                 result.Value.HasMore))
             : FailureResult<OperationConversationListResponse>(result.Failure!.Value);
     }
@@ -51,8 +52,25 @@ public sealed class OperationalChatController(OperationalCommunicationHandler ha
         var result = await handler.GetMessagesAsync(accountId, operationId, offset, cancellationToken);
         return result.IsSuccess
             ? Ok(new OperationMessageListResponse(operationId,
-                result.Value!.Messages.Select(Map).ToArray(), result.Value.HasMore))
+                result.Value!.Messages.Select(Map).ToArray(), result.Value.HasMore, result.Value.OthersReadUpTo))
             : FailureResult<OperationMessageListResponse>(result.Failure!.Value);
+    }
+
+    /// <summary>Marks the conversation read up to a message (ADR-0029); used for unread counts and «visto».</summary>
+    [RequestSizeLimit(1024)]
+    [HttpPut("{operationId:guid}/read", Name = "MarkOperationalConversationRead")]
+    [Consumes("application/json")]
+    [ProducesResponseType(204)]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    public async Task<IActionResult> MarkRead([FromRoute] Guid operationId,
+        [FromBody, BindRequired] MarkOperationalConversationReadRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryAccountId(out var accountId)) return UnauthorizedResult<OperationMessageListResponse>().Result!;
+        var result = await handler.MarkReadAsync(accountId, operationId, request.MessageId, cancellationToken);
+        return result.IsSuccess ? NoContent() : FailureResult<OperationMessageListResponse>(result.Failure!.Value).Result!;
     }
 
     [RequestSizeLimit(8 * 1024)]

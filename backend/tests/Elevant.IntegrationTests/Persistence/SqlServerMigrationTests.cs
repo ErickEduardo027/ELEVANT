@@ -8388,8 +8388,9 @@ public sealed partial class SqlServerMigrationTests
         var changeHints = await verify.OutboxMessages.AsNoTracking()
             .Where(message => message.EventType == "account.changed.v1")
             .ToArrayAsync(cancellationToken);
-        Assert.Equal(4, changeHints.Length);
-        Assert.Equal(4, changeHints.Select(message => message.PublicId).Distinct().Count());
+        // ADR-0029: each message also reaches the other participant, not only the sender.
+        Assert.Equal(6, changeHints.Length);
+        Assert.Equal(6, changeHints.Select(message => message.PublicId).Distinct().Count());
         Assert.DoesNotContain(changeHints, message =>
             message.PayloadJson.Contains("Llegu", StringComparison.Ordinal) ||
             message.PayloadJson.Contains("Recibido", StringComparison.Ordinal));

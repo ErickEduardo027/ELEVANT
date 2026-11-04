@@ -250,6 +250,9 @@ internal sealed class EfRampIncidentStore(
                 installationId = device.InstallationId,
             }, JsonOptions),
         });
+        await RampOperationChangeWriter.AnnounceAsync(context, scope.Operation.Id, now, false, cancellationToken);
+        await OperationalNotificationWriter.NotifyOccAsync(context, scope.StationInternalId, scope.Operation.Id,
+            incident.PublicId, "incident_reported", now, actor.AccountInternalId, cancellationToken);
         return await CompleteReceiptAsync(receipt, incident, request.OperationId, now, device, cancellationToken);
     }
 
