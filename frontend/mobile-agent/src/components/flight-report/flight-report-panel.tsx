@@ -258,7 +258,7 @@ export function DeviationAction({ operationId, editable }: { operationId: string
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState<string | null>(null);
   const [note, setNote] = useState('');
-  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'sent' | 'error'>('idle');
   const submit = async () => {
     if (!code || note.trim().length < 8) return;
     setStatus('saving');
@@ -266,9 +266,11 @@ export function DeviationAction({ operationId, editable }: { operationId: string
       await reserveRampIncident(operationId, { incidentType: 'Deviation', severity: 'Medium', description: note.trim(),
         occurredAt: new Date(Math.floor(Date.now() / 1000) * 1000).toISOString(), delayCode: code });
       haptic();
-      setStatus('saved');
       setOpen(false); setCode(null); setNote('');
-      void loadRampIncidentCenter(operationId).catch(() => {});
+      setStatus('saved');
+      // Saved on the device first; try to send now and tell the agent what actually happened.
+      const center = await loadRampIncidentCenter(operationId).catch(() => null);
+      if (center && center.sent > 0 && !center.outbox.some(item => item.state === 'pending')) setStatus('sent');
     } catch {
       setStatus('error');
     }
@@ -283,7 +285,8 @@ export function DeviationAction({ operationId, editable }: { operationId: string
           <Text style={styles.deviationText}>Llega a OCC como alerta, con su código IATA de demora.</Text>
         </View>
       </Pressable>
-      {status === 'saved' && <Text accessibilityLiveRegion="polite" style={styles.saved}>Desviación guardada; se envía a OCC en cuanto haya señal.</Text>}
+      {status === 'saved' && <Text accessibilityLiveRegion="polite" style={styles.saved}>Desviación guardada en el dispositivo; se envía a OCC en cuanto haya señal.</Text>}
+      {status === 'sent' && <Text accessibilityLiveRegion="polite" style={styles.saved}>Desviación enviada a OCC como alerta.</Text>}
       <Modal animationType="slide" visible={open} onRequestClose={() => setOpen(false)}>
         <View style={styles.deviationScreen}>
           <Text style={styles.sheetTitle}>¿Qué causó la desviación?</Text>
