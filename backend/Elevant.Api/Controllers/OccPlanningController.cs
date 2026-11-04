@@ -438,7 +438,9 @@ public sealed class OccPlanningController(
             airport.IataCode, airport.IcaoCode, airport.Name)).ToArray(),
         options.Stands.Select(stand => new OccStandResponse(stand.Id, stand.Code,
             stand.Terminal is null ? null : new OccTerminalResponse(
-                stand.Terminal.Id, stand.Terminal.Code, stand.Terminal.Name))).ToArray());
+                stand.Terminal.Id, stand.Terminal.Code, stand.Terminal.Name))).ToArray(),
+        (options.CharterAirlines ?? []).Select(airline => new ManualTurnaroundAirlineResponse(
+            airline.Id, airline.IataCode, airline.Name)).ToArray());
 
     private static OccAssignmentResponse Map(OccAssignmentData assignment) => new(
         assignment.TurnaroundId,

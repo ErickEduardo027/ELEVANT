@@ -30,4 +30,5 @@ public sealed record ManualTurnaroundOptionsResponse(
     OccAirportResponse StationAirport,
     IReadOnlyList<ManualTurnaroundAirlineResponse> Airlines,
     IReadOnlyList<OccAirportResponse> Airports,
-    IReadOnlyList<OccStandResponse> Stands);
+    IReadOnlyList<OccStandResponse> Stands,
+    IReadOnlyList<ManualTurnaroundAirlineResponse>? CharterAirlines = null);

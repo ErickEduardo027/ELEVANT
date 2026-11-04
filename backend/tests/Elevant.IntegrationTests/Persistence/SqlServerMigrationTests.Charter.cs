@@ -80,6 +80,11 @@ public sealed partial class SqlServerMigrationTests
             services.GetRequiredService<IManualTurnaroundStore>().CreateAsync(new ManualTurnaroundWriteRequest(occ, [station], id,
                 station, airline, standId, date, "C9100", "MIA", At(22), "C9101", "MIA", At(23), Guid.NewGuid(), "charter-test",
                 charter), ct));
+        var manualOptionsList = await Run(services => services.GetRequiredService<IManualTurnaroundOptionsStore>()
+            .GetAsync(occ, station, date, ct));
+        Assert.Contains(manualOptionsList!.CharterAirlines!, item => item.Id == charterAirline);
+        Assert.DoesNotContain(manualOptionsList.CharterAirlines!, item => item.Id == demoAirline);
+        Assert.Contains(manualOptionsList.Airlines, item => item.Id == demoAirline);
         var manualCharter = Guid.CreateVersion7();
         Assert.Equal(ManualTurnaroundWriteFailure.Conflict, (await Enter(Guid.CreateVersion7(), charterAirline, false)).Failure);
         Assert.Equal(ManualTurnaroundWriteFailure.Conflict, (await Enter(Guid.CreateVersion7(), demoAirline, true)).Failure);

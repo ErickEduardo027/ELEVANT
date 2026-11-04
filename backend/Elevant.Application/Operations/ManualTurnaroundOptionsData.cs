@@ -8,4 +8,5 @@ public sealed record ManualTurnaroundOptionsData(
     OccAirportData StationAirport,
     IReadOnlyList<ManualTurnaroundAirlineData> Airlines,
     IReadOnlyList<OccAirportData> Airports,
-    IReadOnlyList<OccStandData> Stands);
+    IReadOnlyList<OccStandData> Stands,
+    IReadOnlyList<ManualTurnaroundAirlineData>? CharterAirlines = null);
