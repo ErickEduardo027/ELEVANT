@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-11-05"
-verified_commit: "08db4b37b32c3665d63478a3a0df055cb5949990"
+verified_commit: "d6a65ac8a400f3f1f129d6978bcee0c8cf683e2b"
 sources:
   - docs/adr/0035-direct-invoicing-simulated-ecf.md
   - docs/adr/0036-simulated-card-payment.md

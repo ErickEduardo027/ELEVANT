@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "5aa0a94ed544ff49491ac9759f62bb77cf8af9fb398483234e22c098522090bf",
+        "sha256": "a44a50ec8ea07eff7dce5a314807e4d4023d42cbdaeee792938c6b95a1b4d118",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "456c3508259f30084ef3ccab91192e99c7b289b7c92dc2810c43efec44e08d8a",
+        "sha256": "1de07aafb46b07b6074c74e162ace754fe2a6b0be4a41c8c0bc69875a66fa3a0",
         "title": null,
         "version": null
       }
@@ -1478,6 +1478,12 @@
         "name": "AddSimulatedEcfInvoices",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261105143048_AddSimulatedEcfInvoices.cs",
         "sha256": "1a8cd8d278d0dfcc0fb8ec0ba00cca896fedbaba0af7d8d59076a5ae18960416"
+      },
+      {
+        "id": "20261105164624",
+        "name": "AddSimulatedCardPayments",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261105164624_AddSimulatedCardPayments.cs",
+        "sha256": "28a609047f0846e1cc0ed026807fe62a9579765f2bf57733651834ba83f6332e"
       }
     ],
     "manifestContracts": [
