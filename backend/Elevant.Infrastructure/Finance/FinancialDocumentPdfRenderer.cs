@@ -28,6 +28,8 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         if (string.IsNullOrWhiteSpace(invoice.Number) || invoice.Lines is null ||
             invoice.Lines.Count == 0 || invoice.CurrencyCode.Length != 3)
             throw new ArgumentException("The invoice snapshot is incomplete.", nameof(invoice));
+        if (invoice.Fiscal is { FiscalNumber: not null, SecurityCode: not null } fiscal)
+            return RenderFiscalInvoice(invoice, fiscal);
 
         using var document = new PdfDocument();
         document.Info.Title = $"Factura no fiscal {invoice.Number}";
@@ -78,6 +80,122 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         document.Save(output, false);
         return output.ToArray();
     }
+
+    /// <summary>
+    /// ADR-0035: simulated e-CF type 31 (crédito fiscal). Parties, e-NCF, security code, due date,
+    /// subtotal/ITBIS/total and a simulated QR, always with the «sin validez fiscal» legend.
+    /// </summary>
+    private static byte[] RenderFiscalInvoice(NonFiscalInvoiceData invoice, NonFiscalInvoiceFiscalData fiscal)
+    {
+        using var document = new PdfDocument();
+        document.Info.Title = $"Factura de crédito fiscal {fiscal.FiscalNumber} ({invoice.Number})";
+        document.Info.Subject = FinanceInvoicePolicy.Disclaimer;
+        document.Info.Author = "ELEVANT";
+        var body = new XFont(Typeface, 9, XFontStyleEx.Regular);
+        var caption = new XFont(Typeface, 8, XFontStyleEx.Regular);
+        var heading = new XFont(Typeface, 16, XFontStyleEx.Regular);
+        var net = fiscal.NetTotal ?? invoice.Lines.Sum(line => line.NetAmount ?? line.Amount);
+        var tax = fiscal.TaxTotal ?? invoice.Lines.Sum(line => line.TaxAmount ?? 0m);
+        var lineIndex = 0;
+        while (lineIndex < invoice.Lines.Count)
+        {
+            var page = document.AddPage();
+            page.Size = PageSize.A4;
+            using var graphics = XGraphics.FromPdfPage(page);
+            var width = page.Width.Point;
+            graphics.DrawRectangle(new XSolidBrush(Navy), 0, 0, width, 96);
+            DrawText(graphics, fiscal.IssuerName, heading, XColors.White, Margin, 24, 300);
+            DrawText(graphics, $"RNC {fiscal.IssuerRnc} · Estación {fiscal.StationCode}", caption,
+                XColors.White, Margin, 52, 300);
+            DrawText(graphics, FinanceInvoicePolicy.Disclaimer.ToUpperInvariant(), caption, XColors.White,
+                Margin, 68, 300);
+            DrawText(graphics, "FACTURA DE CRÉDITO FISCAL ELECTRÓNICA", caption, XColors.White, 340, 24, 210);
+            DrawText(graphics, $"e-NCF {fiscal.FiscalNumber}", heading, XColors.White, 340, 40, 210);
+            DrawText(graphics, $"Interno {invoice.Number}", caption, XColors.White, 340, 68, 210);
+
+            DrawText(graphics, "CLIENTE", caption, Muted, Margin, 112, 200);
+            DrawText(graphics, fiscal.CustomerName, body, Navy, Margin, 126, 280);
+            DrawText(graphics, "EMISIÓN", caption, Muted, 340, 112, 100);
+            DrawText(graphics, Date(fiscal.SignedAt ?? invoice.IssuedAt), body, Navy, 340, 126, 100);
+            DrawText(graphics, "VENCIMIENTO", caption, Muted, 450, 112, 100);
+            DrawText(graphics, fiscal.DueDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "—",
+                body, Navy, 450, 126, 100);
+
+            var y = 160d;
+            DrawText(graphics, "OPERACIÓN", caption, Muted, Margin, y, 110);
+            DrawText(graphics, "SERVICIO / CARGO", caption, Muted, 158, y, 170);
+            DrawText(graphics, "CANT.", caption, Muted, 332, y, 44);
+            DrawText(graphics, "NETO", caption, Muted, 380, y, 60);
+            DrawText(graphics, "ITBIS", caption, Muted, 444, y, 50);
+            DrawText(graphics, "TOTAL", caption, Muted, 498, y, 60);
+            graphics.DrawLine(new XPen(Muted, 0.4), Margin, y + 16, width - Margin, y + 16);
+            y += 24;
+            while (lineIndex < invoice.Lines.Count && y + RowHeight < page.Height.Point - 200)
+            {
+                var line = invoice.Lines[lineIndex++];
+                DrawText(graphics, line.OperationCode, body, Navy, Margin, y, 108);
+                DrawText(graphics, $"{line.ServiceCode} · {line.ServiceName}", body, Navy, 158, y, 170);
+                DrawText(graphics, Money(line.ExecutedQuantity), body, Navy, 332, y, 44);
+                DrawText(graphics, Money(line.NetAmount ?? line.Amount), body, Navy, 380, y, 60);
+                DrawText(graphics, Money(line.TaxAmount ?? 0m), body, Navy, 444, y, 50);
+                DrawText(graphics, Money(line.Amount), body, Navy, 498, y, 60);
+                graphics.DrawLine(new XPen(XColor.FromArgb(225, 231, 239), 0.3), Margin, y + 18, width - Margin, y + 18);
+                y += RowHeight;
+            }
+            if (lineIndex == invoice.Lines.Count)
+            {
+                var bottom = page.Height.Point - 180;
+                DrawSimulatedQr(graphics, $"{fiscal.FiscalNumber}|{fiscal.SecurityCode}|{invoice.Total}", Margin, bottom, 84);
+                DrawText(graphics, $"Código de seguridad {fiscal.SecurityCode}", body, Navy, Margin + 96, bottom, 220);
+                DrawText(graphics, $"Firma {Date(fiscal.SignedAt ?? invoice.IssuedAt)}", caption, Muted, Margin + 96, bottom + 16, 220);
+                DrawText(graphics, "QR de consulta simulado: no se valida ante la DGII.", caption, Muted,
+                    Margin + 96, bottom + 32, 220);
+                DrawText(graphics, "SUBTOTAL", caption, Muted, 380, bottom, 80);
+                DrawText(graphics, $"{invoice.CurrencyCode} {Money(net)}", body, Navy, 460, bottom, 98);
+                DrawText(graphics, $"ITBIS {FinanceInvoicePolicy.ItbisRate:0}%", caption, Muted, 380, bottom + 18, 80);
+                DrawText(graphics, $"{invoice.CurrencyCode} {Money(tax)}", body, Navy, 460, bottom + 18, 98);
+                graphics.DrawLine(new XPen(Muted, 0.4), 380, bottom + 36, width - Margin, bottom + 36);
+                DrawText(graphics, "TOTAL", caption, Blue, 380, bottom + 42, 80);
+                DrawText(graphics, $"{invoice.CurrencyCode} {Money(invoice.Total)}", body, Blue, 460, bottom + 42, 98);
+            }
+            graphics.DrawLine(new XPen(Muted, 0.4), Margin, page.Height.Point - 51, width - Margin, page.Height.Point - 51);
+            DrawText(graphics, $"{FinanceInvoicePolicy.Disclaimer}. Documento de demostración de ELEVANT.", caption, Muted,
+                Margin, page.Height.Point - 41, 380);
+            DrawText(graphics, $"Pág. {document.PageCount}", caption, Muted, width - Margin - 47, page.Height.Point - 41, 47);
+        }
+        using var output = new MemoryStream();
+        document.Save(output, false);
+        return output.ToArray();
+    }
+
+    /// <summary>A deterministic QR-like 21×21 pattern; it encodes nothing a reader could validate.</summary>
+    private static void DrawSimulatedQr(XGraphics graphics, string seed, double x, double y, double size)
+    {
+        const int cells = 21;
+        var cell = size / cells;
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed));
+        var brush = new XSolidBrush(Navy);
+        static bool Finder(int r, int c, int top, int left)
+        {
+            var dr = r - top;
+            var dc = c - left;
+            if (dr is < 0 or > 6 || dc is < 0 or > 6) return false;
+            return dr is 0 or 6 || dc is 0 or 6 || (dr is >= 2 and <= 4 && dc is >= 2 and <= 4);
+        }
+        for (var row = 0; row < cells; row++)
+        for (var column = 0; column < cells; column++)
+        {
+            var inFinder = (row < 7 && column < 7) || (row < 7 && column > 13) || (row > 13 && column < 7);
+            var bit = row * cells + column;
+            var dark = inFinder
+                ? Finder(row, column, 0, 0) || Finder(row, column, 0, 14) || Finder(row, column, 14, 0)
+                : ((hash[bit / 8 % hash.Length] >> (bit % 8)) & 1) == 1;
+            if (dark) graphics.DrawRectangle(brush, x + column * cell, y + row * cell, cell, cell);
+        }
+    }
+
+    private static string Date(DateTimeOffset value) =>
+        value.ToUniversalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     public byte[] RenderReceipt(NonFiscalPaymentData payment, string invoiceNumber)
     {

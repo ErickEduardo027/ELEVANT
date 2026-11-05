@@ -163,14 +163,22 @@ internal sealed class EfPreinvoiceDraftStore(
         return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Conflict);
     }
 
+    /// <summary>
+    /// ADR-0035: the internal valuation step of issuing an invoice. Runs inside the caller's
+    /// transaction; the caller has already checked «Emitir facturas».
+    /// </summary>
+    internal Task<PreinvoiceDraftResult> DraftForInvoiceAsync(CreatePreinvoiceDraftCommand request,
+        CancellationToken cancellationToken) =>
+        CreateInsideTransactionAsync(request, HashRequest(request), cancellationToken, requirePermission: false);
+
     private async Task<PreinvoiceDraftResult> CreateInsideTransactionAsync(
         CreatePreinvoiceDraftCommand request, string payloadHash,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, bool requirePermission = true)
     {
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(request.AccountId, cancellationToken);
         if (actor is null ||
-            !actor.HasPermission("finance.approved_services.create") ||
+            requirePermission && !actor.HasPermission("finance.approved_services.create") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff) ||

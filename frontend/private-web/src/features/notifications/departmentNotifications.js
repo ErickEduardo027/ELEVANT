@@ -20,8 +20,8 @@ const KINDS = {
   contract_expiring: { title: 'Un contrato vence en 30 días o menos', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_lifecycle: { title: 'Cambio en el ciclo de un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_approval: { title: 'Contrato pendiente de aprobación', target: { moduleId: FINANCE_MODULE_IDS.CONTRACT_APPROVALS } },
-  preinvoice_accepted: { title: 'La aerolínea aceptó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.PREINVOICES } },
-  preinvoice_disputed: { title: 'La aerolínea disputó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.PREINVOICES } },
+  preinvoice_accepted: { title: 'La aerolínea aceptó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
+  preinvoice_disputed: { title: 'La aerolínea disputó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
 };
 
 export function describeNotification(item) {

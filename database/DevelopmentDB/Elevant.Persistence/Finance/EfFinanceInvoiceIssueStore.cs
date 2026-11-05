@@ -67,13 +67,17 @@ internal sealed class EfFinanceInvoiceIssueStore(
         }
     }
 
+    /// <summary>ADR-0035: issues the invoice of the internal draft inside the caller's transaction.</summary>
+    internal Task<IssueFinanceInvoiceResult> IssueForInvoicingAsync(IssueFinanceInvoiceCommand command,
+        CancellationToken cancellationToken) => IssueInsideTransactionAsync(command, cancellationToken, requirePermission: false);
+
     private async Task<IssueFinanceInvoiceResult> IssueInsideTransactionAsync(
-        IssueFinanceInvoiceCommand command, CancellationToken cancellationToken)
+        IssueFinanceInvoiceCommand command, CancellationToken cancellationToken, bool requirePermission = true)
     {
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(command.AccountId, cancellationToken);
         if (actor is null ||
-            !actor.HasPermission("finance.preinvoices.issue") ||
+            requirePermission && !actor.HasPermission("finance.preinvoices.issue") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -185,8 +189,18 @@ internal sealed class EfFinanceInvoiceIssueStore(
             net = invoice.NetTotal, discount = invoice.DiscountTotal, tax = invoice.TaxTotal, gross = invoice.Total,
             treatmentsConfigured = invoice.TaxTreatmentsConfigured,
             // The shared commercial model has no reviewed tax-registration/address source.
-            issuerTaxRegistration = (string?)null, customerTaxRegistration = (string?)null,
+            issuerTaxRegistration = FinanceInvoicePolicy.SimulatedIssuerRnc, customerTaxRegistration = (string?)null,
+            fiscalDisclaimer = FinanceInvoicePolicy.Disclaimer,
         });
+        // ADR-0035: every new invoice gets the next simulated e-NCF; the serializable transaction and
+        // the unique index keep the sequence gap-free and unique.
+        var highest = await context.NonFiscalInvoices
+            .FromSqlRaw("SELECT * FROM [commercial].[non_fiscal_invoices] WITH (UPDLOCK, HOLDLOCK)")
+            .Where(item => item.FiscalNumber != null).Select(item => item.FiscalNumber).MaxAsync(cancellationToken);
+        invoice.FiscalNumber = FinanceInvoicePolicy.NextFiscalNumber(highest);
+        invoice.FiscalSignedAt = now;
+        invoice.SecurityCode = FinanceInvoicePolicy.SecurityCode(invoice.FiscalNumber, invoice.Total, now,
+            customer.Code);
         context.NonFiscalInvoices.Add(invoice);
         await context.SaveChangesAsync(cancellationToken);
         foreach (var line in lines)

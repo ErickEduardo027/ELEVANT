@@ -4057,6 +4057,15 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("date")
                         .HasColumnName("due_date");
 
+                    b.Property<string>("FiscalNumber")
+                        .HasColumnType("char(13)")
+                        .HasColumnName("fiscal_number");
+
+                    b.Property<DateTimeOffset?>("FiscalSignedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("fiscal_signed_at");
+
                     b.Property<long>("IssuedByAccountId")
                         .HasColumnType("bigint")
                         .HasColumnName("issued_by_account_id");
@@ -4097,6 +4106,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("rowversion")
                         .HasColumnName("row_version");
 
+                    b.Property<string>("SecurityCode")
+                        .HasColumnType("char(6)")
+                        .HasColumnName("security_code");
+
                     b.Property<long>("StationId")
                         .HasColumnType("bigint")
                         .HasColumnName("station_id");
@@ -4124,6 +4137,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("FiscalNumber")
+                        .IsUnique()
+                        .HasFilter("[fiscal_number] IS NOT NULL");
+
                     b.HasIndex("IssuedByAccountId");
 
                     b.HasIndex("Number")
@@ -4145,6 +4162,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.ToTable("non_fiscal_invoices", "commercial", t =>
                         {
                             t.HasCheckConstraint("ck_non_fiscal_invoice_currency", "LEN([currency_code]) = 3");
+
+                            t.HasCheckConstraint("ck_non_fiscal_invoice_fiscal_identity", "([fiscal_number] IS NULL AND [security_code] IS NULL AND [fiscal_signed_at] IS NULL) OR ([fiscal_number] LIKE 'E31[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' AND LEN([security_code]) = 6 AND [fiscal_signed_at] IS NOT NULL)");
 
                             t.HasCheckConstraint("ck_non_fiscal_invoice_number", "LEN([number]) = 35");
 

@@ -203,7 +203,7 @@ it("clears the airline session when financial document access is revoked", async
   }));
   vi.stubGlobal("fetch", vi.fn<typeof fetch>(async input => {
     const path = new URL(String(input)).pathname;
-    if (path.endsWith("/preinvoices/74000000-0000-7000-8000-000000000001/invoice/document"))
+    if (path.endsWith("/airline/portal/invoices/74000000-0000-7000-8000-000000000001/document"))
       return json({ status: 403 }, 403);
     return path === "/api/v1/auth/session" ? json({ actor }) : json(bootstrap);
   }));

@@ -65,7 +65,7 @@ const NAVIGATION: NavigationItem[] = [
   },
   {
     href: "/portal/finanzas",
-    label: "Finanzas",
+    label: "Facturas",
     group: "Cuenta",
     icon: FinanceIcon,
   },

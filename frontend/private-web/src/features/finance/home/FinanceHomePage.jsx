@@ -67,7 +67,7 @@ export default function FinanceHomePage({ status, data, onRetry, onNavigate,
     {(isLoading || status === 'success') && <>
       {(data?.bounds?.servicesHaveMore || data?.bounds?.preinvoicesHaveMore) &&
         <p role="status" className="rounded-xl border border-accent-600/20 bg-accent-600/5 px-4 py-3 text-xs text-text-secondary-light dark:text-text-secondary-dark">
-          {data.bounds.servicesHaveMore && 'Esta consulta muestra hasta 200 servicios; acota fechas en Servicios aprobados si hay más. '}
+          {data.bounds.servicesHaveMore && 'Esta consulta muestra hasta 200 servicios; acota fechas en Por facturar si hay más. '}
           {data.bounds.preinvoicesHaveMore && 'Esta consulta muestra hasta 50 prefacturas; abre Pre-facturación para consultar las demás.'}
         </p>}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -78,8 +78,8 @@ export default function FinanceHomePage({ status, data, onRetry, onNavigate,
       </div>
       <FinanceReceivablesStrip stationId={stationId} onNavigate={onNavigate} revision={data} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-        <SectionCard title="Servicios aprobados recientes" actionLabel="Ver servicios"
-          onAction={() => onNavigate('finance-approved-services')}>
+        <SectionCard title="Servicios aprobados recientes" actionLabel="Ver por facturar"
+          onAction={() => onNavigate('finance-to-invoice')}>
           {isLoading ? <div data-testid="services-table-skeleton" className="h-64 animate-pulse bg-black/[0.03] dark:bg-white/[0.03]" />
             : data.approvedServices.length ? <div className="overflow-x-auto"><table className="table-stack w-full text-left text-sm">
               <thead className="bg-black/[0.025] text-xs uppercase tracking-wide text-text-secondary-light dark:bg-white/[0.025] dark:text-text-secondary-dark">
@@ -95,8 +95,8 @@ export default function FinanceHomePage({ status, data, onRetry, onNavigate,
               </tbody>
             </table></div> : <p className="p-6 text-sm text-text-secondary-light">No hay servicios aprobados en este período.</p>}
         </SectionCard>
-        <SectionCard title="Acciones pendientes en consulta" actionLabel="Ver pre-facturación"
-          onAction={() => onNavigate('finance-preinvoices')}>
+        <SectionCard title="Acciones pendientes en consulta" actionLabel="Ver facturas"
+          onAction={() => onNavigate('finance-reconciliation')}>
           {isLoading ? <div data-testid="actions-skeleton" className="h-64 animate-pulse bg-black/[0.03] dark:bg-white/[0.03]" />
             : data.pendingActions.length ? <ul className="divide-y divide-black/5 dark:divide-white/5">
               {data.pendingActions.map(action => <li key={action.id}><button type="button"

@@ -7,9 +7,10 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-26"
-verified_commit: "83ce325f99fea54879649f92ae1a231637a1bc2d"
+last_verified: "2026-11-05"
+verified_commit: "08db4b37b32c3665d63478a3a0df055cb5949990"
 sources:
+  - docs/adr/0035-direct-invoicing-simulated-ecf.md
   - AGENTS.md
   - frontend/AGENTS.md
   - frontend/public-web/AGENTS.md
@@ -72,8 +73,8 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |
 | Firma del contrato | La aerolínea firma primero, con una firma dibujada en un canvas (PNG de hasta 256 KB), y solo después de que Contratos confirma la vigencia y la renovación; el portal muestra esos términos y que AVIAM contrafirma después. El PDF firmado llega por correo al activarse el contrato (ADR-0025). |
 | Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
-| Finanzas | En esta rama consulta prefacturas publicadas (`Submitted`, `Disputed`, `Accepted`, `Invoiced` o `Voided`) paginadas y filtradas por aerolínea en SQL. Puede releer por ID las líneas y montos snapshot de una prefactura propia; borradores y otros tenants no se exponen. Tras confirmación explícita puede aceptar una prefactura `Submitted` propia con un comando auditado e idempotente. Esta rama añade registro y consulta de disputas de líneas y de la resolución motivada por Finanzas. Una prefactura anulada queda visible solo como historial. Una prefactura `Invoiced` consulta su factura no fiscal congelada y, por otra ruta tenant-scoped, el estado persistido de un pago manual completo de prueba. Un aviso `airline_preinvoices` invalida la consulta; el sondeo de 25 segundos respalda la reconexión. No hay verificación bancaria ni documento fiscal; en el tramo local posterior, Documentos descarga un PDF no fiscal de factura y, si hay pago, de recibo. |
-| Documentos y reportes | En el tramo local, Documentos consulta facturas propias ya emitidas y pagos registrados y descarga PDF privado por la API. Reportes muestra la primera página autorizada de operaciones y prefacturas publicadas, con conteos limitados a esas filas y enlaces al historial paginado; no calcula métricas globales. El PDF es no fiscal y no verifica fondos externos. Nada de este tramo está promocionado. |
+| Facturas | Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) lista las facturas propias del estado de cuenta (`GET airline/portal/treasury/statements`) con e-NCF, estado (Pendiente, Vencida o Pagada), vencimiento y saldo; el detalle muestra líneas, pagos y el PDF de la factura e-CF simulada (`GET airline/portal/invoices/{invoiceId}/document`). No hay prefacturas, aceptación ni disputa: los reclamos se resuelven fuera del sistema con nota de crédito. Se revalida con el aviso `airline_treasury`. |
+| Documentos y reportes | Documentos lista los PDF de cada factura propia por id. Reportes muestra la primera página autorizada de operaciones y las facturas del estado de cuenta, sin métricas globales. Nada de este tramo está promocionado. |
 | Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. |
 
 El JWT corto y su vencimiento se conservan en `sessionStorage` de la pestaña, no en `localStorage`. No existe opción «Recordarme». Al recargar, el cliente revalida identidad y bootstrap; al cerrar sesión, vencer el token o perder autorización, limpia el acceso. Un fallo transitorio permite reintentar sin presentar datos obsoletos como si fueran actuales. La comprobación del navegador no sustituye el enforcement del backend por tenant y estación.

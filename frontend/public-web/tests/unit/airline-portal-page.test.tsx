@@ -7,6 +7,7 @@ import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse,
   type SessionActorResponse } from "@elevant/api-client";
 
 import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
+import type { AirlineTreasuryInvoice, AirlineTreasuryInvoiceDetail, AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
 
 const actor: SessionActorResponse = {
   accountId: "40000000-0000-7000-8000-000000000003",
@@ -106,8 +107,8 @@ const getPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type
 const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
   subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
-const getTreasuryStatement = vi.fn(async (asOf: string) => ({ airlineId: bootstrap.airlineId, asOf, invoices: [], receipts: [], movements: [], aging: [] }));
-const getTreasuryInvoice = vi.fn(async (id: string) => ({ invoice: { id, preinvoiceId: initialPreinvoicePage.preinvoices[0].id,
+const getTreasuryStatement = vi.fn<(asOf: string, stationId?: string, signal?: AbortSignal) => Promise<AirlineTreasuryStatement>>(async asOf => ({ airlineId: bootstrap.airlineId, asOf, invoices: [], receipts: [], movements: [], aging: [] }));
+const getTreasuryInvoice = vi.fn(async (id: string): Promise<AirlineTreasuryInvoiceDetail> => ({ invoice: { id, preinvoiceId: initialPreinvoicePage.preinvoices[0].id,
   number: "NF-74000000000070008000000000000009", stationId: bootstrap.stations[0].id, stationCode: "PUJ", currencyCode: "USD",
   total: 125.5, legacyPaid: 50, legacyCredited: 0, applied: 0, credited: 0, debited: 0, balance: 75.5, dueDate: null, daysOverdue: 0, agingBucket: "Current" }, lines: [], movements: [], notes: [] }));
 const getTreasuryReceipt = vi.fn(async () => { throw new ElevantApiError({ kind: "http", status: 404 }); });
@@ -257,320 +258,6 @@ it("does not invent details for an operation outside the authorized tenant", asy
   expect(screen.queryByText("DEV-TAT-0002")).not.toBeInTheDocument();
 });
 
-it("shows an honest empty documents state from the live finance page", async () => {
-  render(<AirlinePortalPage view="documents" />);
-  expect(screen.getByRole("heading", { level: 1, name: "Documentos" })).toBeInTheDocument();
-  expect(await screen.findByText(/no hay facturas emitidas/i)).toBeInTheDocument();
-  expect(screen.queryByText(/datos de demostración/i)).not.toBeInTheDocument();
-  expect(screen.queryByText("DEMO-DOC-001")).not.toBeInTheDocument();
-});
-
-it("opens tenant-scoped invoice and receipt PDFs without a mock document", async () => {
-  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item =>
-    ({ ...item, status: "Invoiced" })) };
-  const createObjectURL = vi.fn(() => "blob:financial-test");
-  const revokeObjectURL = vi.fn();
-  Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
-  Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
-  const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-  try {
-    render(<AirlinePortalPage view="documents" />);
-    await screen.findByText("Prefactura facturada");
-    fireEvent.click(screen.getByRole("button", { name: "Ver documentos" }));
-    await screen.findByText(/Factura no fiscal NF-/);
-    fireEvent.click(screen.getByRole("button", { name: "Descargar factura PDF" }));
-    await screen.findByRole("button", { name: "Descargar recibo PDF" });
-    expect(getInvoiceDocument).toHaveBeenCalledWith(preinvoicePage.preinvoices[0].id);
-    expect(click).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Descargar recibo PDF" }));
-    await act(async () => { expect(getPaymentReceipt).toHaveBeenCalledWith(
-      "74000000-0000-7000-8000-000000000009"); });
-  } finally {
-    click.mockRestore();
-    Reflect.deleteProperty(URL, "createObjectURL");
-    Reflect.deleteProperty(URL, "revokeObjectURL");
-  }
-});
-
-it("keeps the invoice and receipt expanded across a live finance refresh", async () => {
-  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item =>
-    ({ ...item, status: "Invoiced" })) };
-  const page = render(<AirlinePortalPage view="documents" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
-  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
-
-  financeRevision += 1;
-  page.rerender(<AirlinePortalPage view="documents" />);
-
-  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
-  expect(getPreinvoiceInvoice).toHaveBeenCalledTimes(2);
-});
-
-it("keeps a page-two invoice available after the first page refreshes", async () => {
-  const secondPage = { ...preinvoicePage, page: 2, hasMore: false,
-    preinvoices: preinvoicePage.preinvoices.map(item => ({ ...item, status: "Invoiced" })) };
-  const firstPage = { page: 1, limit: 20, hasMore: true, preinvoices: [
-    { ...preinvoicePage.preinvoices[0], id: "74000000-0000-7000-8000-000000000005" },
-  ] };
-  getPreinvoices.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage)
-    .mockResolvedValueOnce(firstPage);
-  const page = render(<AirlinePortalPage view="documents" />);
-  const loadMore = await screen.findByRole("button", { name: "Cargar más" });
-  expect(screen.queryByText(/No hay facturas emitidas/)).not.toBeInTheDocument();
-  fireEvent.click(loadMore);
-  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
-  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
-
-  financeRevision += 1;
-  page.rerender(<AirlinePortalPage view="documents" />);
-
-  expect(await screen.findByText("Documento seleccionado de otra página")).toBeInTheDocument();
-  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
-});
-
-it("removes selected financial documents when live revalidation fails", async () => {
-  preinvoicePage = { ...preinvoicePage, preinvoices: preinvoicePage.preinvoices.map(item =>
-    ({ ...item, status: "Invoiced" })) };
-  const page = render(<AirlinePortalPage view="documents" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Ver documentos" }));
-  expect(await screen.findByRole("button", { name: "Descargar recibo PDF" })).toBeInTheDocument();
-
-  getPreinvoices.mockRejectedValueOnce(new Error("private transport detail"));
-  financeRevision += 1;
-  page.rerender(<AirlinePortalPage view="documents" />);
-
-  expect(await screen.findByRole("alert")).toHaveTextContent(/No se pudo actualizar la consulta/);
-  expect(screen.queryByRole("button", { name: "Descargar recibo PDF" })).not.toBeInTheDocument();
-  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
-});
-
-it("shows only published preinvoices returned by the authorized finance API", async () => {
-  render(<AirlinePortalPage view="finance" />);
-  expect(await screen.findByText("USD 125.50")).toBeInTheDocument();
-  expect(screen.getByText("PUJ · 2026-08-18 — 2026-08-19")).toBeInTheDocument();
-  expect(screen.queryByText(/datos de demostración/i)).not.toBeInTheDocument();
-  expect(screen.queryByText("DEMO-PRE-001")).not.toBeInTheDocument();
-});
-
-it("refetches published preinvoices when Finance receives a durable change revision", async () => {
-  const page = render(<AirlinePortalPage view="finance" />);
-  await screen.findByText("USD 125.50");
-  expect(getPreinvoices).toHaveBeenCalledTimes(1);
-  financeRevision += 1;
-  page.rerender(<AirlinePortalPage view="finance" />);
-  await screen.findByText("USD 125.50");
-  expect(getPreinvoices).toHaveBeenCalledTimes(2);
-});
-
-it("opens immutable service lines from the authorized preinvoice detail", async () => {
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
-  expect(await screen.findByText("Ground power")).toBeInTheDocument();
-  expect(screen.getByText(/DEV-TAT-0021/)).toBeInTheDocument();
-  expect(getPreinvoice).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000001");
-});
-
-it("shows the real non-fiscal invoice only for an invoiced airline preinvoice", async () => {
-  const invoicedPage = { page: 1, limit: 20, hasMore: false,
-    preinvoices: [{ id: '74000000-0000-7000-8000-000000000001',
-      stationId: '20000000-0000-7000-8000-000000000003', stationCode: 'PUJ',
-      from: '2026-08-18', to: '2026-08-19', currencyCode: 'USD', total: 125.5,
-      status: 'Invoiced', createdAt: '2026-08-20T12:00:00Z' }] };
-  getPreinvoices.mockResolvedValueOnce(invoicedPage).mockResolvedValueOnce(invoicedPage);
-  const invoicedDetail = { id: '74000000-0000-7000-8000-000000000001',
-    stationId: '20000000-0000-7000-8000-000000000003', stationCode: 'PUJ',
-    from: '2026-08-18', to: '2026-08-19', currencyCode: 'USD', total: 125.5,
-    status: 'Invoiced', createdAt: '2026-08-20T12:00:00Z', lines: [{
-      id: '74000000-0000-7000-8000-000000000002', operationCode: 'DEV-TAT-0021',
-      operationDate: '2026-08-18', serviceCode: 'GPU', serviceName: 'Ground power',
-      executedQuantity: 1, billingUnit: 'hour', unitPrice: 125.5, amount: 125.5 }] };
-  getPreinvoice.mockResolvedValueOnce(invoicedDetail).mockResolvedValueOnce(invoicedDetail);
-  getInvoiceStatement.mockResolvedValueOnce(statementOf('74000000-0000-7000-8000-000000000009', 0));
-  const page = render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole('button', { name: /Ver l.*neas de prefactura/i }));
-  expect(await screen.findByText(/NF-74000000000070008000000000000009/)).toBeInTheDocument();
-  expect(getPreinvoiceInvoice).toHaveBeenCalledExactlyOnceWith(
-    '74000000-0000-7000-8000-000000000001');
-  expect(getInvoiceStatement).toHaveBeenCalledWith('74000000-0000-7000-8000-000000000009');
-  expect(screen.getByText('Sin pagos históricos registrados.')).toBeInTheDocument();
-  expect(screen.getByText(/vence el 2026-10-28/)).toBeInTheDocument();
-  expect(screen.getByText(/Cargo · Recargo nocturno/)).toBeInTheDocument();
-  financeRevision = 1;
-  page.rerender(<AirlinePortalPage view="finance" />);
-  expect(await screen.findByText(/BANK-TEST-123/)).toBeInTheDocument();
-  expect(screen.getByText(/Pago parcial · Saldo USD 75.50/)).toBeInTheDocument();
-  expect(getInvoiceStatement).toHaveBeenCalledTimes(2);
-  expect(screen.queryByRole('button', { name: 'Aceptar prefactura' })).not.toBeInTheDocument();
-});
-
-it("requires explicit confirmation before accepting a published preinvoice", async () => {
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
-  await screen.findByText("Ground power");
-  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
-  expect(acceptPreinvoice).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
-  await screen.findByText(/Aceptación registrada/);
-  expect(acceptPreinvoice).toHaveBeenCalledExactlyOnceWith(
-    "74000000-0000-7000-8000-000000000001");
-});
-
-it("keeps the same preinvoice acceptance confirmation open across a live finance refresh", async () => {
-  const page = render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
-  await screen.findByText("Ground power");
-  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
-  expect(screen.getByRole("button", { name: "Confirmar aceptación" })).toBeInTheDocument();
-
-  financeRevision = 1;
-  page.rerender(<AirlinePortalPage view="finance" />);
-  await act(async () => {});
-
-  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
-  expect(await screen.findByText(/Aceptación registrada/)).toBeInTheDocument();
-});
-
-it("keeps page-two acceptance available after the first page refreshes", async () => {
-  const secondPage = { ...preinvoicePage, page: 2, hasMore: false };
-  const firstPage = { page: 1, limit: 20, hasMore: true, preinvoices: [
-    { ...preinvoicePage.preinvoices[0], id: "74000000-0000-7000-8000-000000000005" },
-  ] };
-  getPreinvoices.mockResolvedValueOnce(firstPage).mockResolvedValueOnce(secondPage)
-    .mockResolvedValueOnce(firstPage);
-  const page = render(<AirlinePortalPage view="finance" />);
-  const loadMore = await screen.findByRole("button", { name: "Cargar más prefacturas" });
-  expect(screen.queryByText(/No hay prefacturas publicadas/)).not.toBeInTheDocument();
-  fireEvent.click(loadMore);
-  const secondCard = await screen.findByRole("region", {
-    name: `Prefactura ${secondPage.preinvoices[0].id}`,
-  });
-  fireEvent.click(within(secondCard).getByRole("button", { name: /Ver l.*neas de prefactura/i }));
-  await screen.findByText("Ground power");
-  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
-
-  financeRevision += 1;
-  page.rerender(<AirlinePortalPage view="finance" />);
-
-  expect(await screen.findByText("Detalle seleccionado de otra página")).toBeInTheDocument();
-  fireEvent.click(await screen.findByRole("button", { name: "Confirmar aceptación" }));
-  expect(await screen.findByText(/Aceptación registrada/)).toBeInTheDocument();
-});
-
-it("selects disputed lines and requires confirmation before submitting a real objection", async () => {
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
-  await screen.findByText("Ground power");
-  fireEvent.click(screen.getByRole("button", { name: "Disputar prefactura" }));
-  fireEvent.click(screen.getByRole("checkbox", { name: /Ground power/ }));
-  fireEvent.change(screen.getByRole("textbox", { name: "Asunto de la disputa" }),
-    { target: { value: "Cantidad incorrecta" } });
-  fireEvent.change(screen.getByRole("textbox", { name: /Descripci.*n de la disputa/ }),
-    { target: { value: "La cantidad de GPU no coincide." } });
-  fireEvent.click(screen.getByRole("button", { name: "Revisar disputa" }));
-  expect(disputePreinvoice).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Confirmar disputa" }));
-  expect(await screen.findByText(/Disputa registrada/)).toBeInTheDocument();
-  expect(disputePreinvoice).toHaveBeenCalledExactlyOnceWith(
-    "74000000-0000-7000-8000-000000000001",
-    expect.objectContaining({ subject: "Cantidad incorrecta",
-      description: "La cantidad de GPU no coincide.",
-      lineIds: ["74000000-0000-7000-8000-000000000002"],
-      requestId: expect.any(String) }));
-});
-
-it("shows the Finance resolution and reason on a previously published preinvoice", async () => {
-  getPreinvoiceDisputes.mockResolvedValueOnce({
-    preinvoiceId: "74000000-0000-7000-8000-000000000001",
-    disputes: [{ id: "74000000-0000-7000-8000-000000000020",
-      subject: "Cantidad incorrecta", description: "La cantidad de GPU no coincide.",
-      createdAt: "2026-09-28T16:00:00Z",
-      lineIds: ["74000000-0000-7000-8000-000000000002"],
-      resolution: { id: "74000000-0000-7000-8000-000000000021",
-        decision: "Maintain", reason: "Servicio ejecutado según evidencia.",
-        resolvedAt: "2026-09-28T17:00:00Z" } }],
-  });
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
-  const record = await screen.findByLabelText(
-    "Disputa 74000000-0000-7000-8000-000000000020");
-  expect(within(record).getByText(/Finanzas mantuvo la prefactura/)).toBeInTheDocument();
-  expect(within(record).getByText(/Servicio ejecutado seg.*n evidencia/)).toBeInTheDocument();
-});
-
-it("keeps a voided preinvoice visible as read-only history", async () => {
-  getPreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
-    preinvoices: [{ id: "74000000-0000-7000-8000-000000000001",
-      stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
-      from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
-      status: "Voided", createdAt: "2026-08-20T12:00:00Z" }] });
-  getPreinvoice.mockResolvedValueOnce({
-    id: "74000000-0000-7000-8000-000000000001",
-    stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
-    from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
-    status: "Voided", createdAt: "2026-08-20T12:00:00Z",
-    lines: [{ id: "74000000-0000-7000-8000-000000000002",
-      operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
-      serviceCode: "GPU", serviceName: "Ground power",
-      executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5 }],
-  });
-  getPreinvoiceDisputes.mockResolvedValueOnce({
-    preinvoiceId: "74000000-0000-7000-8000-000000000001",
-    disputes: [{ id: "74000000-0000-7000-8000-000000000020",
-      subject: "Servicio ausente", description: "No se prestó el servicio.",
-      createdAt: "2026-09-28T16:00:00Z",
-      lineIds: ["74000000-0000-7000-8000-000000000002"],
-      resolution: { id: "74000000-0000-7000-8000-000000000021",
-        decision: "Void", reason: "Cargo anulado tras revisión.",
-        resolvedAt: "2026-09-28T17:00:00Z" } }],
-  });
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver l.*neas de prefactura/i }));
-  const record = await screen.findByLabelText(
-    "Disputa 74000000-0000-7000-8000-000000000020");
-  expect(screen.getByText("Anulada")).toBeInTheDocument();
-  expect(within(record).getByText(/Finanzas anuló la prefactura/)).toBeInTheDocument();
-  expect(within(record).getByText(/Cargo anulado tras revisión/)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Aceptar prefactura" })).not.toBeInTheDocument();
-});
-
-it("does not claim acceptance when the server reports a competing decision", async () => {
-  acceptPreinvoice.mockRejectedValueOnce(new ElevantApiError({ kind: "http", status: 409 }));
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
-  await screen.findByText("Ground power");
-  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent(/cambió antes de aceptarla/i);
-  expect(screen.queryByText(/Aceptación registrada/)).not.toBeInTheDocument();
-});
-
-it("does not show a stale acceptance banner after opening another preinvoice", async () => {
-  getPreinvoices.mockResolvedValueOnce({ page: 1, limit: 20, hasMore: false,
-    preinvoices: [
-      { id: "74000000-0000-7000-8000-000000000001",
-        stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
-        from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
-        status: "Submitted", createdAt: "2026-08-20T12:00:00Z" },
-      { id: "74000000-0000-7000-8000-000000000003",
-        stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
-        from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 95,
-        status: "Submitted", createdAt: "2026-08-21T12:00:00Z" },
-    ] });
-  let finish!: () => void;
-  acceptPreinvoice.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", {
-    name: "Ver líneas de prefactura 74000000-0000-7000-8000-000000000001" }));
-  await screen.findByLabelText("Líneas de prefactura 74000000-0000-7000-8000-000000000001");
-  fireEvent.click(screen.getByRole("button", { name: "Aceptar prefactura" }));
-  fireEvent.click(screen.getByRole("button", { name: "Confirmar aceptación" }));
-  fireEvent.click(screen.getByRole("button", {
-    name: "Ver líneas de prefactura 74000000-0000-7000-8000-000000000003" }));
-  await screen.findByLabelText("Líneas de prefactura 74000000-0000-7000-8000-000000000003");
-  await act(async () => { finish(); });
-  expect(screen.queryByText(/Aceptación registrada/)).not.toBeInTheDocument();
-});
-
 it("shows verified account and station scope in profile", () => {
   render(<AirlinePortalPage view="profile" />);
   expect(screen.getByText(actor.email)).toBeInTheDocument();
@@ -601,51 +288,6 @@ it("shows tenant-scoped operational requests without demo fixtures", async () =>
   expect(screen.getByRole("button", { name: "Nueva solicitud" })).toBeDisabled();
 });
 
-it("reports only tenant-scoped operations and published preinvoices returned by the API", async () => {
-  render(<AirlinePortalPage view="reports" />);
-  expect(await screen.findByText("DEV-TAT-0002")).toBeInTheDocument();
-  expect(await screen.findByText(/USD 125\.50/)).toBeInTheDocument();
-  expect(getOperations).toHaveBeenCalledWith(1);
-  expect(getPreinvoices).toHaveBeenCalledWith(1);
-  expect(screen.getByText(/Operaciones cargadas/)).toBeInTheDocument();
-  expect(screen.getByText(/Prefacturas cargadas/)).toBeInTheDocument();
-  expect(screen.queryByText(/Vuelos de ejemplo|Indicador ilustrativo|Datos de demostración/)).not.toBeInTheDocument();
-  expect(screen.queryByText(/50%|67%|US\$413/)).not.toBeInTheDocument();
-});
-
-it("reports honest empty and recoverable error states without retaining stale data", async () => {
-  historyPage = { page: 1, limit: 20, hasMore: false, operations: [] };
-  preinvoicePage = { page: 1, limit: 20, hasMore: false, preinvoices: [] };
-  getPreinvoices.mockRejectedValueOnce(new Error("private transport detail"));
-  render(<AirlinePortalPage view="reports" />);
-  expect(await screen.findByRole("alert")).toHaveTextContent(/No se pudieron actualizar los reportes/);
-  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /Reintentar reportes/ }));
-  expect(await screen.findByText(/No hay operaciones registradas/)).toBeInTheDocument();
-  expect(screen.getByText(/No hay prefacturas publicadas/)).toBeInTheDocument();
-});
-
-it("does not round away the published financial snapshot precision", async () => {
-  preinvoicePage = { ...initialPreinvoicePage, preinvoices: [
-    { ...initialPreinvoicePage.preinvoices[0], total: 125.1234 },
-  ] };
-  render(<AirlinePortalPage view="reports" />);
-  expect(await screen.findByText("USD 125.1234")).toBeInTheDocument();
-});
-
-it("hides an old report while a finance change is being revalidated", async () => {
-  const page = render(<AirlinePortalPage view="reports" />);
-  expect(await screen.findByText(/USD 125\.50/)).toBeInTheDocument();
-  let finish!: (value: typeof preinvoicePage) => void;
-  getPreinvoices.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
-  financeRevision += 1;
-  page.rerender(<AirlinePortalPage view="reports" />);
-  expect(screen.queryByText(/USD 125\.50/)).not.toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent(/Cargando reportes autorizados/);
-  await act(async () => finish({ page: 1, limit: 20, hasMore: false, preinvoices: [] }));
-  expect(await screen.findByText(/No hay prefacturas publicadas/)).toBeInTheDocument();
-});
-
 it("shows an honest empty state when the airline has no operational requests", async () => {
   requestPage = { page: 1, limit: 20, hasMore: false, requests: [] };
   render(<AirlinePortalPage view="requests" />);
@@ -654,49 +296,84 @@ it("shows an honest empty state when the airline has no operational requests", a
   expect(screen.queryByText(/datos sintéticos/i)).not.toBeInTheDocument();
 });
 
-it("lists each agent charge under its service as a separate disputable line", async () => {
-  const withCharge = await getPreinvoice("74000000-0000-7000-8000-000000000001");
-  getPreinvoice.mockClear();
-  const detail = { ...withCharge, total: 135.5, lines: [
-    { id: "74000000-0000-7000-8000-000000000003", operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
-      serviceCode: "NIGHT", serviceName: "Recargo nocturno", executedQuantity: 1, billingUnit: "operation",
-      unitPrice: 10, amount: 10, kind: "Charge", parentLineId: withCharge.lines[0].id,
-      reason: "Ajustado al horario real" },
-    { ...withCharge.lines[0], kind: "Service", parentLineId: null, reason: null }] };
-  getPreinvoice.mockResolvedValueOnce(detail);
-  render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
-  const charge = await screen.findByText("Cargo · Recargo nocturno");
-  const lines = screen.getByLabelText(/Líneas de prefactura/);
-  const rendered = Array.from(lines.children).map(node => node.textContent ?? "");
-  expect(rendered[0]).toContain("Ground power");
-  expect(rendered[1]).toContain("Recargo nocturno");
-  expect(screen.getByText("Motivo de Finanzas: Ajustado al horario real")).toBeInTheDocument();
-  expect(charge).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Disputar prefactura" }));
-  expect(screen.getByRole("checkbox", { name: "Disputar Recargo nocturno" })).toBeInTheDocument();
+const ecfInvoice = (overrides: Partial<AirlineTreasuryInvoice> = {}): AirlineTreasuryInvoice => ({
+  id: "74000000-0000-7000-8000-000000000009", preinvoiceId: initialPreinvoicePage.preinvoices[0].id,
+  number: "NF-74000000000070008000000000000009", fiscalNumber: "E310000000001",
+  stationId: bootstrap.stations[0].id, stationCode: "PUJ", currencyCode: "USD", total: 148.09,
+  legacyPaid: 0, legacyCredited: 0, applied: 0, credited: 0, debited: 0, balance: 148.09,
+  dueDate: "2026-12-05", daysOverdue: 0, agingBucket: "Current", ...overrides,
+});
+const statementWith = (invoices: AirlineTreasuryInvoice[]) => async (asOf: string): Promise<AirlineTreasuryStatement> =>
+  ({ airlineId: bootstrap.airlineId, asOf, invoices, receipts: [], movements: [], aging: [] });
+
+afterEach(() => {
+  getTreasuryStatement.mockReset();
+  getTreasuryStatement.mockImplementation(statementWith([]));
+  getTreasuryInvoice.mockClear();
 });
 
-it.each([
-  ["Package", "Paquete"],
-  ["Excess", "Exceso"],
-  ["Minimum", "Mínimo"],
-])("translates %s lines in both published preinvoice and invoice", async (kind, label) => {
-  const id = initialPreinvoicePage.preinvoices[0].id;
-  const base = await getPreinvoice(id);
-  getPreinvoice.mockClear();
-  const serviceName = "Concepto de tarifa";
-  const pricedPreinvoice = { ...base, status: "Invoiced",
-    lines: [{ ...base.lines[0], kind, serviceName }] };
-  getPreinvoice.mockResolvedValueOnce(pricedPreinvoice);
-  const statement = statementOf("74000000-0000-7000-8000-000000000009", 50);
-  getInvoiceStatement.mockResolvedValueOnce({ ...statement,
-    lines: [{ ...statement.lines[0], kind, serviceName }] });
+it("lists invoices with their e-NCF, status and balance, without preinvoice decisions", async () => {
+  getTreasuryStatement.mockImplementation(statementWith([
+    ecfInvoice(),
+    ecfInvoice({ id: "74000000-0000-7000-8000-000000000019", fiscalNumber: "E310000000002", balance: 0, applied: 148.09 }),
+    ecfInvoice({ id: "74000000-0000-7000-8000-000000000029", fiscalNumber: null, number: "NF-OLD", daysOverdue: 12 }),
+  ]));
   render(<AirlinePortalPage view="finance" />);
-  fireEvent.click(await screen.findByRole("button", { name: /Ver líneas de prefactura/i }));
-  const preinvoiceLines = await screen.findByLabelText("Líneas de prefactura " + id);
-  expect(within(preinvoiceLines).getByText(label + " · " + serviceName)).toBeInTheDocument();
-  const invoice = await screen.findByRole("region", { name: "Factura no fiscal" });
-  expect(within(invoice).getByText(new RegExp(label + " · " + serviceName))).toBeInTheDocument();
-  expect(within(invoice).queryByText(new RegExp(kind + " · "))).not.toBeInTheDocument();
+  expect(await screen.findByRole("heading", { level: 2, name: "Factura E310000000001" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "Factura E310000000001" })).toHaveTextContent("PUJ · Pendiente");
+  expect(screen.getByRole("region", { name: "Factura E310000000002" })).toHaveTextContent("Pagada");
+  expect(screen.getByRole("region", { name: "Factura NF-OLD" })).toHaveTextContent("Vencida");
+  expect(screen.getByLabelText("Resumen de facturas")).toHaveTextContent("USD 296.18");
+  expect(screen.queryByRole("button", { name: /Aceptar prefactura|Disputar prefactura/ })).not.toBeInTheDocument();
+  expect(getPreinvoices).not.toHaveBeenCalled();
+});
+
+it("opens an invoice detail and downloads its PDF by invoice id", async () => {
+  getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
+  getTreasuryInvoice.mockImplementationOnce(async () => ({ invoice: ecfInvoice(), movements: [], notes: [],
+    lines: [{ id: "l1", lineNumber: 1, kind: "Service", parentLineNumber: null, operationCode: "DEV-TAT-0021",
+      operationDate: "2026-08-18", serviceCode: "GPU", serviceName: "Ground power", quantity: 1, billingUnit: "hour",
+      unitPrice: 125.5, amount: 148.09, reason: null }] }));
+  const createObjectURL = vi.fn(() => "blob:invoice");
+  Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+  render(<AirlinePortalPage view="finance" />);
+  fireEvent.click(await screen.findByRole("button", { name: "Ver detalle" }));
+  const detail = await screen.findByRole("region", { name: "Detalle de factura" });
+  expect(await within(detail).findByText(/Servicio · DEV-TAT-0021 · Ground power/)).toBeInTheDocument();
+  expect(within(detail).getByText(/sin validez fiscal/)).toBeInTheDocument();
+  expect(getTreasuryInvoice).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000009", expect.any(AbortSignal));
+  fireEvent.click(within(detail).getByRole("button", { name: "Descargar PDF de Factura E310000000001" }));
+  await waitFor(() => expect(getInvoiceDocument).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000009"));
+  await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
+});
+
+it("shows honest empty and recoverable states for invoices", async () => {
+  getTreasuryStatement.mockRejectedValueOnce(new Error("private transport detail"));
+  render(<AirlinePortalPage view="finance" />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("No se pudieron consultar las facturas.");
+  expect(screen.queryByText(/private transport detail/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Reintentar" }));
+  expect(await screen.findByText("No hay facturas emitidas para esta aerolínea.")).toBeInTheDocument();
+});
+
+it("lists invoice PDFs in documents by invoice id", async () => {
+  getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
+  render(<AirlinePortalPage view="documents" />);
+  expect(await screen.findByRole("heading", { level: 2, name: "Factura E310000000001" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Descargar PDF de Factura E310000000001" }));
+  await waitFor(() => expect(getInvoiceDocument).toHaveBeenCalledWith("74000000-0000-7000-8000-000000000009"));
+});
+
+it("reports operations and invoices returned by the API, hiding stale data while revalidating", async () => {
+  getTreasuryStatement.mockImplementation(statementWith([ecfInvoice()]));
+  const page = render(<AirlinePortalPage view="reports" />);
+  expect(await screen.findByText(/Factura E310000000001 · USD 148\.09/)).toBeInTheDocument();
+  expect(screen.getByText("DEV-TAT-0002")).toBeInTheDocument();
+  let finish!: (value: AirlineTreasuryStatement) => void;
+  getTreasuryStatement.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  financeRevision += 1;
+  page.rerender(<AirlinePortalPage view="reports" />);
+  expect(screen.queryByText(/Factura E310000000001/)).not.toBeInTheDocument();
+  await act(async () => finish({ airlineId: bootstrap.airlineId, asOf: "2026-11-05", invoices: [], receipts: [], movements: [], aging: [] }));
+  expect(await screen.findByText(/No hay facturas emitidas/)).toBeInTheDocument();
 });

@@ -121,8 +121,13 @@ public static class DependencyInjection
         services.AddScoped<IContractDocumentStore>(provider => provider.GetRequiredService<EfContractDocumentStore>());
         // The PDF renderer lives in Infrastructure; a factory keeps hosts without it (tools, tests) valid.
         services.AddScoped<Elevant.Application.Abstractions.Messaging.IEmailAttachmentResolver>(provider =>
-            new EfContractAttachmentResolver(provider.GetRequiredService<EfContractDocumentStore>(),
-                provider.GetRequiredService<Elevant.Application.Abstractions.Commercial.IContractPdfRenderer>()));
+            new Elevant.Persistence.Finance.CompositeEmailAttachmentResolver([
+                new EfContractAttachmentResolver(provider.GetRequiredService<EfContractDocumentStore>(),
+                    provider.GetRequiredService<Elevant.Application.Abstractions.Commercial.IContractPdfRenderer>()),
+                new Elevant.Persistence.Finance.EfInvoiceAttachmentResolver(
+                    provider.GetRequiredService<Elevant.Persistence.Finance.EfNonFiscalInvoiceReadStore>(),
+                    provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
+            ]));
         services.AddScoped<IAirlinePermitStore, EfAirlinePermitStore>();
         services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
@@ -147,11 +152,15 @@ public static class DependencyInjection
         services.AddScoped<IFinanceReportExportAudit, EfFinanceReportExportAudit>();
         services.AddScoped<IFinanceReconciliationReadStore, EfFinanceReconciliationReadStore>();
         services.AddScoped<IFinancePreinvoiceListStore, EfFinancePreinvoiceListStore>();
-        services.AddScoped<IPreinvoiceDraftStore, EfPreinvoiceDraftStore>();
+        services.AddScoped<EfPreinvoiceDraftStore>();
+        services.AddScoped<IPreinvoiceDraftStore>(provider => provider.GetRequiredService<EfPreinvoiceDraftStore>());
         services.AddScoped<IPreinvoiceSubmissionStore, EfPreinvoiceSubmissionStore>();
         services.AddScoped<IPreinvoiceDisputeResolutionStore, EfPreinvoiceDisputeResolutionStore>();
-        services.AddScoped<IFinanceInvoiceIssueStore, EfFinanceInvoiceIssueStore>();
-        services.AddScoped<INonFiscalInvoiceReadStore, EfNonFiscalInvoiceReadStore>();
+        services.AddScoped<EfFinanceInvoiceIssueStore>();
+        services.AddScoped<IFinanceInvoiceIssueStore>(provider => provider.GetRequiredService<EfFinanceInvoiceIssueStore>());
+        services.AddScoped<EfNonFiscalInvoiceReadStore>();
+        services.AddScoped<INonFiscalInvoiceReadStore>(provider => provider.GetRequiredService<EfNonFiscalInvoiceReadStore>());
+        services.AddScoped<Elevant.Application.Finance.IInvoiceIssuanceStore, EfInvoiceIssuanceStore>();
         services.AddScoped<INonFiscalPaymentStore, EfNonFiscalPaymentStore>();
         services.AddScoped<INonFiscalPaymentReadStore, EfNonFiscalPaymentReadStore>();
         services.AddScoped<IPrivateFinancialObjectStore>(

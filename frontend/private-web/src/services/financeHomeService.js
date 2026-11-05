@@ -38,7 +38,7 @@ export async function getFinanceHomeSnapshot({ stationId, from, to }, { signal }
         kind: 'Pre-factura',
         airline: item.airlineName,
         detail: ACTIONS[item.status],
-        moduleId: 'finance-preinvoices',
+        moduleId: 'finance-to-invoice',
       })),
   };
 }

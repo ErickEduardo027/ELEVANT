@@ -87,7 +87,7 @@ interface AirlineSessionContextValue {
   getTreasuryNotes(invoiceId: string, signal?: AbortSignal): Promise<AirlineTreasuryNotes>;
   getInvoicePayment(invoiceId: string): Promise<NonFiscalPaymentLookupResponse>;
   getInvoiceStatement(invoiceId: string): Promise<AirlineInvoiceStatementResponse>;
-  getInvoiceDocument(preinvoiceId: string): Promise<Blob>;
+  getInvoiceDocument(invoiceId: string): Promise<Blob>;
   getPaymentReceipt(invoiceId: string): Promise<Blob>;
   acceptPreinvoice(preinvoiceId: string): Promise<void>;
   disputePreinvoice(preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest): Promise<void>;
@@ -675,14 +675,14 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     }
   }, [baseUrl, clear]);
 
-  const getInvoiceDocument = useCallback(async (preinvoiceId: string): Promise<Blob> => {
+  const getInvoiceDocument = useCallback(async (invoiceId: string): Promise<Blob> => {
     const record = stored.current;
     if (!record) throw new AirlineAccessDenied();
     const request = generation.current;
     try {
       const result = await createPublicWebApiClient({ baseUrl,
-        getAccessToken: () => record.accessToken }).getAirlineInvoiceDocument(
-          preinvoiceId, { cache: "no-store" });
+        getAccessToken: () => record.accessToken }).getAirlineInvoiceDocumentById(
+          invoiceId, { cache: "no-store" });
       if (request !== generation.current) throw new AirlineAccessDenied();
       return result;
     } catch (error) {

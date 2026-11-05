@@ -1155,7 +1155,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             {
                 Department = Department.Finance,
                 Name = "Analista de facturación",
-                Description = "Prefactura y consulta de facturas y cobros.",
+                Description = "Facturación de operaciones y consulta de facturas y cobros.",
                 IsActive = true,
                 CreatedByAccountId = financeAccountId,
             }, "44000000-0000-7000-8000-000000000001"),
@@ -1164,7 +1164,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                  {
                      "finance.home.read", "finance.approved_services.read", "finance.approved_services.create",
                      "finance.preinvoices.read", "finance.preinvoices.update", "finance.preinvoices.issue",
-                     "finance.reconciliation.read",
+                     "finance.reconciliation.read", "finance.invoicing.read", "finance.invoicing.issue",
                  })
         {
             await GetOrAddAsync(context.AccessProfileGrants,

@@ -8,13 +8,16 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-11-05"
-verified_commit: "b506e91b33570d387ceb70f7fda5b7c1b0c5381c"
+verified_commit: "08db4b37b32c3665d63478a3a0df055cb5949990"
 sources:
   - docs/superpowers/plans/2026-10-18-finance-platform.md
   - docs/adr/0016-finance-tariffs-charges-and-receivables.md
   - docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md
   - docs/adr/0033-charter-flights-without-contract.md
   - docs/adr/0034-operational-close-occ-to-finance.md
+  - docs/adr/0035-direct-invoicing-simulated-ecf.md
+  - backend/Elevant.Application/Finance/FinanceInvoicePolicy.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/EfInvoiceIssuanceStore.cs
   - docs/reference/odoo-finance-adaptation.md
   - docs/reference/dgii-ecf-schema-sources.md
   - docs/runbooks/finance-fiscal-activation.md
@@ -65,9 +68,7 @@ flowchart LR
     TB[Tarifas y paquetes Finanzas] --> CV[Versión contractual]
     CV --> FA[Aprobación Finanzas]
     FA --> OP[Ejecución y entrega aprobada OCC]
-    OP --> PF[Prefactura y reservas]
-    PF --> PA[Aceptación o disputa aerolínea]
-    PA --> FC[Factura comercial inmutable]
+    OP --> FC[Factura e-CF simulada con ITBIS 18 %]
     FC --> NT[Notas vinculadas]
     RC[Recibo registrado] --> AP[Aplicación parcial o múltiple]
     AP --> SA[Saldo]
@@ -91,7 +92,20 @@ La factura comercial, el cobro y el resultado fiscal tienen estados independient
 
 La evidencia OCC y las marcas de cargo deben coincidir con la entrega aprobada. Una marca posterior que altere esa evidencia bloquea la valoración. El móvil sigue enviando marcas mediante su endpoint e idempotencia de instalación, sin recibir precios.
 
-## Prefactura, impuesto explícito y emisión comercial
+## Facturación directa e-CF simulada
+
+Desde la fase 4 ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)) Finanzas factura directamente las operaciones aprobadas por OCC, sin prefactura visible ni aceptación de la aerolínea:
+
+- **Por facturar** agrupa por operación; se emite una sola o varias de la misma aerolínea y moneda (`POST finance/invoices/from-operations`, permiso `finance.invoicing.issue`).
+- La emisión reutiliza el borrador de prefactura como paso interno de una transacción serializable: valora paquetes, mínimos y recargos, aplica **ITBIS 18 %** fijo a cada línea y emite.
+- Cada factura recibe un **e-NCF `E31` + 10 dígitos** consecutivo, un código de seguridad y su fecha de firma. El PDF tiene formato de factura de crédito fiscal y dice «Simulación — sin validez fiscal».
+- Un charter con prepago confirmado queda saldado al emitir: se registra el cobro `PREPAGO {referencia}` y se aplica hasta el total.
+- La aerolínea recibe el correo «Factura emitida» con el PDF.
+- Se rechaza una operación no aprobada o ya facturada (`409`) y una mezcla de aerolíneas (`422`).
+
+La prefactura, su disputa y los tratamientos tributarios configurables siguen en el código hasta el bloque 3 de la fase 4, pero ya no están en el menú ni en el portal. Lo que sigue describe ese modelo heredado.
+
+## Prefactura, impuesto explícito y emisión comercial (heredado)
 
 En borrador, Finanzas puede ajustar o excluir con motivo y versión, conservando cálculo original. Recalcular es una acción explícita; la disputa bloquea facturar. La factura congela líneas de servicio, cargo, ajuste, mínimo, paquete y excedente, con jerarquía y razones.
 
@@ -182,7 +196,7 @@ El módulo «Charters sin contrato» de Finanzas:
 - muestra el total de servicios y si la Solicitud está firmada por los dos roles;
 - con `finance.charters.confirm`, registra el monto y la referencia del prepago. Repetir con los mismos datos es idempotente, con otros datos da conflicto, y queda auditado.
 
-La prefactura y los recargos de un charter llegan con el cierre OCC → Finanzas (fase 3, bloque 5). No se ha verificado en el VPS.
+Los recargos de un charter llegan con el cierre OCC → Finanzas (fase 3, bloque 5). Al facturarlo, el prepago confirmado salda la factura ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)). No se ha verificado en el VPS.
 
 ## Límites y referencias
 

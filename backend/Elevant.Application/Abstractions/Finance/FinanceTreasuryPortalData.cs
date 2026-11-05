@@ -5,7 +5,7 @@ public sealed record AirlineTreasuryReadResult<T>(T? Data, FinanceTreasuryFailur
 }
 public sealed record AirlineTreasuryInvoiceData(Guid Id, Guid PreinvoiceId, string Number, Guid StationId, string StationCode,
     string CurrencyCode, decimal Total, decimal LegacyPaid, decimal LegacyCredited, decimal Applied, decimal Credited,
-    decimal Debited, decimal Balance, DateOnly? DueDate, int DaysOverdue, string AgingBucket);
+    decimal Debited, decimal Balance, DateOnly? DueDate, int DaysOverdue, string AgingBucket, string? FiscalNumber = null);
 public sealed record AirlineTreasuryMovementData(Guid Id, Guid? ReceiptId, Guid? InvoiceId, string Kind, string CurrencyCode,
     decimal Amount, DateOnly EffectiveOn, DateTimeOffset RecordedAt, Guid? ReversesId, string Reference);
 public sealed record AirlineTreasuryReceiptMovementData(Guid Id, string Kind, Guid? InvoiceId, Guid? ReversesId,

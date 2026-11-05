@@ -29,7 +29,7 @@ test("shows real airline data for overview, flights, detail and profile", async 
 test("renders every portal module with its heading, even when a read is unavailable", async ({ page }) => {
   for (const [path, title] of [
     ["solicitudes", "Solicitudes con estado visible."], ["documentos", "Documentos"],
-    ["finanzas", "Finanzas"], ["reportes", "Reportes operativos y financieros"],
+    ["finanzas", "Facturas"], ["reportes", "Reportes operativos y financieros"],
   ]) {
     await page.goto(`/portal/${path}`);
     await expect(page.getByRole("heading", { level: 1, name: title })).toBeVisible();

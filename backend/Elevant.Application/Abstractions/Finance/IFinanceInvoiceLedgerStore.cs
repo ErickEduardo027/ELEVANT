@@ -3,7 +3,8 @@ namespace Elevant.Application.Abstractions.Finance;
 /// <summary>Balance-derived status: Paid, PartiallyPaid, Overdue (past due with balance) or Pending.</summary>
 public sealed record FinanceInvoiceSummaryData(Guid Id, string Number, Guid PreinvoiceId, Guid AirlineId, string Airline,
     Guid StationId, string StationCode, string CurrencyCode, decimal Total, decimal Paid, decimal Credited,
-    decimal Balance, DateTimeOffset IssuedAt, DateOnly? DueDate, string Status, int DaysOverdue);
+    decimal Balance, DateTimeOffset IssuedAt, DateOnly? DueDate, string Status, int DaysOverdue,
+    string? FiscalNumber = null);
 
 public sealed record FinanceInvoicePageData(int Page, int Limit, bool HasMore, IReadOnlyList<FinanceInvoiceSummaryData> Invoices);
 

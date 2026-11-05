@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { AirlineOperationPageResponse, AirlinePreinvoicePageResponse } from "@elevant/api-client";
+import type { AirlineOperationPageResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import type { AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
+import { invoiceStatus, invoiceTitle } from "./AirlineFinancePage";
 import styles from "./AirlinePortalPage.module.css";
 
 type ReportSnapshot = {
   revision: string;
   operations: AirlineOperationPageResponse;
-  preinvoices: AirlinePreinvoicePageResponse;
+  statement: AirlineTreasuryStatement;
 };
 
 function formatAmount(currency: string, value: number) {
@@ -21,7 +23,7 @@ function formatAmount(currency: string, value: number) {
 
 /** A bounded, tenant-scoped read model; it deliberately does not claim global KPIs. */
 export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
-  const { getOperations, getPreinvoices, operationRevision, financeRevision } = useAirlineSession();
+  const { getOperations, getTreasuryStatement, operationRevision, financeRevision } = useAirlineSession();
   const revision = `${operationRevision}:${financeRevision}`;
   const generation = useRef(0);
   const [retry, setRetry] = useState(0);
@@ -30,9 +32,9 @@ export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
 
   useEffect(() => {
     const request = ++generation.current;
-    void Promise.all([getOperations(1), getPreinvoices(1)]).then(([operations, preinvoices]) => {
+    void Promise.all([getOperations(1), getTreasuryStatement(new Date().toISOString().slice(0, 10))]).then(([operations, statement]) => {
       if (request !== generation.current) return;
-      setSnapshot({ revision, operations, preinvoices });
+      setSnapshot({ revision, operations, statement });
       setError(null);
     }).catch(() => {
       if (request !== generation.current) return;
@@ -40,7 +42,7 @@ export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
       setError({ revision, retry });
     });
     return () => { generation.current += 1; };
-  }, [getOperations, getPreinvoices, revision, retry]);
+  }, [getOperations, getTreasuryStatement, revision, retry]);
 
   const visible = snapshot?.revision === revision && !error ? snapshot : null;
   const failed = error?.revision === revision && error.retry === retry;
@@ -49,7 +51,7 @@ export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
     <header className={styles.pageHeader}>
       <span className={styles.kicker}>Consulta autorizada · {airlineName}</span>
       <h1>Reportes operativos y financieros</h1>
-      <p>Consulta las operaciones y prefacturas publicadas de tu aerolínea. Esta vista muestra la primera página de cada historial; no calcula puntualidad, cumplimiento ni facturación total sin datos completos.</p>
+      <p>Consulta las operaciones y facturas de tu aerolínea. Esta vista muestra la primera página de cada historial; no calcula puntualidad, cumplimiento ni facturación total sin datos completos.</p>
     </header>
     {!visible && !failed && <p role="status">Cargando reportes autorizados…</p>}
     {failed && <div role="alert" className={styles.unavailable}>
@@ -59,7 +61,7 @@ export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
     {visible && <>
       <div className={styles.metrics} aria-label="Registros cargados del historial autorizado">
         <div><span>Operaciones cargadas</span><strong>{visible.operations.operations.length}</strong></div>
-        <div><span>Prefacturas cargadas</span><strong>{visible.preinvoices.preinvoices.length}</strong></div>
+        <div><span>Facturas</span><strong>{visible.statement.invoices.length}</strong></div>
       </div>
       <section className={styles.panel} aria-label="Reporte de operaciones">
         <div className={styles.sectionHeading}><h2>Operaciones recientes</h2><Link href="/portal/vuelos">Ver historial completo</Link></div>
@@ -72,16 +74,15 @@ export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
         </ul> : <p className={styles.empty}>No hay operaciones registradas para esta aerolínea.</p>}
         {visible.operations.hasMore && <p className={styles.scopeLine}>Hay más operaciones en el historial de vuelos.</p>}
       </section>
-      <section className={styles.panel} aria-label="Reporte de prefacturas">
-        <div className={styles.sectionHeading}><h2>Prefacturas publicadas recientes</h2><Link href="/portal/finanzas">Ver historial financiero</Link></div>
-        {visible.preinvoices.preinvoices.length ? <ul className={styles.previewRows}>
-          {visible.preinvoices.preinvoices.map(preinvoice => <li key={preinvoice.id}>
-            <span className={styles.kicker}>{preinvoice.stationCode} · {preinvoice.from} a {preinvoice.to}</span>
-            <strong>{formatAmount(preinvoice.currencyCode, preinvoice.total)}</strong>
-            <p>Estado: {preinvoice.status}</p>
+      <section className={styles.panel} aria-label="Reporte de facturas">
+        <div className={styles.sectionHeading}><h2>Facturas recientes</h2><Link href="/portal/finanzas">Ver facturas</Link></div>
+        {visible.statement.invoices.length ? <ul className={styles.previewRows}>
+          {visible.statement.invoices.slice(0, 20).map(invoice => <li key={invoice.id}>
+            <span className={styles.kicker}>{invoice.stationCode}{invoice.dueDate ? ` · vence ${invoice.dueDate}` : ""}</span>
+            <strong>{invoiceTitle(invoice)} · {formatAmount(invoice.currencyCode, invoice.total)}</strong>
+            <p>Estado: {invoiceStatus(invoice)} · Saldo {formatAmount(invoice.currencyCode, invoice.balance)}</p>
           </li>)}
-        </ul> : <p className={styles.empty}>No hay prefacturas publicadas para esta aerolínea.</p>}
-        {visible.preinvoices.hasMore && <p className={styles.scopeLine}>Hay más prefacturas en Finanzas.</p>}
+        </ul> : <p className={styles.empty}>No hay facturas emitidas para esta aerolínea.</p>}
       </section>
     </>}
   </div>;

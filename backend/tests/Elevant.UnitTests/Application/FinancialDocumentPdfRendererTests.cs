@@ -29,6 +29,26 @@ public sealed class FinancialDocumentPdfRendererTests
     }
 
     [Fact]
+    public void FiscalInvoiceCarriesEcfIdentityAndSimulationLegend()
+    {
+        var signedAt = new DateTimeOffset(2026, 11, 5, 14, 0, 0, TimeSpan.Zero);
+        var invoice = new NonFiscalInvoiceData(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            "DEV-NF-2026-00000000000000000000002", "USD", 118m, signedAt,
+            [new NonFiscalInvoiceLineData(Guid.NewGuid(), 1, "DEV-TAT-0001", new DateOnly(2026, 11, 5), "RAMP",
+                "Asistencia en rampa", 1m, "servicio", 100m, 118m, 100m, 18m)],
+            new NonFiscalInvoiceFiscalData("E310000000001", "ABC234", signedAt, new DateOnly(2026, 12, 5), 100m, 18m,
+                "AVIAM Ltd.", FinanceInvoicePolicy.SimulatedIssuerRnc, "Aerolínea Demo S.A.", "SDQ"));
+
+        var pdf = new FinancialDocumentPdfRenderer().RenderInvoice(invoice);
+
+        using var document = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Import);
+        Assert.Single(document.Pages);
+        Assert.Contains("E310000000001", document.Info.Title);
+        Assert.Equal(FinanceInvoicePolicy.Disclaimer, document.Info.Subject);
+    }
+
+    [Fact]
     public void ReceiptIsNonFiscalAndTiedToRecordedPayment()
     {
         var payment = new NonFiscalPaymentData(Guid.NewGuid(), Guid.NewGuid(),
