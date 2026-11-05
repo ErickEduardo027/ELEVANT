@@ -13,7 +13,9 @@ export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["passwor
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",
   "too_many_stands", "driver_license_required", "vehicle_required", "agent_inactive", "airport_permit_required",
   "bridge_qualification_required", "shift_not_covering", "absent", "agent_overlap", "mentor_required",
-  "mentor_not_eligible", "stand_taken", "stand_cancelled", "stand_narrowbody_only", "neighbour_widebody"] as const;
+  "mentor_not_eligible", "stand_taken", "stand_cancelled", "stand_narrowbody_only", "neighbour_widebody",
+  // Invoicing from operations (ADR-0035).
+  "mixed_airline", "already_invoiced", "operation_not_approved", "nothing_to_invoice"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

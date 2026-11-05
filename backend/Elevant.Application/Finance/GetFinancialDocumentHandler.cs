@@ -19,7 +19,7 @@ public sealed record AirlineFinancialDocumentResult(
 /// <summary>Rechecks live tenant/station access after reading private object bytes.</summary>
 public sealed class GetFinancialDocumentHandler(
     GetNonFiscalInvoiceHandler invoices, GetNonFiscalPaymentHandler payments,
-    IFinancialDocumentStore documents)
+    IFinancialDocumentStore documents, INonFiscalInvoiceReadStore? invoiceLookup = null)
 {
     public async Task<AirlineFinancialDocumentResult> GetAirlineInvoiceAsync(
         Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken = default)
@@ -59,6 +59,19 @@ public sealed class GetFinancialDocumentHandler(
         var latest = await invoices.GetForFinanceAsync(accountId, preinvoiceId, cancellationToken);
         return latest?.Id == first.Id ? document : null;
     }
+
+    /// <summary>ADR-0035: the invoice PDF addressed by the invoice id.</summary>
+    public async Task<AirlineFinancialDocumentResult> GetAirlineInvoiceByIdAsync(Guid accountId, Guid invoiceId,
+        CancellationToken cancellationToken = default) =>
+        invoiceLookup is not null && await invoiceLookup.PreinvoiceOfInvoiceAsync(invoiceId, cancellationToken) is { } preinvoiceId
+            ? await GetAirlineInvoiceAsync(accountId, preinvoiceId, cancellationToken)
+            : AirlineFinancialDocumentResult.Failed(AirlinePortalFailure.NotFound);
+
+    public async Task<FinancialDocumentData?> GetFinanceInvoiceByIdAsync(Guid accountId, Guid invoiceId,
+        CancellationToken cancellationToken = default) =>
+        invoiceLookup is not null && await invoiceLookup.PreinvoiceOfInvoiceAsync(invoiceId, cancellationToken) is { } preinvoiceId
+            ? await GetFinanceInvoiceAsync(accountId, preinvoiceId, cancellationToken)
+            : null;
 
     public async Task<FinancialDocumentData?> GetFinanceReceiptAsync(
         Guid accountId, Guid invoiceId, CancellationToken cancellationToken = default)

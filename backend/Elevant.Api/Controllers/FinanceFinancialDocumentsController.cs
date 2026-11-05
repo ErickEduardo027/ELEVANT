@@ -43,6 +43,28 @@ public sealed class FinanceFinancialDocumentsController(
         }
     }
 
+    /// <summary>ADR-0035: the simulated e-CF invoice PDF, addressed by the invoice id.</summary>
+    [HttpGet("invoices/{invoiceId:guid}/document", Name = "GetFinanceInvoiceDocumentById")]
+    [Produces("application/pdf")]
+    [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "application/pdf")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    public async Task<IActionResult> GetInvoiceById(Guid invoiceId, CancellationToken cancellationToken)
+    {
+        if (!TryAccountId(out var accountId)) return ProblemResult(401, "Authentication failed.");
+        try
+        {
+            var document = await documents.GetFinanceInvoiceByIdAsync(accountId, invoiceId, cancellationToken);
+            return document is null ? ProblemResult(404, "Financial document was not found.") : Pdf(document);
+        }
+        catch (FinancialDocumentUnavailableException exception)
+        {
+            FinancialDocumentDiagnosticLog.Unavailable(logger, exception);
+            return ProblemResult(503, "Financial document is unavailable.");
+        }
+    }
+
     [HttpGet("payments/by-invoice/{invoiceId:guid}/receipt",
         Name = "GetFinancePaymentReceipt")]
     [Produces("application/pdf")]

@@ -127,6 +127,8 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Verificación en registro | Consulta de la aerolínea en Wikidata (o la copia de OpenFlights) por IATA/ICAO ([ADR-0023](../../docs/adr/0023-airline-public-registry-check.md)). | La verificación legal de Contratos. |
 | Tasa de cambio | Tasa diaria USD→DOP registrada manualmente por Finanzas; las correcciones conservan historia. | Una cotización bancaria automática. |
 | Nota de crédito | Reducción no fiscal del saldo de una factura, idempotente y nunca mayor que el saldo. | Una anulación de prefactura. |
+| Factura e-CF simulada | Factura de crédito fiscal (tipo 31) que Finanzas emite directamente de operaciones aprobadas, con e-NCF, código de seguridad e ITBIS 18 % ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)). | Un comprobante válido ante la DGII: dice «Simulación — sin validez fiscal». |
+| e-NCF | Número de la factura e-CF simulada: `E31` y 10 dígitos consecutivos. | El número interno `NF-…`, que se conserva. |
 | Saldo | Total de la factura menos pagos y notas de crédito; su estado (pendiente, parcial, pagada, vencida) es una proyección. | Una conciliación bancaria. |
 
 ## Integración y trazabilidad

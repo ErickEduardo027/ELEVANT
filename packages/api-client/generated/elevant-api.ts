@@ -608,6 +608,8 @@ export interface AirlineTreasuryInvoiceResponse {
   dueDate?: string | null;
   daysOverdue: number;
   agingBucket: string;
+  /** @nullable */
+  fiscalNumber?: string | null;
 }
 
 export interface AirlineTreasuryInvoiceLineResponse {
@@ -2117,6 +2119,8 @@ export interface FinanceInvoiceSummaryData {
   dueDate?: string | null;
   status: string;
   daysOverdue: number;
+  /** @nullable */
+  fiscalNumber?: string | null;
 }
 
 export interface FinanceInvoiceLineData {
@@ -3323,6 +3327,25 @@ export interface IssueFinanceInvoiceResponse {
   preinvoiceId: string;
   number: string;
   kind: string;
+  replayed: boolean;
+}
+
+export interface IssueInvoiceFromOperationsRequest {
+  stationId: string;
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  operationIds: string[];
+  requestId: string;
+}
+
+export interface IssuedInvoiceResponse {
+  invoiceId: string;
+  number: string;
+  fiscalNumber: string;
+  total: number;
+  currencyCode: string;
   replayed: boolean;
 }
 
@@ -6291,6 +6314,36 @@ export const getGetAirlineInvoiceDocumentUrl = (preinvoiceId: string,) => {
 export const getAirlineInvoiceDocument = async (preinvoiceId: string, options?: RequestInit): Promise<Blob> => {
 
   const res = await fetch(getGetAirlineInvoiceDocumentUrl(preinvoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetAirlineInvoiceDocumentByIdUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/invoices/${invoiceId}/document`
+}
+
+/**
+ * @summary ADR-0035: the simulated e-CF invoice PDF, addressed by the invoice id.
+ */
+export const getAirlineInvoiceDocumentById = async (invoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineInvoiceDocumentByIdUrl(invoiceId),
   {
     ...options,
     method: 'GET'
@@ -10322,6 +10375,36 @@ export const getFinanceInvoiceDocument = async (preinvoiceId: string, options?: 
 
 
 
+export const getGetFinanceInvoiceDocumentByIdUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/${invoiceId}/document`
+}
+
+/**
+ * @summary ADR-0035: the simulated e-CF invoice PDF, addressed by the invoice id.
+ */
+export const getFinanceInvoiceDocumentById = async (invoiceId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetFinanceInvoiceDocumentByIdUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
 export const getGetFinancePaymentReceiptUrl = (invoiceId: string,) => {
 
 
@@ -10624,6 +10707,40 @@ const res = await fetch(getPostApiV1FinanceFiscalXmlValidateUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: FinanceFiscalXmlValidationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getIssueInvoiceFromOperationsUrl = () => {
+
+
+
+
+  return `/api/v1/finance/invoices/from-operations`
+}
+
+export const issueInvoiceFromOperations = async (issueInvoiceFromOperationsRequest?: IssueInvoiceFromOperationsRequest, options?: RequestInit): Promise<IssuedInvoiceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getIssueInvoiceFromOperationsUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(issueInvoiceFromOperationsRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: IssuedInvoiceResponse = body ? JSON.parse(body) : {}
   return data
 }
 

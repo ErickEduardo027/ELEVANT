@@ -6,8 +6,7 @@ import { usePreviewControls } from '../../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../../shell/useResponsiveSidebar';
 import FinanceHomePage from '../home/FinanceHomePage';
 import { useFinanceHomeData } from '../home/useFinanceHomeData';
-import ApprovedServicesPage from '../approved-services/ApprovedServicesPage';
-import PreinvoicesPage from '../preinvoices/PreinvoicesPage';
+import ToInvoicePage from '../invoicing/ToInvoicePage';
 import InvoicesPage from '../invoices/InvoicesPage';
 import ServiceTariffsPage from '../tariffs/ServiceTariffsPage';
 import ChargesPage from '../charges/ChargesPage';
@@ -70,8 +69,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout, observeNot
   const pages = {
     [FINANCE_MODULE_IDS.USERS]: <DepartmentUsersPage department={DEPARTMENTS.FINANCE} />,
     [FINANCE_MODULE_IDS.HOME]: <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} />,
-    [FINANCE_MODULE_IDS.APPROVED_SERVICES]: <ApprovedServicesPage {...stationProps} />,
-    [FINANCE_MODULE_IDS.PREINVOICES]: <PreinvoicesPage {...stationProps} />,
+    [FINANCE_MODULE_IDS.TO_INVOICE]: <ToInvoicePage {...stationProps} />,
     [FINANCE_MODULE_IDS.RECONCILIATION]: <InvoicesPage {...stationProps} />,
     [FINANCE_MODULE_IDS.TARIFFS]: <ServiceTariffsPage {...stationProps} />,
     [FINANCE_MODULE_IDS.PACKAGES]: <PackagesPage />,

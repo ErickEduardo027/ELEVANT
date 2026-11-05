@@ -31,6 +31,7 @@ internal sealed class EfFinanceInvoiceLedgerStore(
         public decimal Total { get; init; }
         public DateTimeOffset IssuedAt { get; init; }
         public DateOnly? DueDate { get; init; }
+        public string? FiscalNumber { get; init; }
     }
 
     private async Task<Guid[]?> StationsAsync(Guid actorId, string permission, CancellationToken cancellationToken)
@@ -53,7 +54,7 @@ internal sealed class EfFinanceInvoiceLedgerStore(
         {
             Id = invoice.Id, PublicId = invoice.PublicId, Number = invoice.Number, PreinvoiceId = preinvoice.PublicId,
             AirlineId = airline.PublicId, Airline = airline.Name, StationId = station.PublicId, StationCode = station.Code,
-            CurrencyCode = invoice.CurrencyCode, Total = invoice.Total, IssuedAt = invoice.CreatedAt, DueDate = invoice.DueDate,
+            CurrencyCode = invoice.CurrencyCode, Total = invoice.Total, IssuedAt = invoice.CreatedAt, DueDate = invoice.DueDate, FiscalNumber = invoice.FiscalNumber,
         };
 
     /// <summary>Balance and status of each invoice; overdue counts whole days past the due date.</summary>
@@ -80,7 +81,7 @@ internal sealed class EfFinanceInvoiceLedgerStore(
                 ? "PartiallyPaid" : "Pending";
             return new FinanceInvoiceSummaryData(row.PublicId, row.Number, row.PreinvoiceId, row.AirlineId, row.Airline,
                 row.StationId, row.StationCode, row.CurrencyCode, row.Total, paidAmount, creditedAmount, balance,
-                row.IssuedAt, row.DueDate, status, overdueDays);
+                row.IssuedAt, row.DueDate, status, overdueDays, row.FiscalNumber);
         }).ToArray();
     }
 
@@ -148,7 +149,7 @@ internal sealed class EfFinanceInvoiceLedgerStore(
                 Id = invoice.Id, PublicId = invoice.PublicId, Number = invoice.Number, PreinvoiceId = preinvoice.PublicId,
                 AirlineId = airline.PublicId, Airline = airline.Name, StationId = station.PublicId,
                 StationCode = station.Code, CurrencyCode = invoice.CurrencyCode, Total = invoice.Total,
-                IssuedAt = invoice.CreatedAt, DueDate = invoice.DueDate,
+                IssuedAt = invoice.CreatedAt, DueDate = invoice.DueDate, FiscalNumber = invoice.FiscalNumber,
             }).SingleOrDefaultAsync(cancellationToken);
         if (row is null) return null;
         var summary = (await SummariesAsync([row], cancellationToken))[0];

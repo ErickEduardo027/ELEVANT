@@ -69,6 +69,7 @@ public static class DependencyInjection
         services.AddScoped<RampExecutionHandler>();
         services.AddScoped<OperationDocumentHandler>();
         services.AddScoped<CharterHandler>();
+        services.AddScoped<Elevant.Application.Finance.IssueInvoiceHandler>();
         services.AddScoped<Elevant.Application.Finance.FinanceCloseRulesHandler>();
         services.AddScoped<AirlineServiceOrderHandler>();
         services.AddScoped<RampServiceChargesHandler>();

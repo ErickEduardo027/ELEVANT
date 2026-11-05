@@ -116,6 +116,8 @@ public static class DepartmentPermissionCatalog
                     Read(), Create(), Update(), Other("publish", "Publicar paquetes")),
                 Module("finance", "contract_approvals", "Aprobación de contratos", "Comercial", null,
                     Read(), Other("decide", "Aprobar o devolver contratos")),
+                Module("finance", "invoicing", "Facturación", "Facturación", null,
+                    Read(), Other("issue", "Emitir facturas")),
                 Module("finance", "approved_services", "Servicios aprobados", "Comercial", null,
                     Read(), Create("Generar prefacturas")),
                 Module("finance", "charters", "Charters sin contrato", "Comercial", null,

@@ -1,7 +1,7 @@
 namespace Elevant.Contracts.Finance;
 public sealed record AirlineTreasuryInvoiceResponse(Guid Id, Guid PreinvoiceId, string Number, Guid StationId, string StationCode,
     string CurrencyCode, decimal Total, decimal LegacyPaid, decimal LegacyCredited, decimal Applied, decimal Credited,
-    decimal Debited, decimal Balance, DateOnly? DueDate, int DaysOverdue, string AgingBucket);
+    decimal Debited, decimal Balance, DateOnly? DueDate, int DaysOverdue, string AgingBucket, string? FiscalNumber = null);
 public sealed record AirlineTreasuryMovementResponse(Guid Id, Guid? ReceiptId, Guid? InvoiceId, string Kind, string CurrencyCode,
     decimal Amount, DateOnly EffectiveOn, DateTimeOffset RecordedAt, Guid? ReversesId, string Reference);
 public sealed record AirlineTreasuryReceiptMovementResponse(Guid Id, string Kind, Guid? InvoiceId, Guid? ReversesId,

@@ -78,6 +78,30 @@ internal sealed class EfNonFiscalInvoiceReadStore(
             cancellationToken);
     }
 
+    public async Task<Guid?> PreinvoiceOfInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default) =>
+        invoiceId == Guid.Empty ? null : await (from invoice in context.NonFiscalInvoices.AsNoTracking()
+                                               join preinvoice in context.Preinvoices.AsNoTracking()
+                                                   on invoice.PreinvoiceId equals preinvoice.Id
+                                               where invoice.PublicId == invoiceId
+                                               select (Guid?)preinvoice.PublicId).SingleOrDefaultAsync(cancellationToken);
+
+    /// <summary>The invoice for system use (the email attachment); never exposed to a caller.</summary>
+    internal async Task<NonFiscalInvoiceData?> SystemReadAsync(Guid invoiceId, CancellationToken cancellationToken)
+    {
+        var header = await (from invoice in context.NonFiscalInvoices.AsNoTracking()
+                            join preinvoice in context.Preinvoices.AsNoTracking() on invoice.PreinvoiceId equals preinvoice.Id
+                            join station in context.Stations.AsNoTracking() on invoice.StationId equals station.Id
+                            join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
+                            where invoice.PublicId == invoiceId
+                            select new { invoice.Id, invoice.PublicId, PreinvoiceId = preinvoice.PublicId,
+                                AirlineId = airline.PublicId, StationId = station.PublicId,
+                                invoice.Number, invoice.CurrencyCode, invoice.Total, invoice.CreatedAt })
+            .SingleOrDefaultAsync(cancellationToken);
+        return header is null ? null : await ReadLinesAsync(header.Id, header.PublicId, header.PreinvoiceId,
+            header.AirlineId, header.StationId, header.Number, header.CurrencyCode, header.Total, header.CreatedAt,
+            cancellationToken);
+    }
+
     private async Task<NonFiscalInvoiceData> ReadLinesAsync(
         long internalId, Guid id, Guid preinvoiceId, Guid airlineId, Guid stationId,
         string number, string currency, decimal total, DateTimeOffset issuedAt,
@@ -89,9 +113,19 @@ internal sealed class EfNonFiscalInvoiceReadStore(
             .Select(line => new NonFiscalInvoiceLineData(line.PublicId, line.LineNumber,
                 line.OperationCode, line.OperationDate, line.ServiceCode,
                 line.ServiceName, line.ExecutedQuantity, line.BillingUnit,
-                line.UnitPrice, line.Amount))
+                line.UnitPrice, line.Amount, line.NetAmount, line.TaxAmount))
             .ToArrayAsync(cancellationToken);
+        // ADR-0035: the simulated e-CF identity and the parties printed on the document.
+        var fiscal = await (from invoice in context.NonFiscalInvoices.AsNoTracking()
+                            join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
+                            join organization in context.Organizations.AsNoTracking() on airline.OrganizationId equals organization.Id
+                            join station in context.Stations.AsNoTracking() on invoice.StationId equals station.Id
+                            where invoice.Id == internalId
+                            select new NonFiscalInvoiceFiscalData(invoice.FiscalNumber, invoice.SecurityCode,
+                                invoice.FiscalSignedAt, invoice.DueDate, invoice.NetTotal, invoice.TaxTotal, "AVIAM Ltd.",
+                                FinanceInvoicePolicy.SimulatedIssuerRnc, organization.LegalName, station.Code))
+            .SingleAsync(cancellationToken);
         return new NonFiscalInvoiceData(id, preinvoiceId, airlineId, stationId,
-            number, currency, total, issuedAt, lines);
+            number, currency, total, issuedAt, lines, fiscal);
     }
 }

@@ -1,5 +1,4 @@
 import {
-  ApprovedServicesIcon,
   HomeIcon,
   PreInvoiceIcon,
   ReconciliationIcon,
@@ -10,6 +9,8 @@ import { ShieldCheckIcon, UsersIcon } from '../../shell/components/icons';
 
 export const FINANCE_MODULE_IDS = {
   HOME: 'finance-home',
+  INVOICING: 'finance-invoicing',
+  TO_INVOICE: 'finance-to-invoice',
   PACKAGES: 'finance-packages',
   TREASURY: 'finance-treasury',
   STATEMENTS: 'finance-statements',
@@ -35,13 +36,17 @@ export const FINANCE_MODULE_IDS = {
 
 export const FINANCE_MODULES = [
   { id: FINANCE_MODULE_IDS.HOME, permission: 'finance.home.read', label: 'Inicio', icon: HomeIcon, description: 'Resumen financiero y tareas pendientes.' },
+  {
+    id: FINANCE_MODULE_IDS.INVOICING, label: 'Facturación', icon: PreInvoiceIcon, description: 'Operaciones por facturar, facturas e-CF simuladas y charters.',
+    children: [
+      { id: FINANCE_MODULE_IDS.TO_INVOICE, permission: 'finance.invoicing.read', label: 'Por facturar' },
+      { id: FINANCE_MODULE_IDS.RECONCILIATION, permission: 'finance.reconciliation.read', label: 'Facturas' },
+      { id: FINANCE_MODULE_IDS.CHARTERS, permission: 'finance.charters.read', label: 'Charters' },
+    ],
+  },
   { id: FINANCE_MODULE_IDS.PACKAGES, permission: 'finance.packages.read', label: 'Paquetes', icon: TariffIcon, description: 'Coberturas, vigencias y bloques de excedentes.' },
   { id: FINANCE_MODULE_IDS.CONTRACT_APPROVALS, permission: 'finance.contract_approvals.read', label: 'Aprobación de contratos', icon: ShieldCheckIcon, description: 'Contratos enviados por Contratos frente a la tarifa base.' },
-  { id: FINANCE_MODULE_IDS.APPROVED_SERVICES, permission: 'finance.approved_services.read', label: 'Servicios aprobados', icon: ApprovedServicesIcon, description: 'Consulta y filtrado de servicios aprobados por aerolínea o período.' },
-  { id: FINANCE_MODULE_IDS.CHARTERS, permission: 'finance.charters.read', label: 'Charters sin contrato', icon: ApprovedServicesIcon, description: 'Vuelos sin contrato a tarifa base y confirmación del prepago.' },
   { id: FINANCE_MODULE_IDS.CLOSE_RULES, permission: 'finance.close_rules.read', label: 'Reglas de cierre', icon: TariffIcon, description: 'Tiempo en tierra permitido por categoría de avión y calendario de festivos.' },
-  { id: FINANCE_MODULE_IDS.PREINVOICES, permission: 'finance.preinvoices.read', label: 'Pre-facturación', icon: PreInvoiceIcon, description: 'Prefacturas con sus servicios, cargos y ajustes.' },
-  { id: FINANCE_MODULE_IDS.RECONCILIATION, permission: 'finance.reconciliation.read', label: 'Facturas', icon: ReconciliationIcon, description: 'Facturas no fiscales, saldos, pagos parciales y notas de crédito.' },
   {
     id: FINANCE_MODULE_IDS.TARIFF_BOOKS, label: 'Tarifarios', icon: TariffIcon, description: 'Tarifa base, cargos, tasas de cambio y unidades de cobro.',
     children: [

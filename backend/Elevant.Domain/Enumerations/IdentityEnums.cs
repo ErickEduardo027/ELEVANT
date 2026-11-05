@@ -58,6 +58,8 @@ public enum EmailPurpose
     Test,
     /// <summary>Signed contract PDF sent when a contract becomes active (ADR-0025).</summary>
     ContractActivated,
+    /// <summary>Simulated e-CF invoice PDF sent to the airline when Finance issues it (ADR-0035).</summary>
+    InvoiceIssued,
 }
 
 /// <summary>Delivery state of an email in the outbox.</summary>

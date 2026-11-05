@@ -77,6 +77,26 @@ public static class AccountEmailTemplates
         action: null,
         security: "Guarda este documento: su huella SHA-256 identifica el contenido que firmaron ambas partes.");
 
+    /// <summary>The simulated e-CF invoice Finance issued, with its PDF attached (ADR-0035).</summary>
+    public static EmailMessage InvoiceIssued(string to, string airline, string fiscalNumber, string currency, decimal total,
+        decimal balance, DateOnly? dueDate) => Build(to,
+        subject: $"Factura {fiscalNumber} de AVIAM · ELEVANT",
+        preheader: $"AVIAM emitió la factura {fiscalNumber} a {airline}.",
+        kicker: "Facturación",
+        title: balance > 0 ? "Tienes una factura por pagar" : "Tu factura está saldada",
+        greeting: null,
+        paragraphs: [$"AVIAM emitió la factura {fiscalNumber} a {airline} por {currency} {total.ToString("N2", CultureInfo.InvariantCulture)}.",
+            balance > 0
+                ? $"Saldo pendiente: {currency} {balance.ToString("N2", CultureInfo.InvariantCulture)}" +
+                  (dueDate is { } due ? $", con vencimiento el {due.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}." : ".") +
+                  " Puedes pagarla con tarjeta en el portal de aerolíneas."
+                : "El prepago confirmado cubrió el total: no tienes saldo pendiente.",
+            "Adjuntamos el PDF. Es una simulación de e-CF sin validez fiscal."],
+        validity: "Simulación — sin validez fiscal",
+        code: null,
+        action: null,
+        security: "Si no reconoces esta factura, contacta a Finanzas de AVIAM antes de pagar.");
+
     public static EmailMessage Test(string to, DateTimeOffset? sentAt = null) => Build(to,
         subject: "Prueba de correo ELEVANT",
         preheader: "El remitente no-reply de ELEVANT funciona.",

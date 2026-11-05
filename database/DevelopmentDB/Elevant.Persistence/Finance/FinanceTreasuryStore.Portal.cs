@@ -57,10 +57,10 @@ internal sealed partial class FinanceTreasuryStore
             r.Movements.Select(m => new AirlineTreasuryReceiptMovementData(m.Id, m.Kind, m.InvoiceId, m.ReversesId,
                 m.EffectiveOn, m.ReceiptAmount, m.InvoiceAmount, m.ReceiptCurrency, m.InvoiceCurrency, m.ExchangeRate,
                 m.ExchangeRateOn, m.Reference, m.Reason, m.RecordedAt)).ToArray());
-    private static AirlineTreasuryInvoiceData PortalInvoice(FinanceTreasuryStatementInvoiceData i, Guid preinvoiceId, PortalScope scope) =>
+    private static AirlineTreasuryInvoiceData PortalInvoice(FinanceTreasuryStatementInvoiceData i, Guid preinvoiceId, string? fiscalNumber, PortalScope scope) =>
         new(i.Id, preinvoiceId, i.Number, i.StationId, scope.Stations.Single(s => s.StationId == i.StationId).StationCode,
             i.CurrencyCode, i.Total, i.LegacyPaid, i.LegacyCredited, i.Applied, i.Credited, i.Debited, i.Balance,
-            i.DueDate, i.DaysOverdue, i.AgingBucket);
+            i.DueDate, i.DaysOverdue, i.AgingBucket, fiscalNumber);
     public Task<AirlineTreasuryReadResult<AirlineTreasuryStatementData>> PortalStatementAsync(Guid actorId, DateOnly asOf,
         Guid? stationId, CancellationToken cancellationToken = default)
     {
@@ -72,10 +72,10 @@ internal sealed partial class FinanceTreasuryStore
             var data = await StatementDataAsync(scope.Actor, asOf, stationId, scope.AirlineId, ct);
             var ids = data.Invoices.Select(i => i.Id).ToArray();
             var preinvoices = await (from i in PortalInvoices(scope) join p in context.Preinvoices.AsNoTracking() on i.Invoice.PreinvoiceId equals p.Id
-                where ids.Contains(i.Invoice.PublicId) select new { i.Invoice.PublicId, PreinvoiceId = p.PublicId }).ToDictionaryAsync(i => i.PublicId, i => i.PreinvoiceId, ct);
+                where ids.Contains(i.Invoice.PublicId) select new { i.Invoice.PublicId, PreinvoiceId = p.PublicId, i.Invoice.FiscalNumber }).ToDictionaryAsync(i => i.PublicId, ct);
             var allowedInvoiceIds = await PortalInvoices(scope).Select(i => i.Invoice.PublicId).ToArrayAsync(ct);
             if (data.Receipts.Any(r => r.Movements.Any(m => m.InvoiceId is { } invoiceId && !allowedInvoiceIds.Contains(invoiceId)))) return null;
-            return new(scope.AirlineId, asOf, data.Invoices.Select(i => PortalInvoice(i, preinvoices[i.Id], scope)).ToArray(),
+            return new(scope.AirlineId, asOf, data.Invoices.Select(i => PortalInvoice(i, preinvoices[i.Id].PreinvoiceId, preinvoices[i.Id].FiscalNumber, scope)).ToArray(),
                 data.Receipts.Select(r => PortalReceipt(r, scope)).ToArray(), data.Movements.Select(PortalMovement).ToArray(),
                 data.Aging.Select(a => new AirlineTreasuryAgingData(a.CurrencyCode, a.Balance, a.Current, a.Days1To30,
                     a.Days31To60, a.Days61To90, a.Days91Plus, a.Unallocated, a.CreditBalance)).ToArray());
@@ -97,7 +97,7 @@ internal sealed partial class FinanceTreasuryStore
                 .Select(l => new AirlineTreasuryInvoiceLineData(l.PublicId, l.LineNumber, l.Kind.ToString(), l.ParentLineNumber, l.OperationCode,
                     l.OperationDate, l.ServiceCode, l.ServiceName, l.ExecutedQuantity, l.BillingUnit, l.UnitPrice, l.Amount, l.Reason)).ToArrayAsync(ct);
             var notes = await AdjustmentDataAsync(row.Invoice, ct);
-            return new(PortalInvoice(summary, preinvoiceId, scope), lines,
+            return new(PortalInvoice(summary, preinvoiceId, row.Invoice.FiscalNumber, scope), lines,
                 statement.Movements.Where(m => m.InvoiceId == invoiceId).Select(PortalMovement).ToArray(), notes.Notes.Select(PortalNote).ToArray());
         }, ct);
     }

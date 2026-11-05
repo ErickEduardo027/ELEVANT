@@ -16,6 +16,11 @@ internal static class NonFiscalInvoiceConfiguration
                 table.HasCheckConstraint("ck_non_fiscal_invoice_total", "[total] >= 0");
                 table.HasCheckConstraint("ck_non_fiscal_invoice_currency", "LEN([currency_code]) = 3");
                 table.HasCheckConstraint("ck_non_fiscal_invoice_number", "LEN([number]) = 35");
+                // ADR-0035: simulated e-NCF type 31 and its security code come together.
+                table.HasCheckConstraint("ck_non_fiscal_invoice_fiscal_identity",
+                    "([fiscal_number] IS NULL AND [security_code] IS NULL AND [fiscal_signed_at] IS NULL) OR " +
+                    "([fiscal_number] LIKE 'E31[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' AND " +
+                    "LEN([security_code]) = 6 AND [fiscal_signed_at] IS NOT NULL)");
                 table.HasCheckConstraint("ck_non_fiscal_invoice_request_id",
                     "[request_id] <> '00000000-0000-0000-0000-000000000000'");
             });
@@ -26,6 +31,10 @@ internal static class NonFiscalInvoiceConfiguration
             builder.HasIndex(item => item.PreinvoiceId).IsUnique();
             builder.HasIndex(item => item.RequestId).IsUnique();
             builder.HasIndex(item => item.Number).IsUnique();
+            builder.Property(item => item.FiscalNumber).HasColumnType("char(13)");
+            builder.Property(item => item.SecurityCode).HasColumnType("char(6)");
+            builder.Property(item => item.FiscalSignedAt).HasPrecision(3);
+            builder.HasIndex(item => item.FiscalNumber).IsUnique().HasFilter("[fiscal_number] IS NOT NULL");
             builder.HasIndex(item => new { item.AirlineId, item.CreatedAt });
             builder.HasOne<Preinvoice>().WithMany().HasForeignKey(item => item.PreinvoiceId)
                 .OnDelete(DeleteBehavior.NoAction);

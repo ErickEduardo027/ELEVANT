@@ -44,6 +44,29 @@ public sealed class AirlineFinancialDocumentsController(
         }
     }
 
+    /// <summary>ADR-0035: the simulated e-CF invoice PDF, addressed by the invoice id.</summary>
+    [HttpGet("invoices/{invoiceId:guid}/document", Name = "GetAirlineInvoiceDocumentById")]
+    [Produces("application/pdf")]
+    [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "application/pdf")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable, "application/problem+json")]
+    public async Task<IActionResult> GetInvoiceById(Guid invoiceId, CancellationToken cancellationToken)
+    {
+        if (!TryAccountId(out var accountId)) return ProblemResult(401, "Authentication failed.");
+        try
+        {
+            var result = await documents.GetAirlineInvoiceByIdAsync(accountId, invoiceId, cancellationToken);
+            return result.IsSuccess ? Pdf(result.Document!) : AirlineProblem(result.Failure!.Value);
+        }
+        catch (FinancialDocumentUnavailableException exception)
+        {
+            FinancialDocumentDiagnosticLog.Unavailable(logger, exception);
+            return ProblemResult(503, "Financial document is unavailable.");
+        }
+    }
+
     [HttpGet("invoices/{invoiceId:guid}/receipt", Name = "GetAirlinePaymentReceipt")]
     [Produces("application/pdf")]
     [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "application/pdf")]

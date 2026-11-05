@@ -15,6 +15,7 @@ import AdjustmentNotesPanel from '../treasury/AdjustmentNotesPanel';
 import TreasuryPage from '../treasury/TreasuryPage';
 import { formatMoney, getFinanceInvoice, listFinanceInvoices } from '../../../services/financeBookService';
 import { formatTreasuryMoney, getTreasuryStatement, treasuryError, treasuryToday } from '../../../services/financeTreasuryService';
+import { downloadInvoiceDocument } from '../../../services/invoicingService';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 export const INVOICE_STATUS = {
@@ -24,7 +25,13 @@ export const INVOICE_STATUS = {
 const KIND_LABELS = { Service: 'Servicio', Charge: 'Cargo', Adjustment: 'Ajuste', Package: 'Paquete', Excess: 'Exceso', Minimum: 'Mínimo' };
 const METHODS = { Transfer: 'Transferencia', Check: 'Cheque', Cash: 'Efectivo', Other: 'Otro' };
 
+/** e-NCF when the invoice was issued as a simulated e-CF (ADR-0035); the internal number otherwise. */
+export function invoiceLabel(invoice) {
+  return invoice?.fiscalNumber ?? `${invoice?.number?.slice(0, 15) ?? ''}…`;
+}
+
 function InvoiceDetail({ invoiceId, revision, onChanged, onOpenReceipt }) {
+  const [pdf, setPdf] = useState('idle');
   const { access } = useDepartmentAccess();
   const canReadReceipts = Boolean(access?.can('finance.receipts.read'));
   const [detail, setDetail] = useState(null); const [treasury, setTreasury] = useState(null);
@@ -50,6 +57,15 @@ function InvoiceDetail({ invoiceId, revision, onChanged, onOpenReceipt }) {
       <dt className="text-[11px] font-semibold uppercase text-text-secondary-light">{label}</dt><dd className="mt-0.5 font-bold tabular-nums">{formatTreasuryMoney(value, summary.currencyCode)}</dd></div>)}</dl>
     <p className="flex flex-wrap items-center gap-2 text-xs text-text-secondary-light"><StatusBadge tone={status.tone} label={status.label} />
       Emitida {new Date(summary.issuedAt).toLocaleDateString('es-DO')}{summary.dueDate && ' · Vence ' + summary.dueDate}{summary.daysOverdue > 0 && ' · ' + summary.daysOverdue + ' días vencida'}</p>
+    {summary.fiscalNumber && <div className="flex flex-wrap items-center gap-2 rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
+      <span className="min-w-0 flex-1"><span className="block font-semibold">e-NCF {summary.fiscalNumber}</span>
+        <span className="block text-xs text-text-secondary-light">Factura de crédito fiscal con ITBIS 18 %. Simulación — sin validez fiscal.</span></span>
+      <button type="button" disabled={pdf === 'loading'} onClick={async () => {
+        setPdf('loading');
+        try { await downloadInvoiceDocument(invoiceId, `factura-${summary.fiscalNumber}.pdf`); setPdf('idle'); } catch { setPdf('error'); }
+      }} className="min-h-[40px] rounded-lg border border-accent-600 px-3 text-sm font-semibold text-accent-600 disabled:opacity-50">{pdf === 'loading' ? 'Preparando PDF…' : 'Descargar PDF'}</button>
+      {pdf === 'error' && <p role="alert" className="w-full text-xs text-status-danger">No se pudo descargar el PDF.</p>}
+    </div>}
     {canReadReceipts && <button type="button" onClick={() => onOpenReceipt(null, context)} className="min-h-[40px] rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white">Gestionar cobros y aplicaciones</button>}
     {receiptError && <p role="alert" className="text-sm text-status-danger">{receiptError} <button type="button" className="font-semibold" onClick={() => void load()}>Reintentar aplicaciones</button></p>}
     {treasury && <section className="space-y-2" aria-label="Aplicaciones de cobros"><h3 className="text-sm font-semibold">Aplicaciones de cobros</h3>
@@ -97,7 +113,7 @@ export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
   useEffect(() => {
     if (process.env.NODE_ENV === 'test') return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('finance_preinvoices') || resources.includes('finance_receipts')) setRevision(value => value + 1);
+      if (resources.includes('finance_preinvoices') || resources.includes('finance_receipts') || resources.includes('finance_approved_services')) setRevision(value => value + 1);
     });
     void observer.start().catch(() => {});
     return () => { void observer.stop(); };
@@ -115,8 +131,8 @@ export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
   const current = invoices.find(invoice => invoice.id === selected);
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
-      <PageHeader eyebrow="Finanzas" title="Facturas y cobros"
-        description="Facturas no fiscales con su saldo, vencimiento, pagos parciales y notas de crédito." />
+      <PageHeader eyebrow="Facturación" title="Facturas"
+        description="Facturas e-CF simuladas con su saldo, vencimiento y cobros." />
       <FilterBar>
         {stations.length > 1 && <label className="text-xs font-semibold">Estación<select value={filters.stationId} onChange={event => setFilters(currentFilters => ({ ...currentFilters, stationId: event.target.value }))} className={fieldClass}>
           <option value="">Todas</option>{stations.map(station => <option key={station.stationId} value={station.stationId}>{station.stationCode}</option>)}</select></label>}
@@ -126,7 +142,7 @@ export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
       {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
       {!page ? <p role="status" className="text-sm">Cargando facturas…</p> : invoices.length === 0 ? (
-        <EmptyState icon={ReconciliationIcon} title="Sin facturas" description="Las facturas emitidas desde prefacturas aceptadas aparecerán aquí." />
+        <EmptyState icon={ReconciliationIcon} title="Sin facturas" description="Las facturas emitidas desde «Por facturar» aparecerán aquí." />
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
           <table className="table-stack w-full min-w-[760px] text-left text-sm">
@@ -135,7 +151,7 @@ export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
               const status = INVOICE_STATUS[invoice.status] ?? { label: invoice.status, tone: 'info' };
               return (
                 <tr key={invoice.id} className="cursor-pointer border-t border-black/5 hover:bg-black/[.02] dark:border-white/5" onClick={() => setSelected(invoice.id)}>
-                  <td className="p-3"><button type="button" className="text-left font-semibold text-accent-600" onClick={() => setSelected(invoice.id)}>{invoice.number.slice(0, 15)}…</button><span className="block text-xs text-text-secondary-light">{invoice.stationCode}</span></td>
+                  <td className="p-3"><button type="button" className="text-left font-semibold text-accent-600" onClick={() => setSelected(invoice.id)}>{invoiceLabel(invoice)}</button><span className="block text-xs text-text-secondary-light">{invoice.stationCode}</span></td>
                   <td className="p-3">{invoice.airline}</td>
                   <td className="p-3 tabular-nums">{formatMoney(invoice.total, invoice.currencyCode)}</td>
                   <td className="p-3 font-semibold tabular-nums">{formatMoney(invoice.balance, invoice.currencyCode)}</td>
@@ -148,7 +164,7 @@ export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
         </StackedTable>
       )}
       <Drawer open={Boolean(current)} onClose={() => setSelected(null)} title={current ? `Factura ${current.airline}` : ''}
-        description={current?.number} widthClassName="lg:w-[560px]">
+        description={current?.fiscalNumber ? `${current.fiscalNumber} · ${current.number}` : current?.number} widthClassName="lg:w-[560px]">
         {current && <InvoiceDetail key={current.id} invoiceId={current.id} revision={revision} onOpenReceipt={openReceipt} onChanged={message => { setNotice(message); setRevision(value => value + 1); }} />}
       </Drawer>
     </div>

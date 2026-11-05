@@ -2,7 +2,7 @@ import { ElevantApiError } from "@elevant/api-client";
 
 /** Read DTOs of api/v1/airline/portal/treasury; no finance mutation or actor audit fields. */
 export interface AirlineTreasuryInvoice {
-  id: string; preinvoiceId: string; number: string; stationId: string; stationCode: string; currencyCode: string;
+  id: string; preinvoiceId: string; number: string; fiscalNumber?: string | null; stationId: string; stationCode: string; currencyCode: string;
   total: number; legacyPaid: number; legacyCredited: number; applied: number; credited: number; debited: number;
   balance: number; dueDate: string | null; daysOverdue: number; agingBucket: string;
 }
