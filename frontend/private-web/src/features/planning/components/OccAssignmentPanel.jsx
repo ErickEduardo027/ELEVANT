@@ -36,10 +36,11 @@ function OptionsFailure({ state, onRetry }) {
   );
 }
 
-function assignmentBlocker({ assignable, contract, services, eligibleAgents, etag }) {
+function assignmentBlocker({ assignable, contract, services, eligibleAgents, etag, isCharter }) {
   if (!assignable) return 'assignment.notAssignable';
-  if (!contract) return 'assignment.noContractBlocker';
-  if (services.length === 0) return 'assignment.noServicesBlocker';
+  // A charter has no contract: the agent adds its services on the ramp (ADR-0033).
+  if (!isCharter && !contract) return 'assignment.noContractBlocker';
+  if (!isCharter && services.length === 0) return 'assignment.noServicesBlocker';
   if (eligibleAgents.length === 0) return 'assignment.noEligibleBlocker';
   if (!etag) return 'assignment.noEtagBlocker';
   return null;
@@ -89,7 +90,7 @@ export default function OccAssignmentPanel({
     return <OptionsFailure state={optionsState} onRetry={onRetryOptions} />;
   }
 
-  const { contract = null, services = [], agents = [] } = optionsState.data ?? {};
+  const { contract = null, services = [], agents = [], isCharter = false } = optionsState.data ?? {};
   const eligibleAgents = agents.filter(agent => agent.eligible === true);
   const blocker = assignmentBlocker({
     assignable,
@@ -97,6 +98,7 @@ export default function OccAssignmentPanel({
     services,
     eligibleAgents,
     etag: optionsState.etag,
+    isCharter,
   });
   const reasonLabels = t('assignment.reasons');
   const isSubmitting = assignmentState.status === 'submitting';
@@ -140,7 +142,11 @@ export default function OccAssignmentPanel({
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-secondary-light dark:text-text-secondary-dark">
               {t('assignment.contract')}
             </p>
-            {contract ? (
+            {isCharter ? (
+              <p className="mt-1 rounded-lg border border-status-warning/30 bg-status-warning/10 p-2 text-sm text-status-warning">
+                {t('assignment.charter')}
+              </p>
+            ) : contract ? (
               <p className="mt-1 text-sm font-medium">
                 {contract.code} <span className="text-text-secondary-light dark:text-text-secondary-dark">{t('assignment.contractVersion', { version: contract.version, currency: contract.currencyCode })}</span>
               </p>
@@ -161,7 +167,7 @@ export default function OccAssignmentPanel({
               )}
             </div>
             {services.length === 0 ? (
-              <EmptyValue>{t('assignment.noServices')}</EmptyValue>
+              <EmptyValue>{t(isCharter ? 'assignment.charterServices' : 'assignment.noServices')}</EmptyValue>
             ) : (
               <ol className="mt-2 divide-y divide-black/5 border-y border-black/5 dark:divide-white/5 dark:border-white/5">
                 {services.map((service, index) => (
