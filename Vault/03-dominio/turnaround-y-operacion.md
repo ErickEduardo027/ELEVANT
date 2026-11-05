@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-04"
-verified_commit: "760eb78dbfebe15fe487e962c948334af695678d"
+last_verified: "2026-11-05"
+verified_commit: "b506e91b33570d387ceb70f7fda5b7c1b0c5381c"
 sources:
   - docs/architecture/database-v1.md
   - docs/database/schema-v1.md

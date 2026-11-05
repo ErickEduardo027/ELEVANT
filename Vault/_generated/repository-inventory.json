@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "1bca95f0daf0606f83505f489853ef37b8f2db3040442f9d11c8ab13d37f2005",
+        "sha256": "f73c3d9e57a71456b83270c289a7e46e82079f1e3b3774559043d0236cbad90b",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "995ae06acf0d83458e8d0c6d95c84ff0edffab9c3b38eb0e12dc0c5ed02cb56f",
+        "sha256": "e31a44f83b3b04e2fc3f13d56a9522fab6313de09dd58cea66a47076a1561bf5",
         "title": null,
         "version": null
       }
@@ -1466,6 +1466,12 @@
         "name": "AddCharterAgreements",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261104232738_AddCharterAgreements.cs",
         "sha256": "6cfbead564952a9c45eb8f17b9771f7faae7bde554e6f8b7e8e43f1f5c7d2c70"
+      },
+      {
+        "id": "20261105013802",
+        "name": "AddOperationalCloseRules",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261105013802_AddOperationalCloseRules.cs",
+        "sha256": "1bdd8b26d267ef6e6dbf64ebd2321e7655c4265516444c9cd938cdead014fa36"
       }
     ],
     "manifestContracts": [
