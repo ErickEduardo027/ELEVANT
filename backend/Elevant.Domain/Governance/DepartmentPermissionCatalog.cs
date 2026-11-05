@@ -120,6 +120,8 @@ public static class DepartmentPermissionCatalog
                     Read(), Create("Generar prefacturas")),
                 Module("finance", "charters", "Charters sin contrato", "Comercial", null,
                     Read(), Other("confirm", "Confirmar el prepago de un charter")),
+                Module("finance", "close_rules", "Reglas de cierre", "Comercial", null,
+                    Read(), Update("Configurar tiempos en tierra y festivos")),
                 Module("finance", "preinvoices", "Pre-facturación", "Facturación", null,
                     Read(), Update("Editar importes, ajustes y disputas"), Other("issue", "Publicar y facturar")),
                 Module("finance", "reconciliation", "Facturas", "Facturación", null,

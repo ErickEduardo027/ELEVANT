@@ -24,6 +24,18 @@ function validRange(from, to) {
   return days >= 0 && days <= 30;
 }
 
+/**
+ * Finance reviews a week behind, Sunday to Saturday (ADR-0034): the week that contains the date,
+ * moved by whole weeks. Dates are ISO (YYYY-MM-DD) and computed in UTC to avoid DST shifts.
+ */
+export function sundayWeek(isoDate, offsetWeeks = 0) {
+  const day = new Date(`${isoDate}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - day.getUTCDay() + offsetWeeks * 7);
+  const end = new Date(day);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return { from: day.toISOString().slice(0, 10), to: end.toISOString().slice(0, 10) };
+}
+
 export function useApprovedServicesData(initialStationId) {
   const accountId = useMemo(() => readSession()?.accountId, []);
   const scopes = useMemo(() => (readSession()?.stationScopes ?? [])
@@ -172,6 +184,11 @@ export function useApprovedServicesData(initialStationId) {
     scopes, stationId, setStationId: value => changeContext(setStationIdState, value),
     from, setFrom: value => changeContext(setFromState, value),
     to, setTo: value => changeContext(setToState, value),
+    setWeek: offsetWeeks => {
+      const week = sundayWeek(today, offsetWeeks);
+      changeContext(setFromState, week.from);
+      changeContext(setToState, week.to);
+    },
     airlines, airline, setAirline, query, setQuery,
     selectedIds, selectedCount: selected.length, canSelect, toggleSelection,
     createDraft, openDraft, draftStatus, draftId, draftDetail,

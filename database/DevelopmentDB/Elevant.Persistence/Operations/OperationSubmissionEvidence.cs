@@ -14,10 +14,14 @@ internal sealed record OperationSubmissionEvidence(
     OccReviewServiceData[] Services,
     OccReviewIncidentData[] Incidents,
     ServiceChargeEvidence[]? Charges = null,
-    ServiceTimingEvidence[]? Timings = null)
+    ServiceTimingEvidence[]? Timings = null,
+    OperationCloseEvidence? Close = null)
 {
-    /// <summary>Version 3 freezes recorded durations/delays; versions 1 and 2 remain readable.</summary>
-    public const int CurrentVersion = 3;
+    /// <summary>
+    /// Version 4 also freezes the ground time against Finance's allowance and who marked each charge
+    /// (ADR-0034); versions 1 to 3 remain readable.
+    /// </summary>
+    public const int CurrentVersion = 4;
 
     public IReadOnlyList<ServiceChargeEvidence> ChargesOf(Guid serviceId) =>
         (Charges ?? []).Where(charge => charge.ServiceId == serviceId).ToArray();
@@ -46,18 +50,14 @@ internal sealed record OperationSubmissionEvidence(
             .ThenBy(item => item.Id)
             .Select(item => new OccReviewIncidentData(
                 item.PublicId, item.IncidentType, item.Severity.ToString(),
-                item.Status.ToString(), item.Description, item.OccurredAt))
+                item.Status.ToString(), item.Description, item.OccurredAt, item.DelayCode))
             .ToArrayAsync(cancellationToken);
-        var charges = await (
-            from mark in context.OperationServiceCharges.AsNoTracking()
-            join service in context.OperationServices.AsNoTracking() on mark.OperationServiceId equals service.Id
-            join charge in context.ChargeDefinitions.AsNoTracking() on mark.ChargeDefinitionId equals charge.Id
-            where service.GroundOperationId == operationId && mark.RemovedAt == null
-            orderby service.LineNumber, mark.AppliedAt, mark.Id
-            select new ServiceChargeEvidence(mark.PublicId, service.PublicId, charge.PublicId, charge.Code, mark.AppliedAt))
-            .ToArrayAsync(cancellationToken);
+        var charges = await CaptureChargesAsync(context, operationId, cancellationToken);
         var operation = await context.GroundOperations.AsNoTracking().SingleAsync(item => item.Id == operationId, cancellationToken);
         var endAt = submittedAt ?? operation.ActualEndAt;
+        var facts = await OperationCloseFacts.LoadAsync(context, operationId, endAt, cancellationToken);
+        // Package exceeded is measured against Finance's allowance when the aircraft category is known.
+        var overrun = AutomaticSurchargePolicy.OverrunMinutes(facts.GroundMinutes, facts.AllowedGroundMinutes);
         var events = await (from item in context.Set<Elevant.Domain.Entities.Operations.OperationServiceStatusEvent>().AsNoTracking()
             join service in context.OperationServices.AsNoTracking() on item.OperationServiceId equals service.Id
             where service.GroundOperationId == operationId && (endAt == null || item.OccurredAt <= endAt)
@@ -69,24 +69,43 @@ internal sealed record OperationSubmissionEvidence(
             var serviceEvents = events.Where(item => item.PublicId == service.Id).ToArray();
             var start = serviceEvents.LastOrDefault(item => item.ToStatus == Elevant.Domain.Enumerations.ServiceExecutionStatus.InProgress)?.OccurredAt;
             var end = serviceEvents.LastOrDefault(item => item.ToStatus is Elevant.Domain.Enumerations.ServiceExecutionStatus.Completed or Elevant.Domain.Enumerations.ServiceExecutionStatus.Exception && item.OccurredAt >= start)?.OccurredAt;
-            return new ServiceTimingEvidence(service.Id, Minutes(start, end), Minutes(operation.PlannedEndAt, endAt), Minutes(arrival?.ScheduledAt, arrival?.ActualAt));
+            return new ServiceTimingEvidence(service.Id, Minutes(start, end), overrun ?? Minutes(operation.PlannedEndAt, endAt), Minutes(arrival?.ScheduledAt, arrival?.ActualAt));
         }).ToArray();
-        return new OperationSubmissionEvidence(CurrentVersion, services, incidents, charges, timings);
+        return new OperationSubmissionEvidence(CurrentVersion, services, incidents, charges, timings,
+            new OperationCloseEvidence(facts.StartedAt, facts.EndedAt, facts.GroundMinutes, facts.AllowedGroundMinutes,
+                facts.Category?.ToString(), facts.ArrivalDelayMinutes));
     }
+
+    /// <summary>The charges live on the operation's services, in service and marking order.</summary>
+    public static Task<ServiceChargeEvidence[]> CaptureChargesAsync(ElevantDbContext context, long operationId,
+        CancellationToken cancellationToken) =>
+        (from mark in context.OperationServiceCharges.AsNoTracking()
+         join service in context.OperationServices.AsNoTracking() on mark.OperationServiceId equals service.Id
+         join charge in context.ChargeDefinitions.AsNoTracking() on mark.ChargeDefinitionId equals charge.Id
+         where service.GroundOperationId == operationId && mark.RemovedAt == null
+         orderby service.LineNumber, mark.AppliedAt, mark.Id
+         select new ServiceChargeEvidence(mark.PublicId, service.PublicId, charge.PublicId, charge.Code, mark.AppliedAt,
+             mark.Source.ToString()))
+        .ToArrayAsync(cancellationToken);
 
     public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
 
     public static OperationSubmissionEvidence Parse(string json)
     {
         var evidence = JsonSerializer.Deserialize<OperationSubmissionEvidence>(json, JsonOptions);
-        if (evidence is not { Version: 1 or 2 or 3, Services: not null, Incidents: not null })
+        if (evidence is not { Version: >= 1 and <= CurrentVersion, Services: not null, Incidents: not null })
             throw new InvalidOperationException("The submitted evidence snapshot is invalid.");
         return evidence;
     }
 }
 
 /// <summary>A charge the agent had marked on a service when the delivery was submitted.</summary>
-internal sealed record ServiceChargeEvidence(Guid MarkId, Guid ServiceId, Guid ChargeId, string Code, DateTimeOffset AppliedAt);
+internal sealed record ServiceChargeEvidence(Guid MarkId, Guid ServiceId, Guid ChargeId, string Code, DateTimeOffset AppliedAt,
+    string? Source = null);
+
+/// <summary>Ground time of the whole operation and Finance's allowance for its aircraft category, at hand-off.</summary>
+internal sealed record OperationCloseEvidence(DateTimeOffset? StartedAt, DateTimeOffset? EndedAt, decimal? GroundMinutes,
+    int? AllowedGroundMinutes, string? AircraftCategory, decimal? ArrivalDelayMinutes);
 
 /// <summary>Server-recorded measurements frozen at submission; no itinerary estimates are treated as execution.</summary>
 internal sealed record ServiceTimingEvidence(Guid ServiceId, decimal? ServiceMinutes, decimal? OperationOverrunMinutes, decimal? ArrivalDelayMinutes);

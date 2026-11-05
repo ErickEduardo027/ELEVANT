@@ -111,30 +111,38 @@ export function RampOperationChargesCard({
                 const marks = item.applied.filter(applied => applied.chargeId === option.id);
                 const selected = marks.length > 0;
                 const key = `${item.serviceId}:${option.id}`;
+                // ADR-0034: ELEVANT's automatic marks and OCC's are not the agent's to remove.
+                const agentMarks = marks.filter(mark => (mark.source ?? 'Agent') === 'Agent');
+                const locked = selected && !option.allowMultiple && agentMarks.length === 0;
+                const origin = marks.find(mark => mark.source === 'Automatic') ? 'automático'
+                  : marks.find(mark => mark.source === 'Occ') ? 'OCC' : null;
+                const disabled = !editable || busy !== null || locked;
                 const action: RampServiceChargeAction = selected && !option.allowMultiple ? 'Remove' : 'Apply';
                 return (
                   <Pressable
-                    accessibilityLabel={`${option.name}${selected ? ', aplicado' : ''}`}
+                    accessibilityLabel={`${option.name}${selected ? ', aplicado' : ''}${origin ? `, ${origin}` : ''}`}
                     accessibilityRole="checkbox"
-                    accessibilityState={{ checked: selected, disabled: !editable || busy !== null }}
-                    disabled={!editable || busy !== null}
+                    accessibilityState={{ checked: selected, disabled }}
+                    disabled={disabled}
                     key={option.id}
                     onPress={() => void change(item, option.id, action)}
-                    style={[styles.chip, selected && styles.chipSelected, (!editable || busy !== null) && styles.chipDisabled]}
+                    style={[styles.chip, selected && styles.chipSelected, disabled && styles.chipDisabled]}
                   >
                     {busy === key
                       ? <ActivityIndicator size="small" color={selected ? colors.white : colors.blue} />
                       : <Ionicons name={selected ? 'checkmark-circle' : 'add-circle-outline'} size={16} color={selected ? colors.white : colors.blue} />}
                     <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
-                      {option.name}{option.allowMultiple && marks.length > 1 ? ` ×${marks.length}` : ''}
+                      {option.name}{option.allowMultiple && marks.length > 1 ? ` ×${marks.length}` : ''}{origin ? ` · ${origin}` : ''}
                     </Text>
                   </Pressable>
                 );
               })}
             </View>
-            {item.available.some(option => option.allowMultiple && item.applied.some(applied => applied.chargeId === option.id)) && editable && (
+            {item.available.some(option => option.allowMultiple && item.applied.some(applied => applied.chargeId === option.id &&
+              (applied.source ?? 'Agent') === 'Agent')) && editable && (
               <View style={styles.chips}>
-                {item.available.filter(option => option.allowMultiple && item.applied.some(applied => applied.chargeId === option.id)).map(option => (
+                {item.available.filter(option => option.allowMultiple && item.applied.some(applied => applied.chargeId === option.id &&
+                  (applied.source ?? 'Agent') === 'Agent')).map(option => (
                   <Pressable accessibilityRole="button" accessibilityLabel={`Quitar ${option.name}`} disabled={busy !== null}
                     key={option.id} onPress={() => void change(item, option.id, 'Remove')} style={styles.remove}>
                     <Text style={styles.removeText}>Quitar uno · {option.name}</Text>

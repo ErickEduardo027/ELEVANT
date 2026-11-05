@@ -64,7 +64,9 @@ public sealed class FinanceApprovedServicesController(
                 service.ServiceCode, service.ServiceName, service.ExecutionStatus,
                 service.ContractedQuantity, service.ExecutedQuantity, service.BillingUnit,
                 service.FrozenUnitPrice, service.FrozenCurrency, service.Ready,
-                service.BlockingReason, service.Amount, service.PreinvoiceId)).ToArray(), page.HasMore));
+                service.BlockingReason, service.Amount, service.PreinvoiceId,
+                (service.Charges ?? []).Select(charge => new FinanceApprovedChargeResponse(charge.Code, charge.Source))
+                    .ToArray())).ToArray(), page.HasMore));
     }
 
     private ActionResult<T> ProblemResult<T>(int status, string title) =>

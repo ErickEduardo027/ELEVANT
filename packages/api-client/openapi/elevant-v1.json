@@ -7939,6 +7939,278 @@
         ]
       }
     },
+    "/api/v1/finance/close-rules": {
+      "get": {
+        "tags": [
+          "FinanceCloseRules"
+        ],
+        "operationId": "GetFinanceCloseRules",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceCloseRulesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/close-rules/ground-time/{category}": {
+      "put": {
+        "tags": [
+          "FinanceCloseRules"
+        ],
+        "summary": "Sets the ground time of Narrowbody or Widebody; send the version you read.",
+        "operationId": "SetGroundTimeAllowance",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SetGroundTimeAllowanceRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroundTimeAllowanceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/close-rules/holidays": {
+      "post": {
+        "tags": [
+          "FinanceCloseRules"
+        ],
+        "summary": "Adds a holiday; the same date and name again is a retry.",
+        "operationId": "AddFinanceHoliday",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AddFinanceHolidayRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceHolidayResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/close-rules/holidays/{holidayId}": {
+      "delete": {
+        "tags": [
+          "FinanceCloseRules"
+        ],
+        "operationId": "RemoveFinanceHoliday",
+        "parameters": [
+          {
+            "name": "holidayId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/preinvoices/{preinvoiceId}/resolution": {
       "post": {
         "tags": [
@@ -22197,6 +22469,271 @@
         ]
       }
     },
+    "/api/v1/occ/review/operations/{operationId}/charges": {
+      "post": {
+        "tags": [
+          "OccReview"
+        ],
+        "summary": "OCC adds a charge to a service of the operation it is reviewing (ADR-0034).",
+        "operationId": "AddOccReviewCharge",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AddOccReviewChargeRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccReviewChargeAdjustResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/review/operations/{operationId}/charges/{markId}/removal": {
+      "post": {
+        "tags": [
+          "OccReview"
+        ],
+        "summary": "OCC removes a charge from the operation it is reviewing, whoever marked it (ADR-0034).",
+        "operationId": "RemoveOccReviewCharge",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "markId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RemoveOccReviewChargeRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccReviewChargeAdjustResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/review/operations/{operationId}/decision": {
       "post": {
         "tags": [
@@ -28048,6 +28585,52 @@
         },
         "additionalProperties": false
       },
+      "AddFinanceHolidayRequest": {
+        "required": [
+          "date"
+        ],
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "name": {
+            "maxLength": 120,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AddOccReviewChargeRequest": {
+        "required": [
+          "chargeId",
+          "serviceId",
+          "submissionId"
+        ],
+        "type": "object",
+        "properties": {
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "AddOccStandConstraintRequest": {
         "required": [
           "affectedStandId",
@@ -33267,6 +33850,22 @@
         },
         "additionalProperties": false
       },
+      "FinanceApprovedChargeResponse": {
+        "required": [
+          "code",
+          "source"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "FinanceApprovedServiceResponse": {
         "required": [
           "airlineId",
@@ -33369,6 +33968,13 @@
           "preinvoiceId": {
             "type": "string",
             "format": "uuid",
+            "nullable": true
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceApprovedChargeResponse"
+            },
             "nullable": true
           }
         },
@@ -33510,6 +34116,28 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceCloseRulesResponse": {
+        "required": [
+          "allowances",
+          "holidays"
+        ],
+        "type": "object",
+        "properties": {
+          "allowances": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GroundTimeAllowanceResponse"
+            }
+          },
+          "holidays": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceHolidayResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -33925,6 +34553,28 @@
             "type": "string"
           },
           "fiscalAcceptance": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceHolidayResponse": {
+        "required": [
+          "date",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "name": {
             "type": "string"
           }
         },
@@ -37223,6 +37873,32 @@
           "avatarMediaUrl": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "GroundTimeAllowanceResponse": {
+        "required": [
+          "allowedMinutes",
+          "category",
+          "updatedAt",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string"
+          },
+          "allowedMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -41256,6 +41932,99 @@
         },
         "additionalProperties": false
       },
+      "OccReviewChargeAdjustResponse": {
+        "required": [
+          "reviewVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "reviewVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewChargeOptionResponse": {
+        "required": [
+          "appliesToAllServices",
+          "chargeId",
+          "code",
+          "name",
+          "serviceIds"
+        ],
+        "type": "object",
+        "properties": {
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "appliesToAllServices": {
+            "type": "boolean"
+          },
+          "serviceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewChargeResponse": {
+        "required": [
+          "appliedAt",
+          "chargeId",
+          "code",
+          "markId",
+          "name",
+          "serviceCode",
+          "serviceId",
+          "source"
+        ],
+        "type": "object",
+        "properties": {
+          "markId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceCode": {
+            "type": "string"
+          },
+          "chargeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "appliedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "OccReviewChecklistAnswerResponse": {
         "required": [
           "code",
@@ -41280,6 +42049,52 @@
           "note": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewCloseResponse": {
+        "required": [
+          "canAdjustCharges",
+          "chargeOptions",
+          "charges",
+          "damageCount",
+          "milestones",
+          "timing"
+        ],
+        "type": "object",
+        "properties": {
+          "milestones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReviewMilestoneResponse"
+            }
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReviewChargeResponse"
+            }
+          },
+          "chargeOptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReviewChargeOptionResponse"
+            }
+          },
+          "timing": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccReviewTimingResponse"
+              }
+            ]
+          },
+          "canAdjustCharges": {
+            "type": "boolean"
+          },
+          "damageCount": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -41424,6 +42239,14 @@
           },
           "reviewVersion": {
             "type": "string"
+          },
+          "close": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccReviewCloseResponse"
+              }
+            ],
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -41456,6 +42279,27 @@
             "type": "string"
           },
           "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delayCode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewMilestoneResponse": {
+        "required": [
+          "actualAt",
+          "code"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "actualAt": {
             "type": "string",
             "format": "date-time"
           }
@@ -41652,6 +42496,31 @@
           },
           "hasMore": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewTimingResponse": {
+        "type": "object",
+        "properties": {
+          "groundMinutes": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "allowedGroundMinutes": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "arrivalDelayMinutes": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "aircraftCategory": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -43311,7 +44180,8 @@
           "chargeId",
           "code",
           "id",
-          "name"
+          "name",
+          "source"
         ],
         "type": "object",
         "properties": {
@@ -43332,6 +44202,9 @@
           "appliedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "source": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -45213,6 +46086,24 @@
         },
         "additionalProperties": false
       },
+      "RemoveOccReviewChargeRequest": {
+        "required": [
+          "submissionId"
+        ],
+        "type": "object",
+        "properties": {
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ReopenServiceRequest": {
         "required": [
           "reason",
@@ -46591,6 +47482,26 @@
         },
         "additionalProperties": false
       },
+      "SetGroundTimeAllowanceRequest": {
+        "required": [
+          "allowedMinutes"
+        ],
+        "type": "object",
+        "properties": {
+          "allowedMinutes": {
+            "maximum": 720,
+            "minimum": 15,
+            "type": "integer",
+            "format": "int32"
+          },
+          "version": {
+            "maxLength": 64,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "SetOperationalNotificationReadRequest": {
         "required": [
           "read"
@@ -47597,6 +48508,9 @@
     },
     {
       "name": "FinanceCharters"
+    },
+    {
+      "name": "FinanceCloseRules"
     },
     {
       "name": "FinanceDisputeResolutions"

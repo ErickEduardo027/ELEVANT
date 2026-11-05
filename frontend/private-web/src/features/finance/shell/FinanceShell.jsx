@@ -14,6 +14,7 @@ import ChargesPage from '../charges/ChargesPage';
 import ExchangeRatesPage from '../exchange-rates/ExchangeRatesPage';
 import ContractApprovalsPage from '../contract-approvals/ContractApprovalsPage';
 import ChartersPage from '../charters/ChartersPage';
+import CloseRulesPage from '../close-rules/CloseRulesPage';
 import FinanceReportsPage from '../reports/FinanceReportsPage';
 import BillingUnitsPage from '../billing-units/BillingUnitsPage';
 import PackagesPage from '../packages/PackagesPage';
@@ -79,6 +80,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout, observeNot
     [FINANCE_MODULE_IDS.BILLING_UNITS]: <BillingUnitsPage canCreate={Boolean(access?.can('finance.billing_units.create'))} canUpdate={Boolean(access?.can('finance.billing_units.update'))} />,
     [FINANCE_MODULE_IDS.CONTRACT_APPROVALS]: <ContractApprovalsPage />,
     [FINANCE_MODULE_IDS.CHARTERS]: <ChartersPage />,
+    [FINANCE_MODULE_IDS.CLOSE_RULES]: <CloseRulesPage />,
     [FINANCE_MODULE_IDS.TREASURY]: <TreasuryPage {...stationProps} />,
     [FINANCE_MODULE_IDS.STATEMENTS]: <StatementPage {...stationProps} />,
     [FINANCE_MODULE_IDS.SUPPLIERS]: <SuppliersPage />,

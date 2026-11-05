@@ -2,6 +2,7 @@ export * from "./presence";
 export * from "./flightReport";
 export * from "./operationDocuments";
 export * from "./charters";
+export * from "./operationalClose";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -251,6 +252,16 @@ export {
   type DamageMarkResponse,
   type AirlineServiceOrderResponse,
   type RampCharterResponse,
+  type OccReviewCloseResponse,
+  type OccReviewChargeResponse,
+  type OccReviewChargeOptionResponse,
+  type OccReviewTimingResponse,
+  type OccReviewMilestoneResponse,
+  type OccReviewChargeAdjustResponse,
+  type FinanceCloseRulesResponse,
+  type GroundTimeAllowanceResponse,
+  type FinanceHolidayResponse,
+  type FinanceApprovedChargeResponse,
   type CharterCatalogItemResponse,
   type FinanceCharterResponse,
   type FinanceCharterListResponse,

@@ -68,7 +68,7 @@ internal sealed class EfRampServiceChargeStore(
                              where mark.OperationServiceId == service.Id && mark.RemovedAt == null
                              orderby mark.AppliedAt
                              select new RampAppliedChargeData(mark.PublicId, charge.PublicId, charge.Code, charge.Name,
-                                 mark.AppliedAt)).ToArrayAsync(cancellationToken);
+                                 mark.AppliedAt, mark.Source.ToString())).ToArrayAsync(cancellationToken);
         var canEdit = RampServiceChargePolicy.CanEdit(scope.TurnaroundStatus, scope.Operation.CurrentStatus,
             scope.Operation.ActualStartAt, scope.Operation.ActualEndAt, service.CurrentStatus);
         return new RampServiceChargesData(service.PublicId, canEdit, available, applied);
@@ -166,7 +166,8 @@ internal sealed class EfRampServiceChargeStore(
         var allowed = options.CanEdit && request.Action switch
         {
             RampServiceChargeAction.Apply => option is not null && (option.AllowMultiple || applied.Length == 0),
-            RampServiceChargeAction.Remove => applied.Length > 0,
+            // Automatic and OCC marks are not the agent's to remove (ADR-0034).
+            RampServiceChargeAction.Remove => applied.Any(item => item.Source == nameof(ChargeMarkSource.Agent)),
             _ => false,
         };
         if (!allowed)
@@ -189,7 +190,7 @@ internal sealed class EfRampServiceChargeStore(
         }
         else
         {
-            var latest = applied.Last().Id;
+            var latest = applied.Last(item => item.Source == nameof(ChargeMarkSource.Agent)).Id;
             var mark = await context.OperationServiceCharges.SingleAsync(item => item.PublicId == latest, cancellationToken);
             mark.RemovedAt = now;
             mark.RemovedByRampAgentId = actor.RampAgentInternalId;

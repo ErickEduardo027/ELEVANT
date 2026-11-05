@@ -68,7 +68,7 @@ public sealed class RampServiceChargesController(RampServiceChargesHandler handl
             service.Available.Select(option => new RampChargeOptionResponse(option.Id, option.Code, option.Name,
                 option.Description, option.Category, option.AllowMultiple)).ToArray(),
             service.Applied.Select(mark => new RampAppliedChargeResponse(mark.Id, mark.ChargeId, mark.Code, mark.Name,
-                mark.AppliedAt)).ToArray());
+                mark.AppliedAt, mark.Source)).ToArray());
 
     private bool TryAccount(out Guid accountId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) && accountId != Guid.Empty;

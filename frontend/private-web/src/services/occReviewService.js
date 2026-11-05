@@ -40,6 +40,11 @@ function safeError(error, action) {
       });
     }
   }
+  if (action === 'adjust') {
+    return new OccReviewServiceError('No fue posible ajustar el recargo. Revisa el motivo e intenta nuevamente.', {
+      status: error instanceof ElevantApiError ? error.status : null, code: 'request-failed',
+    });
+  }
   const message = action === 'decision'
     ? 'No fue posible confirmar el resultado. Actualiza la cola y el detalle antes de intentarlo de nuevo.'
     : 'No fue posible cargar la revisión. Comprueba la conexión e intenta nuevamente.';
@@ -78,6 +83,25 @@ export async function loadOccReviewSubmissionDetail(operationId, submissionId, {
     return await client().getOccReviewSubmissionDetail(operationId, submissionId, { signal });
   } catch (error) {
     throw safeError(error, 'history');
+  }
+}
+
+/** OCC adds a charge to a service while reviewing (ADR-0034); resolves with the new review version. */
+export async function addOccReviewCharge(operationId, command, etag, { signal } = {}) {
+  try {
+    return await client().addOccReviewCharge(operationId, command, etag, { signal });
+  } catch (error) {
+    if (error instanceof TypeError) throw new OccReviewServiceError('El motivo debe tener entre 8 y 500 caracteres.', { code: 'invalid' });
+    throw safeError(error, 'adjust');
+  }
+}
+
+export async function removeOccReviewCharge(operationId, markId, command, etag, { signal } = {}) {
+  try {
+    return await client().removeOccReviewCharge(operationId, markId, command, etag, { signal });
+  } catch (error) {
+    if (error instanceof TypeError) throw new OccReviewServiceError('El motivo debe tener entre 8 y 500 caracteres.', { code: 'invalid' });
+    throw safeError(error, 'adjust');
   }
 }
 

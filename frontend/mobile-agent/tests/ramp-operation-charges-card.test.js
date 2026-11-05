@@ -63,3 +63,12 @@ it('is read-only when the server says the service cannot be edited or data is ca
   expect(chip(tree).props.disabled).toBe(true);
   expect(JSON.stringify(tree.toJSON())).toContain('última copia guardada');
 });
+
+it('shows an automatic or OCC charge as applied but never lets the agent remove it (ADR-0034)', async () => {
+  mockGet.mockResolvedValue({ charges: charges([{ ...mark, source: 'Automatic' }]), fromCache: false });
+  const tree = await render();
+  expect(chip(tree).props.accessibilityState.checked).toBe(true);
+  expect(chip(tree).props.disabled).toBe(true);
+  expect(chip(tree).props.accessibilityLabel).toContain('automático');
+  expect(JSON.stringify(tree.toJSON())).toContain('" · automático"');
+});

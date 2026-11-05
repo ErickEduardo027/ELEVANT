@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-04"
-verified_commit: "760eb78dbfebe15fe487e962c948334af695678d"
+last_verified: "2026-11-05"
+verified_commit: "b506e91b33570d387ceb70f7fda5b7c1b0c5381c"
 sources:
   - frontend/AGENTS.md
   - frontend/mobile-agent/README.md
@@ -24,6 +24,7 @@ sources:
   - frontend/mobile-agent/tests/flight-report.test.js
   - docs/adr/0032-aviam-forms-signatures-and-walkaround.md
   - docs/adr/0033-charter-flights-without-contract.md
+  - docs/adr/0034-operational-close-occ-to-finance.md
   - frontend/mobile-agent/src/components/documents/operation-documents.tsx
   - frontend/mobile-agent/src/components/documents/signature-pad.tsx
   - frontend/mobile-agent/src/storage/walkaround-photos.ts
@@ -280,6 +281,12 @@ Las [pruebas](../../frontend/mobile-agent/tests/operation-documents.test.js) cub
 - el formulario que cambió, que queda retenido;
 - el almacenamiento de fotos caído, que deja la foto pendiente;
 - la última vista del servidor guardada por operación.
+
+## Fase 3, bloque 5: recargos automáticos
+
+Desde el cierre OCC → Finanzas ([ADR-0034](../../docs/adr/0034-operational-close-occ-to-finance.md)), la [tarjeta de cargos](../../frontend/mobile-agent/src/components/ramp-operation-charges-card.tsx) muestra con su origen («automático» u «OCC») los recargos que marcó ELEVANT al entregar o que agregó OCC en la revisión.
+
+El agente no puede quitarlos: solo quita los que marcó él. El servidor rechaza también ese intento.
 
 ## Fase 3, bloque 4b: charter sin contrato
 

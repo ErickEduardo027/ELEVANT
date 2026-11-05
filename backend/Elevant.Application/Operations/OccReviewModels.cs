@@ -65,7 +65,31 @@ public sealed record OccReviewChecklistAnswerData(
 
 public sealed record OccReviewIncidentData(
     Guid Id, string Type, string Severity, string Status,
-    string Description, DateTimeOffset OccurredAt);
+    string Description, DateTimeOffset OccurredAt, string? DelayCode = null);
+
+/// <summary>A charge on a service, with who marked it: the agent, ELEVANT on its own or OCC (ADR-0034).</summary>
+public sealed record OccReviewChargeData(
+    Guid MarkId, Guid ServiceId, string ServiceCode, Guid ChargeId, string Code, string Name, string Source,
+    DateTimeOffset AppliedAt, string? Reason);
+
+/// <summary>A charge OCC may add to a service of the operation under review.</summary>
+public sealed record OccReviewChargeOptionData(Guid ChargeId, string Code, string Name, bool AppliesToAllServices,
+    IReadOnlyList<Guid> ServiceIds);
+
+public sealed record OccReviewMilestoneData(string Code, DateTimeOffset ActualAt);
+
+/// <summary>Times the surcharges are measured on, frozen at hand-off.</summary>
+public sealed record OccReviewTimingData(decimal? GroundMinutes, int? AllowedGroundMinutes, decimal? ArrivalDelayMinutes,
+    string? AircraftCategory);
+
+/// <summary>Everything OCC closes the operation with (ADR-0034).</summary>
+public sealed record OccReviewCloseData(
+    IReadOnlyList<OccReviewMilestoneData> Milestones,
+    IReadOnlyList<OccReviewChargeData> Charges,
+    IReadOnlyList<OccReviewChargeOptionData> ChargeOptions,
+    OccReviewTimingData Timing,
+    bool CanAdjustCharges,
+    int DamageCount);
 
 public sealed record OccReviewDecisionData(
     string Outcome, string? Reason, DateTimeOffset DecidedAt);
@@ -93,7 +117,8 @@ public sealed record OccReviewDetailData(
     IReadOnlyList<OccReviewServiceData> Services,
     IReadOnlyList<OccReviewIncidentData> Incidents,
     OccReviewDecisionData? Decision,
-    string ConcurrencyToken);
+    string ConcurrencyToken,
+    OccReviewCloseData? Close = null);
 
 public sealed record OccReviewDetailResult(OccReviewDetailData? Detail, OccReviewFailure? Failure)
 {
@@ -112,6 +137,25 @@ public sealed record OccReviewDecisionWriteRequest(
     string? Reason,
     Guid CorrelationId,
     string? RequestId);
+
+/// <summary>OCC adds a charge to a service, or removes one, while reviewing; the reason is audited (ADR-0034).</summary>
+public sealed record OccReviewChargeAdjustRequest(
+    Guid ActorAccountId,
+    IReadOnlyCollection<Guid> AllowedStationIds,
+    Guid OperationId,
+    Guid SubmissionId,
+    string ConcurrencyToken,
+    Guid? ServiceId,
+    Guid? ChargeId,
+    Guid? MarkId,
+    string Reason,
+    Guid CorrelationId,
+    string? RequestId);
+
+public sealed record OccReviewChargeAdjustResult(string? ConcurrencyToken, OccReviewFailure? Failure)
+{
+    public bool IsSuccess => ConcurrencyToken is not null && Failure is null;
+}
 
 public sealed record OccReviewDecisionWriteData(
     Guid OperationId,

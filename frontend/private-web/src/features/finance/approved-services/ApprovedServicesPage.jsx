@@ -1,5 +1,8 @@
 import { useApprovedServicesData } from './useApprovedServicesData';
 
+/** Who marked the charge OCC approved (ADR-0034). */
+const CHARGE_SOURCES = { Agent: 'agente', Automatic: 'automático', Occ: 'OCC' };
+
 const BLOCKING_LABELS = {
   approved_evidence_mismatch: 'Evidencia aprobada ausente o distinta',
   service_not_completed: 'Servicio no completado',
@@ -107,6 +110,13 @@ export default function ApprovedServicesPage({ initialStationId }) {
               onChange={event => data.setTo(event.target.value)}
               className="mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark" />
           </label>
+          <div className="flex flex-wrap items-end gap-2 sm:col-span-2 xl:col-span-5">
+            <span className="text-xs font-semibold">Semana de domingo a sábado:</span>
+            <button type="button" onClick={() => data.setWeek(-1)}
+              className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold dark:border-white/10">Semana pasada</button>
+            <button type="button" onClick={() => data.setWeek(0)}
+              className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold dark:border-white/10">Esta semana</button>
+          </div>
           <label className="text-xs font-semibold">Buscar
             <input aria-label="Buscar servicios" value={data.query}
               onChange={event => data.setQuery(event.target.value)} placeholder="Vuelo, servicio o contrato"
@@ -154,7 +164,13 @@ export default function ApprovedServicesPage({ initialStationId }) {
                       checked={data.selectedIds.includes(item.id)} disabled={!data.canSelect(item)}
                       onChange={() => data.toggleSelection(item.id)} /></td>
                     <td className="px-5 py-4"><span className="block font-semibold">{item.serviceName}</span>
-                      <span className="font-mono text-[11px] text-text-secondary-light">{item.serviceCode} · {item.id}</span></td>
+                      <span className="font-mono text-[11px] text-text-secondary-light">{item.serviceCode} · {item.id}</span>
+                      {(item.charges ?? []).length > 0 && <span className="mt-1 flex flex-wrap gap-1">
+                        {item.charges.map((charge, index) => (
+                          <span key={`${charge.code}:${index}`} className="rounded-full bg-status-warning/10 px-2 py-0.5 text-[11px] font-semibold"
+                            title={CHARGE_SOURCES[charge.source] ?? charge.source}>{charge.code} · {CHARGE_SOURCES[charge.source] ?? charge.source}</span>
+                        ))}
+                      </span>}</td>
                     <td className="px-5 py-4">{item.airlineName}<span className="block text-xs text-text-secondary-light">{item.flightNumber || item.operationCode}</span></td>
                     <td className="px-5 py-4 font-mono text-xs">{item.contractCode || 'Sin referencia'}</td>
                     <td className="px-5 py-4">{date(item.operationDate)}</td>

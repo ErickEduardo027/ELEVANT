@@ -312,7 +312,7 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
                   submission.Status == SubmissionStatus.Approved &&
                   decision.Outcome == ReviewOutcome.Approved
             orderby submission.RevisionNumber descending
-            select new { submission.EvidenceJson, decision.DecidedAt })
+            select new { EvidenceJson = decision.ApprovedEvidenceJson ?? submission.EvidenceJson, decision.DecidedAt })
             .FirstOrDefaultAsync(cancellationToken);
         if (approval?.EvidenceJson is null) return Unavailable();
 

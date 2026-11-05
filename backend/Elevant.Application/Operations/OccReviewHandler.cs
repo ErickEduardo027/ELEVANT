@@ -90,6 +90,25 @@ public sealed class OccReviewHandler(
             Guid.NewGuid(), requestId), cancellationToken);
     }
 
+    /// <summary>Adds a charge to a service (service and charge) or removes a mark (mark), with a reason.</summary>
+    public async Task<OccReviewChargeAdjustResult> AdjustChargeAsync(Guid accountId, Guid operationId,
+        Guid submissionId, string? concurrencyToken, Guid? serviceId, Guid? chargeId, Guid? markId, string? reason,
+        string? requestId, CancellationToken cancellationToken = default)
+    {
+        var access = await ResolveAccessAsync(accountId, "operations.review.decide", cancellationToken);
+        if (access.Failure is OccReviewFailure failure) return new OccReviewChargeAdjustResult(null, failure);
+        var adding = serviceId is { } service && service != Guid.Empty && chargeId is { } charge && charge != Guid.Empty &&
+            markId is null;
+        var removing = markId is { } mark && mark != Guid.Empty && serviceId is null && chargeId is null;
+        var trimmed = reason?.Trim();
+        if (operationId == Guid.Empty || submissionId == Guid.Empty || string.IsNullOrWhiteSpace(concurrencyToken) ||
+            !(adding ^ removing) || trimmed is null || trimmed.Length is < 8 or > 500)
+            return new OccReviewChargeAdjustResult(null, OccReviewFailure.InvalidRequest);
+        return await store.AdjustChargeAsync(new OccReviewChargeAdjustRequest(accountId, access.Stations!, operationId,
+            submissionId, concurrencyToken!, serviceId, chargeId, markId, trimmed, Guid.NewGuid(), requestId),
+            cancellationToken);
+    }
+
     private async Task<(IReadOnlyCollection<Guid>? Stations, OccReviewFailure? Failure)> ResolveAccessAsync(
         Guid accountId, string permissionCode, CancellationToken cancellationToken)
     {

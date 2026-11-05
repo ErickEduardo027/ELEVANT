@@ -7096,6 +7096,54 @@ public sealed partial class SqlServerMigrationTests
             Assert.NotEmpty(reviewDetail.ChecklistAnswers);
             Assert.All(reviewDetail.Services, service =>
                 Assert.True(service.Status is "Completed" or "NotPerformed" or "Exception"));
+            // ADR-0034: OCC sees what it closes the operation with and can still adjust the charges.
+            var close = Assert.IsType<OccReviewCloseData>(reviewDetail.Close);
+            Assert.True(close.CanAdjustCharges);
+            Assert.Contains(close.Charges, charge => charge.Code == "NIGHT" && charge.Source == "Agent");
+            Assert.All(close.Charges, charge => Assert.Contains(charge.Source, new[] { "Agent", "Automatic" }));
+            Assert.Contains(close.ChargeOptions, option => option.Code == "ADMIN-FEE");
+        }
+
+        if (reviewOutcome == "Approved")
+        {
+            // ADR-0034: OCC adds a charge and takes it back, each with a reason; every change moves the
+            // review version, so a decision prepared on the old charges is refused.
+            async Task<OccReviewChargeAdjustResult> AdjustAsync(string token, Guid? serviceId, Guid? chargeId,
+                Guid? markId, string reason)
+            {
+                await using var scope = provider.CreateAsyncScope();
+                return await scope.ServiceProvider.GetRequiredService<IOccReviewStore>().AdjustChargeAsync(
+                    new OccReviewChargeAdjustRequest(occAccountId, [stationId], operationId, handoffKey, token,
+                        serviceId, chargeId, markId, reason, Guid.CreateVersion7(), "occ-close-sql-test"),
+                    cancellationToken);
+            }
+            var adminFee = reviewDetail.Close!.ChargeOptions.Single(option => option.Code == "ADMIN-FEE");
+            Assert.Equal(OccReviewFailure.PreconditionFailed, (await AdjustAsync("\"" + new string('0', 64) + "\"",
+                baggageServiceId, adminFee.ChargeId, null, "Cargo administrativo acordado")).Failure);
+            var added = await AdjustAsync(reviewDetail.ConcurrencyToken, baggageServiceId, adminFee.ChargeId, null,
+                "Cargo administrativo acordado");
+            Assert.True(added.IsSuccess);
+            Assert.NotEqual(reviewDetail.ConcurrencyToken, added.ConcurrencyToken);
+            Assert.Equal(OccReviewFailure.PreconditionFailed,
+                (await DecideAsync(occAccountId, reviewDetail.ConcurrencyToken, "Approved")).Failure);
+            await using (var adjustedScope = provider.CreateAsyncScope())
+                reviewDetail = (await adjustedScope.ServiceProvider.GetRequiredService<IOccReviewStore>()
+                    .GetDetailAsync(operationId, [stationId], cancellationToken))!;
+            var occMark = Assert.Single(reviewDetail.Close!.Charges, charge => charge.Source == "Occ");
+            Assert.Equal("Cargo administrativo acordado", occMark.Reason);
+            var removed = await AdjustAsync(reviewDetail.ConcurrencyToken, null, null, occMark.MarkId,
+                "Se cobra en otra factura");
+            Assert.True(removed.IsSuccess);
+            Assert.Equal(OccReviewFailure.Conflict, (await AdjustAsync(removed.ConcurrencyToken!, null, null,
+                occMark.MarkId, "Se cobra en otra factura")).Failure);
+            await using (var adjustedScope = provider.CreateAsyncScope())
+                reviewDetail = (await adjustedScope.ServiceProvider.GetRequiredService<IOccReviewStore>()
+                    .GetDetailAsync(operationId, [stationId], cancellationToken))!;
+            Assert.DoesNotContain(reviewDetail.Close!.Charges, charge => charge.Source == "Occ");
+            await using var adjustCheck = CreateContext(database.ConnectionString);
+            Assert.Equal(2, await adjustCheck.AuditEntries.AsNoTracking().CountAsync(item =>
+                item.Action == "occ.operation.charge.added" || item.Action == "occ.operation.charge.removed",
+                cancellationToken));
         }
 
         async Task<OccReviewDecisionWriteResult> DecideAsync(Guid actorId, string token, string outcome,
@@ -7132,6 +7180,29 @@ public sealed partial class SqlServerMigrationTests
                     .Select(submission => submission.Id).Single())
             .ToArrayAsync(cancellationToken));
         Assert.Equal(decisionReason, savedDecision.Reason);
+        if (reviewOutcome == "Approved")
+        {
+            // ADR-0034: what OCC approved is frozen with the charges as they stood; the incidents are
+            // closed and the turnaround completes.
+            Assert.NotNull(savedDecision.ApprovedEvidenceJson);
+            Assert.DoesNotContain("ADMIN-FEE", savedDecision.ApprovedEvidenceJson!, StringComparison.Ordinal);
+            Assert.Contains("NIGHT", savedDecision.ApprovedEvidenceJson!, StringComparison.Ordinal);
+            Assert.All(await decisionCheck.Incidents.AsNoTracking()
+                    .Where(item => item.GroundOperationId == operationInternalId).ToArrayAsync(cancellationToken),
+                incident =>
+                {
+                    Assert.Equal(IncidentStatus.Resolved, incident.Status);
+                    Assert.NotNull(incident.ResolvedAt);
+                });
+            var turnaroundAfter = await decisionCheck.Turnarounds.AsNoTracking().SingleAsync(item =>
+                item.Id == decisionCheck.GroundOperations.Where(operation => operation.Id == operationInternalId)
+                    .Select(operation => operation.TurnaroundId).Single(), cancellationToken);
+            Assert.Equal(TurnaroundStatus.Completed, turnaroundAfter.CurrentStatus);
+        }
+        else
+        {
+            Assert.Null(savedDecision.ApprovedEvidenceJson);
+        }
         var reviewAudit = await decisionCheck.AuditEntries.AsNoTracking()
             .SingleAsync(item => item.Action == "occ.operation.review.decided", cancellationToken);
         Assert.DoesNotContain(AgentNote, reviewAudit.MetadataJson ?? string.Empty, StringComparison.Ordinal);
@@ -7251,13 +7322,13 @@ public sealed partial class SqlServerMigrationTests
             var line = await inspection.PreinvoiceLines.AsNoTracking()
                 .SingleAsync(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Service,
                     cancellationToken);
-            // The NIGHT surcharge the agent marked is billed as its own line under the service (25 %).
+            // The NIGHT surcharge the agent marked is billed as its own line under the service (15 %, ADR-0034).
             var nightLine = await inspection.PreinvoiceLines.AsNoTracking()
                 .SingleAsync(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Charge,
                     cancellationToken);
             Assert.Equal(line.Id, nightLine.ParentLineId);
             Assert.Equal("NIGHT", nightLine.ServiceCode);
-            Assert.Equal(decimal.Round(line.Amount * 0.25m, 4), nightLine.Amount);
+            Assert.Equal(decimal.Round(line.Amount * 0.15m, 4), nightLine.Amount);
             Assert.Equal(nightLine.Amount, nightLine.ComputedAmount);
             Assert.Equal(PreinvoiceStatus.Draft, draft.Status);
             Assert.Equal(draft.Total, line.Amount + nightLine.Amount);

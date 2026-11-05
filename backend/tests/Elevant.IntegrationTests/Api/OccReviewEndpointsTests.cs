@@ -276,6 +276,15 @@ public sealed class OccReviewEndpointsTests(ElevantApiFactory factory)
             return Task.FromResult(History?.OperationId == operationId ? History : null);
         }
 
+        public OccReviewChargeAdjustRequest? LastAdjust { get; private set; }
+
+        public Task<OccReviewChargeAdjustResult> AdjustChargeAsync(OccReviewChargeAdjustRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastAdjust = request;
+            return Task.FromResult(new OccReviewChargeAdjustResult("\"next\"", null));
+        }
+
         public Task<OccReviewDecisionWriteResult> DecideAsync(
             OccReviewDecisionWriteRequest request, CancellationToken cancellationToken = default)
         {

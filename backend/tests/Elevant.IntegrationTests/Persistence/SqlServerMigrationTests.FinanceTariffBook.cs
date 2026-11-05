@@ -145,7 +145,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(130m, rate.BasePrice);
         Assert.Equal(-20m, rate.DifferencePercent);
         Assert.Equal(1, detail.Summary.RatesBelowBase);
-        Assert.Contains(detail.Charges, item => item.ChargeCode == "NIGHT" && item.BaseValue == 25m);
+        Assert.Contains(detail.Charges, item => item.ChargeCode == "NIGHT" && item.BaseValue == 15m);
 
         // Returning needs a reason and sends the draft back to Contracts with it.
         Assert.Equal(FinanceCatalogFailure.Invalid, (await book.DecideContractApprovalAsync(FinanceAccount,

@@ -197,6 +197,9 @@ internal sealed class EfRampOperationSubmissionStore(
         {
             return await RejectAsync(receipt, RampOperationsFailure.Conflict, "conflict", now, cancellationToken);
         }
+        // ADR-0034: the automatic surcharges are marked before the evidence OCC reviews is frozen.
+        var automaticSurcharges = await AutomaticSurchargeApplier.ApplyAsync(context, scope.Operation.Id, now, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
         var submission = new OperationSubmission
         {
             PublicId = request.IdempotencyKey,
@@ -255,6 +258,7 @@ internal sealed class EfRampOperationSubmissionStore(
                 revision,
                 rampAgentId = actor.RampAgentPublicId,
                 installationId = device.InstallationId,
+                automaticSurcharges,
             }, JsonOptions),
         };
         context.AuditEntries.Add(audit);

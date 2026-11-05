@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-04"
-verified_commit: "760eb78dbfebe15fe487e962c948334af695678d"
+last_verified: "2026-11-05"
+verified_commit: "b506e91b33570d387ceb70f7fda5b7c1b0c5381c"
 sources:
   - docs/architecture/database-v1.md
   - docs/database/schema-v1.md
@@ -35,6 +35,10 @@ sources:
   - backend/Elevant.Infrastructure/Operations/OperationDocumentPdfRenderer.cs
   - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Documents.cs
   - docs/adr/0033-charter-flights-without-contract.md
+  - docs/adr/0034-operational-close-occ-to-finance.md
+  - backend/Elevant.Application/Operations/AutomaticSurcharges.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/AutomaticSurchargeApplier.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.OperationalClose.cs
   - backend/Elevant.Application/Operations/Charters.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/EfCharterStore.cs
   - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Charter.cs
@@ -215,6 +219,36 @@ Una aerolínea sin contrato se opera como charter ([ADR-0033](../../docs/adr/003
 - **La Solicitud de Servicio** (`CharterServiceRequest`) la firman el representante y AVIAM. El representante deja su cédula o pasaporte, que solo llega al PDF. La Orden de Servicio sale como «Vuelo Charter» y «Al Contado».
 - **El PDF** reproduce literalmente la página 1. Para las páginas 2 y 3 (términos IATA 2018 con modificaciones de AVIAM) incluye una nota, sin inventar el texto.
 - **Finanzas** ve el total de servicios y si la Solicitud está firmada, y confirma el prepago con monto y referencia.
+
+No se ha verificado en el VPS.
+
+## Cierre OCC → Finanzas
+
+El cierre de la operación ([ADR-0034](../../docs/adr/0034-operational-close-occ-to-finance.md)) une la entrega del agente, la revisión de OCC y Finanzas.
+
+**Recargos automáticos.** Al entregar, ELEVANT marca en los servicios completados los recargos que describe la Orden de Servicio de AVIAM. Cada marca guarda su origen (agente, automático u OCC). Los recargos son:
+
+- **Nocturno:** inicio (bloqueo) entre las 22:00 y las 05:59, hora de la estación.
+- **Domingo o festivo:** entre las 06:00 y las 21:59; nunca se suma al nocturno.
+- **Tiempo extra (paquete excedido):** de bloqueo a push-back por encima del tiempo permitido por Finanzas para la categoría del avión, más la tolerancia del recargo.
+- **Demora** de llegada, más la tolerancia del recargo.
+
+La [política](../../backend/Elevant.Application/Operations/AutomaticSurcharges.cs) solo decide los códigos: los porcentajes y las tarifas son del tarifario y del contrato. Se respetan las exclusiones del contrato, no se duplican marcas y un recargo que OCC quitó no vuelve a marcarse. La evidencia (versión 4) congela el tiempo en tierra, el permitido, la categoría y la demora.
+
+**Revisión de OCC.** El detalle muestra los hitos, el tiempo en tierra frente al permitido, la demora, los daños, los recargos con su origen y los códigos IATA. Mientras la entrega está pendiente, OCC agrega o quita recargos con un motivo auditado. Cada ajuste mueve la versión de la revisión.
+
+**Al aprobar:**
+
+- `ops.review_decisions.approved_evidence_json` guarda lo aprobado, y de ahí lo valoran Finanzas y el portal.
+- Las incidencias quedan resueltas.
+- La escala pasa a `Completed` cuando todas sus operaciones están aprobadas.
+
+**Cierre operacional del día.** El reporte `daily-close` de OCC muestra, por vuelo:
+
+- horarios programados y reales;
+- posición inicial y final, con los minutos entre el último cambio y el bloqueo;
+- tiempo en tierra frente al permitido;
+- demoras IATA y desviaciones.
 
 No se ha verificado en el VPS.
 

@@ -48,9 +48,10 @@ public sealed class OccReportRendererTests
         Assert.Throws<ArgumentException>(() => new OccReportRenderer().RenderCsv(Table([new OccReportCell("solo una")])));
 
     [Fact]
-    public void CatalogOffersFiveReportsAndLimitsThePeriod()
+    public void CatalogOffersSixReportsAndLimitsThePeriod()
     {
-        Assert.Equal(5, OccReportCatalog.All.Count);
+        Assert.Equal(6, OccReportCatalog.All.Count);
+        Assert.Equal("daily-close", OccReportCatalog.Find("daily-close")?.Key);
         Assert.True(OccReportCatalog.ValidRange(new(2026, 1, 1), new(2026, 12, 31)));
         Assert.False(OccReportCatalog.ValidRange(new(2026, 2, 1), new(2026, 1, 1)));
         Assert.False(OccReportCatalog.ValidRange(new(2025, 1, 1), new(2026, 6, 1)));

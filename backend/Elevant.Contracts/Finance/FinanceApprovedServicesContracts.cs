@@ -22,7 +22,11 @@ public sealed record FinanceApprovedServiceResponse(
     bool Ready,
     string? BlockingReason,
     decimal? Amount,
-    Guid? PreinvoiceId);
+    Guid? PreinvoiceId,
+    IReadOnlyList<FinanceApprovedChargeResponse>? Charges = null);
+
+/// <summary>A charge OCC approved on the service; source is Agent, Automatic or Occ (ADR-0034).</summary>
+public sealed record FinanceApprovedChargeResponse(string Code, string Source);
 
 public sealed record FinanceApprovedServicesResponse(
     Guid StationId,

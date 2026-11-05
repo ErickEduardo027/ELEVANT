@@ -78,7 +78,8 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                 OperationId = operation.PublicId,
                 TurnaroundId = turnaround.PublicId,
                 SubmissionId = submission.PublicId,
-                submission.EvidenceJson,
+                // ADR-0034: what OCC approved, charges adjusted included; older approvals kept only the hand-off.
+                EvidenceJson = decision.ApprovedEvidenceJson ?? submission.EvidenceJson,
                 turnaround.OperationCode,
                 turnaround.OperationDate,
                 AirlineId = airline.PublicId,
@@ -154,7 +155,8 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                 row.ExecutedQuantity, row.BillingUnitSnapshot,
                 row.UnitPriceSnapshot, row.CurrencyCodeSnapshot,
                 valuation.Ready, valuation.BlockingReason, valuation.Amount,
-                row.PreinvoiceId);
+                row.PreinvoiceId, frozenCharges.Select(charge => new FinanceApprovedChargeData(charge.Code,
+                    charge.Source ?? nameof(Elevant.Domain.Enumerations.ChargeMarkSource.Agent))).ToArray());
         }).ToArray();
         return new FinanceApprovedServicesData(stationId, startDate, endDate,
             services, rows.Length > PageLimit);
