@@ -11,6 +11,7 @@ import {
 } from '../../services/occReviewService';
 import { reviewMessages } from './reviewMessages';
 import OperationDocumentsSection from './components/OperationDocumentsSection';
+import OperationCloseSection from './components/OperationCloseSection';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -79,6 +80,7 @@ function ReviewEvidence({ detail }) {
             {detail.incidents.map(incident => (
               <li key={incident.id} className="py-2">
                 <strong>{incident.type} · {incident.severity}</strong> · {incident.status}
+                {incident.delayCode && <span className="ml-2 rounded bg-status-warning/15 px-1.5 py-0.5 text-xs font-semibold">IATA {incident.delayCode}</span>}
                 <span className="ml-2 text-text-secondary-light">{dateTime(incident.occurredAt, detail.ianaTimeZone, locale)}</span>
                 <p>{incident.description}</p>
               </li>
@@ -286,6 +288,8 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
           <div className="grid gap-2 text-sm sm:grid-cols-2"><p>{t('detail.plannedStart', { date: dateTime(detail.data.plannedStartAt, detail.data.ianaTimeZone, locale) })}<br />{t('detail.actualStart', { date: dateTime(detail.data.actualStartAt, detail.data.ianaTimeZone, locale) })}</p><p>{t('detail.plannedEnd', { date: dateTime(detail.data.plannedEndAt, detail.data.ianaTimeZone, locale) })}<br />{t('detail.actualEnd', { date: dateTime(detail.data.actualEndAt, detail.data.ianaTimeZone, locale) })}</p></div>
           {detail.data.agentNote && <p className="rounded-xl bg-accent-600/10 p-3 text-sm"><strong>{t('detail.agentNote')}</strong> {detail.data.agentNote}</p>}
           <ReviewEvidence detail={detail.data} />
+          {detail.data.close && <OperationCloseSection detail={detail.data} disabled={busy}
+            onChanged={text => { setMessage({ kind: 'success', text }); setRefreshVersion(value => value + 1); }} />}
           <OperationDocumentsSection key={detail.data.operationId} operationId={detail.data.operationId} />
           <HistoricalSubmissions operationId={detail.data.operationId} currentSubmissionId={detail.data.submissionId} timeZone={detail.data.ianaTimeZone} />
           {detail.data.decision && <p className="rounded-xl bg-accent-600/10 p-3 text-sm">{t('detail.decision')}<strong>{statusLabel(detail.data.decision.outcome)}</strong> · {dateTime(detail.data.decision.decidedAt, detail.data.ianaTimeZone, locale)}{detail.data.decision.reason ? ` — ${detail.data.decision.reason}` : ''}</p>}
