@@ -91,5 +91,5 @@ Las páginas 2 y 3 son los términos del Acuerdo Estándar de Servicios en Tierr
 
 **Queda fuera de este bloque**
 - El texto literal de las páginas 2 y 3, hasta tener el formulario de AVIAM.
-- La valoración de recargos de un charter y su prefactura, que llegan con el cierre OCC → Finanzas del bloque 5.
+- La valoración de recargos de un charter y su prefactura, que llegan con el cierre OCC → Finanzas del bloque 5. *Recargos automáticos y cierre: [ADR-0034](0034-operational-close-occ-to-finance.md).*
 - Retirar un servicio agregado por error: hoy lo corrige OCC en la revisión.

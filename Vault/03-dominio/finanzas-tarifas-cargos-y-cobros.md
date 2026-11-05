@@ -14,6 +14,7 @@ sources:
   - docs/adr/0016-finance-tariffs-charges-and-receivables.md
   - docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md
   - docs/adr/0033-charter-flights-without-contract.md
+  - docs/adr/0034-operational-close-occ-to-finance.md
   - docs/reference/odoo-finance-adaptation.md
   - docs/reference/dgii-ecf-schema-sources.md
   - docs/runbooks/finance-fiscal-activation.md
@@ -154,6 +155,22 @@ La [matriz del servidor](../../backend/Elevant.Domain/Governance/DepartmentPermi
 Las mutaciones usan intención/hash, expectedVersion donde corresponde y transacción con auditoría e invalidaciones dirigidas. El feed revalida destinatario y ámbito; los replays no duplican el hecho de negocio.
 
 Los [reportes](../../backend/Elevant.Application/Abstractions/Finance/IFinanceReportStore.cs) incluyen cartera, cobranza, pipeline, cargos, disputas, tarifas, notas de crédito/débito, tesorería, proveedores/CxP, gastos, paquetes, estado fiscal y simulación. Los dos últimos están separados. Exportaciones CSV/XLSX/PDF requieren permiso/auditoría; conciliación documental no equivale a conciliación bancaria.
+
+## Reglas de cierre y recargos automáticos
+
+Finanzas define las reglas con las que se cierra cada operación ([ADR-0034](../../docs/adr/0034-operational-close-occ-to-finance.md)):
+
+- **Tiempo en tierra permitido por categoría de avión** (estrecho o ancho, de 15 a 720 minutos, con versión optimista). Es el umbral del recargo por tiempo extra (paquete excedido).
+- **Calendario de festivos.** En un festivo o domingo, de 06:00 a 21:59, aplica el recargo por día festivo.
+
+Se gestionan en el módulo «Reglas de cierre» con `finance.close_rules.read` y `.update`, y cada cambio queda auditado.
+
+**Cómo llegan los recargos a Finanzas.**
+
+- ELEVANT marca el nocturno, el festivo, el tiempo extra y la demora al entregar; OCC puede ajustarlos con motivo.
+- Finanzas valora la evidencia aprobada por OCC (`approved_evidence_json`), con la de la entrega como respaldo para aprobaciones anteriores.
+- En «Servicios aprobados» cada servicio muestra sus recargos con su origen, y hay atajos de semana de domingo a sábado.
+- El seed de Development usa 15 % para el nocturno y el festivo, como el formulario de AVIAM.
 
 ## Charters sin contrato
 
