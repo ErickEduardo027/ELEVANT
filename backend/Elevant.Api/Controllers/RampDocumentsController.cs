@@ -64,7 +64,7 @@ public sealed class RampDocumentsController(OperationDocumentHandler handler) : 
             return Failure(RampOperationsFailure.InvalidRequest);
         var (data, failure) = await handler.SignAsync(accountId, operationId, documentKind, signatureRole,
             request.SignerName, request.DocumentSha256, request.Strokes, DateTimeOffset.UtcNow, installationId,
-            idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
+            idempotencyKey, HttpContext.TraceIdentifier, cancellationToken, request.SignerIdentification);
         return failure is { } error ? Failure(error) : Ok(OperationDocumentResponseMapper.Map(data!));
     }
 

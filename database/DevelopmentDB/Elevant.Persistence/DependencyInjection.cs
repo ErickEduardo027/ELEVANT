@@ -174,6 +174,7 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationServiceCommandStore, EfRampOperationServiceCommandStore>();
         services.AddScoped<Elevant.Application.Operations.IRampExecutionCommandStore, EfRampExecutionCommandStore>();
         services.AddScoped<Elevant.Application.Operations.IOperationDocumentStore, EfOperationDocumentStore>();
+        services.AddScoped<Elevant.Application.Operations.ICharterStore, EfCharterStore>();
         services.AddScoped<IOperationalEvidenceStore>(_ => new S3OperationalEvidenceStore(configuration));
         services.AddScoped<IRampServiceChargeStore, EfRampServiceChargeStore>();
         services.AddScoped<IRampIncidentStore, EfRampIncidentStore>();

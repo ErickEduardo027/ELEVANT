@@ -14,7 +14,8 @@ public sealed record CreateManualTurnaroundRequest(
     DateTimeOffset ArrivalScheduledAt,
     string DepartureFlightNumber,
     string DepartureDestinationIata,
-    DateTimeOffset DepartureScheduledAt);
+    DateTimeOffset DepartureScheduledAt,
+    bool Charter = false);
 
 public sealed record ManualTurnaroundResponse(
     Guid TurnaroundId,
@@ -29,4 +30,5 @@ public sealed record ManualTurnaroundOptionsResponse(
     OccAirportResponse StationAirport,
     IReadOnlyList<ManualTurnaroundAirlineResponse> Airlines,
     IReadOnlyList<OccAirportResponse> Airports,
-    IReadOnlyList<OccStandResponse> Stands);
+    IReadOnlyList<OccStandResponse> Stands,
+    IReadOnlyList<ManualTurnaroundAirlineResponse>? CharterAirlines = null);

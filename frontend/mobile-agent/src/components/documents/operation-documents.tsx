@@ -24,11 +24,13 @@ import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
 import { PrimaryButton } from '../ui';
 import { SignaturePad, type Strokes } from './signature-pad';
+import { isValidSignerIdentification, normalizeSignerIdentification } from '../../utils/signer-identification';
 
 const TITLES: Record<OperationDocumentKind, string> = {
   ServiceOrder: 'Orden de Servicio',
   FlightReport: 'Reporte de Vuelo',
   BridgeChecklist: 'Check-List del puente',
+  CharterServiceRequest: 'Solicitud de Servicio',
 };
 
 const ROLES: Record<OperationSignatureRole, string> = {
@@ -112,9 +114,9 @@ export function DocumentsPanel({ operationId, editable }: { operationId: string;
       {signing && (
         <SignSheet document={signing.document} role={signing.role} defaultName={AVIAM_ROLES.has(signing.role) ? agentName : ''}
           onClose={() => setSigning(null)}
-          onSign={(name, strokes) => {
+          onSign={(name, strokes, identification) => {
             void signDocument(operationId, signing.document.kind as OperationDocumentKind, signing.role, name,
-              signing.document.contentSha256, strokes);
+              signing.document.contentSha256, strokes, identification);
             void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
             setSigning(null);
           }} />
@@ -177,13 +179,18 @@ function DocumentRow({ document, queued, editable, onSign }: {
 
 function SignSheet({ document, role, defaultName, onClose, onSign }: {
   document: OperationDocumentResponse; role: OperationSignatureRole; defaultName: string;
-  onClose: () => void; onSign: (name: string, strokes: Strokes) => void;
+  onClose: () => void; onSign: (name: string, strokes: Strokes, identification?: string) => void;
 }) {
   const [name, setName] = useState(defaultName);
+  // The charter request is the flight's agreement: whoever signs it leaves an ID or passport (ADR-0033).
+  const asksIdentification = document.kind === 'CharterServiceRequest';
+  const [identification, setIdentification] = useState('');
+  const normalizedId = normalizeSignerIdentification(identification);
+  const idValid = !asksIdentification || isValidSignerIdentification(identification);
   const [strokes, setStrokes] = useState<Strokes>([]);
   const [drawing, setDrawing] = useState(false);
   const summary = document.summary;
-  const ready = name.trim().length >= 2 && strokes.length > 0;
+  const ready = name.trim().length >= 2 && strokes.length > 0 && idValid;
   return (
     <Modal animationType="slide" visible onRequestClose={onClose}>
       <ScrollView scrollEnabled={!drawing} contentContainerStyle={styles.sheet} keyboardShouldPersistTaps="handled">
@@ -197,7 +204,7 @@ function SignSheet({ document, role, defaultName, onClose, onSign }: {
           <Fact label="Pasajeros" value={`${summary.passengersIn ?? '—'} llegan · ${summary.passengersOut ?? '—'} salen`} />
           <Fact label="MTOW" value={summary.mtowKg ? `${summary.mtowKg.toLocaleString('es-DO')} kg` : '—'} />
         </View>
-        {document.kind === 'ServiceOrder' ? (
+        {document.kind === 'ServiceOrder' || document.kind === 'CharterServiceRequest' ? (
           <View style={styles.lines}>
             {summary.services.length === 0 && <Text style={styles.hint}>Sin servicios registrados.</Text>}
             {summary.services.map(line => (
@@ -222,9 +229,17 @@ function SignSheet({ document, role, defaultName, onClose, onSign }: {
         <Text style={styles.fieldLabel}>Nombre de quien firma</Text>
         <TextInput accessibilityLabel="Nombre de quien firma" value={name} onChangeText={setName} maxLength={120}
           autoCapitalize="words" placeholder="Nombre y apellido" style={styles.input} />
+        {asksIdentification && (
+          <>
+            <Text style={styles.fieldLabel}>Cédula o pasaporte</Text>
+            <TextInput accessibilityLabel="Cédula o pasaporte" value={identification} onChangeText={setIdentification}
+              maxLength={44} autoCapitalize="characters" autoCorrect={false} placeholder="Número del documento" style={styles.input} />
+            {identification.length > 0 && !idValid && <Text style={styles.error}>Use solo letras, números o guiones (4 a 40).</Text>}
+          </>
+        )}
         <SignaturePad value={strokes} onChange={setStrokes} onDrawing={setDrawing} />
         <Text style={styles.fingerprint}>Huella del documento {document.contentSha256.slice(0, 12)}…{document.contentSha256.slice(-6)}</Text>
-        <PrimaryButton icon="checkmark" title="FIRMAR" disabled={!ready} onPress={() => onSign(name.trim(), strokes)} />
+        <PrimaryButton icon="checkmark" title="FIRMAR" disabled={!ready} onPress={() => onSign(name.trim(), strokes, asksIdentification ? normalizedId : undefined)} />
         <PrimaryButton secondary title="CANCELAR" onPress={onClose} />
       </ScrollView>
     </Modal>

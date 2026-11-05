@@ -34,11 +34,15 @@ public sealed class OccPlanningContractSafetyTests
             "identification",
             "documentnumber",
         };
+        // The only allowed exception: the charter request legally prints the signer's ID or passport,
+        // so the tablet sends it once. It is write-only: no response type carries it (ADR-0033).
+        var writeOnlyExceptions = new[] { "SignOperationDocumentRequest.SignerIdentification" };
         var exposedNames = typeof(OccPlanningSnapshotResponse).Assembly
             .GetTypes()
             .Where(type => type.Namespace == typeof(OccPlanningSnapshotResponse).Namespace)
-            .SelectMany(type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
-            .Select(property => property.Name)
+            .SelectMany(type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public)
+                .Where(property => !writeOnlyExceptions.Contains($"{type.Name}.{property.Name}"))
+                .Select(property => property.Name))
             .ToArray();
 
         Assert.DoesNotContain(

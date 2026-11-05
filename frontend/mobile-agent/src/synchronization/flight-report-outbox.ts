@@ -6,6 +6,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * timestamp cannot be typed again. The queue belongs to one account; local data is only a cache.
  * Signatures and walk-around marks (ADR-0032) travel in the same ordered queue: a photo always
  * follows its mark, and a signature carries the content hash the signer saw.
+ * A charter (ADR-0033) adds its services and the carrier's data through the same queue; the
+ * signer's ID of the charter request stays on the device only until it is sent.
  */
 export type FlightReportCommand =
   | Readonly<{ kind: 'milestone'; operationId: string; code: string; occurredAt: string }>
@@ -15,12 +17,14 @@ export type FlightReportCommand =
   }>
   | Readonly<{
     kind: 'signature'; operationId: string; documentKind: string; role: string; signerName: string;
-    documentSha256: string; strokes: readonly (readonly number[])[];
+    documentSha256: string; strokes: readonly (readonly number[])[]; signerIdentification?: string | null;
   }>
+  | Readonly<{ kind: 'charterService'; operationId: string; serviceDefinitionId: string; quantity: number }>
+  | Readonly<{ kind: 'charterDetails'; operationId: string; carrierAddress: string | null; chargesPayableBy: string | null }>
   | Readonly<{ kind: 'damageMark'; operationId: string; markId: string; x: number; y: number; note: string; reportedAt: string }>
   | Readonly<{ kind: 'damagePhoto'; operationId: string; markId: string; fileUri: string; contentType: 'image/jpeg' | 'image/png' }>;
 
-const KINDS = new Set(['milestone', 'flightData', 'signature', 'damageMark', 'damagePhoto']);
+const KINDS = new Set(['milestone', 'flightData', 'signature', 'damageMark', 'damagePhoto', 'charterService', 'charterDetails']);
 
 export type FlightReportOutboxItem = Readonly<{
   idempotencyKey: string;
@@ -86,6 +90,8 @@ function sameTarget(left: FlightReportCommand, right: FlightReportCommand) {
     return left.documentKind === right.documentKind && left.role === right.role;
   if ((left.kind === 'damageMark' && right.kind === 'damageMark') || (left.kind === 'damagePhoto' && right.kind === 'damagePhoto'))
     return left.markId === right.markId;
+  if (left.kind === 'charterService' && right.kind === 'charterService')
+    return left.serviceDefinitionId === right.serviceDefinitionId;
   return true;
 }
 

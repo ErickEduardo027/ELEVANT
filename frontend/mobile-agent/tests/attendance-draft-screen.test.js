@@ -14,6 +14,7 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
 jest.mock('../src/services/mobile-change-feed', () => ({ subscribeMobileChanges: () => () => {} }));
 jest.mock('../src/components/flight-report/connection-badge', () => ({ ConnectionBadge: () => null }));
 jest.mock('../src/components/documents/operation-documents', () => ({ DocumentsPanel: () => null, WalkaroundCard: () => null }));
+jest.mock('../src/components/documents/charter-card', () => ({ CharterCard: () => null }));
 jest.mock('../src/components/flight-report/flight-report-panel', () => ({
   FlightReportPanel: () => null, FlightDataCard: () => null, DeviationAction: () => null,
 }));

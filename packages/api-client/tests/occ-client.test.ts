@@ -142,6 +142,7 @@ const snapshot: OccPlanningSnapshotResponse = {
 };
 
 const planningOptions: OccPlanningOptionsResponse = {
+  isCharter: false,
   turnaround: {
     id: turnaroundId,
     operationCode: "DEV-TAT-0002",
@@ -226,6 +227,7 @@ const manualRequest: CreateManualTurnaroundRequest = {
   departureFlightNumber: "EV 312",
   departureDestinationIata: "mia",
   departureScheduledAt: "2026-08-19T15:00:00Z",
+  charter: false,
 };
 
 const shiftRequest: ProgramOccShiftRequest = {
@@ -725,6 +727,7 @@ describe("OCC planning API client", () => {
       ],
     };
     const minimalOptions: OccPlanningOptionsResponse = {
+      isCharter: false,
       turnaround: {
         id: turnaroundId,
         operationCode: "DEV-TAT-0002",

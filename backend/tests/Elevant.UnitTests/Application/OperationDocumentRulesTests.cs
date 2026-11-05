@@ -89,6 +89,7 @@ public sealed class OperationDocumentRulesTests
     [InlineData(OperationDocumentKind.ServiceOrder)]
     [InlineData(OperationDocumentKind.FlightReport)]
     [InlineData(OperationDocumentKind.BridgeChecklist)]
+    [InlineData(OperationDocumentKind.CharterServiceRequest)]
     public void EveryFormRendersAsPdfWithItsSignature(OperationDocumentKind kind)
     {
         var content = Content(kind);

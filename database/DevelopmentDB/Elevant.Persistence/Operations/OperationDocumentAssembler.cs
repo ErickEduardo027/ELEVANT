@@ -27,6 +27,7 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
                           join turnaround in context.Turnarounds.AsNoTracking() on operation.TurnaroundId equals turnaround.Id
                           join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
                           join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
+                          join airport in context.Set<Airport>().AsNoTracking() on station.AirportId equals airport.Id
                           where operation.Id == operationId
                           select new
                           {
@@ -34,9 +35,17 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
                               TurnaroundId = turnaround.Id, turnaround.OperationCode, turnaround.OperationDate,
                               turnaround.AircraftTypeId, turnaround.AircraftRegistration,
                               StationCode = station.Code, StationName = station.Name, StationTimeZone = station.IanaTimeZone,
-                              AirlineName = airline.Name, AirlineIata = airline.IataCode,
+                              AirlineName = airline.Name, AirlineIata = airline.IataCode, AirportIcao = airport.IcaoCode,
                           }).SingleOrDefaultAsync(cancellationToken);
         if (head is null) return null;
+        // A charter (ADR-0033) is paid in advance and prints the carrier data its representative gave.
+        var charterAgreement = await context.Set<CharterAgreement>().AsNoTracking()
+            .Where(item => item.TurnaroundId == head.TurnaroundId)
+            .Select(item => new { item.CarrierAddress, item.ChargesPayableBy }).SingleOrDefaultAsync(cancellationToken);
+        var charter = charterAgreement is null ? null
+            : new DocumentCharter($"{head.AirportIcao}/{head.StationCode}", charterAgreement.CarrierAddress,
+                charterAgreement.ChargesPayableBy);
+        var billingType = charter is null ? "Credit" : "Cash";
 
         var legs = await (from leg in context.Set<FlightLeg>().AsNoTracking()
                           join origin in context.Set<Airport>().AsNoTracking() on leg.OriginAirportId equals origin.Id
@@ -87,7 +96,9 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
                               }).ToArrayAsync(cancellationToken);
         var lines = services.Select(item =>
         {
-            var quantity = item.ExecutedQuantity;
+            // A charter is agreed and prepaid before the work (ADR-0033): until a quantity is executed,
+            // its forms show what the carrier requested, the same total Finance confirms.
+            var quantity = charter is not null && item.ExecutedQuantity == 0 ? item.ContractedQuantity : item.ExecutedQuantity;
             return new DocumentServiceLine(item.LineNumber, item.Code, item.Name, quantity, item.BillingUnitSnapshot,
                 item.UnitPriceSnapshot, item.UnitPriceSnapshot is decimal price ? decimal.Round(price * quantity, 2) : null);
         }).ToArray();
@@ -119,8 +130,8 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
         var documents = new List<OperationDocumentContent>
         {
             new(OperationDocumentRules.SchemaVersion, OperationDocumentKind.ServiceOrder, "F-RAM-AVL-MAG 04", "Rev. 02, 2023",
-                "Orden de Servicio en Rampa / Ramp Order Service", number, flight, lines, surcharges, currency, total, "Credit",
-                [], [], [], [], []),
+                "Orden de Servicio en Rampa / Ramp Order Service", number, flight, lines, surcharges, currency, total, billingType,
+                [], [], [], [], [], charter),
             new(OperationDocumentRules.SchemaVersion, OperationDocumentKind.FlightReport, "F-OCC-AVL-6.2.12/A9", "Rev. 2, Junio 2023",
                 "Reporte de Vuelo", number, flight, [], [], null, null, "Credit",
                 checklist.Where(item => item.ItemCode.StartsWith("ARR-", StringComparison.Ordinal) ||
@@ -138,6 +149,12 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
                 "F-MGO-AVL 8.14.1/A1-A2", "Revisión 01: Enero 2022", "Check-List y Reporte Diario Puente Abordaje", number,
                 flight, [], [], null, null, "Credit", bridge, [], [], [],
                 bridge.Where(item => item.Note is not null).Select(item => $"{item.Section}: {item.Note}").ToArray()));
+        if (charter is not null)
+            documents.Insert(0, new(OperationDocumentRules.SchemaVersion, OperationDocumentKind.CharterServiceRequest,
+                "Solicitud de Servicio", "AVIAM Ltd.",
+                "Solicitud de Servicio y Descargo de Responsabilidad e Indemnización / Service Request and Release and " +
+                "Waiver of Liability and Indemnity", number, flight, lines, surcharges, currency, total, billingType,
+                [], [], [], [], [], charter));
         return new Assembled(documents, marks);
     }
 

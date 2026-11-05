@@ -142,7 +142,7 @@ public sealed class OccPlanningController(
             request.OperationDate, request.ArrivalFlightNumber, request.ArrivalOriginIata,
             request.ArrivalScheduledAt, request.DepartureFlightNumber,
             request.DepartureDestinationIata, request.DepartureScheduledAt,
-            Guid.NewGuid(), HttpContext.TraceIdentifier), cancellationToken);
+            Guid.NewGuid(), HttpContext.TraceIdentifier, request.Charter), cancellationToken);
         if (!result.IsSuccess)
             return FailureResult<ManualTurnaroundResponse>(result.Failure!.Value);
 
@@ -425,7 +425,8 @@ public sealed class OccPlanningController(
             agent.DisplayName,
             agent.EmployeeNumber,
             agent.Eligible,
-            agent.EligibilityReasons)).ToArray());
+            agent.EligibilityReasons)).ToArray(),
+        options.IsCharter);
 
     private static ManualTurnaroundOptionsResponse Map(ManualTurnaroundOptionsData options) => new(
         Map(options.Station), options.Date,
@@ -437,7 +438,9 @@ public sealed class OccPlanningController(
             airport.IataCode, airport.IcaoCode, airport.Name)).ToArray(),
         options.Stands.Select(stand => new OccStandResponse(stand.Id, stand.Code,
             stand.Terminal is null ? null : new OccTerminalResponse(
-                stand.Terminal.Id, stand.Terminal.Code, stand.Terminal.Name))).ToArray());
+                stand.Terminal.Id, stand.Terminal.Code, stand.Terminal.Name))).ToArray(),
+        (options.CharterAirlines ?? []).Select(airline => new ManualTurnaroundAirlineResponse(
+            airline.Id, airline.IataCode, airline.Name)).ToArray());
 
     private static OccAssignmentResponse Map(OccAssignmentData assignment) => new(
         assignment.TurnaroundId,

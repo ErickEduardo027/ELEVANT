@@ -28,6 +28,8 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
   const [optionsRetry, setOptionsRetry] = useState(0);
   const [submitStatus, setSubmitStatus] = useState('idle');
   const [formError, setFormError] = useState('');
+  const [charter, setCharter] = useState(false);
+  const airlineChoices = (charter ? options?.charterAirlines : options?.airlines) ?? [];
   const idempotencyId = useRef(null);
   const dialogRef = useRef(null);
   const dateRef = useRef(null);
@@ -74,7 +76,7 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
 
   async function submit(event) {
     event.preventDefault();
-    if (optionsStatus !== 'success' || !options?.airlines.length || submitStatus === 'submitting') return;
+    if (optionsStatus !== 'success' || !airlineChoices.length || submitStatus === 'submitting') return;
     const arrival = new Date(`${form.arrivalScheduledAt}:00.000Z`);
     const departure = new Date(`${form.departureScheduledAt}:00.000Z`);
     if (!form.airlineId || !form.standId || !form.arrivalOriginIata || !form.departureDestinationIata ||
@@ -99,6 +101,7 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
         departureFlightNumber: form.departureFlightNumber,
         departureDestinationIata: form.departureDestinationIata,
         departureScheduledAt: departure.toISOString(),
+        charter,
       }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       setSubmitStatus('success');
@@ -158,12 +161,20 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
             <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.operationalDate')}
               <input ref={dateRef} type="date" required value={date} onChange={event => updateDate(event.target.value)} className={`${fieldClass} mt-1`} />
             </label>
-            <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.airline')}
+            <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t(charter ? 'manual.charterAirline' : 'manual.airline')}
               <select required value={form.airlineId} onChange={event => updateField('airlineId', event.target.value)} className={`${fieldClass} mt-1`}>
                 <option value="">{t('manual.selectAirline')}</option>
-                {(options?.airlines ?? []).map(airline => <option key={airline.id} value={airline.id}>{airline.name} · {airline.iataCode}</option>)}
+                {airlineChoices.map(airline => <option key={airline.id} value={airline.id}>{airline.name} · {airline.iataCode}</option>)}
               </select>
             </label>
+            <div className="sm:col-span-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-ink-900 dark:text-text-primary-dark">
+                <input type="checkbox" checked={charter} onChange={event => { setCharter(event.target.checked); updateField('airlineId', ''); }}
+                  className="h-4 w-4 rounded border-black/20 text-accent-600 focus:ring-accent-600" />
+                {t('manual.charterToggle')}
+              </label>
+              {charter && <p className="mt-1 text-xs text-status-warning">{t(airlineChoices.length ? 'manual.charterHint' : 'manual.noCharterAirlines')}</p>}
+            </div>
             <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.stand')}
               <select required value={form.standId} onChange={event => updateField('standId', event.target.value)} className={`${fieldClass} mt-1`}>
                 <option value="">{t('manual.selectStand')}</option>
@@ -216,7 +227,7 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
           {formError && <p role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/5 p-3 text-sm text-status-danger">{t(formError)}</p>}
           <div className="flex flex-wrap justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10">
             <button type="button" onClick={onClose} className="rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold text-ink-900 dark:border-white/15 dark:text-text-primary-dark">{t('manual.cancel')}</button>
-            <button type="submit" disabled={optionsStatus !== 'success' || !options?.airlines.length || !options?.stands.length || !selectableAirports.length || submitStatus === 'submitting'}
+            <button type="submit" disabled={optionsStatus !== 'success' || !airlineChoices.length || !options?.stands.length || !selectableAirports.length || submitStatus === 'submitting'}
               className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
               {submitStatus === 'submitting' ? t('manual.submitting') : t('manual.submit')}
             </button>

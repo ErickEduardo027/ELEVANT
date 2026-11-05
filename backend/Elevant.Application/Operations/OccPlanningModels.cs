@@ -142,7 +142,8 @@ public sealed record OccPlanningOptionsSourceData(
     OccPlanningTurnaroundContextData Turnaround,
     OccContractOptionData? Contract,
     IReadOnlyList<OccServiceOptionData> Services,
-    IReadOnlyList<OccAgentCandidateData> AgentCandidates);
+    IReadOnlyList<OccAgentCandidateData> AgentCandidates,
+    bool IsCharter = false);
 
 public enum OccPlanningOptionsReadFailure
 {
@@ -175,4 +176,5 @@ public sealed record OccPlanningOptionsData(
     OccPlanningTurnaroundContextData Turnaround,
     OccContractOptionData? Contract,
     IReadOnlyList<OccServiceOptionData> Services,
-    IReadOnlyList<OccAgentOptionData> Agents);
+    IReadOnlyList<OccAgentOptionData> Agents,
+    bool IsCharter = false);

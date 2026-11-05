@@ -15,7 +15,8 @@ public sealed record ManualTurnaroundWriteRequest(
     string DepartureDestinationIata,
     DateTimeOffset DepartureScheduledAt,
     Guid CorrelationId,
-    string RequestId);
+    string RequestId,
+    bool Charter = false);
 
 public enum ManualTurnaroundWriteFailure
 {

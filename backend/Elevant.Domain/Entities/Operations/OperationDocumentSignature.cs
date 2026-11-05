@@ -15,6 +15,9 @@ public sealed class OperationDocumentSignature : AuditableEntity
     /// <summary>Name the signer wrote (the airline representative is not an ELEVANT account).</summary>
     public string SignerName { get; set; } = string.Empty;
 
+    /// <summary>ID or passport number, required by the charter request (ADR-0033).</summary>
+    public string? SignerIdentification { get; set; }
+
     /// <summary>The ramp agent's account that captured the signature on its device.</summary>
     public long CapturedByAccountId { get; set; }
 

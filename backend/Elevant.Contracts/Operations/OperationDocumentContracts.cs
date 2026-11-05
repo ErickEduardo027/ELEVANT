@@ -30,7 +30,9 @@ public sealed record DamageMarkResponse(Guid Id, decimal X, decimal Y, string No
 public sealed record SignOperationDocumentRequest(
     [Required, StringLength(120, MinimumLength = 2)] string SignerName,
     [Required, RegularExpression("^[0-9a-f]{64}$")] string DocumentSha256,
-    [Required, MinLength(1), MaxLength(64)] decimal[][] Strokes);
+    [Required, MinLength(1), MaxLength(64)] decimal[][] Strokes,
+    // Write-only: the charter request prints it; the API never returns it (ADR-0033).
+    [StringLength(40)] string? SignerIdentification = null);
 
 /// <param name="X">Horizontal position on the silhouette box, 0–1 (nose at the left).</param>
 /// <param name="Y">Vertical position on the silhouette box, 0–1.</param>

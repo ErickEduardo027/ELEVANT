@@ -399,7 +399,10 @@ internal sealed class EfOccPlanningReadStore(
             scheduledAt ??
             GetUtcInstantAtLocalMidnight(scope.OperationDate, scope.Station.IanaTimeZone);
 
-        var applicableContracts = await ApplicableContracts.For(context, scope.AirlineId, scope.StationInternalId, scope.OperationDate)
+        // A charter flight has no contract (ADR-0033): its services are added on the ramp at the base tariff.
+        var isCharter = await context.Set<CharterAgreement>().AsNoTracking()
+            .AnyAsync(item => item.TurnaroundId == scope.TurnaroundInternalId, cancellationToken);
+        var applicableContracts = isCharter ? [] : await ApplicableContracts.For(context, scope.AirlineId, scope.StationInternalId, scope.OperationDate)
             .OrderByDescending(row => row.VersionNumber).ThenBy(row => row.VersionPublicId)
             .Select(row => new ContractProjection(row.VersionId, new OccContractOptionData(row.ContractPublicId,
                 row.ContractCode, row.VersionNumber, row.ValidFrom, row.ValidTo, row.CurrencyCode)))
@@ -455,7 +458,8 @@ internal sealed class EfOccPlanningReadStore(
                 string.Empty),
             contract?.Contract,
             services,
-            candidates);
+            candidates,
+            isCharter);
         var concurrencyToken = OccPlanningConcurrencyToken.CreateOptions(
             scope.TurnaroundStatus,
             scope.OperationStatus.Value,

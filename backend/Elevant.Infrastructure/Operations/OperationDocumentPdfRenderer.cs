@@ -39,6 +39,7 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         {
             case OperationDocumentKind.ServiceOrder: writer.ServiceOrder(signatures); break;
             case OperationDocumentKind.FlightReport: writer.FlightReport(signatures, damagePhotos); break;
+            case OperationDocumentKind.CharterServiceRequest: writer.CharterServiceRequest(signatures); break;
             default: writer.BridgeChecklist(signatures); break;
         }
         writer.Finish(contentSha256, signatures, (timeProvider ?? TimeProvider.System).GetUtcNow());
@@ -75,6 +76,7 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         private readonly XFont bold = new(ElevantPdfFontResolver.Typeface, 8.5, XFontStyleEx.Bold, Embedded);
         private readonly XFont small = new(ElevantPdfFontResolver.Typeface, 7, XFontStyleEx.Regular, Embedded);
         private readonly XFont smallBold = new(ElevantPdfFontResolver.Typeface, 7, XFontStyleEx.Bold, Embedded);
+        private readonly XFont tiny = new(ElevantPdfFontResolver.Typeface, 5.8, XFontStyleEx.Regular, Embedded);
         private readonly XFont band = new(ElevantPdfFontResolver.Typeface, 8.5, XFontStyleEx.Bold, Embedded);
         private readonly XFont brand = new(ElevantPdfFontResolver.Typeface, 24, XFontStyleEx.Bold, Embedded);
         private readonly XFont title = new(ElevantPdfFontResolver.Typeface, 13, XFontStyleEx.Bold, Embedded);
@@ -115,7 +117,8 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                 ("Cantidad de Pasajeros Llegados / Pax In", Flight.PassengersIn?.ToString(Spanish)),
                 ("Cantidad de Pasajeros Salientes / Pax Out", Flight.PassengersOut?.ToString(Spanish)),
                 ("Peso Despegue en Libras / MTOW", Mtow()),
-                ("Vuelo Regular / Regular Flight", "X"), ("Vuelo Charter / Charter Flight", string.Empty),
+                ("Vuelo Regular / Regular Flight", content.Charter is null ? "X" : string.Empty),
+                ("Vuelo Charter / Charter Flight", content.Charter is null ? string.Empty : "X"),
             ]);
             Band("Servicios / Services");
             var currency = content.CurrencyCode ?? "USD";
@@ -182,6 +185,258 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         }
 
         // ──────────────────── Check-List y Reporte Diario Puente ────────────────────
+        // ─────────── Solicitud de Servicio y Descargo de Responsabilidad (charter, ADR-0033) ───────────
+        /// <summary>Page 1 exactly as AVIAM's form; the services served are ticked on its fixed list.</summary>
+        public void CharterServiceRequest(IReadOnlyList<OperationDocumentSignatureData> signatures)
+        {
+            var charter = content.Charter;
+            graphics.DrawString("AVIAM", brand, new XSolidBrush(Navy), Margin, y + 22);
+            graphics.DrawString("Ltd.", small, new XSolidBrush(Navy), Margin + 86, y + 22);
+            foreach (var (line, offset) in new[]
+            {
+                ("SOLICITUD DE SERVICIO Y DESCARGO DE RESPONSABILIDAD E INDEMNIZACION /", 4.0),
+                ("SERVICE REQUEST AND RELEASE AND WAIVER OF LIABILITY AND INDEMNITY", 16.0),
+            })
+                Fit(line, bold, new XSolidBrush(Navy), Margin + 130, y + offset, Width - 130);
+            y += 34;
+            graphics.DrawLine(new XPen(Rule, 0.8), Margin, y, Margin + Width, y);
+            y += 10;
+            Band("INFORMACION GENERAL/GENERAL INFORMATION");
+            StackedGrid([
+                ("Aerolínea / Carrier:", Airline()), ("Estación / Station:", charter?.StationLabel),
+                ("Dirección / Address:", charter?.CarrierAddress), ("Tipo  de Aeronave /Type Of Aircraft:", Flight.AircraftType),
+                ("Vuelo No. / Flight No.:", Flights()), ("Matrícula de Aeronave / Aircraft Registration:", Flight.Registration),
+                ("No. de la Nota de Cargo / Charge Note Number:", content.Number),
+                ("Cargos pagaderos por / Charges payable by:", charter?.ChargesPayableBy ?? Airline()),
+            ]);
+            TwoLineHeads(("FECHA-HORA LOCAL DE LLEGADA/", "DATE-LOCAL TIME OF ARRIVAL"),
+                ("FECHA-HORA LOCAL DE SALIDA/", "DATE-LOCAL TIME OF DEPARTURE"));
+            StackedGrid([
+                ("Fecha-Hora Itinerario / Date-Time Schedule", Time(Flight.ArrivalAt)),
+                ("Fecha-Hora Itinerario / Date-Time Schedule:", Time(Flight.DepartureAt)),
+                ("Fecha-Hora Real /  Date-Time Actual:", ActualTime("BLOCK_ON")),
+                ("Fecha-Hora Real / Date-Time Actual:", ActualTime("PUSHBACK")),
+            ]);
+            Band("LISTA DE LOS SERVICIOS PROVISTOS PARA FINES CONTABLES /LIST OF SERVICES RENDERED AND FOR ACCOUNTING PURPOSES");
+            var served = content.Services.Select(line => line.Code.ToUpperInvariant()).ToArray();
+            var matched = new HashSet<string>(StringComparer.Ordinal);
+            bool Ticked(params string[] tokens)
+            {
+                var hits = served.Where(code => tokens.Any(token => code.Contains(token, StringComparison.Ordinal))).ToArray();
+                foreach (var hit in hits) matched.Add(hit);
+                return hits.Length > 0;
+            }
+            (string Label, bool Ticked)[] left =
+            [
+                ("Escalera Pasajero/ Passenger Stairs", Ticked("STAIR")),
+                ("Correa de Equipaje Motorizada/Cargoveyor", Ticked("CONVEYOR", "BELT")),
+                ("Elevador de Carga/Loader", Ticked("LOADER")),
+                ("Tractor", Ticked("TOW", "TRACTOR", "PUSH")),
+                ("Carro de Equipaje/Baggage Cart-Dollies", Ticked("BAGGAGE", "CART", "DOLL")),
+                ("Limpieza de Cabina/ Cabin Cleaning", Ticked("CLEAN")),
+                ("Servicio de Agua Potable/Potable Water", Ticked("WATER")),
+                ("Servicio a los Baños/Lavatory", Ticked("LAV", "TOILET")),
+            ];
+            (string Label, bool Ticked)[] right =
+            [
+                ("Energía Eléctrica/ Ground Power Unit (GPU)", Ticked("GPU")),
+                ("Aire Acondicionado/Air Conditioning (ACU)", Ticked("ACU", "-AC")),
+                ("Aire Neumático/Air Starter (ASU)", Ticked("ASU")),
+                ("Ascensor Pasajeros Discapacitados/Disabled Passenger Lift", Ticked("LIFT", "AMBU")),
+                ("Uso de Escalera por Pasajero Discapacitados/ Use of Stair by Disabled Passenger", Ticked("PRM")),
+            ];
+            var others = content.Services.Where(line => !matched.Contains(line.Code.ToUpperInvariant()))
+                .Select(line => line.Name).ToArray();
+            const double rowHeight = 12;
+            var rows = Math.Max(left.Length, right.Length + 1);
+            Ensure(rows * rowHeight + 8);
+            var top = y + 4;
+            graphics.DrawRectangle(new XPen(Rule, 0.5), Margin, y, Width, rows * rowHeight + 8);
+            graphics.DrawLine(new XPen(Rule, 0.5), Margin + Width / 2, y, Margin + Width / 2, y + rows * rowHeight + 8);
+            void Box(double x, double rowTop, string label, bool ticked)
+            {
+                graphics.DrawRectangle(new XPen(Navy, 0.7), x, rowTop + 1.5, 7, 7);
+                if (ticked) graphics.DrawString("X", smallBold, new XSolidBrush(Navy), x + 1.2, rowTop + 7.8);
+                // The form prints every service in full; a long one uses a smaller size rather than an ellipsis.
+                var font = graphics.MeasureString(label, small).Width <= Width / 2 - 30 ? small : tiny;
+                Fit(label, font, XBrushes.Black, x + 12, rowTop + (font == small ? 0 : 0.6), Width / 2 - 24);
+            }
+            for (var index = 0; index < left.Length; index++)
+                Box(Margin + 8, top + index * rowHeight, left[index].Label, left[index].Ticked);
+            for (var index = 0; index < right.Length; index++)
+                Box(Margin + Width / 2 + 8, top + index * rowHeight, right[index].Label, right[index].Ticked);
+            Box(Margin + Width / 2 + 8, top + right.Length * rowHeight,
+                "Otro/Other " + (others.Length == 0 ? "______________________" : string.Join(", ", others)), others.Length > 0);
+            y += rows * rowHeight + 12;
+            foreach (var clause in new[]
+            {
+                "El firmante, actuando en nombre y representación de la Aerolínea antes citada, por este medio certifica que la " +
+                "Aerolínea reconoce y acepta todos los términos y condiciones de responsabilidad e indemnización establecidas en el " +
+                "Acuerdo Estándar de IATA 2018, con modificaciones, utilizado por AVIAM, LTD., para la prestación de los servicios " +
+                "de rampa. Véase página 2.",
+                "The undersigned, acting on behalf and in representation of the above referenced Carrier, hereby certifies that " +
+                "the Carrier recognizes and accepts the terms and conditions of liability and indemnity as provided in the 2018 " +
+                "IATA Standard Ground Handling Agreement, with modifications, with AVIAM, LTD. for ground handling services. " +
+                "See page 3.",
+            })
+            {
+                Lines(clause, small);
+                y += 3;
+            }
+            CharterSignatures(signatures);
+            TermsNote();
+        }
+
+        /// <summary>Cells as on the charter form: the label on top, the value below across the cell.</summary>
+        private void StackedGrid(IReadOnlyList<(string Label, string? Value)> cells)
+        {
+            const double height = 24;
+            for (var index = 0; index < cells.Count; index += 2)
+            {
+                Ensure(height);
+                for (var column = 0; column < 2 && index + column < cells.Count; column++)
+                {
+                    var (label, value) = cells[index + column];
+                    var x = Margin + column * Width / 2;
+                    graphics.DrawRectangle(new XPen(Rule, 0.5), x, y, Width / 2, height);
+                    Fit(label, small, XBrushes.Black, x + 3, y + 2, Width / 2 - 6);
+                    graphics.DrawRectangle(new XSolidBrush(Tint), x + 3, y + 11, Width / 2 - 6, 11);
+                    Fit(string.IsNullOrWhiteSpace(value) ? string.Empty : value, bold, new XSolidBrush(Navy), x + 5, y + 12,
+                        Width / 2 - 10);
+                }
+                y += height;
+            }
+        }
+
+        private void TwoLineHeads((string First, string Second) left, (string First, string Second) right)
+        {
+            const double height = 20;
+            Ensure(height);
+            foreach (var (head, column) in new[] { (left, 0), (right, 1) })
+            {
+                var x = Margin + column * Width / 2;
+                graphics.DrawRectangle(new XPen(Rule, 0.5), new XSolidBrush(Tint), x, y, Width / 2, height);
+                graphics.DrawString(head.First, smallBold, XBrushes.Black, new XRect(x, y + 2, Width / 2, 9), XStringFormats.TopCenter);
+                graphics.DrawString(head.Second, smallBold, XBrushes.Black, new XRect(x, y + 10.5, Width / 2, 9),
+                    XStringFormats.TopCenter);
+            }
+            y += height;
+        }
+
+        private void CharterSignatures(IReadOnlyList<OperationDocumentSignatureData> signatures)
+        {
+            const double height = 150;
+            Ensure(height + 4);
+            y += 4;
+            var half = Width / 2;
+            (OperationSignatureRole Role, string Caption, string NameLabel, string IdLabel, string SealLabel)[] columns =
+            [
+                (OperationSignatureRole.AirlineRepresentative,
+                    "Firma de aceptación por parte de la Aerolínea a los términos y condiciones referidos / Signature of " +
+                    "acceptance by the Carrier for the terms and conditions previously stated.",
+                    "Nombre del representante en letras de molde / Name of the representative in bold letters",
+                    "Número de Cédula o Pasaporte del Representante / ID or Passport number of the representative",
+                    "Sello de la Aerolínea/ Airline Seal"),
+                (OperationSignatureRole.AviamAgent,
+                    "Firma del representante de AVIAM, Ltd. / Signature of AVIAM, Ltd. representative",
+                    "Nombre del representante de AVIAM LTD en letras de  molde / Name of the representative of the Carrier in bold letters",
+                    "Número de Cédula o Pasaporte del Representante de AVIAM / ID or Passport number of the AVIAM representative",
+                    "Sello AVIAM/ AVIAMSeal"),
+            ];
+            graphics.DrawRectangle(new XPen(Rule, 0.5), Margin, y, Width, height);
+            graphics.DrawLine(new XPen(Rule, 0.5), Margin + half, y, Margin + half, y + height);
+            for (var index = 0; index < columns.Length; index++)
+            {
+                var column = columns[index];
+                var x = Margin + index * half + 5;
+                var columnWidth = half - 10;
+                var signature = signatures.FirstOrDefault(item => item.Role == column.Role);
+                var top = y + 2;
+                foreach (var line in Wrap(column.Caption, smallBold, columnWidth))
+                {
+                    graphics.DrawString(line, smallBold, XBrushes.Black, x, top + 7);
+                    top += 8.5;
+                }
+                var area = new XRect(x, top + 2, columnWidth, 28);
+                if (signature is not null) DrawStrokes(signature, area);
+                top += 32;
+                graphics.DrawLine(new XPen(Rule, 0.5), x, top, x + columnWidth, top);
+                foreach (var (label, value) in new[]
+                {
+                    (column.NameLabel, signature?.SignerName.ToUpper(Spanish)),
+                    (column.IdLabel, signature?.SignerIdentification),
+                })
+                {
+                    foreach (var line in Wrap(label, smallBold, columnWidth))
+                    {
+                        graphics.DrawString(line, smallBold, XBrushes.Black, x, top + 8);
+                        top += 8.5;
+                    }
+                    graphics.DrawRectangle(new XSolidBrush(Tint), x, top + 1, columnWidth, 12);
+                    graphics.DrawString(value ?? string.Empty, bold, new XSolidBrush(Navy), x + 3, top + 10);
+                    top += 15;
+                }
+                graphics.DrawString(column.SealLabel, smallBold, XBrushes.Black, x, top + 8);
+                if (signature is not null)
+                    graphics.DrawString("Firmado en ELEVANT · " +
+                        TimeZoneInfo.ConvertTime(signature.SignedAt, zone).ToString("dd/MM/yyyy HH:mm", Spanish),
+                        small, new XSolidBrush(Muted), x, y + height - 4);
+            }
+            y += height;
+        }
+
+        /// <summary>
+        /// Pages 2 and 3 of the paper form carry the 2018 IATA SGHA terms with AVIAM's modifications.
+        /// Their text was not available; ELEVANT states what they are and never invents them (ADR-0033).
+        /// </summary>
+        private void TermsNote()
+        {
+            NewPage();
+            Band("PÁGINAS 2 Y 3 · TÉRMINOS Y CONDICIONES / PAGES 2 AND 3 · TERMS AND CONDITIONS");
+            y += 6;
+            Lines("Los términos y condiciones de responsabilidad e indemnización a los que se refiere la página 1 son los del " +
+                "Acuerdo Estándar de Servicios en Tierra de IATA 2018 (SGHA), con las modificaciones utilizadas por AVIAM, Ltd. " +
+                "Su texto completo forma parte de este acuerdo en la versión vigente de AVIAM y no se reproduce en este documento " +
+                "generado.", body);
+            y += 4;
+            Lines("The terms and conditions of liability and indemnity referred to on page 1 are those of the 2018 IATA Standard " +
+                "Ground Handling Agreement (SGHA), with the modifications used by AVIAM, Ltd. Their full text is part of this " +
+                "agreement in AVIAM's current version and is not reproduced in this generated document.", body);
+        }
+
+        private void DrawStrokes(OperationDocumentSignatureData signature, XRect area)
+        {
+            var pen = new XPen(Navy, 1.1) { LineCap = XLineCap.Round, LineJoin = XLineJoin.Round };
+            var scale = Math.Min(area.Width / 3, area.Height);
+            foreach (var stroke in signature.Strokes)
+            {
+                var points = new XPoint[stroke.Count / 2];
+                for (var point = 0; point < points.Length; point++)
+                    points[point] = new XPoint(area.X + (double)stroke[point * 2] * scale * 3,
+                        area.Y + (double)stroke[point * 2 + 1] * scale);
+                if (points.Length > 1) graphics.DrawLines(pen, points);
+            }
+        }
+
+        private IEnumerable<string> Wrap(string text, XFont font, double width)
+        {
+            var line = string.Empty;
+            foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var candidate = line.Length == 0 ? word : line + " " + word;
+                if (graphics.MeasureString(candidate, font).Width > width && line.Length > 0)
+                {
+                    yield return line;
+                    line = word;
+                }
+                else line = candidate;
+            }
+            if (line.Length > 0) yield return line;
+        }
+
+        private string? ActualTime(string code) => content.Milestones.FirstOrDefault(item => item.Code == code) is { } milestone
+            ? Time(milestone.At) : null;
+
         public void BridgeChecklist(IReadOnlyList<OperationDocumentSignatureData> signatures)
         {
             Header($"Check-List Diario Puente Abordaje · {Flight.StationName}",
@@ -242,7 +497,10 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         {
             Ensure(18);
             graphics.DrawRectangle(new XSolidBrush(Orange), Margin, y, Width, 13);
-            graphics.DrawString(text, band, XBrushes.White, new XRect(Margin, y + 1.5, Width, 11), XStringFormats.TopCenter);
+            // A long bilingual heading shrinks instead of overflowing the band.
+            var font = graphics.MeasureString(text, band).Width <= Width - 8 ? band : smallBold;
+            graphics.DrawString(text, font, XBrushes.White, new XRect(Margin, y + (font == band ? 1.5 : 2.5), Width, 11),
+                XStringFormats.TopCenter);
             y += 13;
         }
 

@@ -11,6 +11,9 @@ public enum OperationDocumentKind
 
     /// <summary>Check-List y Reporte Diario Puente Abordaje, F-MGO-AVL 8.14.1/A1 y A2.</summary>
     BridgeChecklist,
+
+    /// <summary>Solicitud de Servicio y Descargo de Responsabilidad e Indemnización: the charter's agreement (ADR-0033).</summary>
+    CharterServiceRequest,
 }
 
 /// <summary>Who signs a form; each form asks for its own set of roles.</summary>
@@ -20,4 +23,11 @@ public enum OperationSignatureRole
     AviamAgent,
     Coordinator,
     BridgeOperator,
+}
+
+/// <summary>Finance's confirmation that a charter carrier paid in advance (ADR-0033).</summary>
+public enum CharterPrepaymentStatus
+{
+    Pending,
+    Confirmed,
 }

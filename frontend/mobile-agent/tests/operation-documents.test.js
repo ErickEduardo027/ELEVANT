@@ -4,6 +4,8 @@ const mockApi = {
   recordRampDamageMark: jest.fn(),
   attachRampDamagePhoto: jest.fn(),
   getRampOperationDocuments: jest.fn(),
+  addRampCharterService: jest.fn(),
+  updateRampCharterDetails: jest.fn(),
 };
 const mockContext = jest.fn();
 const mockRegister = jest.fn();
@@ -45,7 +47,7 @@ jest.mock('../src/storage/walkaround-photos', () => ({
 
 const { ElevantApiError } = require('@elevant/api-client');
 const { readFlightReportOutbox } = require('../src/synchronization/flight-report-outbox');
-const { flushFlightReport, markDamage, signDocument, subscribeFlightReport } = require('../src/services/flight-report');
+const { addCharterService, flushFlightReport, markDamage, saveCharterDetails, signDocument, subscribeFlightReport } = require('../src/services/flight-report');
 
 const accountId = '20000000-0000-4000-8000-000000000001';
 const operationId = '70000000-0000-4000-8000-000000000001';
@@ -113,4 +115,37 @@ test('the last server view of the forms is kept per operation', async () => {
   await flushFlightReport();
   stop();
   expect(states.at(-1).documents[operationId]).toEqual(signed);
+});
+
+test('a charter request signature carries the ID or passport only in the command it sends', async () => {
+  await signDocument(operationId, 'CharterServiceRequest', 'AirlineRepresentative', 'Ana Pérez', sha, [[0.1, 0.2, 0.3, 0.4]], 'PA1234567');
+  await flushFlightReport();
+  expect(mockApi.signRampOperationDocument).toHaveBeenCalledWith(operationId, 'CharterServiceRequest', 'AirlineRepresentative',
+    { signerName: 'Ana Pérez', documentSha256: sha, strokes: [[0.1, 0.2, 0.3, 0.4]], signerIdentification: 'PA1234567' },
+    installationId, expect.any(String));
+  expect(await readFlightReportOutbox(accountId)).toEqual([]);
+});
+
+test('charter services and carrier data travel in order and keep the last server view of the charter', async () => {
+  const charter = { operationId, charterId: '91000000-0000-4000-8000-000000000001', currencyCode: 'USD', carrierAddress: 'Miami',
+    chargesPayableBy: null, prepaymentStatus: 'Pending', prepaymentAmount: null, catalog: [] };
+  mockApi.addRampCharterService.mockResolvedValue(charter);
+  mockApi.updateRampCharterDetails.mockResolvedValue(charter);
+  const serviceId = '30000000-0000-4000-8000-000000000001';
+  mockRegister.mockRejectedValue(new Error('offline'));
+  await addCharterService(operationId, serviceId, 2);
+  await addCharterService(operationId, serviceId, 3);
+  await saveCharterDetails(operationId, 'Miami', null);
+  expect((await readFlightReportOutbox(accountId)).map(item => item.command.kind)).toEqual(['charterService', 'charterDetails']);
+  await flushFlightReport();
+  mockRegister.mockResolvedValue({ installationId });
+  await flushFlightReport();
+  expect(mockApi.addRampCharterService).toHaveBeenCalledWith(operationId, { serviceDefinitionId: serviceId, quantity: 3 },
+    installationId, expect.any(String));
+  expect(mockApi.addRampCharterService.mock.invocationCallOrder[0])
+    .toBeLessThan(mockApi.updateRampCharterDetails.mock.invocationCallOrder[0]);
+  let latest;
+  subscribeFlightReport(value => { latest = value; })();
+  expect(latest.charters[operationId]).toEqual(charter);
+  expect(await readFlightReportOutbox(accountId)).toEqual([]);
 });

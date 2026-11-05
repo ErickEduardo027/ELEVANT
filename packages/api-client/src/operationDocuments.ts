@@ -10,7 +10,7 @@ import type {
   OperationDocumentSignatureResponse,
 } from "../generated/elevant-api";
 
-export const OPERATION_DOCUMENT_KINDS = ["ServiceOrder", "FlightReport", "BridgeChecklist"] as const;
+export const OPERATION_DOCUMENT_KINDS = ["ServiceOrder", "FlightReport", "BridgeChecklist", "CharterServiceRequest"] as const;
 export type OperationDocumentKind = (typeof OPERATION_DOCUMENT_KINDS)[number];
 
 export const OPERATION_SIGNATURE_ROLES = ["AirlineRepresentative", "AviamAgent", "Coordinator", "BridgeOperator"] as const;
@@ -21,6 +21,7 @@ export const OPERATION_DOCUMENT_SIGNERS: Readonly<Record<OperationDocumentKind, 
   ServiceOrder: ["AirlineRepresentative", "AviamAgent"],
   FlightReport: ["Coordinator"],
   BridgeChecklist: ["BridgeOperator"],
+  CharterServiceRequest: ["AirlineRepresentative", "AviamAgent"],
 };
 
 /** Top view of an airliner, nose to the left, in a box `ASPECT` times wider than tall (same as the PDF). */
@@ -44,6 +45,8 @@ export interface SignOperationDocumentCommand {
   readonly documentSha256: string;
   /** Strokes as flat lists of normalized points [x0, y0, x1, y1, …], each value 0–1. */
   readonly strokes: readonly (readonly number[])[];
+  /** ID or passport number; only the charter service request asks for it, and the API never returns it. */
+  readonly signerIdentification?: string | null;
 }
 
 export interface RecordDamageMarkCommand {
@@ -127,7 +130,13 @@ export const normalizedSignature = (command: SignOperationDocumentCommand): Sign
     points += stroke.length / 2;
     strokes.push(stroke.map(value => Math.round(value * 1000) / 1000));
   }
-  return points >= 2 && points <= SIGNATURE_MAX_POINTS ? { signerName, documentSha256: command.documentSha256, strokes } : null;
+  if (points < 2 || points > SIGNATURE_MAX_POINTS) return null;
+  if (command.signerIdentification === undefined || command.signerIdentification === null)
+    return { signerName, documentSha256: command.documentSha256, strokes };
+  const signerIdentification = typeof command.signerIdentification === "string"
+    ? command.signerIdentification.replace(/\s+/g, "").toUpperCase() : "";
+  return /^[A-Z0-9-]{4,40}$/.test(signerIdentification)
+    ? { signerName, documentSha256: command.documentSha256, strokes, signerIdentification } : null;
 };
 
 export const isValidDamageMark = (command: RecordDamageMarkCommand) =>

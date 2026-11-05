@@ -525,6 +525,7 @@ internal static class OperationsConfiguration
             });
             builder.Property(signature => signature.Role).HasConversion<string>().HasMaxLength(32);
             builder.Property(signature => signature.SignerName).HasMaxLength(120).IsRequired();
+            builder.Property(signature => signature.SignerIdentification).HasMaxLength(40);
             builder.Property(signature => signature.SignedAt).HasPrecision(3);
             builder.Property(signature => signature.DocumentSha256).HasMaxLength(64).IsFixedLength().IsRequired();
             builder.Property(signature => signature.StrokesJson).IsRequired();
@@ -534,6 +535,31 @@ internal static class OperationsConfiguration
             AddReference<OperationDocumentVersion, OperationDocumentSignature>(builder, signature => signature.OperationDocumentVersionId);
             AddReference<ApplicationUser, OperationDocumentSignature>(builder, signature => signature.CapturedByAccountId);
             AddReference<MobileDevice, OperationDocumentSignature>(builder, signature => signature.MobileDeviceId);
+        });
+
+        modelBuilder.Entity<CharterAgreement>(builder =>
+        {
+            builder.ToTable("charter_agreements", "ops", table =>
+            {
+                table.HasCheckConstraint("ck_charter_agreement_currency", "LEN([currency_code]) = 3");
+                table.HasCheckConstraint("ck_charter_agreement_prepayment",
+                    "([prepayment_status] = 'Pending' AND [prepayment_confirmed_at] IS NULL) OR " +
+                    "([prepayment_status] = 'Confirmed' AND [prepayment_confirmed_at] IS NOT NULL AND " +
+                    "[prepayment_amount] > 0 AND [prepayment_confirmed_by_account_id] IS NOT NULL)");
+            });
+            builder.Property(agreement => agreement.CurrencyCode).HasMaxLength(3).IsFixedLength().IsRequired();
+            builder.Property(agreement => agreement.CarrierAddress).HasMaxLength(300);
+            builder.Property(agreement => agreement.ChargesPayableBy).HasMaxLength(160);
+            builder.Property(agreement => agreement.PrepaymentStatus).HasConversion<string>().HasMaxLength(16);
+            builder.Property(agreement => agreement.PrepaymentAmount).HasPrecision(18, 2);
+            builder.Property(agreement => agreement.PrepaymentReference).HasMaxLength(80);
+            builder.Property(agreement => agreement.PrepaymentConfirmedAt).HasPrecision(3);
+            builder.HasIndex(agreement => agreement.TurnaroundId).IsUnique();
+            builder.HasIndex(agreement => new { agreement.PrepaymentStatus, agreement.CreatedAt });
+            AddReference<Turnaround, CharterAgreement>(builder, agreement => agreement.TurnaroundId);
+            AddReference<Airline, CharterAgreement>(builder, agreement => agreement.AirlineId);
+            AddReference<ApplicationUser, CharterAgreement>(builder, agreement => agreement.CreatedByAccountId);
+            AddReference<ApplicationUser, CharterAgreement>(builder, agreement => agreement.PrepaymentConfirmedByAccountId);
         });
 
         modelBuilder.Entity<OperationDamageMark>(builder =>

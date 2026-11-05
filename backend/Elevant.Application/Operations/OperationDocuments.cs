@@ -43,11 +43,19 @@ public sealed record OperationDocumentContent(
     IReadOnlyList<DocumentServiceLine> Services, IReadOnlyList<DocumentSurcharge> Surcharges,
     string? CurrencyCode, decimal? TotalAmount, string BillingType,
     IReadOnlyList<DocumentChecklistAnswer> Checklist, IReadOnlyList<DocumentMilestone> Milestones,
-    IReadOnlyList<DocumentDamage> Damages, IReadOnlyList<DocumentDelay> Delays, IReadOnlyList<string> Observations);
+    IReadOnlyList<DocumentDamage> Damages, IReadOnlyList<DocumentDelay> Delays, IReadOnlyList<string> Observations,
+    DocumentCharter? Charter = null);
+
+/// <summary>
+/// What only a charter carries (ADR-0033): the station as the form prints it («MDPC/PUJ»), the
+/// carrier's address and who pays, as the representative gives them on the ramp.
+/// </summary>
+public sealed record DocumentCharter(string StationLabel, string? CarrierAddress, string? ChargesPayableBy);
 
 /// <summary>A signature drawn on the tablet: strokes of normalized points [x0, y0, x1, y1, …].</summary>
+/// <param name="SignerIdentification">ID or passport number, required by the charter request (ADR-0033).</param>
 public sealed record OperationDocumentSignatureData(OperationSignatureRole Role, string SignerName, DateTimeOffset SignedAt,
-    string DocumentSha256, IReadOnlyList<IReadOnlyList<decimal>> Strokes);
+    string DocumentSha256, IReadOnlyList<IReadOnlyList<decimal>> Strokes, string? SignerIdentification = null);
 
 /// <param name="Signatures">Signatures on the current content.</param>
 /// <param name="StaleRoles">Roles that signed an earlier content and must sign again.</param>
@@ -72,7 +80,7 @@ public sealed record DamagePhoto(byte[] Content, string ContentType);
 public sealed record OperationDocumentSignRequest(Guid ActorAccountId, IReadOnlyCollection<Guid> AllowedStationIds,
     Guid OperationId, OperationDocumentKind Kind, OperationSignatureRole Role, string SignerName, string DocumentSha256,
     IReadOnlyList<IReadOnlyList<decimal>> Strokes, DateTimeOffset SignedAt, Guid InstallationId, Guid IdempotencyKey,
-    string? RequestId);
+    string? RequestId, string? SignerIdentification = null);
 
 public sealed record DamageMarkWriteRequest(Guid ActorAccountId, IReadOnlyCollection<Guid> AllowedStationIds,
     Guid OperationId, Guid MarkId, decimal X, decimal Y, string Note, DateTimeOffset ReportedAt, Guid InstallationId,
@@ -144,6 +152,8 @@ public static class OperationDocumentRules
     {
         OperationDocumentKind.ServiceOrder => [OperationSignatureRole.AirlineRepresentative, OperationSignatureRole.AviamAgent],
         OperationDocumentKind.FlightReport => [OperationSignatureRole.Coordinator],
+        OperationDocumentKind.CharterServiceRequest =>
+            [OperationSignatureRole.AirlineRepresentative, OperationSignatureRole.AviamAgent],
         _ => [OperationSignatureRole.BridgeOperator],
     };
 
@@ -222,18 +232,25 @@ public sealed class OperationDocumentHandler(IActorContextResolver actors, IOper
     public async Task<(OperationDocumentsView? Data, RampOperationsFailure? Failure)> SignAsync(Guid accountId,
         Guid operationId, OperationDocumentKind kind, OperationSignatureRole role, string? signerName, string? documentSha256,
         IReadOnlyList<IReadOnlyList<decimal>>? strokes, DateTimeOffset signedAt, Guid installationId, Guid idempotencyKey,
-        string? requestId, CancellationToken cancellationToken = default)
+        string? requestId, CancellationToken cancellationToken = default, string? signerIdentification = null)
     {
         var name = OperationDocumentRules.NormalizeSignerName(signerName);
         var normalized = OperationDocumentRules.NormalizeStrokes(strokes);
+        var identification = CharterRules.NormalizeIdentification(signerIdentification);
+        // The charter request prints the signer's ID or passport; the other forms do not ask for it.
+        var identificationValid = kind == OperationDocumentKind.CharterServiceRequest
+            ? identification is not null
+            : string.IsNullOrWhiteSpace(signerIdentification);
         if (operationId == Guid.Empty || installationId == Guid.Empty || idempotencyKey == Guid.Empty || name is null ||
+            !identificationValid ||
             normalized is null || !OperationDocumentRules.IsSha256(documentSha256) ||
             !Enum.IsDefined(kind) || !OperationDocumentRules.RolesFor(kind).Contains(role))
             return (null, RampOperationsFailure.InvalidRequest);
         var (stations, failure) = await RampStationsAsync(accountId, cancellationToken);
         if (failure is not null) return (null, failure);
         return Map(await store.SignAsync(new OperationDocumentSignRequest(accountId, stations!, operationId, kind, role, name,
-            documentSha256!, normalized, signedAt.ToUniversalTime(), installationId, idempotencyKey, requestId), cancellationToken));
+            documentSha256!, normalized, signedAt.ToUniversalTime(), installationId, idempotencyKey, requestId, identification),
+            cancellationToken));
     }
 
     public async Task<(OperationDocumentsView? Data, RampOperationsFailure? Failure)> RecordDamageMarkAsync(Guid accountId,
@@ -305,6 +322,7 @@ public sealed class OperationDocumentHandler(IActorContextResolver actors, IOper
     {
         OperationDocumentKind.ServiceOrder => $"orden-de-servicio-{content.Number}.pdf",
         OperationDocumentKind.FlightReport => $"reporte-de-vuelo-{content.Number}.pdf",
+        OperationDocumentKind.CharterServiceRequest => $"solicitud-de-servicio-{content.Number}.pdf",
         _ => $"checklist-puente-{content.Number}.pdf",
     };
 

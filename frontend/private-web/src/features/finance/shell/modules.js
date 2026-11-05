@@ -20,6 +20,7 @@ export const FINANCE_MODULE_IDS = {
   TAXES: 'finance-taxes',
   CONTRACT_APPROVALS: 'finance-contract-approvals',
   APPROVED_SERVICES: 'finance-approved-services',
+  CHARTERS: 'finance-charters',
   PREINVOICES: 'finance-preinvoices',
   RECONCILIATION: 'finance-reconciliation',
   TARIFF_BOOKS: 'finance-tariff-books',
@@ -36,6 +37,7 @@ export const FINANCE_MODULES = [
   { id: FINANCE_MODULE_IDS.PACKAGES, permission: 'finance.packages.read', label: 'Paquetes', icon: TariffIcon, description: 'Coberturas, vigencias y bloques de excedentes.' },
   { id: FINANCE_MODULE_IDS.CONTRACT_APPROVALS, permission: 'finance.contract_approvals.read', label: 'Aprobación de contratos', icon: ShieldCheckIcon, description: 'Contratos enviados por Contratos frente a la tarifa base.' },
   { id: FINANCE_MODULE_IDS.APPROVED_SERVICES, permission: 'finance.approved_services.read', label: 'Servicios aprobados', icon: ApprovedServicesIcon, description: 'Consulta y filtrado de servicios aprobados por aerolínea o período.' },
+  { id: FINANCE_MODULE_IDS.CHARTERS, permission: 'finance.charters.read', label: 'Charters sin contrato', icon: ApprovedServicesIcon, description: 'Vuelos sin contrato a tarifa base y confirmación del prepago.' },
   { id: FINANCE_MODULE_IDS.PREINVOICES, permission: 'finance.preinvoices.read', label: 'Pre-facturación', icon: PreInvoiceIcon, description: 'Prefacturas con sus servicios, cargos y ajustes.' },
   { id: FINANCE_MODULE_IDS.RECONCILIATION, permission: 'finance.reconciliation.read', label: 'Facturas', icon: ReconciliationIcon, description: 'Facturas no fiscales, saldos, pagos parciales y notas de crédito.' },
   {
