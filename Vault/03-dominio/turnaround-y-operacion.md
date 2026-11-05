@@ -34,6 +34,10 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Operations/EfOperationDocumentStore.cs
   - backend/Elevant.Infrastructure/Operations/OperationDocumentPdfRenderer.cs
   - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Documents.cs
+  - docs/adr/0033-charter-flights-without-contract.md
+  - backend/Elevant.Application/Operations/Charters.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfCharterStore.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Charter.cs
 tags:
   - turnaround
   - operaciones
@@ -198,7 +202,21 @@ Los formularios de AVIAM ya no se transcriben: se generan desde el registro de l
 
 **Walk-around.** `ops.operation_damage_marks` guarda la posición en la silueta (0–1), la nota y, opcionalmente, una foto JPEG o PNG en almacenamiento privado con su SHA-256. Las fotos no entran en la huella: se anexan al PDF del Reporte de Vuelo.
 
-**Fuera de este bloque:** el formulario de charter sin contrato (falta el formulario literal) y la valoración de recargos (bloque 5).
+**Fuera de este bloque:** la valoración de recargos (bloque 5).
+
+## Charter sin contrato
+
+Una aerolínea sin contrato se opera como charter ([ADR-0033](../../docs/adr/0033-charter-flights-without-contract.md)). La Solicitud de Servicio firmada hace de contrato de ese vuelo.
+
+- **OCC** da de alta la escala con «Vuelo charter». Solo se ofrecen aerolíneas activas sin contrato, y la escala queda con su `ops.charter_agreements` y sin versión de contrato. Se asigna sin contrato ni servicios previos.
+- **El agente**, en la tablet:
+  - agrega los servicios a la tarifa base de Finanzas (precio y moneda en instantánea, una línea por definición);
+  - registra la dirección del transportista y quién paga.
+- **La Solicitud de Servicio** (`CharterServiceRequest`) la firman el representante y AVIAM. El representante deja su cédula o pasaporte, que solo llega al PDF. La Orden de Servicio sale como «Vuelo Charter» y «Al Contado».
+- **El PDF** reproduce literalmente la página 1. Para las páginas 2 y 3 (términos IATA 2018 con modificaciones de AVIAM) incluye una nota, sin inventar el texto.
+- **Finanzas** ve el total de servicios y si la Solicitud está firmada, y confirma el prepago con monto y referencia.
+
+No se ha verificado en el VPS.
 
 ## Relacionados
 

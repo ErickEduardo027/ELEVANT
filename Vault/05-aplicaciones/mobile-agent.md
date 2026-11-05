@@ -23,6 +23,7 @@ sources:
   - frontend/mobile-agent/src/app/sync.tsx
   - frontend/mobile-agent/tests/flight-report.test.js
   - docs/adr/0032-aviam-forms-signatures-and-walkaround.md
+  - docs/adr/0033-charter-flights-without-contract.md
   - frontend/mobile-agent/src/components/documents/operation-documents.tsx
   - frontend/mobile-agent/src/components/documents/signature-pad.tsx
   - frontend/mobile-agent/src/storage/walkaround-photos.ts
@@ -280,4 +281,12 @@ Las [pruebas](../../frontend/mobile-agent/tests/operation-documents.test.js) cub
 - el almacenamiento de fotos caído, que deja la foto pendiente;
 - la última vista del servidor guardada por operación.
 
-El formulario de charter sin contrato no está en este bloque: falta el formulario literal de AVIAM.
+## Fase 3, bloque 4b: charter sin contrato
+
+En un charter ([ADR-0033](../../docs/adr/0033-charter-flights-without-contract.md)) la pantalla de operación suma la [tarjeta «Charter sin contrato»](../../frontend/mobile-agent/src/components/documents/charter-card.tsx). La tarjeta aparece cuando los formularios incluyen la Solicitud de Servicio y contiene:
+
+- la dirección del transportista y quién paga los cargos;
+- el catálogo de servicios con la tarifa base y su mínimo, con la cantidad y «Agregar»;
+- el estado del prepago que confirma Finanzas.
+
+Los servicios y los datos viajan en la misma cola persistente, sin señal. La hoja de firma de la Solicitud de Servicio pide además la cédula o el pasaporte. Ese dato queda en el dispositivo solo hasta que se envía.

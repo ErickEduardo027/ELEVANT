@@ -13,6 +13,7 @@ sources:
   - docs/superpowers/plans/2026-10-18-finance-platform.md
   - docs/adr/0016-finance-tariffs-charges-and-receivables.md
   - docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md
+  - docs/adr/0033-charter-flights-without-contract.md
   - docs/reference/odoo-finance-adaptation.md
   - docs/reference/dgii-ecf-schema-sources.md
   - docs/runbooks/finance-fiscal-activation.md
@@ -153,6 +154,18 @@ La [matriz del servidor](../../backend/Elevant.Domain/Governance/DepartmentPermi
 Las mutaciones usan intención/hash, expectedVersion donde corresponde y transacción con auditoría e invalidaciones dirigidas. El feed revalida destinatario y ámbito; los replays no duplican el hecho de negocio.
 
 Los [reportes](../../backend/Elevant.Application/Abstractions/Finance/IFinanceReportStore.cs) incluyen cartera, cobranza, pipeline, cargos, disputas, tarifas, notas de crédito/débito, tesorería, proveedores/CxP, gastos, paquetes, estado fiscal y simulación. Los dos últimos están separados. Exportaciones CSV/XLSX/PDF requieren permiso/auditoría; conciliación documental no equivale a conciliación bancaria.
+
+## Charters sin contrato
+
+Un vuelo de una aerolínea sin contrato se cobra a la tarifa base, con prepago ([ADR-0033](../../docs/adr/0033-charter-flights-without-contract.md)). El agente agrega los servicios en rampa con el precio en instantánea, y la Solicitud de Servicio firmada hace de contrato del vuelo.
+
+El módulo «Charters sin contrato» de Finanzas:
+
+- requiere `finance.charters.read` y lista los charters de las estaciones de la cuenta;
+- muestra el total de servicios y si la Solicitud está firmada por los dos roles;
+- con `finance.charters.confirm`, registra el monto y la referencia del prepago. Repetir con los mismos datos es idempotente, con otros datos da conflicto, y queda auditado.
+
+La prefactura y los recargos de un charter llegan con el cierre OCC → Finanzas (fase 3, bloque 5). No se ha verificado en el VPS.
 
 ## Límites y referencias
 

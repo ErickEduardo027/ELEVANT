@@ -85,7 +85,7 @@ Un error de matrícula o un cambio de avión obligan a rehacer la Orden y a volv
 - La aerolínea recibe la Orden firmada en su portal.
 
 **Queda fuera de este bloque**
-- **Formulario de charter sin contrato.** El «Formulario de solicitud de servicio y descargo de responsabilidad» no está entre los formularios recibidos, y su texto legal no se inventa. Queda pendiente hasta tener el formulario literal de AVIAM. Mientras tanto, la Orden de Servicio se emite siempre como «A Crédito» y «Vuelo Regular».
+- **Formulario de charter sin contrato.** El «Formulario de solicitud de servicio y descargo de responsabilidad» no está entre los formularios recibidos, y su texto legal no se inventa. Queda pendiente hasta tener el formulario literal de AVIAM. Mientras tanto, la Orden de Servicio se emite siempre como «A Crédito» y «Vuelo Regular». *Resuelto después en [ADR-0033](0033-charter-flights-without-contract.md).*
 - **Valoración de recargos.** La Orden lista los recargos aplicados, pero no los valora: eso es el cierre OCC → Finanzas del bloque 5. El total cubre solo los servicios con precio del contrato.
 - **Check-List del Puente.** Se firma una vez por operación, no por fase. El pre-uso y la llave recibida o entregada siguen dentro del checklist del vuelo, hasta que la cobertura por turno los registre.
 - **Checklist del Reporte de Vuelo en posiciones con puente.** Esas operaciones materializan el checklist del puente (ADR-0031), así que su Reporte de Vuelo muestra «sin respuestas» en llegada y retroempuje.
