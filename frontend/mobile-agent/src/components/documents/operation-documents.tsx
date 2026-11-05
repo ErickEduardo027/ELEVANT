@@ -24,6 +24,7 @@ import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
 import { PrimaryButton } from '../ui';
 import { SignaturePad, type Strokes } from './signature-pad';
+import { isValidSignerIdentification, normalizeSignerIdentification } from '../../utils/signer-identification';
 
 const TITLES: Record<OperationDocumentKind, string> = {
   ServiceOrder: 'Orden de Servicio',
@@ -184,8 +185,8 @@ function SignSheet({ document, role, defaultName, onClose, onSign }: {
   // The charter request is the flight's agreement: whoever signs it leaves an ID or passport (ADR-0033).
   const asksIdentification = document.kind === 'CharterServiceRequest';
   const [identification, setIdentification] = useState('');
-  const normalizedId = identification.replace(/s+/g, '').toUpperCase();
-  const idValid = !asksIdentification || /^[A-Z0-9-]{4,40}$/.test(normalizedId);
+  const normalizedId = normalizeSignerIdentification(identification);
+  const idValid = !asksIdentification || isValidSignerIdentification(identification);
   const [strokes, setStrokes] = useState<Strokes>([]);
   const [drawing, setDrawing] = useState(false);
   const summary = document.summary;
