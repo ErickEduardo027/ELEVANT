@@ -16,6 +16,8 @@ const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3
 const primary = 'min-h-[40px] rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
 const secondary = 'min-h-[40px] rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold dark:border-white/10 disabled:opacity-50';
 const METHODS = { Transfer: 'Transferencia', Check: 'Cheque', Cash: 'Efectivo', Other: 'Otro' };
+// A card receipt only comes from the airline portal (ADR-0036): it is shown, never recorded by hand.
+const METHOD_LABELS = { ...METHODS, Card: 'Tarjeta' };
 const KINDS = { Application: 'Aplicación', ApplicationReversal: 'Reverso de aplicación', ReceiptReversal: 'Reverso de cobro', Refund: 'Devolución' };
 
 function ReceiptDetail({ receiptId, revision, onChanged, onOpenInvoice, preferredInvoiceId }) {
@@ -84,7 +86,7 @@ function ReceiptDetail({ receiptId, revision, onChanged, onOpenInvoice, preferre
       {[['Recibido', receipt.amount], ['Aplicado', receipt.applied], ['Devuelto', receipt.refunded], ['Remanente', receipt.available]].map(([label, amount]) =>
         <div key={label} className="rounded-lg bg-black/[.03] p-3 dark:bg-white/[.04]"><dt className="text-xs">{label}</dt><dd className="font-semibold tabular-nums">{money(amount, receipt.currencyCode)}</dd></div>)}
     </dl>
-    <p className="text-sm">{receipt.receivedOn} · {METHODS[receipt.method] ?? receipt.method}{receipt.reversed && ' · Revertido'}</p>
+    <p className="text-sm">{receipt.receivedOn} · {METHOD_LABELS[receipt.method] ?? receipt.method}{receipt.reversed && ' · Revertido'}</p>
     <p className="text-sm">{receipt.reason}</p>
     <div className="flex flex-wrap gap-2">
       {canApply && <button type="button" className={primary} onClick={() => void open('apply')}>Aplicar a facturas</button>}

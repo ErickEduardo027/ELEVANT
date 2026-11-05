@@ -6,6 +6,7 @@ import { ElevantApiError } from "@elevant/api-client";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import type { AirlineTreasuryInvoice, AirlineTreasuryInvoiceDetail, AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
 import styles from "./AirlinePortalPage.module.css";
+import { CardPaymentPanel } from "./CardPaymentPanel";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -75,13 +76,14 @@ function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }) {
     return () => { active = false; controller.abort(); };
   }, [getTreasuryInvoice, id, key]);
   const live = state.key === key ? state : null;
-  const detail = live?.data;
+  // While a payment or a live change reloads it, the previous detail stays on screen.
+  const detail = live?.data ?? (state.data?.invoice.id === id ? state.data : null);
   return <section className={styles.panel} aria-label="Detalle de factura">
     <div className={styles.requestCardHeading}>
       <h2>{detail ? invoiceTitle(detail.invoice) : "Factura"}</h2>
       <button type="button" className={styles.loadMore} onClick={onBack}>Volver a facturas</button>
     </div>
-    {!live && <p role="status">Cargando factura…</p>}
+    {!live && !detail && <p role="status">Cargando factura…</p>}
     {live?.error && <div role="alert"><p>{live.error}</p>
       <button type="button" className={styles.loadMore} onClick={() => setRetry(value => value + 1)}>Reintentar</button></div>}
     {detail && <>
@@ -93,6 +95,8 @@ function InvoiceDetail({ id, onBack }: { id: string; onBack: () => void }) {
         <div><span>Saldo</span><strong>{amount(detail.invoice.currencyCode, detail.invoice.balance)}</strong></div>
       </div>
       <InvoicePdfButton invoice={detail.invoice} />
+      <CardPaymentPanel invoiceId={detail.invoice.id} balance={detail.invoice.balance} currencyCode={detail.invoice.currencyCode}
+        onChanged={() => setRetry(value => value + 1)} />
       {detail.invoice.fiscalNumber && <p className={styles.note}>Factura de crédito fiscal electrónica simulada. Simulación — sin validez fiscal.</p>}
       <section className={styles.preinvoiceLines} aria-label="Líneas de factura"><h3>Líneas</h3>
         {detail.lines.map(line => <p key={line.id} className={line.parentLineNumber ? styles.nestedLine : undefined}>

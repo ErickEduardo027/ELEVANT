@@ -60,6 +60,7 @@ public enum EmailPurpose
     ContractActivated,
     /// <summary>Simulated e-CF invoice PDF sent to the airline when Finance issues it (ADR-0035).</summary>
     InvoiceIssued,
+    PaymentReceived,
 }
 
 /// <summary>Delivery state of an email in the outbox.</summary>

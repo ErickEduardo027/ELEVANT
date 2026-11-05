@@ -15,7 +15,7 @@ import AdjustmentNotesPanel from '../treasury/AdjustmentNotesPanel';
 import TreasuryPage from '../treasury/TreasuryPage';
 import { formatMoney, getFinanceInvoice, listFinanceInvoices } from '../../../services/financeBookService';
 import { formatTreasuryMoney, getTreasuryStatement, treasuryError, treasuryToday } from '../../../services/financeTreasuryService';
-import { downloadInvoiceDocument } from '../../../services/invoicingService';
+import { downloadInvoiceDocument, getInvoiceCardPayments } from '../../../services/invoicingService';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 export const INVOICE_STATUS = {
@@ -23,7 +23,29 @@ export const INVOICE_STATUS = {
   Paid: { label: 'Pagada', tone: 'success' }, Overdue: { label: 'Vencida', tone: 'danger' },
 };
 const KIND_LABELS = { Service: 'Servicio', Charge: 'Cargo', Adjustment: 'Ajuste', Package: 'Paquete', Excess: 'Exceso', Minimum: 'Mínimo' };
-const METHODS = { Transfer: 'Transferencia', Check: 'Cheque', Cash: 'Efectivo', Other: 'Otro' };
+const METHODS = { Transfer: 'Transferencia', Check: 'Cheque', Cash: 'Efectivo', Other: 'Otro', Card: 'Tarjeta' };
+const CARD_STATUS = { Approved: { label: 'Aprobado', tone: 'success' }, Declined: { label: 'Rechazado', tone: 'warning' }, Error: { label: 'Error del procesador', tone: 'danger' } };
+const DECLINES = { insufficient_funds: 'fondos insuficientes', expired_card: 'tarjeta vencida', card_not_accepted: 'tarjeta no aceptada', processing_error: 'reintentar' };
+
+/** ADR-0036: the airline card attempts on this invoice; Finance sees the brand and last four digits only. */
+function CardAttempts({ invoiceId, revision }) {
+  const [state, setState] = useState({ items: null, error: false });
+  useEffect(() => {
+    let active = true;
+    Promise.resolve().then(() => getInvoiceCardPayments(invoiceId)).then(list => { if (active) setState({ items: list?.attempts ?? [], error: false }); },
+      () => { if (active) setState({ items: null, error: true }); });
+    return () => { active = false; };
+  }, [invoiceId, revision]);
+  if (state.error) return <p role="alert" className="text-xs text-status-danger">No se pudieron consultar los pagos con tarjeta.</p>;
+  if (!state.items) return null;
+  return <section aria-label="Pagos con tarjeta"><h3 className="text-sm font-semibold">Pagos con tarjeta</h3>
+    {state.items.length === 0 ? <p className="mt-1 text-xs text-text-secondary-light">La aerolínea no ha intentado pagar con tarjeta.</p>
+      : <ul className="mt-2 space-y-1 text-xs">{state.items.map(item => { const status = CARD_STATUS[item.status] ?? { label: item.status, tone: 'info' };
+        return <li key={item.id} className="flex flex-wrap items-center gap-2"><StatusBadge tone={status.tone} label={status.label} />
+          <span>{item.brand} •••• {item.last4} · <strong>{formatTreasuryMoney(item.amount, item.currencyCode)}</strong> · {new Date(item.attemptedAt).toLocaleString('es-DO')}
+            {item.authorizationCode && ` · autorización ${item.authorizationCode}`}{item.declineCode && ` · ${DECLINES[item.declineCode] ?? item.declineCode}`}</span></li>; })}</ul>}
+  </section>;
+}
 
 /** e-NCF when the invoice was issued as a simulated e-CF (ADR-0035); the internal number otherwise. */
 export function invoiceLabel(invoice) {
@@ -75,6 +97,7 @@ function InvoiceDetail({ invoiceId, revision, onChanged, onOpenReceipt }) {
         <button type="button" aria-label={'Ver cobro ' + r.reference} onClick={() => onOpenReceipt(r.id, context)} className="min-h-[36px] font-semibold text-accent-600">Ver cobro {r.reference}</button>
       </article>))}
     </section>}
+    <CardAttempts invoiceId={invoiceId} revision={revision} />
     <section><h3 className="text-sm font-semibold">Líneas</h3><ul className="mt-2 divide-y divide-black/5 text-sm dark:divide-white/5">{detail.lines.map(line => <li key={line.lineNumber} className={'flex flex-wrap justify-between gap-2 py-2 ' + (line.parentLineNumber ? 'pl-4' : '')}>
       <span className="min-w-0"><span className="text-xs text-text-secondary-light">{KIND_LABELS[line.kind] ?? line.kind} · </span>{line.serviceCode} · {line.serviceName}{line.reason && <span className="block text-xs text-text-secondary-light">{line.reason}</span>}</span>
       <span className="tabular-nums">{formatTreasuryMoney(line.amount, summary.currencyCode)}</span></li>)}</ul></section>

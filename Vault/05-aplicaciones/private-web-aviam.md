@@ -11,6 +11,7 @@ last_verified: "2026-11-05"
 verified_commit: "08db4b37b32c3665d63478a3a0df055cb5949990"
 sources:
   - docs/adr/0035-direct-invoicing-simulated-ecf.md
+  - docs/adr/0036-simulated-card-payment.md
   - frontend/AGENTS.md
   - frontend/private-web/README.md
   - frontend/private-web/package.json
@@ -396,7 +397,7 @@ y [servicio de sesión](../../frontend/private-web/src/services/humanResourcesVe
 
 > [!note] Rama `feat/finance-refinement`
 > [!NOTE] Facturación (fase 4, bloque 1)
-> Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) el menú de Finanzas agrupa en «Facturación» **Por facturar** (operaciones aprobadas por OCC sin facturar, por operación, con atajos de semana y mes; emite una factura e-CF simulada para una o varias operaciones de la misma aerolínea), **Facturas** (e-NCF, saldo y PDF por id de factura) y **Charters**. «Pre-facturación» y «Servicios aprobados» salieron del menú; su código se borra en el bloque 3. Fuentes: [Por facturar](../../frontend/private-web/src/features/finance/invoicing/ToInvoicePage.jsx), [menú](../../frontend/private-web/src/features/finance/shell/modules.js) y [adaptador](../../frontend/private-web/src/services/invoicingService.js). Lo que sigue describe el estado anterior.
+> Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) el menú de Finanzas agrupa en «Facturación» **Por facturar** (operaciones aprobadas por OCC sin facturar, por operación, con atajos de semana y mes; emite una factura e-CF simulada para una o varias operaciones de la misma aerolínea), **Facturas** (e-NCF, saldo y PDF por id de factura) y **Charters**. «Pre-facturación» y «Servicios aprobados» salieron del menú; su código se borra en el bloque 3. Desde [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) el detalle de **Facturas** muestra los pagos con tarjeta de la aerolínea (marca •••• últimos 4, autorización o motivo de rechazo) y la campana avisa `invoice_paid`. Fuentes: [Por facturar](../../frontend/private-web/src/features/finance/invoicing/ToInvoicePage.jsx), [menú](../../frontend/private-web/src/features/finance/shell/modules.js) y [adaptador](../../frontend/private-web/src/services/invoicingService.js). Lo que sigue describe el estado anterior.
 
 > Finanzas agrupa en «Tarifarios» el tarifario de servicios (tarifa base versionada por moneda), el tarifario de cargos (catálogo CRUD e importes) y las tasas de cambio; añade «Aprobación de contratos» (precio contra base, aprobar o devolver con motivo) y sustituye «Seguimiento» por «Facturas y cobros» (saldo, vencimiento, pagos parciales y notas de crédito). Pre-facturación muestra cargos y ajustes bajo cada servicio y permite editarlos en borrador con motivo. Reportes lee ocho reportes del servidor y exporta CSV/PDF. Contratos envía a Finanzas en lugar de activar y ve precio base y diferencia. Cada módulo se muestra según los permisos `finance.*`. El texto siguiente describe el estado anterior. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
 

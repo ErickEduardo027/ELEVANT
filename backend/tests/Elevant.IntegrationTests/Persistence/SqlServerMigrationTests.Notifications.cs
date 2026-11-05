@@ -34,6 +34,7 @@ public sealed partial class SqlServerMigrationTests
         { "contract_approval", Department.Finance, "finance.contract_approvals.read", "finance" },
         { "preinvoice_accepted", Department.Finance, "finance.preinvoices.read", "finance" },
         { "preinvoice_disputed", Department.Finance, "finance.preinvoices.read", "finance" },
+        { "invoice_paid", Department.Finance, "finance.reconciliation.read", "finance" },
     };
 
     [Theory]

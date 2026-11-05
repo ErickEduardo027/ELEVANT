@@ -233,6 +233,45 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         return output.ToArray();
     }
 
+    public byte[] RenderCardReceipt(CardPaymentReceiptData receipt)
+    {
+        ArgumentNullException.ThrowIfNull(receipt);
+        using var document = new PdfDocument();
+        document.Info.Title = $"Recibo de pago {receipt.AuthorizationCode} · factura {receipt.FiscalNumber ?? receipt.InvoiceNumber}";
+        document.Info.Subject = FinanceInvoicePolicy.Disclaimer;
+        document.Info.Author = "ELEVANT";
+        var body = new XFont(Typeface, 11, XFontStyleEx.Regular);
+        var caption = new XFont(Typeface, 8, XFontStyleEx.Regular);
+        var heading = new XFont(Typeface, 16, XFontStyleEx.Regular);
+        var page = document.AddPage();
+        page.Size = PageSize.A4;
+        using (var graphics = XGraphics.FromPdfPage(page))
+        {
+            DrawFrame(graphics, page, heading, caption, "Recibo de pago con tarjeta", receipt.ReceiptReference, receipt.PaidAt, 1);
+            var rows = new (string Label, string Value)[]
+            {
+                ("Aerolínea", receipt.AirlineName),
+                ("Factura", receipt.FiscalNumber is null ? receipt.InvoiceNumber : $"e-NCF {receipt.FiscalNumber} · {receipt.InvoiceNumber}"),
+                ("Tarjeta", $"{receipt.Brand} terminada en {receipt.Last4}"),
+                ("Autorización", receipt.AuthorizationCode),
+            };
+            var y = 194d;
+            foreach (var (label, value) in rows)
+            {
+                DrawText(graphics, label, caption, Muted, Margin, y, 190);
+                DrawText(graphics, value, body, Navy, Margin, y + 21, 480);
+                y += 58;
+            }
+            DrawText(graphics, "Importe pagado", caption, Muted, Margin, y, 190);
+            DrawText(graphics, $"{receipt.CurrencyCode} {Money(receipt.Amount)}", heading, Blue, Margin, y + 25, 480);
+            DrawText(graphics, "Pago simulado: no se movió dinero real. Simulación — sin validez fiscal.", caption, Muted,
+                Margin, y + 80, 500);
+        }
+        using var output = new MemoryStream();
+        document.Save(output, false);
+        return output.ToArray();
+    }
+
     public byte[] RenderReport(FinanceReportData report, string filterSummary)
     {
         ArgumentNullException.ThrowIfNull(report);

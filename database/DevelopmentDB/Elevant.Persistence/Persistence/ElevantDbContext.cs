@@ -217,6 +217,7 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
         builder.ConfigureWorkforceAndCommercial();
         builder.ConfigurePreinvoices();
         builder.ConfigureNonFiscalInvoices();
+        builder.ConfigureCardPayments();
         builder.ConfigureNonFiscalPayments();
         builder.ConfigureFinanceTariffs();
         builder.ConfigureFinancePackages();

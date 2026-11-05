@@ -780,6 +780,34 @@ export interface CancelRequisitionInput {
   reason: string;
 }
 
+export interface CardPaymentAttemptResponse {
+  id: string;
+  invoiceId: string;
+  status: string;
+  brand: string;
+  last4: string;
+  amount: number;
+  currencyCode: string;
+  /** @nullable */
+  authorizationCode?: string | null;
+  /** @nullable */
+  declineCode?: string | null;
+  /** @nullable */
+  receiptId?: string | null;
+  attemptedAt: string;
+}
+
+export interface CardPaymentListResponse {
+  invoiceId: string;
+  attempts: CardPaymentAttemptResponse[];
+}
+
+export interface CardPaymentResponse {
+  attempt: CardPaymentAttemptResponse;
+  invoiceBalance: number;
+  replayed: boolean;
+}
+
 export interface ChangePasswordRequest {
   /**
      * @minLength 1
@@ -4347,6 +4375,39 @@ export interface PasswordResetRequest {
   email: string;
 }
 
+export interface PayInvoiceByCardBody {
+  /**
+     * @minLength 2
+     * @maxLength 80
+     */
+  cardholderName: string;
+  /**
+     * @minLength 12
+     * @maxLength 23
+     */
+  cardNumber: string;
+  /**
+     * @minimum 1
+     * @maximum 12
+     */
+  expiryMonth: number;
+  /**
+     * @minimum 2000
+     * @maximum 2099
+     */
+  expiryYear: number;
+  /**
+     * @minLength 3
+     * @maxLength 4
+     */
+  securityCode: string;
+  /**
+     * @minimum 0.01
+     * @maximum 100000000
+     */
+  amount: number;
+}
+
 export interface PreinvoiceDisputeResolutionResponse {
   id: string;
   decision: string;
@@ -7375,6 +7436,124 @@ const res = await fetch(getChangePasswordUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getPayAirlineInvoiceByCardUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/invoices/${invoiceId}/card-payments`
+}
+
+export const payAirlineInvoiceByCard = async (invoiceId: string,
+    payInvoiceByCardBody?: PayInvoiceByCardBody, options?: RequestInit): Promise<CardPaymentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPayAirlineInvoiceByCardUrl(invoiceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(payInvoiceByCardBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CardPaymentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineInvoiceCardPaymentsUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/invoices/${invoiceId}/card-payments`
+}
+
+export const getAirlineInvoiceCardPayments = async (invoiceId: string, options?: RequestInit): Promise<CardPaymentListResponse> => {
+
+  const res = await fetch(getGetAirlineInvoiceCardPaymentsUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CardPaymentListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceInvoiceCardPaymentsUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/${invoiceId}/card-payments`
+}
+
+export const getFinanceInvoiceCardPayments = async (invoiceId: string, options?: RequestInit): Promise<CardPaymentListResponse> => {
+
+  const res = await fetch(getGetFinanceInvoiceCardPaymentsUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CardPaymentListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineCardPaymentReceiptUrl = (attemptId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/card-payments/${attemptId}/receipt`
+}
+
+export const getAirlineCardPaymentReceipt = async (attemptId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineCardPaymentReceiptUrl(attemptId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 

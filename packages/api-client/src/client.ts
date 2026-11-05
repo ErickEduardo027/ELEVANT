@@ -83,6 +83,10 @@ import {
   getResolveFinancePreinvoiceDisputeUrl,
   getIssueFinanceInvoiceUrl,
   getIssueInvoiceFromOperationsUrl,
+  getPayAirlineInvoiceByCardUrl,
+  getGetAirlineInvoiceCardPaymentsUrl,
+  getGetFinanceInvoiceCardPaymentsUrl,
+  getGetAirlineCardPaymentReceiptUrl,
   getGetFinanceInvoiceDocumentByIdUrl,
   getGetAirlineInvoiceDocumentByIdUrl,
   getGetFinanceInvoiceByPreinvoiceUrl,
@@ -227,6 +231,10 @@ import {
   type ResolvePreinvoiceDisputeResponse,
   type IssueFinanceInvoiceRequest,
   type IssueInvoiceFromOperationsRequest,
+  type PayInvoiceByCardBody,
+  type CardPaymentAttemptResponse,
+  type CardPaymentListResponse,
+  type CardPaymentResponse,
   type IssuedInvoiceResponse,
   type IssueFinanceInvoiceResponse,
   type NonFiscalInvoiceResponse,
@@ -421,6 +429,7 @@ export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "me
 export type ResolvePreinvoiceDisputeOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type IssueFinanceInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type IssueInvoiceFromOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type PayInvoiceByCardOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -805,6 +814,14 @@ export interface ElevantApiClient {
   getAirlineInvoiceDocumentById(
     invoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
+  /** ADR-0036: pays the whole balance with a simulated card; the same key and body replay the attempt. */
+  payAirlineInvoiceByCard(
+    invoiceId: string, request: PayInvoiceByCardBody, idempotencyKey: string,
+    options?: PayInvoiceByCardOptions,
+  ): Promise<CardPaymentResponse>;
+  getAirlineInvoiceCardPayments(invoiceId: string, options?: GetFinancialDocumentOptions): Promise<CardPaymentListResponse>;
+  getFinanceInvoiceCardPayments(invoiceId: string, options?: GetFinancialDocumentOptions): Promise<CardPaymentListResponse>;
+  getAirlineCardPaymentReceipt(attemptId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
   getFinanceInvoiceByPreinvoice(
     preinvoiceId: string,
     options?: GetNonFiscalInvoiceOptions,
@@ -3375,6 +3392,45 @@ function validatedIssueInvoiceFromOperationsRequest(
 
 const FISCAL_NUMBER = /^E31\d{10}$/;
 
+const CARD_STATUSES = ["Approved", "Declined", "Error"];
+
+/** ADR-0036: the attempt carries the brand and last four digits only; an approval has its receipt. */
+function isCardPaymentAttempt(value: unknown, invoiceId: string): value is CardPaymentAttemptResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "invoiceId", "status", "brand", "last4", "amount",
+      "currencyCode", "authorizationCode", "declineCode", "receiptId", "attemptedAt"]) ||
+      !isUuid(value.id) || typeof value.invoiceId !== "string" || value.invoiceId.toLowerCase() !== invoiceId ||
+      typeof value.status !== "string" || !CARD_STATUSES.includes(value.status) ||
+      typeof value.brand !== "string" || value.brand.length < 1 || value.brand.length > 16 ||
+      typeof value.last4 !== "string" || !/^\d{4}$/.test(value.last4) ||
+      !isFiniteNumber(value.amount) || value.amount <= 0 ||
+      (value.currencyCode !== "USD" && value.currencyCode !== "DOP") || !isDateTimeOffset(value.attemptedAt)) return false;
+  return value.status === "Approved"
+    ? typeof value.authorizationCode === "string" && isUuid(value.receiptId) &&
+      (value.declineCode === null || value.declineCode === undefined)
+    : typeof value.declineCode === "string" && (value.authorizationCode === null || value.authorizationCode === undefined) &&
+      (value.receiptId === null || value.receiptId === undefined);
+}
+
+function isCardPaymentList(value: unknown, invoiceId: string): value is CardPaymentListResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["invoiceId", "attempts"]) && typeof value.invoiceId === "string" &&
+    value.invoiceId.toLowerCase() === invoiceId && Array.isArray(value.attempts) && value.attempts.length <= 500 &&
+    value.attempts.every(item => isCardPaymentAttempt(item, invoiceId));
+}
+
+function validatedCardBody(request: PayInvoiceByCardBody): PayInvoiceByCardBody {
+  if (!isRecord(request) || !hasOnlyKeys(request, ["cardholderName", "cardNumber", "expiryMonth", "expiryYear",
+      "securityCode", "amount"]) ||
+      typeof request.cardholderName !== "string" || request.cardholderName.trim().length < 2 ||
+      request.cardholderName.trim().length > 80 ||
+      typeof request.cardNumber !== "string" || !/^[\d -]{12,23}$/.test(request.cardNumber) ||
+      !Number.isInteger(request.expiryMonth) || request.expiryMonth < 1 || request.expiryMonth > 12 ||
+      !Number.isInteger(request.expiryYear) || request.expiryYear < 2000 || request.expiryYear > 2099 ||
+      typeof request.securityCode !== "string" || !/^\d{3,4}$/.test(request.securityCode) ||
+      !isFiniteNumber(request.amount) || request.amount <= 0)
+    throw new TypeError("Card payment request is invalid.");
+  return { ...request, cardholderName: request.cardholderName.trim() };
+}
+
 function isIssuedInvoiceResponse(value: unknown): value is IssuedInvoiceResponse {
   return isRecord(value) &&
     hasOnlyKeys(value, ["invoiceId", "number", "fiscalNumber", "total", "currencyCode", "replayed"]) &&
@@ -4198,7 +4254,7 @@ function isSubmitPreinvoiceResponse(value: unknown): value is SubmitPreinvoiceRe
 
 const PRICED_LINE_KINDS = ["Service", "Charge", "Adjustment", "Package", "Excess", "Minimum"];
 const INVOICE_STATUSES = ["Pending", "PartiallyPaid", "Paid", "Overdue"];
-const PAYMENT_METHODS = ["Transfer", "Check", "Cash", "Other"];
+const PAYMENT_METHODS = ["Transfer", "Check", "Cash", "Other", "Card"];
 
 function isStatementText(value: unknown, maximum: number): value is string {
   return typeof value === "string" && value.trim().length > 0 && value.length <= maximum;
@@ -6053,6 +6109,39 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     getFinanceInvoiceDocumentById(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");
       return executePdf(getGetFinanceInvoiceDocumentByIdUrl(id), options);
+    },
+    async payAirlineInvoiceByCard(invoiceId: string, request: PayInvoiceByCardBody, idempotencyKey: string,
+      options?: PayInvoiceByCardOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const key = validatedUuid(idempotencyKey, "idempotencyKey");
+      const body = validatedCardBody(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", key);
+      const result = await execute(getPayAirlineInvoiceByCardUrl(id),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      const data = result.data;
+      if (!isRecord(data) || !hasOnlyKeys(data, ["attempt", "invoiceBalance", "replayed"]) ||
+          !isCardPaymentAttempt(data.attempt, id) || !isFiniteNumber(data.invoiceBalance) || data.invoiceBalance < 0 ||
+          typeof data.replayed !== "boolean")
+        throw malformedResponse(result.status);
+      return data as unknown as CardPaymentResponse;
+    },
+    async getAirlineInvoiceCardPayments(invoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetAirlineInvoiceCardPaymentsUrl(id), { ...options, method: "GET" }, true);
+      if (!isCardPaymentList(result.data, id)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinanceInvoiceCardPayments(invoiceId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetFinanceInvoiceCardPaymentsUrl(id), { ...options, method: "GET" }, true);
+      if (!isCardPaymentList(result.data, id)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    getAirlineCardPaymentReceipt(attemptId: string, options?: GetFinancialDocumentOptions) {
+      const id = validatedUuid(attemptId, "attemptId");
+      return executePdf(getGetAirlineCardPaymentReceiptUrl(id), options);
     },
     getAirlineInvoiceDocumentById(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");

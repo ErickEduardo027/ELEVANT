@@ -128,6 +128,7 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Tasa de cambio | Tasa diaria USD→DOP registrada manualmente por Finanzas; las correcciones conservan historia. | Una cotización bancaria automática. |
 | Nota de crédito | Reducción no fiscal del saldo de una factura, idempotente y nunca mayor que el saldo. | Una anulación de prefactura. |
 | Factura e-CF simulada | Factura de crédito fiscal (tipo 31) que Finanzas emite directamente de operaciones aprobadas, con e-NCF, código de seguridad e ITBIS 18 % ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)). | Un comprobante válido ante la DGII: dice «Simulación — sin validez fiscal». |
+| Pago con tarjeta simulado | Pago del saldo completo de una factura desde el portal con una pasarela simulada; guarda solo marca y últimos 4 dígitos ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). | Un cobro real: no se mueve dinero. |
 | e-NCF | Número de la factura e-CF simulada: `E31` y 10 dígitos consecutivos. | El número interno `NF-…`, que se conserva. |
 | Saldo | Total de la factura menos pagos y notas de crédito; su estado (pendiente, parcial, pagada, vencida) es una proyección. | Una conciliación bancaria. |
 

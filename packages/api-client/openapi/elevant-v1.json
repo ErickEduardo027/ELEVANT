@@ -3029,6 +3029,291 @@
         }
       }
     },
+    "/api/v1/airline/portal/invoices/{invoiceId}/card-payments": {
+      "post": {
+        "tags": [
+          "CardPayments"
+        ],
+        "operationId": "PayAirlineInvoiceByCard",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PayInvoiceByCardBody"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardPaymentResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardPaymentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "CardPayments"
+        ],
+        "operationId": "GetAirlineInvoiceCardPayments",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardPaymentListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/invoices/{invoiceId}/card-payments": {
+      "get": {
+        "tags": [
+          "CardPayments"
+        ],
+        "operationId": "GetFinanceInvoiceCardPayments",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardPaymentListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/airline/portal/card-payments/{attemptId}/receipt": {
+      "get": {
+        "tags": [
+          "CardPayments"
+        ],
+        "operationId": "GetAirlineCardPaymentReceipt",
+        "parameters": [
+          {
+            "name": "attemptId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/governance/airlines": {
       "get": {
         "tags": [
@@ -31010,6 +31295,108 @@
         },
         "additionalProperties": false
       },
+      "CardPaymentAttemptResponse": {
+        "required": [
+          "amount",
+          "attemptedAt",
+          "brand",
+          "currencyCode",
+          "id",
+          "invoiceId",
+          "last4",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "invoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "brand": {
+            "type": "string"
+          },
+          "last4": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "authorizationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "declineCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "receiptId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "attemptedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CardPaymentListResponse": {
+        "required": [
+          "attempts",
+          "invoiceId"
+        ],
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "attempts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CardPaymentAttemptResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CardPaymentResponse": {
+        "required": [
+          "attempt",
+          "invoiceBalance",
+          "replayed"
+        ],
+        "type": "object",
+        "properties": {
+          "attempt": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CardPaymentAttemptResponse"
+              }
+            ]
+          },
+          "invoiceBalance": {
+            "type": "number",
+            "format": "double"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "CatalogMutationFailure": {
         "enum": [
           0,
@@ -43637,6 +44024,53 @@
         },
         "additionalProperties": false
       },
+      "PayInvoiceByCardBody": {
+        "required": [
+          "amount",
+          "cardholderName",
+          "cardNumber",
+          "expiryMonth",
+          "expiryYear",
+          "securityCode"
+        ],
+        "type": "object",
+        "properties": {
+          "cardholderName": {
+            "maxLength": 80,
+            "minLength": 2,
+            "type": "string"
+          },
+          "cardNumber": {
+            "maxLength": 23,
+            "minLength": 12,
+            "type": "string"
+          },
+          "expiryMonth": {
+            "maximum": 12,
+            "minimum": 1,
+            "type": "integer",
+            "format": "int32"
+          },
+          "expiryYear": {
+            "maximum": 2099,
+            "minimum": 2000,
+            "type": "integer",
+            "format": "int32"
+          },
+          "securityCode": {
+            "maxLength": 4,
+            "minLength": 3,
+            "type": "string"
+          },
+          "amount": {
+            "maximum": 100000000,
+            "minimum": 0.01,
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
       "PermissionActionData": {
         "required": [
           "action",
@@ -48793,6 +49227,9 @@
     },
     {
       "name": "Authentication"
+    },
+    {
+      "name": "CardPayments"
     },
     {
       "name": "CommercialAirlineManagement"

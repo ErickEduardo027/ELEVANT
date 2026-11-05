@@ -119,3 +119,50 @@ it("downloads the invoice PDF by invoice id for Finance and the airline portal",
     `https://api.example.test/api/v1/airline/portal/invoices/${invoiceId}/document`,
   ]);
 });
+
+it("pays an invoice by card with the idempotency key and accepts only brand and last four digits back", async () => {
+  const key = "10000000-0000-7000-8000-00000000000b";
+  const attempt = { id: "10000000-0000-7000-8000-00000000000c", invoiceId, status: "Approved", brand: "Visa", last4: "1111",
+    amount: 118, currencyCode: "USD", authorizationCode: "ABC234", declineCode: null,
+    receiptId: "10000000-0000-7000-8000-00000000000d", attemptedAt: "2026-11-05T12:00:00Z" };
+  const calls: Array<{ url: string; key: string | null; body: unknown }> = [];
+  let reply: unknown = { attempt, invoiceBalance: 0, replayed: false };
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async (url, init) => {
+      calls.push({ url: String(url), key: new Headers(init?.headers).get("idempotency-key"),
+        body: init?.body ? JSON.parse(String(init.body)) : null });
+      return new Response(JSON.stringify(reply), { status: 201, headers: { "content-type": "application/json" } });
+    } });
+  const card = { cardholderName: " Casey Airline ", cardNumber: "4111 1111 1111 1111", expiryMonth: 12, expiryYear: 2030,
+    securityCode: "123", amount: 118 };
+  await expect(client.payAirlineInvoiceByCard(invoiceId, card, key)).resolves.toEqual({ attempt, invoiceBalance: 0, replayed: false });
+  expect(calls[0]).toEqual({ url: `https://api.example.test/api/v1/airline/portal/invoices/${invoiceId}/card-payments`, key,
+    body: { ...card, cardholderName: "Casey Airline" } });
+  reply = { attempt: { ...attempt, last4: "4111111111111111" }, invoiceBalance: 0, replayed: false };
+  await expect(client.payAirlineInvoiceByCard(invoiceId, card, key)).rejects.toThrow();
+  reply = { attempt: { ...attempt, status: "Declined", authorizationCode: null, receiptId: null, declineCode: "insufficient_funds" },
+    invoiceBalance: 118, replayed: false };
+  await expect(client.payAirlineInvoiceByCard(invoiceId, card, key)).resolves.toMatchObject({ invoiceBalance: 118 });
+  await expect(client.payAirlineInvoiceByCard(invoiceId, { ...card, securityCode: "12a" }, key)).rejects.toBeInstanceOf(TypeError);
+  await expect(client.payAirlineInvoiceByCard(invoiceId, card, "not-a-key")).rejects.toBeInstanceOf(TypeError);
+  expect(calls).toHaveLength(3);
+});
+
+it("lists card attempts for Finance and the portal and downloads the card receipt", async () => {
+  const urls: string[] = [];
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async url => {
+      urls.push(String(url));
+      return String(url).endsWith("/receipt")
+        ? new Response(new Blob(["%PDF-1.7"]), { headers: { "content-type": "application/pdf" } })
+        : new Response(JSON.stringify({ invoiceId, attempts: [] }), { headers: { "content-type": "application/json" } });
+    } });
+  await expect(client.getAirlineInvoiceCardPayments(invoiceId)).resolves.toEqual({ invoiceId, attempts: [] });
+  await expect(client.getFinanceInvoiceCardPayments(invoiceId)).resolves.toEqual({ invoiceId, attempts: [] });
+  await client.getAirlineCardPaymentReceipt("10000000-0000-7000-8000-00000000000c");
+  expect(urls).toEqual([
+    `https://api.example.test/api/v1/airline/portal/invoices/${invoiceId}/card-payments`,
+    `https://api.example.test/api/v1/finance/invoices/${invoiceId}/card-payments`,
+    "https://api.example.test/api/v1/airline/portal/card-payments/10000000-0000-7000-8000-00000000000c/receipt",
+  ]);
+});

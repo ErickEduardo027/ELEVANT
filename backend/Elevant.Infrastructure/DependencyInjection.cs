@@ -76,6 +76,7 @@ public static class DependencyInjection
             Elevant.Application.Commercial.AirlineRegistryLookup>();
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
+        services.AddSingleton<Elevant.Application.Finance.ICardPaymentGateway, SimulatedCardGateway>();
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
         services.AddSingleton<IOccReportRenderer, OccReportRenderer>();

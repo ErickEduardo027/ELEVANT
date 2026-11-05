@@ -18,6 +18,10 @@ async function call(action) {
 export const issueInvoiceFromOperations = request =>
   call(api => api.issueInvoiceFromOperations(request));
 
+/** ADR-0036: card attempts of an invoice (brand and last four digits only). */
+export const getInvoiceCardPayments = invoiceId =>
+  call(api => api.getFinanceInvoiceCardPayments(invoiceId, { cache: 'no-store' }));
+
 export const getInvoiceDocument = invoiceId =>
   call(api => api.getFinanceInvoiceDocumentById(invoiceId, { cache: 'no-store' }));
 

@@ -22,6 +22,7 @@ const KINDS = {
   contract_approval: { title: 'Contrato pendiente de aprobación', target: { moduleId: FINANCE_MODULE_IDS.CONTRACT_APPROVALS } },
   preinvoice_accepted: { title: 'La aerolínea aceptó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
   preinvoice_disputed: { title: 'La aerolínea disputó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
+  invoice_paid: { title: 'La aerolínea pagó una factura con tarjeta', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
 };
 
 export function describeNotification(item) {

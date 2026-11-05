@@ -127,6 +127,9 @@ public static class DependencyInjection
                 new Elevant.Persistence.Finance.EfInvoiceAttachmentResolver(
                     provider.GetRequiredService<Elevant.Persistence.Finance.EfNonFiscalInvoiceReadStore>(),
                     provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
+                new Elevant.Persistence.Finance.EfCardReceiptAttachmentResolver(
+                    provider.GetRequiredService<Elevant.Persistence.Finance.EfCardPaymentStore>(),
+                    provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
             ]));
         services.AddScoped<IAirlinePermitStore, EfAirlinePermitStore>();
         services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
@@ -161,6 +164,9 @@ public static class DependencyInjection
         services.AddScoped<EfNonFiscalInvoiceReadStore>();
         services.AddScoped<INonFiscalInvoiceReadStore>(provider => provider.GetRequiredService<EfNonFiscalInvoiceReadStore>());
         services.AddScoped<Elevant.Application.Finance.IInvoiceIssuanceStore, EfInvoiceIssuanceStore>();
+        // ADR-0036: the gateway lives in Infrastructure (simulated card processor).
+        services.AddScoped<EfCardPaymentStore>();
+        services.AddScoped<Elevant.Application.Finance.ICardPaymentStore>(provider => provider.GetRequiredService<EfCardPaymentStore>());
         services.AddScoped<INonFiscalPaymentStore, EfNonFiscalPaymentStore>();
         services.AddScoped<INonFiscalPaymentReadStore, EfNonFiscalPaymentReadStore>();
         services.AddScoped<IPrivateFinancialObjectStore>(
