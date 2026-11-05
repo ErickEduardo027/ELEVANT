@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-11-05"
-verified_commit: "b506e91b33570d387ceb70f7fda5b7c1b0c5381c"
+verified_commit: "08db4b37b32c3665d63478a3a0df055cb5949990"
 sources:
   - docs/superpowers/plans/2026-10-18-finance-platform.md
   - docs/adr/0016-finance-tariffs-charges-and-receivables.md

@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "f73c3d9e57a71456b83270c289a7e46e82079f1e3b3774559043d0236cbad90b",
+        "sha256": "5aa0a94ed544ff49491ac9759f62bb77cf8af9fb398483234e22c098522090bf",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "e31a44f83b3b04e2fc3f13d56a9522fab6313de09dd58cea66a47076a1561bf5",
+        "sha256": "456c3508259f30084ef3ccab91192e99c7b289b7c92dc2810c43efec44e08d8a",
         "title": null,
         "version": null
       }
@@ -1472,6 +1472,12 @@
         "name": "AddOperationalCloseRules",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261105013802_AddOperationalCloseRules.cs",
         "sha256": "1bdd8b26d267ef6e6dbf64ebd2321e7655c4265516444c9cd938cdead014fa36"
+      },
+      {
+        "id": "20261105143048",
+        "name": "AddSimulatedEcfInvoices",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261105143048_AddSimulatedEcfInvoices.cs",
+        "sha256": "1a8cd8d278d0dfcc0fb8ec0ba00cca896fedbaba0af7d8d59076a5ae18960416"
       }
     ],
     "manifestContracts": [

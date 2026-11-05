@@ -7,8 +7,8 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-26"
-verified_commit: "83ce325f99fea54879649f92ae1a231637a1bc2d"
+last_verified: "2026-11-05"
+verified_commit: "08db4b37b32c3665d63478a3a0df055cb5949990"
 sources:
   - docs/adr/0035-direct-invoicing-simulated-ecf.md
   - AGENTS.md
