@@ -58,4 +58,15 @@ public enum PaymentMethod
     Check,
     Cash,
     Other,
+
+    /// <summary>Simulated card payment from the airline portal (ADR-0036); never recorded by hand.</summary>
+    Card,
+}
+
+/// <summary>Outcome of a simulated card authorization (ADR-0036).</summary>
+public enum CardPaymentStatus
+{
+    Approved,
+    Declined,
+    Error,
 }

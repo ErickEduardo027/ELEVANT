@@ -9,7 +9,8 @@ internal sealed partial class FinanceTreasuryStore
     {
         if (input is null || !FinanceTreasuryRules.Money(input.Amount) || input.CurrencyCode is not ("USD" or "DOP") ||
             input.Reference?.Trim().Length is not (>= 1 and <= 120) || !Reason(input.Reason) || !DateValid(input.ReceivedOn) ||
-            !Enum.TryParse<PaymentMethod>(input.Method, false, out var method) || !Enum.IsDefined(method))
+            !Enum.TryParse<PaymentMethod>(input.Method, false, out var method) || !Enum.IsDefined(method) ||
+            method == PaymentMethod.Card)
             return Task.FromResult(Fail(FinanceTreasuryFailure.Invalid));
         var hash = Hash(input); var ct = cancellationToken;
         return ExecuteAsync(actorId, input.RequestId, "finance.receipts.create", async (actor, accountId) =>

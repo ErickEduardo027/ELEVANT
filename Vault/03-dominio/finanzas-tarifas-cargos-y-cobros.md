@@ -8,7 +8,7 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-11-05"
-verified_commit: "08db4b37b32c3665d63478a3a0df055cb5949990"
+verified_commit: "d6a65ac8a400f3f1f129d6978bcee0c8cf683e2b"
 sources:
   - docs/superpowers/plans/2026-10-18-finance-platform.md
   - docs/adr/0016-finance-tariffs-charges-and-receivables.md
@@ -16,6 +16,9 @@ sources:
   - docs/adr/0033-charter-flights-without-contract.md
   - docs/adr/0034-operational-close-occ-to-finance.md
   - docs/adr/0035-direct-invoicing-simulated-ecf.md
+  - docs/adr/0036-simulated-card-payment.md
+  - backend/Elevant.Application/Finance/CardPayments.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/EfCardPaymentStore.cs
   - backend/Elevant.Application/Finance/FinanceInvoicePolicy.cs
   - database/DevelopmentDB/Elevant.Persistence/Finance/EfInvoiceIssuanceStore.cs
   - docs/reference/odoo-finance-adaptation.md
@@ -102,6 +105,15 @@ Desde la fase 4 ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.m
 - Un charter con prepago confirmado queda saldado al emitir: se registra el cobro `PREPAGO {referencia}` y se aplica hasta el total.
 - La aerolínea recibe el correo «Factura emitida» con el PDF.
 - Se rechaza una operación no aprobada o ya facturada (`409`) y una mezcla de aerolíneas (`422`).
+
+### Pago con tarjeta simulado
+
+La aerolínea paga su factura desde el portal con una tarjeta simulada, siempre por el saldo completo ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)):
+
+- `POST airline/portal/invoices/{id}/card-payments` con `Idempotency-Key`; el monto distinto del saldo da `409 amount_mismatch` y una factura saldada `409 invoice_paid`.
+- La pasarela simulada aprueba 4111 1111 1111 1111 y 5555 5555 5555 4444, rechaza 4000 0000 0000 0002 (fondos) y 0069 (vencida), responde error de procesador con 0119 y rechaza cualquier otra.
+- Un pago aprobado crea un cobro con método `Card` aplicado a la factura, el correo «Pago recibido» con recibo PDF y el aviso `invoice_paid` a Finanzas. Rechazos y errores quedan como intentos en `commercial.card_payment_attempts`.
+- Solo se guardan la marca, los últimos 4 dígitos y la autorización: nunca el número, el CVV ni el titular. Finanzas no registra cobros `Card` a mano.
 
 La prefactura, su disputa y los tratamientos tributarios configurables siguen en el código hasta el bloque 3 de la fase 4, pero ya no están en el menú ni en el portal. Lo que sigue describe ese modelo heredado.
 

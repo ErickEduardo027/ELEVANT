@@ -97,6 +97,22 @@ public static class AccountEmailTemplates
         action: null,
         security: "Si no reconoces esta factura, contacta a Finanzas de AVIAM antes de pagar.");
 
+    /// <summary>ADR-0036: the approved simulated card payment; only the brand and last four digits are shown.</summary>
+    public static EmailMessage PaymentReceived(string to, string airline, string invoice, string currency, decimal amount,
+        string brand, string last4, string authorizationCode) => Build(to,
+        subject: $"Pago recibido · factura {invoice} · ELEVANT",
+        preheader: $"Recibimos el pago de la factura {invoice}.",
+        kicker: "Facturación",
+        title: "Pago recibido",
+        greeting: null,
+        paragraphs: [$"Recibimos el pago de {airline} por {currency} {amount.ToString("N2", CultureInfo.InvariantCulture)} de la factura {invoice}.",
+            $"Tarjeta {brand} terminada en {last4} · autorización {authorizationCode}.",
+            "Adjuntamos el recibo. Es un pago simulado: no se movió dinero real."],
+        validity: "Simulación — sin validez fiscal",
+        code: null,
+        action: null,
+        security: "Si no reconoces este pago, contacta a Finanzas de AVIAM.");
+
     public static EmailMessage Test(string to, DateTimeOffset? sentAt = null) => Build(to,
         subject: "Prueba de correo ELEVANT",
         preheader: "El remitente no-reply de ELEVANT funciona.",

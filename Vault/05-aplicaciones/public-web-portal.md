@@ -8,9 +8,10 @@ maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
 last_verified: "2026-11-05"
-verified_commit: "08db4b37b32c3665d63478a3a0df055cb5949990"
+verified_commit: "d6a65ac8a400f3f1f129d6978bcee0c8cf683e2b"
 sources:
   - docs/adr/0035-direct-invoicing-simulated-ecf.md
+  - docs/adr/0036-simulated-card-payment.md
   - AGENTS.md
   - frontend/AGENTS.md
   - frontend/public-web/AGENTS.md
@@ -73,7 +74,7 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |
 | Firma del contrato | La aerolínea firma primero, con una firma dibujada en un canvas (PNG de hasta 256 KB), y solo después de que Contratos confirma la vigencia y la renovación; el portal muestra esos términos y que AVIAM contrafirma después. El PDF firmado llega por correo al activarse el contrato (ADR-0025). |
 | Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
-| Facturas | Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) lista las facturas propias del estado de cuenta (`GET airline/portal/treasury/statements`) con e-NCF, estado (Pendiente, Vencida o Pagada), vencimiento y saldo; el detalle muestra líneas, pagos y el PDF de la factura e-CF simulada (`GET airline/portal/invoices/{invoiceId}/document`). No hay prefacturas, aceptación ni disputa: los reclamos se resuelven fuera del sistema con nota de crédito. Se revalida con el aviso `airline_treasury`. |
+| Facturas | Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) lista las facturas propias del estado de cuenta (`GET airline/portal/treasury/statements`) con e-NCF, estado (Pendiente, Vencida o Pagada), vencimiento y saldo; el detalle muestra líneas, pagos y el PDF de la factura e-CF simulada (`GET airline/portal/invoices/{invoiceId}/document`). No hay prefacturas, aceptación ni disputa: los reclamos se resuelven fuera del sistema con nota de crédito. Desde [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) el detalle permite **pagar con tarjeta simulada** el saldo completo (Idempotency-Key estable ante un resultado incierto), muestra el historial de intentos y descarga el recibo PDF. Se revalida con el aviso `airline_treasury`. |
 | Documentos y reportes | Documentos lista los PDF de cada factura propia por id. Reportes muestra la primera página autorizada de operaciones y las facturas del estado de cuenta, sin métricas globales. Nada de este tramo está promocionado. |
 | Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. |
 

@@ -15,7 +15,10 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   "bridge_qualification_required", "shift_not_covering", "absent", "agent_overlap", "mentor_required",
   "mentor_not_eligible", "stand_taken", "stand_cancelled", "stand_narrowbody_only", "neighbour_widebody",
   // Invoicing from operations (ADR-0035).
-  "mixed_airline", "already_invoiced", "operation_not_approved", "nothing_to_invoice"] as const;
+  "mixed_airline", "already_invoiced", "operation_not_approved", "nothing_to_invoice",
+  // Simulated card payment (ADR-0036).
+  "cardholder_invalid", "card_number_invalid", "card_expired", "security_code_invalid", "amount_invalid",
+  "amount_mismatch", "invoice_paid", "idempotency_conflict", "concurrent_payment"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {
