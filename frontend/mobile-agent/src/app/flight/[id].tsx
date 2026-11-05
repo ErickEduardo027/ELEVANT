@@ -62,6 +62,7 @@ import { resetToLogin } from '../../utils/session-navigation';
 import { dateTimeFormat } from '../../utils/date-format';
 import { ConnectionBadge } from '../../components/flight-report/connection-badge';
 import { DocumentsPanel, WalkaroundCard } from '../../components/documents/operation-documents';
+import { CharterCard } from '../../components/documents/charter-card';
 import { DeviationAction, FlightDataCard, FlightReportPanel } from '../../components/flight-report/flight-report-panel';
 
 type DetailState = 'loading' | 'ready' | 'not-found' | 'offline' | 'unavailable';
@@ -710,6 +711,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           <DeviationAction operationId={operation.operation.id} editable={executing} />
           <FlightDataCard key={operation.operation.id} operation={operation} editable={executing} />
           <WalkaroundCard operationId={operation.operation.id} editable={executing} />
+          <CharterCard operationId={operation.operation.id} editable={executing}
+            existingServiceIds={operation.services.map(service => service.serviceDefinitionId)} />
           <DocumentsPanel operationId={operation.operation.id} editable={executing || operation.operation.status === 'PendingReview' ||
             operation.operation.status === 'Returned'} />
         </>

@@ -3,6 +3,7 @@ import type {
   OperationDocumentKind,
   OperationDocumentsResponse,
   OperationSignatureRole,
+  RampCharterResponse,
   RampExecutionResponse,
 } from '@elevant/api-client';
 import { createMobileAgentApiClient } from '../config/elevant-api';
@@ -25,12 +26,14 @@ export type FlightReportSnapshot = Readonly<{
   confirmed: Readonly<Record<string, RampExecutionResponse>>;
   /** Last forms read or written per operation (ADR-0032). */
   documents: Readonly<Record<string, OperationDocumentsResponse>>;
+  /** Last charter read or written per operation (ADR-0033). */
+  charters: Readonly<Record<string, RampCharterResponse>>;
   issue?: MobileServiceError;
 }>;
 
 type Listener = (snapshot: FlightReportSnapshot) => void;
 const listeners = new Set<Listener>();
-let snapshot: FlightReportSnapshot = { items: [], syncing: false, confirmed: {}, documents: {} };
+let snapshot: FlightReportSnapshot = { items: [], syncing: false, confirmed: {}, documents: {}, charters: {} };
 let running: Promise<void> | null = null;
 let again = false;
 
@@ -84,8 +87,28 @@ export async function loadOperationDocuments(operationId: string): Promise<Opera
  * «Sincronización» to be signed again.
  */
 export const signDocument = (operationId: string, documentKind: OperationDocumentKind, role: OperationSignatureRole,
-  signerName: string, documentSha256: string, strokes: readonly (readonly number[])[]) =>
-  enqueue({ kind: 'signature', operationId, documentKind, role, signerName, documentSha256, strokes });
+  signerName: string, documentSha256: string, strokes: readonly (readonly number[])[], signerIdentification?: string) =>
+  enqueue({ kind: 'signature', operationId, documentKind, role, signerName, documentSha256, strokes,
+    ...(signerIdentification ? { signerIdentification } : {}) });
+
+/** The charter of the operation: carrier data and the services it can add at the base tariff (ADR-0033). */
+export async function loadCharter(operationId: string): Promise<RampCharterResponse> {
+  const context = await getMobileSessionRequestContext();
+  try {
+    const charter = await createMobileAgentApiClient({ getAccessToken: () => context.accessToken }).getRampCharter(operationId);
+    publish({ charters: { ...snapshot.charters, [operationId]: charter } });
+    return charter;
+  } catch (error) {
+    throw await revoked(context.sessionId, error);
+  }
+}
+
+/** A service the carrier asks for, priced by Finance's base tariff; saved on the device first. */
+export const addCharterService = (operationId: string, serviceDefinitionId: string, quantity: number) =>
+  enqueue({ kind: 'charterService', operationId, serviceDefinitionId, quantity });
+
+export const saveCharterDetails = (operationId: string, carrierAddress: string | null, chargesPayableBy: string | null) =>
+  enqueue({ kind: 'charterDetails', operationId, carrierAddress, chargesPayableBy });
 
 /** A damage marked on the silhouette, with its photo kept on the device until it is sent. */
 export async function markDamage(operationId: string, mark: Readonly<{ x: number; y: number; note: string }>,
@@ -139,10 +162,21 @@ async function flushOnce() {
         publish({ items, confirmed: { ...snapshot.confirmed, [command.operationId]: result } });
         continue;
       }
+      if (command.kind === 'charterService' || command.kind === 'charterDetails') {
+        const charter = command.kind === 'charterService'
+          ? await client.addRampCharterService(command.operationId, { serviceDefinitionId: command.serviceDefinitionId,
+            quantity: command.quantity }, installationId, item.idempotencyKey)
+          : await client.updateRampCharterDetails(command.operationId, { carrierAddress: command.carrierAddress,
+            chargesPayableBy: command.chargesPayableBy }, installationId, item.idempotencyKey);
+        const items = await updateFlightReportItem(accountId, item.idempotencyKey, 'remove');
+        publish({ items, charters: { ...snapshot.charters, [command.operationId]: charter } });
+        continue;
+      }
       const documents = command.kind === 'signature'
         ? await client.signRampOperationDocument(command.operationId, command.documentKind as OperationDocumentKind,
           command.role as OperationSignatureRole, { signerName: command.signerName, documentSha256: command.documentSha256,
-            strokes: command.strokes }, installationId, item.idempotencyKey)
+            strokes: command.strokes, ...(command.signerIdentification ? { signerIdentification: command.signerIdentification } : {}) },
+          installationId, item.idempotencyKey)
         : command.kind === 'damageMark'
           ? await client.recordRampDamageMark(command.operationId, command.markId, { x: command.x, y: command.y,
             note: command.note, reportedAt: command.reportedAt }, installationId, item.idempotencyKey)
