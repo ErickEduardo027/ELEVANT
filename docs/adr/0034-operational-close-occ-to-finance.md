@@ -106,6 +106,7 @@ Fase 3 del ciclo operativo, bloque 5: el cierre de la operación entre OCC y Fin
 - Un cambio de las reglas de Finanzas no revalora operaciones ya entregadas, porque el tiempo permitido queda congelado en su evidencia.
 
 **Queda fuera de este bloque**
+- **Tipo de avión de cada escala.** Hoy solo lo trae el seed de Development: ni el alta manual, ni la importación de AeroDataBox, ni la tablet lo registran. Sin tipo no hay categoría, así que el tiempo extra automático no aplica (el detalle de cierre lo indica como «Sin tiempo permitido para esta categoría») y OCC lo agrega a mano con motivo. Capturar el tipo de avión es el siguiente paso.
 
 - **Corrección de datos capturados por OCC** (pasajeros, matrícula). Sigue siendo devolver la operación al agente, porque cambia formularios ya firmados.
 - **Calendario de festivos por país o estación.** Hoy es uno solo, de República Dominicana.
