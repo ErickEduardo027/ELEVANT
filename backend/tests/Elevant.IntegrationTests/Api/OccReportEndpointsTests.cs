@@ -26,7 +26,7 @@ public sealed class OccReportEndpointsTests(ElevantApiFactory factory) : IClassF
         using var catalog = await client.GetAsync("/api/v1/occ/reports", ct);
         catalog.EnsureSuccessStatusCode();
         using var json = JsonDocument.Parse(await catalog.Content.ReadAsStringAsync(ct));
-        Assert.Equal(5, json.RootElement.GetProperty("reports").GetArrayLength());
+        Assert.Equal(6, json.RootElement.GetProperty("reports").GetArrayLength());
         using var unknown = await client.GetAsync($"/api/v1/occ/reports/sla?stationId={StationId}&from=2026-08-01&to=2026-08-31", ct);
         Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
         using var inverted = await client.GetAsync($"/api/v1/occ/reports/operations?stationId={StationId}&from=2026-09-01&to=2026-08-01", ct);
