@@ -43,7 +43,12 @@ public sealed partial class SqlServerMigrationTests
         await AssertFinancePlatformLegacyAsync(database.ConnectionString, before, ct);
         Assert.False(context.Database.HasPendingModelChanges());
 
-        var invoice = await context.NonFiscalInvoices.AsNoTracking().SingleAsync(ct);
+        // Only the columns of this upgrade step: later migrations add more (e.g. the e-CF of ADR-0035).
+        var invoice = await context.NonFiscalInvoices.AsNoTracking().Select(item => new
+        {
+            item.Id, item.PublicId, item.PreinvoiceId, item.AirlineId, item.StationId, item.IssuedByAccountId, item.Total,
+            item.NetTotal, item.DiscountTotal, item.TaxTotal, item.TaxTreatmentsConfigured, item.CommercialSnapshotJson,
+        }).SingleAsync(ct);
         var invoiceLine = await context.NonFiscalInvoiceLines.AsNoTracking().SingleAsync(ct);
         var draft = await context.Preinvoices.AsNoTracking().SingleAsync(ct);
         var draftLine = await context.PreinvoiceLines.AsNoTracking().SingleAsync(ct);
@@ -88,7 +93,11 @@ public sealed partial class SqlServerMigrationTests
         Assert.Null(invoice.NetTotal);
         Assert.Null(invoice.DiscountTotal);
         Assert.Null(invoice.TaxTotal);
-        Assert.False(FinanceTaxSnapshotWriter.HasConfiguredIssuedTreatments(invoice, [invoiceLine]));
+        Assert.False(FinanceTaxSnapshotWriter.HasConfiguredIssuedTreatments(new NonFiscalInvoice
+        {
+            Total = invoice.Total, TaxTotal = invoice.TaxTotal, TaxTreatmentsConfigured = invoice.TaxTreatmentsConfigured,
+            CommercialSnapshotJson = invoice.CommercialSnapshotJson,
+        }, [invoiceLine]));
         Assert.Empty(await context.Set<FinanceTreasuryReceipt>().ToArrayAsync(ct));
         Assert.Empty(await context.Set<FinanceTreasuryMovement>().ToArrayAsync(ct));
         Assert.Empty(await context.Set<FinanceFiscalDocument>().ToArrayAsync(ct));

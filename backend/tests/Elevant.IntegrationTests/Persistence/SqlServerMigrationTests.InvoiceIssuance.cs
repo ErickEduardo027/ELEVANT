@@ -75,6 +75,20 @@ public sealed partial class SqlServerMigrationTests
         Assert.Contains(email, item => item.Subject.Contains("E310000000001", StringComparison.Ordinal));
         Assert.Equal(1, await setup.AuditEntries.CountAsync(item => item.Action == "finance.invoice.issued", ct));
 
+        // The airline reads its own invoice with the e-NCF in the portal (Demo Airlines owns DEV-TAT-0001).
+        await using (var portalContext = CreateContext(database.ConnectionString))
+        {
+            var portal = new Elevant.Persistence.Finance.FinanceTreasuryStore(portalContext,
+                new Elevant.Persistence.Identity.EfActorContextResolver(portalContext, TimeProvider.System), TimeProvider.System);
+            var airlineAccount = Guid.Parse("40000000-0000-7000-8000-000000000003");
+            var statement = await portal.PortalStatementAsync(airlineAccount, DateOnly.FromDateTime(DateTime.UtcNow), null, ct);
+            Assert.True(statement.IsSuccess);
+            var own = Assert.Single(statement.Data!.Invoices, item => item.Id == invoice.PublicId);
+            Assert.Equal("E310000000001", own.FiscalNumber);
+            Assert.Equal(invoice.Total, own.Balance);
+            Assert.Equal("E310000000001", (await portal.PortalInvoiceAsync(airlineAccount, invoice.PublicId, ct)).Data!.Invoice.FiscalNumber);
+        }
+
         // One invoice is always for a single airline.
         var secondTurnaround = await setup.GroundOperations.Where(item => item.PublicId == second).Select(item => item.TurnaroundId).SingleAsync(ct);
         var airlineId = await setup.Turnarounds.Where(item => item.Id == secondTurnaround).Select(item => item.AirlineId).SingleAsync(ct);
