@@ -27,7 +27,8 @@ export interface ConfirmCharterPrepaymentCommand {
   readonly reference: string;
 }
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// Any well-formed UUID: the Development seed derives deterministic ids that carry no RFC version.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 const isText = (value: unknown, max: number): value is string => typeof value === "string" && value.length <= max;

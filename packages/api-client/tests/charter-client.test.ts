@@ -9,7 +9,10 @@ const charter = {
   operationId, charterId: "90000000-0000-7000-8000-000000000001", currencyCode: "USD", carrierAddress: null,
   chargesPayableBy: null, prepaymentStatus: "Pending", prepaymentAmount: null,
   catalog: [{ serviceDefinitionId: serviceId, code: "BAGGAGE", name: "Baggage handling", billingUnit: "operation",
-    unitPrice: 130, minimumQuantity: 1 }],
+    unitPrice: 130, minimumQuantity: 1 },
+    // The Development seed derives deterministic ids without an RFC version; they are still valid ids.
+    { serviceDefinitionId: "8986b689-14bd-a57e-9e2b-5f9756c5a1dc", code: "PASSENGER-BRIDGE",
+      name: "Passenger boarding bridge operation", billingUnit: "operation", unitPrice: 100, minimumQuantity: 1 }],
 };
 
 describe("Charter client (ADR-0033)", () => {
@@ -20,7 +23,7 @@ describe("Charter client (ADR-0033)", () => {
         headers: new Headers(init?.headers), body: String(init?.body ?? "") });
       return Response.json(charter);
     } });
-    await expect(client.getRampCharter(operationId)).resolves.toMatchObject({ catalog: [{ code: "BAGGAGE" }] });
+    await expect(client.getRampCharter(operationId)).resolves.toMatchObject({ catalog: [{ code: "BAGGAGE" }, { code: "PASSENGER-BRIDGE" }] });
     await client.addRampCharterService(operationId, { serviceDefinitionId: serviceId, quantity: 2 }, installationId, key);
     await client.updateRampCharterDetails(operationId, { carrierAddress: "  1200 NW  72nd Ave ", chargesPayableBy: "" },
       installationId, key);
