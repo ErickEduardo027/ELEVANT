@@ -19,6 +19,9 @@ public interface IOccReviewStore
         Guid operationId, IReadOnlyCollection<Guid> allowedStationIds,
         CancellationToken cancellationToken = default);
 
+    Task<OccReviewChargeAdjustResult> AdjustChargeAsync(
+        OccReviewChargeAdjustRequest request, CancellationToken cancellationToken = default);
+
     Task<OccReviewDecisionWriteResult> DecideAsync(
         OccReviewDecisionWriteRequest request, CancellationToken cancellationToken = default);
 }

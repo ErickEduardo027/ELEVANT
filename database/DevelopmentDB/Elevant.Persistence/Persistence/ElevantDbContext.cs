@@ -162,6 +162,10 @@ public sealed class ElevantDbContext(DbContextOptions<ElevantDbContext> options)
 
     public DbSet<OperationServiceCharge> OperationServiceCharges => Set<OperationServiceCharge>();
 
+    public DbSet<GroundTimeAllowance> GroundTimeAllowances => Set<GroundTimeAllowance>();
+
+    public DbSet<FinanceHoliday> FinanceHolidays => Set<FinanceHoliday>();
+
     public DbSet<FinancialDocument> FinancialDocuments => Set<FinancialDocument>();
 
     public DbSet<Turnaround> Turnarounds => Set<Turnaround>();

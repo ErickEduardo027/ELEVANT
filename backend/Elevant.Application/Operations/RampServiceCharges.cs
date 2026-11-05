@@ -9,7 +9,9 @@ namespace Elevant.Application.Operations;
 public sealed record RampChargeOptionData(Guid Id, string Code, string Name, string? Description, string Category,
     bool AllowMultiple);
 
-public sealed record RampAppliedChargeData(Guid Id, Guid ChargeId, string Code, string Name, DateTimeOffset AppliedAt);
+/// <summary>Source is Agent, Automatic or Occ (ADR-0034); the agent removes only the ones it marked.</summary>
+public sealed record RampAppliedChargeData(Guid Id, Guid ChargeId, string Code, string Name, DateTimeOffset AppliedAt,
+    string Source = "Agent");
 
 public sealed record RampServiceChargesData(Guid ServiceId, bool CanEdit, IReadOnlyList<RampChargeOptionData> Available,
     IReadOnlyList<RampAppliedChargeData> Applied);

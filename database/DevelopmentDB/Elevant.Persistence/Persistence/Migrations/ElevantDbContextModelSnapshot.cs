@@ -2499,6 +2499,85 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.FinanceHoliday", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("CreatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by_account_id");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("nvarchar(120)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("removed_at");
+
+                    b.Property<long?>("RemovedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("removed_by_account_id");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedByAccountId");
+
+                    b.HasIndex("Date")
+                        .IsUnique()
+                        .HasDatabaseName("ux_finance_holidays_active_date")
+                        .HasFilter("[removed_at] IS NULL");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("RemovedByAccountId");
+
+                    b.ToTable("finance_holidays", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_finance_holiday_removal", "([removed_at] IS NULL AND [removed_by_account_id] IS NULL) OR ([removed_at] IS NOT NULL AND [removed_by_account_id] IS NOT NULL)");
+                        });
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.FinancePayablesApplication", b =>
                 {
                     b.Property<long>("Id")
@@ -3714,6 +3793,72 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_financial_document_length", "[length] > 0");
 
                             t.HasCheckConstraint("ck_financial_document_sha256", "LEN([sha256]) = 64");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.GroundTimeAllowance", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<int>("AllowedMinutes")
+                        .HasColumnType("int")
+                        .HasColumnName("allowed_minutes");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<Guid>("PublicId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id")
+                        .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion")
+                        .HasColumnName("row_version");
+
+                    b.Property<string>("SizeCategory")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("size_category");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("SYSUTCDATETIME()");
+
+                    b.Property<long>("UpdatedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("updated_by_account_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("SizeCategory")
+                        .IsUnique();
+
+                    b.HasIndex("UpdatedByAccountId");
+
+                    b.ToTable("ground_time_allowances", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_ground_time_allowance_minutes", "[allowed_minutes] BETWEEN 15 AND 720");
                         });
                 });
 
@@ -10085,12 +10230,21 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("AdjustmentReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("adjustment_reason");
+
                     b.Property<DateTimeOffset>("AppliedAt")
                         .HasPrecision(3)
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("applied_at");
 
-                    b.Property<long>("AppliedByRampAgentId")
+                    b.Property<long?>("AppliedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("applied_by_account_id");
+
+                    b.Property<long?>("AppliedByRampAgentId")
                         .HasColumnType("bigint")
                         .HasColumnName("applied_by_ramp_agent_id");
 
@@ -10120,6 +10274,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("removed_at");
 
+                    b.Property<long?>("RemovedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("removed_by_account_id");
+
                     b.Property<long?>("RemovedByRampAgentId")
                         .HasColumnType("bigint")
                         .HasColumnName("removed_by_ramp_agent_id");
@@ -10131,6 +10289,14 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("rowversion")
                         .HasColumnName("row_version");
 
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasDefaultValue("Agent")
+                        .HasColumnName("source");
+
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(3)
@@ -10140,6 +10306,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AppliedByAccountId");
+
                     b.HasIndex("AppliedByRampAgentId");
 
                     b.HasIndex("ChargeDefinitionId");
@@ -10147,13 +10315,19 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
+                    b.HasIndex("RemovedByAccountId");
+
                     b.HasIndex("RemovedByRampAgentId");
 
                     b.HasIndex("OperationServiceId", "RemovedAt");
 
                     b.ToTable("operation_service_charges", "ops", t =>
                         {
-                            t.HasCheckConstraint("ck_operation_service_charge_removal", "([removed_at] IS NULL AND [removed_by_ramp_agent_id] IS NULL) OR ([removed_at] IS NOT NULL AND [removed_by_ramp_agent_id] IS NOT NULL)");
+                            t.HasCheckConstraint("ck_operation_service_charge_reason", "([applied_by_account_id] IS NULL AND [removed_by_account_id] IS NULL) OR [adjustment_reason] IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_operation_service_charge_removal", "([removed_at] IS NULL AND [removed_by_ramp_agent_id] IS NULL AND [removed_by_account_id] IS NULL) OR ([removed_at] IS NOT NULL AND (([removed_by_ramp_agent_id] IS NOT NULL AND [removed_by_account_id] IS NULL) OR ([removed_by_ramp_agent_id] IS NULL AND [removed_by_account_id] IS NOT NULL)))");
+
+                            t.HasCheckConstraint("ck_operation_service_charge_source", "([source] = N'Agent' AND [applied_by_ramp_agent_id] IS NOT NULL AND [applied_by_account_id] IS NULL) OR ([source] = N'Automatic' AND [applied_by_ramp_agent_id] IS NULL AND [applied_by_account_id] IS NULL) OR ([source] = N'Occ' AND [applied_by_ramp_agent_id] IS NULL AND [applied_by_account_id] IS NOT NULL)");
                         });
                 });
 
@@ -10648,6 +10822,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("id");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ApprovedEvidenceJson")
+                        .HasColumnType("nvarchar(max)")
+                        .HasColumnName("approved_evidence_json");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -13933,6 +14111,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.FinanceHoliday", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RemovedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.FinancePayablesApplication", b =>
                 {
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
@@ -14163,6 +14355,15 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .WithMany()
                         .HasForeignKey("PaymentId")
                         .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.GroundTimeAllowance", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UpdatedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Commercial.MediaAsset", b =>
@@ -15275,11 +15476,15 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationServiceCharge", b =>
                 {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("AppliedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
                         .WithMany()
                         .HasForeignKey("AppliedByRampAgentId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Domain.Entities.Commercial.ChargeDefinition", null)
                         .WithMany()
@@ -15292,6 +15497,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("OperationServiceId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RemovedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
                         .WithMany()

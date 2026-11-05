@@ -186,9 +186,21 @@ internal static class FinanceTariffConfiguration
         modelBuilder.Entity<OperationServiceCharge>(builder =>
         {
             builder.ToTable("operation_service_charges", "ops", table =>
+            {
+                // Removed by exactly one: the agent or an OCC reviewer (ADR-0034).
                 table.HasCheckConstraint("ck_operation_service_charge_removal",
-                    "([removed_at] IS NULL AND [removed_by_ramp_agent_id] IS NULL) OR " +
-                    "([removed_at] IS NOT NULL AND [removed_by_ramp_agent_id] IS NOT NULL)"));
+                    "([removed_at] IS NULL AND [removed_by_ramp_agent_id] IS NULL AND [removed_by_account_id] IS NULL) OR " +
+                    "([removed_at] IS NOT NULL AND (([removed_by_ramp_agent_id] IS NOT NULL AND [removed_by_account_id] IS NULL) OR ([removed_by_ramp_agent_id] IS NULL AND [removed_by_account_id] IS NOT NULL)))");
+                table.HasCheckConstraint("ck_operation_service_charge_source",
+                    "([source] = N'Agent' AND [applied_by_ramp_agent_id] IS NOT NULL AND [applied_by_account_id] IS NULL) OR " +
+                    "([source] = N'Automatic' AND [applied_by_ramp_agent_id] IS NULL AND [applied_by_account_id] IS NULL) OR " +
+                    "([source] = N'Occ' AND [applied_by_ramp_agent_id] IS NULL AND [applied_by_account_id] IS NOT NULL)");
+                table.HasCheckConstraint("ck_operation_service_charge_reason",
+                    "([applied_by_account_id] IS NULL AND [removed_by_account_id] IS NULL) OR [adjustment_reason] IS NOT NULL");
+            });
+            builder.Property(charge => charge.Source).HasConversion<string>().HasMaxLength(16)
+                .HasDefaultValue(Elevant.Domain.Enumerations.ChargeMarkSource.Agent).HasSentinel((Elevant.Domain.Enumerations.ChargeMarkSource)(-1));
+            builder.Property(charge => charge.AdjustmentReason).HasMaxLength(500);
             builder.Property(charge => charge.AppliedAt).HasPrecision(3);
             builder.Property(charge => charge.RemovedAt).HasPrecision(3);
             builder.HasIndex(charge => new { charge.OperationServiceId, charge.RemovedAt });
@@ -196,6 +208,31 @@ internal static class FinanceTariffConfiguration
             Reference<ChargeDefinition, OperationServiceCharge>(builder, charge => charge.ChargeDefinitionId);
             Reference<RampAgent, OperationServiceCharge>(builder, charge => charge.AppliedByRampAgentId);
             Reference<RampAgent, OperationServiceCharge>(builder, charge => charge.RemovedByRampAgentId);
+            Reference<ApplicationUser, OperationServiceCharge>(builder, charge => charge.AppliedByAccountId);
+            Reference<ApplicationUser, OperationServiceCharge>(builder, charge => charge.RemovedByAccountId);
+        });
+
+        modelBuilder.Entity<GroundTimeAllowance>(builder =>
+        {
+            builder.ToTable("ground_time_allowances", "commercial", table =>
+                table.HasCheckConstraint("ck_ground_time_allowance_minutes", "[allowed_minutes] BETWEEN 15 AND 720"));
+            builder.Property(allowance => allowance.SizeCategory).HasConversion<string>().HasMaxLength(16);
+            builder.HasIndex(allowance => allowance.SizeCategory).IsUnique();
+            Reference<ApplicationUser, GroundTimeAllowance>(builder, allowance => allowance.UpdatedByAccountId);
+        });
+
+        modelBuilder.Entity<FinanceHoliday>(builder =>
+        {
+            builder.ToTable("finance_holidays", "commercial", table =>
+                table.HasCheckConstraint("ck_finance_holiday_removal",
+                    "([removed_at] IS NULL AND [removed_by_account_id] IS NULL) OR " +
+                    "([removed_at] IS NOT NULL AND [removed_by_account_id] IS NOT NULL)"));
+            builder.Property(holiday => holiday.Name).HasMaxLength(120).IsRequired();
+            builder.Property(holiday => holiday.RemovedAt).HasPrecision(3);
+            builder.HasIndex(holiday => holiday.Date).IsUnique().HasFilter("[removed_at] IS NULL")
+                .HasDatabaseName("ux_finance_holidays_active_date");
+            Reference<ApplicationUser, FinanceHoliday>(builder, holiday => holiday.CreatedByAccountId);
+            Reference<ApplicationUser, FinanceHoliday>(builder, holiday => holiday.RemovedByAccountId);
         });
     }
 

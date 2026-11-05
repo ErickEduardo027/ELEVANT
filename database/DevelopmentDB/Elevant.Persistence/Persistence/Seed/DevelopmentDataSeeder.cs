@@ -1009,9 +1009,11 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
         var charges = new[]
         {
             ("NIGHT", "Recargo nocturno", ChargeCategory.Surcharge, ChargeCalculationMethod.PercentOfService,
-                ChargeQuantityRule.One, 0, 0m, 25m, (string?)null),
+                // AVIAM's Service Order: 15 % between 22:00 and 05:59 (ADR-0034).
+                ChargeQuantityRule.One, 0, 0m, 15m, (string?)null),
             ("HOLIDAY", "Recargo por día festivo", ChargeCategory.Surcharge, ChargeCalculationMethod.PercentOfService,
-                ChargeQuantityRule.One, 0, 0m, 50m, null),
+                // AVIAM's Service Order: 15 % on Sundays and holidays between 06:00 and 21:59.
+                ChargeQuantityRule.One, 0, 0m, 15m, null),
             ("OVERTIME", "Tiempo extra de operación", ChargeCategory.AdditionalCharge, ChargeCalculationMethod.PerHour,
                 ChargeQuantityRule.OperationOverrun, 15, 0.25m, 45m, "hour"),
             ("DELAY", "Espera por demora del vuelo", ChargeCategory.AdditionalCharge, ChargeCalculationMethod.PerHour,
@@ -1059,6 +1061,13 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 RateDate = FixtureDate, FromCurrency = "USD", ToCurrency = "DOP", Rate = 58.5m,
                 Source = "Synthetic Development rate", RecordedByAccountId = financeAccountId, IsCurrent = true,
             }, DeterministicGuid("exchange-rate:USD:DOP:2026-08-18").ToString("D")), cancellationToken);
+        // Ground time Finance allows before «package exceeded» (ADR-0034): ~1 h 15 narrowbody, ~2 h 15 widebody.
+        foreach (var (category, minutes) in new[] { (AircraftSizeCategory.Narrowbody, 75), (AircraftSizeCategory.Widebody, 135) })
+            await GetOrAddAsync(context.GroundTimeAllowances, allowance => allowance.SizeCategory == category,
+                () => Stamp(new GroundTimeAllowance
+                {
+                    SizeCategory = category, AllowedMinutes = minutes, UpdatedByAccountId = financeAccountId,
+                }, DeterministicGuid($"ground-time-allowance:{category}").ToString("D")), cancellationToken);
         await GetOrAddAsync(context.AirlineBillingProfiles, profile => profile.AirlineId == airlineId,
             () => Stamp(new AirlineBillingProfile { AirlineId = airlineId, PaymentTermDays = 30 },
                 DeterministicGuid($"airline-billing-profile:{airlineId}").ToString("D")), cancellationToken);

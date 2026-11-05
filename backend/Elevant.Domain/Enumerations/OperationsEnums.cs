@@ -113,3 +113,11 @@ public enum OperationalRequestStatus
     Completed,
     Cancelled,
 }
+
+/// <summary>Who marked a charge on a service (ADR-0034).</summary>
+public enum ChargeMarkSource
+{
+    Agent,
+    Automatic,
+    Occ,
+}

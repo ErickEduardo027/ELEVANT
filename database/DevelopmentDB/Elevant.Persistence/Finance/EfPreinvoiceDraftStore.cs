@@ -229,7 +229,7 @@ internal sealed class EfPreinvoiceDraftStore(
             {
                 ServiceId = service.Id, ServicePublicId = service.PublicId,
                 OperationId = operation.Id, TurnaroundId = turnaround.Id, service.ContractServiceRateId,
-                SubmissionId = submission.Id, submission.EvidenceJson, SubmittedAt = submission.SubmittedAt, DefinitionId = definition.Id,
+                SubmissionId = submission.Id, EvidenceJson = decision.ApprovedEvidenceJson ?? submission.EvidenceJson, SubmittedAt = submission.SubmittedAt, DefinitionId = definition.Id,
                 AirlineId = airline.Id, AirlinePublicId = airline.PublicId,
                 turnaround.OperationDate, turnaround.OperationCode,
                 definition.Code, definition.Name,

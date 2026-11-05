@@ -56,6 +56,7 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
             OccReportKind.TurnaroundTimes => TurnaroundTimes(operations),
             OccReportKind.ServicesByAirline => await ServicesAsync(operations, ids, cancellationToken),
             OccReportKind.Reviews => await ReviewsAsync(operations, ids, zone, cancellationToken),
+            OccReportKind.DailyClose => await DailyCloseAsync(operations, ids, zone, cancellationToken),
             _ => await ProductivityAsync(operations, ids, cancellationToken),
         };
         var slice = rows.Skip((page - 1) * limit).Take(limit + 1).ToArray();
@@ -202,6 +203,72 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
                     OccReportCell.Number(worked.Sum(item => Minutes(item.ActualStart, item.ActualEnd) ?? 0)),
                 ];
             }).ToList();
+    }
+
+    /// <summary>
+    /// The day's operational close OCC used to build by hand (ADR-0034). The notice is the minutes
+    /// between the last stand change and block-on: negative when the stand changed after the aircraft
+    /// blocked, empty when the stand never changed.
+    /// </summary>
+    private async Task<List<IReadOnlyList<OccReportCell>>> DailyCloseAsync(OperationRow[] operations, long[] ids,
+        TimeZoneInfo zone, CancellationToken cancellationToken)
+    {
+        var turnaroundIds = operations.Select(item => item.TurnaroundId).Distinct().ToArray();
+        var legs = (await context.FlightLegs.AsNoTracking().Where(leg => turnaroundIds.Contains(leg.TurnaroundId))
+                .Select(leg => new { leg.TurnaroundId, leg.Direction, leg.FlightNumber, leg.ScheduledAt, leg.ActualAt })
+                .ToArrayAsync(cancellationToken))
+            .ToLookup(leg => leg.TurnaroundId);
+        var stands = (await (from assignment in context.Set<Elevant.Domain.Entities.Operations.StandAssignment>().AsNoTracking()
+                             join stand in context.Stands.AsNoTracking() on assignment.StandId equals stand.Id
+                             where turnaroundIds.Contains(assignment.TurnaroundId)
+                             orderby assignment.AssignedFrom, assignment.Id
+                             select new { assignment.TurnaroundId, stand.Code, assignment.AssignedFrom })
+                .ToArrayAsync(cancellationToken))
+            .ToLookup(item => item.TurnaroundId);
+        var milestones = (await context.Set<Elevant.Domain.Entities.Operations.OperationMilestone>().AsNoTracking()
+                .Where(item => ids.Contains(item.GroundOperationId) && item.ActualAt != null &&
+                    (item.Code == "BLOCK_ON" || item.Code == "PUSHBACK"))
+                .Select(item => new { item.GroundOperationId, item.Code, item.ActualAt }).ToArrayAsync(cancellationToken))
+            .ToLookup(item => item.GroundOperationId);
+        var categories = await (from turnaround in context.Turnarounds.AsNoTracking()
+                                join type in context.AircraftTypes.AsNoTracking() on turnaround.AircraftTypeId equals type.Id
+                                where turnaroundIds.Contains(turnaround.Id)
+                                select new { turnaround.Id, type.SizeCategory }).ToDictionaryAsync(item => item.Id,
+            item => item.SizeCategory, cancellationToken);
+        var allowances = await context.GroundTimeAllowances.AsNoTracking()
+            .ToDictionaryAsync(item => item.SizeCategory, item => item.AllowedMinutes, cancellationToken);
+        var incidents = (await context.Incidents.AsNoTracking().Where(item => ids.Contains(item.GroundOperationId))
+                .Select(item => new { item.GroundOperationId, item.DelayCode }).ToArrayAsync(cancellationToken))
+            .ToLookup(item => item.GroundOperationId);
+        return operations.Select(item =>
+        {
+            var arrival = legs[item.TurnaroundId].FirstOrDefault(leg => leg.Direction == FlightDirection.Arrival);
+            var departure = legs[item.TurnaroundId].FirstOrDefault(leg => leg.Direction == FlightDirection.Departure);
+            var history = stands[item.TurnaroundId].ToArray();
+            var blockOn = milestones[item.Id].FirstOrDefault(mark => mark.Code == "BLOCK_ON")?.ActualAt ?? item.ActualStart;
+            var pushback = milestones[item.Id].FirstOrDefault(mark => mark.Code == "PUSHBACK")?.ActualAt ?? item.ActualEnd;
+            decimal? notice = history.Length > 1 && blockOn is { } blocked
+                ? Math.Round((decimal)(blocked - history[^1].AssignedFrom).TotalMinutes, 0) : null;
+            var ground = Elevant.Application.Operations.AutomaticSurchargePolicy.GroundMinutes(blockOn, pushback);
+            int? allowed = categories.TryGetValue(item.TurnaroundId, out var category) && category is { } size &&
+                allowances.TryGetValue(size, out var minutes) ? minutes : null;
+            var reported = incidents[item.Id].ToArray();
+            var delays = reported.Select(incident => incident.DelayCode).OfType<string>().Distinct().Order().ToArray();
+            return (IReadOnlyList<OccReportCell>)
+            [
+                Text(Date(item.Date)), Text(item.Code), Text(item.Airline),
+                Text(string.Join(" / ", new[] { arrival?.FlightNumber, departure?.FlightNumber }.OfType<string>())),
+                Text(Time(arrival?.ScheduledAt, zone)), Text(Time(arrival?.ActualAt, zone)),
+                Text(Time(departure?.ScheduledAt, zone)), Text(Time(pushback, zone)),
+                Text(history.FirstOrDefault()?.Code ?? "—"), Text(history.LastOrDefault()?.Code ?? "—"),
+                notice is { } value ? OccReportCell.Number(value) : Text("—"),
+                ground is { } groundMinutes ? OccReportCell.Number(groundMinutes) : Text("—"),
+                allowed is { } allowance ? OccReportCell.Number(allowance) : Text("—"),
+                Text(delays.Length == 0 ? "—" : string.Join(", ", delays)),
+                OccReportCell.Number(reported.Length),
+                Text(Status(item.Status)),
+            ];
+        }).ToList();
     }
 
     private static OccReportCell Text(string value) => new(value);

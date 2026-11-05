@@ -199,21 +199,241 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                 item.SectionName, item.ItemCode, item.Label,
                 answer.Value.ToString(), answer.Note))
             .ToArrayAsync(cancellationToken);
-        var decision = await context.ReviewDecisions.AsNoTracking()
+        var decisionRow = await context.ReviewDecisions.AsNoTracking()
             .Where(item => item.OperationSubmissionId == core.SubmissionInternalId)
-            .Select(item => new OccReviewDecisionData(
-                item.Outcome.ToString(), item.Reason, item.DecidedAt))
+            .Select(item => new { item.Outcome, item.Reason, item.DecidedAt, item.ApprovedEvidenceJson })
             .SingleOrDefaultAsync(cancellationToken);
+        var decision = decisionRow is null ? null
+            : new OccReviewDecisionData(decisionRow.Outcome.ToString(), decisionRow.Reason, decisionRow.DecidedAt);
+        var latestRevision = await context.OperationSubmissions.AsNoTracking()
+            .Where(item => item.GroundOperationId == core.OperationInternalId)
+            .MaxAsync(item => item.RevisionNumber, cancellationToken);
+        var canAdjust = core.Status == SubmissionStatus.PendingReview && core.RevisionNumber == latestRevision;
+        var close = await CloseAsync(core.OperationInternalId, evidence,
+            decisionRow?.ApprovedEvidenceJson is { } approved ? OperationSubmissionEvidence.Parse(approved) : null,
+            canAdjust, cancellationToken);
 
         return new OccReviewDetailData(
             core.OperationId, core.SubmissionId, core.RevisionNumber,
             core.Status.ToString(), core.OperationCode, core.OperationDate,
             core.StationId, core.StationCode, core.IanaTimeZone,
             core.AirlineName, core.AgentName.Trim(), core.PlannedStartAt,
-            core.PlannedEndAt, core.ActualStartAt, core.SubmittedAt,
+            core.PlannedEndAt, core.ActualStartAt, core.ActualEndAt ?? core.SubmittedAt,
             core.SubmittedAt, core.AgentNote, core.ChecklistStatus.ToString(),
             answers, evidence.Services, evidence.Incidents, decision,
-            ConcurrencyToken(core.OperationId, core.RowVersion, core.SubmissionId, core.Status));
+            ConcurrencyToken(core.OperationId, core.RowVersion, core.SubmissionId, core.Status), close);
+    }
+
+    /// <summary>
+    /// What OCC closes the operation with (ADR-0034): recorded times, the charges (live while it can
+    /// still adjust them, otherwise as approved or as handed off) and the charges it may add.
+    /// </summary>
+    private async Task<OccReviewCloseData> CloseAsync(long operationId, OperationSubmissionEvidence submitted,
+        OperationSubmissionEvidence? approved, bool canAdjust, CancellationToken cancellationToken)
+    {
+        var milestones = await context.Set<OperationMilestone>().AsNoTracking()
+            .Where(item => item.GroundOperationId == operationId && item.ActualAt != null)
+            .OrderBy(item => item.ActualAt)
+            .Select(item => new OccReviewMilestoneData(item.Code, item.ActualAt!.Value))
+            .ToArrayAsync(cancellationToken);
+        var serviceCodes = submitted.Services.ToDictionary(service => service.Id, service => service.Code);
+        var definitions = await context.ChargeDefinitions.AsNoTracking()
+            .Select(charge => new { charge.Id, charge.PublicId, charge.Code, charge.Name, charge.IsActive,
+                charge.AppliesToAllServices })
+            .ToArrayAsync(cancellationToken);
+        IReadOnlyList<OccReviewChargeData> charges;
+        if (canAdjust)
+        {
+            charges = await (from mark in context.OperationServiceCharges.AsNoTracking()
+                             join service in context.OperationServices.AsNoTracking() on mark.OperationServiceId equals service.Id
+                             join definition in context.ServiceDefinitions.AsNoTracking()
+                                 on service.ServiceDefinitionId equals definition.Id
+                             join charge in context.ChargeDefinitions.AsNoTracking() on mark.ChargeDefinitionId equals charge.Id
+                             where service.GroundOperationId == operationId && mark.RemovedAt == null
+                             orderby service.LineNumber, mark.AppliedAt, mark.Id
+                             select new OccReviewChargeData(mark.PublicId, service.PublicId, definition.Code, charge.PublicId,
+                                 charge.Code, charge.Name, mark.Source.ToString(), mark.AppliedAt, mark.AdjustmentReason))
+                .ToArrayAsync(cancellationToken);
+        }
+        else
+        {
+            charges = ((approved ?? submitted).Charges ?? []).Select(item => new OccReviewChargeData(item.MarkId,
+                    item.ServiceId, serviceCodes.GetValueOrDefault(item.ServiceId, string.Empty), item.ChargeId, item.Code,
+                    definitions.FirstOrDefault(definition => definition.PublicId == item.ChargeId)?.Name ?? item.Code,
+                    item.Source ?? nameof(ChargeMarkSource.Agent), item.AppliedAt, null))
+                .ToArray();
+        }
+        var options = new List<OccReviewChargeOptionData>();
+        if (canAdjust)
+        {
+            var services = await context.OperationServices.AsNoTracking()
+                .Where(service => service.GroundOperationId == operationId)
+                .Select(service => new { service.PublicId, service.ServiceDefinitionId }).ToArrayAsync(cancellationToken);
+            var links = await context.ChargeDefinitionServices.AsNoTracking()
+                .Select(link => new { link.ChargeDefinitionId, link.ServiceDefinitionId }).ToArrayAsync(cancellationToken);
+            foreach (var charge in definitions.Where(item => item.IsActive).OrderBy(item => item.Name))
+            {
+                var serviceIds = services.Where(service => charge.AppliesToAllServices || links.Any(link =>
+                        link.ChargeDefinitionId == charge.Id && link.ServiceDefinitionId == service.ServiceDefinitionId))
+                    .Select(service => service.PublicId).ToArray();
+                if (serviceIds.Length > 0)
+                    options.Add(new OccReviewChargeOptionData(charge.PublicId, charge.Code, charge.Name,
+                        charge.AppliesToAllServices, serviceIds));
+            }
+        }
+        var frozen = submitted.Close;
+        var timing = frozen is not null
+            ? new OccReviewTimingData(frozen.GroundMinutes, frozen.AllowedGroundMinutes, frozen.ArrivalDelayMinutes,
+                frozen.AircraftCategory)
+            : await LiveTimingAsync(operationId, cancellationToken);
+        var damages = await context.Set<OperationDamageMark>().AsNoTracking()
+            .CountAsync(item => item.GroundOperationId == operationId, cancellationToken);
+        return new OccReviewCloseData(milestones, charges, options, timing, canAdjust, damages);
+    }
+
+    private async Task<OccReviewTimingData> LiveTimingAsync(long operationId, CancellationToken cancellationToken)
+    {
+        var facts = await OperationCloseFacts.LoadAsync(context, operationId, null, cancellationToken);
+        return new OccReviewTimingData(facts.GroundMinutes, facts.AllowedGroundMinutes, facts.ArrivalDelayMinutes,
+            facts.Category?.ToString());
+    }
+
+    public async Task<OccReviewChargeAdjustResult> AdjustChargeAsync(
+        OccReviewChargeAdjustRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var strategy = context.Database.CreateExecutionStrategy();
+        OccReviewChargeAdjustResult? attempt = null;
+        Guid? auditId = null;
+        try
+        {
+            return await strategy.ExecuteInTransactionAsync(
+                async token =>
+                {
+                    context.ChangeTracker.Clear();
+                    (attempt, auditId) = await AdjustInsideTransactionAsync(request, token);
+                    if (!attempt.IsSuccess) context.ChangeTracker.Clear();
+                    return attempt;
+                },
+                async token =>
+                {
+                    context.ChangeTracker.Clear();
+                    return auditId is not Guid id ||
+                        await context.AuditEntries.AsNoTracking().AnyAsync(item => item.PublicId == id, token);
+                },
+                IsolationLevel.Serializable,
+                cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return new OccReviewChargeAdjustResult(null, OccReviewFailure.PreconditionFailed);
+        }
+        catch (Exception exception) when (exception is RetryLimitExceededException or DbUpdateException or SqlException &&
+            exception.GetBaseException() is SqlException { Number: 1205 or 1222 or 3960 or 2601 or 2627 or 547 })
+        {
+            context.ChangeTracker.Clear();
+            return new OccReviewChargeAdjustResult(null, OccReviewFailure.Conflict);
+        }
+    }
+
+    private async Task<(OccReviewChargeAdjustResult Result, Guid? AuditId)> AdjustInsideTransactionAsync(
+        OccReviewChargeAdjustRequest request, CancellationToken cancellationToken)
+    {
+        static (OccReviewChargeAdjustResult, Guid?) Fail(OccReviewFailure failure) =>
+            (new OccReviewChargeAdjustResult(null, failure), null);
+        var liveActor = await new EfActorContextResolver(context, timeProvider)
+            .ResolveAsync(request.ActorAccountId, cancellationToken);
+        if (liveActor is null || !liveActor.HasPermission("operations.review.decide"))
+            return Fail(OccReviewFailure.NotFound);
+        var liveStations = liveActor.StationScopes.Select(item => item.StationId)
+            .Intersect(request.AllowedStationIds).ToArray();
+        if (liveStations.Length == 0) return Fail(OccReviewFailure.NotFound);
+        var now = NormalizeToMilliseconds(timeProvider.GetUtcNow());
+        var operation = await context.GroundOperations
+            .FromSqlInterpolated($"""
+                SELECT * FROM [ops].[ground_operations] WITH (UPDLOCK, HOLDLOCK)
+                WHERE [public_id] = {request.OperationId}
+                """)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (operation is null) return Fail(OccReviewFailure.NotFound);
+        var scope = await (from turnaround in context.Turnarounds.AsNoTracking()
+                           join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+                           join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
+                           join account in context.Users.AsNoTracking() on request.ActorAccountId equals account.PublicId
+                           where turnaround.Id == operation.TurnaroundId && station.IsActive &&
+                                 liveStations.Contains(station.PublicId)
+                           select new { StationId = station.Id, AirlineOrganizationId = airline.OrganizationId,
+                               AccountId = account.Id, ActorName = account.UserName })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (scope is null) return Fail(OccReviewFailure.NotFound);
+        var latest = await context.OperationSubmissions.AsNoTracking()
+            .Where(item => item.GroundOperationId == operation.Id)
+            .OrderByDescending(item => item.RevisionNumber).FirstOrDefaultAsync(cancellationToken);
+        if (latest is null || latest.PublicId != request.SubmissionId ||
+            ConcurrencyToken(operation.PublicId, operation.RowVersion, latest.PublicId, latest.Status) != request.ConcurrencyToken)
+            return Fail(OccReviewFailure.PreconditionFailed);
+        if (!OccReviewDecisionPolicy.CanDecide(operation.CurrentStatus.ToString(), latest.Status.ToString()))
+            return Fail(OccReviewFailure.Conflict);
+
+        string action;
+        object metadata;
+        if (request.MarkId is Guid markId)
+        {
+            var mark = await (from item in context.OperationServiceCharges
+                              join service in context.OperationServices.AsNoTracking() on item.OperationServiceId equals service.Id
+                              where item.PublicId == markId && service.GroundOperationId == operation.Id
+                              select item).SingleOrDefaultAsync(cancellationToken);
+            if (mark is null) return Fail(OccReviewFailure.NotFound);
+            if (mark.RemovedAt is not null) return Fail(OccReviewFailure.Conflict);
+            mark.RemovedAt = now;
+            mark.RemovedByAccountId = scope.AccountId;
+            mark.AdjustmentReason = request.Reason;
+            mark.UpdatedAt = now;
+            action = "removed";
+            metadata = new { operationId = operation.PublicId, markId, source = mark.Source.ToString() };
+        }
+        else
+        {
+            var service = await context.OperationServices.AsNoTracking()
+                .SingleOrDefaultAsync(item => item.PublicId == request.ServiceId && item.GroundOperationId == operation.Id,
+                    cancellationToken);
+            var charge = await context.ChargeDefinitions.AsNoTracking()
+                .SingleOrDefaultAsync(item => item.PublicId == request.ChargeId && item.IsActive, cancellationToken);
+            if (service is null || charge is null) return Fail(OccReviewFailure.NotFound);
+            var applies = charge.AppliesToAllServices || await context.ChargeDefinitionServices.AsNoTracking()
+                .AnyAsync(link => link.ChargeDefinitionId == charge.Id && link.ServiceDefinitionId == service.ServiceDefinitionId,
+                    cancellationToken);
+            var duplicate = !charge.AllowMultiple && await context.OperationServiceCharges.AsNoTracking()
+                .AnyAsync(item => item.OperationServiceId == service.Id && item.ChargeDefinitionId == charge.Id &&
+                    item.RemovedAt == null, cancellationToken);
+            if (!applies || duplicate) return Fail(OccReviewFailure.Conflict);
+            var added = new OperationServiceCharge
+            {
+                PublicId = Guid.CreateVersion7(), OperationServiceId = service.Id, ChargeDefinitionId = charge.Id,
+                Source = ChargeMarkSource.Occ, AppliedByAccountId = scope.AccountId, AdjustmentReason = request.Reason,
+                AppliedAt = now, CreatedAt = now, UpdatedAt = now,
+            };
+            context.OperationServiceCharges.Add(added);
+            action = "added";
+            metadata = new { operationId = operation.PublicId, markId = added.PublicId, serviceId = service.PublicId,
+                charge = charge.Code };
+        }
+        // The operation version moves, so a decision prepared on the previous charges is refused.
+        operation.UpdatedAt = now;
+        var audit = new AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+            ActorAccountId = scope.AccountId, ActorDisplay = scope.ActorName, Action = $"occ.operation.charge.{action}",
+            EntityType = nameof(OperationServiceCharge), EntityPublicId = latest.PublicId,
+            OrganizationId = scope.AirlineOrganizationId, StationId = scope.StationId, Source = AuditSource.Api,
+            CorrelationId = request.CorrelationId, RequestId = request.RequestId, Reason = request.Reason,
+            MetadataJson = JsonSerializer.Serialize(metadata),
+        };
+        context.AuditEntries.Add(audit);
+        await context.SaveChangesAsync(cancellationToken);
+        return (new OccReviewChargeAdjustResult(
+            ConcurrencyToken(operation.PublicId, operation.RowVersion, latest.PublicId, latest.Status), null), audit.PublicId);
     }
 
     public async Task<OccReviewDecisionWriteResult> DecideAsync(
@@ -351,6 +571,8 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             UpdatedAt = now,
         };
         context.ReviewDecisions.Add(reviewDecision);
+        if (outcome == ReviewOutcome.Approved)
+            await CloseApprovedAsync(operation, latest, reviewDecision, scope.AccountId, now, cancellationToken);
         await OperationalNotificationWriter.NotifyAgentAsync(
             context, latest.SubmittedByRampAgentId, scope.StationId,
             operation.Id, reviewDecision.PublicId,
@@ -403,6 +625,51 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         return OccReviewDecisionWriteResult.Success(new OccReviewDecisionWriteData(
             operation.PublicId, latest.PublicId, latest.Status.ToString(), outcome.ToString(),
             now, request.Reason), audit.PublicId);
+    }
+
+    /// <summary>
+    /// ADR-0034: what OCC approves is the handed-off evidence with the charges as they stand after its
+    /// adjustments; the open incidents are closed and the turnaround completes when every operation of
+    /// it is approved.
+    /// </summary>
+    private async Task CloseApprovedAsync(GroundOperation operation, OperationSubmission submission,
+        ReviewDecision decision, long reviewerAccountId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var submitted = submission.EvidenceJson is null
+            ? await OperationSubmissionEvidence.CaptureAsync(context, operation.Id, cancellationToken)
+            : OperationSubmissionEvidence.Parse(submission.EvidenceJson);
+        var charges = await OperationSubmissionEvidence.CaptureChargesAsync(context, operation.Id, cancellationToken);
+        decision.ApprovedEvidenceJson = (submitted with { Charges = charges }).ToJson();
+
+        var incidents = await context.Incidents
+            .Where(item => item.GroundOperationId == operation.Id &&
+                item.Status != IncidentStatus.Resolved && item.Status != IncidentStatus.Closed)
+            .ToArrayAsync(cancellationToken);
+        foreach (var incident in incidents)
+        {
+            incident.Status = IncidentStatus.Resolved;
+            incident.ResolvedAt = now;
+            incident.ResolvedByAccountId = reviewerAccountId;
+            incident.ResolutionNote = "Cerrada al aprobar la revisión de OCC.";
+            incident.UpdatedAt = now;
+        }
+
+        var turnaround = await context.Turnarounds.SingleAsync(item => item.Id == operation.TurnaroundId, cancellationToken);
+        var othersOpen = await context.GroundOperations.AsNoTracking()
+            .AnyAsync(item => item.TurnaroundId == turnaround.Id && item.Id != operation.Id &&
+                item.CurrentStatus != GroundOperationStatus.Approved, cancellationToken);
+        if (!othersOpen && turnaround.CurrentStatus is not (TurnaroundStatus.Completed or TurnaroundStatus.Cancelled or
+                TurnaroundStatus.Diverted))
+        {
+            context.Set<TurnaroundStatusEvent>().Add(new TurnaroundStatusEvent
+            {
+                TurnaroundId = turnaround.Id, FromStatus = turnaround.CurrentStatus, ToStatus = TurnaroundStatus.Completed,
+                OccurredAt = now, ActorAccountId = reviewerAccountId, Source = OperationalDataSource.Manual,
+                Reason = "OCC aprobó la operación: la escala queda cerrada.",
+            });
+            turnaround.CurrentStatus = TurnaroundStatus.Completed;
+            turnaround.UpdatedAt = now;
+        }
     }
 
     private static string ConcurrencyToken(

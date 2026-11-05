@@ -125,10 +125,70 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
                 item.ExecutedQuantity, item.Unit)).ToArray(),
             detail.Incidents.Select(item => new OccReviewIncidentResponse(
                 item.Id, item.Type, item.Severity, item.Status, item.Description,
-                item.OccurredAt)).ToArray(),
+                item.OccurredAt, item.DelayCode)).ToArray(),
             detail.Decision is null ? null : new OccReviewDecisionResponse(
                 detail.Decision.Outcome, detail.Decision.Reason, detail.Decision.DecidedAt),
-            detail.ConcurrencyToken);
+            detail.ConcurrencyToken,
+            detail.Close is not { } close ? null : new OccReviewCloseResponse(
+                close.Milestones.Select(item => new OccReviewMilestoneResponse(item.Code, item.ActualAt)).ToArray(),
+                close.Charges.Select(item => new OccReviewChargeResponse(item.MarkId, item.ServiceId, item.ServiceCode,
+                    item.ChargeId, item.Code, item.Name, item.Source, item.AppliedAt, item.Reason)).ToArray(),
+                close.ChargeOptions.Select(item => new OccReviewChargeOptionResponse(item.ChargeId, item.Code, item.Name,
+                    item.AppliesToAllServices, item.ServiceIds)).ToArray(),
+                new OccReviewTimingResponse(close.Timing.GroundMinutes, close.Timing.AllowedGroundMinutes,
+                    close.Timing.ArrivalDelayMinutes, close.Timing.AircraftCategory),
+                close.CanAdjustCharges, close.DamageCount));
+
+    /// <summary>OCC adds a charge to a service of the operation it is reviewing (ADR-0034).</summary>
+    [RequestSizeLimit(BodyLimitBytes)]
+    [HttpPost("operations/{operationId:guid}/charges", Name = "AddOccReviewCharge")]
+    [Consumes("application/json")]
+    [ProducesResponseType<OccReviewChargeAdjustResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status412PreconditionFailed, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(428, "application/problem+json")]
+    public Task<ActionResult<OccReviewChargeAdjustResponse>> AddCharge([FromRoute] Guid operationId,
+        [FromHeader(Name = "If-Match")] string? ifMatch, [FromBody, BindRequired] AddOccReviewChargeRequest request,
+        CancellationToken cancellationToken) =>
+        AdjustAsync(operationId, ifMatch, request.SubmissionId, request.ServiceId, request.ChargeId, null, request.Reason,
+            cancellationToken);
+
+    /// <summary>OCC removes a charge from the operation it is reviewing, whoever marked it (ADR-0034).</summary>
+    [RequestSizeLimit(BodyLimitBytes)]
+    [HttpPost("operations/{operationId:guid}/charges/{markId:guid}/removal", Name = "RemoveOccReviewCharge")]
+    [Consumes("application/json")]
+    [ProducesResponseType<OccReviewChargeAdjustResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status412PreconditionFailed, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(428, "application/problem+json")]
+    public Task<ActionResult<OccReviewChargeAdjustResponse>> RemoveCharge([FromRoute] Guid operationId,
+        [FromRoute] Guid markId, [FromHeader(Name = "If-Match")] string? ifMatch,
+        [FromBody, BindRequired] RemoveOccReviewChargeRequest request, CancellationToken cancellationToken) =>
+        AdjustAsync(operationId, ifMatch, request.SubmissionId, null, null, markId, request.Reason, cancellationToken);
+
+    private async Task<ActionResult<OccReviewChargeAdjustResponse>> AdjustAsync(Guid operationId, string? ifMatch,
+        Guid submissionId, Guid? serviceId, Guid? chargeId, Guid? markId, string? reason,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccountId(out var accountId)) return UnauthorizedResult<OccReviewChargeAdjustResponse>();
+        if (string.IsNullOrWhiteSpace(ifMatch))
+            return ProblemResult<OccReviewChargeAdjustResponse>(428, "An If-Match precondition is required.");
+        if (!StrongTokenPattern().IsMatch(ifMatch))
+            return ProblemResult<OccReviewChargeAdjustResponse>(400, "The review precondition is invalid.");
+        var result = await handler.AdjustChargeAsync(accountId, operationId, submissionId, ifMatch, serviceId, chargeId,
+            markId, reason, HttpContext.TraceIdentifier, cancellationToken);
+        if (!result.IsSuccess) return FailureResult<OccReviewChargeAdjustResponse>(result.Failure!.Value);
+        Response.Headers.ETag = result.ConcurrencyToken;
+        return Ok(new OccReviewChargeAdjustResponse(result.ConcurrencyToken!));
+    }
 
     /// <summary>Approves or returns one pending submission using its strong snapshot token.</summary>
     [RequestSizeLimit(BodyLimitBytes)]

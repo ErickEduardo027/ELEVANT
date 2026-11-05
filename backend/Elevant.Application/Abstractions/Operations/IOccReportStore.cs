@@ -8,6 +8,7 @@ public enum OccReportKind
     ServicesByAirline,
     Reviews,
     AgentProductivity,
+    DailyClose,
 }
 
 public enum OccReportCellType { Text, Number }
@@ -43,6 +44,13 @@ public static class OccReportCatalog
         new(OccReportKind.AgentProductivity, "agent-productivity", "Productividad por agente",
             "Operaciones asignadas a cada agente, cuántas fueron aprobadas o devueltas y los minutos trabajados.",
             ["Agente", "N.º de empleado", "Operaciones", "Aprobadas", "Devueltas", "Minutos trabajados"]),
+        new(OccReportKind.DailyClose, "daily-close", "Cierre operacional del día",
+            "Por vuelo: horarios programados y reales, posición inicial y final, con cuántos minutos de antelación al " +
+            "bloqueo llegó el último cambio de posición, tiempo en tierra frente al permitido por Finanzas, demoras IATA " +
+            "y desviaciones (ADR-0034).",
+            ["Fecha", "Operación", "Aerolínea", "Vuelos", "STA", "ATA", "STD", "Push-back", "Posición inicial",
+                "Posición final", "Aviso del cambio (min)", "Tiempo en tierra (min)", "Permitido (min)", "Demoras IATA",
+                "Desviaciones", "Estado"]),
     ];
 
     public static OccReportDefinition? Find(string? key) =>

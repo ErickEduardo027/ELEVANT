@@ -33,7 +33,11 @@ public sealed record FinanceApprovedServiceData(
     bool Ready,
     string? BlockingReason,
     decimal? Amount,
-    Guid? PreinvoiceId);
+    Guid? PreinvoiceId,
+    IReadOnlyList<FinanceApprovedChargeData>? Charges = null);
+
+/// <summary>A charge OCC approved on the service and who marked it (ADR-0034).</summary>
+public sealed record FinanceApprovedChargeData(string Code, string Source);
 
 public sealed record FinanceApprovedServicesData(
     Guid StationId,
