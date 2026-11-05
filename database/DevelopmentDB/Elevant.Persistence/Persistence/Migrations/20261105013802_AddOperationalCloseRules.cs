@@ -224,6 +224,14 @@ namespace Elevant.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // ADR-0034: automatic and OCC charge marks, approved evidence and the holiday calendar are history.
+            migrationBuilder.Sql("""
+                IF EXISTS (SELECT 1 FROM ops.operation_service_charges WHERE source <> N'Agent' OR removed_by_account_id IS NOT NULL)
+                   OR EXISTS (SELECT 1 FROM ops.review_decisions WHERE approved_evidence_json IS NOT NULL)
+                   OR EXISTS (SELECT 1 FROM commercial.finance_holidays)
+                    THROW 52340, 'Operational close records already exist; closed history must be retained.', 1;
+                """);
+
             migrationBuilder.DropForeignKey(
                 name: "FK_operation_service_charges_accounts_applied_by_account_id",
                 schema: "ops",

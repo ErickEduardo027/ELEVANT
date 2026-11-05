@@ -380,10 +380,10 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         object metadata;
         if (request.MarkId is Guid markId)
         {
-            var mark = await (from item in context.OperationServiceCharges
-                              join service in context.OperationServices.AsNoTracking() on item.OperationServiceId equals service.Id
-                              where item.PublicId == markId && service.GroundOperationId == operation.Id
-                              select item).SingleOrDefaultAsync(cancellationToken);
+            // Tracked on purpose: a join with an AsNoTracking source would leave the mark untracked and unsaved.
+            var mark = await context.OperationServiceCharges.SingleOrDefaultAsync(item => item.PublicId == markId &&
+                context.OperationServices.Any(service => service.Id == item.OperationServiceId &&
+                    service.GroundOperationId == operation.Id), cancellationToken);
             if (mark is null) return Fail(OccReviewFailure.NotFound);
             if (mark.RemovedAt is not null) return Fail(OccReviewFailure.Conflict);
             mark.RemovedAt = now;
