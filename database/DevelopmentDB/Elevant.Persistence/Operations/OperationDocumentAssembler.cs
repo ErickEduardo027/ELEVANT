@@ -96,7 +96,9 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
                               }).ToArrayAsync(cancellationToken);
         var lines = services.Select(item =>
         {
-            var quantity = item.ExecutedQuantity;
+            // A charter is agreed and prepaid before the work (ADR-0033): until a quantity is executed,
+            // its forms show what the carrier requested, the same total Finance confirms.
+            var quantity = charter is not null && item.ExecutedQuantity == 0 ? item.ContractedQuantity : item.ExecutedQuantity;
             return new DocumentServiceLine(item.LineNumber, item.Code, item.Name, quantity, item.BillingUnitSnapshot,
                 item.UnitPriceSnapshot, item.UnitPriceSnapshot is decimal price ? decimal.Round(price * quantity, 2) : null);
         }).ToArray();

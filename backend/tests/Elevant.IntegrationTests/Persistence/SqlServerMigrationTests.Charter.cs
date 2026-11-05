@@ -161,6 +161,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(OperationDocumentKind.CharterServiceRequest, request.Content.Kind);
         Assert.Equal("MDPC/PUJ", request.Content.Charter!.StationLabel);
         Assert.Equal("1200 NW 72nd Ave, Miami", request.Content.Charter.CarrierAddress);
+        // Nothing executed yet: the agreement shows the requested quantity and the total Finance will confirm.
+        Assert.Equal((2m, 260m), (request.Content.Services.Single().Quantity, request.Content.TotalAmount!.Value));
         Assert.Equal("Cash", documents.Documents.Single(item => item.Content.Kind == OperationDocumentKind.ServiceOrder)
             .Content.BillingType);
         foreach (var (role, name, identification) in new[]
