@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "c42518e1d23fb1e6ea1ffe6dc65e335bbdfd6a7dde2c19da8675f0f701adc33f",
+        "sha256": "1bca95f0daf0606f83505f489853ef37b8f2db3040442f9d11c8ab13d37f2005",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "a515d65e74e650574b3cef61bc7621964017f9645742a701338f03d6442e00d8",
+        "sha256": "995ae06acf0d83458e8d0c6d95c84ff0edffab9c3b38eb0e12dc0c5ed02cb56f",
         "title": null,
         "version": null
       }
@@ -1460,6 +1460,12 @@
         "name": "AddOperationDocuments",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261104195729_AddOperationDocuments.cs",
         "sha256": "5036c9428712a93160121b503cf176b633c93ab0f982a442e34122e74e771b08"
+      },
+      {
+        "id": "20261104232738",
+        "name": "AddCharterAgreements",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261104232738_AddCharterAgreements.cs",
+        "sha256": "6cfbead564952a9c45eb8f17b9771f7faae7bde554e6f8b7e8e43f1f5c7d2c70"
       }
     ],
     "manifestContracts": [
