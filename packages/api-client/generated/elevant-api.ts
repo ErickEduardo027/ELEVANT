@@ -154,6 +154,26 @@ export interface AddCharterServiceRequest {
   quantity: number;
 }
 
+export interface AddFinanceHolidayRequest {
+  date: string;
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  name?: string | null;
+}
+
+export interface AddOccReviewChargeRequest {
+  submissionId: string;
+  serviceId: string;
+  chargeId: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  reason?: string | null;
+}
+
 export interface AddOccStandConstraintRequest {
   date: string;
   standId: string;
@@ -1860,6 +1880,11 @@ export interface ExpectedVersionInput {
   expectedVersion: string;
 }
 
+export interface FinanceApprovedChargeResponse {
+  code: string;
+  source: string;
+}
+
 export interface FinanceApprovedServiceResponse {
   id: string;
   operationId: string;
@@ -1889,6 +1914,8 @@ export interface FinanceApprovedServiceResponse {
   amount?: number | null;
   /** @nullable */
   preinvoiceId?: string | null;
+  /** @nullable */
+  charges?: FinanceApprovedChargeResponse[] | null;
 }
 
 export interface FinanceApprovedServicesResponse {
@@ -1930,6 +1957,24 @@ export interface FinanceCharterResponse {
 
 export interface FinanceCharterListResponse {
   charters: FinanceCharterResponse[];
+}
+
+export interface GroundTimeAllowanceResponse {
+  category: string;
+  allowedMinutes: number;
+  updatedAt: string;
+  version: string;
+}
+
+export interface FinanceHolidayResponse {
+  id: string;
+  date: string;
+  name: string;
+}
+
+export interface FinanceCloseRulesResponse {
+  allowances: GroundTimeAllowanceResponse[];
+  holidays: FinanceHolidayResponse[];
 }
 
 export interface FinanceCreditNoteData {
@@ -3973,6 +4018,31 @@ export interface OccReportPageResponse {
   hasMore: boolean;
 }
 
+export interface OccReviewChargeAdjustResponse {
+  reviewVersion: string;
+}
+
+export interface OccReviewChargeOptionResponse {
+  chargeId: string;
+  code: string;
+  name: string;
+  appliesToAllServices: boolean;
+  serviceIds: string[];
+}
+
+export interface OccReviewChargeResponse {
+  markId: string;
+  serviceId: string;
+  serviceCode: string;
+  chargeId: string;
+  code: string;
+  name: string;
+  source: string;
+  appliedAt: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface OccReviewChecklistAnswerResponse {
   section: string;
   code: string;
@@ -3980,6 +4050,31 @@ export interface OccReviewChecklistAnswerResponse {
   value: string;
   /** @nullable */
   note?: string | null;
+}
+
+export interface OccReviewMilestoneResponse {
+  code: string;
+  actualAt: string;
+}
+
+export interface OccReviewTimingResponse {
+  /** @nullable */
+  groundMinutes?: number | null;
+  /** @nullable */
+  allowedGroundMinutes?: number | null;
+  /** @nullable */
+  arrivalDelayMinutes?: number | null;
+  /** @nullable */
+  aircraftCategory?: string | null;
+}
+
+export interface OccReviewCloseResponse {
+  milestones: OccReviewMilestoneResponse[];
+  charges: OccReviewChargeResponse[];
+  chargeOptions: OccReviewChargeOptionResponse[];
+  timing: OccReviewTimingResponse;
+  canAdjustCharges: boolean;
+  damageCount: number;
 }
 
 export interface OccReviewDecisionResponse {
@@ -4006,6 +4101,8 @@ export interface OccReviewIncidentResponse {
   status: string;
   description: string;
   occurredAt: string;
+  /** @nullable */
+  delayCode?: string | null;
 }
 
 export interface OccReviewDetailResponse {
@@ -4037,6 +4134,7 @@ export interface OccReviewDetailResponse {
   incidents: OccReviewIncidentResponse[];
   decision?: OccReviewDecisionResponse | null;
   reviewVersion: string;
+  close?: OccReviewCloseResponse | null;
 }
 
 export interface OccReviewQueueItemResponse {
@@ -4473,6 +4571,7 @@ export interface RampAppliedChargeResponse {
   code: string;
   name: string;
   appliedAt: string;
+  source: string;
 }
 
 export interface RampGroundOperationResponse {
@@ -4957,6 +5056,15 @@ export interface RejectRampMobileAccessInput {
   expectedVersion: string;
 }
 
+export interface RemoveOccReviewChargeRequest {
+  submissionId: string;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  reason?: string | null;
+}
+
 export interface ReopenServiceRequest {
   reason: string;
   serviceVersion: string;
@@ -5283,6 +5391,19 @@ export interface SetDepartmentNotificationReadRequest {
 export interface SetDepartmentUserStatusInput {
   isActive: boolean;
   expectedVersion: string;
+}
+
+export interface SetGroundTimeAllowanceRequest {
+  /**
+     * @minimum 15
+     * @maximum 720
+     */
+  allowedMinutes: number;
+  /**
+     * @maxLength 64
+     * @nullable
+     */
+  version?: string | null;
 }
 
 export interface SetOperationalNotificationReadRequest {
@@ -10003,6 +10124,137 @@ const res = await fetch(getConfirmFinanceCharterPrepaymentUrl(charterId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: FinanceCharterResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceCloseRulesUrl = () => {
+
+
+
+
+  return `/api/v1/finance/close-rules`
+}
+
+export const getFinanceCloseRules = async ( options?: RequestInit): Promise<FinanceCloseRulesResponse> => {
+
+  const res = await fetch(getGetFinanceCloseRulesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceCloseRulesResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetGroundTimeAllowanceUrl = (category: string,) => {
+
+
+
+
+  return `/api/v1/finance/close-rules/ground-time/${category}`
+}
+
+/**
+ * @summary Sets the ground time of Narrowbody or Widebody; send the version you read.
+ */
+export const setGroundTimeAllowance = async (category: string,
+    setGroundTimeAllowanceRequest?: SetGroundTimeAllowanceRequest, options?: RequestInit): Promise<GroundTimeAllowanceResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetGroundTimeAllowanceUrl(category),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setGroundTimeAllowanceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: GroundTimeAllowanceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAddFinanceHolidayUrl = () => {
+
+
+
+
+  return `/api/v1/finance/close-rules/holidays`
+}
+
+/**
+ * @summary Adds a holiday; the same date and name again is a retry.
+ */
+export const addFinanceHoliday = async (addFinanceHolidayRequest?: AddFinanceHolidayRequest, options?: RequestInit): Promise<FinanceHolidayResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAddFinanceHolidayUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(addFinanceHolidayRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceHolidayResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRemoveFinanceHolidayUrl = (holidayId: string,) => {
+
+
+
+
+  return `/api/v1/finance/close-rules/holidays/${holidayId}`
+}
+
+export const removeFinanceHoliday = async (holidayId: string, options?: RequestInit): Promise<void> => {
+
+  const res = await fetch(getRemoveFinanceHolidayUrl(holidayId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
   return data
 }
 
@@ -15983,6 +16235,84 @@ export const getOccReviewSubmissionDetail = async (operationId: string,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccReviewDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAddOccReviewChargeUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/charges`
+}
+
+/**
+ * @summary OCC adds a charge to a service of the operation it is reviewing (ADR-0034).
+ */
+export const addOccReviewCharge = async (operationId: string,
+    addOccReviewChargeRequest: AddOccReviewChargeRequest, options?: RequestInit): Promise<OccReviewChargeAdjustResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAddOccReviewChargeUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(addOccReviewChargeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewChargeAdjustResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRemoveOccReviewChargeUrl = (operationId: string,
+    markId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/charges/${markId}/removal`
+}
+
+/**
+ * @summary OCC removes a charge from the operation it is reviewing, whoever marked it (ADR-0034).
+ */
+export const removeOccReviewCharge = async (operationId: string,
+    markId: string,
+    removeOccReviewChargeRequest: RemoveOccReviewChargeRequest, options?: RequestInit): Promise<OccReviewChargeAdjustResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRemoveOccReviewChargeUrl(operationId,markId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(removeOccReviewChargeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewChargeAdjustResponse = body ? JSON.parse(body) : {}
   return data
 }
 

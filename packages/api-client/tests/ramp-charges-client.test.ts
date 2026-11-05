@@ -19,7 +19,7 @@ const service = {
   available: [{ id: chargeId, code: "NIGHT", name: "Recargo nocturno", description: null,
     category: "Surcharge", allowMultiple: false }],
   applied: [{ id: "75000000-0000-4000-8000-000000000001", chargeId, code: "NIGHT",
-    name: "Recargo nocturno", appliedAt: "2026-10-08T03:10:00.000+00:00" }],
+    name: "Recargo nocturno", appliedAt: "2026-10-08T03:10:00.000+00:00", source: "Agent" }],
 };
 const charges: RampOperationChargesResponse = { operationId, services: [service] };
 const command: RampServiceChargeCommandResponse = { receiptId, service };

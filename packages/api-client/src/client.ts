@@ -23,6 +23,24 @@ import {
   type CharterDetailsCommand,
   type ConfirmCharterPrepaymentCommand,
 } from "./charters";
+import {
+  AIRCRAFT_SIZE_CATEGORIES,
+  CHARGE_MARK_SOURCES,
+  isFinanceCloseRulesResponse,
+  isFinanceHolidayResponse,
+  isGroundTimeAllowanceResponse,
+  isOccReviewChargeAdjustResponse,
+  isOccReviewClose,
+  normalizedAddCharge,
+  normalizedAllowance,
+  normalizedHoliday,
+  normalizedRemoveCharge,
+  type AddFinanceHolidayCommand,
+  type AddOccReviewChargeCommand,
+  type AircraftSizeCategory,
+  type RemoveOccReviewChargeCommand,
+  type SetGroundTimeAllowanceCommand,
+} from "./operationalClose";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
   getGetAccountChangesUrl,
@@ -172,6 +190,12 @@ import {
   getGetAirlineServiceOrderUrl,
   getGetAirlineServiceOrderPdfUrl,
   getGetRampCharterUrl,
+  getAddOccReviewChargeUrl,
+  getRemoveOccReviewChargeUrl,
+  getGetFinanceCloseRulesUrl,
+  getSetGroundTimeAllowanceUrl,
+  getAddFinanceHolidayUrl,
+  getRemoveFinanceHolidayUrl,
   getAddRampCharterServiceUrl,
   getUpdateRampCharterDetailsUrl,
   getGetFinanceChartersUrl,
@@ -332,6 +356,10 @@ import {
   type OperationDocumentsResponse,
   type AirlineServiceOrderResponse,
   type RampCharterResponse,
+  type OccReviewChargeAdjustResponse,
+  type FinanceCloseRulesResponse,
+  type GroundTimeAllowanceResponse,
+  type FinanceHolidayResponse,
   type FinanceCharterListResponse,
   type FinanceCharterResponse,
   type SubmitRampOperationRequest,
@@ -421,7 +449,8 @@ export type HumanResourcesReportQuery = {
     documentKind?: "Qualification" | "Permit";
     validity?: "Current" | "Expired";
 };
-export type OccReportKey = "operations" | "turnaround-times" | "services-by-airline" | "reviews" | "agent-productivity";
+export type OccReportKey = "operations" | "turnaround-times" | "services-by-airline" | "reviews" | "agent-productivity" |
+  "daily-close";
 export type OccReportQuery = { stationId: string; from: string; to: string; page?: number; limit?: number };
 export type OccReportFormat = "csv" | "xlsx" | "pdf";
 export type HumanResourcesReportPage =
@@ -845,6 +874,18 @@ export interface ElevantApiClient {
     operationId: string,
     options?: GetOccReviewOptions,
   ): Promise<OccReviewSubmissionHistoryResponse>;
+  /** OCC adds a charge to a service while reviewing (ADR-0034); returns the new review version. */
+  addOccReviewCharge(operationId: string, command: AddOccReviewChargeCommand, etag: string,
+    options?: DecideOccReviewOptions): Promise<OccReviewChargeAdjustResponse>;
+  removeOccReviewCharge(operationId: string, markId: string, command: RemoveOccReviewChargeCommand, etag: string,
+    options?: DecideOccReviewOptions): Promise<OccReviewChargeAdjustResponse>;
+  /** Finance's ground time allowances and holiday calendar (ADR-0034). */
+  getFinanceCloseRules(options?: GetHumanResourcesReportOptions): Promise<FinanceCloseRulesResponse>;
+  setGroundTimeAllowance(category: AircraftSizeCategory, command: SetGroundTimeAllowanceCommand,
+    options?: GetHumanResourcesReportOptions): Promise<GroundTimeAllowanceResponse>;
+  addFinanceHoliday(command: AddFinanceHolidayCommand, options?: GetHumanResourcesReportOptions):
+    Promise<FinanceHolidayResponse>;
+  removeFinanceHoliday(holidayId: string, options?: GetHumanResourcesReportOptions): Promise<void>;
   getOperationalPresence(operationIds: string[], options?: GetOperationalCommunicationOptions): Promise<OperationalPresenceList>;
   putOperationalPresence(heartbeat: PresenceHeartbeat, options?: GetOperationalCommunicationOptions): Promise<void>;
   getOwnOperationalPresence(options?: GetOperationalCommunicationOptions): Promise<OwnPresence>;
@@ -2182,7 +2223,8 @@ function isRampServiceChargesResponse(value: unknown): value is RampServiceCharg
     value.applied.length <= 200 &&
     value.applied.every(applied =>
       isRecord(applied) &&
-      hasOnlyKeys(applied, ["id", "chargeId", "code", "name", "appliedAt"]) &&
+      hasOnlyKeys(applied, ["id", "chargeId", "code", "name", "appliedAt", "source"]) &&
+      (applied.source === undefined || isOneOf(applied.source, CHARGE_MARK_SOURCES)) &&
       isUuid(applied.id) &&
       isUuid(applied.chargeId) &&
       isRampChargeName(applied.code, 32) &&
@@ -2781,7 +2823,8 @@ function validatedSignaturePng(value: unknown): string {
   return base64;
 }
 
-const OCC_REPORT_KEYS = new Set<string>(["operations", "turnaround-times", "services-by-airline", "reviews", "agent-productivity"]);
+const OCC_REPORT_KEYS = new Set<string>(["operations", "turnaround-times", "services-by-airline", "reviews", "agent-productivity",
+  "daily-close"]);
 const OCC_REPORT_FORMATS = new Set<string>(["csv", "xlsx", "pdf"]);
 
 function validatedOccReportQuery(key: OccReportKey, query: OccReportQuery): OccReportQuery {
@@ -2879,7 +2922,8 @@ function isOccReviewDetailResponse(
       "operationCode", "operationDate", "stationId", "stationCode", "ianaTimeZone",
       "airlineName", "agentName", "plannedStartAt", "plannedEndAt", "actualStartAt",
       "actualEndAt", "submittedAt", "agentNote", "checklistStatus", "checklistAnswers",
-      "services", "incidents", "decision", "reviewVersion"]) &&
+      "services", "incidents", "decision", "reviewVersion", "close"]) &&
+    (value.close === undefined || value.close === null || isOccReviewClose(value.close)) &&
     isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
     isUuid(value.submissionId) && isInt32(value.revisionNumber) && value.revisionNumber > 0 &&
     isOneOf(value.status, occReviewStatuses) && isNonEmptyString(value.operationCode) &&
@@ -2907,7 +2951,8 @@ function isOccReviewDetailResponse(
       isNonEmptyString(service.unit)) &&
     Array.isArray(value.incidents) && value.incidents.every((incident: unknown) =>
       isRecord(incident) && hasOnlyKeys(incident, ["id", "type", "severity", "status",
-        "description", "occurredAt"]) && isUuid(incident.id) &&
+        "description", "occurredAt", "delayCode"]) && isUuid(incident.id) &&
+      isOptionalNullable(incident.delayCode, (code) => typeof code === "string" && /^[0-9]{2}[A-Z]?$/.test(code)) &&
       isNonEmptyString(incident.type) &&
       isOneOf(incident.severity, ["Low", "Medium", "High", "Critical"] as const) &&
       isOneOf(incident.status, ["Open", "InReview", "Resolved", "Closed"] as const) &&
@@ -4051,7 +4096,11 @@ function isFinanceApprovedServicesResponse(value: unknown): value is FinanceAppr
         "operationCode", "operationDate", "airlineId", "airlineName", "flightNumber", "contractCode",
         "serviceCode", "serviceName", "executionStatus", "contractedQuantity",
         "executedQuantity", "billingUnit", "frozenUnitPrice", "frozenCurrency",
-        "ready", "blockingReason", "amount", "preinvoiceId"]) &&
+        "ready", "blockingReason", "amount", "preinvoiceId", "charges"]) &&
+      (service.charges === undefined || service.charges === null || (Array.isArray(service.charges) &&
+        service.charges.length <= 50 && service.charges.every((charge: unknown) => isRecord(charge) &&
+          hasOnlyKeys(charge, ["code", "source"]) && isNonEmptyString(charge.code) &&
+          isOneOf(charge.source, CHARGE_MARK_SOURCES)))) &&
       isUuid(service.id) && isUuid(service.operationId) && isUuid(service.turnaroundId) &&
       isUuid(service.approvedSubmissionId) && isNonEmptyString(service.operationCode) &&
       isDateOnly(service.operationDate) && isUuid(service.airlineId) &&
@@ -5102,6 +5151,15 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
     const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
     if (!isRampCharterResponse(result.data, operation)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  const reviewChargeWrite = async (path: string, body: unknown, etag: string, options?: DecideOccReviewOptions) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("if-match", validatedStrongEtag(etag));
+    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (!isOccReviewChargeAdjustResponse(result.data)) throw malformedResponse(result.status);
     return result.data;
   };
 
@@ -6265,6 +6323,54 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           (read && result.data.readAt == null) || (!read && result.data.readAt != null))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async addOccReviewCharge(operationId: string, command: AddOccReviewChargeCommand, etag: string,
+      options?: DecideOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const body = normalizedAddCharge(command);
+      if (body === null) throw new TypeError("The charge adjustment is invalid.");
+      return reviewChargeWrite(getAddOccReviewChargeUrl(operation), body, etag, options);
+    },
+    async removeOccReviewCharge(operationId: string, markId: string, command: RemoveOccReviewChargeCommand,
+      etag: string, options?: DecideOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const mark = validatedUuid(markId, "markId");
+      const body = normalizedRemoveCharge(command);
+      if (body === null) throw new TypeError("The charge adjustment is invalid.");
+      return reviewChargeWrite(getRemoveOccReviewChargeUrl(operation, mark), body, etag, options);
+    },
+    async getFinanceCloseRules(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getGetFinanceCloseRulesUrl(), { ...options, method: "GET" }, true);
+      if (!isFinanceCloseRulesResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async setGroundTimeAllowance(category: AircraftSizeCategory, command: SetGroundTimeAllowanceCommand,
+      options?: GetHumanResourcesReportOptions) {
+      if (!(AIRCRAFT_SIZE_CATEGORIES as readonly string[]).includes(category))
+        throw new TypeError("The aircraft category is invalid.");
+      const body = normalizedAllowance(command);
+      if (body === null) throw new TypeError("The ground time is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getSetGroundTimeAllowanceUrl(category),
+        { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
+      if (!isGroundTimeAllowanceResponse(result.data) || result.data.category !== category)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async addFinanceHoliday(command: AddFinanceHolidayCommand, options?: GetHumanResourcesReportOptions) {
+      const body = normalizedHoliday(command);
+      if (body === null) throw new TypeError("The holiday is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      const result = await execute(getAddFinanceHolidayUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isFinanceHolidayResponse(result.data) || result.data.date !== body.date) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async removeFinanceHoliday(holidayId: string, options?: GetHumanResourcesReportOptions) {
+      const holiday = validatedUuid(holidayId, "holidayId");
+      await execute(getRemoveFinanceHolidayUrl(holiday), { ...options, method: "DELETE" }, true);
     },
     async decideOccReview(
       operationId: string,
