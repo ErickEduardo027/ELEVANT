@@ -90,4 +90,4 @@ paquetes con fecha retroactiva (ADR-0018) y la valoración de prefacturas depend
   vigencia antes de poder firmarse.
 - La migración `AddContractValidityAndDrawnSignatures` solo añade columnas y restricciones;
   no hay datos de negocio en ella.
-- `ContractVersionStatus.Rejected` sigue reservado: ningún flujo lo asigna.
+- `ContractVersionStatus.Rejected` sigue reservado: ningún flujo lo asigna. *Desde el 6 de noviembre de 2026 lo asignan el descarte de un borrador y la terminación de un contrato con versiones abiertas, y un contrato terminado ya no se firma ni recibe vigencia (`contract_terminated`): [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).*

@@ -7,10 +7,15 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-05"
-verified_commit: "d6a65ac8a400f3f1f129d6978bcee0c8cf683e2b"
+last_verified: "2026-11-06"
+verified_commit: "8a79fe70a3c592ab3f5dc8af1e7c03f1314b526d"
 sources:
   - docs/superpowers/plans/2026-10-18-finance-platform.md
+  - backend/Elevant.Application/Commercial/ContractAmendment.cs
+  - backend/Elevant.Application/Finance/BillingUnitNames.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/EfFinancePackageStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceTariffBookStore.Approvals.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/EfInvoiceEmailStatusStore.cs
   - docs/adr/0016-finance-tariffs-charges-and-receivables.md
   - docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md
   - docs/adr/0033-charter-flights-without-contract.md
@@ -62,7 +67,7 @@ tags:
 > [!NOTE] Alcance editorial y de entrega
 > Esta ampliación describe el código local de integración del plan aprobado el 2026-10-18. No acredita merge, promoción, despliegue ni emisión fiscal real. La nota queda `documented`; `last_verified` y `verified_commit` conservan la verificación integral anterior hasta que el responsable cierre QA y compruebe el commit fuente. Véanse [ADR-0018](../../docs/adr/0018-finance-commercial-platform-and-fiscal-simulation.md) y el [runbook fiscal](../../docs/runbooks/finance-fiscal-activation.md).
 
-Finanzas gobierna catálogo, precios y paquetes; Contratos negocia y propone versiones; Finanzas aprueba el contrato y OCC valida la ejecución. El agente registra hechos y tipos de cargo. La API compartida valora, congela documentos y calcula saldos desde persistencia.
+Contratos gobierna el catálogo de servicios y negocia y propone las versiones del contrato; Finanzas gobierna precios y paquetes y aprueba los precios de cada versión; OCC valida la ejecución. El agente registra hechos y tipos de cargo. La API compartida valora, congela documentos y calcula saldos desde persistencia.
 
 ## Recorrido comercial
 
@@ -93,6 +98,19 @@ La factura comercial, el cobro y el resultado fiscal tienen estados independient
 - Los mínimos de cantidad generan un complemento trazable solo en versiones modernas con `PricingPolicyVersion > 0`. La cobertura de paquete no recibe otro mínimo de servicio. El legado conserva su semántica.
 - Falta de tarifa/FX, cobertura ambigua o base porcentual de paquete sin definir bloquea; no se convierte en precio cero.
 
+### Fase 1 del ciclo: aprobación, enmiendas, unidades y paquetes
+
+Desde [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md):
+
+- **Unidad como código.** Catálogo, solicitud, borrador, enmienda, tarifas, cargos y paquetes guardan el código de `ref.billing_units`. Un nombre heredado («operación») se traduce al leer y al guardar, sin reescribir filas, y una unidad desconocida responde `billing_unit_unknown`. Las pantallas proponen una unidad activa y la muestran en español.
+- **Tarifa base sembrada.** El seed de Development publica, solo insertando, la tarifa base en USD y DOP de los servicios públicos `RAMP-*`.
+- **Aprobación de precios.** Aprobar no activa el contrato: después vienen la vigencia, las dos firmas y el permiso de operación ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)). La decisión exige la versión esperada y acepta `Idempotency-Key`. Se bloquea con un código por causa: paquete retirado o fuera de la moneda o la vigencia, cobertura ambigua, paquete con un servicio que no está en el contrato, servicio dado de baja o inicio no posterior a la versión aprobada vigente. La aerolínea no ve el motivo de una devolución.
+- **Revisores por estación.** Contratos solo envía un borrador si alguien con `finance.contract_approvals.decide` cubre todas sus estaciones, y solo esas cuentas reciben el aviso.
+- **Precio base único.** Alta del borrador, editor de Contratos y comparación de Finanzas usan la misma estación base: la única de la versión, o la tarifa general si tiene varias.
+- **Enmienda.** Contratos la crea sobre un contrato activo o suspendido (`POST contracts/versions/{id}/amendments`). Parte de la última versión aprobada, hereda su fin, estaciones, cargos y paquetes, copia las tarifas sin confirmar y solo pide «Vigente desde», que debe caer después del inicio de esa versión y no después de su fin.
+- **Paquetes.** Finanzas descarta un borrador (`finance.packages.delete`, queda `Discarded`) o retira una versión publicada (`finance.packages.retire`, queda `Retired`), siempre con motivo. Una versión retirada ya no se vincula y bloquea el envío y la aprobación de los borradores que la usan; los contratos aprobados conservan su paquete congelado y retirar no revive la versión anterior.
+- **Tarifarios.** Tarifas, cargos, unidades y tasas responden un código por causa, y sus listas distinguen error recuperable, falta de permiso y vacío. Finanzas traduce el ámbito del paquete y los estados `Superseded`, `Discarded` y `Retired`.
+
 La evidencia OCC y las marcas de cargo deben coincidir con la entrega aprobada. Una marca posterior que altere esa evidencia bloquea la valoración. El móvil sigue enviando marcas mediante su endpoint e idempotencia de instalación, sin recibir precios.
 
 ## Facturación directa e-CF simulada
@@ -103,7 +121,7 @@ Desde la fase 4 ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.m
 - La emisión reutiliza el borrador de prefactura como paso interno de una transacción serializable: valora paquetes, mínimos y recargos, aplica **ITBIS 18 %** fijo a cada línea y emite.
 - Cada factura recibe un **e-NCF `E31` + 10 dígitos** consecutivo, un código de seguridad y su fecha de firma. El PDF tiene formato de factura de crédito fiscal y dice «Simulación — sin validez fiscal».
 - Un charter con prepago confirmado queda saldado al emitir: se registra el cobro `PREPAGO {referencia}` y se aplica hasta el total.
-- La aerolínea recibe el correo «Factura emitida» con el PDF.
+- La aerolínea recibe el correo «Factura emitida» con el PDF. Desde la fase 1 ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)), la factura muestra el estado real de esos correos (`GET finance/invoices/{id}/email-deliveries`): en cola, enviado, fallido con su motivo o sin destinatarios, y en ese caso pide entregar el PDF por otro canal.
 - Se rechaza una operación no aprobada o ya facturada (`409`) y una mezcla de aerolíneas (`422`).
 
 ### Pago con tarjeta simulado
@@ -176,7 +194,7 @@ Una conexión real requiere autorización posterior, proveedor/contrato versiona
 
 ## Permisos, auditoría y reportes
 
-La [matriz del servidor](../../backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs) conserva tarifas/cargos/tasas, contratos, prefacturas y conciliación; agrega catálogo, paquetes, impuestos, recibos, ajustes, proveedores, CxP, gastos y fiscal. Códigos de rol o departamento enviados por el cliente no autorizan nada. La excepción de gasto propio no concede lectura general ni decisión final de Finanzas.
+La [matriz del servidor](../../backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs) conserva tarifas/cargos/tasas, contratos, prefacturas y conciliación; agrega paquetes, impuestos, recibos, ajustes, proveedores, CxP, gastos y fiscal. El catálogo de servicios pertenece a Contratos ([ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md)). Los paquetes tienen además descartar (`finance.packages.delete`) y retirar (`finance.packages.retire`), incluidos en el alias heredado `finance.packages.manage`. Códigos de rol o departamento enviados por el cliente no autorizan nada. La excepción de gasto propio no concede lectura general ni decisión final de Finanzas.
 
 Las mutaciones usan intención/hash, expectedVersion donde corresponde y transacción con auditoría e invalidaciones dirigidas. El feed revalida destinatario y ámbito; los replays no duplican el hecho de negocio.
 

@@ -103,6 +103,20 @@ El catálogo vive en código (`DepartmentPermissionCatalog`) con el formato
 desactivar una plantilla cambia el acceso de sus miembros y rota su sello de
 seguridad.
 
+**Altas de la fase 1 del ciclo**
+([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)):
+
+- `contracts.requests.cancel` cancela solicitudes comerciales;
+- `contracts.drafts.delete` descarta borradores de contrato;
+- `finance.packages.delete` descarta borradores de paquete y
+  `finance.packages.retire` retira paquetes publicados.
+
+`contracts.catalog.delete` se rotula «Dar de baja» y la verificación de
+solicitudes, «Verificar aerolínea y representante». Los grants heredados
+`commercial.requests.full` y `commercial.requests.write` incluyen las dos
+acciones nuevas de Contratos, y el alias `finance.packages.manage`, las dos de
+paquetes. No hacen falta migraciones: el catálogo vive en código.
+
 El acceso efectivo se calcula en el servidor para cada petición. Private Web
 sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/access`).
 
@@ -147,7 +161,15 @@ de lo que debe atender:
   clausuras, permisos enviados o por vencer, y cambios del ciclo del contrato
   (activación, suspensión, vencimiento y aviso a 30 días;
   [ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
-- **Finanzas:** contratos por aprobar, y prefacturas aceptadas o disputadas.
+  Desde la fase 1 del ciclo, también la cuenta del portal lista para enviar un
+  borrador y las devoluciones y aprobaciones de precios de Finanzas
+  ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+- **Finanzas:** contratos por aprobar, que solo recibe quien cubre todas las
+  estaciones de la versión, y facturas pagadas con tarjeta
+  ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Las alertas de
+  prefacturas aceptadas o disputadas siguen en el código, pero el portal ya no
+  ofrece esas acciones
+  ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)).
 
 Solo las recibe quien también puede abrir la fuente; ver
 [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md).

@@ -24,6 +24,10 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/PreinvoiceConfiguration.cs
   - backend/Elevant.Api/Controllers/AirlinePortalController.cs
   - database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePortalReadStore.cs
+  - backend/Elevant.Application/Commercial/ContractDraftRules.cs
+  - backend/Elevant.Application/Commercial/ContractAmendment.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/EfCommercialWorkflowStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/EfContractDraftStore.Commands.cs
 tags:
   - solicitudes
   - contratos
@@ -71,15 +75,15 @@ flowchart LR
     OPSERVICE --> SNAPSHOT[Columnas snapshot]
 ```
 
-`CommercialRequestType` sólo contiene `Affiliation` y `AdditionalService`. Sus estados persistibles son `Pending`, `InReview`, `Approved`, `Rejected` y `Cancelled`. Cada ítem puede expresar cantidad estimada, unidad y vigencia solicitadas; fechas invertidas y cantidades no positivas son rechazadas por constraints.
+`CommercialRequestType` sólo contiene `Affiliation` y `AdditionalService`. Sus estados persistibles son `Pending`, `InReview`, `Approved`, `Rejected` y `Cancelled`. Cada ítem puede expresar cantidad estimada, unidad y vigencia solicitadas; fechas invertidas y cantidades no positivas son rechazadas por constraints. Desde [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md) los cinco estados se usan: la solicitud pasa a `InReview` cuando Contratos verifica la aerolínea o confirma al representante, y termina aprobada, rechazada o cancelada, siempre con evento de estado y auditoría.
 
-El contrato guarda aerolínea, código y estado general (`Draft`, `Active`, `Suspended`, `Terminated`, `Expired`). Sus versiones tienen número positivo, vigencia, moneda, términos y estado (`Draft`, `PendingFinanceApproval`, `Approved`, `Superseded`; `Rejected` queda reservado y ningún flujo lo asigna). Tarifas y estaciones pertenecen a la versión, no al contrato mutable.
+El contrato guarda aerolínea, código y estado general (`Draft`, `Active`, `Suspended`, `Terminated`, `Expired`). Sus versiones tienen número positivo, vigencia, moneda, términos y estado (`Draft`, `PendingFinanceApproval`, `Approved`, `Superseded`, `Rejected`). `Rejected` marca la versión que Contratos descartó antes de la aprobación, o la que quedó abierta en un contrato terminado; Finanzas nunca rechaza: devuelve la versión a `Draft`. Tarifas y estaciones pertenecen a la versión, no al contrato mutable.
 
 En la rama `feat/finance-refinement`, el borrador hereda precio y unidad de la tarifa base de Finanzas en su moneda (USD o DOP) y «activar» envía la versión a `PendingFinanceApproval`: solo la aprobación de Finanzas la deja `Approved`; una devolución exige motivo y la regresa a `Draft`. Ver [Finanzas: tarifarios, cargos y cobros](finanzas-tarifas-cargos-y-cobros.md).
 
 La rama de integración añade una lectura interna paginada de acuerdos (`GET /api/v1/contracts/agreements`) para personal con permiso `commercial.requests.read`. Incluye únicamente versiones `Approved` o `Superseded` con sus estaciones y tarifas. Esta lectura no autoriza crear ni alterar un contrato, ni confiere acceso de aerolínea: la lectura del portal sigue derivando su tenant por separado.
 
-El esquema permite enlazar un contrato a una solicitud mediante `OriginatingServiceRequestId`, pero no prueba que la solicitud estuviera aprobada ni que perteneciera a la misma aerolínea del contrato. Tampoco impide vigencias de versiones solapadas. Esas son invariantes pendientes de aplicación y pruebas.
+El esquema permite enlazar un contrato a una solicitud mediante `OriginatingServiceRequestId`, pero no prueba que la solicitud estuviera aprobada ni que perteneciera a la misma aerolínea del contrato. Tampoco impide vigencias de versiones solapadas. En la aplicación, solo la aprobación de una solicitud crea un contrato desde ella, y una renovación o una enmienda debe empezar después de la última versión aprobada; el esquema, por sí solo, sigue sin impedirlo.
 
 En la rama de integración de Development, el portal dispone de una lectura
 tenant-scoped y paginada de contratos publicados (`Approved` y versiones luego
@@ -87,6 +91,34 @@ tenant-scoped y paginada de contratos publicados (`Approved` y versiones luego
 La aerolínea también ve sus borradores (`Draft` y `PendingFinanceApproval`) como
 copia de revisión con marca de agua, puede comentarlos y firma la versión aprobada
 desde el portal (ADR-0024).
+
+## Reglas de la fase 1 del ciclo (ADR-0037)
+
+- **Una afiliación por aerolínea.** Aprobar se rechaza si la aerolínea ya tiene
+  un contrato `Draft`, `Active` o `Suspended`, otra solicitud aprobada cuyo
+  contrato sigue vivo, cuentas activas del portal o un código que pertenece a
+  otra aerolínea. Quien ya opera amplía su contrato con una enmienda o una
+  renovación. Con contratos solo terminados o vencidos puede volver a afiliarse.
+- **Representante confirmado.** Aprobar exige que Contratos haya registrado
+  quién confirmó al representante, cuándo y cómo.
+- **Aerolínea propuesta.** Si la aerolínea no está en el catálogo, la solicitud
+  guarda la propuesta del solicitante (nombre, país, ICAO, IATA opcional y
+  sitio). Contratos la vincula a una ficha existente o crea una ficha
+  verificada al revisarla.
+- **ICAO sin IATA.** El ICAO es obligatorio; `ref.airlines.iata_code` admite
+  nulos con un índice único filtrado.
+- **Unidad de cobro.** Solicitud, borrador, enmienda y tarifas guardan el
+  código de `ref.billing_units`; un nombre heredado se traduce sin reescribir
+  filas.
+- **Borrador.** Contratos agrega o quita servicios activos y estaciones antes
+  de enviarlo a Finanzas. Un servicio dado de baja se conserva marcado y
+  bloquea el envío hasta que se quita. Descartar deja la versión `Rejected` y,
+  si el contrato nunca se activó, lo termina. Nada se borra.
+- **Lo que ve la aerolínea.** Comenta su borrador también mientras Finanzas lo
+  revisa, pero no recibe la tarifa base, los valores base de los cargos ni el
+  motivo interno de una devolución de Finanzas.
+- **Enmienda.** Parte de la última versión `Approved` de un contrato activo o
+  suspendido, hereda su fin y empieza después de su inicio.
 
 ## Vigencia, firmas y código definitivo (ADR-0025)
 

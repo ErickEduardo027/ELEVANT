@@ -7,8 +7,8 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-05"
-verified_commit: "d6a65ac8a400f3f1f129d6978bcee0c8cf683e2b"
+last_verified: "2026-11-06"
+verified_commit: "8a79fe70a3c592ab3f5dc8af1e7c03f1314b526d"
 sources:
   - README.md
   - docs/architecture/database-v1.md
@@ -16,6 +16,11 @@ sources:
   - backend/Elevant.Domain/Enumerations/IdentityEnums.cs
   - backend/Elevant.Domain/Enumerations/OperationsEnums.cs
   - backend/Elevant.Domain/Enumerations/WorkforceCommercialEnums.cs
+  - backend/Elevant.Domain/Enumerations/FinanceEnums.cs
+  - backend/Elevant.Application/Commercial/ContractDraftRules.cs
+  - backend/Elevant.Application/Commercial/ContractAmendment.cs
+  - backend/Elevant.Application/Commercial/CommercialServiceRetirement.cs
+  - backend/Elevant.Application/Identity/AccountEmails/EmailOutboxLifetimes.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/IntegrationAuditConfiguration.cs
   - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/PlatformConfiguration.cs
@@ -40,7 +45,7 @@ Este glosario normaliza términos usados por código, base y prototipos. “Can�
 | ELEVANT | Plataforma de AVIAM para planificar y controlar asistencia en tierra. | Una sola de sus interfaces. |
 | AVIAM | Organización operadora interna modelada como `AviamOperator`. | Una aerolínea cliente. |
 | OCC | Función interna de control operacional observada en Private Web y en el flujo de revisión. | Un rol único y definitivo; la taxonomía fina aún no está cerrada. |
-| Aerolínea cliente | Organización cliente con perfil canónico `Airline` y códigos aeronáuticos. | El texto libre de una solicitud previa a afiliación. |
+| Aerolínea cliente | Organización cliente con perfil canónico `Airline`, identificada por su código ICAO y, si lo tiene, por su IATA. | El texto libre de una solicitud previa a afiliación. |
 | Agente de rampa | Persona con perfil laboral `RampAgent`, scopes y habilitaciones operativas. | Cuenta, rol IAM o asignación concreta. |
 | Tenant | Organización que delimita los datos del cliente; para el portal se deriva de una membresía autenticada. | `airlineId` enviado por el navegador. |
 
@@ -61,6 +66,7 @@ Este glosario normaliza términos usados por código, base y prototipos. “Can�
 | Requisición de personal | Petición de un departamento a Gestión Humana de N personas para un puesto. | Lo cubierto es una proyección de los empleados enlazados. |
 | Refresh token | Secreto rotativo que renueva el access token de 15 minutos sin volver a iniciar sesión; solo se guarda su SHA-256 ([ADR-0021](../../docs/adr/0021-rotating-refresh-tokens.md)). | Reutilizar uno ya rotado revoca toda la familia. |
 | Código de verificación | Código de 6 dígitos enviado al correo en cada inicio de sesión del portal; 10 minutos y 5 intentos ([ADR-0022](../../docs/adr/0022-portal-email-verification.md)). | Solo aplica a cuentas del portal, no a las internas. |
+| Correo descartado | Correo de la cola que ya no se envía porque su enlace o código venció, otro lo reemplazó o se cerró la invitación; pierde el cuerpo y guarda el motivo (`Discarded`). | Un correo fallido (`Failed`), que no se pudo enviar después de los reintentos. |
 | Subventana | Función dentro de otra pantalla (Solicitudes de clausura dentro de Servicios) con permiso propio. | Concederla concede «Ver» de la pantalla que la contiene. |
 
 ## Geografía y catálogos
@@ -74,7 +80,7 @@ Este glosario normaliza términos usados por código, base y prototipos. “Can�
 | Ocupación de posición | Proyección: «ocupada» si la aeronave de la asignación activa ya llegó (hora real de llegada); «planificada» si aún no llegó; «libre» sin asignación activa. | El color del mapa del prototipo. |
 | Distrito municipal | Subdivisión de un municipio según la DGII y la ONE (p. ej. Pedro Sánchez, en El Seibo). | Un municipio o una sección. |
 | Definición de servicio | Catálogo de servicios y unidad de cobro predeterminada; lo gestiona Contratos. | No es una línea solicitada, contratada ni ejecutada. |
-| Unidad de cobro | Cómo se mide un servicio o cargo (operación, hora, kilogramo…); catálogo `ref.billing_units` que mantiene Finanzas. | Un precio o un recargo. |
+| Unidad de cobro | Cómo se mide un servicio o cargo (operación, hora, pasajero…); catálogo `ref.billing_units` que mantiene Finanzas. El ciclo comercial guarda su código (`operation`), no su nombre. | Un precio o un recargo. |
 | Tipo de equipo | Clase de recurso; puede exigir habilitación. | No es un activo físico. |
 | Activo de equipo | Unidad identificada y ubicada en una estación. | Se asigna temporalmente a una operación. |
 | Tipo de aeronave | Catálogo de fabricante/modelo con código ICAO. | La matrícula pertenece al turnaround concreto. |
@@ -112,6 +118,8 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | --- | --- | --- |
 | Solicitud comercial | Solicitud de afiliación o servicio adicional que puede preceder a una aerolínea canónica. | Solicitud operativa ligada a una estación/turnaround. |
 | Solicitud operativa | Petición de servicio durante la operación, con solicitante, necesidad y resolución. | Afiliación o negociación contractual. |
+| Confirmación del representante | Registro de Contratos sobre quién confirmó, cuándo y por qué canal que el representante habla por la aerolínea; aprobar la solicitud la exige ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)). | La declaración de autoridad que marca el representante en el formulario público. |
+| Aerolínea propuesta | Aerolínea que el solicitante describe cuando no figura en el listado; vive en la solicitud hasta que Contratos la vincula a una ficha o crea una. | Una ficha del catálogo de aerolíneas. |
 | Contrato | Acuerdo de una aerolínea, opcionalmente originado en una solicitud comercial. | Una versión concreta del acuerdo. |
 | Versión de contrato | Vigencia, moneda, términos, estaciones y tarifas aprobables. | El estado general del contrato. |
 | Tarifa de servicio | Precio/unidad/mínimo de un servicio en una versión. | El snapshot guardado en una ejecución. |
@@ -122,7 +130,13 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Firma de contrato | Aceptación de una parte (AVIAM o la aerolínea) sobre una versión aprobada, con nombre, cargo, fecha y huella; solo de inserción. | Una firma electrónica certificada. |
 | Marca de cargo | Tipo de cargo que el agente de rampa aplica a un servicio, sin precio ni cantidad. | La línea de cargo valorada en la prefactura. |
 | Ajuste | Línea manual de Finanzas en una prefactura borrador, positiva o negativa, con motivo. | Una nota de crédito sobre una factura emitida. |
-| Aprobación de Finanzas | Revisión que aprueba una versión de contrato enviada por Contratos o la devuelve con motivo; el contrato se activa después, con ambas firmas y el permiso de operación. | La aprobación de una entrega por OCC. |
+| Listo para Finanzas | Regla del servidor que decide si un borrador puede enviarse a Finanzas, con un código por cada causa pendiente. | La aprobación de Finanzas. |
+| Descartar un borrador | Cerrar sin borrar una versión que no prosperó: queda `Rejected` y, si el contrato nunca se activó, el contrato se termina. | Una devolución de Finanzas, que regresa la versión a `Draft`. |
+| Enmienda | Versión nueva de un contrato activo o suspendido, creada desde la última versión aprobada con su propio «Vigente desde»; vuelve a pasar por Finanzas y por las firmas. | Una renovación, que abre la vigencia siguiente. |
+| Aprobación de Finanzas | Revisión que aprueba una versión de contrato enviada por Contratos o la devuelve con motivo; el contrato se activa después, con ambas firmas y el permiso de operación. La aerolínea no ve el motivo de una devolución. | La aprobación de una entrega por OCC. |
+| Ocultar del catálogo | Quitar «Visible al público» a un servicio: sale del catálogo público, pero sigue en los contratos y en OCC. | Dar de baja el servicio. |
+| Dar de baja un servicio | Comando con motivo que saca el servicio del catálogo, de los contratos nuevos y de la operación; se rechaza mientras un contrato en vigor o en aprobación lo use. | Ocultarlo o aprobar su clausura. |
+| Paquete retirado | Versión publicada de un paquete que Finanzas dejó de ofrecer (`Retired`): no se vincula a borradores y los contratos aprobados la conservan. | Un borrador de paquete descartado (`Discarded`). |
 | Permiso de operación | Autorización de la autoridad aeronáutica (JAC) que la aerolínea envía desde el portal y Contratos verifica ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)). | Vigente, por vencer o vencido se calcula con la fecha; un contrato no se activa sin uno verificado y vigente. |
 | Verificación en registro | Consulta de la aerolínea en Wikidata (o la copia de OpenFlights) por IATA/ICAO ([ADR-0023](../../docs/adr/0023-airline-public-registry-check.md)). | La verificación legal de Contratos. |
 | Tasa de cambio | Tasa diaria USD→DOP registrada manualmente por Finanzas; las correcciones conservan historia. | Una cotización bancaria automática. |

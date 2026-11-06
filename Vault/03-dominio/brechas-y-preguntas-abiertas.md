@@ -78,13 +78,14 @@ Esta lista evita que un vacío se convierta en una suposición. “Brecha” no 
 
 ### Comercial
 
-- Definir transiciones entre solicitud aprobada, alta de aerolínea y creación de contrato.
 - Exigir que `OriginatingServiceRequestId`, cuando exista, apunte a una solicitud aprobada de la misma aerolínea del contrato.
 - Evitar solapamientos incompatibles entre versiones y resolver suspensión/terminación.
 - Al vincular `OperationService` con una tarifa, exigir precio/moneda all-or-none, enlace de tarifa cuando corresponda, la misma definición de servicio y aerolínea, cobertura de estación, versión aprobada y vigente, y copia consistente e histórica de unidad/precio/moneda.
-- Normalizar o gobernar strings todavía abiertos: unidad de cobro, categoría, estado de equipo, rol de asignación y tipo de incidente.
+- Normalizar o gobernar strings todavía abiertos: categoría, estado de equipo, rol de asignación y tipo de incidente.
 - Decidir Schedule Change, Special Assistance y otros tipos observados en Public Web sin asumir que ya existen.
 - Prefacturas, disputas, factura no fiscal, pagos parciales, notas de crédito, tarifarios y cargos ya tienen modelo (ver [Finanzas: tarifarios, cargos y cobros](finanzas-tarifas-cargos-y-cobros.md)); siguen abiertos impuestos y documento fiscal (ITBIS, NCF), conciliación bancaria y obtención automática de tasas.
+
+Salieron de esta lista el 6 de noviembre de 2026: las transiciones entre solicitud aprobada, alta de aerolínea, cuenta del portal y contrato ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md) y [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)), y la unidad de cobro, que el ciclo comercial guarda como código de `ref.billing_units`. De ese trabajo sigue abierto el paso «contract» que hará obligatorias la `Idempotency-Key` y la versión esperada en los comandos comerciales que todavía las aceptan opcionales.
 
 ### Operación, evidencia y revisión
 
