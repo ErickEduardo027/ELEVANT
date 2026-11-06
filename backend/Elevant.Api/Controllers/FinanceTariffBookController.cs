@@ -162,12 +162,35 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
     public Task<IActionResult> ContractApproval(Guid versionId, CancellationToken cancellationToken) =>
         ReadAsync(actor => store.GetContractApprovalAsync(actor, versionId, cancellationToken));
 
+    /// <summary>
+    /// Finance approves the prices or returns the version to Contratos. Every failure carries a code,
+    /// one per blocking cause (1-N07). The Idempotency-Key is optional while older clients exist
+    /// (expand); with it the same key and body replay the first result.
+    /// </summary>
     [HttpPost("contract-approvals/{versionId:guid}/decision", Name = "DecideFinanceContractApproval")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(8192)]
-    public Task<IActionResult> DecideContractApproval(Guid versionId, [FromBody] DecideContractApprovalInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.DecideContractApprovalAsync(actor, versionId, input, cancellationToken));
+    public async Task<IActionResult> DecideContractApproval(Guid versionId, [FromBody] DecideContractApprovalInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
+    {
+        if (!TryActor(out var actorId)) return Unauthorized();
+        var result = await store.DecideContractApprovalAsync(actorId, versionId, input, idempotencyKey, cancellationToken);
+        return result.Failure switch
+        {
+            null => Ok(new FinanceIdResponse(result.Id!.Value)),
+            FinanceCatalogFailure.Forbidden => Forbid(),
+            FinanceCatalogFailure.NotFound => Coded(404, "El contrato ya no está pendiente en sus estaciones.",
+                result.Code ?? "not_found"),
+            FinanceCatalogFailure.Invalid => Coded(400, "La decisión no es válida.", result.Code ?? "invalid_contract_decision"),
+            FinanceCatalogFailure.Conflict => Coded(409, "El contrato cambió o no se puede aprobar así.",
+                result.Code ?? "version_conflict"),
+            _ => throw new InvalidOperationException(),
+        };
+    }
 
     private async Task<IActionResult> ReadAsync<T>(Func<Guid, Task<T?>> query) where T : class
     {
@@ -194,6 +217,14 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
 
     private bool TryActor(out Guid accountId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) && accountId != Guid.Empty;
+
+    // The clients explain the code, never the title.
+    private ObjectResult Coded(int status, string title, string code)
+    {
+        var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
+    }
 }
 
 public sealed record FinanceIdResponse(Guid Id);

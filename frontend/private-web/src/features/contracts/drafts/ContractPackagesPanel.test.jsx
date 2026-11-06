@@ -4,11 +4,14 @@ import userEvent from '@testing-library/user-event';
 import ContractPackagesPanel from './ContractPackagesPanel';
 import ManagedDraftsPage from './ManagedDraftsPage';
 import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
-import { commercialApi, getManagedDrafts, updateManagedDraft } from '../../../services/commercialGovernanceApi';
+import {
+  commercialApi, getContractDraftReadiness, getContractDraftScope, getManagedDrafts, updateManagedDraft,
+} from '../../../services/commercialGovernanceApi';
 
 // All components, state, permissions and package services are real. Only HTTP adapters are replaced.
 vi.mock('../../../services/commercialGovernanceApi', async importOriginal => ({
   ...(await importOriginal()), commercialApi: vi.fn(), getManagedDrafts: vi.fn(), updateManagedDraft: vi.fn(),
+  getContractDraftReadiness: vi.fn(), getContractDraftScope: vi.fn(),
 }));
 
 const component = (id = 'gpu') => ({ serviceId: id, serviceCode: id.toUpperCase(), serviceName: id === 'gpu' ? 'Energía' : 'Equipaje',
@@ -56,6 +59,11 @@ beforeEach(() => {
   });
   getManagedDrafts.mockImplementation(async () => [structuredClone(currentDraft)]);
   updateManagedDraft.mockResolvedValue({ id: 'd1' });
+  // The server reports the current version ready for Finance and its scope.
+  getContractDraftReadiness.mockImplementation(async () => ({ versionId: 'd1', version: currentDraft.version,
+    versionStatus: 'Draft', ready: true, portalAccount: 'Active', issues: [] }));
+  getContractDraftScope.mockImplementation(async () => ({ versionId: 'd1', version: currentDraft.version,
+    versionStatus: 'Draft', services: [], stations: [] }));
   // Keeps the real parent observers from making network calls during integration tests.
   vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', 'https://api.example.test');
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Offline test transport')));

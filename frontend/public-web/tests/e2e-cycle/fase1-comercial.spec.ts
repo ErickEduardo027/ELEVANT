@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { call, login } from "./support/api";
+import { call, expectCall, login } from "./support/api";
 import { forwardApi, loginPortal, loginPrivate, openModule, snap } from "./support/browser";
 import { API, loadRun, PUBLIC_WEB, savePassword, saveRun, startRun } from "./support/env";
 import { linkTo, waitForEmail } from "./support/mailpit";
@@ -279,6 +279,37 @@ test("El representante activa su cuenta y entra al portal con el código por cor
   await snap(page, "fase1-portal-activado");
 });
 
+test("La aerolínea comenta el borrador y Contratos le responde desde Borradores", async ({ page }) => {
+  const run = loadRun();
+  const airline = run.airline as { name: string };
+  const representative = run.representative as { email: string };
+  await loginPortal(page, representative.email);
+  await page.getByRole("link", { name: "Contratos", exact: true }).first().click();
+  await expect(page.getByText("Cargando contratos autorizados…")).toBeHidden();
+  const question = `¿El precio incluye la asistencia nocturna? Corrida ${run.runId}`;
+  await page.getByLabel("Enviar una observación a Contratos").first().fill(question);
+  await page.getByRole("button", { name: "Enviar observación" }).first().click();
+  await expect(page.getByRole("status").filter({ hasText: "Observación enviada a Contratos." })).toBeVisible();
+  await snap(page, "fase1-portal-observacion");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await loginPrivate(page, "contracts");
+  await openModule(page, "Borradores");
+  await page.getByRole("button", { name: new RegExp(airline.name) }).first().click();
+  const editor = page.locator("section").filter({ has: page.getByRole("heading", { name: airline.name }) });
+  await expect(editor.getByText(question)).toBeVisible();
+  const answer = "El recargo nocturno se cobra aparte según el tarifario de Finanzas.";
+  await editor.getByLabel("Responder a la aerolínea").fill(answer);
+  await editor.getByRole("button", { name: "Enviar respuesta" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Respuesta enviada" })).toBeVisible();
+  // The airline reads the answer signed by Contratos, never by an internal name.
+  const portal = await login({ email: representative.email });
+  const drafts = await expectCall<Array<{ comments: Array<{ author: string; body: string; isAirline: boolean }> }>>(200,
+    portal, "GET", "/airline/contract-drafts");
+  const reply = drafts.data.flatMap(item => item.comments).find(comment => comment.body === answer);
+  expect(reply).toMatchObject({ author: "Contratos AVIAM", isAirline: false });
+});
+
 test("Contratos completa las tarifas del borrador y lo envía a Finanzas", async ({ page }) => {
   const run = loadRun();
   const airline = run.airline as { name: string };
@@ -296,13 +327,72 @@ test("Contratos completa las tarifas del borrador y lo envía a Finanzas", async
   await editor.getByRole("button", { name: "Guardar borrador" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Borrador actualizado" })).toBeVisible();
   await expect(page.getByText("Cargando paquetes del contrato…")).toBeHidden();
+  // 1-D, 1-N14: the checklist comes from the server and every requirement is met.
+  const checks = editor.getByRole("list", { name: "Requisitos para enviar a Finanzas" });
+  await expect(checks).toBeVisible();
+  await expect(checks.getByText(/^○/)).toHaveCount(0);
   await snap(page, "fase1-contratos-borrador");
   await editor.getByRole("button", { name: "Enviar a Finanzas" }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Enviar" }).click();
   await expect(editor.getByText("En revisión por Finanzas")).toBeVisible();
 });
 
-test.fixme("hueco 1-B · Contratos descarta un borrador que no prosperó", async () => {});
+test("Contratos descarta un borrador que no prosperó y el contrato queda cerrado sin borrar nada", async ({ page }) => {
+  const run = loadRun();
+  const name = `E2E Desistida ${run.runId}`;
+  const email = `e2e.desistida.${run.runId.toLowerCase()}@e2e-desist.example.com`;
+  const contracts = await login("contracts");
+  const catalog = await call<{ services: Array<{ id: string }> }>(null, "GET", "/public/commercial-catalog");
+  // An airline that is not listed asks for services (1-N25); Contratos verifies and approves it by API.
+  await expectCall(201, null, "POST", "/public/commercial-requests", {
+    requestId: crypto.randomUUID(), proposedAirline: { name, countryCode: "DO", iataCode: null,
+      icaoCode: `W${pick(letters)}${pick(letters)}`, websiteUrl: "https://e2e-desist.example.com" },
+    serviceIds: [catalog.data.services[0]!.id], representativeName: "Marta Desistida Prueba",
+    representativeTitle: "Gerente comercial", representativeEmail: email, representativePhone: "809-555-0103",
+    authorityDeclared: true, representativeDocumentType: "NationalId", representativeDocumentNumber: "00112345673" });
+  type InboxRequest = { id: string; version: string; contractId: string | null };
+  const request = async () => (await expectCall<{ requests: InboxRequest[] }>(200, contracts, "GET",
+    `/contracts/commercial-requests/inbox?status=All&search=${encodeURIComponent(email)}`)).data.requests[0]!;
+  await expectCall(200, contracts, "POST", `/contracts/commercial-requests/${(await request()).id}/representative-confirmation`,
+    { expectedVersion: (await request()).version, note: "Llamada a la central: la aerolínea confirmó a la representante." });
+  for (let attempt = 0; ; attempt += 1) {
+    const current = await request();
+    const verified = await call(contracts, "POST", `/contracts/commercial-requests/${current.id}/airline-verification`, {
+      expectedVersion: current.version, legalName: `${name} S.R.L.`, countryCode: "DO", iataCode: null,
+      icaoCode: `W${pick(letters)}${pick(letters)}`, verificationSourceUrl: "https://e2e-desist.example.com/aoc" });
+    if (verified.status === 200) break;
+    // A random ICAO may already be taken by another run's airline.
+    if (attempt >= 4 || (verified.data as { code?: string })?.code !== "airline_profile_conflict")
+      throw new Error(`verification → HTTP ${verified.status} ${JSON.stringify(verified.data)}`);
+  }
+  const stations = await expectCall<Array<{ id: string; code: string }>>(200, contracts, "GET",
+    "/contracts/commercial-requests/stations");
+  const puj = stations.data.find(station => station.code === "PUJ")!;
+  const approved = await expectCall<{ id: string }>(200, contracts, "POST",
+    `/contracts/commercial-requests/${(await request()).id}/decision`,
+    { approve: true, stationIds: [puj.id], expectedVersion: (await request()).version });
+
+  // The negotiation fails: Contratos discards the draft from Borradores with a reason.
+  await loginPrivate(page, "contracts");
+  await openModule(page, "Borradores");
+  await page.getByRole("button", { name: new RegExp(name) }).first().click();
+  const editor = page.locator("section").filter({ has: page.getByRole("heading", { name }) });
+  await editor.getByRole("button", { name: "Descartar borrador" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog.getByText(/también quedará terminado/)).toBeVisible();
+  await dialog.getByLabel("Motivo").fill("La aerolínea desistió de la afiliación. Corrida E2E.");
+  await dialog.getByRole("button", { name: "Descartar" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Borrador descartado" })).toBeVisible();
+  await expect(page.getByRole("button", { name: new RegExp(name) })).toHaveCount(0);
+  await snap(page, "fase1-contratos-borrador-descartado");
+
+  // Nothing is deleted: the contract is terminated, it leaves the drafts and Superadmin's tasks.
+  const drafts = await expectCall<Array<{ contractId: string }>>(200, contracts, "GET", "/contracts/drafts");
+  expect(drafts.data.some(item => item.contractId === approved.data.id)).toBe(false);
+  const tasks = await expectCall<Array<{ contractId: string }>>(200, await login("superadmin"), "GET",
+    "/governance/provisioning");
+  expect(tasks.data.some(task => task.contractId === approved.data.id)).toBe(false);
+});
 
 test("Finanzas aprueba las tarifas del contrato", async ({ page }) => {
   const run = loadRun();

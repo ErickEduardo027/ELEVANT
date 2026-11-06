@@ -110,15 +110,15 @@ public sealed partial class SqlServerMigrationTests
 
         // Manual actions need a reason, the expected state and the lifecycle permission.
         Assert.Equal(ContractLifecycleFailure.Forbidden, (await lifecycle.ApplyAsync(PortalAirlineAccount, SeededContractVersion,
-            new ContractLifecycleInput("Suspend", "Prueba de permisos", "Active"), ct)).Failure);
+            new ContractLifecycleInput("Suspend", "Prueba de permisos", "Active"), null, ct)).Failure);
         Assert.Equal("reason_required", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractLifecycleInput("Suspend", "no", "Active"), ct)).Code);
+            new ContractLifecycleInput("Suspend", "no", "Active"), null, ct)).Code);
         Assert.Equal("status_changed", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractLifecycleInput("Suspend", "Auditoría de seguridad", "Suspended"), ct)).Code);
+            new ContractLifecycleInput("Suspend", "Auditoría de seguridad", "Suspended"), null, ct)).Code);
         Assert.Equal("Suspended", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractLifecycleInput("Suspend", "Auditoría de seguridad", "Active"), ct)).Status);
+            new ContractLifecycleInput("Suspend", "Auditoría de seguridad", "Active"), null, ct)).Status);
         Assert.Equal("Active", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractLifecycleInput("Reactivate", "Auditoría cerrada", "Suspended"), ct)).Status);
+            new ContractLifecycleInput("Reactivate", "Auditoría cerrada", "Suspended"), null, ct)).Status);
 
         // An expired permit suspends the contract; reactivating by hand needs a usable permit,
         // and verifying a new one resumes it.
@@ -127,7 +127,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(1, (await lifecycle.SweepAsync(ct)).Suspended);
         Assert.Equal(ContractStatus.Suspended, (await ContractAsync()).Status);
         Assert.Equal("permit_required", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractLifecycleInput("Reactivate", "Intento sin permiso", "Suspended"), ct)).Code);
+            new ContractLifecycleInput("Reactivate", "Intento sin permiso", "Suspended"), null, ct)).Code);
         var renewed = (await permits.SubmitAsync(PortalAirlineAccount,
             new SubmitAirlinePermitInput("OperatingPermit", "JAC-2027-001", "Junta de Aviación Civil", today, today.AddYears(1), null), ct)).Permit!;
         await permits.ReviewAsync(ContractsAdministrator, renewed.Id, new ReviewAirlinePermitInput(true, null, renewed.Version), ct);
@@ -135,14 +135,14 @@ public sealed partial class SqlServerMigrationTests
 
         // Renewal copies the version in force into a draft for Finance; only one at a time.
         var renewal = await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractLifecycleInput("Renew", "Renovación anual", "Active", new DateOnly(2100, 1, 1), new DateOnly(2100, 12, 31)), ct);
+            new ContractLifecycleInput("Renew", "Renovación anual", "Active", new DateOnly(2100, 1, 1), new DateOnly(2100, 12, 31)), null, ct);
         var draft = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == renewal.DraftVersionId, ct);
         Assert.Equal((ContractVersionStatus.Draft, 2), (draft.Status, draft.VersionNumber));
         var sourceVersionId = await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion).Select(item => item.Id).SingleAsync(ct);
         Assert.Equal(await context.ContractServiceRates.CountAsync(item => item.ContractVersionId == sourceVersionId, ct),
             await context.ContractServiceRates.CountAsync(item => item.ContractVersionId == draft.Id, ct));
         Assert.Equal("draft_in_progress", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractLifecycleInput("Renew", "Otra renovación", "Active", new DateOnly(2101, 1, 1), null), ct)).Code);
+            new ContractLifecycleInput("Renew", "Otra renovación", "Active", new DateOnly(2101, 1, 1), null), null, ct)).Code);
 
         // Past its last approved validity the contract expires; it can still be terminated.
         await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion)
@@ -150,8 +150,11 @@ public sealed partial class SqlServerMigrationTests
                 .SetProperty(item => item.ValidTo, today.AddDays(-1)), ct);
         Assert.Equal(1, (await lifecycle.SweepAsync(ct)).Expired);
         Assert.Equal("Terminated", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractLifecycleInput("Terminate", "Fin de la relación comercial", "Expired"), ct)).Status);
+            new ContractLifecycleInput("Terminate", "Fin de la relación comercial", "Expired"), null, ct)).Status);
         Assert.NotNull((await ContractAsync()).TerminatedOn);
+        // 1-B: the renewal draft in progress closes with the contract; nothing is deleted.
+        Assert.Equal(ContractVersionStatus.Rejected, await context.ContractVersions.AsNoTracking()
+            .Where(item => item.Id == draft.Id).Select(item => item.Status).SingleAsync(ct));
 
         // Timeline: the airline reads the same history, without internal names.
         var internalView = (await lifecycle.TimelineAsync(ContractsAdministrator, SeededContractVersion, ct))!;

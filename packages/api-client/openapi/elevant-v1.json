@@ -5076,12 +5076,21 @@
         "tags": [
           "ContractDrafts"
         ],
+        "summary": "The airline comments its draft, also while Finance reviews it. The Idempotency-Key and\n`expectedVersion` are optional while older portals exist; a key without the version is rejected.",
         "operationId": "CommentAirlineContractDraft",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -5096,7 +5105,8 @@
                   {
                     "$ref": "#/components/schemas/ContractDraftCommentRequest"
                   }
-                ]
+                ],
+                "description": "An airline observation; `expectedVersion` is the draft rowversion the airline read."
               }
             },
             "text/json": {
@@ -5105,7 +5115,8 @@
                   {
                     "$ref": "#/components/schemas/ContractDraftCommentRequest"
                   }
-                ]
+                ],
+                "description": "An airline observation; `expectedVersion` is the draft rowversion the airline read."
               }
             },
             "application/*+json": {
@@ -5114,7 +5125,8 @@
                   {
                     "$ref": "#/components/schemas/ContractDraftCommentRequest"
                   }
-                ]
+                ],
+                "description": "An airline observation; `expectedVersion` is the draft rowversion the airline read."
               }
             }
           }
@@ -5126,6 +5138,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5196,12 +5248,21 @@
         "tags": [
           "ContractDrafts"
         ],
+        "summary": "Saves terms, validity, currency, rates and charges. The Idempotency-Key and `expectedVersion`\nare optional while older clients exist (expand); a key without the version is rejected.",
         "operationId": "UpdateManagedContractDraft",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -5249,6 +5310,46 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -5263,7 +5364,124 @@
         "tags": [
           "ContractDrafts"
         ],
+        "summary": "«Enviar a Finanzas» when every readiness rule holds; answers the contract. The body with\n`expectedVersion` and the Idempotency-Key are optional while older clients exist (expand).",
         "operationId": "ActivateManagedContractDraft",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitContractDraftInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitContractDraftInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitContractDraftInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/drafts/{versionId}/readiness": {
+      "get": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "Whether the draft can go to Finance, every blocking cause and the portal account status.",
+        "operationId": "GetManagedContractDraftReadiness",
         "parameters": [
           {
             "name": "versionId",
@@ -5281,7 +5499,382 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "$ref": "#/components/schemas/ContractDraftReadinessData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/drafts/{versionId}/scope": {
+      "get": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "The services and stations of the draft and the active ones that can be added.",
+        "operationId": "GetManagedContractDraftScope",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractDraftScopeData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "Sets the services and stations of a draft: kept services keep their rates, new ones start from\nthe Finance base tariff unconfirmed, and only active catalog services can be added.",
+        "operationId": "SetManagedContractDraftScope",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SetContractDraftScopeInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/drafts/{versionId}/discard": {
+      "post": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "Discards a draft or a version awaiting Finance with a reason. When it was the only live version of\na contract that never activated, the contract is terminated too. Nothing is deleted.",
+        "operationId": "DiscardManagedContractDraft",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DiscardContractDraftInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/drafts/{versionId}/comments": {
+      "post": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "Contratos answers the airline on the draft; the answer appears in the portal.",
+        "operationId": "ReplyManagedContractDraft",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReplyContractDraftInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5567,6 +6160,7 @@
         "tags": [
           "ContractLifecycle"
         ],
+        "summary": "History of the contract. The airline reads its own contracts without internal names or the\ninternal reason of a Finance return (1-N05).",
         "operationId": "GetContractTimeline",
         "parameters": [
           {
@@ -5613,12 +6207,21 @@
         "tags": [
           "ContractLifecycle"
         ],
+        "summary": "Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated) or renew,\nwith a reason and the status the user saw. The Idempotency-Key is optional while older clients\nexist (expand); with it a retry replays the first result.",
         "operationId": "ApplyContractLifecycle",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -14048,12 +14651,21 @@
         "tags": [
           "FinanceTariffBook"
         ],
+        "summary": "Finance approves the prices or returns the version to Contratos. Every failure carries a code,\none per blocking cause (1-N07). The Idempotency-Key is optional while older clients exist\n(expand); with it the same key and body replay the first result.",
         "operationId": "DecideFinanceContractApproval",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -14098,6 +14710,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -33148,9 +33800,14 @@
         "properties": {
           "body": {
             "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "An airline observation; `expectedVersion` is the draft rowversion the airline read."
       },
       "ContractDraftData": {
         "required": [
@@ -33244,6 +33901,25 @@
         },
         "additionalProperties": false
       },
+      "ContractDraftIssueData": {
+        "required": [
+          "code",
+          "subjects"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "ContractDraftOverviewData": {
         "required": [
           "count",
@@ -33326,6 +34002,144 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftReadinessData": {
+        "required": [
+          "issues",
+          "portalAccount",
+          "ready",
+          "version",
+          "versionId",
+          "versionStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "versionStatus": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "portalAccount": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractDraftIssueData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftScopeData": {
+        "required": [
+          "services",
+          "stations",
+          "version",
+          "versionId",
+          "versionStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "versionStatus": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractDraftScopeServiceData"
+            }
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractDraftScopeStationData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftScopeServiceData": {
+        "required": [
+          "code",
+          "coveredByPackage",
+          "isActive",
+          "name",
+          "selected",
+          "serviceId"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "boolean"
+          },
+          "rateId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "coveredByPackage": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftScopeStationData": {
+        "required": [
+          "code",
+          "isActive",
+          "name",
+          "selected",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -34566,6 +35380,22 @@
             "items": {
               "$ref": "#/components/schemas/DepartmentSummaryData"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "DiscardContractDraftInput": {
+        "required": [
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -47706,6 +48536,22 @@
         },
         "additionalProperties": false
       },
+      "ReplyContractDraftInput": {
+        "required": [
+          "body",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ReportRampIncidentRequest": {
         "required": [
           "description",
@@ -48974,6 +49820,34 @@
         },
         "additionalProperties": false
       },
+      "SetContractDraftScopeInput": {
+        "required": [
+          "expectedVersion",
+          "serviceIds",
+          "stationIds"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "serviceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "stationIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "SetContractPackagesRequest": {
         "required": [
           "expectedVersion",
@@ -49328,6 +50202,16 @@
           },
           "replayed": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubmitContractDraftInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -49734,6 +50618,10 @@
             "items": {
               "$ref": "#/components/schemas/UpdateDraftChargeInput"
             },
+            "nullable": true
+          },
+          "expectedVersion": {
+            "type": "string",
             "nullable": true
           }
         },

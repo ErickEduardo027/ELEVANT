@@ -2451,6 +2451,9 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken);
         Assert.True(provisioned.IsSuccess, provisioned.Failure?.ToString());
         Assert.Empty((await provisioning.ListPendingAsync(superAdminId, cancellationToken))!);
+        // 1-N14: Contratos hears that the portal account exists, on the airline's draft.
+        Assert.True(await context.DepartmentNotifications.AsNoTracking().AnyAsync(item =>
+            item.Kind == "portal_account_ready" && item.SourceId == version.PublicId, cancellationToken));
         Assert.True((await context.Users.AsNoTracking().SingleAsync(item =>
             item.PublicId == provisioned.AccountId, cancellationToken)).MustChangePassword);
         Assert.Equal(ProvisioningFailure.Conflict,
@@ -2480,7 +2483,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(ContractDocumentFailure.NotFound,
             (await documents.ReadAsync(provisioned.AccountId.Value, airlineDraft.Id, cancellationToken)).Failure);
         Assert.True((await drafts.AddAirlineCommentAsync(provisioned.AccountId.Value,
-            airlineDraft.Id, "Confirmar el horario de asistencia.", cancellationToken)).IsSuccess);
+            airlineDraft.Id, new AirlineDraftCommentInput("Confirmar el horario de asistencia."), null, cancellationToken)).IsSuccess);
         await using (var commentsConnection = new SqlConnection(database.ConnectionString))
         {
             await commentsConnection.OpenAsync(cancellationToken);
@@ -2506,27 +2509,27 @@ public sealed partial class SqlServerMigrationTests
             contractsAccountId, cancellationToken))!);
         Assert.Single(managedDraft.Comments);
         Assert.Equal(ContractDraftFailure.Conflict,
-            (await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
+            (await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id, null, null,
                 cancellationToken)).Failure);
         Assert.True((await drafts.UpdateAsync(contractsAccountId, airlineDraft.Id,
             new UpdateContractDraftInput(airlineDraft.ValidFrom, null, "USD",
                 "Condiciones revisadas por Contratos.",
                 airlineDraft.Rates.Select(rate => new UpdateDraftRateInput(
-                    rate.Id, rate.BillingUnit, 100, 0, false)).ToArray()),
+                    rate.Id, rate.BillingUnit, 100, 0, false)).ToArray()), null,
             cancellationToken)).IsSuccess);
         Assert.Equal(ContractDraftFailure.Conflict,
-            (await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
+            (await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id, null, null,
                 cancellationToken)).Failure);
         Assert.True((await drafts.UpdateAsync(contractsAccountId, airlineDraft.Id,
             new UpdateContractDraftInput(airlineDraft.ValidFrom, null, "USD",
                 "Condiciones revisadas por Contratos.",
                 airlineDraft.Rates.Select(rate => new UpdateDraftRateInput(
-                    rate.Id, rate.BillingUnit, 0, 0, true)).ToArray()),
+                    rate.Id, rate.BillingUnit, 0, 0, true)).ToArray()), null,
             cancellationToken)).IsSuccess);
         var agreements = scope.ServiceProvider.GetRequiredService<IManagedContractReadStore>();
         Assert.DoesNotContain((await agreements.ListAsync(contractsAccountId, 1, 20,
             cancellationToken))!.Contracts, item => item.Code == contract.ContractCode);
-        Assert.True((await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id,
+        Assert.True((await drafts.ActivateAsync(contractsAccountId, airlineDraft.Id, null, null,
             cancellationToken)).IsSuccess);
         // Contracts only submits; the contract becomes active when Finance approves it.
         Assert.Equal(ContractStatus.Draft, (await context.Contracts.AsNoTracking()
@@ -2537,10 +2540,10 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!, item => item.VersionId == airlineDraft.Id);
         Assert.Equal("PendingFinanceApproval", pendingApproval.Status);
         Assert.Equal(FinanceCatalogFailure.Forbidden, (await tariffBook.DecideContractApprovalAsync(contractsAccountId,
-            airlineDraft.Id, new DecideContractApprovalInput("Approved", null, pendingApproval.Version),
+            airlineDraft.Id, new DecideContractApprovalInput("Approved", null, pendingApproval.Version), null,
             cancellationToken)).Failure);
         Assert.True((await tariffBook.DecideContractApprovalAsync(financeAccountId, airlineDraft.Id,
-            new DecideContractApprovalInput("Approved", null, pendingApproval.Version), cancellationToken)).IsSuccess);
+            new DecideContractApprovalInput("Approved", null, pendingApproval.Version), null, cancellationToken)).IsSuccess);
         var financeAccountKey = await context.Users.AsNoTracking().Where(account =>
             account.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000006"))
             .Select(account => account.Id).SingleAsync(cancellationToken);

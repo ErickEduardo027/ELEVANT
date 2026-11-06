@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from '../../../components/Modal';
 import StatusBadge from '../../../components/StatusBadge';
 import { applyContractLifecycle, getContractTimeline } from '../../../services/commercialGovernanceApi';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { isConflict, problemMessage } from '../../../services/problemMessages';
 
 export const CONTRACT_STATUS = {
   Draft: { label: 'Pendiente de firmas y permiso', tone: 'warning' },
@@ -14,8 +16,10 @@ const ACTIONS = {
   Suspend: { label: 'Suspender', from: ['Active'], danger: true },
   Reactivate: { label: 'Reactivar', from: ['Suspended'] },
   Renew: { label: 'Renovar', from: ['Active', 'Suspended', 'Expired'] },
-  Terminate: { label: 'Terminar', from: ['Active', 'Suspended', 'Expired'], danger: true },
+  Terminate: { label: 'Terminar', from: ['Draft', 'Active', 'Suspended', 'Expired'], danger: true },
 };
+/** A contract that never activated is discarded, not terminated (1-B). */
+const actionLabel = (action, status) => (action === 'Terminate' && status === 'Draft' ? 'Descartar contrato' : ACTIONS[action]?.label ?? '');
 const KIND_DOT = {
   request: 'bg-sky-500', draft: 'bg-slate-400', finance: 'bg-violet-500', validity: 'bg-blue-600', signature: 'bg-accent-600',
   permit: 'bg-amber-500', status: 'bg-emerald-600', upcoming: 'border-2 border-dashed border-slate-400 bg-transparent',
@@ -28,6 +32,8 @@ const MESSAGES = {
   status_changed: 'El contrato cambió de estado; se volvió a cargar.',
   transition_not_allowed: 'Esa acción no aplica al estado actual del contrato.',
   reason_required: 'Escribe el motivo (5 a 500 caracteres).',
+  no_approved_version: 'El contrato no tiene una versión aprobada que renovar.',
+  invalid_lifecycle_action: 'Revisa la acción y la nueva vigencia e intenta de nuevo.',
 };
 const stamp = value => new Intl.DateTimeFormat('es-DO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 
@@ -42,6 +48,7 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, o
   const [form, setForm] = useState({ reason: '', validFrom: '', validTo: '' });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const keys = useRef(createCommandKeyHolder());
 
   const load = useCallback(async () => {
     try { setState({ status: 'ready', timeline: await getContractTimeline(versionId) }); }
@@ -51,20 +58,25 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, o
 
   async function submit() {
     setBusy(true); setMessage('');
+    const discarding = action === 'Terminate' && state.timeline.status === 'Draft';
+    const values = {
+      action, reason: form.reason.trim(), expectedStatus: state.timeline.status,
+      ...(action === 'Renew' ? { validFrom: form.validFrom, validTo: form.validTo || null } : {}),
+    };
     try {
-      const result = await applyContractLifecycle(versionId, {
-        action, reason: form.reason.trim(), expectedStatus: state.timeline.status,
-        ...(action === 'Renew' ? { validFrom: form.validFrom, validTo: form.validTo || null } : {}),
-      });
+      // The same key goes with a retry of the same intent after an uncertain result.
+      const result = await keys.current.run('lifecycle', { versionId, ...values },
+        key => applyContractLifecycle(versionId, values, key));
       setMessage(action === 'Renew'
         ? 'Se creó el borrador de renovación; complétalo en Borradores y envíalo a Finanzas.'
-        : `Contrato ${CONTRACT_STATUS[result.status]?.label.toLowerCase() ?? result.status}.`);
+        : discarding ? 'Contrato descartado. Sus versiones abiertas quedaron cerradas y se conservan en el historial.'
+          : `Contrato ${CONTRACT_STATUS[result.status]?.label.toLowerCase() ?? result.status}.`);
       setAction(null); setForm({ reason: '', validFrom: '', validTo: '' });
       await load();
       onChanged?.();
     } catch (failure) {
-      setMessage(MESSAGES[failure.code] ?? failure.message);
-      if (failure.status === 409) await load();
+      setMessage(problemMessage(failure, MESSAGES));
+      if (isConflict(failure)) await load();
     } finally { setBusy(false); }
   }
 
@@ -83,7 +95,7 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, o
         <div className="flex flex-wrap gap-2">
           {available.map(([key, meta]) => (
             <button key={key} type="button" onClick={() => { setAction(key); setMessage(''); }}
-              className={`min-h-[36px] rounded-lg border px-3 text-xs font-semibold ${meta.danger ? 'border-status-danger text-status-danger' : 'border-accent-600 text-accent-600'}`}>{meta.label}</button>
+              className={`min-h-[36px] rounded-lg border px-3 text-xs font-semibold ${meta.danger ? 'border-status-danger text-status-danger' : 'border-accent-600 text-accent-600'}`}>{actionLabel(key, timeline.status)}</button>
           ))}
         </div>
       )}
@@ -99,7 +111,8 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, o
           </li>
         ))}
       </ol>
-      <Modal open={Boolean(action)} onClose={() => setAction(null)} title={`${ACTIONS[action]?.label ?? ''} contrato ${timeline.contractCode}`}
+      <Modal open={Boolean(action)} onClose={() => setAction(null)} title={action === 'Terminate' && timeline.status === 'Draft'
+        ? `Descartar el contrato ${timeline.contractCode}` : `${ACTIONS[action]?.label ?? ''} contrato ${timeline.contractCode}`}
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setAction(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy || form.reason.trim().length < 5 || action === 'Renew' && !form.validFrom} onClick={() => void submit()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Aplicando…' : 'Confirmar'}</button></div>}>
@@ -111,7 +124,9 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, o
           <label className="block text-xs font-semibold">Motivo
             <textarea rows={3} maxLength={500} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))}
               className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
-          {action === 'Terminate' && <p className="text-xs text-status-danger">Terminar es definitivo: el contrato deja de habilitar operaciones.</p>}
+          {action === 'Terminate' && (timeline.status === 'Draft'
+            ? <p className="text-xs text-status-danger">El contrato nunca se activó. Descartarlo es definitivo: se cierra sin firmas, sus versiones abiertas salen de Borradores y de Finanzas, y nada se borra del historial.</p>
+            : <p className="text-xs text-status-danger">Terminar es definitivo: el contrato deja de habilitar operaciones.</p>)}
         </div>
       </Modal>
     </section>

@@ -1250,8 +1250,13 @@ export interface ContractDraftCommentData {
   isAirline: boolean;
 }
 
+/**
+ * An airline observation; `expectedVersion` is the draft rowversion the airline read.
+ */
 export interface ContractDraftCommentRequest {
   body: string;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ContractDraftRateData {
@@ -1292,6 +1297,11 @@ export interface ContractDraftData {
   version: string;
 }
 
+export interface ContractDraftIssueData {
+  code: string;
+  subjects: string[];
+}
+
 export interface ContractDraftOverviewItemData {
   id: string;
   contractCode: string;
@@ -1301,6 +1311,42 @@ export interface ContractDraftOverviewItemData {
 export interface ContractDraftOverviewData {
   count: number;
   recent: ContractDraftOverviewItemData[];
+}
+
+export interface ContractDraftReadinessData {
+  versionId: string;
+  version: string;
+  versionStatus: string;
+  ready: boolean;
+  portalAccount: string;
+  issues: ContractDraftIssueData[];
+}
+
+export interface ContractDraftScopeServiceData {
+  serviceId: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  selected: boolean;
+  /** @nullable */
+  rateId?: string | null;
+  coveredByPackage: boolean;
+}
+
+export interface ContractDraftScopeStationData {
+  stationId: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  selected: boolean;
+}
+
+export interface ContractDraftScopeData {
+  versionId: string;
+  version: string;
+  versionStatus: string;
+  services: ContractDraftScopeServiceData[];
+  stations: ContractDraftScopeStationData[];
 }
 
 export type ContractLifecycleFailure = typeof ContractLifecycleFailure[keyof typeof ContractLifecycleFailure];
@@ -1734,6 +1780,11 @@ export interface DepartmentsOverviewData {
   members: number;
   pendingRequests: number;
   departments: DepartmentSummaryData[];
+}
+
+export interface DiscardContractDraftInput {
+  expectedVersion: string;
+  reason: string;
 }
 
 export interface DisputeAirlinePreinvoiceRequest {
@@ -5271,6 +5322,11 @@ export interface ReopenServiceRequest {
   serviceVersion: string;
 }
 
+export interface ReplyContractDraftInput {
+  expectedVersion: string;
+  body: string;
+}
+
 export interface ReportRampIncidentRequest {
   /**
      * @minLength 1
@@ -5568,6 +5624,12 @@ export interface SessionResponse {
   refreshExpiresAt?: string | null;
 }
 
+export interface SetContractDraftScopeInput {
+  expectedVersion: string;
+  serviceIds: string[];
+  stationIds: string[];
+}
+
 export interface SetContractPackagesRequest {
   requestId: string;
   expectedVersion: string;
@@ -5682,6 +5744,11 @@ export interface SubmitCommercialRequestRequest {
 export interface SubmitCommercialRequestResponse {
   reference: string;
   replayed: boolean;
+}
+
+export interface SubmitContractDraftInput {
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface SubmitPreinvoiceRequest {
@@ -5822,6 +5889,8 @@ export interface UpdateContractDraftInput {
   rates: UpdateDraftRateInput[];
   /** @nullable */
   chargeRates?: UpdateDraftChargeInput[] | null;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface UpdateDepartmentUserInput {
@@ -8670,6 +8739,10 @@ export const getCommentAirlineContractDraftUrl = (versionId: string,) => {
   return `/api/v1/airline/contract-drafts/${versionId}/comments`
 }
 
+/**
+ * @summary The airline comments its draft, also while Finance reviews it. The Idempotency-Key and
+`expectedVersion` are optional while older portals exist; a key without the version is rejected.
+ */
 export const commentAirlineContractDraft = async (versionId: string,
     contractDraftCommentRequest?: ContractDraftCommentRequest, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -8761,6 +8834,10 @@ export const getUpdateManagedContractDraftUrl = (versionId: string,) => {
   return `/api/v1/contracts/drafts/${versionId}`
 }
 
+/**
+ * @summary Saves terms, validity, currency, rates and charges. The Idempotency-Key and `expectedVersion`
+are optional while older clients exist (expand); a key without the version is rejected.
+ */
 export const updateManagedContractDraft = async (versionId: string,
     updateContractDraftInput?: UpdateContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -8796,14 +8873,203 @@ export const getActivateManagedContractDraftUrl = (versionId: string,) => {
   return `/api/v1/contracts/drafts/${versionId}/activate`
 }
 
-export const activateManagedContractDraft = async (versionId: string, options?: RequestInit): Promise<CommercialIdResponse> => {
+/**
+ * @summary «Enviar a Finanzas» when every readiness rule holds; answers the contract. The body with
+`expectedVersion` and the Idempotency-Key are optional while older clients exist (expand).
+ */
+export const activateManagedContractDraft = async (versionId: string,
+    submitContractDraftInput?: SubmitContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
-  const res = await fetch(getActivateManagedContractDraftUrl(versionId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getActivateManagedContractDraftUrl(versionId),
   {
     ...options,
-    method: 'POST'
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitContractDraftInput)
+  }
+)
 
 
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManagedContractDraftReadinessUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/readiness`
+}
+
+/**
+ * @summary Whether the draft can go to Finance, every blocking cause and the portal account status.
+ */
+export const getManagedContractDraftReadiness = async (versionId: string, options?: RequestInit): Promise<ContractDraftReadinessData> => {
+
+  const res = await fetch(getGetManagedContractDraftReadinessUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDraftReadinessData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManagedContractDraftScopeUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/scope`
+}
+
+/**
+ * @summary The services and stations of the draft and the active ones that can be added.
+ */
+export const getManagedContractDraftScope = async (versionId: string, options?: RequestInit): Promise<ContractDraftScopeData> => {
+
+  const res = await fetch(getGetManagedContractDraftScopeUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDraftScopeData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetManagedContractDraftScopeUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/scope`
+}
+
+/**
+ * @summary Sets the services and stations of a draft: kept services keep their rates, new ones start from
+the Finance base tariff unconfirmed, and only active catalog services can be added.
+ */
+export const setManagedContractDraftScope = async (versionId: string,
+    setContractDraftScopeInput: SetContractDraftScopeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetManagedContractDraftScopeUrl(versionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setContractDraftScopeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDiscardManagedContractDraftUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/discard`
+}
+
+/**
+ * @summary Discards a draft or a version awaiting Finance with a reason. When it was the only live version of
+a contract that never activated, the contract is terminated too. Nothing is deleted.
+ */
+export const discardManagedContractDraft = async (versionId: string,
+    discardContractDraftInput: DiscardContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDiscardManagedContractDraftUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(discardContractDraftInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReplyManagedContractDraftUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/comments`
+}
+
+/**
+ * @summary Contratos answers the airline on the draft; the answer appears in the portal.
+ */
+export const replyManagedContractDraft = async (versionId: string,
+    replyContractDraftInput: ReplyContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReplyManagedContractDraftUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(replyContractDraftInput)
   }
 )
 
@@ -8956,6 +9222,10 @@ export const getGetContractTimelineUrl = (versionId: string,) => {
   return `/api/v1/contract-versions/${versionId}/timeline`
 }
 
+/**
+ * @summary History of the contract. The airline reads its own contracts without internal names or the
+internal reason of a Finance return (1-N05).
+ */
 export const getContractTimeline = async (versionId: string, options?: RequestInit): Promise<ContractTimelineData> => {
 
   const res = await fetch(getGetContractTimelineUrl(versionId),
@@ -8984,6 +9254,11 @@ export const getApplyContractLifecycleUrl = (versionId: string,) => {
   return `/api/v1/contract-versions/${versionId}/lifecycle`
 }
 
+/**
+ * @summary Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated) or renew,
+with a reason and the status the user saw. The Idempotency-Key is optional while older clients
+exist (expand); with it a retry replays the first result.
+ */
 export const applyContractLifecycle = async (versionId: string,
     contractLifecycleInput: ContractLifecycleInput, options?: RequestInit): Promise<ContractLifecycleResult> => {
 
@@ -13267,6 +13542,11 @@ export const getDecideFinanceContractApprovalUrl = (versionId: string,) => {
   return `/api/v1/finance/contract-approvals/${versionId}/decision`
 }
 
+/**
+ * @summary Finance approves the prices or returns the version to Contratos. Every failure carries a code,
+one per blocking cause (1-N07). The Idempotency-Key is optional while older clients exist
+(expand); with it the same key and body replay the first result.
+ */
 export const decideFinanceContractApproval = async (versionId: string,
     decideContractApprovalInput?: DecideContractApprovalInput, options?: RequestInit): Promise<FinanceIdResponse> => {
 

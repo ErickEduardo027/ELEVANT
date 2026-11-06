@@ -56,7 +56,48 @@ describe('ContractApprovalsPage', () => {
     expect(decideContractApproval).not.toHaveBeenCalled();
     await userEvent.type(screen.getByRole('textbox', { name: 'Motivo' }), 'Precio por debajo de la base');
     await userEvent.click(screen.getByRole('button', { name: 'Devolver' }));
-    expect(decideContractApproval).toHaveBeenCalledWith('v-1', { decision: 'Returned', reason: 'Precio por debajo de la base', expectedVersion: 'AAA=' });
+    expect(decideContractApproval).toHaveBeenCalledWith('v-1', { decision: 'Returned', reason: 'Precio por debajo de la base', expectedVersion: 'AAA=' },
+      expect.any(String));
+  });
+
+  it('tells Finance that the airline never sees the internal reason of a return', async () => {
+    listContractApprovals.mockResolvedValue([summary]);
+    getContractApproval.mockResolvedValue({ summary, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] });
+    renderWith(<ContractApprovalsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Devolver a Contratos' }));
+    expect(screen.getByText(/La aerolínea solo verá que la versión fue devuelta, sin el motivo/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['package_not_eligible', /Un paquete del contrato ya no corresponde a su moneda o vigencia/],
+    ['service_retired', /incluye un servicio dado de baja/],
+    ['valid_from_not_after_current', /La vigencia empieza antes que la versión aprobada vigente/],
+  ])('explains an approval blocked by %s instead of a generic conflict', async (code, text) => {
+    listContractApprovals.mockResolvedValue([summary]);
+    getContractApproval.mockResolvedValue({ summary, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] });
+    decideContractApproval.mockRejectedValue(Object.assign(new Error('Finance record conflicts with current state.'),
+      { status: 409, code }));
+    renderWith(<ContractApprovalsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Aprobar y activar' }));
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Aprobar' }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.queryByText(/Finance record conflicts/)).not.toBeInTheDocument();
+    expect(listContractApprovals).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows a recoverable error or the unauthorized state instead of an empty inbox', async () => {
+    listContractApprovals.mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce([]);
+    const { unmount } = renderWith(<ContractApprovalsPage />);
+    expect(await screen.findByText(/No se pudieron cargar los contratos por aprobar/)).toBeInTheDocument();
+    expect(screen.queryByText('Sin contratos por aprobar')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('Sin contratos por aprobar')).toBeInTheDocument();
+    unmount();
+    listContractApprovals.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }));
+    renderWith(<ContractApprovalsPage />);
+    expect(await screen.findByText('No tiene permiso para ver las aprobaciones de contratos.')).toBeInTheDocument();
   });
 
   it('hides decisions from accounts that can only read', async () => {

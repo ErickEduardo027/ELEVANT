@@ -43,7 +43,7 @@ public sealed partial class SqlServerMigrationTests
             foreach (var undefined in new[] { "999", "-1", "2147483647" })
             {
                 var result = await book.DecideContractApprovalAsync(FinanceAccount, version.PublicId,
-                    new(undefined, "Synthetic undefined decision", expectedVersion), ct);
+                    new(undefined, "Synthetic undefined decision", expectedVersion), null, ct);
                 Assert.Equal(FinanceCatalogFailure.Invalid, result.Failure);
                 Assert.False(result.IsSuccess);
                 var unchangedVersion = await db.ContractVersions.AsNoTracking().SingleAsync(v => v.Id == version.Id, ct);
@@ -63,7 +63,7 @@ public sealed partial class SqlServerMigrationTests
 
             // The unchanged rowversion remains usable by either explicitly supported transition.
             var decided = await book.DecideContractApprovalAsync(FinanceAccount, version.PublicId,
-                new(validDecision.ToString(), "Synthetic valid decision", expectedVersion), ct);
+                new(validDecision.ToString(), "Synthetic valid decision", expectedVersion), null, ct);
             Assert.True(decided.IsSuccess, decided.Failure?.ToString());
             var finalVersion = await db.ContractVersions.AsNoTracking().SingleAsync(v => v.Id == version.Id, ct);
             var finalContract = await db.Contracts.AsNoTracking().SingleAsync(c => c.Id == contract.Id, ct);

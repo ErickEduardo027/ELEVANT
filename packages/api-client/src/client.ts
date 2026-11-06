@@ -43,6 +43,20 @@ import {
 } from "./operationalClose";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
+  isContractDraftReadiness,
+  isContractDraftScope,
+  normalizedDraftDiscard,
+  normalizedDraftMessage,
+  normalizedDraftScope,
+  normalizedDraftSubmission,
+  normalizedDraftUpdate,
+  type ContractDraftMessageCommand,
+  type DiscardContractDraftCommand,
+  type SetContractDraftScopeCommand,
+  type SubmitManagedContractDraftCommand,
+  type UpdateManagedContractDraftCommand,
+} from "./contractDrafts";
+import {
   isCommercialIdResponse,
   isCommercialInboxData,
   normalizedAirlineVerification,
@@ -77,6 +91,14 @@ import {
   getConfirmCommercialRepresentativeUrl,
   getCancelCommercialRequestUrl,
   getDecideCommercialRequestUrl,
+  getCommentAirlineContractDraftUrl,
+  getUpdateManagedContractDraftUrl,
+  getActivateManagedContractDraftUrl,
+  getGetManagedContractDraftReadinessUrl,
+  getGetManagedContractDraftScopeUrl,
+  getSetManagedContractDraftScopeUrl,
+  getDiscardManagedContractDraftUrl,
+  getReplyManagedContractDraftUrl,
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
@@ -268,6 +290,8 @@ import {
   type SubmitCommercialRequestResponse,
   type CommercialIdResponse,
   type CommercialInboxData,
+  type ContractDraftReadinessData,
+  type ContractDraftScopeData,
   type FinanceApprovedServicesResponse,
   type FinancePreinvoicePageData,
   type ListFinancePreinvoicesParams,
@@ -1118,6 +1142,29 @@ export interface ElevantApiClient {
   /** Contratos confirms validity, renewal and termination before signatures (ADR-0025). */
   setContractValidity(versionId: string, request: SetContractValidityRequest,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
+  /** Whether a draft can go to Finance, each blocking cause and the airline's portal account (phase 1, B). */
+  getContractDraftReadiness(versionId: string,
+    options?: GetHumanResourcesReportOptions): Promise<ContractDraftReadinessData>;
+  /** The services and stations of a draft and the active ones that can be added. */
+  getContractDraftScope(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractDraftScopeData>;
+  /** Sets the services and stations of a draft; new services start from the base tariff, unconfirmed. */
+  setContractDraftScope(versionId: string, command: SetContractDraftScopeCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Saves terms, validity, currency, rates and charges of a draft. */
+  updateManagedContractDraft(versionId: string, command: UpdateManagedContractDraftCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** «Enviar a Finanzas»; answers the contract of the draft. */
+  submitManagedContractDraft(versionId: string, command: SubmitManagedContractDraftCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Discards a draft or a version awaiting Finance with a reason; nothing is deleted. */
+  discardContractDraft(versionId: string, command: DiscardContractDraftCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Contratos answers the airline on its draft; answers the new comment. */
+  replyContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** The airline's observation on its draft, also while Finance reviews it; answers the new comment. */
+  commentAirlineContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
   getOccReport(key: OccReportKey, query: OccReportQuery,
     options?: GetHumanResourcesReportOptions): Promise<OccReportPageResponse>;
   exportOccReport(key: OccReportKey, query: OccReportQuery, format: OccReportFormat,
@@ -5219,6 +5266,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return result.data;
   };
 
+  // A draft command: JSON body, Idempotency-Key, and the expected status with a CommercialIdResponse.
+  const draftCommand = async (method: "POST" | "PUT", path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, status: 200 | 201, expectedId: string | undefined) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
+    if (result.status !== status || !isCommercialIdResponse(result.data, expectedId)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
   const executePdf = async (path: string, init: ElevantRequestInit = {}): Promise<Blob> => {
     const response = await send(path, { ...init, method: "GET" }, true);
     if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
@@ -6933,6 +6991,52 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       // An approval answers with the new draft contract; a rejection with the request itself.
       return commercialCommand(getDecideCommercialRequestUrl(validatedUuid(requestId, "requestId")), body,
         idempotencyKey, options, body.approve ? undefined : requestId);
+    },
+    async getContractDraftReadiness(versionId: string, options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      const result = await execute(getGetManagedContractDraftReadinessUrl(version), { ...options, method: "GET" }, true);
+      if (!isContractDraftReadiness(result.data, version)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getContractDraftScope(versionId: string, options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      const result = await execute(getGetManagedContractDraftScopeUrl(version), { ...options, method: "GET" }, true);
+      if (!isContractDraftScope(result.data, version)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async setContractDraftScope(versionId: string, command: SetContractDraftScopeCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      return draftCommand("PUT", getSetManagedContractDraftScopeUrl(version), normalizedDraftScope(command), idempotencyKey,
+        options, 200, version);
+    },
+    async updateManagedContractDraft(versionId: string, command: UpdateManagedContractDraftCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      return draftCommand("PUT", getUpdateManagedContractDraftUrl(version), normalizedDraftUpdate(command), idempotencyKey,
+        options, 200, version);
+    },
+    async submitManagedContractDraft(versionId: string, command: SubmitManagedContractDraftCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      // The submission answers the draft's contract, not the version.
+      return draftCommand("POST", getActivateManagedContractDraftUrl(validatedUuid(versionId, "versionId")),
+        normalizedDraftSubmission(command), idempotencyKey, options, 200, undefined);
+    },
+    async discardContractDraft(versionId: string, command: DiscardContractDraftCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      return draftCommand("POST", getDiscardManagedContractDraftUrl(version), normalizedDraftDiscard(command),
+        idempotencyKey, options, 200, version);
+    },
+    async replyContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      return draftCommand("POST", getReplyManagedContractDraftUrl(validatedUuid(versionId, "versionId")),
+        normalizedDraftMessage(command), idempotencyKey, options, 201, undefined);
+    },
+    async commentAirlineContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      return draftCommand("POST", getCommentAirlineContractDraftUrl(validatedUuid(versionId, "versionId")),
+        normalizedDraftMessage(command), idempotencyKey, options, 201, undefined);
     },
     async setContractValidity(versionId: string, request: SetContractValidityRequest,
       options?: GetHumanResourcesReportOptions) {

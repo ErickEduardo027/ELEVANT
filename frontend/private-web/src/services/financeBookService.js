@@ -55,8 +55,11 @@ export const correctExchangeRate = (id, values) =>
 export const listContractApprovals = (pendingOnly = true) =>
   commercialApi(`/finance/contract-approvals${query({ pendingOnly })}`);
 export const getContractApproval = versionId => commercialApi(`/finance/contract-approvals/${versionId}`);
-export const decideContractApproval = (versionId, values) =>
-  commercialApi(`/finance/contract-approvals/${versionId}/decision`, json('POST', values));
+/** Approves or returns a version with the version on screen and the intent's Idempotency-Key. */
+export const decideContractApproval = (versionId, values, idempotencyKey) =>
+  commercialApi(`/finance/contract-approvals/${versionId}/decision`, {
+    ...json('POST', values), ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
+  });
 
 // Preinvoice draft edits
 export const editPreinvoiceLine = (preinvoiceId, lineId, values) =>

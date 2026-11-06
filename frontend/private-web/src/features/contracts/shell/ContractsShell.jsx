@@ -63,8 +63,8 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout, observeN
   useEffect(() => {
     if (process.env.NODE_ENV === 'test') return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.some(resource => ['commercial_requests',
-        'contract_draft_comments', 'airline_contracts'].includes(resource))) {
+      if (resources.some(resource => ['commercial_requests', 'contract_draft_comments', 'contract_drafts',
+        'contract_approvals', 'airline_contracts'].includes(resource))) {
         revalidateHome();
       }
       if (resources.includes('service_closures')) void revalidateClosures();
@@ -110,7 +110,8 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout, observeN
           ) : activeModule.id === CONTRACT_MODULE_IDS.PERMITS ? (
             <AirlinePermitsPage canVerify={can('contracts.permits.verify')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (
-            <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')} />
+            <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')}
+              canDiscard={can('contracts.drafts.delete')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (
             <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} canCancel={can('contracts.requests.cancel')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CATALOG ? (

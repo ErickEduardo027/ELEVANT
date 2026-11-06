@@ -108,12 +108,6 @@ export const deleteManagedService = (id, version) => commercialApi(`/contracts/c
 });
 export const getManagedDrafts = () => commercialApi('/contracts/drafts');
 export const getManagedDraftOverview = () => commercialApi('/contracts/drafts/overview');
-export const updateManagedDraft = (id, values) => commercialApi(`/contracts/drafts/${id}`, {
-  method: 'PUT', body: JSON.stringify(values),
-});
-export const activateManagedDraft = id => commercialApi(`/contracts/drafts/${id}/activate`, {
-  method: 'POST',
-});
 
 function contractClient() {
   return createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
@@ -147,6 +141,31 @@ export const decideCommercialRequest = (requestId, command, idempotencyKey) =>
 /** Published airline profiles, to link a proposed airline to an existing one. */
 export const getPublishedAirlineProfiles = () => createPrivateWebApiClient()
   .getPublicCommercialCatalog({ cache: 'no-store' }).then(catalog => catalog.airlines);
+
+/**
+ * Contract drafts (phase 1, block B). Every command carries an Idempotency-Key and the draft
+ * `version` (rowversion) the user saw; a 409 means re-reading before a new attempt.
+ */
+/** Saves terms, validity, currency, rates and charges. */
+export const updateManagedDraft = (versionId, command, idempotencyKey) =>
+  contractCall(() => contractClient().updateManagedContractDraft(versionId, command, idempotencyKey));
+/** «Enviar a Finanzas»: answers the draft's contract. */
+export const activateManagedDraft = (versionId, command, idempotencyKey) =>
+  contractCall(() => contractClient().submitManagedContractDraft(versionId, command, idempotencyKey));
+/** Whether the draft can go to Finance, every blocking cause and the airline's portal account. */
+export const getContractDraftReadiness = versionId =>
+  contractCall(() => contractClient().getContractDraftReadiness(versionId, { cache: 'no-store' }));
+/** Services and stations of the draft, and the active services that can be added. */
+export const getContractDraftScope = versionId =>
+  contractCall(() => contractClient().getContractDraftScope(versionId, { cache: 'no-store' }));
+export const setContractDraftScope = (versionId, command, idempotencyKey) =>
+  contractCall(() => contractClient().setContractDraftScope(versionId, command, idempotencyKey));
+/** Discards a draft or a version awaiting Finance with a reason; nothing is deleted. */
+export const discardContractDraft = (versionId, command, idempotencyKey) =>
+  contractCall(() => contractClient().discardContractDraft(versionId, command, idempotencyKey));
+/** Contratos answers the airline on its draft. */
+export const replyContractDraft = (versionId, command, idempotencyKey) =>
+  contractCall(() => contractClient().replyContractDraft(versionId, command, idempotencyKey));
 
 /** Formal document of an approved contract version, with its signatures and content hash. */
 export const getContractDocument = versionId => contractCall(() => contractClient().getContractDocument(versionId));
@@ -182,10 +201,15 @@ export const reviewAirlinePermit = (permitId, verified, note, expectedVersion) =
   });
 /** Contract history (request, Finance, signatures, permits and status), oldest first. */
 export const getContractTimeline = versionId => commercialApi(`/contract-versions/${versionId}/timeline`);
-/** Suspend, Reactivate, Terminate or Renew (validFrom/validTo) with a reason and the status the user saw. */
-export const applyContractLifecycle = (versionId, values) => commercialApi(`/contract-versions/${versionId}/lifecycle`, {
-  method: 'POST', body: JSON.stringify(values),
-});
+/**
+ * Suspend, Reactivate, Terminate (also «Descartar contrato» for one that never activated) or Renew
+ * (validFrom/validTo) with a reason, the status the user saw and the intent's Idempotency-Key.
+ */
+export const applyContractLifecycle = (versionId, values, idempotencyKey) => commercialApi(
+  `/contract-versions/${versionId}/lifecycle`, {
+    method: 'POST', body: JSON.stringify(values),
+    ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
+  });
 
 /** Opens a private media document (permit scan, PDF or image) in a new tab with the session token. */
 export async function openPrivateDocument(url) {

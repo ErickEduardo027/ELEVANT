@@ -2,6 +2,7 @@ using System.Data;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Messaging;
+using Elevant.Application.Commercial;
 using Elevant.Application.Identity.AccountEmails;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
@@ -546,9 +547,11 @@ internal sealed class EfCommercialWorkflowStore(
             var requestedServices = await context.Set<ServiceRequestItem>()
                 .Where(item => item.ServiceRequestId == request.Id)
                 .ToArrayAsync(cancellationToken);
-            // The draft starts from the Finance base tariff; Contracts negotiates from there.
+            // The draft starts from the Finance base tariff; Contracts negotiates from there. The station
+            // rule is the one the editor and the Finance comparison use (1-N06). A retired service is
+            // copied too and stays marked in the draft until Contratos removes it (1-N10).
             var baseRates = await FinanceTariffLookup.ServiceRatesAsync(context, version.CurrencyCode,
-                version.ValidFrom, stations.Length == 1 ? stations[0].Id : null,
+                version.ValidFrom, ContractDraftRules.BaseStation(stations.Select(station => station.Id).ToArray()),
                 requestedServices.Where(item => item.ServiceDefinitionId != null)
                     .Select(item => item.ServiceDefinitionId!.Value).ToArray(), cancellationToken);
             foreach (var service in requestedServices)

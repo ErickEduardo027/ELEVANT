@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import EmptyState from '../../../components/EmptyState';
 import Modal from '../../../components/Modal';
 import PageHeader from '../../../components/PageHeader';
@@ -9,11 +9,17 @@ import { createPrivateWebAccountChangeObserver } from '../../../services/account
 import { ApprovedServicesIcon } from '../components/icons';
 import { METHOD_LABELS } from '../charges/ChargesPage';
 import { decideContractApproval, formatMoney, getContractApproval, listContractApprovals } from '../../../services/financeBookService';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { financeContractApprovalMessage } from '../../../services/financeErrors';
+import { isConflict, isForbidden } from '../../../services/problemMessages';
+
+const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revise la conexión e intente de nuevo.';
 
 const STATUS = {
   PendingFinanceApproval: { label: 'Pendiente de Finanzas', tone: 'warning' },
   Approved: { label: 'Aprobado', tone: 'success' },
   Draft: { label: 'Devuelto a Contratos', tone: 'danger' },
+  Rejected: { label: 'Descartado por Contratos', tone: 'neutral' },
 };
 
 function Difference({ value }) {
@@ -27,7 +33,10 @@ export default function ContractApprovalsPage() {
   const { access } = useDepartmentAccess();
   const canDecide = Boolean(access?.can('finance.contract_approvals.decide'));
   const [pendingOnly, setPendingOnly] = useState(true);
+  // null while loading; the list never shows «vacío» for a list that failed to load.
   const [items, setItems] = useState(null);
+  const [loadState, setLoadState] = useState({ status: 'loading', error: '' });
+  const decideKeys = useRef(createCommandKeyHolder());
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
   const [deciding, setDeciding] = useState(null);
@@ -36,7 +45,14 @@ export default function ContractApprovalsPage() {
   const [message, setMessage] = useState({ tone: '', text: '' });
 
   const load = useCallback(async () => {
-    try { setItems(await listContractApprovals(pendingOnly)); } catch (failure) { setItems([]); setMessage({ tone: 'error', text: failure.message }); }
+    try {
+      setItems(await listContractApprovals(pendingOnly));
+      setLoadState({ status: 'ready', error: '' });
+    } catch (failure) {
+      if (isForbidden(failure)) setLoadState({ status: 'forbidden', error: '' });
+      else setLoadState(current => ({ status: current.status === 'ready' ? 'ready' : 'error',
+        error: financeContractApprovalMessage(failure, { fallback: LOAD_FAILED }) }));
+    }
   }, [pendingOnly]);
   useEffect(() => { void load(); }, [load]);
   useEffect(() => {
@@ -51,24 +67,28 @@ export default function ContractApprovalsPage() {
     if (!selected) { setDetail(null); return undefined; }
     let active = true;
     getContractApproval(selected).then(result => active && setDetail(result))
-      .catch(failure => active && setMessage({ tone: 'error', text: failure.message }));
+      .catch(failure => active && setMessage({ tone: 'error', text: financeContractApprovalMessage(failure, {
+        fallback: 'No se pudo cargar el contrato. Revise la conexión e intente de nuevo.' }) }));
     return () => { active = false; };
   }, [selected, items]);
 
   async function decide(event) {
     event.preventDefault();
     setBusy(true);
+    const values = { decision: deciding, reason: reason.trim() || null, expectedVersion: detail.summary.version };
     try {
-      await decideContractApproval(detail.summary.versionId, { decision: deciding, reason: reason.trim() || null,
-        expectedVersion: detail.summary.version });
+      // The same key goes with a retry of the same decision after an uncertain result.
+      await decideKeys.current.run('decide', { versionId: detail.summary.versionId, ...values },
+        key => decideContractApproval(detail.summary.versionId, values, key));
       setMessage({ tone: 'success', text: deciding === 'Approved' ? 'Contrato aprobado y activado.' : 'Contrato devuelto a Contratos con el motivo.' });
       setDeciding(null);
       setSelected(null);
       await load();
     } catch (failure) {
-      setMessage({ tone: 'error', text: failure.status === 409 ? 'El contrato cambió o ya fue decidido. Se actualizó la lista.' : failure.message });
+      // One message per blocking cause (1-N07); the server title is never shown.
+      setMessage({ tone: 'error', text: financeContractApprovalMessage(failure) });
       setDeciding(null);
-      await load();
+      if (isConflict(failure)) await load();
     } finally {
       setBusy(false);
     }
@@ -81,7 +101,9 @@ export default function ContractApprovalsPage() {
         description="Contratos enviados por Contratos. Compare cada precio con la tarifa base antes de activarlos." />
       <label className="flex min-h-[40px] items-center gap-2 text-sm"><input type="checkbox" checked={!pendingOnly} onChange={event => setPendingOnly(!event.target.checked)} />Ver también decididos en los últimos 90 días</label>
       {message.text && <p role={message.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${message.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{message.text}</p>}
-      {!items ? <p role="status" className="text-sm">Cargando contratos…</p> : items.length === 0 ? (
+      {loadState.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-6 text-sm dark:bg-surface-dark-card">No tiene permiso para ver las aprobaciones de contratos.</p>
+        : loadState.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{loadState.error}</span><button type="button" onClick={() => { void load(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
+      {loadState.status === 'forbidden' || loadState.status === 'error' ? null : !items ? <p role="status" className="text-sm">Cargando contratos…</p> : items.length === 0 ? (
         <EmptyState icon={ApprovedServicesIcon} title="Sin contratos por aprobar" description="Los contratos que Contratos envíe aparecerán aquí." />
       ) : (
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)]">
@@ -155,7 +177,7 @@ export default function ContractApprovalsPage() {
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setDeciding(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="submit" form="contract-decision-form" disabled={busy} className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${deciding === 'Returned' ? 'bg-status-danger' : 'bg-accent-600'}`}>{deciding === 'Approved' ? 'Aprobar' : 'Devolver'}</button></div>}>
         <form id="contract-decision-form" onSubmit={decide} className="space-y-3">
-          <p className="text-sm">{deciding === 'Approved' ? 'El contrato quedará activo y el OCC podrá planificar sus operaciones.' : 'Contratos verá el motivo y podrá corregir el borrador.'}</p>
+          <p className="text-sm">{deciding === 'Approved' ? 'El contrato quedará activo y el OCC podrá planificar sus operaciones.' : 'Contratos verá el motivo y podrá corregir el borrador. La aerolínea solo verá que la versión fue devuelta, sin el motivo.'}</p>
           <label className="block text-sm font-semibold">{deciding === 'Approved' ? 'Comentario (opcional)' : 'Motivo'}
             <textarea required={deciding === 'Returned'} minLength={deciding === 'Returned' ? 3 : undefined} maxLength={1000} rows={3} value={reason}
               onChange={event => setReason(event.target.value)} className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark" />

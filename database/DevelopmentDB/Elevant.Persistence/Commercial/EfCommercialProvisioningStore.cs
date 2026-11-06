@@ -138,6 +138,9 @@ internal sealed class EfCommercialProvisioningStore(
             if (invite && !EfAccountEmailStore.AddActivation(context, emailOptions, account,
                     person.FirstName, airline!.Name, DateTimeOffset.UtcNow))
                 return ProvisioningResult.Failed(ProvisioningFailure.Invalid, "invitations_unavailable");
+            // 1-N14: Contratos can now send the airline's draft to Finance.
+            await ContractDraftAudience.PortalAccountReadyAsync(context, request.Id, DateTimeOffset.UtcNow,
+                cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return ProvisioningResult.Success(account.PublicId);

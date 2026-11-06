@@ -96,7 +96,7 @@ public sealed partial class SqlServerMigrationTests
         next.ValidFrom = new DateOnly(2026, 8, 15); next.Status = ContractVersionStatus.PendingFinanceApproval;
         await db.SaveChangesAsync(ct);
         var approval = await scope.ServiceProvider.GetRequiredService<IFinanceTariffBookStore>().DecideContractApprovalAsync(
-            FinanceAccount, next.PublicId, new("Approved", "Synthetic backdated amendment", Convert.ToBase64String(next.RowVersion)), ct);
+            FinanceAccount, next.PublicId, new("Approved", "Synthetic backdated amendment", Convert.ToBase64String(next.RowVersion)), null, ct);
         Assert.True(approval.IsSuccess);
         db.ChangeTracker.Clear();
         original = await db.ContractVersions.SingleAsync(v => v.Id == fixture.VersionKey, ct);

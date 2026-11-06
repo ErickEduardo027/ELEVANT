@@ -149,11 +149,11 @@ public sealed partial class SqlServerMigrationTests
 
         // Returning needs a reason and sends the draft back to Contracts with it.
         Assert.Equal(FinanceCatalogFailure.Invalid, (await book.DecideContractApprovalAsync(FinanceAccount,
-            version.PublicId, new DecideContractApprovalInput("Returned", null, detail.Summary.Version),
+            version.PublicId, new DecideContractApprovalInput("Returned", null, detail.Summary.Version), null,
             cancellationToken)).Failure);
         Assert.True((await book.DecideContractApprovalAsync(FinanceAccount, version.PublicId,
             new DecideContractApprovalInput("Returned", "Precio por debajo de la tarifa base sin justificación.",
-                detail.Summary.Version), cancellationToken)).IsSuccess);
+                detail.Summary.Version), null, cancellationToken)).IsSuccess);
         var returned = Assert.Single((await drafts.ListForContractsAsync(ContractsAccount, cancellationToken))!,
             item => item.Id == version.PublicId);
         Assert.Equal("Draft", returned.VersionStatus);
@@ -165,12 +165,12 @@ public sealed partial class SqlServerMigrationTests
         Assert.True((await drafts.UpdateAsync(ContractsAccount, version.PublicId, new UpdateContractDraftInput(
             returned.ValidFrom, null, "USD", "QA revisado",
             returned.Rates.Select(item => new UpdateDraftRateInput(item.Id, item.BillingUnit, 125m, 1m, true)).ToArray(),
-            [new UpdateDraftChargeInput(night.ChargeId, false, 20m)]), cancellationToken)).IsSuccess);
-        Assert.True((await drafts.ActivateAsync(ContractsAccount, version.PublicId, cancellationToken)).IsSuccess);
+            [new UpdateDraftChargeInput(night.ChargeId, false, 20m)]), null, cancellationToken)).IsSuccess);
+        Assert.True((await drafts.ActivateAsync(ContractsAccount, version.PublicId, null, null, cancellationToken)).IsSuccess);
         var pending = (await book.GetContractApprovalAsync(FinanceAccount, version.PublicId, cancellationToken))!;
         Assert.Equal(20m, Assert.Single(pending.Charges, item => item.ChargeCode == "NIGHT").ContractValue);
         Assert.True((await book.DecideContractApprovalAsync(FinanceAccount, version.PublicId,
-            new DecideContractApprovalInput("Approved", null, pending.Summary.Version), cancellationToken)).IsSuccess);
+            new DecideContractApprovalInput("Approved", null, pending.Summary.Version), null, cancellationToken)).IsSuccess);
         Assert.Equal(ContractStatus.Draft, (await context.Contracts.AsNoTracking()
             .SingleAsync(item => item.Id == contract.Id, cancellationToken)).Status);
         Assert.Equal(2, (await book.GetContractApprovalAsync(FinanceAccount, version.PublicId, cancellationToken))!

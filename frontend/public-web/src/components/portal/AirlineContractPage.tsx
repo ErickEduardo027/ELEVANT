@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import type { AirlineContractPageResponse } from "@elevant/api-client";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ElevantApiError, type AirlineContractPageResponse } from "@elevant/api-client";
 import type { AirlineDraftData } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractSignature } from "./AirlineContractSignature";
@@ -14,12 +14,35 @@ const STATUS: Record<string, string> = {
   Terminated: "Terminado", Expired: "Vencido",
 };
 
+/** Why an observation was refused, by its Problem Details code; the server title is never shown. */
+const COMMENT_ERRORS: Record<string, string> = {
+  version_conflict: "El borrador cambió mientras escribía. Revise la versión actual y envíe de nuevo su observación.",
+  draft_closed: "Este borrador ya no admite observaciones: Contratos lo cerró o ya fue aprobado.",
+  comment_required: "Escriba la observación (hasta 2000 caracteres).",
+  not_found: "Este borrador ya no está disponible.",
+  idempotency_conflict: "Esa observación ya se envió con otro texto. Revise el borrador e intente de nuevo.",
+  expected_version_required: "Actualice la página antes de enviar la observación.",
+};
+
+/** Message for a refused or uncertain observation, and whether the draft must be read again. */
+function commentFailure(error: unknown): { text: string; settled: boolean; reload: boolean } {
+  if (error instanceof ElevantApiError && error.status >= 400 && error.status < 500) {
+    const known = error.code ? COMMENT_ERRORS[error.code] : undefined;
+    return { text: known ?? (error.status === 403 ? "Su acceso no permite comentar este borrador."
+      : "No se pudo enviar la observación. Revise el texto e intente de nuevo."), settled: true,
+      reload: error.status === 409 || error.status === 404 };
+  }
+  return { text: "No se pudo confirmar el envío. Intente de nuevo: la observación no se enviará dos veces.",
+    settled: false, reload: false };
+}
+
 function money(amount: number, currency: string) {
   return new Intl.NumberFormat("es-DO", { style: "currency", currency }).format(amount);
 }
 
 export function AirlineContractPage() {
   const { session, getContracts, getDrafts, commentDraft, downloadContractDraft, draftRevision } = useAirlineSession();
+  const [reloadDrafts, setReloadDrafts] = useState(0);
   const accountId = session?.actor.accountId;
   const [pages, setPages] = useState<AirlineContractPageResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,7 +62,7 @@ export function AirlineContractPage() {
       setLoading(false);
     });
     return () => { active = false; };
-  }, [accountId, getContracts, getDrafts, draftRevision]);
+  }, [accountId, getContracts, getDrafts, draftRevision, reloadDrafts]);
 
   const loadMore = useCallback(async () => {
     if (loading || !pages.at(-1)?.hasMore) return;
@@ -73,7 +96,8 @@ export function AirlineContractPage() {
     <AirlinePermitsSection />
     {draftError && <section className={styles.panel} role="alert">No se pudieron cargar los borradores. Actualice la página para volver a intentarlo.</section>}
     {drafts.length > 0 && <section className={styles.contractGrid} aria-label="Borradores para revisión">
-      {drafts.map(draft => <AirlineDraftCard key={draft.id} draft={draft} onComment={commentDraft} onDownload={downloadContractDraft} />)}
+      {drafts.map(draft => <AirlineDraftCard key={draft.id} draft={draft} onComment={commentDraft}
+        onDownload={downloadContractDraft} onReload={() => setReloadDrafts(value => value + 1)} />)}
     </section>}
     {!loading && !error && contracts.length === 0 && drafts.length === 0 ? <section className={styles.panel}>
       <h2>No hay contratos aprobados</h2>
@@ -108,27 +132,45 @@ export function AirlineContractPage() {
   </div>;
 }
 
-function AirlineDraftCard({ draft, onComment, onDownload }: {
+function AirlineDraftCard({ draft, onComment, onDownload, onReload }: {
   draft: AirlineDraftData;
-  onComment: (versionId: string, body: string) => Promise<void>;
+  onComment: (versionId: string, body: string, expectedVersion: string, idempotencyKey: string) => Promise<void>;
   onDownload: (versionId: string) => Promise<Blob>;
+  onReload: () => void;
 }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  // The key of an uncertain attempt is reused for the same text, so a retry never comments twice.
+  const pending = useRef<{ key: string; body: string } | null>(null);
+  const inFinance = draft.versionStatus === "PendingFinanceApproval";
   async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true); setMessage("");
-    try { await onComment(draft.id, body.trim()); setBody(""); setMessage("Observación enviada a Contratos."); }
-    catch { setMessage("No se pudo enviar la observación. Intente de nuevo."); }
-    finally { setBusy(false); }
+    event.preventDefault();
+    const text = body.trim();
+    if (!draft.version) { setMessage(COMMENT_ERRORS.expected_version_required); return; }
+    if (pending.current?.body !== text) pending.current = { key: crypto.randomUUID(), body: text };
+    setBusy(true); setMessage("");
+    try {
+      await onComment(draft.id, text, draft.version, pending.current.key);
+      pending.current = null;
+      setBody("");
+      setMessage("Observación enviada a Contratos.");
+    } catch (error) {
+      const failure = commentFailure(error);
+      if (failure.settled) pending.current = null;
+      setMessage(failure.text);
+      if (failure.reload) onReload();
+    } finally { setBusy(false); }
   }
   return <article className={styles.panel}>
-    <div className={styles.sectionHeading}><div><span className={styles.kicker}>En revisión · {draft.contractCode}</span><h2>Propuesta de contrato</h2></div><strong className={styles.draftBadge}>BORRADOR</strong></div>
+    <div className={styles.sectionHeading}><div><span className={styles.kicker}>{inFinance ? "En revisión por Finanzas" : "En revisión"} · {draft.contractCode}</span><h2>Propuesta de contrato</h2></div><strong className={styles.draftBadge}>BORRADOR</strong></div>
     <p className={styles.note}>Este documento todavía no habilita servicios operativos.</p>
+    {inFinance && <p className={styles.note}>Finanzas está revisando los precios. Puede seguir enviando observaciones a Contratos.</p>}
+    {!inFinance && draft.financeDecision === "Returned" && <p className={styles.note}>Finanzas devolvió esta versión a Contratos para ajustes.</p>}
     <ContractPdfActions load={() => onDownload(draft.id)} fileName={`borrador-${draft.contractCode}.pdf`} label="borrador del contrato" />
     <div className={styles.contractVersion}><h3>Condiciones propuestas</h3><p>Vigencia prevista: {draft.validFrom} — {draft.validTo ?? "sin fecha de fin"}</p><p>Estaciones: {draft.stations.join(", ") || "Por definir"}</p><p>{draft.terms || "Contratos está preparando los términos de esta versión."}</p></div>
     <div className={styles.contractRateList}>{draft.rates.map(rate => <div key={rate.id}><strong>{rate.serviceName}</strong><span>Precio por {rate.billingUnit}: {rate.isConfirmed ? money(rate.unitPrice, draft.currencyCode) : "por definir"}</span><span>Cantidad mínima: {rate.minimumQuantity}</span></div>)}</div>
-    <div className={styles.contractVersion}><h3>Observaciones</h3>{draft.comments.length ? <ul className={styles.draftComments}>{draft.comments.map(comment => <li key={comment.id}><strong>{comment.author}</strong><p>{comment.body}</p><small>{new Date(comment.at).toLocaleString("es-DO")}</small></li>)}</ul> : <p>Aún no hay observaciones.</p>}
+    <div className={styles.contractVersion}><h3>Observaciones</h3>{draft.comments.length ? <ul className={styles.draftComments}>{draft.comments.map(comment => <li key={comment.id}><strong>{comment.isAirline ? comment.author : "Respuesta de Contratos"}</strong><p>{comment.body}</p><small>{new Date(comment.at).toLocaleString("es-DO")}</small></li>)}</ul> : <p>Aún no hay observaciones.</p>}
       <form onSubmit={submit} className={styles.draftCommentForm}><label htmlFor={`draft-comment-${draft.id}`}>Enviar una observación a Contratos</label><textarea id={`draft-comment-${draft.id}`} required maxLength={2000} rows={3} value={body} onChange={event => setBody(event.target.value)} /><button disabled={busy || !body.trim()} type="submit">{busy ? "Enviando…" : "Enviar observación"}</button>{message && <p role="status">{message}</p>}</form>
     </div>
   </article>;

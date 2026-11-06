@@ -4,6 +4,7 @@ export * from "./operationDocuments";
 export * from "./charters";
 export * from "./operationalClose";
 export * from "./commercialRequests";
+export * from "./contractDrafts";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -178,6 +179,11 @@ export {
   type CommercialInboxRequestData,
   type CommercialProposedAirlineData,
   type CommercialRepresentativeConfirmationData,
+  type ContractDraftIssueData,
+  type ContractDraftReadinessData,
+  type ContractDraftScopeData,
+  type ContractDraftScopeServiceData,
+  type ContractDraftScopeStationData,
   type FinanceApprovedServiceResponse,
   type FinanceApprovedServicesResponse,
   type FinancePreinvoiceListItem,

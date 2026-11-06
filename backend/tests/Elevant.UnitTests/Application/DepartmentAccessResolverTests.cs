@@ -85,6 +85,7 @@ public sealed class DepartmentAccessResolverTests
         Assert.True(access.Has("contracts.requests.approve"));
         Assert.True(access.Has("contracts.requests.cancel"));
         Assert.True(access.Has("contracts.drafts.activate"));
+        Assert.True(access.Has("contracts.drafts.delete"));
         Assert.False(access.Has("operations.service_closures.request"));
     }
 

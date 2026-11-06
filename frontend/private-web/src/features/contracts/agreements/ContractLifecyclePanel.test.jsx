@@ -34,7 +34,8 @@ it('suspends with a reason and the status the user saw', async () => {
   expect(confirm).toBeDisabled();
   await userEvent.type(screen.getByLabelText('Motivo'), 'Auditoría de seguridad');
   await userEvent.click(confirm);
-  expect(applyContractLifecycle).toHaveBeenCalledWith('v-1', { action: 'Suspend', reason: 'Auditoría de seguridad', expectedStatus: 'Active' });
+  expect(applyContractLifecycle).toHaveBeenCalledWith('v-1', { action: 'Suspend', reason: 'Auditoría de seguridad', expectedStatus: 'Active' },
+    expect.any(String));
   expect(await screen.findByRole('button', { name: 'Reactivar' })).toBeInTheDocument();
   expect(onChanged).toHaveBeenCalled();
 });
@@ -54,4 +55,35 @@ it('hides the actions without the lifecycle permission', async () => {
   render(<ContractLifecyclePanel versionId="v-1" />);
   await screen.findByText('Contrato activo');
   expect(screen.queryByRole('button', { name: 'Suspender' })).not.toBeInTheDocument();
+});
+
+it('discards a contract that never activated with its own wording and keeps the key of an uncertain retry', async () => {
+  getContractTimeline.mockResolvedValue(timeline('Draft'));
+  applyContractLifecycle.mockRejectedValueOnce(new TypeError('Network down'))
+    .mockResolvedValueOnce({ status: 'Terminated', draftVersionId: null });
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Descartar contrato' }));
+  expect(screen.queryByRole('button', { name: 'Terminar' })).not.toBeInTheDocument();
+  expect(screen.getByText(/El contrato nunca se activó/)).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText('Motivo'), 'La aerolínea desistió.');
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+  expect(await screen.findByText(/No se pudo completar la acción/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+  expect(await screen.findByText(/Contrato descartado/)).toBeInTheDocument();
+  const [first, second] = applyContractLifecycle.mock.calls;
+  expect(first[1]).toEqual({ action: 'Terminate', reason: 'La aerolínea desistió.', expectedStatus: 'Draft' });
+  expect(second[2]).toBe(first[2]);
+});
+
+it('explains a conflict by its code and re-reads the contract', async () => {
+  getContractTimeline.mockResolvedValue(timeline('Active'));
+  applyContractLifecycle.mockRejectedValue(Object.assign(new Error('The contract changed; reload and retry.'),
+    { status: 409, code: 'status_changed' }));
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Suspender' }));
+  await userEvent.type(screen.getByLabelText('Motivo'), 'Auditoría de seguridad');
+  await userEvent.click(screen.getByRole('button', { name: 'Confirmar' }));
+  expect(await screen.findByText('El contrato cambió de estado; se volvió a cargar.')).toBeInTheDocument();
+  expect(screen.queryByText(/reload and retry/)).not.toBeInTheDocument();
+  expect(getContractTimeline).toHaveBeenCalledTimes(2);
 });

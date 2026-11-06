@@ -58,7 +58,10 @@ public enum ContractVersionStatus
     PendingFinanceApproval,
     Approved,
     Superseded,
-    /// <summary>Reserved: no flow assigns it; Finance returns a version to Draft instead.</summary>
+    /// <summary>
+    /// Discarded by Contratos before approval (a draft that did not prosper, 1-B). Finance never
+    /// rejects: it returns the version to Draft instead. The row and its history are kept.
+    /// </summary>
     Rejected,
 }
 

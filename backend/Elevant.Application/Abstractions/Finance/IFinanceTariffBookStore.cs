@@ -2,11 +2,12 @@ namespace Elevant.Application.Abstractions.Finance;
 
 public enum FinanceCatalogFailure { Forbidden, NotFound, Invalid, Conflict }
 
-public sealed record FinanceCatalogResult(Guid? Id, FinanceCatalogFailure? Failure)
+/// <summary>Outcome of a Finance command; <paramref name="Code"/> is the stable Problem Details code of a failure.</summary>
+public sealed record FinanceCatalogResult(Guid? Id, FinanceCatalogFailure? Failure, string? Code = null)
 {
     public bool IsSuccess => Id is not null;
     public static FinanceCatalogResult Success(Guid id) => new(id, null);
-    public static FinanceCatalogResult Failed(FinanceCatalogFailure failure) => new(null, failure);
+    public static FinanceCatalogResult Failed(FinanceCatalogFailure failure, string? code = null) => new(null, failure, code);
 }
 
 public sealed record FinanceServiceOptionData(Guid Id, string Code, string Name, string DefaultBillingUnit, bool IsActive);
@@ -117,6 +118,10 @@ public interface IFinanceTariffBookStore
         CancellationToken cancellationToken = default);
     Task<ContractApprovalDetailData?> GetContractApprovalAsync(Guid actorId, Guid versionId,
         CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Approves or returns a version pending Finance. The Idempotency-Key is optional while older
+    /// clients exist (expand): with it, the same key and body replay the first result.
+    /// </summary>
     Task<FinanceCatalogResult> DecideContractApprovalAsync(Guid actorId, Guid versionId,
-        DecideContractApprovalInput input, CancellationToken cancellationToken = default);
+        DecideContractApprovalInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
 }

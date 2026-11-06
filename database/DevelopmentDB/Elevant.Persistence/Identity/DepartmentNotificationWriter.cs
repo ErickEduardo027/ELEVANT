@@ -9,7 +9,8 @@ namespace Elevant.Persistence.Identity;
 /// <summary>
 /// Appends on-screen alerts for a department in the transaction of the source event. A
 /// recipient needs the department's «Notificaciones» option and the permission that lets it
-/// open the source; a station-scoped source also needs that station. Re-raising the same
+/// open the source; a station-scoped source also needs that station, and a source spanning
+/// several stations (<c>coveringStationIds</c>) needs every one of them. Re-raising the same
 /// source marks the alert unread again instead of duplicating it.
 /// </summary>
 internal static class DepartmentNotificationWriter
@@ -25,7 +26,8 @@ internal static class DepartmentNotificationWriter
 
     public static async Task NotifyAsync(ElevantDbContext context, Department department,
         string sourcePermission, string kind, Guid sourceId, string? subject, DateTimeOffset occurredAt,
-        CancellationToken cancellationToken, long? stationId = null, long? exceptAccountId = null)
+        CancellationToken cancellationToken, long? stationId = null, long? exceptAccountId = null,
+        IReadOnlyCollection<long>? coveringStationIds = null)
     {
         var accounts = await DepartmentAccessQueries.ActiveInternalAccounts(context).ToArrayAsync(cancellationToken);
         var accesses = await DepartmentAccessQueries.ReadManyAsync(context, accounts, cancellationToken);
@@ -40,6 +42,9 @@ internal static class DepartmentNotificationWriter
                 .Where(scope => recipients.Contains(scope.AccountId) && scope.StationId == station &&
                     scope.GrantedAt <= occurredAt && scope.RevokedAt == null)
                 .Select(scope => scope.AccountId).Distinct().ToArrayAsync(cancellationToken);
+        if (coveringStationIds is { Count: > 0 } && recipients.Length > 0)
+            recipients = await StationScopeCoverage.CoveringAsync(context, recipients, coveringStationIds, occurredAt,
+                cancellationToken);
         if (recipients.Length == 0) return;
 
         var trimmed = subject?.Trim() is { Length: > 0 } text ? text[..Math.Min(text.Length, 160)] : null;

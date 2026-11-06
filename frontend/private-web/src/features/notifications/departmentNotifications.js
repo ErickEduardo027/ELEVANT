@@ -10,6 +10,10 @@ const KINDS = {
   availability_request: { title: 'Solicitud de disponibilidad por decidir', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/schedules` } },
   commercial_request: { title: 'Nueva solicitud comercial', target: { moduleId: CONTRACT_MODULE_IDS.REQUESTS } },
   draft_comment: { title: 'La aerolínea comentó un borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
+  // 1-N14: Contratos learns when it can move a draft forward.
+  portal_account_ready: { title: 'La cuenta del portal de la aerolínea está lista: ya puede enviar el borrador a Finanzas', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
+  contract_returned: { title: 'Finanzas devolvió un borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
+  contract_approved: { title: 'Finanzas aprobó los precios de un contrato: fije la vigencia y gestione las firmas', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   service_closure: { title: 'Solicitud de clausura de servicio', target: { moduleId: CONTRACT_MODULE_IDS.CATALOG } },
   contract_signed: { title: 'La aerolínea firmó un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   permit_submitted: { title: 'La aerolínea envió un permiso para verificar', target: { moduleId: CONTRACT_MODULE_IDS.PERMITS } },

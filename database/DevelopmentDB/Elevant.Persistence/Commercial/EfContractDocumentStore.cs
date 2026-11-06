@@ -87,6 +87,9 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
             return Failed(ContractDocumentFailure.Conflict);
         if (document.Signatures.Any(item => item.Party == reader.Party.ToString()))
             return Failed(ContractDocumentFailure.AlreadySigned);
+        // A discarded or terminated contract is closed: its approved version is history, not an offer.
+        if (document.ContractStatus == nameof(ContractStatus.Terminated))
+            return Failed(ContractDocumentFailure.Conflict, "contract_terminated");
         if (document.Validity is null) return Failed(ContractDocumentFailure.ValidityPending, "validity_pending");
         // The airline signs first; AVIAM countersigns what the airline already accepted.
         if (reader.Party == ContractSignatureParty.Aviam &&
@@ -164,6 +167,8 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         if (row.Value.Status != ContractVersionStatus.Approved) return Failed(ContractDocumentFailure.Conflict, "not_approved");
         var current = await DocumentAsync(row.Value.VersionId, cancellationToken);
         if (current.Signatures.Count > 0) return Failed(ContractDocumentFailure.Conflict, "already_signed");
+        if (current.ContractStatus == nameof(ContractStatus.Terminated))
+            return Failed(ContractDocumentFailure.Conflict, "contract_terminated");
         if (!string.Equals(current.ContentSha256, input.ExpectedDocumentSha256, StringComparison.OrdinalIgnoreCase))
             return Failed(ContractDocumentFailure.Conflict, "content_changed");
 
@@ -266,6 +271,7 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
     /// <summary>The party may sign now: validity confirmed, not signed yet and, for AVIAM, after the airline.</summary>
     private static string? SignableBy(ContractDocumentData document, Reader reader) =>
         reader.CanSign && document.VersionStatus == nameof(ContractVersionStatus.Approved) && document.Validity is not null &&
+        document.ContractStatus != nameof(ContractStatus.Terminated) &&
         document.Signatures.All(item => item.Party != reader.Party.ToString()) &&
         (reader.Party == ContractSignatureParty.Airline ||
          document.Signatures.Any(item => item.Party == nameof(ContractSignatureParty.Airline)))
@@ -274,13 +280,13 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
     private async Task<(long VersionId, long ContractId, Guid ContractPublicId, long AirlineId, ContractVersionStatus Status)?>
         VersionAsync(Guid versionId, CancellationToken cancellationToken, bool draft = false)
     {
-        // Drafts follow the airline draft list: editable or awaiting Finance, on a live contract.
+        // Drafts follow the draft lists: editable or awaiting Finance, on a contract that is not terminated.
         var row = await (from version in context.ContractVersions.AsNoTracking()
                          join contract in context.Contracts.AsNoTracking() on version.ContractId equals contract.Id
                          where version.PublicId == versionId && (draft
                              ? (version.Status == ContractVersionStatus.Draft ||
                                 version.Status == ContractVersionStatus.PendingFinanceApproval) &&
-                               (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active)
+                               contract.Status != ContractStatus.Terminated
                              : version.Status == ContractVersionStatus.Approved || version.Status == ContractVersionStatus.Superseded)
                          select new { version.Id, ContractId = contract.Id, contract.PublicId, contract.AirlineId, version.Status })
             .SingleOrDefaultAsync(cancellationToken);
