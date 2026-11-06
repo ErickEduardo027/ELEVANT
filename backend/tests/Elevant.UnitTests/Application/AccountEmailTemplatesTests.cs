@@ -50,7 +50,9 @@ public sealed class AccountEmailTemplatesTests
     {
         var email = AccountEmailTemplates.LoginCode("ana@example.test", "246810");
 
-        Assert.Contains("246810", email.Subject);
+        // 1-N09: the code never goes in the subject, which the outbox keeps after clearing the body.
+        Assert.Equal(AccountEmailTemplates.LoginCodeSubject, email.Subject);
+        Assert.DoesNotContain("246810", email.Subject);
         Assert.Equal(6, Regex.Matches(email.HtmlBody, "border:2px solid #1757d8").Count);
         Assert.Matches(new Regex(@"^246810\r?$", RegexOptions.Multiline), email.TextBody);
         Assert.Contains("Vence en 10 minutos", email.TextBody);

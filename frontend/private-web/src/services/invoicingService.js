@@ -22,6 +22,10 @@ export const issueInvoiceFromOperations = request =>
 export const getInvoiceCardPayments = invoiceId =>
   call(api => api.getFinanceInvoiceCardPayments(invoiceId, { cache: 'no-store' }));
 
+/** 1-N08: the «Factura emitida» emails the invoice queued and their delivery state (none when nobody could receive it). */
+export const getInvoiceEmailDeliveries = invoiceId =>
+  call(api => api.getInvoiceEmailDeliveries(invoiceId, { cache: 'no-store' }));
+
 export const getInvoiceDocument = invoiceId =>
   call(api => api.getFinanceInvoiceDocumentById(invoiceId, { cache: 'no-store' }));
 

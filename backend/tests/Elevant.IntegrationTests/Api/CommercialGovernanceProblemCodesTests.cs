@@ -26,6 +26,12 @@ public sealed class CommercialGovernanceProblemCodesTests(ElevantApiFactory fact
         { ProvisioningFailure.Invalid, null, HttpStatusCode.BadRequest, "invalid_provisioning" },
         { ProvisioningFailure.Invalid, "invitations_unavailable", HttpStatusCode.BadRequest, "invitations_unavailable" },
         { ProvisioningFailure.NotFound, null, HttpStatusCode.NotFound, "not_found" },
+        // 1-N13: an email that already has an account says whether it can be linked and, if not, why.
+        { ProvisioningFailure.Conflict, "email_has_account", HttpStatusCode.Conflict, "email_has_account" },
+        { ProvisioningFailure.Conflict, "email_in_use_other_airline", HttpStatusCode.Conflict, "email_in_use_other_airline" },
+        { ProvisioningFailure.Conflict, "email_in_use_internal", HttpStatusCode.Conflict, "email_in_use_internal" },
+        { ProvisioningFailure.Conflict, "account_disabled", HttpStatusCode.Conflict, "account_disabled" },
+        { ProvisioningFailure.Invalid, "expected_version_required", HttpStatusCode.BadRequest, "expected_version_required" },
     };
 
     [Theory]
@@ -75,6 +81,7 @@ public sealed class CommercialGovernanceProblemCodesTests(ElevantApiFactory fact
         { CatalogMutationFailure.Conflict, null, HttpStatusCode.Conflict, "version_conflict" },
         { CatalogMutationFailure.Conflict, "airline_profile_conflict", HttpStatusCode.Conflict, "airline_profile_conflict" },
         { CatalogMutationFailure.NotFound, null, HttpStatusCode.NotFound, "not_found" },
+        { CatalogMutationFailure.Conflict, "airline_identity_locked", HttpStatusCode.Conflict, "airline_identity_locked" },
     };
 
     [Theory]
@@ -97,6 +104,107 @@ public sealed class CommercialGovernanceProblemCodesTests(ElevantApiFactory fact
         Assert.Equal(status, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
         Assert.Equal(expected, await CodeAsync(response));
+    }
+
+    [Fact]
+    public async Task ProvisioningPassesItsIdempotencyKeyAndLinkingRequiresOne()
+    {
+        var store = new ProvisioningStub();
+        await using var application = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ICommercialProvisioningStore>();
+            services.AddSingleton<ICommercialProvisioningStore>(store);
+        }));
+        using var client = Authorized(application);
+        var ct = TestContext.Current.CancellationToken;
+        var key = Guid.NewGuid();
+        using (var provision = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/governance/provisioning/{TargetId}")
+               { Content = JsonContent.Create(new { email = "ana@carrier.example.com", expectedVersion = "AAAAAAAAB9E=" }) })
+        {
+            provision.Headers.Add("Idempotency-Key", key.ToString());
+            using var created = await client.SendAsync(provision, ct);
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        }
+        Assert.Equal(("provision", (Guid?)key), (store.Calls[^1].Command, store.Calls[^1].Key));
+        Assert.Equal("AAAAAAAAB9E=", ((ProvisionAirlineInput)store.Calls[^1].Input!).ExpectedVersion);
+
+        // The link is a new command: without its Idempotency-Key it never reaches the store.
+        using var keyless = await client.PostAsJsonAsync($"/api/v1/governance/provisioning/{TargetId}/account-link",
+            new { email = "ana@carrier.example.com", expectedVersion = "AAAAAAAAB9E=" }, ct);
+        Assert.Equal(HttpStatusCode.BadRequest, keyless.StatusCode);
+        Assert.DoesNotContain(store.Calls, call => call.Command == "link");
+        using var link = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/governance/provisioning/{TargetId}/account-link")
+            { Content = JsonContent.Create(new { email = "ana@carrier.example.com", expectedVersion = "AAAAAAAAB9E=" }) };
+        link.Headers.Add("Idempotency-Key", key.ToString());
+        using var linked = await client.SendAsync(link, ct);
+        Assert.Equal(HttpStatusCode.OK, linked.StatusCode);
+        using (var body = JsonDocument.Parse(await linked.Content.ReadAsStringAsync(ct)))
+            Assert.Equal(TargetId, body.RootElement.GetProperty("accountId").GetGuid());
+        Assert.Equal(new LinkProvisioningAccountInput("ana@carrier.example.com", "AAAAAAAAB9E="), store.Calls[^1].Input);
+
+        store.Result = ProvisioningResult.Failed(ProvisioningFailure.Conflict, "email_in_use_other_airline");
+        using var other = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/governance/provisioning/{TargetId}/account-link")
+            { Content = JsonContent.Create(new { email = "gsa@carrier.example.com", expectedVersion = "AAAAAAAAB9E=" }) };
+        other.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        using var refused = await client.SendAsync(other, ct);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal("email_in_use_other_airline", await CodeAsync(refused));
+    }
+
+    [Fact]
+    public async Task ResendingTakesTheAccountVersionWithItsKeyAndStillAcceptsAnEmptyBody()
+    {
+        var store = new ProvisioningStub();
+        await using var application = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ICommercialProvisioningStore>();
+            services.AddSingleton<ICommercialProvisioningStore>(store);
+        }));
+        using var client = Authorized(application);
+        var ct = TestContext.Current.CancellationToken;
+        var key = Guid.NewGuid();
+        using var resend = new HttpRequestMessage(HttpMethod.Post,
+            $"/api/v1/governance/provisioning/accounts/{TargetId}/resend-invitation")
+            { Content = JsonContent.Create(new { expectedVersion = "AAAAAAAAB9E=" }) };
+        resend.Headers.Add("Idempotency-Key", key.ToString());
+        using var accepted = await client.SendAsync(resend, ct);
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+        Assert.Equal(("resend", (Guid?)key, (object?)new ResendInvitationInput("AAAAAAAAB9E=")), store.Calls[^1]);
+
+        // Older clients post nothing (expand phase).
+        using var legacy = await client.PostAsync($"/api/v1/governance/provisioning/accounts/{TargetId}/resend-invitation",
+            null, ct);
+        Assert.Equal(HttpStatusCode.Accepted, legacy.StatusCode);
+        Assert.Equal(("resend", (Guid?)null, (object?)null), store.Calls[^1]);
+    }
+
+    [Fact]
+    public async Task UpdatingAnAirlinePassesItsOptionalIdempotencyKey()
+    {
+        var profile = new ManagedAirlineData(TargetId, "CARRIER", "Carrier", null, "Caribe", null, null, "CRR", null,
+            "https://carrier.example.com", null, false, false, "AAAAAAAAB9E=");
+        var store = new AirlineStub { Result = AirlineMutationResult.Success(profile) };
+        await using var application = factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<ICommercialAirlineManagementStore>();
+            services.AddSingleton<ICommercialAirlineManagementStore>(store);
+        }));
+        using var client = Authorized(application);
+        var key = Guid.NewGuid();
+        using var update = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/governance/airlines/{TargetId}")
+        {
+            Content = JsonContent.Create(new
+            {
+                sourceName = "CARRIER", displayName = "Carrier", region = "Caribe", sourceUrl = "https://carrier.example.com",
+                icaoCode = "CRR", isVerified = false, isPublished = false, version = "AAAAAAAAB9E=",
+            }),
+        };
+        update.Headers.Add("Idempotency-Key", key.ToString());
+        using var response = await client.SendAsync(update, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(key, store.LastKey);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.False(body.RootElement.GetProperty("identityLocked").GetBoolean());
     }
 
     private static async Task<string?> CodeAsync(HttpResponseMessage response)
@@ -139,15 +247,32 @@ public sealed class CommercialGovernanceProblemCodesTests(ElevantApiFactory fact
     {
         public ProvisioningResult Result { get; set; } = ProvisioningResult.Success(TargetId);
 
+        public List<(string Command, Guid? Key, object? Input)> Calls { get; } = [];
+
         public Task<IReadOnlyList<ProvisioningTaskData>?> ListPendingAsync(Guid actorId,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ProvisioningTaskData>?>([]);
 
         public Task<ProvisioningResult> ProvisionAsync(Guid actorId, Guid requestId, ProvisionAirlineInput input,
-            CancellationToken cancellationToken = default) => Task.FromResult(Result);
+            Guid? idempotencyKey, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(("provision", idempotencyKey, input));
+            return Task.FromResult(Result);
+        }
 
-        public Task<ProvisioningResult> ResendInvitationAsync(Guid actorId, Guid accountId,
-            CancellationToken cancellationToken = default) => Task.FromResult(Result);
+        public Task<ProvisioningResult> LinkAccountAsync(Guid actorId, Guid requestId, Guid idempotencyKey,
+            LinkProvisioningAccountInput input, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(("link", idempotencyKey, input));
+            return Task.FromResult(Result);
+        }
+
+        public Task<ProvisioningResult> ResendInvitationAsync(Guid actorId, Guid accountId, ResendInvitationInput? input,
+            Guid? idempotencyKey, CancellationToken cancellationToken = default)
+        {
+            Calls.Add(("resend", idempotencyKey, input));
+            return Task.FromResult(Result);
+        }
     }
 
     private sealed class AirlineStub : ICommercialAirlineManagementStore
@@ -158,8 +283,14 @@ public sealed class CommercialGovernanceProblemCodesTests(ElevantApiFactory fact
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<ManagedAirlineData>?>([]);
 
+        public Guid? LastKey { get; private set; }
+
         public Task<AirlineMutationResult> SaveAsync(Guid actorId, Guid? profileId, ManagedAirlineInput input,
-            CancellationToken cancellationToken = default) => Task.FromResult(Result);
+            Guid? idempotencyKey, CancellationToken cancellationToken = default)
+        {
+            LastKey = idempotencyKey;
+            return Task.FromResult(Result);
+        }
 
         public Task<AirlineMutationResult> ArchiveAsync(Guid actorId, Guid profileId, string version,
             CancellationToken cancellationToken = default) => Task.FromResult(Result);

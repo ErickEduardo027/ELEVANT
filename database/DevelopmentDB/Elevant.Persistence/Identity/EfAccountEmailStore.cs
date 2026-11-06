@@ -98,6 +98,27 @@ internal sealed class EfAccountEmailStore(ElevantDbContext context, UserManager<
         SetPasswordAsync(token, newPassword, EmailPurpose.PasswordReset, "identity.password.reset", cancellationToken);
 
     /// <summary>
+    /// Retires every unused activation link of the account and discards its activation emails still
+    /// in the queue, inside the caller's unit of work: a new link replaces them, or a temporary
+    /// password closed the invitation (1-N09, 1-N12).
+    /// </summary>
+    internal static async Task RetireActivationAsync(ElevantDbContext context, ApplicationUser account, string reason,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var links = await context.Set<AccountEmailToken>()
+            .Where(item => item.AccountId == account.Id && item.Purpose == EmailPurpose.Activation && item.UsedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var link in links)
+        {
+            link.UsedAt = now;
+            link.UpdatedAt = now;
+        }
+        if (account.Email is { } email)
+            await EfEmailOutboxStore.DiscardPendingAsync(context, email, EmailPurpose.Activation, reason, now,
+                cancellationToken);
+    }
+
+    /// <summary>
     /// Adds the activation token and its email for a new portal account, inside the caller's
     /// transaction. False when the portal origin is not configured.
     /// </summary>
@@ -157,11 +178,14 @@ internal sealed class EfAccountEmailStore(ElevantDbContext context, UserManager<
         CancellationToken cancellationToken)
     {
         var now = Now();
-        // A new code retires the earlier ones of the account.
+        // A new code retires the earlier ones of the account, and their emails still in the queue are
+        // discarded: a late code would only burn attempts of the current one (1-N09).
         await context.Set<AccountEmailToken>()
             .Where(item => item.AccountId == accountId && item.Purpose == EmailPurpose.LoginCode && item.UsedAt == null)
             .ExecuteUpdateAsync(update => update.SetProperty(item => item.UsedAt, now)
                 .SetProperty(item => item.UpdatedAt, now), cancellationToken);
+        await EfEmailOutboxStore.DiscardPendingAsync(context, email, EmailPurpose.LoginCode,
+            EmailDeliveryReasons.Superseded, now, cancellationToken);
         var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6", System.Globalization.CultureInfo.InvariantCulture);
         var expiresAt = now + AccountEmailOptions.LoginCodeLifetime;
         AddToken(accountId, EmailPurpose.LoginCode, challengeId, Hash(Secret(challengeId, code)), expiresAt);

@@ -181,6 +181,16 @@ public sealed record RequestUserAccessInput(
 
 public sealed record DecideUserAccessInput(string ExpectedVersion, string? TemporaryPassword = null, string? Reason = null);
 
+/// <summary>
+/// Temporary password of a portal user. <c>ExpectedVersion</c> is the account version the
+/// superadministrator saw; it is optional while older clients exist (expand) and required with an
+/// Idempotency-Key.
+/// </summary>
+public sealed record ResetClientUserPasswordInput(string TemporaryPassword, string? ExpectedVersion = null)
+{
+    public override string ToString() => $"{nameof(ResetClientUserPasswordInput)} {{ TemporaryPassword = [REDACTED] }}";
+}
+
 /// <summary>Without a temporary password the user receives an activation link by email (ADR-0022).</summary>
 public sealed record CreateClientUserInput(string FirstName, string LastName, string Email, string? TemporaryPassword = null)
 {
@@ -240,8 +250,12 @@ public interface IDepartmentGovernanceStore
         CancellationToken cancellationToken = default);
     Task<GovernanceResult> SetClientUserStatusAsync(Guid actorId, Guid organizationId, Guid userId,
         SetDepartmentUserStatusInput input, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Sets a temporary password the user must change at the next sign-in. On an invitation that is
+    /// still pending it accepts the invitation, retires its links and discards its queued email (1-N12).
+    /// </summary>
     Task<GovernanceResult> ResetClientUserPasswordAsync(Guid actorId, Guid organizationId, Guid userId,
-        string temporaryPassword, CancellationToken cancellationToken = default);
+        ResetClientUserPasswordInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LegacyRoleData>?> ListLegacyRolesAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<GovernanceResult> ConvertLegacyRoleAsync(Guid actorId, Guid roleId, CancellationToken cancellationToken = default);
 }

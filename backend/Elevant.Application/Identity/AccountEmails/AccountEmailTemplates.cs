@@ -35,8 +35,14 @@ public static class AccountEmailTemplates
         action: ("Activar mi cuenta", link),
         security: "Si no esperabas este correo, ignóralo: nadie podrá entrar sin este enlace.");
 
+    /// <summary>
+    /// Subject of every login-code email. The code never goes in the subject: the outbox keeps the
+    /// subject after it clears the body, and a code must not outlive its email (1-N09).
+    /// </summary>
+    public const string LoginCodeSubject = "Tu código de acceso ELEVANT";
+
     public static EmailMessage LoginCode(string to, string code) => Build(to,
-        subject: $"Tu código de acceso ELEVANT: {code}",
+        subject: LoginCodeSubject,
         preheader: $"Tu código es {code}. Vence en 10 minutos.",
         kicker: "Seguridad de tu cuenta",
         title: "Tu código de acceso",

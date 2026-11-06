@@ -164,6 +164,7 @@ public static class DependencyInjection
         services.AddScoped<EfNonFiscalInvoiceReadStore>();
         services.AddScoped<INonFiscalInvoiceReadStore>(provider => provider.GetRequiredService<EfNonFiscalInvoiceReadStore>());
         services.AddScoped<Elevant.Application.Finance.IInvoiceIssuanceStore, EfInvoiceIssuanceStore>();
+        services.AddScoped<Elevant.Application.Finance.IInvoiceEmailStatusStore, EfInvoiceEmailStatusStore>();
         // ADR-0036: the gateway lives in Infrastructure (simulated card processor).
         // A factory, like the PDF renderer: hosts without Infrastructure (tools, tests) stay valid.
         services.AddScoped(provider => new EfCardPaymentStore(provider.GetRequiredService<ElevantDbContext>(),

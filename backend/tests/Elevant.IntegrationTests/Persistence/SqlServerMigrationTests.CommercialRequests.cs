@@ -274,11 +274,12 @@ public sealed partial class SqlServerMigrationTests
         // Once the contract is over, the airline's active portal accounts still block a new affiliation.
         var provisioning = scope.ServiceProvider.GetRequiredService<ICommercialProvisioningStore>();
         var provisioned = await provisioning.ProvisionAsync(
-            SuperAdministratorAccount, first, new ProvisionAirlineInput("ops@caribecargo.example.com", "Synthetic-AirlineNew!234"), ct);
+            SuperAdministratorAccount, first, new ProvisionAirlineInput("ops@caribecargo.example.com", "Synthetic-AirlineNew!234"),
+            null, ct);
         Assert.True(provisioned.IsSuccess, provisioned.Code);
         // 1-N16: the provisioning failures say why (the request is done; the email already has an account).
         Assert.Equal("request_unavailable", (await provisioning.ProvisionAsync(SuperAdministratorAccount, first,
-            new ProvisionAirlineInput("otra@caribecargo.example.com", "Synthetic-AirlineNew!234"), ct)).Code);
+            new ProvisionAirlineInput("otra@caribecargo.example.com", "Synthetic-AirlineNew!234"), null, ct)).Code);
         await context.Contracts.Where(item => item.AirlineId == airline.Id)
             .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, ContractStatus.Terminated), ct);
         Assert.Equal("airline_has_portal_account", (await ApproveAsync(again)).Code);
@@ -288,8 +289,9 @@ public sealed partial class SqlServerMigrationTests
         var reaffiliated = await ApproveAsync(again);
         Assert.True(reaffiliated.IsSuccess, reaffiliated.Code);
         Assert.Equal(2, await context.Contracts.CountAsync(item => item.AirlineId == airline.Id, ct));
-        Assert.Equal("email_in_use", (await provisioning.ProvisionAsync(SuperAdministratorAccount, again,
-            new ProvisionAirlineInput("ops@caribecargo.example.com", "Synthetic-AirlineNew!234"), ct)).Code);
+        // 1-N13: the returning airline's representative already has its portal account; it is linked, not recreated.
+        Assert.Equal("email_has_account", (await provisioning.ProvisionAsync(SuperAdministratorAccount, again,
+            new ProvisionAirlineInput("ops@caribecargo.example.com", "Synthetic-AirlineNew!234"), null, ct)).Code);
 
         // A designator that belongs to another operating airline stops the approval.
         var taken = Guid.NewGuid();

@@ -1,3 +1,5 @@
+import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { commercialApi } from './commercialGovernanceApi';
 
 /** Department keys used by the governance API. */
@@ -72,8 +74,19 @@ export const createClientUser = (organizationId, values) =>
   commercialApi(`/governance/clients/${organizationId}/users`, json('POST', values));
 export const setClientUserStatus = (organizationId, id, isActive, expectedVersion) =>
   commercialApi(`/governance/clients/${organizationId}/users/${id}/status`, json('POST', { isActive, expectedVersion }));
-export const resetClientUserPassword = (organizationId, id, temporaryPassword) =>
-  commercialApi(`/governance/clients/${organizationId}/users/${id}/password-reset`, json('POST', { temporaryPassword }));
+/**
+ * Sets a temporary password with the user `version` on screen and the intent's Idempotency-Key. On a pending
+ * invitation the API closes it: its links stop working and its queued email is discarded (1-N12).
+ */
+export async function resetClientUserPassword(organizationId, id, temporaryPassword, expectedVersion, idempotencyKey) {
+  try {
+    return await createPrivateWebApiClient({ getAccessToken: () => readSession()?.token })
+      .resetClientUserPassword(organizationId, id, { temporaryPassword, expectedVersion }, idempotencyKey);
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+}
 
 export const listLegacyRoles = () => commercialApi('/governance/legacy-roles');
 export const convertLegacyRole = id => commercialApi(`/governance/legacy-roles/${id}/convert`, { method: 'POST' });

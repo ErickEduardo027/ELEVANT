@@ -66,20 +66,28 @@ public sealed class CommercialAirlineManagementController(
         CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await store.SaveAsync(actorId, null, input, cancellationToken);
+        var result = await store.SaveAsync(actorId, null, input, null, cancellationToken);
         if (result.Failure is not null) return Failure(result.Failure.Value, result.Code);
         await InvalidateAsync();
         return StatusCode(201, result.Airline);
     }
 
+    /// <summary>
+    /// Saves the profile with the <c>version</c> the superadministrator saw. The Idempotency-Key is
+    /// optional while older clients exist (expand). The legal name, codes and verification of an
+    /// airline that already operates with AVIAM are fixed (<c>airline_identity_locked</c>, 1-N20).
+    /// </summary>
     [HttpPut("{id:guid}", Name = "UpdateManagedAirline")]
     [RequestSizeLimit(32768)]
     [ProducesResponseType<ManagedAirlineData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Update(Guid id, [FromBody] ManagedAirlineInput input,
-        CancellationToken cancellationToken)
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await store.SaveAsync(actorId, id, input, cancellationToken);
+        var result = await store.SaveAsync(actorId, id, input, idempotencyKey, cancellationToken);
         if (result.Failure is not null) return Failure(result.Failure.Value, result.Code);
         await InvalidateAsync();
         return Ok(result.Airline);
@@ -111,6 +119,8 @@ public sealed class CommercialAirlineManagementController(
         CatalogMutationFailure.Invalid when code == "registry_check_required" =>
             Coded(400, "Para publicarla hace falta el registro público en verde o una verificación manual.", code),
         CatalogMutationFailure.Invalid => Coded(400, "La ficha de la aerolínea no es válida.", code ?? "invalid_airline"),
+        CatalogMutationFailure.Conflict when code == "airline_identity_locked" =>
+            Coded(409, "La identidad de una aerolínea que ya opera con AVIAM no puede cambiarse.", code),
         CatalogMutationFailure.NotFound => Coded(404, "La ficha de la aerolínea ya no existe.", code ?? "not_found"),
         CatalogMutationFailure.Conflict => Coded(409, "La ficha cambió o entra en conflicto con otra aerolínea.",
             code ?? "version_conflict"),

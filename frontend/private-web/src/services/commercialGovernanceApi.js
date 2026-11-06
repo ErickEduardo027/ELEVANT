@@ -42,8 +42,13 @@ export const saveRampProfile = (id, values) => commercialApi(id ? `/human-resour
 });
 export const getManagedAirlines = () => commercialApi('/governance/airlines');
 export const enrichManagedAirlines = () => commercialApi('/governance/airlines/enrichment', { method: 'POST' });
-export const saveManagedAirline = (id, values) => commercialApi(id ? `/governance/airlines/${id}` : '/governance/airlines', {
+/**
+ * Creates (no id) or saves an airline profile with the `version` on screen. An update carries the intent's
+ * Idempotency-Key; the identity of an airline that already operates is fixed (`airline_identity_locked`, 1-N20).
+ */
+export const saveManagedAirline = (id, values, idempotencyKey) => commercialApi(id ? `/governance/airlines/${id}` : '/governance/airlines', {
   method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
+  ...(id && idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
 });
 /** Checks the airline in Wikidata (or the offline OpenFlights copy) and stores the verdict (ADR-0023). */
 export const checkManagedAirlineRegistry = id => commercialApi(`/governance/airlines/${id}/registry-check`, { method: 'POST' });
@@ -51,14 +56,23 @@ export const archiveManagedAirline = (id, version) => commercialApi(`/governance
   method: 'DELETE',
 });
 export const getMyPermissions = () => commercialApi('/governance/me/permissions');
-export const getProvisioning = () => commercialApi('/governance/provisioning');
-/** Without a temporary password the API emails an activation link instead (ADR-0022). */
-export const provisionAirline = (requestId, email, temporaryPassword) => commercialApi(`/governance/provisioning/${requestId}`, {
-  method: 'POST', body: JSON.stringify(temporaryPassword ? { email, temporaryPassword } : { email }),
-});
-export const resendAirlineInvitation = accountId => commercialApi(`/governance/provisioning/accounts/${accountId}/resend-invitation`, {
-  method: 'POST',
-});
+/** Approved requests waiting for their portal account, each with the request `version` (1-N13). */
+export const getProvisioning = () => contractCall(() => contractClient().listProvisioningTasks({ cache: 'no-store' }));
+/**
+ * Creates the airline's portal account: `{ email, temporaryPassword?, expectedVersion }`. Without a temporary
+ * password the API queues an activation link instead (ADR-0022). An email that already has a portal account
+ * fails with `email_has_account` when it can be linked instead.
+ */
+export const provisionAirline = (requestId, command, idempotencyKey) =>
+  contractCall(() => contractClient().provisionAirlineAccount(requestId, command, idempotencyKey));
+/** Links the existing portal account of the email to the request (`{ email, expectedVersion }`); credentials do not change. */
+export const linkProvisioningAccount = (requestId, command, idempotencyKey) =>
+  contractCall(() => contractClient().linkProvisioningAccount(requestId, command, idempotencyKey));
+/** Queues a new activation link for the account whose `version` is on screen; the earlier ones stop working. */
+export const resendAirlineInvitation = (accountId, expectedVersion, idempotencyKey) =>
+  contractCall(() => contractClient().resendAirlineInvitation(accountId, { expectedVersion }, idempotencyKey));
+/** Superadmin outbox (1-N22): `{ status, page, limit }`, with the reason of each email and what it is about. */
+export const getEmailOutbox = query => contractCall(() => contractClient().getEmailOutbox(query, { cache: 'no-store' }));
 export const getCommercialStations = () => commercialApi('/contracts/commercial-requests/stations');
 export const getManagedServices = () => commercialApi('/contracts/catalog/services');
 export const getPublishedCommercialServices = () => createPrivateWebApiClient()

@@ -16,7 +16,12 @@ autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. El
 layout activo solo monta `AirlineSessionProvider`; el proveedor de sesión mock
 permanece en componentes prototípicos no montados y no concede acceso al portal.
 La tarjeta del login describe la verificación pendiente sin mostrar rutas ni
-estados autenticados ficticios. Vuelos
+estados autenticados ficticios. El login, `/activar` y `/recuperar` no nombran
+ningún entorno: solo muestran una etiqueta si el build define
+`NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL` (por ejemplo «Pruebas»), que es
+configuración pública de build, nunca un secreto. El código de acceso y los
+enlaces quedan en la cola de correo de la API; la pantalla nunca afirma que ya
+se enviaron. Vuelos
 consulta además el historial paginado de su tenant
 mediante `GET /api/v1/airline/portal/operations`. El detalle de una operación
 histórica se relee por su ID público con autorización en la API, aunque ya no

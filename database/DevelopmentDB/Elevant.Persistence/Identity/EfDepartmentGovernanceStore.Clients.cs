@@ -1,8 +1,12 @@
+using System.Data;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Messaging;
+using Elevant.Application.Commercial;
 using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
+using Elevant.Persistence.Commercial;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -64,12 +68,13 @@ internal sealed partial class EfDepartmentGovernanceStore
         if (organization is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
         if (input is null || !GovernanceSupport.ValidName(input.FirstName) || !GovernanceSupport.ValidName(input.LastName) ||
             !GovernanceSupport.ValidEmail(input.Email))
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.InvalidClientUser);
         var invite = string.IsNullOrWhiteSpace(input.TemporaryPassword);
         // An invitation needs the portal origin for its activation link.
-        if (invite && emailOptions.Link("/activar", "x") is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        if (invite && emailOptions.Link("/activar", "x") is null)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.InvitationsUnavailable);
         if (await EmailInUseAsync(input.Email, null, cancellationToken))
-            return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            return GovernanceResult.Failed(GovernanceFailure.Conflict, GovernanceAccountIssues.EmailInUse);
 
         return await InSerializableTransactionAsync(async () =>
         {
@@ -103,7 +108,10 @@ internal sealed partial class EfDepartmentGovernanceStore
             };
             var created = invite ? await userManager.CreateAsync(account)
                 : await userManager.CreateAsync(account, input.TemporaryPassword!);
-            if (!created.Succeeded) return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            if (!created.Succeeded)
+                return created.Errors.Any(error => error.Code is "DuplicateUserName" or "DuplicateEmail")
+                    ? GovernanceResult.Failed(GovernanceFailure.Conflict, GovernanceAccountIssues.EmailInUse)
+                    : GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.PasswordPolicy);
             context.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long> { UserId = account.Id, RoleId = role.Id });
             context.OrganizationMemberships.Add(new OrganizationMembership
             {
@@ -120,7 +128,7 @@ internal sealed partial class EfDepartmentGovernanceStore
                 var airline = await context.Organizations.Where(item => item.Id == organization.Value)
                     .Select(item => item.DisplayName).SingleAsync(cancellationToken);
                 if (!EfAccountEmailStore.AddActivation(context, emailOptions, account, person.FirstName, airline, now))
-                    return GovernanceResult.Failed(GovernanceFailure.Invalid);
+                    return GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.InvitationsUnavailable);
             }
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(account.PublicId);
@@ -133,13 +141,13 @@ internal sealed partial class EfDepartmentGovernanceStore
         var target = await ClientTargetAsync(actorId, organizationId, userId, cancellationToken);
         if (target.Failure is { } failure) return GovernanceResult.Failed(failure);
         if (input is null || string.IsNullOrWhiteSpace(input.ExpectedVersion))
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
         return await InSerializableTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
             var user = await context.Users.SingleAsync(item => item.Id == target.AccountId, cancellationToken);
             if (GovernanceSupport.Version(user.RowVersion) != input.ExpectedVersion)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             var before = user.Status;
             user.Status = input.IsActive ? AccountLifecycleStatus.Active : AccountLifecycleStatus.Disabled;
             await userManager.UpdateSecurityStampAsync(user);
@@ -151,22 +159,102 @@ internal sealed partial class EfDepartmentGovernanceStore
         }, cancellationToken);
     }
 
+    private const string ClientPasswordResetAction = "governance.client_user.password_reset";
+
     public async Task<GovernanceResult> ResetClientUserPasswordAsync(Guid actorId, Guid organizationId, Guid userId,
-        string temporaryPassword, CancellationToken cancellationToken = default)
+        ResetClientUserPasswordInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var target = await ClientTargetAsync(actorId, organizationId, userId, cancellationToken);
-        if (target.Failure is { } failure) return GovernanceResult.Failed(failure);
-        if (string.IsNullOrWhiteSpace(temporaryPassword)) return GovernanceResult.Failed(GovernanceFailure.Invalid);
-        var user = await context.Users.SingleAsync(item => item.Id == target.AccountId, cancellationToken);
-        var token = await userManager.GeneratePasswordResetTokenAsync(user);
-        var result = await userManager.ResetPasswordAsync(user, token, temporaryPassword);
-        if (!result.Succeeded) return GovernanceResult.Failed(GovernanceFailure.Invalid);
-        user.MustChangePassword = true;
-        await userManager.UpdateSecurityStampAsync(user);
-        GovernanceSupport.AddAudit(context, target.ActorId, "governance.client_user.password_reset", "iam.accounts",
-            user.PublicId, null, [], timeProvider.GetUtcNow());
-        await context.SaveChangesAsync(cancellationToken);
-        return GovernanceResult.Success(user.PublicId);
+        if (target.Failure is { } failure)
+            return GovernanceResult.Failed(failure, failure == GovernanceFailure.NotFound ? "not_found" : null);
+        if (input is null || string.IsNullOrWhiteSpace(input.TemporaryPassword))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.PasswordPolicy);
+        // Expand phase: older clients send neither; a client that sends the key must send the version.
+        if (idempotencyKey is { } key)
+        {
+            if (key == Guid.Empty) return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
+            if (string.IsNullOrWhiteSpace(input.ExpectedVersion))
+                return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        }
+        // The receipt never stores the temporary password: a replay compares it with the account instead.
+        var hash = CommercialCommandReceipts.Hash(new { organizationId, userId, input.ExpectedVersion });
+        var strategy = context.Database.CreateExecutionStrategy();
+        try
+        {
+            return await strategy.ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken);
+                if (idempotencyKey is { } receiptKey)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, receiptKey, target.ActorId,
+                        ClientPasswordResetAction, hash, cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                        return await ReplayPasswordAsync(prior.ResultId, input.TemporaryPassword, cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return GovernanceResult.Failed(GovernanceFailure.Conflict, "idempotency_conflict");
+                }
+                var now = timeProvider.GetUtcNow();
+                var user = await context.Users.SingleAsync(item => item.Id == target.AccountId, cancellationToken);
+                if (input.ExpectedVersion is { } expected && GovernanceSupport.Version(user.RowVersion) != expected)
+                    return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
+                var invitation = user.InvitationStatus;
+                // The policy is checked before anything changes; the password is set without a reset token,
+                // so it also works for an invited account that never had one.
+                foreach (var validator in userManager.PasswordValidators)
+                    if (!(await validator.ValidateAsync(userManager, user, input.TemporaryPassword)).Succeeded)
+                        return GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.PasswordPolicy);
+                user.PasswordHash = userManager.PasswordHasher.HashPassword(user, input.TemporaryPassword);
+                user.MustChangePassword = true;
+                if (invitation != InvitationStatus.Accepted)
+                {
+                    // 1-N12: the temporary password replaces the pending invitation. It is accepted with
+                    // the email the superadministrator confirmed, its links stop working and its queued
+                    // email is discarded; the first sign-in still requires a new password.
+                    user.InvitationStatus = InvitationStatus.Accepted;
+                    user.EmailConfirmed = true;
+                    await EfAccountEmailStore.RetireActivationAsync(context, user, EmailDeliveryReasons.InvitationClosed,
+                        now, cancellationToken);
+                }
+                await userManager.UpdateSecurityStampAsync(user);
+                GovernanceSupport.AddAudit(context, target.ActorId, "governance.client_user.password_reset", "iam.accounts",
+                    user.PublicId, null, [], now,
+                    new AuditFieldChangeData("user.invitation", invitation.ToString(), user.InvitationStatus.ToString()));
+                if (idempotencyKey is { } receipt)
+                    CommercialCommandReceipts.Add(context, receipt, target.ActorId, ClientPasswordResetAction, hash,
+                        user.PublicId, now);
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return GovernanceResult.Success(user.PublicId);
+            });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is { } duplicateKey &&
+            CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent reset with the same key committed first.
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, duplicateKey, target.ActorId,
+                ClientPasswordResetAction, hash, cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? await ReplayPasswordAsync(concurrent.ResultId, input.TemporaryPassword, cancellationToken)
+                : GovernanceResult.Failed(GovernanceFailure.Conflict, "idempotency_conflict");
+        }
+    }
+
+    /// <summary>A replayed reset must carry the temporary password the account now has.</summary>
+    private async Task<GovernanceResult> ReplayPasswordAsync(Guid accountId, string password,
+        CancellationToken cancellationToken)
+    {
+        var account = await context.Users.SingleOrDefaultAsync(item => item.PublicId == accountId, cancellationToken);
+        return account is not null && await userManager.CheckPasswordAsync(account, password)
+            ? GovernanceResult.Success(accountId)
+            : GovernanceResult.Failed(GovernanceFailure.Conflict, "idempotency_conflict");
     }
 
     private sealed record ClientTarget(long ActorId, long AccountId, GovernanceFailure? Failure);

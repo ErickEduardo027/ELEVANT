@@ -20,3 +20,17 @@ public sealed record IssueInvoiceFromOperationsRequest
 
 public sealed record IssuedInvoiceResponse(Guid InvoiceId, string Number, string FiscalNumber, decimal Total,
     string CurrencyCode, bool Replayed);
+
+/// <summary>
+/// One «Factura emitida» email of an invoice (1-N08). <c>Status</c> is Pending, Sent, Failed or
+/// Discarded; <c>Reason</c> is the normalized code of an email that was not sent.
+/// </summary>
+public sealed record InvoiceEmailDeliveryResponse(string Recipient, string Status, string? Reason,
+    DateTimeOffset CreatedAt, DateTimeOffset? SentAt);
+
+/// <summary>
+/// The emails an issued invoice queued and whether SMTP is configured, so the issuing screen states
+/// what really happened (ADR-0022). No deliveries means nobody could receive it.
+/// </summary>
+public sealed record InvoiceEmailStatusResponse(Guid InvoiceId, bool SmtpConfigured,
+    IReadOnlyList<InvoiceEmailDeliveryResponse> Deliveries);

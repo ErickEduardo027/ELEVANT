@@ -7,7 +7,8 @@ describe("Problem Details codes", () => {
     expect(new Set(ELEVANT_API_ERROR_CODES).size).toBe(ELEVANT_API_ERROR_CODES.length);
     for (const code of ["version_conflict", "idempotency_conflict", "idempotency_key_required", "expected_version_required",
       "reason_required", "not_found", "airline_already_contracted", "airline_has_portal_account", "airline_code_in_use",
-      "representative_unconfirmed", "request_closed"])
+      "representative_unconfirmed", "request_closed", "email_has_account", "email_in_use_other_airline",
+      "email_in_use_internal", "account_disabled", "account_not_found", "airline_identity_locked"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 });

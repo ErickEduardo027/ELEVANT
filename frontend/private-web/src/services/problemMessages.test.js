@@ -42,7 +42,12 @@ describe('commercial messages', () => {
     expect(commercialRequestMessage(failure(409, 'airline_code_in_use'))).toMatch(/IATA o ICAO/);
     expect(commercialRequestMessage(failure(409, 'representative_unconfirmed'))).toMatch(/confirmación del representante/);
     expect(commercialRequestMessage(failure(400, 'invalid_airline'))).toMatch(/ICAO obligatorio/);
-    expect(commercialGovernanceMessage(failure(409, 'email_in_use'))).toBe('Ese correo ya tiene una cuenta en ELEVANT.');
+    expect(commercialGovernanceMessage(failure(409, 'email_in_use'))).toMatch(/no es una cuenta del portal/);
+    // 1-N13: whether the existing account can be linked and, if not, why.
+    expect(commercialGovernanceMessage(failure(409, 'email_has_account'))).toMatch(/Puede vincularla/);
+    expect(commercialGovernanceMessage(failure(409, 'email_in_use_other_airline'))).toMatch(/otra aerolínea/);
+    expect(commercialGovernanceMessage(failure(409, 'account_disabled'))).toMatch(/Reactívela desde Clientes/);
+    expect(commercialGovernanceMessage(failure(409, 'airline_identity_locked'))).toMatch(/ya opera con AVIAM/);
     expect(commercialGovernanceMessage(failure(400, 'registry_check_required'))).toMatch(/registro público/);
   });
 });

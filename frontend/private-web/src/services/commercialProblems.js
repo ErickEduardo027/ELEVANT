@@ -27,17 +27,25 @@ export const COMMERCIAL_REQUEST_MESSAGES = Object.freeze({
 });
 
 export const COMMERCIAL_GOVERNANCE_MESSAGES = Object.freeze({
-  request_unavailable: 'La solicitud ya no está pendiente de aprovisionar. Actualice la lista.',
-  email_in_use: 'Ese correo ya tiene una cuenta en ELEVANT.',
+  request_unavailable: 'La solicitud ya no espera su cuenta del portal: ya tiene una o su contrato se descartó. Actualice la lista.',
+  email_in_use: 'Ese correo ya está registrado en ELEVANT y no es una cuenta del portal. Use otro correo.',
   invalid_provisioning: 'Revise el correo de acceso.',
   invitations_unavailable: 'Las invitaciones por correo no están configuradas. Entregue una contraseña temporal.',
   invitation_already_accepted: 'La cuenta ya aceptó la invitación.',
   password_policy: 'La contraseña temporal no cumple la política de seguridad.',
+  // 1-N13: an email that already has an account, linkable or not.
+  email_has_account: 'Ese correo ya tiene una cuenta del portal. Puede vincularla a esta solicitud sin cambiar su contraseña.',
+  email_in_use_other_airline: 'Ese correo es la cuenta del portal de otra aerolínea. Use el correo del representante de esta aerolínea.',
+  email_in_use_internal: 'Ese correo es una cuenta interna de AVIAM. Use el correo del representante de la aerolínea.',
+  account_disabled: 'La cuenta de ese correo está desactivada. Reactívela desde Clientes y vuelva a intentarlo.',
+  account_not_found: 'Ningún usuario usa ese correo. Revise la dirección o cree la cuenta.',
+  invalid_client_user: 'Revise el nombre, el apellido y el correo del usuario.',
+  invalid_email_outbox_query: 'El filtro de la bandeja de correos no es válido.',
   registry_check_required: 'Para publicarla, verifica la aerolínea en el registro público (check verde) o marca la verificación manual con su fuente.',
   invalid_airline: 'Revise los datos de la ficha: nombres, región, país, códigos y fuentes.',
   airline_profile_conflict: 'Otra ficha ya usa ese nombre de origen o ese código verificado.',
-  airline_identity_locked: 'La identidad de esta aerolínea ya está en contratos y facturas: no puede cambiarse.',
-  version_conflict: 'La ficha cambió mientras la editaba. Actualice e intente de nuevo.',
+  airline_identity_locked: 'La aerolínea ya opera con AVIAM: su razón social, sus códigos y su verificación no pueden cambiar.',
+  version_conflict: 'El registro cambió mientras lo editaba. Actualice e intente de nuevo.',
 });
 
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */

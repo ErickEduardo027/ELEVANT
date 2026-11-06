@@ -4,6 +4,7 @@ export * from "./operationDocuments";
 export * from "./charters";
 export * from "./operationalClose";
 export * from "./commercialRequests";
+export * from "./governanceAccounts";
 export * from "./contractDrafts";
 export * from "./financePackages";
 export * from "./catalog";

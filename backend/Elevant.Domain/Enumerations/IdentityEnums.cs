@@ -71,4 +71,6 @@ public enum EmailDeliveryStatus
     Pending,
     Sent,
     Failed,
+    /// <summary>Never sent: its link or code expired, or a newer one replaced it (1-N09).</summary>
+    Discarded,
 }

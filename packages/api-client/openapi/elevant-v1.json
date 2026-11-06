@@ -3463,12 +3463,21 @@
         "tags": [
           "CommercialAirlineManagement"
         ],
+        "summary": "Saves the profile with the `version` the superadministrator saw. The Idempotency-Key is\noptional while older clients exist (expand). The legal name, codes and verification of an\nairline that already operates with AVIAM are fixed (`airline_identity_locked`, 1-N20).",
         "operationId": "UpdateManagedAirline",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -3513,6 +3522,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ManagedAirlineData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -4073,12 +4112,21 @@
         "tags": [
           "CommercialProvisioning"
         ],
+        "summary": "Creates the airline's portal account: an emailed invitation by default, a temporary password\nas the explicit alternative. The Idempotency-Key and `expectedVersion` (the request\nversion) are optional while older clients exist (expand); a key without the version is\nrejected. An email that already has an account answers `email_has_account` when it can be\nlinked instead.",
         "operationId": "ProvisionCommercialAirline",
         "parameters": [
           {
             "name": "requestId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -4126,6 +4174,166 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/provisioning/{requestId}/account-link": {
+      "post": {
+        "tags": [
+          "CommercialProvisioning"
+        ],
+        "summary": "Completes the request with the existing portal account of the email (1-N13): one of the same\nairline, or one without an airline, which joins it. Its credentials do not change.",
+        "operationId": "LinkCommercialAirlineAccount",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/LinkProvisioningAccountInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialAccountResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4140,7 +4348,7 @@
         "tags": [
           "CommercialProvisioning"
         ],
-        "summary": "Sends a new activation link to an airline account that has not activated yet (ADR-0022).",
+        "summary": "Queues a new activation link for an airline account that has not activated yet (ADR-0022); the\nearlier links stop working and their queued emails are discarded. The Idempotency-Key and\n`expectedVersion` (the account version) are optional while older clients exist (expand).",
         "operationId": "ResendAirlineInvitation",
         "parameters": [
           {
@@ -4151,8 +4359,47 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ResendInvitationInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ResendInvitationInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ResendInvitationInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Accepted",
@@ -4160,6 +4407,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialAccountResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -8399,6 +8696,7 @@
         "tags": [
           "DepartmentGovernance"
         ],
+        "summary": "Sets a temporary password the user must change at the next sign-in. On an invitation that is\nstill pending it accepts the invitation, retires its links and discards its queued email (1-N12).\nThe Idempotency-Key and `expectedVersion` (the account version) are optional while older\nclients exist (expand); a key without the version is rejected.",
         "operationId": "ResetGovernanceClientUserPassword",
         "parameters": [
           {
@@ -8418,6 +8716,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
@@ -8426,7 +8732,7 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/ResetGovernancePasswordRequest"
+                    "$ref": "#/components/schemas/ResetClientUserPasswordInput"
                   }
                 ]
               }
@@ -8435,7 +8741,7 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/ResetGovernancePasswordRequest"
+                    "$ref": "#/components/schemas/ResetClientUserPasswordInput"
                   }
                 ]
               }
@@ -8444,7 +8750,7 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/ResetGovernancePasswordRequest"
+                    "$ref": "#/components/schemas/ResetClientUserPasswordInput"
                   }
                 ]
               }
@@ -8458,6 +8764,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -10831,6 +11167,63 @@
           },
           "422": {
             "description": "Unprocessable Content",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/invoices/{invoiceId}/email-deliveries": {
+      "get": {
+        "tags": [
+          "FinanceInvoiceIssuance"
+        ],
+        "summary": "The «Factura emitida» emails of the invoice and their delivery state (1-N08): queued, sent,\nfailed or discarded, or none when the airline has no active portal account nor billing email.",
+        "operationId": "GetFinanceInvoiceEmailDeliveries",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceEmailStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26413,6 +26806,89 @@
         ]
       }
     },
+    "/api/v1/governance/email/outbox": {
+      "get": {
+        "tags": [
+          "PortalAccount"
+        ],
+        "summary": "The outbox for the superadmin (1-N22): filter by status (`All`, `Pending`, `Sent`,\n`Failed` or `Discarded`), the normalized reason of each email and the contract,\ninvoice, payment, account or request it is about. Bodies are never returned.",
+        "operationId": "ListEmailOutbox",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailOutboxPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/preinvoices/{draftId}/disputes": {
       "get": {
         "tags": [
@@ -36110,6 +36586,121 @@
         },
         "additionalProperties": false
       },
+      "EmailOutboxEntryResponse": {
+        "required": [
+          "attempts",
+          "createdAt",
+          "id",
+          "purpose",
+          "recipient",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "reference": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmailReferenceResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailOutboxPageResponse": {
+        "required": [
+          "entries",
+          "hasMore",
+          "limit",
+          "page",
+          "smtpConfigured"
+        ],
+        "type": "object",
+        "properties": {
+          "smtpConfigured": {
+            "type": "boolean"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmailOutboxEntryResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailReferenceResponse": {
+        "required": [
+          "kind",
+          "label"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "label": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "EmployeeAccountRefData": {
         "required": [
           "id",
@@ -42247,6 +42838,60 @@
         },
         "additionalProperties": false
       },
+      "InvoiceEmailDeliveryResponse": {
+        "required": [
+          "createdAt",
+          "recipient",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "InvoiceEmailStatusResponse": {
+        "required": [
+          "deliveries",
+          "invoiceId",
+          "smtpConfigured"
+        ],
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "smtpConfigured": {
+            "type": "boolean"
+          },
+          "deliveries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvoiceEmailDeliveryResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "IssueCreditNoteInput": {
         "required": [
           "amount",
@@ -42484,6 +43129,22 @@
         },
         "additionalProperties": false
       },
+      "LinkProvisioningAccountInput": {
+        "required": [
+          "email",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "LocateOccStandRequest": {
         "required": [
           "operationDate"
@@ -42538,6 +43199,7 @@
         "required": [
           "displayName",
           "id",
+          "identityLocked",
           "isPublished",
           "isVerified",
           "region",
@@ -42612,6 +43274,9 @@
           "registryEntityUrl": {
             "type": "string",
             "nullable": true
+          },
+          "identityLocked": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -46740,6 +47405,10 @@
           "temporaryPassword": {
             "type": "string",
             "nullable": true
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -46752,7 +47421,8 @@
           "reference",
           "representativeName",
           "requestId",
-          "suggestedEmail"
+          "suggestedEmail",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -46779,6 +47449,9 @@
           "approvedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -49367,6 +50040,16 @@
         },
         "additionalProperties": false
       },
+      "ResendInvitationInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ResendLoginCodeRequest": {
         "required": [
           "challengeId"
@@ -49376,6 +50059,22 @@
           "challengeId": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResetClientUserPasswordInput": {
+        "required": [
+          "temporaryPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "temporaryPassword": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

@@ -11,6 +11,8 @@ internal static class SafeAuditChanges
         "airline.country", "airline.iata", "airline.icao", "airline.logo", "airline.published",
         "airline.verified", "service.name", "service.public", "service.active",
         "rate.confirmed", "rate.price",
+        // Portal accounts (phase 1, block E): the invitation a temporary password closed, the membership a link reactivated.
+        "user.invitation", "membership.status",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

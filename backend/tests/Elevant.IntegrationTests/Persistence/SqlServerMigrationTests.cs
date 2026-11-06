@@ -2451,7 +2451,7 @@ public sealed partial class SqlServerMigrationTests
         var provisioning = scope.ServiceProvider.GetRequiredService<ICommercialProvisioningStore>();
         Assert.Single((await provisioning.ListPendingAsync(superAdminId, cancellationToken))!);
         var provisioned = await provisioning.ProvisionAsync(superAdminId, requestId,
-            new ProvisionAirlineInput("representative@example.test", "Synthetic-AirlineNew!234"),
+            new ProvisionAirlineInput("representative@example.test", "Synthetic-AirlineNew!234"), null,
             cancellationToken);
         Assert.True(provisioned.IsSuccess, provisioned.Failure?.ToString());
         Assert.Empty((await provisioning.ListPendingAsync(superAdminId, cancellationToken))!);
@@ -2462,7 +2462,7 @@ public sealed partial class SqlServerMigrationTests
             item.PublicId == provisioned.AccountId, cancellationToken)).MustChangePassword);
         Assert.Equal(ProvisioningFailure.Conflict,
             (await provisioning.ProvisionAsync(superAdminId, requestId,
-                new ProvisionAirlineInput("other@example.test", "Synthetic-AirlineNew!234"),
+                new ProvisionAirlineInput("other@example.test", "Synthetic-AirlineNew!234"), null,
                 cancellationToken)).Failure);
 
         var drafts = scope.ServiceProvider.GetRequiredService<IContractDraftStore>();

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Mail;
 using System.Net.Mime;
+using System.Net.Sockets;
 using System.Text;
 using Elevant.Application.Abstractions.Messaging;
 using Elevant.Application.Identity.AccountEmails;
@@ -36,7 +37,10 @@ public sealed class SmtpOptions
         MailAddress.TryCreate(FromAddress, out _);
 }
 
-/// <summary>Sends email through SMTP with an HTML body and a plain-text alternative.</summary>
+/// <summary>
+/// Sends email through SMTP with an HTML body and a plain-text alternative. A failure surfaces as
+/// <see cref="EmailSendException"/> with a normalized reason, never the server's text (1-N22).
+/// </summary>
 public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IEmailSender
 {
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(20);
@@ -58,7 +62,14 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IEmailSende
             Credentials = string.IsNullOrEmpty(settings.Username) ? null
                 : new NetworkCredential(settings.Username, settings.Password),
         };
-        await client.SendMailAsync(mail, cancellationToken);
+        try
+        {
+            await client.SendMailAsync(mail, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw EmailSendException.For(SmtpFailureReasons.Of(exception), exception);
+        }
     }
 
     /// <summary>
@@ -92,4 +103,31 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IEmailSende
     }
 
     private static readonly Lazy<byte[]> Logo = new(() => EmbeddedResources.Read("elevant-logo.jpg"));
+}
+
+/// <summary>
+/// Normalized reason of an SMTP failure (1-N22): the outbox and the screens see a code, never the
+/// exception text of the provider.
+/// </summary>
+public static class SmtpFailureReasons
+{
+    public static string Of(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception switch
+        {
+            SmtpFailedRecipientException => EmailDeliveryReasons.SmtpRejected,
+            // 530 authentication required, 534 application password required, 535 credentials refused,
+            // 454 temporary authentication failure.
+            SmtpException { StatusCode: var code } when (int)code is 454 or 530 or 534 or 535 =>
+                EmailDeliveryReasons.SmtpAuthentication,
+            // Other 5xx answers are permanent refusals; 4xx answers and connection failures are transient.
+            SmtpException { StatusCode: var code } when (int)code >= 500 => EmailDeliveryReasons.SmtpRejected,
+            SmtpException => EmailDeliveryReasons.SmtpUnavailable,
+            SocketException or IOException or TimeoutException or System.Security.Authentication.AuthenticationException =>
+                EmailDeliveryReasons.SmtpUnavailable,
+            { InnerException: { } inner } => Of(inner),
+            _ => EmailDeliveryReasons.SendFailed,
+        };
+    }
 }

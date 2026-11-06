@@ -245,13 +245,23 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
         [FromBody] SetDepartmentUserStatusInput input, CancellationToken cancellationToken) =>
         MutateAsync(actorId => store.SetClientUserStatusAsync(actorId, organizationId, id, input, cancellationToken));
 
+    /// <summary>
+    /// Sets a temporary password the user must change at the next sign-in. On an invitation that is
+    /// still pending it accepts the invitation, retires its links and discards its queued email (1-N12).
+    /// The Idempotency-Key and <c>expectedVersion</c> (the account version) are optional while older
+    /// clients exist (expand); a key without the version is rejected.
+    /// </summary>
     [HttpPost("clients/{organizationId:guid}/users/{id:guid}/password-reset", Name = "ResetGovernanceClientUserPassword")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(16384)]
     public Task<IActionResult> ResetClientUserPassword(Guid organizationId, Guid id,
-        [FromBody] ResetGovernancePasswordRequest input, CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.ResetClientUserPasswordAsync(actorId, organizationId, id,
-            input.TemporaryPassword, cancellationToken));
+        [FromBody] ResetClientUserPasswordInput input, [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
+        CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.ResetClientUserPasswordAsync(actorId, organizationId, id, input, idempotencyKey,
+            cancellationToken));
 
     [HttpGet("legacy-roles", Name = "ListLegacyRoles")]
     [ProducesResponseType<LegacyRoleData[]>(StatusCodes.Status200OK, "application/json")]

@@ -76,6 +76,22 @@ import {
   type UpdateManagedServiceCommand,
 } from "./catalog";
 import {
+  isCommercialAccountResponse,
+  isEmailOutboxPage,
+  isInvoiceEmailStatus,
+  isProvisioningTaskList,
+  normalizedAccountLink,
+  normalizedClientPasswordReset,
+  normalizedEmailOutboxQuery,
+  normalizedInvitationResend,
+  normalizedProvisioning,
+  type EmailOutboxQuery,
+  type LinkProvisioningAccountCommand,
+  type ProvisionAirlineAccountCommand,
+  type ResendAirlineInvitationCommand,
+  type ResetClientUserPasswordCommand,
+} from "./governanceAccounts";
+import {
   isCommercialIdResponse,
   isCommercialInboxData,
   normalizedAirlineVerification,
@@ -181,6 +197,12 @@ import {
   getResendAirlineInvitationUrl,
   getSendTestEmailUrl,
   getListEmailDeliveriesUrl,
+  getListEmailOutboxUrl,
+  getListCommercialProvisioningUrl,
+  getProvisionCommercialAirlineUrl,
+  getLinkCommercialAirlineAccountUrl,
+  getResetGovernanceClientUserPasswordUrl,
+  getGetFinanceInvoiceEmailDeliveriesUrl,
   getChangePasswordUrl,
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
@@ -464,6 +486,10 @@ import {
   type LoginChallengeResponse,
   type EmailDeliveryResponse,
   type EmailDeliveriesResponse,
+  type EmailOutboxPageResponse,
+  type InvoiceEmailStatusResponse,
+  type ProvisioningTaskData,
+  type CommercialAccountResponse,
   type SubmitRampOperationChecklistRequest,
   type SystemPingResponse,
   type TransitionRampOperationServiceRequest,
@@ -701,9 +727,35 @@ export interface ElevantApiClient {
   /** Always resolves when the request is well formed, whether or not the email has an account. */
   requestPasswordReset(email: string, options?: CreateSessionOptions): Promise<void>;
   resetPassword(token: string, newPassword: string, options?: CreateSessionOptions): Promise<void>;
-  resendAirlineInvitation(accountId: string, options?: CreateSessionOptions): Promise<void>;
+  /**
+   * Queues a new activation link for an account that has not activated yet; the earlier links stop working and
+   * their queued emails are discarded (ADR-0022, 1-N09). `expectedVersion` is the account version on screen.
+   */
+  resendAirlineInvitation(accountId: string, command: ResendAirlineInvitationCommand, idempotencyKey: string,
+    options?: CreateSessionOptions): Promise<CommercialAccountResponse>;
   sendTestEmail(to: string, options?: CreateSessionOptions): Promise<EmailDeliveryResponse>;
   listEmailDeliveries(options?: CreateSessionOptions): Promise<EmailDeliveriesResponse>;
+  /** The superadmin outbox: status filter, paging, the reason of each email and what it is about (1-N22). */
+  getEmailOutbox(query?: EmailOutboxQuery, options?: CreateSessionOptions): Promise<EmailOutboxPageResponse>;
+  /** Approved requests waiting for their portal account, each with the request version (1-N13). */
+  listProvisioningTasks(options?: CreateSessionOptions): Promise<ProvisioningTaskData[]>;
+  /**
+   * Creates the airline's portal account: an emailed invitation, or the temporary password chosen instead. An email
+   * that already has an account fails with `email_has_account` when it can be linked instead.
+   */
+  provisionAirlineAccount(requestId: string, command: ProvisionAirlineAccountCommand, idempotencyKey: string,
+    options?: CreateSessionOptions): Promise<CommercialAccountResponse>;
+  /** Links the existing portal account of the email to the request; its credentials do not change (1-N13). */
+  linkProvisioningAccount(requestId: string, command: LinkProvisioningAccountCommand, idempotencyKey: string,
+    options?: CreateSessionOptions): Promise<CommercialAccountResponse>;
+  /**
+   * Sets a temporary password the user must change at the next sign-in; on a pending invitation it accepts the
+   * invitation, retires its links and discards its queued email (1-N12).
+   */
+  resetClientUserPassword(organizationId: string, userId: string, command: ResetClientUserPasswordCommand,
+    idempotencyKey: string, options?: CreateSessionOptions): Promise<CommercialIdResponse>;
+  /** The «Factura emitida» emails of an invoice and their delivery state; none when nobody could receive it (1-N08). */
+  getInvoiceEmailDeliveries(invoiceId: string, options?: CreateSessionOptions): Promise<InvoiceEmailStatusResponse>;
   /** Renews the session; a 409 with code refresh_rotated means another tab already did (ADR-0021). */
   refreshSession(refreshToken: string, options?: CreateSessionOptions): Promise<SessionResponse>;
   /** Ends the session: the refresh token and every renewal of it stop working. */
@@ -5312,6 +5364,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     };
   };
 
+  // A portal account command (phase 1, block E): JSON body, Idempotency-Key and the status the endpoint answers.
+  const accountCommand = async <T>(path: string, body: unknown, idempotencyKey: string,
+    options: CreateSessionOptions | undefined, status: 200 | 201 | 202, valid: (value: unknown) => value is T): Promise<T> => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (result.status !== status || !valid(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
   const commercialCommand = async (path: string, body: unknown, idempotencyKey: string,
     options: GetHumanResourcesReportOptions | undefined, expectedId: string | undefined) => {
     const headers = headersFrom(options?.headers, "Request headers");
@@ -5567,9 +5630,47 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       await execute(getConfirmPasswordResetUrl(), jsonPost(options,
         { token: validatedLinkToken(token), newPassword: validatedNewPassword(newPassword) }), false);
     },
-    async resendAirlineInvitation(accountId: string, options?: CreateSessionOptions) {
-      await execute(getResendAirlineInvitationUrl(validatedUuid(accountId, "accountId")),
-        { ...options, method: "POST", headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+    async resendAirlineInvitation(accountId: string, command: ResendAirlineInvitationCommand, idempotencyKey: string,
+      options?: CreateSessionOptions) {
+      const id = validatedUuid(accountId, "accountId");
+      return accountCommand(getResendAirlineInvitationUrl(id), normalizedInvitationResend(command), idempotencyKey,
+        options, 202, value => isCommercialAccountResponse(value, id));
+    },
+    async getEmailOutbox(query?: EmailOutboxQuery, options?: CreateSessionOptions) {
+      const params = normalizedEmailOutboxQuery(query);
+      const result = await execute(getListEmailOutboxUrl(params), { ...options, method: "GET",
+        headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+      if (!isEmailOutboxPage(result.data, params)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async listProvisioningTasks(options?: CreateSessionOptions) {
+      const result = await execute(getListCommercialProvisioningUrl(), { ...options, method: "GET",
+        headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+      if (!isProvisioningTaskList(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async provisionAirlineAccount(requestId: string, command: ProvisionAirlineAccountCommand, idempotencyKey: string,
+      options?: CreateSessionOptions) {
+      return accountCommand(getProvisionCommercialAirlineUrl(validatedUuid(requestId, "requestId")),
+        normalizedProvisioning(command), idempotencyKey, options, 201, value => isCommercialAccountResponse(value));
+    },
+    async linkProvisioningAccount(requestId: string, command: LinkProvisioningAccountCommand, idempotencyKey: string,
+      options?: CreateSessionOptions) {
+      return accountCommand(getLinkCommercialAirlineAccountUrl(validatedUuid(requestId, "requestId")),
+        normalizedAccountLink(command), idempotencyKey, options, 200, value => isCommercialAccountResponse(value));
+    },
+    async resetClientUserPassword(organizationId: string, userId: string, command: ResetClientUserPasswordCommand,
+      idempotencyKey: string, options?: CreateSessionOptions) {
+      const id = validatedUuid(userId, "userId");
+      return accountCommand(getResetGovernanceClientUserPasswordUrl(validatedUuid(organizationId, "organizationId"), id),
+        normalizedClientPasswordReset(command), idempotencyKey, options, 200, value => isCommercialIdResponse(value, id));
+    },
+    async getInvoiceEmailDeliveries(invoiceId: string, options?: CreateSessionOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetFinanceInvoiceEmailDeliveriesUrl(id), { ...options, method: "GET",
+        headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+      if (!isInvoiceEmailStatus(result.data, id)) throw malformedResponse(result.status);
+      return result.data;
     },
     async sendTestEmail(to: string, options?: CreateSessionOptions) {
       const result = await execute(getSendTestEmailUrl(), jsonPost(options, { to: validatedEmailAddress(to) }), true);

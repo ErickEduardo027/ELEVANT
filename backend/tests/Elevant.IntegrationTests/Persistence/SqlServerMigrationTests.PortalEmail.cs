@@ -92,9 +92,9 @@ public sealed partial class SqlServerMigrationTests
         {
             var provisioning = scope.ServiceProvider.GetRequiredService<ICommercialProvisioningStore>();
             Assert.Equal(ProvisioningFailure.Forbidden,
-                (await provisioning.ResendInvitationAsync(PortalAccount, PortalAccount, ct)).Failure);
+                (await provisioning.ResendInvitationAsync(PortalAccount, PortalAccount, null, null, ct)).Failure);
             Assert.True((await provisioning.ResendInvitationAsync(Guid.Parse("40000000-0000-7000-8000-000000000007"),
-                PortalAccount, ct)).IsSuccess);
+                PortalAccount, null, null, ct)).IsSuccess);
             var link = await LatestBodyAsync(EmailPurpose.Activation);
             Assert.Contains("https://portal.example.test/activar?token=", link);
             var emails = scope.ServiceProvider.GetRequiredService<IAccountEmailStore>();
@@ -103,7 +103,7 @@ public sealed partial class SqlServerMigrationTests
             Assert.True(account.EmailConfirmed);
             Assert.Equal(InvitationStatus.Accepted, account.InvitationStatus);
             Assert.Equal(ProvisioningFailure.Conflict, (await provisioning.ResendInvitationAsync(
-                Guid.Parse("40000000-0000-7000-8000-000000000007"), PortalAccount, ct)).Failure);
+                Guid.Parse("40000000-0000-7000-8000-000000000007"), PortalAccount, null, null, ct)).Failure);
         }
 
         // Outbox: a claimed message is leased, and sending clears codes and links from the database.

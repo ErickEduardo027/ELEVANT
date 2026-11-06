@@ -525,6 +525,7 @@ export interface ManagedAirlineData {
   registryCheckedAt?: string | null;
   /** @nullable */
   registryEntityUrl?: string | null;
+  identityLocked: boolean;
 }
 
 export interface AirlineRegistryCheckResult {
@@ -1831,6 +1832,38 @@ export interface EmailDeliveryResponse {
 export interface EmailDeliveriesResponse {
   smtpConfigured: boolean;
   deliveries: EmailDeliveryResponse[];
+}
+
+export interface EmailReferenceResponse {
+  kind: string;
+  /** @nullable */
+  id?: string | null;
+  label: string;
+  /** @nullable */
+  context?: string | null;
+}
+
+export interface EmailOutboxEntryResponse {
+  id: string;
+  recipient: string;
+  purpose: string;
+  status: string;
+  attempts: number;
+  createdAt: string;
+  /** @nullable */
+  sentAt?: string | null;
+  updatedAt: string;
+  /** @nullable */
+  reason?: string | null;
+  reference?: EmailReferenceResponse | null;
+}
+
+export interface EmailOutboxPageResponse {
+  smtpConfigured: boolean;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  entries: EmailOutboxEntryResponse[];
 }
 
 export interface EmployeeAccountRefData {
@@ -3508,6 +3541,22 @@ export interface ImportOccFlightResponse {
   replayed: boolean;
 }
 
+export interface InvoiceEmailDeliveryResponse {
+  recipient: string;
+  status: string;
+  /** @nullable */
+  reason?: string | null;
+  createdAt: string;
+  /** @nullable */
+  sentAt?: string | null;
+}
+
+export interface InvoiceEmailStatusResponse {
+  invoiceId: string;
+  smtpConfigured: boolean;
+  deliveries: InvoiceEmailDeliveryResponse[];
+}
+
 export interface IssueCreditNoteInput {
   requestId: string;
   amount: number;
@@ -3552,6 +3601,11 @@ export interface LegacyRoleData {
   name: string;
   permissions: string[];
   activeUsers: number;
+}
+
+export interface LinkProvisioningAccountInput {
+  email: string;
+  expectedVersion: string;
 }
 
 export interface LocateOccStandRequest {
@@ -4697,6 +4751,8 @@ export interface ProvisionAirlineInput {
   email: string;
   /** @nullable */
   temporaryPassword?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ProvisioningTaskData {
@@ -4707,6 +4763,7 @@ export interface ProvisioningTaskData {
   suggestedEmail: string;
   contractId: string;
   approvedAt: string;
+  version: string;
 }
 
 export interface PublicAirlineData {
@@ -5395,8 +5452,19 @@ export interface RequestUserAccessInput {
   employeeId?: string | null;
 }
 
+export interface ResendInvitationInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface ResendLoginCodeRequest {
   challengeId: string;
+}
+
+export interface ResetClientUserPasswordInput {
+  temporaryPassword: string;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ResetGovernancePasswordRequest {
@@ -6501,6 +6569,12 @@ offset?: number;
 
 export type GetOperationalPresenceParams = {
 operationIds?: string[];
+};
+
+export type ListEmailOutboxParams = {
+status?: string;
+page?: number;
+limit?: number;
 };
 
 export type GetFinancePreinvoiceDisputesParams = {
@@ -7925,6 +7999,11 @@ export const getUpdateManagedAirlineUrl = (id: string,) => {
   return `/api/v1/governance/airlines/${id}`
 }
 
+/**
+ * @summary Saves the profile with the `version` the superadministrator saw. The Idempotency-Key is
+optional while older clients exist (expand). The legal name, codes and verification of an
+airline that already operates with AVIAM are fixed (`airline_identity_locked`, 1-N20).
+ */
 export const updateManagedAirline = async (id: string,
     managedAirlineInput?: ManagedAirlineInput, options?: RequestInit): Promise<ManagedAirlineData> => {
 
@@ -8271,6 +8350,13 @@ export const getProvisionCommercialAirlineUrl = (requestId: string,) => {
   return `/api/v1/governance/provisioning/${requestId}`
 }
 
+/**
+ * @summary Creates the airline's portal account: an emailed invitation by default, a temporary password
+as the explicit alternative. The Idempotency-Key and `expectedVersion` (the request
+version) are optional while older clients exist (expand); a key without the version is
+rejected. An email that already has an account answers `email_has_account` when it can be
+linked instead.
+ */
 export const provisionCommercialAirline = async (requestId: string,
     provisionAirlineInput?: ProvisionAirlineInput, options?: RequestInit): Promise<CommercialAccountResponse> => {
 
@@ -8298,6 +8384,45 @@ const res = await fetch(getProvisionCommercialAirlineUrl(requestId),
 
 
 
+export const getLinkCommercialAirlineAccountUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/v1/governance/provisioning/${requestId}/account-link`
+}
+
+/**
+ * @summary Completes the request with the existing portal account of the email (1-N13): one of the same
+airline, or one without an airline, which joins it. Its credentials do not change.
+ */
+export const linkCommercialAirlineAccount = async (requestId: string,
+    linkProvisioningAccountInput: LinkProvisioningAccountInput, options?: RequestInit): Promise<CommercialAccountResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getLinkCommercialAirlineAccountUrl(requestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(linkProvisioningAccountInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialAccountResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getResendAirlineInvitationUrl = (accountId: string,) => {
 
 
@@ -8307,16 +8432,25 @@ export const getResendAirlineInvitationUrl = (accountId: string,) => {
 }
 
 /**
- * @summary Sends a new activation link to an airline account that has not activated yet (ADR-0022).
+ * @summary Queues a new activation link for an airline account that has not activated yet (ADR-0022); the
+earlier links stop working and their queued emails are discarded. The Idempotency-Key and
+`expectedVersion` (the account version) are optional while older clients exist (expand).
  */
-export const resendAirlineInvitation = async (accountId: string, options?: RequestInit): Promise<CommercialAccountResponse> => {
+export const resendAirlineInvitation = async (accountId: string,
+    resendInvitationInput?: ResendInvitationInput, options?: RequestInit): Promise<CommercialAccountResponse> => {
 
-  const res = await fetch(getResendAirlineInvitationUrl(accountId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResendAirlineInvitationUrl(accountId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resendInvitationInput)
   }
 )
 
@@ -10458,9 +10592,15 @@ export const getResetGovernanceClientUserPasswordUrl = (organizationId: string,
   return `/api/v1/governance/clients/${organizationId}/users/${id}/password-reset`
 }
 
+/**
+ * @summary Sets a temporary password the user must change at the next sign-in. On an invitation that is
+still pending it accepts the invitation, retires its links and discards its queued email (1-N12).
+The Idempotency-Key and `expectedVersion` (the account version) are optional while older
+clients exist (expand); a key without the version is rejected.
+ */
 export const resetGovernanceClientUserPassword = async (organizationId: string,
     id: string,
-    resetGovernancePasswordRequest?: ResetGovernancePasswordRequest, options?: RequestInit): Promise<CommercialIdResponse> => {
+    resetClientUserPasswordInput?: ResetClientUserPasswordInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -10473,7 +10613,7 @@ const res = await fetch(getResetGovernanceClientUserPasswordUrl(organizationId,i
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(resetGovernancePasswordRequest)
+    body: JSON.stringify(resetClientUserPasswordInput)
   }
 )
 
@@ -11570,6 +11710,38 @@ const res = await fetch(getIssueInvoiceFromOperationsUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: IssuedInvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceInvoiceEmailDeliveriesUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/${invoiceId}/email-deliveries`
+}
+
+/**
+ * @summary The «Factura emitida» emails of the invoice and their delivery state (1-N08): queued, sent,
+failed or discarded, or none when the airline has no active portal account nor billing email.
+ */
+export const getFinanceInvoiceEmailDeliveries = async (invoiceId: string, options?: RequestInit): Promise<InvoiceEmailStatusResponse> => {
+
+  const res = await fetch(getGetFinanceInvoiceEmailDeliveriesUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: InvoiceEmailStatusResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -17945,6 +18117,46 @@ export const listEmailDeliveries = async ( options?: RequestInit): Promise<Email
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: EmailDeliveriesResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListEmailOutboxUrl = (params?: ListEmailOutboxParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/email/outbox?${stringifiedParams}` : `/api/v1/governance/email/outbox`
+}
+
+/**
+ * @summary The outbox for the superadmin (1-N22): filter by status (`All`, `Pending`, `Sent`,
+`Failed` or `Discarded`), the normalized reason of each email and the contract,
+invoice, payment, account or request it is about. Bodies are never returned.
+ */
+export const listEmailOutbox = async (params?: ListEmailOutboxParams, options?: RequestInit): Promise<EmailOutboxPageResponse> => {
+
+  const res = await fetch(getListEmailOutboxUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmailOutboxPageResponse = body ? JSON.parse(body) : {}
   return data
 }
 

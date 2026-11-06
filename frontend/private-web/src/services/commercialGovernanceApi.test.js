@@ -29,3 +29,28 @@ it('classifies a missing current session as unauthorized before requesting profi
   await expect(getRampProfiles()).rejects.toMatchObject({ status: 401 });
   expect(fetch).not.toHaveBeenCalled();
 });
+it('provisions through the API client with the intent key and the request version (1-N13)', async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ accountId: '40000000-0000-7000-8000-0000000000e1' }),
+    { status: 201, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetch);
+  const { provisionAirline } = await import('./commercialGovernanceApi');
+  await expect(provisionAirline('70000000-0000-7000-8000-0000000000e1',
+    { email: 'ana@demo.test', temporaryPassword: null, expectedVersion: 'AAAAAAAAB9E=' },
+    'a0000000-0000-7000-8000-0000000000e1')).resolves.toEqual({ accountId: '40000000-0000-7000-8000-0000000000e1' });
+  const [url, init] = fetch.mock.calls[0];
+  expect(String(url)).toBe('https://api.example.test/api/v1/governance/provisioning/70000000-0000-7000-8000-0000000000e1');
+  expect(new Headers(init.headers).get('idempotency-key')).toBe('a0000000-0000-7000-8000-0000000000e1');
+  expect(JSON.parse(init.body)).toEqual({ email: 'ana@demo.test', expectedVersion: 'AAAAAAAAB9E=' });
+});
+
+it('saves an airline update with its Idempotency-Key and creates without one (1-N20)', async () => {
+  const fetch = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ id: 'p-1' }),
+    { status: 200, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetch);
+  const { saveManagedAirline } = await import('./commercialGovernanceApi');
+  await saveManagedAirline('p-1', { displayName: 'Demo' }, 'a0000000-0000-7000-8000-0000000000e2');
+  await saveManagedAirline(null, { displayName: 'Demo' }, 'a0000000-0000-7000-8000-0000000000e3');
+  expect(fetch.mock.calls[0][1].headers['Idempotency-Key']).toBe('a0000000-0000-7000-8000-0000000000e2');
+  expect(fetch.mock.calls[0][1].method).toBe('PUT');
+  expect(fetch.mock.calls[1][1].headers['Idempotency-Key']).toBeUndefined();
+});

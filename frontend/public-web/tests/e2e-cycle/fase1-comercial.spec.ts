@@ -252,12 +252,26 @@ test("Superadmin crea la cuenta del portal y envía la invitación", async ({ pa
   await loginPrivate(page, "superadmin");
   const card = page.locator("form").filter({ hasText: airline.name });
   await expect(card).toBeVisible();
+  // 1-N21: the invitation by email is the default; the temporary password is the explicit alternative.
+  await expect(page.getByText(/Por defecto, ELEVANT deja en cola una invitación por correo/)).toBeVisible();
   await card.getByLabel("Correo de acceso").fill(representative.email);
   const since = Date.now();
   await card.getByRole("button", { name: "Crear y enviar invitación" }).click();
-  await expect(page.getByRole("status")).toContainText("enlace de activación");
+  // ADR-0022, 1-N08: the screen says the invitation is queued, never that it was sent.
+  const notice = page.getByRole("status").filter({ hasText: "enlace de activación" });
+  await expect(notice).toContainText(`La invitación quedó en cola para ${representative.email}`);
+  await expect(notice).not.toContainText("Enviamos");
   await snap(page, "fase1-superadmin-cuenta");
   saveRun({ invitationSince: since });
+
+  // 1-N22: the outbox shows the invitation with the account it is for, in Spanish.
+  const superadmin = await login("superadmin");
+  const outbox = await expectCall<{ entries: Array<{ recipient: string; purpose: string; status: string;
+    reference: { kind: string } | null }> }>(200, superadmin, "GET", "/governance/email/outbox?status=All&page=1&limit=50");
+  const invitation = outbox.data.entries.find(item => item.recipient === representative.email && item.purpose === "Activation");
+  expect(invitation?.reference?.kind).toBe("account");
+  await openModule(page, "Configuración");
+  await expect(page.getByRole("list", { name: "Correos de la bandeja" })).toContainText("Activación de cuenta");
 });
 
 test("El representante activa su cuenta y entra al portal con el código por correo", async ({ page }) => {
@@ -391,6 +405,83 @@ test("Contratos descarta un borrador que no prosperó y el contrato queda cerrad
   const tasks = await expectCall<Array<{ contractId: string }>>(200, await login("superadmin"), "GET",
     "/governance/provisioning");
   expect(tasks.data.some(task => task.contractId === approved.data.id)).toBe(false);
+});
+
+test("Superadmin vincula la cuenta que ya existía y cierra su invitación con una contraseña temporal", async ({ page }) => {
+  const run = loadRun();
+  const name = `E2E Vinculada ${run.runId}`;
+  const email = `e2e.vinculada.${run.runId.toLowerCase()}@e2e-link.example.com`;
+  const contracts = await login("contracts");
+  const superadmin = await login("superadmin");
+  const catalog = await call<{ services: Array<{ id: string }> }>(null, "GET", "/public/commercial-catalog");
+  // An airline that is not listed is verified and approved by API (1-N25), as in the discarded draft above.
+  await expectCall(201, null, "POST", "/public/commercial-requests", {
+    requestId: crypto.randomUUID(), proposedAirline: { name, countryCode: "DO", iataCode: null,
+      icaoCode: `V${pick(letters)}${pick(letters)}`, websiteUrl: "https://e2e-link.example.com" },
+    serviceIds: [catalog.data.services[0]!.id], representativeName: "Lucía Vinculada Prueba",
+    representativeTitle: "Gerente comercial", representativeEmail: email, representativePhone: "809-555-0104",
+    authorityDeclared: true, representativeDocumentType: "NationalId", representativeDocumentNumber: "00112345673" });
+  type InboxRequest = { id: string; version: string };
+  const request = async () => (await expectCall<{ requests: InboxRequest[] }>(200, contracts, "GET",
+    `/contracts/commercial-requests/inbox?status=All&search=${encodeURIComponent(email)}`)).data.requests[0]!;
+  await expectCall(200, contracts, "POST", `/contracts/commercial-requests/${(await request()).id}/representative-confirmation`,
+    { expectedVersion: (await request()).version, note: "Llamada a la central: la aerolínea confirmó a la representante." });
+  for (let attempt = 0; ; attempt += 1) {
+    const current = await request();
+    const verified = await call(contracts, "POST", `/contracts/commercial-requests/${current.id}/airline-verification`, {
+      expectedVersion: current.version, legalName: `${name} S.R.L.`, countryCode: "DO", iataCode: null,
+      icaoCode: `V${pick(letters)}${pick(letters)}`, verificationSourceUrl: "https://e2e-link.example.com/aoc" });
+    if (verified.status === 200) break;
+    // A random ICAO may already be taken by another run's airline.
+    if (attempt >= 4 || (verified.data as { code?: string })?.code !== "airline_profile_conflict")
+      throw new Error(`verification → HTTP ${verified.status} ${JSON.stringify(verified.data)}`);
+  }
+  const stations = await expectCall<Array<{ id: string; code: string }>>(200, contracts, "GET",
+    "/contracts/commercial-requests/stations");
+  await expectCall(200, contracts, "POST", `/contracts/commercial-requests/${(await request()).id}/decision`,
+    { approve: true, stationIds: [stations.data.find(station => station.code === "PUJ")!.id],
+      expectedVersion: (await request()).version });
+
+  // Clientes already invited the representative before the provisioning (1-N13).
+  const clients = await expectCall<Array<{ organizationId: string; name: string }>>(200, superadmin, "GET",
+    "/governance/clients");
+  const organization = clients.data.find(item => item.name.includes("Vinculada") && item.name.includes(run.runId))!;
+  await expectCall(201, superadmin, "POST", `/governance/clients/${organization.organizationId}/users`,
+    { firstName: "Lucía", lastName: "Vinculada", email });
+  const tasks = await expectCall<Array<{ requestId: string; airline: string; version: string }>>(200, superadmin, "GET",
+    "/governance/provisioning");
+  const task = tasks.data.find(item => item.airline === name)!;
+  const refused = await call<{ code?: string }>(superadmin, "POST", `/governance/provisioning/${task.requestId}`,
+    { email, expectedVersion: task.version });
+  expect([refused.status, refused.data.code]).toEqual([409, "email_has_account"]);
+
+  // Superadmin links the existing account instead of creating a second one.
+  await loginPrivate(page, "superadmin");
+  const card = page.locator("form").filter({ hasText: name });
+  await card.getByLabel("Correo de acceso").fill(email);
+  await card.getByRole("button", { name: "Crear y enviar invitación" }).click();
+  await expect(card.getByRole("alert")).toContainText("Puede vincularla");
+  await card.getByRole("button", { name: "Vincular cuenta existente" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "quedó vinculada" })).toBeVisible();
+  await expect(page.locator("form").filter({ hasText: name })).toHaveCount(0);
+  await snap(page, "fase1-superadmin-vincula-cuenta");
+
+  // 1-N12: the invitation is still pending; a temporary password closes it and the user can sign in.
+  await openModule(page, "Usuarios");
+  await openModule(page, "Clientes");
+  await page.getByRole("button", { name: new RegExp(name) }).first().click();
+  const row = page.getByRole("row").filter({ hasText: email });
+  await expect(row).toContainText("Invitación pendiente de activar");
+  await row.getByRole("button", { name: "Asignar contraseña temporal" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("la invitación se da por aceptada");
+  const temporary = `Temporal-${run.runId}-Aa9!x`;
+  await dialog.getByLabel("Nueva contraseña temporal", { exact: true }).fill(temporary);
+  await dialog.getByRole("button", { name: "Asignar contraseña" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "La invitación quedó cerrada" })).toBeVisible();
+  await expect(page.getByRole("row").filter({ hasText: email })).not.toContainText("Invitación pendiente de activar");
+  const session = await call<{ code?: string }>(null, "POST", "/auth/session", { email, password: temporary });
+  expect([session.status, session.data.code]).toEqual([409, "password_change_required"]);
 });
 
 test("Finanzas aprueba las tarifas del contrato", async ({ page }) => {

@@ -29,11 +29,11 @@ public sealed partial class SqlServerMigrationTests
 
         var input = new ManagedAirlineInput("REGISTRY TEST", "Copa Airlines", null, "Centroamérica", "PA", "CM", "CMP",
             null, "https://www.copaair.com/", null, IsVerified: false, IsPublished: false, Version: null);
-        var created = (await store.SaveAsync(superAdmin, null, input, ct)).Airline!;
+        var created = (await store.SaveAsync(superAdmin, null, input, null, ct)).Airline!;
         Assert.Null(created.RegistryStatus);
 
         // Without a check or a manual verification it cannot be published.
-        var refused = await store.SaveAsync(superAdmin, created.Id, input with { IsPublished = true, Version = created.Version }, ct);
+        var refused = await store.SaveAsync(superAdmin, created.Id, input with { IsPublished = true, Version = created.Version }, null, ct);
         Assert.Equal((CatalogMutationFailure.Invalid, "registry_check_required"), (refused.Failure!.Value, refused.Code));
 
         Assert.Equal(CatalogMutationFailure.Forbidden, (await store.RegistryKeyAsync(contracts, created.Id, ct)).Failure);
@@ -49,16 +49,16 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(("Found", "Wikidata", "https://www.wikidata.org/wiki/Q849404"),
             (recorded.RegistryStatus, recorded.RegistrySource, recorded.RegistryEntityUrl));
 
-        var published = (await store.SaveAsync(superAdmin, created.Id, input with { IsPublished = true, Version = recorded.Version }, ct)).Airline!;
+        var published = (await store.SaveAsync(superAdmin, created.Id, input with { IsPublished = true, Version = recorded.Version }, null, ct)).Airline!;
         Assert.True(published.IsPublished);
         var catalog = await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>().GetPublicAsync(ct);
         Assert.Equal("Wikidata", Assert.Single(catalog.Airlines, airline => airline.Id == created.Id).RegistrySource);
 
         // Changing a code makes the check stale: it is cleared and publishing needs a new check.
         var changed = await store.SaveAsync(superAdmin, created.Id, input with { IcaoCode = "CMQ", IsPublished = true,
-            Version = published.Version }, ct);
+            Version = published.Version }, null, ct);
         Assert.Equal("registry_check_required", changed.Code);
-        var unpublished = (await store.SaveAsync(superAdmin, created.Id, input with { IcaoCode = "CMQ", Version = published.Version }, ct)).Airline!;
+        var unpublished = (await store.SaveAsync(superAdmin, created.Id, input with { IcaoCode = "CMQ", Version = published.Version }, null, ct)).Airline!;
         Assert.Null(unpublished.RegistryStatus);
         Assert.Equal(CatalogMutationFailure.Conflict, (await store.RecordRegistryCheckAsync(superAdmin, key, found, ct)).Failure);
 
@@ -67,7 +67,7 @@ public sealed partial class SqlServerMigrationTests
         {
             IcaoCode = "CMQ", LegalName = "Compañía Panameña de Aviación, S.A.", IsVerified = true,
             VerificationSourceUrl = "https://www.copaair.com/es-gs/legal/", IsPublished = true, Version = unpublished.Version,
-        }, ct);
+        }, null, ct);
         Assert.Null(manual.Failure);
         Assert.True(await context.AuditEntries.AnyAsync(entry => entry.Action == "commercial.airline.registry_checked" &&
             entry.EntityPublicId == created.Id, ct));

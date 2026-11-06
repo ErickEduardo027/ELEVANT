@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { BrandMark } from "@/components/marketing/BrandMark";
+import { environmentLabel } from "@/lib/environment-label";
 import {
   type MockSignInField,
   type MockSignInInput,
@@ -85,7 +86,12 @@ export function AuthExperience({
   );
 }
 
+/**
+ * Side panel of /login, /activar and /recuperar. It names an environment only when the deployment
+ * sets NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL (1-N24); otherwise it shows no environment at all.
+ */
 export function CredentialPanel() {
+  const label = environmentLabel();
   return (
     <aside className={styles.credential} aria-labelledby="auth-title">
       <div className={styles.credentialGrid} aria-hidden="true" />
@@ -96,17 +102,17 @@ export function CredentialPanel() {
       </div>
 
       <div className={styles.credentialContent}>
-        <p className={styles.kicker}>Portal de aerolíneas · Development</p>
+        <p className={styles.kicker}>{label ? `Portal de aerolíneas · ${label}` : "Portal de aerolíneas"}</p>
         <h1 id="auth-title">La operación, visible para quien debe verla.</h1>
         <p className={styles.credentialLead}>
-          Consulta las operaciones de tu aerolínea y las estaciones que la API
-          autoriza para tu cuenta.
+          Consulta las operaciones de tu aerolínea en las estaciones autorizadas
+          para tu cuenta.
         </p>
 
         <div className={styles.routeCard}>
           <div className={styles.routeCardTop}>
             <span>Verificación de acceso</span>
-            <strong>API / Development</strong>
+            <strong>Cuenta y código por correo</strong>
           </div>
           <div className={styles.routeCodes}>
             <div>
@@ -132,9 +138,11 @@ export function CredentialPanel() {
         </div>
       </div>
 
-      <footer className={styles.credentialFootnote}>
-        Sin conexión a sistemas de producción
-      </footer>
+      {label && (
+        <footer className={styles.credentialFootnote}>
+          Entorno: {label}
+        </footer>
+      )}
     </aside>
   );
 }
@@ -143,10 +151,10 @@ function signInFailureMessage(reason: AirlineSignInFailure): string {
   switch (reason) {
     case "invalid": return "No se pudo validar la cuenta. Revisa el correo y la contraseña.";
     case "forbidden": return "Esta cuenta no tiene acceso al portal de aerolíneas.";
-    case "context": return "El contexto de esta aerolínea no está disponible en la API.";
+    case "context": return "Los datos de tu aerolínea no están disponibles ahora. Reintenta en unos minutos.";
     case "password-change-required": return "Debes cambiar la contraseña temporal antes de entrar.";
     case "rate-limited": return "Demasiados intentos. Espera un momento antes de reintentar.";
-    case "unavailable": return "No se pudo conectar con la API. Comprueba la conexión y reintenta.";
+    case "unavailable": return "No se pudo conectar con ELEVANT. Comprueba la conexión y reintenta.";
   }
 }
 
@@ -219,7 +227,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
       setChallenge(result.challenge);
       setCode("");
       setResendAvailableAt(Date.now() + 30_000);
-      setFeedback({ kind: "info", message: `Enviamos un código de 6 dígitos a ${result.challenge.emailHint}.` });
+      setFeedback({ kind: "info", message: `Pedimos un código de 6 dígitos para ${result.challenge.emailHint}. Puede tardar unos minutos en llegar; revisa también la carpeta de spam.` });
     } else {
       if (result.reason === "password-change-required") setPasswordChangeRequired(true);
       setFeedback({ kind: "error", message: signInFailureMessage(result.reason) });
@@ -259,7 +267,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
     setChallenge(next);
     setCode("");
     setResendAvailableAt(Date.now() + 30_000);
-    setFeedback({ kind: "info", message: `Enviamos un código nuevo a ${next.emailHint}. El anterior ya no sirve.` });
+    setFeedback({ kind: "info", message: `Pedimos un código nuevo para ${next.emailHint}. El anterior ya no sirve.` });
   };
 
   const secondsLeft = challenge ? Math.max(0, Math.ceil((Date.parse(challenge.expiresAt) - now) / 1000)) : 0;
@@ -278,7 +286,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
       const message = result.reason === "invalid" ? "La contraseña actual no es válida."
         : result.reason === "policy" ? "La nueva contraseña no cumple la política de seguridad."
           : result.reason === "rate-limited" ? "Demasiados intentos. Espera antes de reintentar."
-            : "No se pudo cambiar la contraseña. Reintenta cuando la API esté disponible.";
+            : "No se pudo cambiar la contraseña. Reintenta en unos minutos.";
       setFeedback({ kind: "error", message });
       return;
     }
@@ -301,14 +309,14 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
         <p className={styles.formKicker}>Acceso autorizado</p>
         <h2 id="login-heading">Continúa al portal de tu aerolínea.</h2>
         <p>
-          Utiliza la cuenta emitida para tu aerolínea. El acceso y las estaciones
-          se comprueban con la API de Development.
+          Utiliza la cuenta emitida para tu aerolínea. Al entrar comprobamos tu
+          acceso y las estaciones autorizadas para tu cuenta.
         </p>
       </header>
 
       {challenge && <form className={styles.form} onSubmit={submitCode} noValidate aria-labelledby="code-heading">
-        <h3 id="code-heading">Código enviado a tu correo</h3>
-        <p>Escribe el código de 6 dígitos que enviamos a <strong>{challenge.emailHint}</strong>.</p>
+        <h3 id="code-heading">Código de verificación por correo</h3>
+        <p>Escribe el código de 6 dígitos del correo que llega a <strong>{challenge.emailHint}</strong>.</p>
         <Field id="auth-code" name="code" label="Código de verificación" type="text" value={code}
           autoComplete="one-time-code" inputMode="numeric" maxLength={6}
           onChange={(value) => { setCode(value.replace(/\D/g, "").slice(0, 6)); setFeedback(null); }}
@@ -389,7 +397,7 @@ function SignInPanel({ returnTo }: { returnTo: string }) {
       </form>
 
       {passwordChangeRequired && <form className={styles.form} onSubmit={submitPasswordChange} noValidate>
-        <p>La API solicita reemplazar la contraseña temporal de {input.email}.</p>
+        <p>Antes de entrar debes reemplazar la contraseña temporal de {input.email}.</p>
         <PasswordField id="airline-new-password" name="newPassword" label="Nueva contraseña"
           value={newPassword} autoComplete="new-password" visible={showNewPassword} onVisibilityChange={() => setShowNewPassword((value) => !value)}
           onChange={setNewPassword} onBlur={() => {}} />
