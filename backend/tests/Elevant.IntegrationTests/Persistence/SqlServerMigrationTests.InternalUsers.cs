@@ -64,7 +64,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.NotNull(await catalog.ListAsync(created.Id.Value, cancellationToken));
         Assert.Equal(CatalogMutationFailure.Forbidden, (await catalog.SaveAsync(created.Id.Value, null,
             new ManagedServiceInput("QA-SVC", "Servicio de prueba", "Descripción", "operation", null, null, 1, false,
-                true, null), cancellationToken)).Failure);
+                true, null), null, cancellationToken)).Failure);
         Assert.Null(await closures.ListAsync(created.Id.Value, null, 1, 20, cancellationToken));
 
         // Granting the closures sub-window also grants the screen that contains it, nothing more.

@@ -42,12 +42,21 @@ const FINANCE_COMMAND_CODES = ["package_not_draft", "package_not_published", "pa
   "invalid_billing_unit", "billing_unit_exists", "billing_unit_code_locked", "billing_unit_required", "invalid_tariff",
   "tariff_draft_exists", "tariff_not_found", "tariff_empty", "tariff_start_not_after_current", "invalid_charge",
   "charge_code_exists", "charge_not_found", "invalid_exchange_rate", "exchange_rate_exists", "invalid_finance_data"] as const;
+/**
+ * Catalog of services and closures (phase 1, block D): «Dar de baja» refused while a contract uses the service, the
+ * form that never retires, a closure that keeps the service hidden until it is reopened, the publication rules of a
+ * service, and the closure workflow. A retired service is `service_retired` (CONTRACT_DRAFT_CODES).
+ */
+const CATALOG_CODES = ["service_in_active_contract", "retirement_command_required", "closure_requires_reopen",
+  "service_code_exists", "invalid_service", "media_invalid", "image_required", "description_too_short",
+  "placeholder_name", "invalid_closure", "invalid_closure_query", "closure_pending", "closure_not_pending",
+  "closure_self_decision", "service_not_published", "service_already_public", "no_approved_closure"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
-  (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number];
+  (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
-  ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES];
+  ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

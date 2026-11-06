@@ -64,6 +64,18 @@ import {
   type FinancePackageLifecycleCommand,
 } from "./financePackages";
 import {
+  isManagedService,
+  isServiceClosure,
+  normalizedClosureDecision,
+  normalizedManagedServiceUpdate,
+  normalizedServiceReopen,
+  normalizedServiceRetirement,
+  type DecideServiceClosureCommand,
+  type ReopenServiceCommand,
+  type RetireManagedServiceCommand,
+  type UpdateManagedServiceCommand,
+} from "./catalog";
+import {
   isCommercialIdResponse,
   isCommercialInboxData,
   normalizedAirlineVerification,
@@ -109,6 +121,10 @@ import {
   getCreateContractAmendmentUrl,
   getDiscardFinancePackageUrl,
   getRetireFinancePackageUrl,
+  getUpdateCommercialServiceUrl,
+  getRetireCommercialServiceUrl,
+  getDecideServiceClosureUrl,
+  getReopenServiceUrl,
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
@@ -300,6 +316,8 @@ import {
   type SubmitCommercialRequestResponse,
   type CommercialIdResponse,
   type FinancePackageIdResponse,
+  type ManagedServiceData,
+  type ServiceClosureData,
   type CommercialInboxData,
   type ContractDraftReadinessData,
   type ContractDraftScopeData,
@@ -1188,6 +1206,21 @@ export interface ElevantApiClient {
   /** Finance retires a published package with a reason (1-N27); approved contracts keep it. */
   retireFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<FinancePackageIdResponse>;
+  /**
+   * Contratos edits a catalog service: hides it from the public catalog, shows it or reactivates it, never
+   * retires it (1-N03). Answers the service as stored.
+   */
+  updateManagedService(serviceId: string, command: UpdateManagedServiceCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ManagedServiceData>;
+  /** «Dar de baja» with a reason; refused while a contract in force or in approval uses the service (1-N03). */
+  retireManagedService(serviceId: string, command: RetireManagedServiceCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ManagedServiceData>;
+  /** Contratos approves or denies an OCC closure request, also of a hidden or retired service (1-N11). */
+  decideServiceClosure(closureId: string, command: DecideServiceClosureCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ServiceClosureData>;
+  /** Republishes the service its approved closure hid; a retired service is reactivated first (1-N11). */
+  reopenService(serviceId: string, command: ReopenServiceCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ServiceClosureData>;
   getOccReport(key: OccReportKey, query: OccReportQuery,
     options?: GetHumanResourcesReportOptions): Promise<OccReportPageResponse>;
   exportOccReport(key: OccReportKey, query: OccReportQuery, format: OccReportFormat,
@@ -5300,6 +5333,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return result.data;
   };
 
+  // A catalog or closure command: JSON body, Idempotency-Key and the resource the strict validator accepts.
+  const catalogCommand = async <T>(method: "POST" | "PUT", path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, valid: (value: unknown) => value is T): Promise<T> => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
+    if (result.status !== 200 || !valid(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
   // A Finance package or amendment command: JSON body, Idempotency-Key and a FinancePackageIdResponse.
   const packageCommand = async (path: string, body: unknown, idempotencyKey: string,
     options: GetHumanResourcesReportOptions | undefined, status: 200 | 201, expectedId: string | undefined) => {
@@ -7089,6 +7133,31 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const id = validatedUuid(packageId, "packageId");
       return packageCommand(getRetireFinancePackageUrl(id), normalizedPackageLifecycle(command), idempotencyKey, options,
         200, id);
+    },
+    async updateManagedService(serviceId: string, command: UpdateManagedServiceCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(serviceId, "serviceId");
+      return catalogCommand("PUT", getUpdateCommercialServiceUrl(id), normalizedManagedServiceUpdate(command),
+        idempotencyKey, options, (value): value is ManagedServiceData => isManagedService(value, id));
+    },
+    async retireManagedService(serviceId: string, command: RetireManagedServiceCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(serviceId, "serviceId");
+      return catalogCommand("POST", getRetireCommercialServiceUrl(id), normalizedServiceRetirement(command),
+        idempotencyKey, options, (value): value is ManagedServiceData => isManagedService(value, id));
+    },
+    async decideServiceClosure(closureId: string, command: DecideServiceClosureCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(closureId, "closureId");
+      return catalogCommand("POST", getDecideServiceClosureUrl(id), normalizedClosureDecision(command),
+        idempotencyKey, options, (value): value is ServiceClosureData => isServiceClosure(value, { id }));
+    },
+    async reopenService(serviceId: string, command: ReopenServiceCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      // The reopening answers the closure it reopened, for the service in the route.
+      const id = validatedUuid(serviceId, "serviceId");
+      return catalogCommand("POST", getReopenServiceUrl(id), normalizedServiceReopen(command),
+        idempotencyKey, options, (value): value is ServiceClosureData => isServiceClosure(value, { serviceId: id }));
     },
     async setContractValidity(versionId: string, request: SetContractValidityRequest,
       options?: GetHumanResourcesReportOptions) {

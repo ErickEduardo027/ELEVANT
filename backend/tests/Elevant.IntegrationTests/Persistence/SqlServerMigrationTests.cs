@@ -94,12 +94,12 @@ public sealed partial class SqlServerMigrationTests
         Assert.Contains((await closures.ListAsync(occId, null, 1, 25, cancellationToken))!.Items,
             item => item.Id == requestId);
         Assert.Equal(ServiceClosureFailure.Forbidden, (await closures.DecideAsync(occId,
-            requestId, true, null, pending.Request.Version, cancellationToken)).Failure);
+            requestId, true, null, pending.Request.Version, null, cancellationToken)).Failure);
         Assert.Equal(ServiceClosureFailure.Invalid, (await closures.DecideAsync(contractsId,
-            requestId, false, "corto", pending.Request.Version, cancellationToken)).Failure);
+            requestId, false, "corto", pending.Request.Version, null, cancellationToken)).Failure);
 
         var denied = await closures.DecideAsync(contractsId, requestId, false,
-            "La contingencia se resolverá hoy.", pending.Request.Version, cancellationToken);
+            "La contingencia se resolverá hoy.", pending.Request.Version, null, cancellationToken);
         Assert.Equal("Denied", denied.Request!.Status);
         Assert.Contains((await catalog.GetPublicAsync(cancellationToken)).Services,
             item => item.Id == service.PublicId);
@@ -117,9 +117,9 @@ public sealed partial class SqlServerMigrationTests
         });
         await context.SaveChangesAsync(cancellationToken);
         Assert.Equal(ServiceClosureFailure.Forbidden, (await closures.DecideAsync(occId,
-            approvedRequestId, true, null, second.Version, cancellationToken)).Failure);
+            approvedRequestId, true, null, second.Version, null, cancellationToken)).Failure);
         var approved = await closures.DecideAsync(contractsId, approvedRequestId,
-            true, null, second.Version, cancellationToken);
+            true, null, second.Version, null, cancellationToken);
         Assert.Equal("Approved", approved.Request!.Status);
         Assert.False(approved.Request.IsCurrentlyPublic);
         Assert.DoesNotContain((await catalog.GetPublicAsync(cancellationToken)).Services,
@@ -127,27 +127,29 @@ public sealed partial class SqlServerMigrationTests
         Assert.True((await context.ServiceDefinitions.AsNoTracking().SingleAsync(
             item => item.PublicId == service.PublicId, cancellationToken)).IsActive);
         Assert.Equal(ServiceClosureFailure.Conflict, (await closures.DecideAsync(contractsId,
-            approvedRequestId, false, "La clausura ya se aprobó.", second.Version,
+            approvedRequestId, false, "La clausura ya se aprobó.", second.Version, null,
             cancellationToken)).Failure);
         Assert.Equal(approved.Request, (await closures.RequestAsync(occId, approvedRequestId,
             service.PublicId, reason, cancellationToken)).Request);
-        // Finance no longer edits the catalog; Contracts sees the approved closure as a conflict.
+        // Finance no longer edits the catalog; Contracts is told to republish it from the closure (1-N11).
         Assert.Equal(CatalogMutationFailure.Forbidden, (await management.SaveAsync(
             Guid.Parse("40000000-0000-7000-8000-000000000006"), service.PublicId,
             new ManagedServiceInput(service.Code, service.Name, service.Description!,
                 service.DefaultBillingUnit, service.ImageUrl, service.VideoUrl,
-                service.DisplayOrder, true, true, approved.Request.ServiceVersion),
+                service.DisplayOrder, true, true, approved.Request.ServiceVersion), null,
             cancellationToken)).Failure);
-        Assert.Equal(CatalogMutationFailure.Conflict, (await management.SaveAsync(
+        var republishedByForm = await management.SaveAsync(
             contractsId, service.PublicId,
             new ManagedServiceInput(service.Code, service.Name, service.Description!,
                 service.DefaultBillingUnit, service.ImageUrl, service.VideoUrl,
-                service.DisplayOrder, true, true, approved.Request.ServiceVersion),
-            cancellationToken)).Failure);
+                service.DisplayOrder, true, true, approved.Request.ServiceVersion), null,
+            cancellationToken);
+        Assert.Equal((CatalogMutationFailure.Conflict, "closure_requires_reopen"),
+            (republishedByForm.Failure!.Value, republishedByForm.Code));
         Assert.Equal(ServiceClosureFailure.Invalid, (await closures.ReopenAsync(contractsId,
-            service.PublicId, "corto", approved.Request.ServiceVersion, cancellationToken)).Failure);
+            service.PublicId, "corto", approved.Request.ServiceVersion, null, cancellationToken)).Failure);
         var reopened = await closures.ReopenAsync(contractsId, service.PublicId,
-            "El equipo se reparó y ya está disponible.", approved.Request.ServiceVersion,
+            "El equipo se reparó y ya está disponible.", approved.Request.ServiceVersion, null,
             cancellationToken);
         Assert.True(reopened.Request!.IsCurrentlyPublic);
         Assert.NotNull(reopened.Request.ReopenedAt);
@@ -170,7 +172,7 @@ public sealed partial class SqlServerMigrationTests
             new ManagedServiceInput(service.Code, service.Name,
                 "Descripcion actualizada para OCC.", service.DefaultBillingUnit,
                 service.ImageUrl, service.VideoUrl, service.DisplayOrder, true, true,
-                reopened.Request.ServiceVersion), cancellationToken);
+                reopened.Request.ServiceVersion), null, cancellationToken);
         Assert.NotNull(edited.Service);
         var occKey = await context.Users.Where(item => item.PublicId == occId)
             .Select(item => item.Id).SingleAsync(cancellationToken);
@@ -2060,25 +2062,27 @@ public sealed partial class SqlServerMigrationTests
         var input = new ManagedServiceInput("MEDIA-LINK-PHOTO", "Servicio con foto",
             "Servicio con fotografía real para validar los enlaces", "operación", url, null, 999, false, true, null);
         Assert.Equal(CatalogMutationFailure.Invalid,
-            (await manager.SaveAsync(actor, null, input, cancellationToken)).Failure);
+            (await manager.SaveAsync(actor, null, input, null, cancellationToken)).Failure);
 
-        asset.CreatedAt = DateTimeOffset.UtcNow.AddDays(-5);
-        await context.SaveChangesAsync(cancellationToken);
-        var saved = await manager.SaveAsync(actor, null, input, cancellationToken);
+        // Each catalog command runs in its own transaction and clears the change tracker, so the
+        // asset age is changed with a set-based update rather than through a tracked entity.
+        await context.MediaAssets.Where(item => item.PublicId == assetId).ExecuteUpdateAsync(update =>
+            update.SetProperty(item => item.CreatedAt, DateTimeOffset.UtcNow.AddDays(-5)), cancellationToken);
+        var saved = await manager.SaveAsync(actor, null, input, null, cancellationToken);
         Assert.Null(saved.Failure);
         var media = scope.ServiceProvider.GetRequiredService<ICommercialMediaStore>();
         Assert.Null(await media.GetReadableAsync(assetId, null, cancellationToken));
         Assert.NotNull(await media.GetReadableAsync(assetId, actor, cancellationToken));
 
-        asset.CreatedAt = DateTimeOffset.UtcNow.AddDays(-8);
-        await context.SaveChangesAsync(cancellationToken);
+        await context.MediaAssets.Where(item => item.PublicId == assetId).ExecuteUpdateAsync(update =>
+            update.SetProperty(item => item.CreatedAt, DateTimeOffset.UtcNow.AddDays(-8)), cancellationToken);
         var updated = await manager.SaveAsync(actor, saved.Service!.Id,
-            input with { IsPublic = true, Version = saved.Service.Version }, cancellationToken);
+            input with { IsPublic = true, Version = saved.Service.Version }, null, cancellationToken);
         Assert.Null(updated.Failure);
         Assert.NotNull(await media.GetReadableAsync(assetId, null, cancellationToken));
         Assert.Equal(CatalogMutationFailure.Invalid,
             (await manager.SaveAsync(actor, null,
-                input with { Code = "MEDIA-LINK-NEW", Version = null }, cancellationToken)).Failure);
+                input with { Code = "MEDIA-LINK-NEW", Version = null }, null, cancellationToken)).Failure);
 
         context.MediaAssets.AddRange(Enumerable.Range(0, 100).Select(_ =>
         {
@@ -2803,19 +2807,19 @@ public sealed partial class SqlServerMigrationTests
         var managedCatalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
         // Contracts owns the catalog: Finance cannot create services, a legacy role with «create» can.
         Assert.Equal(CatalogMutationFailure.Forbidden, (await managedCatalog.SaveAsync(FinanceAccount, null,
-            new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética", "operación", null, null, 999, false, true, null), cancellationToken)).Failure);
+            new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética", "operación", null, null, 999, false, true, null), null, cancellationToken)).Failure);
         var createdService = await managedCatalog.SaveAsync(catalogCreator.Id!.Value, null,
             new ManagedServiceInput("TEST-RAMP", "Servicio de prueba", "Descripción sintética",
-                "operación", null, null, 999, false, true, null), cancellationToken);
+                "operación", null, null, 999, false, true, null), null, cancellationToken);
         Assert.Null(createdService.Failure);
         Assert.Equal(CatalogMutationFailure.Forbidden,
             (await managedCatalog.SaveAsync(catalogCreator.Id.Value, createdService.Service!.Id,
                 new ManagedServiceInput("TEST-RAMP", "Edición", "Descripción sintética",
-                    "operación", null, null, 999, false, true, createdService.Service.Version),
+                    "operación", null, null, 999, false, true, createdService.Service.Version), null,
                 cancellationToken)).Failure);
         Assert.Equal(CatalogMutationFailure.Forbidden,
             (await managedCatalog.DeleteAsync(catalogCreator.Id.Value,
-                createdService.Service.Id, createdService.Service.Version, cancellationToken)).Failure);
+                createdService.Service.Id, createdService.Service.Version, null, cancellationToken)).Failure);
         var createdRole = await governance.CreateRoleAsync(superAdminId,
             new SaveGovernanceRoleInput("Revisor comercial", "Lectura de solicitudes",
                 ["commercial.requests.read"], true), cancellationToken);

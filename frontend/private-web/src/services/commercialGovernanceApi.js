@@ -68,14 +68,15 @@ export const getServiceClosures = (status = null, page = 1) => commercialApi(
 export const requestServiceClosure = (requestId, serviceId, reason) => commercialApi('/service-closures', {
   method: 'POST', body: JSON.stringify({ requestId, serviceId, reason }),
 });
-export const decideServiceClosure = (id, approve, reason, version) => commercialApi(
-  `/service-closures/${id}/decision`, {
-    method: 'POST', body: JSON.stringify({ approve, reason, version }),
-  });
-export const reopenService = (serviceId, reason, serviceVersion) => commercialApi(
-  `/service-closures/services/${serviceId}/reopen`, {
-    method: 'POST', body: JSON.stringify({ reason, serviceVersion }),
-  });
+/**
+ * Contratos decides an OCC closure (1-N11), also of a hidden or retired service: `command` is
+ * `{ approve, reason, version }` and travels with its Idempotency-Key.
+ */
+export const decideServiceClosure = (id, command, idempotencyKey) =>
+  contractCall(() => contractClient().decideServiceClosure(id, command, idempotencyKey));
+/** Republishes the service its approved closure hid: `{ reason, serviceVersion }`; a retired service is refused. */
+export const reopenService = (serviceId, command, idempotencyKey) =>
+  contractCall(() => contractClient().reopenService(serviceId, command, idempotencyKey));
 export async function getManagedContracts(page = 1) {
   try {
     return await createPrivateWebApiClient({
@@ -100,12 +101,18 @@ export async function uploadCommercialMedia(purpose, file) {
   return response.json();
 }
 export const commercialMediaUrl = path => path?.startsWith('/api/v1/media/') ? `${origin}${path}` : path;
-export const saveManagedService = (id, values) => commercialApi(id ? `/contracts/catalog/services/${id}` : '/contracts/catalog/services', {
-  method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
+export const createManagedService = values => commercialApi('/contracts/catalog/services', {
+  method: 'POST', body: JSON.stringify(values),
 });
-export const deleteManagedService = (id, version) => commercialApi(`/contracts/catalog/services/${id}?version=${encodeURIComponent(version)}`, {
-  method: 'DELETE',
-});
+/**
+ * The edit form of a service (1-N03): hides it from the public catalog, shows it or reactivates it, with its
+ * Idempotency-Key and the version on screen. It never retires a service.
+ */
+export const updateManagedService = (id, values, idempotencyKey) =>
+  contractCall(() => contractClient().updateManagedService(id, values, idempotencyKey));
+/** «Dar de baja» with a reason: `{ expectedVersion, reason }`; refused while a contract in force uses the service. */
+export const retireManagedService = (id, command, idempotencyKey) =>
+  contractCall(() => contractClient().retireManagedService(id, command, idempotencyKey));
 export const getManagedDrafts = () => commercialApi('/contracts/drafts');
 export const getManagedDraftOverview = () => commercialApi('/contracts/drafts/overview');
 

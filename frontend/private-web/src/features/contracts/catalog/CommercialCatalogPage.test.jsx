@@ -2,12 +2,13 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import CommercialCatalogPage from './CommercialCatalogPage';
-import { getManagedServices, saveManagedService, uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
+import { createManagedService, getManagedServices, retireManagedService, updateManagedService,
+  uploadCommercialMedia } from '../../../services/commercialGovernanceApi';
 
 vi.mock('../../../services/commercialGovernanceApi', () => ({
-  getManagedServices: vi.fn(), saveManagedService: vi.fn(), uploadCommercialMedia: vi.fn(),
+  getManagedServices: vi.fn(), createManagedService: vi.fn(), updateManagedService: vi.fn(),
+  retireManagedService: vi.fn(), uploadCommercialMedia: vi.fn(),
   commercialMediaUrl: path => path,
-  deleteManagedService: vi.fn(),
 }));
 vi.mock('../../../services/financeBookService', () => ({
   listBillingUnits: vi.fn().mockResolvedValue([
@@ -31,6 +32,7 @@ const makeService = number => ({
   version: `version-${number}`,
 });
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const cardNames = () => screen.getAllByRole('article').map(card => card.querySelector('strong').textContent);
 const orderBadges = () => screen.getAllByTitle('Número de orden asignado por el sistema').map(badge => badge.textContent);
 
@@ -132,7 +134,7 @@ it('creates a catalog service with its own code at the end of the order', async 
   services[4].displayOrder = 40;
   const created = { ...makeService(13), name: 'Carga y descarga', code: 'RAMP-CARGO', displayOrder: 41 };
   getManagedServices.mockResolvedValueOnce(services).mockResolvedValueOnce([...services, created]);
-  saveManagedService.mockResolvedValue({ id: created.id });
+  createManagedService.mockResolvedValue({ id: created.id });
 
   render(<CommercialCatalogPage />);
   await screen.findByText('Servicio 1');
@@ -148,7 +150,7 @@ it('creates a catalog service with its own code at the end of the order', async 
   await user.click(screen.getByRole('checkbox', { name: 'Visible al público' }));
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
-  await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith(null, expect.objectContaining({
+  await waitFor(() => expect(createManagedService).toHaveBeenCalledWith(expect.objectContaining({
     code: 'RAMP-CARGO', name: 'Carga y descarga', description: 'Atención de carga',
     // 1-E: the catalog stores the unit code of «Unidades de cobro», not its name.
     billingUnit: 'ton', displayOrder: 41, isPublic: false,
@@ -162,7 +164,7 @@ it('creates a catalog service with its own code at the end of the order', async 
 it('creates a new service with «Otro» as its name and a unit maintained by Finance', async () => {
   const user = userEvent.setup();
   getManagedServices.mockResolvedValue([makeService(1)]);
-  saveManagedService.mockResolvedValue({ id: 'service-2' });
+  createManagedService.mockResolvedValue({ id: 'service-2' });
 
   render(<CommercialCatalogPage />);
   await screen.findByText('Servicio 1');
@@ -176,8 +178,8 @@ it('creates a new service with «Otro» as its name and a unit maintained by Fin
   await user.click(screen.getByRole('checkbox', { name: 'Visible al público' }));
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
-  await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith(null, expect.objectContaining({
-    code: 'SA', name: 'Asistencia especial', billingUnit: 'hour', displayOrder: 2,
+  await waitFor(() => expect(createManagedService).toHaveBeenCalledWith(expect.objectContaining({
+    code: 'SA', name: 'Asistencia especial', billingUnit: 'hour', displayOrder: 2, isActive: true,
   })));
 });
 
@@ -211,7 +213,7 @@ it('blocks duplicates and opens the existing service for editing instead', async
   await pick(user, /Nombre del servicio/, /Remolque de aeronaves/);
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
   expect(screen.getByText('Ya existe un servicio con ese nombre y código.')).toBeInTheDocument();
-  expect(saveManagedService).not.toHaveBeenCalled();
+  expect(createManagedService).not.toHaveBeenCalled();
 
   await user.click(screen.getByRole('button', { name: 'Editar este servicio' }));
   expect(screen.getByRole('dialog', { name: 'Editar servicio' })).toBeInTheDocument();
@@ -246,13 +248,14 @@ it('explains missing and invalid fields without calling the API', async () => {
   await fill(user, screen.getByLabelText(/Código del nuevo servicio/), 'ramp-tow');
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
   expect(screen.getByText('El código RAMP-TOW ya pertenece a «Remolque de aeronaves».')).toBeInTheDocument();
-  expect(saveManagedService).not.toHaveBeenCalled();
+  expect(createManagedService).not.toHaveBeenCalled();
 });
 
 it('shows a clear message when the API rejects a duplicate code', async () => {
   const user = userEvent.setup();
   getManagedServices.mockResolvedValue([]);
-  saveManagedService.mockRejectedValue(Object.assign(new Error('Service changed; reload and retry.'), { status: 409 }));
+  createManagedService.mockRejectedValue(Object.assign(new Error('Service changed; reload and retry.'),
+    { status: 409, code: 'service_code_exists' }));
 
   render(<CommercialCatalogPage />);
   await screen.findByText('No hay servicios en el catálogo.');
@@ -263,7 +266,10 @@ it('shows a clear message when the API rejects a duplicate code', async () => {
   await user.click(screen.getByRole('checkbox', { name: 'Visible al público' }));
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
-  expect(await screen.findByText(/ya existe un servicio con ese código o el catálogo cambió/)).toBeInTheDocument();
+  expect(await screen.findByText('Ya existe un servicio con ese código. Actualice el catálogo y edite el existente.'))
+    .toBeInTheDocument();
+  // The server title is never shown.
+  expect(screen.queryByText(/reload and retry/)).not.toBeInTheDocument();
   expect(screen.getByRole('dialog', { name: 'Nuevo servicio' })).toBeInTheDocument();
 });
 
@@ -275,7 +281,7 @@ it('edits name and billing unit while keeping code and order', async () => {
   getManagedServices.mockResolvedValueOnce(services).mockResolvedValueOnce([
     services[0], { ...services[1], name: 'Remolque' }, services[2],
   ]);
-  saveManagedService.mockResolvedValue({ id: 'service-2' });
+  updateManagedService.mockResolvedValue({ id: 'service-2' });
 
   render(<CommercialCatalogPage />);
   await screen.findByText('Servicio 2');
@@ -289,9 +295,10 @@ it('edits name and billing unit while keeping code and order', async () => {
   await pick(user, /Unidad de cobro/, /Por hora/);
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
-  await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith('service-2', expect.objectContaining({
+  // The edit travels with its Idempotency-Key and the version on screen.
+  await waitFor(() => expect(updateManagedService).toHaveBeenCalledWith('service-2', expect.objectContaining({
     code: 'SERVICE-2', name: 'Remolque', billingUnit: 'hour', displayOrder: 2, version: 'version-2',
-  })));
+  }), expect.stringMatching(UUID)));
   await screen.findByText('Servicio actualizado. El catálogo público se refrescará.');
   expect(cardNames()).toEqual(['Servicio 1', 'Remolque', 'Servicio 3']);
 });
@@ -304,7 +311,7 @@ it('edits a service in a right drawer and uploads its selected image before savi
     displayOrder: 1, isPublic: true, isActive: true, version: 'one' };
   getManagedServices.mockResolvedValue([service]);
   uploadCommercialMedia.mockResolvedValue({ url: '/api/v1/media/00000000-0000-0000-0000-000000000001' });
-  saveManagedService.mockResolvedValue({});
+  updateManagedService.mockResolvedValue({});
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
 
   render(<CommercialCatalogPage />);
@@ -318,10 +325,10 @@ it('edits a service in a right drawer and uploads its selected image before savi
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
   await waitFor(() => expect(uploadCommercialMedia).toHaveBeenCalledWith('service-image', image));
   // A legacy unit name opens as the unit it names and is saved by its code.
-  expect(saveManagedService).toHaveBeenCalledWith('service-1', expect.objectContaining({
+  await waitFor(() => expect(updateManagedService).toHaveBeenCalledWith('service-1', expect.objectContaining({
     code: 'RAMP-CARGO', name: 'Carga y descarga', billingUnit: 'operation', displayOrder: 1,
     imageUrl: '/api/v1/media/00000000-0000-0000-0000-000000000001',
-  }));
+  }), expect.stringMatching(UUID)));
 });
 
 it('keeps closure decisions out of a custom catalog-only workspace', async () => {
@@ -335,7 +342,7 @@ it('shows an illustration for services without a photo and maps server publicati
   const user = userEvent.setup();
   getManagedServices.mockResolvedValue([{ ...makeService(1), code: 'RAMP-CATERING', name: 'Servicio de catering',
     description: 'Comidas y bebidas a bordo para la tripulación y pasajeros', isPublic: false }]);
-  saveManagedService.mockRejectedValue(Object.assign(new Error('Invalid service data.'), { status: 400, code: 'placeholder_name' }));
+  updateManagedService.mockRejectedValue(Object.assign(new Error('Invalid service data.'), { status: 400, code: 'placeholder_name' }));
 
   render(<CommercialCatalogPage />);
   const card = await screen.findByRole('article');
@@ -345,4 +352,169 @@ it('shows an illustration for services without a photo and maps server publicati
   await user.click(screen.getByRole('button', { name: 'Editar' }));
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
   expect(await screen.findByText('Un servicio con nombre o código de prueba no puede publicarse.')).toBeInTheDocument();
+});
+
+const problem = (status, code) => Object.assign(new Error('Service changed; reload and retry.'), { status, code });
+
+it('hides a public service from the public catalog without retiring it', async () => {
+  const user = userEvent.setup();
+  const service = { ...makeService(1), code: 'RAMP-GPU', name: 'Unidad generadora de energía',
+    description: 'Energía eléctrica en tierra para la aeronave.' };
+  getManagedServices.mockResolvedValueOnce([service]).mockResolvedValue([{ ...service, isPublic: false, version: 'v2' }]);
+  updateManagedService.mockResolvedValue({ ...service, isPublic: false });
+
+  render(<CommercialCatalogPage />);
+  const card = await screen.findByRole('article');
+  expect(within(card).getByText('Público')).toBeInTheDocument();
+  await user.click(within(card).getByRole('button', { name: 'Ocultar del catálogo' }));
+  const dialog = screen.getByRole('dialog', { name: 'Ocultar del catálogo público' });
+  expect(dialog).toHaveTextContent('Sigue activo: los contratos que lo incluyen y la operación de OCC no cambian.');
+  await user.click(within(dialog).getByRole('button', { name: 'Ocultar' }));
+
+  await waitFor(() => expect(updateManagedService).toHaveBeenCalledWith(service.id, {
+    code: 'RAMP-GPU', name: 'Unidad generadora de energía', description: 'Energía eléctrica en tierra para la aeronave.',
+    billingUnit: 'operación', imageUrl: null, videoUrl: null, displayOrder: 1, isPublic: false, isActive: true,
+    version: 'version-1',
+  }, expect.stringMatching(UUID)));
+  expect(await screen.findByText(/ya no aparece en el catálogo público\. Sigue activo/)).toBeInTheDocument();
+  expect(within(await screen.findByRole('article')).getByText('Oculto')).toBeInTheDocument();
+  expect(retireManagedService).not.toHaveBeenCalled();
+});
+
+it('retires a service with a reason and offers to hide it when a contract still uses it', async () => {
+  const user = userEvent.setup();
+  const service = { ...makeService(1), name: 'Puente de abordaje' };
+  getManagedServices.mockResolvedValue([service]);
+  retireManagedService.mockRejectedValueOnce(problem(409, 'service_in_active_contract'));
+  updateManagedService.mockResolvedValue({ ...service, isPublic: false });
+
+  render(<CommercialCatalogPage />);
+  await user.click(within(await screen.findByRole('article')).getByRole('button', { name: 'Dar de baja' }));
+  const dialog = screen.getByRole('alertdialog', { name: 'Dar de baja Puente de abordaje' });
+  const confirm = within(dialog).getByRole('button', { name: 'Dar de baja' });
+  expect(confirm).toBeDisabled();
+  await fill(user, within(dialog).getByLabelText('Motivo de la baja'), '  AVIAM deja de operar el puente.  ');
+  await user.click(confirm);
+
+  await waitFor(() => expect(retireManagedService).toHaveBeenCalledWith(service.id,
+    { expectedVersion: 'version-1', reason: 'AVIAM deja de operar el puente.' }, expect.stringMatching(UUID)));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+    'No se puede dar de baja: un contrato vigente o en aprobación incluye este servicio');
+  expect(screen.queryByText(/reload and retry/)).not.toBeInTheDocument();
+  // The way out is to hide it: contracts and the operation keep it.
+  await user.click(within(dialog).getByRole('button', { name: 'Ocultar del catálogo' }));
+  const hide = screen.getByRole('dialog', { name: 'Ocultar del catálogo público' });
+  await user.click(within(hide).getByRole('button', { name: 'Ocultar' }));
+  await waitFor(() => expect(updateManagedService).toHaveBeenCalledWith(service.id,
+    expect.objectContaining({ isPublic: false, isActive: true }), expect.stringMatching(UUID)));
+});
+
+it('retires a service that no contract uses', async () => {
+  const user = userEvent.setup();
+  const service = makeService(1);
+  getManagedServices.mockResolvedValueOnce([service])
+    .mockResolvedValue([{ ...service, isActive: false, isPublic: false, version: 'v2' }]);
+  retireManagedService.mockResolvedValue({ ...service, isActive: false, isPublic: false });
+
+  render(<CommercialCatalogPage />);
+  await user.click(within(await screen.findByRole('article')).getByRole('button', { name: 'Dar de baja' }));
+  const dialog = screen.getByRole('alertdialog');
+  await fill(user, within(dialog).getByLabelText('Motivo de la baja'), 'El servicio dejó de prestarse en AVIAM.');
+  await user.click(within(dialog).getByRole('button', { name: 'Dar de baja' }));
+
+  expect(await screen.findByText(/quedó dado de baja: ya no se ofrece en contratos nuevos ni en la operación/))
+    .toBeInTheDocument();
+  const card = await screen.findByRole('article');
+  expect(within(card).getByText('Dado de baja')).toBeInTheDocument();
+  expect(within(card).queryByRole('button', { name: 'Dar de baja' })).not.toBeInTheDocument();
+  expect(within(card).queryByRole('button', { name: 'Ocultar del catálogo' })).not.toBeInTheDocument();
+});
+
+it('reactivates a retired service and keeps it hidden until it is published', async () => {
+  const user = userEvent.setup();
+  const retired = { ...makeService(1), isActive: false, isPublic: false };
+  getManagedServices.mockResolvedValue([retired]);
+  updateManagedService.mockResolvedValue({ ...retired, isActive: true });
+
+  render(<CommercialCatalogPage />);
+  const card = await screen.findByRole('article');
+  expect(within(card).getByText('Dado de baja')).toBeInTheDocument();
+  await user.click(within(card).getByRole('button', { name: 'Reactivar' }));
+  const dialog = screen.getByRole('dialog', { name: 'Reactivar servicio' });
+  expect(dialog).toHaveTextContent('Seguirá oculto del catálogo público hasta que lo publique desde «Editar».');
+  await user.click(within(dialog).getByRole('button', { name: 'Reactivar' }));
+  await waitFor(() => expect(updateManagedService).toHaveBeenCalledWith(retired.id,
+    expect.objectContaining({ isActive: true, isPublic: false, version: 'version-1' }), expect.stringMatching(UUID)));
+});
+
+it('keeps the key of an uncertain command and retries with it', async () => {
+  const user = userEvent.setup();
+  const service = makeService(1);
+  getManagedServices.mockResolvedValue([service]);
+  updateManagedService.mockRejectedValueOnce(new Error('No hay conexión con ELEVANT. Intente de nuevo.'))
+    .mockResolvedValue({ ...service, isPublic: false });
+
+  render(<CommercialCatalogPage />);
+  await user.click(within(await screen.findByRole('article')).getByRole('button', { name: 'Ocultar del catálogo' }));
+  const dialog = screen.getByRole('dialog', { name: 'Ocultar del catálogo público' });
+  await user.click(within(dialog).getByRole('button', { name: 'Ocultar' }));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('Revise la conexión e intente de nuevo.');
+  await user.click(within(dialog).getByRole('button', { name: 'Ocultar' }));
+  await waitFor(() => expect(updateManagedService).toHaveBeenCalledTimes(2));
+  const [first, second] = updateManagedService.mock.calls;
+  expect(second[2]).toBe(first[2]);
+});
+
+it('never offers to deactivate from the form and explains a closure that keeps the service hidden', async () => {
+  const user = userEvent.setup();
+  const hidden = { ...makeService(1), isPublic: false, imageUrl: '/assets/services/ground-power.webp',
+    description: 'Energía eléctrica en tierra para la aeronave.' };
+  getManagedServices.mockResolvedValue([hidden]);
+  updateManagedService.mockRejectedValue(problem(409, 'closure_requires_reopen'));
+
+  render(<CommercialCatalogPage />);
+  await user.click(await screen.findByRole('button', { name: 'Editar' }));
+  expect(screen.queryByRole('checkbox', { name: 'Activo' })).not.toBeInTheDocument();
+  await user.click(screen.getByRole('checkbox', { name: 'Visible al público' }));
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+  expect(await screen.findByText('Una clausura aprobada mantiene oculto este servicio. Republíquelo desde «Solicitudes de clausura» indicando el motivo.'))
+    .toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Editar servicio' })).toBeInTheDocument();
+});
+
+it('does not publish a retired service from its form', async () => {
+  const user = userEvent.setup();
+  // A legacy row may still say «visible» while it is retired.
+  const retired = { ...makeService(1), isActive: false, isPublic: true };
+  getManagedServices.mockResolvedValue([retired]);
+  updateManagedService.mockResolvedValue(retired);
+
+  render(<CommercialCatalogPage />);
+  await user.click(await screen.findByRole('button', { name: 'Editar' }));
+  expect(screen.getByRole('note')).toHaveTextContent('Este servicio está dado de baja');
+  const visible = screen.getByRole('checkbox', { name: 'Visible al público' });
+  expect(visible).toBeDisabled();
+  expect(visible).not.toBeChecked();
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+  await waitFor(() => expect(updateManagedService).toHaveBeenCalledWith(retired.id,
+    expect.objectContaining({ isActive: false, isPublic: false }), expect.stringMatching(UUID)));
+});
+
+it('shows the unauthorized and recoverable-error states of the catalog', async () => {
+  const user = userEvent.setup();
+  getManagedServices.mockRejectedValueOnce(problem(403)).mockRejectedValueOnce(problem(500))
+    .mockResolvedValue([makeService(1)]);
+
+  const { unmount } = render(<CommercialCatalogPage />);
+  expect(await screen.findByText('No tiene permiso para ver el catálogo de servicios.')).toBeInTheDocument();
+  expect(screen.queryByText('No hay servicios en el catálogo.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Crear servicio' })).not.toBeInTheDocument();
+  unmount();
+
+  render(<CommercialCatalogPage />);
+  expect(await screen.findByText('No se pudo completar la acción. Revise la conexión e intente de nuevo.')).toBeInTheDocument();
+  expect(screen.queryByText(/reload and retry/)).not.toBeInTheDocument();
+  expect(screen.queryByText('No hay servicios en el catálogo.')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByText('Servicio 1')).toBeInTheDocument();
 });

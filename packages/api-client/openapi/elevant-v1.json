@@ -3639,6 +3639,26 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3653,12 +3673,21 @@
         "tags": [
           "CommercialCatalogManagement"
         ],
+        "summary": "Edits the service, hides it from or shows it in the public catalog, or reactivates a retired one;\nit never retires (`retirement_command_required`). The Idempotency-Key is optional while older\nclients exist (expand); `version` is the rowversion on screen.",
         "operationId": "UpdateCommercialService",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -3706,6 +3735,46 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3718,6 +3787,7 @@
         "tags": [
           "CommercialCatalogManagement"
         ],
+        "summary": "Deprecated alias of the retirement without a reason; the same checks apply.",
         "operationId": "DeleteCommercialService",
         "parameters": [
           {
@@ -3735,6 +3805,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -3744,6 +3822,137 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ManagedServiceData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/catalog/services/{id}/retirement": {
+      "post": {
+        "tags": [
+          "CommercialCatalogManagement"
+        ],
+        "summary": "«Dar de baja» (1-N03): the service leaves the public catalog, new contracts and the operation. It is\nrefused with `service_in_active_contract` while a contract in force or in approval uses it, as a\nrate or inside a package. The Idempotency-Key and `expectedVersion` are required.",
+        "operationId": "RetireCommercialService",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RetireServiceInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedServiceData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -29288,6 +29497,26 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -29302,12 +29531,21 @@
         "tags": [
           "ServiceClosures"
         ],
+        "summary": "Approves or denies a pending request. The Idempotency-Key is optional while older clients exist\n(expand); `version` is the request rowversion on screen.",
         "operationId": "DecideServiceClosure",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -29355,6 +29593,46 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -29369,12 +29647,21 @@
         "tags": [
           "ServiceClosures"
         ],
+        "summary": "Republishes a service its approved closure hid, with a reason; a retired service answers\n`service_retired` until it is reactivated. The Idempotency-Key is optional while older\nclients exist (expand); `serviceVersion` is the service rowversion on screen.",
         "operationId": "ReopenService",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -29419,6 +29706,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ServiceClosureData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -35273,8 +35600,7 @@
       },
       "DecideServiceClosureRequest": {
         "required": [
-          "approve",
-          "version"
+          "approve"
         ],
         "type": "object",
         "properties": {
@@ -35286,7 +35612,8 @@
             "nullable": true
           },
           "version": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -48777,17 +49104,15 @@
         "additionalProperties": false
       },
       "ReopenServiceRequest": {
-        "required": [
-          "reason",
-          "serviceVersion"
-        ],
         "type": "object",
         "properties": {
           "reason": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "serviceVersion": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -49126,6 +49451,20 @@
           },
           "replayed": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RetireServiceInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -49680,6 +50019,7 @@
         "required": [
           "id",
           "isCurrentlyPublic",
+          "isServiceActive",
           "reason",
           "requestedAt",
           "requestedBy",
@@ -49740,6 +50080,9 @@
             "nullable": true
           },
           "isCurrentlyPublic": {
+            "type": "boolean"
+          },
+          "isServiceActive": {
             "type": "boolean"
           },
           "serviceVersion": {

@@ -6,6 +6,7 @@ export * from "./operationalClose";
 export * from "./commercialRequests";
 export * from "./contractDrafts";
 export * from "./financePackages";
+export * from "./catalog";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -175,6 +176,8 @@ export {
   type SubmitCommercialRequestResponse,
   type ProposedAirlineRequest,
   type CommercialIdResponse,
+  type ManagedServiceData,
+  type ServiceClosureData,
   type CommercialInboxData,
   type CommercialInboxCountsData,
   type CommercialInboxRequestData,

@@ -1673,7 +1673,8 @@ export interface DecideServiceClosureRequest {
   approve: boolean;
   /** @nullable */
   reason?: string | null;
-  version: string;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface DecideUserAccessInput {
@@ -5328,8 +5329,10 @@ export interface RemoveOccReviewChargeRequest {
 }
 
 export interface ReopenServiceRequest {
-  reason: string;
-  serviceVersion: string;
+  /** @nullable */
+  reason?: string | null;
+  /** @nullable */
+  serviceVersion?: string | null;
 }
 
 export interface ReplyContractDraftInput {
@@ -5417,6 +5420,13 @@ export interface ResolvePreinvoiceDisputeResponse {
   preinvoiceId: string;
   status: string;
   replayed: boolean;
+}
+
+export interface RetireServiceInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface ReviewAirlinePermitInput {
@@ -5594,6 +5604,7 @@ export interface ServiceClosureData {
   /** @nullable */
   reopenReason?: string | null;
   isCurrentlyPublic: boolean;
+  isServiceActive: boolean;
   serviceVersion: string;
   version: string;
 }
@@ -8048,6 +8059,11 @@ export const getUpdateCommercialServiceUrl = (id: string,) => {
   return `/api/v1/contracts/catalog/services/${id}`
 }
 
+/**
+ * @summary Edits the service, hides it from or shows it in the public catalog, or reactivates a retired one;
+it never retires (`retirement_command_required`). The Idempotency-Key is optional while older
+clients exist (expand); `version` is the rowversion on screen.
+ */
 export const updateCommercialService = async (id: string,
     managedServiceInput?: ManagedServiceInput, options?: RequestInit): Promise<ManagedServiceData> => {
 
@@ -8091,6 +8107,10 @@ export const getDeleteCommercialServiceUrl = (id: string,
   return stringifiedParams.length > 0 ? `/api/v1/contracts/catalog/services/${id}?${stringifiedParams}` : `/api/v1/contracts/catalog/services/${id}`
 }
 
+/**
+ * @deprecated
+ * @summary Deprecated alias of the retirement without a reason; the same checks apply.
+ */
 export const deleteCommercialService = async (id: string,
     params?: DeleteCommercialServiceParams, options?: RequestInit): Promise<ManagedServiceData> => {
 
@@ -8100,6 +8120,46 @@ export const deleteCommercialService = async (id: string,
     method: 'DELETE'
 
 
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedServiceData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRetireCommercialServiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/catalog/services/${id}/retirement`
+}
+
+/**
+ * @summary «Dar de baja» (1-N03): the service leaves the public catalog, new contracts and the operation. It is
+refused with `service_in_active_contract` while a contract in force or in approval uses it, as a
+rate or inside a package. The Idempotency-Key and `expectedVersion` are required.
+ */
+export const retireCommercialService = async (id: string,
+    retireServiceInput: RetireServiceInput, options?: RequestInit): Promise<ManagedServiceData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRetireCommercialServiceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(retireServiceInput)
   }
 )
 
@@ -19031,6 +19091,10 @@ export const getDecideServiceClosureUrl = (id: string,) => {
   return `/api/v1/service-closures/${id}/decision`
 }
 
+/**
+ * @summary Approves or denies a pending request. The Idempotency-Key is optional while older clients exist
+(expand); `version` is the request rowversion on screen.
+ */
 export const decideServiceClosure = async (id: string,
     decideServiceClosureRequest?: DecideServiceClosureRequest, options?: RequestInit): Promise<ServiceClosureData> => {
 
@@ -19066,6 +19130,11 @@ export const getReopenServiceUrl = (id: string,) => {
   return `/api/v1/service-closures/services/${id}/reopen`
 }
 
+/**
+ * @summary Republishes a service its approved closure hid, with a reason; a retired service answers
+`service_retired` until it is reactivated. The Idempotency-Key is optional while older
+clients exist (expand); `serviceVersion` is the service rowversion on screen.
+ */
 export const reopenService = async (id: string,
     reopenServiceRequest?: ReopenServiceRequest, options?: RequestInit): Promise<ServiceClosureData> => {
 

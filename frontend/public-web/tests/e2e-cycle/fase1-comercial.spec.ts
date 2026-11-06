@@ -418,4 +418,74 @@ test("Finanzas aprueba las tarifas del contrato", async ({ page }) => {
   await snap(page, "fase1-finanzas-aprobado");
 });
 
+test("Contratos no da de baja un servicio contratado; da de baja y reactiva uno sin contratos", async ({ page }) => {
+  const run = loadRun();
+  const contracts = await login("contracts");
+  type Service = { id: string; code: string; name: string; description: string; billingUnit: string;
+    imageUrl?: string | null; videoUrl?: string | null; displayOrder: number; isPublic: boolean; isActive: boolean;
+    version: string };
+  const services = async () => (await expectCall<Service[]>(200, contracts, "GET", "/contracts/catalog/services")).data;
+  const form = (service: Service, change: Partial<Service> = {}) => ({ code: service.code, name: service.name,
+    description: service.description, billingUnit: service.billingUnit, imageUrl: service.imageUrl ?? null,
+    videoUrl: service.videoUrl ?? null, displayOrder: service.displayOrder, isPublic: service.isPublic,
+    isActive: service.isActive, version: service.version, ...change });
+
+  // 1-N03: the run's contract, with the prices Finance approved, keeps its services: none can be retired.
+  type RunContract = { approvedVersions?: Array<{ rates: Array<{ serviceCode: string }> }> };
+  const contractedCode = (run.contract as RunContract).approvedVersions?.[0]?.rates[0]?.serviceCode;
+  expect(contractedCode, "the run's approved contract has a rate").toBeTruthy();
+  const contracted = (await services()).find(item => item.code === contractedCode)!;
+  const refused = await call<{ code?: string }>(contracts, "POST",
+    `/contracts/catalog/services/${contracted.id}/retirement`,
+    { expectedVersion: contracted.version, reason: `Corrida E2E ${run.runId}: un servicio contratado no se da de baja.` });
+  if (refused.status === 200) {
+    // Never leave a contracted service retired for the next phases: put it back before failing.
+    const retired = (await services()).find(item => item.id === contracted.id)!;
+    const active = await call<Service>(contracts, "PUT", `/contracts/catalog/services/${contracted.id}`,
+      form(retired, { isActive: true, isPublic: false }));
+    if (contracted.isPublic && active.status === 200)
+      await call(contracts, "PUT", `/contracts/catalog/services/${contracted.id}`, form(active.data, { isPublic: true }));
+  }
+  expect([refused.status, refused.data?.code]).toEqual([409, "service_in_active_contract"]);
+
+  // A service no contract uses: Contratos retires it from the screen with a reason, then reactivates it.
+  const name = "Servicio E2E de catálogo";
+  let synthetic = (await services()).find(item => item.code === "E2E-CATALOGO");
+  if (!synthetic) {
+    const highest = Math.max(0, ...(await services()).map(item => item.displayOrder));
+    synthetic = (await expectCall<Service>(201, contracts, "POST", "/contracts/catalog/services", {
+      code: "E2E-CATALOGO", name, description: "Servicio sintético de la corrida E2E del catálogo comercial.",
+      billingUnit: "operation", imageUrl: null, videoUrl: null, displayOrder: Math.min(10_000, highest + 1),
+      isPublic: false, isActive: true, version: null })).data;
+  } else if (!synthetic.isActive) {
+    // An earlier run stopped halfway: start again from an active, hidden service.
+    await expectCall(200, contracts, "PUT", `/contracts/catalog/services/${synthetic.id}`,
+      form(synthetic, { isActive: true, isPublic: false }));
+  }
+
+  await loginPrivate(page, "contracts");
+  await openModule(page, /^Servicios$/);
+  await expect(page.getByText("Cargando servicios…")).toBeHidden();
+  const card = page.getByRole("article").filter({ hasText: name });
+  const next = page.getByRole("navigation", { name: "Paginación de servicios" }).getByRole("button", { name: "Siguiente" });
+  while (!await card.isVisible() && await next.isEnabled()) await next.click();
+  await expect(card).toBeVisible();
+  await card.getByRole("button", { name: "Dar de baja" }).click();
+  const dialog = page.getByRole("alertdialog", { name: `Dar de baja ${name}` });
+  await expect(dialog.getByRole("button", { name: "Dar de baja" })).toBeDisabled();
+  await dialog.getByLabel("Motivo de la baja").fill(`Corrida E2E ${run.runId}: el servicio sintético deja de ofrecerse.`);
+  await dialog.getByRole("button", { name: "Dar de baja" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "quedó dado de baja" })).toBeVisible();
+  await expect(card.getByText("Dado de baja", { exact: true })).toBeVisible();
+  await snap(page, "fase1-contratos-servicio-baja");
+
+  // 1-N11: a retired service is reactivated, still hidden, before anyone can republish it.
+  await card.getByRole("button", { name: "Reactivar" }).click();
+  await page.getByRole("dialog", { name: "Reactivar servicio" }).getByRole("button", { name: "Reactivar" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "está activo otra vez" })).toBeVisible();
+  await expect(card.getByText("Oculto", { exact: true })).toBeVisible();
+  const reactivated = (await services()).find(item => item.code === "E2E-CATALOGO")!;
+  expect([reactivated.isActive, reactivated.isPublic]).toEqual([true, false]);
+});
+
 // Hueco 1-C (enmienda) needs an active contract, so it runs at the end of fase 2.

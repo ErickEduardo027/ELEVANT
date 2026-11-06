@@ -105,7 +105,7 @@ public static class DepartmentPermissionCatalog
                     Other("verify", "Verificar aerolínea y representante"), Other("approve", "Aprobar"),
                     Other("reject", "Rechazar"), Other("cancel", "Cancelar solicitudes")),
                 Module("contracts", "catalog", "Servicios", "Oferta", null,
-                    Read(), Create(), Update(), Delete("Retirar")),
+                    Read(), Create(), Update(), Delete("Dar de baja")),
                 Module("contracts", "service_closures", "Solicitudes de clausura", "Oferta", "catalog",
                     Read(), Other("decide", "Aprobar o denegar"), Other("reopen", "Republicar")),
                 Module("contracts", "reports", "Reportes", "Análisis", null, Read()),
