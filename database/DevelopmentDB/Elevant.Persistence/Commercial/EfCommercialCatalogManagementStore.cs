@@ -4,6 +4,7 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Finance;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -20,9 +21,10 @@ internal sealed class EfCommercialCatalogManagementStore(
     {
         if (!await permissions.HasAnyAsync(actorId, CatalogReaders, cancellationToken))
             return null;
+        var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
         return (await context.ServiceDefinitions.AsNoTracking()
             .OrderBy(service => service.DisplayOrder).ThenBy(service => service.Name)
-            .ToArrayAsync(cancellationToken)).Select(Map).ToArray();
+            .ToArrayAsync(cancellationToken)).Select(service => Map(service, units)).ToArray();
     }
 
     public async Task<CatalogMutationResult> SaveAsync(Guid actorId, Guid? serviceId,
@@ -57,7 +59,8 @@ internal sealed class EfCommercialCatalogManagementStore(
                     item.ReopenedAt == null, cancellationToken))
                 return CatalogMutationResult.Failed(CatalogMutationFailure.Conflict);
         }
-        if (!await ValidBillingUnitAsync(input.BillingUnit, service.DefaultBillingUnit, cancellationToken))
+        var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+        if (BillingUnit(input.BillingUnit, service.DefaultBillingUnit, units) is not { } billingUnit)
             return CatalogMutationResult.Failed(CatalogMutationFailure.Invalid, "billing_unit_unknown");
         if (input.IsPublic && input.IsActive && CommercialCatalogPublication.Problem(input.Code, input.Name,
                 input.Description, input.ImageUrl) is { } problem)
@@ -72,7 +75,7 @@ internal sealed class EfCommercialCatalogManagementStore(
         service.Code = input.Code.Trim().ToUpperInvariant();
         service.Name = input.Name.Trim();
         service.Description = input.Description.Trim();
-        service.DefaultBillingUnit = input.BillingUnit.Trim();
+        service.DefaultBillingUnit = billingUnit;
         service.ImageUrl = EmptyToNull(input.ImageUrl);
         service.VideoUrl = EmptyToNull(input.VideoUrl);
         service.DisplayOrder = input.DisplayOrder;
@@ -91,7 +94,7 @@ internal sealed class EfCommercialCatalogManagementStore(
                 new AuditFieldChangeData("service.active", serviceId is null ? null : beforeActive.ToString(), service.IsActive.ToString()));
             await NotifyInternalAsync(service.PublicId, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
-            return CatalogMutationResult.Success(Map(service));
+            return CatalogMutationResult.Success(Map(service, units));
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -126,7 +129,7 @@ internal sealed class EfCommercialCatalogManagementStore(
                 new AuditFieldChangeData("service.public", true.ToString(), false.ToString()));
             await NotifyInternalAsync(service.PublicId, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
-            return CatalogMutationResult.Success(Map(service));
+            return CatalogMutationResult.Success(Map(service, await BillingUnitCodes.LoadAsync(context, cancellationToken)));
         }
         catch (DbUpdateConcurrencyException)
         {
@@ -137,21 +140,22 @@ internal sealed class EfCommercialCatalogManagementStore(
     /// <summary>Contracts manages the catalog; Finance reads it to price the services.</summary>
     internal static readonly string[] CatalogReaders = ["contracts.catalog.read", "finance.tariffs.read"];
 
-    /// <summary>A new or changed unit must be an active billing unit; an unchanged legacy text is kept.</summary>
-    private async Task<bool> ValidBillingUnitAsync(string? requested, string? current,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// The unit code to store (1-E): the active unit the text names, by code or by name; an unchanged
+    /// legacy text that names no active unit is kept as it is. Null when a new or changed unit is unknown.
+    /// </summary>
+    private static string? BillingUnit(string? requested, string? current, BillingUnitCodes units)
     {
         var unit = requested?.Trim();
-        if (string.IsNullOrEmpty(unit)) return false;
-        if (current is not null && string.Equals(unit, current.Trim(), StringComparison.Ordinal)) return true;
-        var names = await context.BillingUnits.AsNoTracking().Where(item => item.IsActive)
-            .Select(item => item.Name).ToArrayAsync(cancellationToken);
-        return names.Any(name => string.Equals(name.Trim(), unit, StringComparison.CurrentCultureIgnoreCase));
+        if (string.IsNullOrEmpty(unit)) return null;
+        return units.Resolve(unit) ??
+            (current is not null && string.Equals(unit, current.Trim(), StringComparison.Ordinal) ? current.Trim() : null);
     }
 
-    private static ManagedServiceData Map(ServiceDefinition item) => new(
+    /// <summary>The unit is read as its code; a legacy name («operación») becomes the code it names.</summary>
+    private static ManagedServiceData Map(ServiceDefinition item, BillingUnitCodes units) => new(
         item.PublicId, item.Code, item.Name, item.Description ?? string.Empty,
-        item.DefaultBillingUnit, CommercialServiceMediaDefaults.Resolve(item.Code, item.ImageUrl), item.VideoUrl, item.DisplayOrder,
+        units.Normalize(item.DefaultBillingUnit), CommercialServiceMediaDefaults.Resolve(item.Code, item.ImageUrl), item.VideoUrl, item.DisplayOrder,
         item.IsPublic, item.IsActive, Convert.ToBase64String(item.RowVersion));
 
     private async Task NotifyInternalAsync(Guid serviceId, CancellationToken cancellationToken)

@@ -44,11 +44,10 @@ test("Finanzas publica la tarifa base de los servicios del catálogo público", 
       const option = add.locator("option").filter({ hasText: service.name }).first();
       if (await option.count()) await add.selectOption({ value: await option.getAttribute("value") ?? "" });
     }
-    // Hueco 1-E: the seeded catalog services carry the text «operación» instead of a billing unit code,
-    // and the tariff page would send it as is. The run picks the real unit until it is fixed.
+    // 1-E: every proposed unit is an active unit code, also for a service whose catalog unit is a legacy name.
     const units = page.getByLabel(/^Unidad de /);
     for (let index = 0; index < await units.count(); index += 1)
-      if (await units.nth(index).inputValue() === "operación") await units.nth(index).selectOption("operation");
+      expect(await units.nth(index).inputValue()).not.toBe("operación");
     const prices = page.getByLabel(/^Precio de /);
     for (let index = 0; index < await prices.count(); index += 1)
       if (["", "0"].includes(await prices.nth(index).inputValue())) await prices.nth(index).fill("125");
@@ -401,16 +400,22 @@ test("Finanzas aprueba las tarifas del contrato", async ({ page }) => {
   await openModule(page, "Aprobación de contratos");
   await page.getByRole("button", { name: new RegExp(airline.name) }).first().click();
   await snap(page, "fase1-finanzas-revision");
-  await page.getByRole("button", { name: "Aprobar y activar" }).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Aprobar" }).click();
+  // 1-F: Finance approves the prices; the modal says what still has to happen before the contract activates.
+  await page.getByRole("button", { name: "Aprobar precios" }).click();
+  const dialog = page.getByRole("dialog", { name: "Aprobar precios" });
+  await expect(dialog.getByText(/firman la aerolínea y AVIAM/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Aprobar precios" }).click();
   await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.getByRole("status").filter({ hasText: "Precios aprobados" })).toBeVisible();
   const token = await login("contracts");
-  const contracts = await call<{ contracts: Array<{ airline: string; id: string; versionId?: string }> }>(token, "GET",
-    "/contracts/agreements?page=1&limit=50");
+  const contracts = await call<{ contracts: Array<{ airline: string; id: string; status: string; versionId?: string }> }>(token,
+    "GET", "/contracts/agreements?page=1&limit=50");
   const contract = contracts.data.contracts?.find(item => item.airline === airline.name);
   expect(contract, "the approved contract is listed for Contratos").toBeTruthy();
+  // The approval does not activate it: the validity, both signatures and the permit come in fase 2.
+  expect(contract?.status).toBe("Draft");
   saveRun({ contract });
   await snap(page, "fase1-finanzas-aprobado");
 });
 
-test.fixme("hueco 1-C · Contratos crea una enmienda que Finanzas puede aprobar", async () => {});
+// Hueco 1-C (enmienda) needs an active contract, so it runs at the end of fase 2.

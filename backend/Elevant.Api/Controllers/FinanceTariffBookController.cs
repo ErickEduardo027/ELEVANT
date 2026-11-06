@@ -199,6 +199,10 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
         return result is null ? Forbid() : Ok(result);
     }
 
+    /// <summary>
+    /// Billing units, tariffs, charges and exchange rates answer every failure with a stable code
+    /// (1-E); each kind of failure has a default code, so the code is never missing.
+    /// </summary>
     private async Task<IActionResult> MutateAsync(Func<Guid, Task<FinanceCatalogResult>> command,
         int successStatus = StatusCodes.Status200OK)
     {
@@ -208,9 +212,11 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
         {
             null => StatusCode(successStatus, new FinanceIdResponse(result.Id!.Value)),
             FinanceCatalogFailure.Forbidden => Forbid(),
-            FinanceCatalogFailure.NotFound => Problem(statusCode: 404, title: "Finance record not found."),
-            FinanceCatalogFailure.Invalid => Problem(statusCode: 400, title: "Invalid finance data."),
-            FinanceCatalogFailure.Conflict => Problem(statusCode: 409, title: "Finance record conflicts with current state."),
+            FinanceCatalogFailure.NotFound => Coded(404, "El registro de Finanzas ya no existe.", result.Code ?? "not_found"),
+            FinanceCatalogFailure.Invalid => Coded(400, "Los datos de Finanzas no son válidos.",
+                result.Code ?? "invalid_finance_data"),
+            FinanceCatalogFailure.Conflict => Coded(409, "El registro de Finanzas cambió o no admite el cambio.",
+                result.Code ?? "version_conflict"),
             _ => throw new InvalidOperationException(),
         };
     }

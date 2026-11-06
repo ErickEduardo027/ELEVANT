@@ -1410,6 +1410,11 @@ export interface CreateClientUserInput {
   temporaryPassword?: string | null;
 }
 
+export interface CreateContractAmendmentRequest {
+  expectedStatus: string;
+  validFrom: string;
+}
+
 export interface CreateDepartmentAccountInput {
   /** @nullable */
   firstName?: string | null;
@@ -2387,6 +2392,11 @@ export interface FinancePackageComponentResponse {
 
 export interface FinancePackageIdResponse {
   id: string;
+}
+
+export interface FinancePackageLifecycleRequest {
+  expectedVersion: string;
+  reason: string;
 }
 
 export interface FinancePackageResponse {
@@ -11860,6 +11870,84 @@ const res = await fetch(getPublishFinancePackageUrl(id),
 
 
 
+export const getDiscardFinancePackageUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/packages/${id}/discard`
+}
+
+/**
+ * @summary Finance discards a package draft with a reason (1-N27, `finance.packages.delete`); the draft is
+kept as Discarded. Idempotency-Key and the expected version are required.
+ */
+export const discardFinancePackage = async (id: string,
+    financePackageLifecycleRequest: FinancePackageLifecycleRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDiscardFinancePackageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePackageLifecycleRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRetireFinancePackageUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/packages/${id}/retire`
+}
+
+/**
+ * @summary Finance retires a published package with a reason (1-N27, `finance.packages.retire`): Contratos can
+no longer link it and Finance does not approve drafts that still do; approved contracts keep it.
+ */
+export const retireFinancePackage = async (id: string,
+    financePackageLifecycleRequest: FinancePackageLifecycleRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRetireFinancePackageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePackageLifecycleRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getCreateContractAmendmentUrl = (versionId: string,) => {
 
 
@@ -11868,8 +11956,14 @@ export const getCreateContractAmendmentUrl = (versionId: string,) => {
   return `/api/v1/contracts/versions/${versionId}/amendments`
 }
 
+/**
+ * @summary Contratos amends an active or suspended contract from any of its versions (1-C): a new draft from
+the latest approved version, starting on `validFrom` and ending when that version ends, with
+its rates unconfirmed. The token is the contract status the user saw. No client used the earlier
+shape, so the Idempotency-Key is required without an expand phase. Answers the new draft version.
+ */
 export const createContractAmendment = async (versionId: string,
-    financePackageCommandRequest?: FinancePackageCommandRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+    createContractAmendmentRequest: CreateContractAmendmentRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -11882,14 +11976,14 @@ const res = await fetch(getCreateContractAmendmentUrl(versionId),
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(financePackageCommandRequest)
+    body: JSON.stringify(createContractAmendmentRequest)
   }
 )
 
-  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  const data: FinancePackageIdResponse = body ? JSON.parse(body) : {}
   return data
 }
 

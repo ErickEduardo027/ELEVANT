@@ -1,9 +1,8 @@
 using System.Data;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
+using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Commercial;
 using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
@@ -15,8 +14,18 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Persistence.Finance;
 
+/// <summary>
+/// Finance service packages and their link to contract drafts, plus the contract amendment (1-C).
+/// Every command runs serializable with an idempotency receipt in
+/// <c>commercial.finance_pricing_commands</c> (<see cref="CommercialCommandReceipts"/>).
+/// </summary>
 internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorContextResolver actors, TimeProvider clock) : IFinancePackageStore
 {
+    private const string DiscardAction = "finance.package.discard";
+    private const string RetireAction = "finance.package.retire";
+    private const string AmendmentAction = "contract.amendment";
+    private const int ReasonMaxLength = 500;
+
     private sealed record Actor(long Id, ActorContext Access);
     private async Task<Actor?> ActorAsync(Guid id, string permission, CancellationToken ct)
     {
@@ -77,8 +86,11 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
         {
             var serviceIds = input.Components.Select(x => x.ServiceId).ToArray();
             var services = await context.ServiceDefinitions.Where(x => serviceIds.Contains(x.PublicId) && x.IsActive).ToDictionaryAsync(x => x.PublicId, cancellationToken);
-            var units = await context.BillingUnits.Where(x => x.IsActive).Select(x => x.Code).ToArrayAsync(cancellationToken);
-            if (services.Count != serviceIds.Length || input.Components.Any(x => !units.Contains(x.BillingUnit))) return PackageWriteResult.Fail("package_reference_invalid");
+            if (services.Count != serviceIds.Length) return PackageWriteResult.Fail("package_reference_invalid");
+            // 1-E: a component keeps the unit code; a unit name («Operación») is saved as its code.
+            var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+            var componentUnits = input.Components.ToDictionary(x => x.ServiceId, x => units.Resolve(x.BillingUnit));
+            if (componentUnits.Values.Any(unit => unit is null)) return PackageWriteResult.Fail("billing_unit_unknown");
             var now = clock.GetUtcNow();
             ServicePackageVersion? row;
             if (id is not null)
@@ -98,7 +110,7 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             }
             row.Name = input.Name.Trim(); row.BasePrice = input.BasePrice; row.Scope = scope; row.FlightDirection = direction; row.PeriodDays = input.PeriodDays; row.ValidFrom = input.ValidFrom; row.ValidTo = input.ValidTo; row.UpdatedAt = now;
             await context.SaveChangesAsync(cancellationToken);
-            foreach (var component in input.Components) context.Set<ServicePackageComponent>().Add(new() { PublicId = Guid.CreateVersion7(), PackageVersionId = row.Id, ServiceDefinitionId = services[component.ServiceId].Id, BillingUnit = component.BillingUnit, IncludedQuantity = component.IncludedQuantity, ExcessBlockSize = component.ExcessBlockSize, ExcessBlockPrice = component.ExcessBlockPrice, CreatedAt = now, UpdatedAt = now });
+            foreach (var component in input.Components) context.Set<ServicePackageComponent>().Add(new() { PublicId = Guid.CreateVersion7(), PackageVersionId = row.Id, ServiceDefinitionId = services[component.ServiceId].Id, BillingUnit = componentUnits[component.ServiceId]!, IncludedQuantity = component.IncludedQuantity, ExcessBlockSize = component.ExcessBlockSize, ExcessBlockPrice = component.ExcessBlockPrice, CreatedAt = now, UpdatedAt = now });
             await ChangedAsync(actor.Id, "finance.package.saved", row.PublicId, now, cancellationToken);
             return PackageWriteResult.Success(row.PublicId);
         }, cancellationToken);
@@ -122,6 +134,68 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
         }, cancellationToken);
     }
 
+    /// <summary>1-N27: a draft that will not be published is kept as Discarded, with the reason audited.</summary>
+    public async Task<PackageWriteResult> DiscardAsync(Guid actorId, Guid id, Guid idempotencyKey, PackageLifecycleInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await ActorAsync(actorId, "finance.packages.delete", cancellationToken);
+        if (actor is null) return PackageWriteResult.Fail("forbidden");
+        if (LifecycleFailure(idempotencyKey, input) is { } failure) return failure;
+        var reason = input.Reason.Trim();
+        return await CommandAsync(actor, idempotencyKey, DiscardAction, new { id, input.ExpectedVersion, reason }, async () =>
+        {
+            var row = await context.Set<ServicePackageVersion>().SingleOrDefaultAsync(x => x.PublicId == id, cancellationToken);
+            if (row is null) return PackageWriteResult.Fail("not_found");
+            if (Version(row.RowVersion) != input.ExpectedVersion) return PackageWriteResult.Fail("version_conflict");
+            if (row.Status != TariffVersionStatus.Draft) return PackageWriteResult.Fail("package_not_draft");
+            var now = clock.GetUtcNow();
+            // Nothing is deleted; the filtered unique index on drafts frees the code for a new draft.
+            row.Status = TariffVersionStatus.Discarded; row.UpdatedAt = now;
+            await ChangedAsync(actor.Id, "finance.package.discarded", row.PublicId, now, cancellationToken, reason);
+            return PackageWriteResult.Success(row.PublicId);
+        }, cancellationToken);
+    }
+
+    /// <summary>
+    /// 1-N27: the published version stops being offered. Approved contracts keep the package they froze
+    /// (billing reads their link); drafts that link it are blocked until Contratos unlinks it.
+    /// </summary>
+    public async Task<PackageWriteResult> RetireAsync(Guid actorId, Guid id, Guid idempotencyKey, PackageLifecycleInput input,
+        CancellationToken cancellationToken = default)
+    {
+        var actor = await ActorAsync(actorId, "finance.packages.retire", cancellationToken);
+        if (actor is null) return PackageWriteResult.Fail("forbidden");
+        if (LifecycleFailure(idempotencyKey, input) is { } failure) return failure;
+        var reason = input.Reason.Trim();
+        return await CommandAsync(actor, idempotencyKey, RetireAction, new { id, input.ExpectedVersion, reason }, async () =>
+        {
+            var row = await context.Set<ServicePackageVersion>().SingleOrDefaultAsync(x => x.PublicId == id, cancellationToken);
+            if (row is null) return PackageWriteResult.Fail("not_found");
+            if (Version(row.RowVersion) != input.ExpectedVersion) return PackageWriteResult.Fail("version_conflict");
+            if (row.Status != TariffVersionStatus.Published) return PackageWriteResult.Fail("package_not_published");
+            var now = clock.GetUtcNow();
+            // The previous publication stays Superseded: retiring never revives an older definition.
+            row.Status = TariffVersionStatus.Retired; row.UpdatedAt = now;
+            await ChangedAsync(actor.Id, "finance.package.retired", row.PublicId, now, cancellationToken, reason);
+            // Contratos re-reads the open drafts that link it: their readiness now reports package_retired.
+            var drafts = await (from link in context.Set<ContractServicePackage>().AsNoTracking()
+                                join version in context.ContractVersions.AsNoTracking() on link.ContractVersionId equals version.Id
+                                where link.PackageVersionId == row.Id && (version.Status == ContractVersionStatus.Draft ||
+                                    version.Status == ContractVersionStatus.PendingFinanceApproval)
+                                select version.PublicId).ToArrayAsync(cancellationToken);
+            foreach (var draft in drafts)
+                await ContractDraftAudience.NotifyContractsAsync(context, ContractDraftAudience.DraftsResource, draft, now,
+                    cancellationToken);
+            return PackageWriteResult.Success(row.PublicId);
+        }, cancellationToken);
+    }
+
+    private static PackageWriteResult? LifecycleFailure(Guid idempotencyKey, PackageLifecycleInput? input) =>
+        idempotencyKey == Guid.Empty ? PackageWriteResult.Fail("idempotency_key_required")
+        : string.IsNullOrWhiteSpace(input?.ExpectedVersion) ? PackageWriteResult.Fail("expected_version_required")
+        : input.Reason?.Trim().Length is not (>= 5 and <= ReasonMaxLength) ? PackageWriteResult.Fail("reason_required")
+        : null;
+
     public async Task<IReadOnlyList<PackageData>?> ListForContractAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default)
     {
         if (!await CanReadAsync(actorId, cancellationToken)) return null;
@@ -142,15 +216,19 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             if (version is null || !await ContractInScopeAsync(actorId, version.Id, cancellationToken)) return PackageWriteResult.Fail("not_found");
             if (version.Status != ContractVersionStatus.Draft || Version(version.RowVersion) != input.ExpectedVersion) return PackageWriteResult.Fail("version_conflict");
             var packageIds = input.PackageVersionIds.ToArray();
-            var packages = await context.Set<ServicePackageVersion>().Where(x => packageIds.Contains(x.PublicId) &&
-                (x.Status == TariffVersionStatus.Published || x.Status == TariffVersionStatus.Superseded)).ToArrayAsync(cancellationToken);
+            var packages = await context.Set<ServicePackageVersion>().Where(x => packageIds.Contains(x.PublicId)).ToArrayAsync(cancellationToken);
             if (packages.Length != packageIds.Length) return PackageWriteResult.Fail("package_not_eligible");
+            // 1-N27: Finance retired it; it is no longer assignable.
+            if (packages.Any(x => x.Status == TariffVersionStatus.Retired)) return PackageWriteResult.Fail("package_retired");
+            if (packages.Any(x => x.Status is not (TariffVersionStatus.Published or TariffVersionStatus.Superseded))) return PackageWriteResult.Fail("package_not_eligible");
             // Publication status describes catalog history, not the version effective on this contract's start date.
-            // Keep old definitions intact and choose the latest applicable publication for each code/currency.
+            // Keep old definitions intact and choose the latest applicable publication for each code/currency. A
+            // retired publication stays in that history, so it never lets an older version become effective again.
             var codes = packages.Select(x => x.Code).Distinct().ToArray();
             var history = await context.Set<ServicePackageVersion>().AsNoTracking().Where(x => codes.Contains(x.Code) &&
                 x.CurrencyCode == version.CurrencyCode && x.ValidFrom <= version.ValidFrom &&
-                (x.Status == TariffVersionStatus.Published || x.Status == TariffVersionStatus.Superseded))
+                (x.Status == TariffVersionStatus.Published || x.Status == TariffVersionStatus.Superseded ||
+                 x.Status == TariffVersionStatus.Retired))
                 .OrderByDescending(x => x.ValidFrom).ThenByDescending(x => x.VersionNumber).ToArrayAsync(cancellationToken);
             var effective = history.GroupBy(x => x.Code).ToDictionary(g => g.Key, g => g.First().Id);
             if (packages.Any(x => x.CurrencyCode != version.CurrencyCode || x.ValidFrom > version.ValidFrom ||
@@ -171,36 +249,95 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
         }, cancellationToken);
     }
 
-    public async Task<PackageWriteResult> CreateAmendmentAsync(Guid actorId, Guid versionId, PackageCommandInput input, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 1-C: a new Draft from the latest approved version with «Vigente desde» after its start and not
+    /// after its end, which it inherits. Rates are copied unconfirmed (units as codes, 1-E), with the
+    /// stations, the negotiated charges and the packages. The status the user saw is the token
+    /// (the same one the contract lifecycle uses); the serializable transaction re-checks that no
+    /// other draft is in progress.
+    /// </summary>
+    public async Task<PackageWriteResult> CreateAmendmentAsync(Guid actorId, Guid versionId, Guid idempotencyKey,
+        CreateAmendmentInput input, CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, "contracts.drafts.update", cancellationToken);
         if (actor is null) return PackageWriteResult.Fail("forbidden");
-        return await CommandAsync(actor, input.RequestId, "contract.amendment", new { versionId, input }, async () =>
+        if (idempotencyKey == Guid.Empty) return PackageWriteResult.Fail("idempotency_key_required");
+        if (string.IsNullOrWhiteSpace(input?.ExpectedStatus)) return PackageWriteResult.Fail("expected_version_required");
+        if (!Enum.TryParse<ContractStatus>(input.ExpectedStatus, false, out var expected) || !Enum.IsDefined(expected) ||
+            input.ValidFrom == default)
+            return PackageWriteResult.Fail(ContractAmendmentIssues.InvalidAmendment);
+        return await CommandAsync(actor, idempotencyKey, AmendmentAction, new { versionId, expected, input.ValidFrom }, async () =>
         {
-            var original = await context.ContractVersions.SingleOrDefaultAsync(x => x.PublicId == versionId, cancellationToken);
-            if (original is null || !await ContractInScopeAsync(actorId, original.Id, cancellationToken)) return PackageWriteResult.Fail("not_found");
-            if (original.Status != ContractVersionStatus.Approved || Version(original.RowVersion) != input.ExpectedVersion || await context.ContractVersions.AnyAsync(x => x.ContractId == original.ContractId && (x.Status == ContractVersionStatus.Draft || x.Status == ContractVersionStatus.PendingFinanceApproval), cancellationToken)) return PackageWriteResult.Fail("version_conflict");
+            var route = await context.ContractVersions.AsNoTracking().SingleOrDefaultAsync(x => x.PublicId == versionId, cancellationToken);
+            if (route is null || !await ContractInScopeAsync(actorId, route.Id, cancellationToken)) return PackageWriteResult.Fail("not_found");
+            var contract = await context.Contracts.SingleAsync(x => x.Id == route.ContractId, cancellationToken);
+            if (contract.Status != expected) return PackageWriteResult.Fail("version_conflict");
+            if (!ContractAmendment.CanAmend(contract.Status)) return PackageWriteResult.Fail(ContractAmendmentIssues.ContractNotAmendable);
+            if (await context.ContractVersions.AnyAsync(x => x.ContractId == contract.Id &&
+                    (x.Status == ContractVersionStatus.Draft || x.Status == ContractVersionStatus.PendingFinanceApproval), cancellationToken))
+                return PackageWriteResult.Fail(ContractAmendmentIssues.DraftInProgress);
+            var source = await context.ContractVersions.AsNoTracking()
+                .Where(x => x.ContractId == contract.Id && x.Status == ContractVersionStatus.Approved)
+                .OrderByDescending(x => x.ValidFrom).ThenByDescending(x => x.VersionNumber).FirstOrDefaultAsync(cancellationToken);
+            if (source is null) return PackageWriteResult.Fail(ContractAmendmentIssues.NoApprovedVersion);
+            if (ContractAmendment.StartIssue(input.ValidFrom, source.ValidFrom, source.ValidTo) is { } issue)
+                return PackageWriteResult.Fail(issue);
             var now = clock.GetUtcNow();
-            var next = new ContractVersion { PublicId = Guid.CreateVersion7(), ContractId = original.ContractId, VersionNumber = await context.ContractVersions.Where(x => x.ContractId == original.ContractId).MaxAsync(x => x.VersionNumber, cancellationToken) + 1, Status = ContractVersionStatus.Draft, CurrencyCode = original.CurrencyCode, ValidFrom = original.ValidFrom, ValidTo = original.ValidTo, Terms = original.Terms, CreatedAt = now, UpdatedAt = now };
-            context.ContractVersions.Add(next); await context.SaveChangesAsync(cancellationToken);
-            foreach (var rate in await context.ContractServiceRates.Where(x => x.ContractVersionId == original.Id).ToArrayAsync(cancellationToken)) context.ContractServiceRates.Add(new() { PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, ServiceDefinitionId = rate.ServiceDefinitionId, BillingUnit = rate.BillingUnit, UnitPrice = rate.UnitPrice, MinimumQuantity = rate.MinimumQuantity, IsConfirmed = false, CreatedAt = now, UpdatedAt = now });
-            foreach (var station in await context.Set<ContractVersionStation>().Where(x => x.ContractVersionId == original.Id).ToArrayAsync(cancellationToken)) context.Add(new ContractVersionStation { ContractVersionId = next.Id, StationId = station.StationId });
-            foreach (var rate in await context.ContractChargeRates.Where(x => x.ContractVersionId == original.Id).ToArrayAsync(cancellationToken)) context.ContractChargeRates.Add(new() { PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, ChargeDefinitionId = rate.ChargeDefinitionId, IsExcluded = rate.IsExcluded, Value = rate.Value, MinimumAmount = rate.MinimumAmount, CreatedAt = now, UpdatedAt = now });
-            foreach (var package in await context.Set<ContractServicePackage>().Where(x => x.ContractVersionId == original.Id).ToArrayAsync(cancellationToken)) context.Set<ContractServicePackage>().Add(new() { PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, PackageVersionId = package.PackageVersionId, CreatedAt = now, UpdatedAt = now });
-            await ChangedAsync(actor.Id, "commercial.contract.amendment_created", next.PublicId, now, cancellationToken);
+            var number = await context.ContractVersions.Where(x => x.ContractId == contract.Id).MaxAsync(x => x.VersionNumber, cancellationToken) + 1;
+            var next = new ContractVersion
+            {
+                PublicId = Guid.CreateVersion7(), ContractId = contract.Id, VersionNumber = number, Status = ContractVersionStatus.Draft,
+                CurrencyCode = source.CurrencyCode, ValidFrom = input.ValidFrom, ValidTo = source.ValidTo, Terms = source.Terms,
+                CreatedAt = now, UpdatedAt = now,
+            };
+            context.ContractVersions.Add(next);
+            await context.SaveChangesAsync(cancellationToken);
+            var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+            foreach (var rate in await context.ContractServiceRates.AsNoTracking().Where(x => x.ContractVersionId == source.Id).ToArrayAsync(cancellationToken))
+                context.ContractServiceRates.Add(new()
+                {
+                    PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, ServiceDefinitionId = rate.ServiceDefinitionId,
+                    BillingUnit = units.Normalize(rate.BillingUnit), UnitPrice = rate.UnitPrice, MinimumQuantity = rate.MinimumQuantity,
+                    IsConfirmed = false, CreatedAt = now, UpdatedAt = now,
+                });
+            foreach (var station in await context.Set<ContractVersionStation>().AsNoTracking().Where(x => x.ContractVersionId == source.Id).Select(x => x.StationId).ToArrayAsync(cancellationToken))
+                context.Add(new ContractVersionStation { ContractVersionId = next.Id, StationId = station });
+            foreach (var rate in await context.ContractChargeRates.AsNoTracking().Where(x => x.ContractVersionId == source.Id).ToArrayAsync(cancellationToken))
+                context.ContractChargeRates.Add(new()
+                {
+                    PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, ChargeDefinitionId = rate.ChargeDefinitionId,
+                    IsExcluded = rate.IsExcluded, Value = rate.Value, MinimumAmount = rate.MinimumAmount, CreatedAt = now, UpdatedAt = now,
+                });
+            foreach (var package in await context.Set<ContractServicePackage>().AsNoTracking().Where(x => x.ContractVersionId == source.Id).Select(x => x.PackageVersionId).ToArrayAsync(cancellationToken))
+                context.Set<ContractServicePackage>().Add(new() { PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, PackageVersionId = package, CreatedAt = now, UpdatedAt = now });
+            CommercialAuditWriter.Add(context, actor.Id, "commercial.contract.amendment_created", "commercial.contract_versions",
+                next.PublicId, null, new AuditFieldChangeData("amendment.valid_from",
+                    source.ValidFrom.ToString("O", CultureInfo.InvariantCulture),
+                    next.ValidFrom.ToString("O", CultureInfo.InvariantCulture)));
+            // Contratos completes it in Borradores; the airline reviews it in its portal.
+            await ContractDraftAudience.NotifyContractsAsync(context, ContractDraftAudience.DraftsResource, next.PublicId, now,
+                cancellationToken);
+            await ContractDraftAudience.NotifyAirlineAsync(context, contract, now, cancellationToken);
             return PackageWriteResult.Success(next.PublicId);
         }, cancellationToken);
     }
 
-    private async Task ChangedAsync(long actorId, string action, Guid id, DateTimeOffset now, CancellationToken ct)
+    private async Task ChangedAsync(long actorId, string action, Guid id, DateTimeOffset now, CancellationToken ct,
+        string? reason = null)
     {
-        CommercialAuditWriter.Add(context, actorId, action, "commercial.service_package_versions", id);
+        CommercialAuditWriter.Add(context, actorId, action, "commercial.service_package_versions", id, reason);
         foreach (var recipient in await DepartmentAccessQueries.AccountsWithPermissionAsync(context, "finance.packages.read", ct)) AccountChangeOutboxWriter.Add(context, recipient, null, "finance_packages", id, now);
     }
+
+    /// <summary>
+    /// Runs a command serializable: the receipt of its key is resolved first (a legitimate retry sees
+    /// the rowversion already changed), the command applies its rules and the receipt is written in the
+    /// same transaction. A concurrent command with the same key resolves to its replay or a conflict.
+    /// </summary>
     private async Task<PackageWriteResult> CommandAsync(Actor actor, Guid requestId, string action, object payload, Func<Task<PackageWriteResult>> command, CancellationToken ct)
     {
         if (requestId == Guid.Empty) return PackageWriteResult.Fail("request_id_required");
-        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload))));
+        var hash = CommercialCommandReceipts.Hash(payload);
         var strategy = context.Database.CreateExecutionStrategy();
         try
         {
@@ -208,14 +345,22 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             {
                 context.ChangeTracker.Clear();
                 await using var tx = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, ct);
-                var prior = await context.Set<FinancePricingCommand>().SingleOrDefaultAsync(x => x.RequestId == requestId, ct);
-                if (prior is not null) return prior.ActorAccountId == actor.Id && prior.Action == action && prior.PayloadHash == hash ? PackageWriteResult.Success(prior.ResultId) : PackageWriteResult.Fail("idempotency_conflict");
+                var prior = await CommercialCommandReceipts.FindAsync(context, requestId, actor.Id, action, hash, ct);
+                if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay) return PackageWriteResult.Success(prior.ResultId);
+                if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict) return PackageWriteResult.Fail("idempotency_conflict");
                 var result = await command();
                 if (!result.IsSuccess) { await tx.RollbackAsync(ct); context.ChangeTracker.Clear(); return result; }
-                var now = clock.GetUtcNow();
-                context.Set<FinancePricingCommand>().Add(new() { PublicId = Guid.CreateVersion7(), RequestId = requestId, ActorAccountId = actor.Id, Action = action, PayloadHash = hash, ResultId = result.Id!.Value, CreatedAt = now, UpdatedAt = now });
+                CommercialCommandReceipts.Add(context, requestId, actor.Id, action, hash, result.Id!.Value, clock.GetUtcNow());
                 await context.SaveChangesAsync(ct); await tx.CommitAsync(ct); return result;
             });
+        }
+        catch (DbUpdateConcurrencyException) { context.ChangeTracker.Clear(); return PackageWriteResult.Fail("version_conflict"); }
+        catch (DbUpdateException exception) when (CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, requestId, actor.Id, action, hash, ct);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? PackageWriteResult.Success(concurrent.ResultId) : PackageWriteResult.Fail("idempotency_conflict");
         }
         catch (DbUpdateException) { context.ChangeTracker.Clear(); return PackageWriteResult.Fail("version_conflict"); }
     }

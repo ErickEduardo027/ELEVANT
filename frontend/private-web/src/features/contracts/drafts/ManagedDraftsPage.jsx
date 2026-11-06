@@ -9,7 +9,9 @@ import {
   activateManagedDraft, discardContractDraft, getContractDraftReadiness, getContractDraftScope, getManagedDrafts,
   replyContractDraft, setContractDraftScope, updateManagedDraft,
 } from '../../../services/commercialGovernanceApi';
+import { billingUnitLabel } from '../../../services/billingUnits';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { listBillingUnits } from '../../../services/financeBookService';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { DRAFT_PROBLEM_MESSAGES, PORTAL_ACCOUNT_LABELS, READINESS_CHECKS, draftProblemMessage } from './draftProblemMessages';
 
@@ -23,6 +25,8 @@ const VERSION_STATUS = {
   Draft: 'Borrador',
   PendingFinanceApproval: 'Pendiente de aprobación de Finanzas',
 };
+/** 1-F: Finance approves prices; the contract activates later, after the validity, both signatures and the permit. */
+const AFTER_FINANCE = 'Tras la aprobación de precios, Contratos fija la vigencia, firman la aerolínea y AVIAM y se verifica el permiso de operación; entonces el contrato se activa.';
 
 /**
  * Contract drafts of Contratos (phase 1, block B): the list, and the editor of one draft with its
@@ -34,6 +38,15 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
   const [view, setView] = useState({ status: 'loading', drafts: [], error: '' });
   const [selectedId, setSelectedId] = useState(null);
   const [notice, setNotice] = useState('');
+  // 1-E: rates keep a unit code; the editor offers the active units Finance maintains.
+  const [units, setUnits] = useState([]);
+  useEffect(() => {
+    let active = true;
+    // Without the list the editor keeps each rate's current unit; saving still checks it on the server.
+    Promise.resolve().then(listBillingUnits).then(list => { if (active) setUnits((list ?? []).filter(unit => unit.isActive)); })
+      .catch(() => { if (active) setUnits([]); });
+    return () => { active = false; };
+  }, []);
   const latest = useRef(0);
   const reload = useCallback(async () => {
     const call = ++latest.current;
@@ -73,7 +86,7 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
           : view.status === 'error' ? <div role="alert" className="mt-5 space-y-2 text-sm text-status-danger"><p>{view.error}</p>{retry}</div>
             : drafts.length ? <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">{drafts.map(item => <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(''); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span className="text-xs text-text-secondary-light">{item.contractCode} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {item.rates.length} servicios · {item.comments.length} observaciones</span></button>)}</div>
               : <p className="mt-5 text-sm text-text-secondary-light">No hay borradores pendientes.</p>}</section>
-        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={setNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Seleccione un borrador para revisarlo.</p>}</section></div>
+        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={setNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Seleccione un borrador para revisarlo.</p>}</section></div>
     </>}
   </div>;
 }
@@ -109,7 +122,7 @@ function useDraftRead(fetcher, key) {
  * One draft. The form follows the server version unless the user is editing it; then the save sends
  * the version the form came from and a newer one is refused (version_conflict) and re-read.
  */
-function DraftEditor({ draft, canEdit, canActivate, canDiscard, onNotice, onChanged }) {
+function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNotice, onChanged }) {
   const pending = draft.versionStatus === 'PendingFinanceApproval';
   const editable = canEdit && !pending;
   const [form, setForm] = useState(() => formOf(draft));
@@ -168,7 +181,7 @@ function DraftEditor({ draft, canEdit, canActivate, canDiscard, onNotice, onChan
     setConfirmSubmit(false);
     const command = { expectedVersion: draft.version };
     void run(submitKeys, 'submit', { id: draft.id, ...command }, key => activateManagedDraft(draft.id, command, key),
-      'Contrato enviado a Finanzas. Se activará cuando Finanzas lo apruebe.');
+      `Contrato enviado a Finanzas para aprobar los precios. ${AFTER_FINANCE}`);
   }
   const saveScope = command => run(scopeKeys, 'scope', { id: draft.id, ...command },
     key => setContractDraftScope(draft.id, command, key),
@@ -213,7 +226,12 @@ function DraftEditor({ draft, canEdit, canActivate, canDiscard, onNotice, onChan
               <div className="flex flex-wrap items-baseline justify-between gap-2"><strong className="text-sm">{rate.serviceName}{retiredRates.has(rate.id) && <span className="ml-2 rounded-full bg-status-danger/10 px-2 py-0.5 text-[11px] font-semibold text-status-danger">Retirado</span>}</strong>
                 <span className="text-xs text-text-secondary-light">Base {rate.basePrice === null || rate.basePrice === undefined ? 'sin tarifa' : rate.basePrice}{diff !== null && <span className={diff < 0 ? ' text-status-danger' : ' text-status-success'}> · {diff > 0 ? '+' : ''}{diff} %</span>}</span></div>
               {retiredRates.has(rate.id) && <p className="mt-1 text-xs text-status-danger">Servicio dado de baja del catálogo: quítelo del alcance antes de enviar a Finanzas.</p>}
-              <div className="mt-2 grid grid-cols-1 gap-2 min-[400px]:grid-cols-3">{[['billingUnit', 'Unidad'], ['unitPrice', 'Precio'], ['minimumQuantity', 'Mínimo']].map(([field, label]) => <label key={field} className="text-[11px]">{label}<input required type={field === 'billingUnit' ? 'text' : 'number'} min={field === 'billingUnit' ? undefined : 0} step={field === 'billingUnit' ? undefined : '0.01'} value={rate[field]} onChange={event => updateRate(index, { [field]: event.target.value })} className={fieldClass} /></label>)}</div>
+              <div className="mt-2 grid grid-cols-1 gap-2 min-[400px]:grid-cols-3">
+                <label className="text-[11px]">Unidad<select required value={rate.billingUnit} onChange={event => updateRate(index, { billingUnit: event.target.value })} className={fieldClass}>
+                  {units.map(unit => <option key={unit.code} value={unit.code}>{unit.name}</option>)}
+                  {!units.some(unit => unit.code === rate.billingUnit) && <option value={rate.billingUnit}>{billingUnitLabel(rate.billingUnit)}{units.length ? ' (no activa)' : ''}</option>}
+                </select></label>
+                {[['unitPrice', 'Precio'], ['minimumQuantity', 'Mínimo']].map(([field, label]) => <label key={field} className="text-[11px]">{label}<input required type="number" min={0} step="0.01" value={rate[field]} onChange={event => updateRate(index, { [field]: event.target.value })} className={fieldClass} /></label>)}</div>
               <label className="mt-3 flex items-center gap-2 text-xs"><input type="checkbox" checked={rate.isConfirmed} onChange={event => updateRate(index, { isConfirmed: event.target.checked })} />Confirmar tarifa (0 = cortesía)</label></div>;
           })}</div>
         {form.charges.length > 0 && <div><h3 className="text-sm font-bold">Cargos y recargos</h3>
@@ -234,7 +252,7 @@ function DraftEditor({ draft, canEdit, canActivate, canDiscard, onNotice, onChan
       <button type="button" disabled={!canSubmit} onClick={() => setConfirmSubmit(true)} className="mt-3 rounded-lg border border-status-success px-4 py-2 text-sm font-semibold text-status-success disabled:opacity-50">Enviar a Finanzas</button></div>}
     {pending && <p className="mt-6 rounded-lg bg-status-warning/10 p-3 text-sm">En revisión por Finanzas. Si lo devuelve, podrá editarlo de nuevo.</p>}
     {canDiscard && <DiscardSection draft={draft} busy={busy === 'discard'} locked={locked} onDiscard={discard} />}
-    <ConfirmDialog open={confirmSubmit} title="Enviar a Finanzas" description={`¿Enviar ${draft.contractCode} a Finanzas? El contrato se activará cuando Finanzas lo apruebe.`} confirmLabel="Enviar" onClose={() => setConfirmSubmit(false)} onConfirm={submitToFinance} busy={busy === 'submit'} />
+    <ConfirmDialog open={confirmSubmit} title="Enviar a Finanzas" description={`¿Enviar ${draft.contractCode} a Finanzas para aprobar los precios? ${AFTER_FINANCE}`} confirmLabel="Enviar" onClose={() => setConfirmSubmit(false)} onConfirm={submitToFinance} busy={busy === 'submit'} />
   </div>;
 }
 

@@ -92,6 +92,48 @@ it('lists every readiness cause and submits only what the server reports ready',
   await waitFor(() => expect(activateManagedDraft).toHaveBeenCalledWith('draft-1', { expectedVersion: 'v2' }, expect.any(String)));
 });
 
+it('submits to Finance without promising an activation the approval does not do (1-F)', async () => {
+  getContractDraftReadiness.mockResolvedValue(readiness());
+  await open();
+  const submit = screen.getByRole('button', { name: 'Enviar a Finanzas' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await userEvent.click(submit);
+  const dialog = screen.getByRole('alertdialog');
+  expect(within(dialog).getByText(/para aprobar los precios.*firman la aerolínea y AVIAM.*permiso de operación/)).toBeInTheDocument();
+  expect(within(dialog).queryByText(/se activará cuando Finanzas lo apruebe/i)).not.toBeInTheDocument();
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Enviar' }));
+  expect(await screen.findByText(/Contrato enviado a Finanzas para aprobar los precios/)).toBeInTheDocument();
+});
+
+it('offers the active units Finance maintains, saves the unit code and lists a retired package (1-E, 1-N27)', async () => {
+  commercialApi.mockImplementation(async path => (path === '/finance/billing-units'
+    ? [{ code: 'operation', name: 'Operación', isActive: true }, { code: 'hour', name: 'Hora', isActive: true },
+      { code: 'old', name: 'Antigua', isActive: false }] : []));
+  getContractDraftReadiness.mockResolvedValue(readiness([{ code: 'package_retired', subjects: ['PKG-TURN v3'] }]));
+  await open();
+  const unit = screen.getByLabelText('Unidad');
+  await waitFor(() => expect(within(unit).getAllByRole('option').map(option => option.textContent))
+    .toEqual(['Operación', 'Hora']));
+  expect(unit).toHaveValue('operation');
+  const checks = screen.getByRole('list', { name: 'Requisitos para enviar a Finanzas' });
+  expect(within(checks).getByText(/Finanzas retiró un paquete vinculado/)).toHaveTextContent('PKG-TURN v3');
+  await userEvent.selectOptions(unit, 'hour');
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
+  await waitFor(() => expect(updateManagedDraft).toHaveBeenCalled());
+  expect(updateManagedDraft.mock.calls[0][1].rates).toEqual([expect.objectContaining({ id: 'rate-1', billingUnit: 'hour' })]);
+});
+
+it('keeps a unit that is no longer active visible until Contratos picks another one', async () => {
+  commercialApi.mockImplementation(async path => (path === '/finance/billing-units'
+    ? [{ code: 'hour', name: 'Hora', isActive: true }] : []));
+  getManagedDrafts.mockResolvedValue([draft({ rates: [{ id: 'rate-1', serviceName: 'Rampa', billingUnit: 'turno', unitPrice: 0,
+    minimumQuantity: 1, isConfirmed: false }] })]);
+  await open();
+  const unit = screen.getByLabelText('Unidad');
+  await waitFor(() => expect(within(unit).getByRole('option', { name: 'turno (no activa)' })).toBeInTheDocument());
+  expect(unit).toHaveValue('turno');
+});
+
 it('retries an uncertain submission with the same key and re-reads the draft after a conflict', async () => {
   getContractDraftReadiness.mockResolvedValue(readiness());
   activateManagedDraft.mockRejectedValueOnce(new TypeError('Network down'))

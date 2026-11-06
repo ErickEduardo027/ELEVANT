@@ -4,6 +4,7 @@ using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Finance;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Realtime;
 using Microsoft.EntityFrameworkCore;
@@ -212,12 +213,14 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
         };
         context.ContractVersions.Add(draft);
         await context.SaveChangesAsync(cancellationToken);
+        // 1-E: the renewal keeps unit codes; a legacy unit name of the source becomes its code.
+        var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
         foreach (var rate in await context.ContractServiceRates.AsNoTracking().Where(item => item.ContractVersionId == source.Id)
                      .ToArrayAsync(cancellationToken))
             context.ContractServiceRates.Add(new ContractServiceRate
             {
                 PublicId = Guid.CreateVersion7(), ContractVersionId = draft.Id, ServiceDefinitionId = rate.ServiceDefinitionId,
-                BillingUnit = rate.BillingUnit, UnitPrice = rate.UnitPrice, MinimumQuantity = rate.MinimumQuantity,
+                BillingUnit = units.Normalize(rate.BillingUnit), UnitPrice = rate.UnitPrice, MinimumQuantity = rate.MinimumQuantity,
                 IsConfirmed = true, CreatedAt = now, UpdatedAt = now,
             });
         foreach (var station in await context.Set<ContractVersionStation>().AsNoTracking()

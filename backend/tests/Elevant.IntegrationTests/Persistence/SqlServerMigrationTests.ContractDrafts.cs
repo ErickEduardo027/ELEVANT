@@ -302,7 +302,9 @@ public sealed partial class SqlServerMigrationTests
         var widened = await DraftAsync();
         Assert.Equal(2, widened.Stations.Count);
         var cargoRate = Assert.Single(widened.Rates, item => item.ServiceName == "Carga y descarga");
-        Assert.Equal((0m, false, null), (cargoRate.UnitPrice, cargoRate.IsConfirmed, cargoRate.BasePrice));
+        // 1-E: the seed gives every public service a base price; the new rate starts from it, by unit code.
+        Assert.Equal((85m, false, (decimal?)85m, "operation"),
+            (cargoRate.UnitPrice, cargoRate.IsConfirmed, cargoRate.BasePrice, cargoRate.BillingUnit));
         // With two stations the base is the all-stations tariff, as Finance compares it.
         Assert.Equal(130m, Assert.Single(widened.Rates, item => item.ServiceName == "Baggage handling").BasePrice);
         Assert.Equal(1, await context.AuditEntries.CountAsync(item =>

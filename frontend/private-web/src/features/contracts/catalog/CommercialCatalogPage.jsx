@@ -10,8 +10,9 @@ import { deleteManagedService, getManagedServices, saveManagedService, uploadCom
 import { listBillingUnits } from '../../../services/financeBookService';
 import { serviceImageFallback } from './serviceImages';
 import ServiceClosurePanel from './ServiceClosurePanel';
-import { billingUnitOptions, buildServiceCatalog, buildServicePayload, nextDisplayOrder, normalizeText,
+import { billingUnitChoice, billingUnitOptions, buildServiceCatalog, buildServicePayload, nextDisplayOrder,
   sortServicesByOrder, validateServiceForm } from './serviceCatalogForm';
+import { billingUnitLabel } from '../../../services/billingUnits';
 
 const empty = { serviceChoice: '', name: '', code: '', unitChoice: '', description: '', imageUrl: '', videoUrl: '', displayOrder: 1, isPublic: true, isActive: true, version: null };
 const PAGE_SIZE = 12;
@@ -78,7 +79,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
 
   function open(service = null) {
     const values = service ? { serviceChoice: service.code, name: service.name, code: service.code,
-      unitChoice: normalizeText(service.billingUnit),
+      unitChoice: billingUnitChoice(service.billingUnit, units),
       description: service.description, imageUrl: service.imageUrl ?? '',
       videoUrl: service.videoUrl ?? '', displayOrder: service.displayOrder,
       isPublic: service.isPublic, isActive: service.isActive, version: service.version }
@@ -153,7 +154,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
       <div className="flex items-center justify-between"><h2 className="font-bold">Catálogo AVIAM</h2><button type="button" onClick={() => void reload()} className="text-xs font-semibold text-accent-600">Actualizar</button></div>
       {status === 'loading' ? <p className="mt-5 text-sm">Cargando servicios…</p> : <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{visibleServices.map(service => <article key={service.id} className="overflow-hidden rounded-xl border border-black/10 dark:border-white/10">
         <ServiceCardImage service={service} />
-        <div className="p-4"><div className="flex justify-between gap-2"><div className="flex min-w-0 items-start gap-2"><span title="Número de orden asignado por el sistema" className="shrink-0 rounded-md bg-black/5 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-text-secondary-light dark:bg-white/10 dark:text-text-secondary-dark"><span className="sr-only">Número de orden </span><span aria-hidden="true">N.º </span>{positionOf.get(service.id)}</span><strong className="text-sm">{service.name}</strong></div><span className={`text-[11px] ${service.isActive && service.isPublic ? 'text-status-success' : 'text-text-secondary-light'}`}>{service.isActive && service.isPublic ? 'Público' : 'Oculto'}</span></div><p className="mt-1 min-h-14 text-xs leading-relaxed text-text-secondary-light">{service.description}</p><p className="mt-2 font-mono text-[10px] text-text-secondary-light">{service.code} · por {service.billingUnit}</p>{(canEdit || canRetire) && <div className="mt-3 flex gap-3">{canEdit && <button type="button" onClick={() => open(service)} className="text-xs font-semibold text-accent-600">Editar</button>}{canRetire && <button type="button" onClick={() => setPendingRetire(service)} className="text-xs font-semibold text-status-danger">Retirar</button>}</div>}</div>
+        <div className="p-4"><div className="flex justify-between gap-2"><div className="flex min-w-0 items-start gap-2"><span title="Número de orden asignado por el sistema" className="shrink-0 rounded-md bg-black/5 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-text-secondary-light dark:bg-white/10 dark:text-text-secondary-dark"><span className="sr-only">Número de orden </span><span aria-hidden="true">N.º </span>{positionOf.get(service.id)}</span><strong className="text-sm">{service.name}</strong></div><span className={`text-[11px] ${service.isActive && service.isPublic ? 'text-status-success' : 'text-text-secondary-light'}`}>{service.isActive && service.isPublic ? 'Público' : 'Oculto'}</span></div><p className="mt-1 min-h-14 text-xs leading-relaxed text-text-secondary-light">{service.description}</p><p className="mt-2 font-mono text-[10px] text-text-secondary-light">{service.code} · por {billingUnitLabel(service.billingUnit, units ?? [])}</p>{(canEdit || canRetire) && <div className="mt-3 flex gap-3">{canEdit && <button type="button" onClick={() => open(service)} className="text-xs font-semibold text-accent-600">Editar</button>}{canRetire && <button type="button" onClick={() => setPendingRetire(service)} className="text-xs font-semibold text-status-danger">Retirar</button>}</div>}</div>
       </article>)}</div>}
       {status === 'ready' && services.length === 0 && <p className="mt-4 text-sm text-text-secondary-light dark:text-text-secondary-dark">No hay servicios en el catálogo.</p>}
       {status === 'ready' && <nav aria-label="Paginación de servicios" className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-black/10 pt-4 text-sm dark:border-white/10">

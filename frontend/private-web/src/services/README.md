@@ -15,3 +15,7 @@ Reservado para adaptadores de API, SignalR y capacidades del navegador. No conti
 `problemMessages.js` es el núcleo que convierte un fallo de la API en un mensaje en español: primero la sesión expirada (`401`), luego el `code` de Problem Details según el mapa del área y los códigos comunes (`version_conflict`, `idempotency_conflict`, `reason_required`…), después el permiso (`403`), el registro inexistente (`404`), el conflicto (`409`), los datos inválidos (`400`) y, por último, el respaldo. Nunca devuelve el `title` del servidor ni el texto de una excepción. Cada área publica su mapa sobre ese núcleo; `commercialProblems.js` cubre Solicitudes, Aprovisionamiento y Aerolíneas.
 
 `commandKeys.js` guarda la `Idempotency-Key` de una intención del usuario: conserva la misma UUID mientras se reintenta la misma acción con el mismo cuerpo tras un resultado incierto (sin respuesta o `5xx`) y la descarta tras cualquier `2xx` o `4xx`. En React se guarda en `useRef(createCommandKeyHolder())`.
+
+`billingUnits.js` muestra las unidades de cobro en español y traduce un nombre heredado («operación») al código activo de «Unidades de cobro». El ciclo comercial guarda siempre el código; las pantallas proponen una unidad activa y nunca envían el nombre.
+
+`financeErrors.js` reúne los mensajes de Finanzas por `code`: la aprobación de contratos, los tarifarios de servicios y cargos, las unidades de cobro y las tasas de cambio. `financePackagesService.js` hace lo mismo para los paquetes, incluidos el descarte y el retiro.

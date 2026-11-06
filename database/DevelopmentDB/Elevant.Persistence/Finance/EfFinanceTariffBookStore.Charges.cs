@@ -56,15 +56,20 @@ internal sealed partial class EfFinanceTariffBookStore
             input.RoundingIncrement is < 0 or > 1000 ||
             !input.AppliesToAllServices && input.ServiceIds is not { Count: > 0 and <= 100 } ||
             chargeId is not null && string.IsNullOrWhiteSpace(input.ExpectedVersion))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
-        var unit = string.IsNullOrWhiteSpace(input.BillingUnit) ? null : input.BillingUnit.Trim();
-        if (method == ChargeCalculationMethod.PerUnit && unit is null ||
-            unit is not null && !await ActiveUnitAsync(unit, cancellationToken))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "invalid_charge");
+        var requestedUnit = string.IsNullOrWhiteSpace(input.BillingUnit) ? null : input.BillingUnit.Trim();
+        if (method == ChargeCalculationMethod.PerUnit && requestedUnit is null)
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "billing_unit_required");
+        // 1-E: the charge keeps the code of an active unit; a unit name is saved as its code.
+        var unit = requestedUnit is null ? null
+            : (await BillingUnitCodes.LoadAsync(context, cancellationToken)).Resolve(requestedUnit);
+        if (requestedUnit is not null && unit is null)
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "billing_unit_unknown");
         var serviceIds = input.AppliesToAllServices ? [] : input.ServiceIds!.Distinct().ToArray();
         var services = await context.ServiceDefinitions.AsNoTracking().Where(service => serviceIds.Contains(service.PublicId))
             .Select(service => service.Id).ToArrayAsync(cancellationToken);
-        if (services.Length != serviceIds.Length) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+        if (services.Length != serviceIds.Length)
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "service_not_found");
 
         return await InTransactionAsync(async () =>
         {
@@ -74,9 +79,9 @@ internal sealed partial class EfFinanceTariffBookStore
             if (chargeId is { } id)
             {
                 charge = await context.ChargeDefinitions.SingleOrDefaultAsync(item => item.PublicId == id, cancellationToken);
-                if (charge is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+                if (charge is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
                 if (Version(charge.RowVersion) != input.ExpectedVersion)
-                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
                 before = $"{charge.Code}:{charge.Method}:{charge.QuantityRule}:{charge.IsActive}";
             }
             else
@@ -85,7 +90,7 @@ internal sealed partial class EfFinanceTariffBookStore
                 context.ChargeDefinitions.Add(charge);
             }
             if (await context.ChargeDefinitions.AnyAsync(item => item.Code == code && item.Id != charge.Id, cancellationToken))
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "charge_code_exists");
             charge.Code = code;
             charge.Name = input.Name.Trim();
             charge.Description = string.IsNullOrWhiteSpace(input.Description) ? null : input.Description.Trim();
@@ -162,19 +167,19 @@ internal sealed partial class EfFinanceTariffBookStore
         var actor = await AuthorizeAsync(actorId, "finance.charges.create", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || !ValidCurrency(input.CurrencyCode) || input.ValidFrom == default || input.Note?.Length > 500)
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
         return await InTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
             if (await context.ChargeTariffVersions.AnyAsync(version => version.CurrencyCode == input.CurrencyCode &&
                     version.Status == TariffVersionStatus.Draft, cancellationToken))
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, TariffDraftExists);
             ChargeTariffVersion? source = null;
             if (input.CopyFromVersionId is { } sourceId)
             {
                 source = await context.ChargeTariffVersions.AsNoTracking()
                     .SingleOrDefaultAsync(item => item.PublicId == sourceId, cancellationToken);
-                if (source is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+                if (source is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, TariffNotFound);
             }
             var draft = new ChargeTariffVersion
             {
@@ -217,22 +222,23 @@ internal sealed partial class EfFinanceTariffBookStore
             string.IsNullOrWhiteSpace(input.ExpectedVersion) || input.Rates is null or { Count: > 300 } ||
             input.Rates.Any(rate => rate.Value is < 0 or > 900_000_000m || rate.MinimumAmount is < 0 or > 900_000_000m) ||
             input.Rates.Select(rate => rate.ChargeId).Distinct().Count() != input.Rates.Count)
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
         var chargeIds = input.Rates.Select(rate => rate.ChargeId).ToArray();
         var charges = await context.ChargeDefinitions.AsNoTracking().Where(charge => chargeIds.Contains(charge.PublicId))
             .ToDictionaryAsync(charge => charge.PublicId, cancellationToken);
-        if (charges.Count != chargeIds.Length || input.Rates.Any(rate =>
-                charges[rate.ChargeId].Method == ChargeCalculationMethod.PercentOfService && rate.Value > 1000m))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+        if (charges.Count != chargeIds.Length)
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "charge_not_found");
+        if (input.Rates.Any(rate => charges[rate.ChargeId].Method == ChargeCalculationMethod.PercentOfService && rate.Value > 1000m))
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
 
         return await InTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
             var draft = await context.ChargeTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
                 cancellationToken);
-            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
             if (draft.Status != TariffVersionStatus.Draft || Version(draft.RowVersion) != input.ExpectedVersion)
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
             draft.ValidFrom = input.ValidFrom;
             draft.ValidTo = input.ValidTo;
             draft.Note = input.Note?.Trim();
@@ -259,21 +265,23 @@ internal sealed partial class EfFinanceTariffBookStore
     {
         var actor = await AuthorizeAsync(actorId, "finance.charges.publish", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
-        if (string.IsNullOrWhiteSpace(expectedVersion)) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+        if (string.IsNullOrWhiteSpace(expectedVersion))
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "expected_version_required");
         return await InTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
             var draft = await context.ChargeTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
                 cancellationToken);
-            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
-            if (draft.Status != TariffVersionStatus.Draft || Version(draft.RowVersion) != expectedVersion ||
-                !await context.ChargeRates.AnyAsync(rate => rate.ChargeTariffVersionId == draft.Id, cancellationToken))
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
+            if (draft.Status != TariffVersionStatus.Draft || Version(draft.RowVersion) != expectedVersion)
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
+            if (!await context.ChargeRates.AnyAsync(rate => rate.ChargeTariffVersionId == draft.Id, cancellationToken))
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, TariffEmpty);
             var previous = await context.ChargeTariffVersions.Where(version => version.CurrencyCode == draft.CurrencyCode &&
                     version.Status != TariffVersionStatus.Draft && (version.ValidTo == null || version.ValidTo >= draft.ValidFrom))
                 .ToArrayAsync(cancellationToken);
             if (previous.Any(version => version.ValidFrom >= draft.ValidFrom))
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, TariffStartNotAfterCurrent);
             foreach (var version in previous)
             {
                 version.ValidTo = draft.ValidFrom.AddDays(-1);
@@ -301,9 +309,9 @@ internal sealed partial class EfFinanceTariffBookStore
         {
             var draft = await context.ChargeTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
                 cancellationToken);
-            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
             if (draft.Status != TariffVersionStatus.Draft || Version(draft.RowVersion) != expectedVersion)
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
             context.ChargeRates.RemoveRange(await context.ChargeRates
                 .Where(rate => rate.ChargeTariffVersionId == draft.Id).ToArrayAsync(cancellationToken));
             context.ChargeTariffVersions.Remove(draft);

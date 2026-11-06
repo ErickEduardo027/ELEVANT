@@ -138,6 +138,8 @@ internal sealed partial class EfContractDraftStore(
             baseCharges[draft.version.Id] = await FinanceTariffLookup.ChargeRatesAsync(context,
                 draft.version.CurrencyCode, draft.version.ValidFrom, cancellationToken);
         }
+        // 1-E: rates carry unit codes; a legacy unit name is read as its code.
+        var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
         var airlineAuthors = await (from assignment in context.Set<IdentityUserRole<long>>().AsNoTracking()
             join role in context.Roles.AsNoTracking() on assignment.RoleId equals role.Id
             where role.NormalizedName == "AIRLINE_CLIENT"
@@ -150,7 +152,7 @@ internal sealed partial class EfContractDraftStore(
                 .Select(station => $"{station.Code} · {station.Name}").ToArray(),
             rates.Where(rate => rate.rate.ContractVersionId == item.version.Id)
                 .Select(rate => new ContractDraftRateData(rate.rate.PublicId,
-                    rate.Name, rate.rate.BillingUnit, rate.rate.UnitPrice,
+                    rate.Name, units.Normalize(rate.rate.BillingUnit), rate.rate.UnitPrice,
                     rate.rate.MinimumQuantity, rate.rate.IsConfirmed == true,
                     basePrices[item.version.Id].GetValueOrDefault(rate.rate.ServiceDefinitionId)?.UnitPrice,
                     basePrices[item.version.Id].GetValueOrDefault(rate.rate.ServiceDefinitionId)?.MinimumBillableQuantity))
@@ -254,19 +256,26 @@ internal sealed partial class EfContractDraftStore(
         var packages = await LinkedPackagesAsync(row.Version.Id, cancellationToken);
         var reviewers = await ContractDraftAudience.FinanceReviewersAsync(context, "finance.contract_approvals.decide",
             stations, now, cancellationToken);
+        static string Package(ServicePackageVersion package) => $"{package.Code} v{package.VersionNumber}";
         var facts = new ContractDraftFacts(portalAccount != "Missing", row.Version.Terms,
             rates.Select(rate => rate.IsConfirmed).ToArray(), stations.Length,
             rates.Where(rate => !rate.IsActive).Select(rate => $"{rate.Code} · {rate.Name}").ToArray(),
-            packages.Where(package => !PackageFits(package, row.Version.CurrencyCode, row.Version.ValidFrom,
-                row.Version.ValidTo)).Select(package => $"{package.Code} v{package.VersionNumber}").ToArray(),
+            packages.Where(package => package.Status != TariffVersionStatus.Retired &&
+                !PackageFits(package, row.Version.CurrencyCode, row.Version.ValidFrom, row.Version.ValidTo))
+                .Select(Package).ToArray(),
             row.Version.ValidFrom, await CurrentApprovedStartAsync(row.Contract.Id, row.Version.Id, cancellationToken),
-            reviewers.Length > 0);
+            reviewers.Length > 0,
+            // 1-N27: Finance retired a linked package; Contratos unlinks it before the submission.
+            packages.Where(package => package.Status == TariffVersionStatus.Retired).Select(Package).ToArray());
         return (ContractDraftRules.Readiness(facts), portalAccount);
     }
 
-    /// <summary>A linked package is in rule while it is published (or historical) and fits the version.</summary>
+    /// <summary>
+    /// A linked package is in rule while it is published (or historical) and fits the version; a draft,
+    /// a discarded or a retired package is not (1-N27).
+    /// </summary>
     internal static bool PackageFits(ServicePackageVersion package, string currency, DateOnly validFrom, DateOnly? validTo) =>
-        package.Status != TariffVersionStatus.Draft &&
+        package.Status is TariffVersionStatus.Published or TariffVersionStatus.Superseded &&
         ContractDraftRules.PackageFits(package.CurrencyCode, package.ValidFrom, package.ValidTo, currency, validFrom, validTo);
 
     private Task<ServicePackageVersion[]> LinkedPackagesAsync(long versionId, CancellationToken cancellationToken) =>

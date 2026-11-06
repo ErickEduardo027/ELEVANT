@@ -8,7 +8,9 @@ import StatusBadge from '../../../components/StatusBadge';
 import Tabs from '../../../components/Tabs';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { TariffIcon } from '../components/icons';
+import LoadFailure, { loadFailure } from '../components/LoadFailure';
 import { latestPublishedStart, VersionList } from '../tariffs/ServiceTariffsPage';
+import { financeTariffMessage } from '../../../services/financeErrors';
 import {
   createChargeTariffDraft, deleteChargeTariffDraft, FINANCE_CURRENCIES, formatMoney, getChargeTariff, listBillingUnits,
   listCharges, listChargeTariffs, listFinanceServices, publishChargeTariff, saveCharge, saveChargeTariffDraft,
@@ -61,7 +63,7 @@ function ChargeDrawer({ open, charge, services, units, onClose, onSaved }) {
       });
       onSaved(charge ? 'Cargo actualizado.' : 'Cargo creado. Asígnele un importe en el tarifario de cargos.');
     } catch (failure) {
-      setError(failure.status === 409 ? 'Ya existe un cargo con ese código o el cargo cambió.' : failure.message);
+      setError(financeTariffMessage(failure, { fallback: 'No se pudo guardar el cargo. Intente de nuevo.' }));
     } finally {
       setBusy(false);
     }
@@ -129,9 +131,15 @@ function Catalog({ perms }) {
   const [editing, setEditing] = useState(null);
   const [open, setOpen] = useState(false);
   const [notice, setNotice] = useState('');
-  const [error, setError] = useState('');
+  // A list that failed to load shows a recoverable error, never «Sin cargos».
+  const [loadError, setLoadError] = useState(null);
   const load = useCallback(async () => {
-    try { setCharges(await listCharges()); setError(''); } catch (failure) { setError(failure.message); }
+    try { setCharges(await listCharges()); setLoadError(null); }
+    catch (failure) {
+      setLoadError(loadFailure(failure, financeTariffMessage(failure, {
+        fallback: 'No se pudieron cargar los cargos. Revise la conexión e intente de nuevo.',
+        forbidden: 'No tiene permiso para consultar los cargos.' })));
+    }
   }, []);
   useEffect(() => {
     void load();
@@ -144,8 +152,8 @@ function Catalog({ perms }) {
     <section className="space-y-3">
       {perms.create && <div className="flex justify-end"><button type="button" onClick={() => { setEditing(null); setOpen(true); }} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Nuevo cargo</button></div>}
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
-      {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
-      {!charges ? !error && <p role="status" className="text-sm">Cargando cargos…</p> : charges.length === 0 ? (
+      <LoadFailure failure={loadError} onRetry={() => { void load(); }} />
+      {!charges ? !loadError && <p role="status" className="text-sm">Cargando cargos…</p> : charges.length === 0 ? (
         <EmptyState icon={TariffIcon} title="Sin cargos" description="Cree los cargos y recargos que los agentes podrán aplicar." />
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
@@ -181,6 +189,8 @@ function ChargeTariff({ perms }) {
   const [confirm, setConfirm] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState({ tone: '', text: '' });
+  // A list that failed to load shows a recoverable error, never «Sin tarifario de cargos».
+  const [loadError, setLoadError] = useState(null);
   /** Bumped on every list read so the selected detail and its version are re-read after a save. */
   const [reloads, setReloads] = useState(0);
 
@@ -188,12 +198,15 @@ function ChargeTariff({ perms }) {
     try {
       const list = await listChargeTariffs(currency);
       setVersions(list);
+      setLoadError(null);
       setReloads(value => value + 1);
       setSelectedId(keep && list.some(item => item.id === keep) ? keep
         : list.find(item => item.status === 'Draft')?.id ?? list.find(item => item.status === 'Published')?.id ?? list[0]?.id ?? null);
     } catch (failure) {
-      setVersions([]);
-      setMessage({ tone: 'error', text: failure.message });
+      setVersions(null);
+      setLoadError(loadFailure(failure, financeTariffMessage(failure, {
+        fallback: 'No se pudo cargar el tarifario de cargos. Revise la conexión e intente de nuevo.',
+        forbidden: 'No tiene permiso para consultar el tarifario de cargos.' })));
     }
   }, [currency]);
   useEffect(() => { void load(); }, [load]);
@@ -206,13 +219,15 @@ function ChargeTariff({ perms }) {
       setDetail(result);
       setRates(result.rates);
       setValidFrom(result.summary.validFrom);
-    }).catch(failure => active && setMessage({ tone: 'error', text: failure.message }));
+    }).catch(failure => active && setMessage({ tone: 'error', text: financeTariffMessage(failure, {
+      fallback: 'No se pudo cargar la versión. Revise la conexión e intente de nuevo.' }) }));
     return () => { active = false; };
   }, [selectedId, reloads]);
 
   const editable = perms.update && detail?.summary.status === 'Draft';
   const draftActions = (perms.update || perms.delete || perms.publish) && detail?.summary.status === 'Draft';
-  async function run(action, success, conflict = 'La tarifa cambió. Se actualizó la vista.') {
+  /** A failure is explained by its code (1-E); the versions are read again either way. */
+  async function run(action, success) {
     setBusy(true);
     setMessage({ tone: '', text: '' });
     try {
@@ -220,7 +235,7 @@ function ChargeTariff({ perms }) {
       setMessage({ tone: 'success', text: success });
       await load(result?.id ?? selectedId);
     } catch (failure) {
-      setMessage({ tone: 'error', text: failure.status === 409 ? conflict : failure.message });
+      setMessage({ tone: 'error', text: financeTariffMessage(failure) });
       await load(selectedId);
     } finally {
       setBusy(false);
@@ -247,7 +262,8 @@ function ChargeTariff({ perms }) {
         )}
       </div>
       {message.text && <p role={message.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${message.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{message.text}</p>}
-      {!versions ? <p role="status" className="text-sm">Cargando…</p> : versions.length === 0 ? (
+      <LoadFailure failure={loadError} onRetry={() => { void load(selectedId); }} />
+      {!versions ? (loadError ? null : <p role="status" className="text-sm">Cargando…</p>) : versions.length === 0 ? (
         <EmptyState icon={TariffIcon} title="Sin tarifario de cargos" description={`Aún no hay importes de cargos en ${currency}.`} />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)]">
@@ -294,8 +310,7 @@ function ChargeTariff({ perms }) {
             setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
             return;
           }
-          await run(() => publishChargeTariff(detail.summary.id, detail.summary.version), 'Tarifario publicado.',
-            'No se pudo publicar: la vigencia debe empezar después de la versión vigente o la tarifa cambió. Se actualizó la vista.');
+          await run(() => publishChargeTariff(detail.summary.id, detail.summary.version), 'Tarifario publicado.');
         }} />
       <ConfirmDialog open={confirm === 'delete'} title="Descartar borrador" description="El borrador se eliminará." confirmLabel="Descartar"
         onClose={() => setConfirm(null)}

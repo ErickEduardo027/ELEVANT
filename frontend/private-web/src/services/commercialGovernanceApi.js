@@ -167,6 +167,19 @@ export const discardContractDraft = (versionId, command, idempotencyKey) =>
 export const replyContractDraft = (versionId, command, idempotencyKey) =>
   contractCall(() => contractClient().replyContractDraft(versionId, command, idempotencyKey));
 
+/**
+ * Finance (phase 1, block C): Contratos amends an active or suspended contract from «Vigente desde» with
+ * the contract status on screen (1-C), and Finance discards or retires a package with a reason (1-N27).
+ * Every command carries the intent's Idempotency-Key.
+ */
+/** Answers the new draft version, which Contratos completes in Borradores. */
+export const createContractAmendment = (versionId, command, idempotencyKey) =>
+  contractCall(() => contractClient().createContractAmendment(versionId, command, idempotencyKey));
+export const discardFinancePackage = (packageId, command, idempotencyKey) =>
+  contractCall(() => contractClient().discardFinancePackage(packageId, command, idempotencyKey));
+export const retireFinancePackage = (packageId, command, idempotencyKey) =>
+  contractCall(() => contractClient().retireFinancePackage(packageId, command, idempotencyKey));
+
 /** Formal document of an approved contract version, with its signatures and content hash. */
 export const getContractDocument = versionId => contractCall(() => contractClient().getContractDocument(versionId));
 

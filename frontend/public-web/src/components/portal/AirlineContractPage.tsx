@@ -7,6 +7,7 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractSignature } from "./AirlineContractSignature";
 import { ContractPdfActions } from "./ContractPdfActions";
 import { AirlinePermitsSection, ContractTimeline } from "./AirlinePermitsSection";
+import { billingUnitLabel } from "@/lib/billing-units";
 import styles from "./AirlinePortalPage.module.css";
 
 const STATUS: Record<string, string> = {
@@ -118,8 +119,8 @@ export function AirlineContractPage() {
           <p>Estaciones: {version.stations.map(station => `${station.code} · ${station.name}`).join(", ") || "Sin estaciones registradas"}</p>
           <div className={styles.contractRateList}>
             {version.rates.length > 0 ? version.rates.map(rate => <div key={rate.id}>
-              <strong>{rate.serviceName}</strong><span>{rate.serviceCode} · {rate.billingUnit}</span>
-              <span>Precio por {rate.billingUnit}: {money(rate.unitPrice, version.currencyCode)} · cantidad mínima {rate.minimumQuantity}</span>
+              <strong>{rate.serviceName}</strong><span>{rate.serviceCode} · por {billingUnitLabel(rate.billingUnit)}</span>
+              <span>Precio por {billingUnitLabel(rate.billingUnit)}: {money(rate.unitPrice, version.currencyCode)} · cantidad mínima {rate.minimumQuantity}</span>
             </div>) : <p>Sin tarifas registradas en esta versión.</p>}
           </div>
           <AirlineContractSignature versionId={version.id} fileName={`contrato-${contract.code}-v${version.versionNumber}.pdf`} />
@@ -169,7 +170,7 @@ function AirlineDraftCard({ draft, onComment, onDownload, onReload }: {
     {!inFinance && draft.financeDecision === "Returned" && <p className={styles.note}>Finanzas devolvió esta versión a Contratos para ajustes.</p>}
     <ContractPdfActions load={() => onDownload(draft.id)} fileName={`borrador-${draft.contractCode}.pdf`} label="borrador del contrato" />
     <div className={styles.contractVersion}><h3>Condiciones propuestas</h3><p>Vigencia prevista: {draft.validFrom} — {draft.validTo ?? "sin fecha de fin"}</p><p>Estaciones: {draft.stations.join(", ") || "Por definir"}</p><p>{draft.terms || "Contratos está preparando los términos de esta versión."}</p></div>
-    <div className={styles.contractRateList}>{draft.rates.map(rate => <div key={rate.id}><strong>{rate.serviceName}</strong><span>Precio por {rate.billingUnit}: {rate.isConfirmed ? money(rate.unitPrice, draft.currencyCode) : "por definir"}</span><span>Cantidad mínima: {rate.minimumQuantity}</span></div>)}</div>
+    <div className={styles.contractRateList}>{draft.rates.map(rate => <div key={rate.id}><strong>{rate.serviceName}</strong><span>Precio por {billingUnitLabel(rate.billingUnit)}: {rate.isConfirmed ? money(rate.unitPrice, draft.currencyCode) : "por definir"}</span><span>Cantidad mínima: {rate.minimumQuantity}</span></div>)}</div>
     <div className={styles.contractVersion}><h3>Observaciones</h3>{draft.comments.length ? <ul className={styles.draftComments}>{draft.comments.map(comment => <li key={comment.id}><strong>{comment.isAirline ? comment.author : "Respuesta de Contratos"}</strong><p>{comment.body}</p><small>{new Date(comment.at).toLocaleString("es-DO")}</small></li>)}</ul> : <p>Aún no hay observaciones.</p>}
       <form onSubmit={submit} className={styles.draftCommentForm}><label htmlFor={`draft-comment-${draft.id}`}>Enviar una observación a Contratos</label><textarea id={`draft-comment-${draft.id}`} required maxLength={2000} rows={3} value={body} onChange={event => setBody(event.target.value)} /><button disabled={busy || !body.trim()} type="submit">{busy ? "Enviando…" : "Enviar observación"}</button>{message && <p role="status">{message}</p>}</form>
     </div>

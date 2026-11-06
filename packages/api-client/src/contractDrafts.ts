@@ -7,8 +7,8 @@ import type { ContractDraftReadinessData, ContractDraftScopeData } from "../gene
 
 /** Why a draft cannot go to Finance yet, in the order the server reports them. */
 export const CONTRACT_DRAFT_ISSUES = ["portal_account_missing", "terms_missing", "services_missing",
-  "rates_unconfirmed", "stations_missing", "service_retired", "package_not_eligible", "valid_from_not_after_current",
-  "finance_reviewer_missing"] as const;
+  "rates_unconfirmed", "stations_missing", "service_retired", "package_not_eligible", "package_retired",
+  "valid_from_not_after_current", "finance_reviewer_missing"] as const;
 export type ContractDraftIssueCode = (typeof CONTRACT_DRAFT_ISSUES)[number];
 
 /** The airline's portal account: none yet, created and invited, or activated. */

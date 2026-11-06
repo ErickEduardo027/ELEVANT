@@ -1,11 +1,18 @@
 namespace Elevant.Domain.Enumerations;
 
-/// <summary>Lifecycle of a Finance tariff book (services or charges).</summary>
+/// <summary>
+/// Lifecycle of a Finance tariff book (services or charges) and of a service package version.
+/// <see cref="Discarded"/> and <see cref="Retired"/> apply to packages only (1-N27): a discarded
+/// draft never published, and a retired publication is no longer offered nor approved, while the
+/// approved contracts that froze it keep it.
+/// </summary>
 public enum TariffVersionStatus
 {
     Draft,
     Published,
     Superseded,
+    Discarded,
+    Retired,
 }
 
 public enum ChargeCategory

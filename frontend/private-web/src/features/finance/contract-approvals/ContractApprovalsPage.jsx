@@ -9,18 +9,15 @@ import { createPrivateWebAccountChangeObserver } from '../../../services/account
 import { ApprovedServicesIcon } from '../components/icons';
 import { METHOD_LABELS } from '../charges/ChargesPage';
 import { decideContractApproval, formatMoney, getContractApproval, listContractApprovals } from '../../../services/financeBookService';
+import { billingUnitLabel } from '../../../services/billingUnits';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { financeContractApprovalMessage } from '../../../services/financeErrors';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
+import { CONTRACT_APPROVAL_STATUS, packageScopeLabel, statusMeta } from '../financeLabels';
 
 const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revise la conexión e intente de nuevo.';
-
-const STATUS = {
-  PendingFinanceApproval: { label: 'Pendiente de Finanzas', tone: 'warning' },
-  Approved: { label: 'Aprobado', tone: 'success' },
-  Draft: { label: 'Devuelto a Contratos', tone: 'danger' },
-  Rejected: { label: 'Descartado por Contratos', tone: 'neutral' },
-};
+/** 1-F: approving the prices does not activate the contract; validity, signatures and the permit follow. */
+const APPROVAL_EXPLAINED = 'Los precios quedarán aprobados. Después Contratos confirma la vigencia y la renovación, firman la aerolínea y AVIAM, y Contratos verifica el permiso de operación de la aerolínea: solo entonces el contrato se activa y el OCC puede planificar sus operaciones.';
 
 function Difference({ value }) {
   if (value === null || value === undefined) return <span className="text-xs text-text-secondary-light">Sin tarifa base</span>;
@@ -28,7 +25,10 @@ function Difference({ value }) {
   return <span className={`font-semibold tabular-nums ${tone}`}>{value > 0 ? '+' : ''}{value} %</span>;
 }
 
-/** Finance reviews each contract against the base tariff before it becomes active. */
+/**
+ * Finance reviews the prices of each contract version against the base tariff. Approving them does not
+ * activate the contract (ADR-0024): the validity, both signatures and a verified permit come after.
+ */
 export default function ContractApprovalsPage() {
   const { access } = useDepartmentAccess();
   const canDecide = Boolean(access?.can('finance.contract_approvals.decide'));
@@ -80,7 +80,9 @@ export default function ContractApprovalsPage() {
       // The same key goes with a retry of the same decision after an uncertain result.
       await decideKeys.current.run('decide', { versionId: detail.summary.versionId, ...values },
         key => decideContractApproval(detail.summary.versionId, values, key));
-      setMessage({ tone: 'success', text: deciding === 'Approved' ? 'Contrato aprobado y activado.' : 'Contrato devuelto a Contratos con el motivo.' });
+      setMessage({ tone: 'success', text: deciding === 'Approved'
+        ? 'Precios aprobados. Contratos continúa con la vigencia y las firmas; el contrato se activa después.'
+        : 'Contrato devuelto a Contratos con el motivo.' });
       setDeciding(null);
       setSelected(null);
       await load();
@@ -98,7 +100,7 @@ export default function ContractApprovalsPage() {
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
       <PageHeader eyebrow="Finanzas" title="Aprobación de contratos"
-        description="Contratos enviados por Contratos. Compare cada precio con la tarifa base antes de activarlos." />
+        description="Versiones que envía Contratos. Compare cada precio con la tarifa base antes de aprobarlos." />
       <label className="flex min-h-[40px] items-center gap-2 text-sm"><input type="checkbox" checked={!pendingOnly} onChange={event => setPendingOnly(!event.target.checked)} />Ver también decididos en los últimos 90 días</label>
       {message.text && <p role={message.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${message.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{message.text}</p>}
       {loadState.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-6 text-sm dark:bg-surface-dark-card">No tiene permiso para ver las aprobaciones de contratos.</p>
@@ -109,7 +111,7 @@ export default function ContractApprovalsPage() {
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(18rem,24rem)_minmax(0,1fr)]">
           <ul className="space-y-2">
             {items.map(item => {
-              const status = STATUS[item.status] ?? { label: item.status, tone: 'info' };
+              const status = statusMeta(CONTRACT_APPROVAL_STATUS, item.status);
               return (
                 <li key={item.versionId}>
                   <button type="button" onClick={() => setSelected(item.versionId)}
@@ -137,7 +139,7 @@ export default function ContractApprovalsPage() {
                   <tbody>{detail.rates.map(rate => (
                     <tr key={rate.rateId} className="border-t border-black/5 dark:border-white/5">
                       <td className="p-2"><strong>{rate.serviceCode}</strong><span className="block text-xs text-text-secondary-light">{rate.serviceName}</span></td>
-                      <td className="p-2 text-xs">{rate.billingUnit} · mín. {rate.contractMinimum}</td>
+                      <td className="p-2 text-xs">Por {billingUnitLabel(rate.billingUnit)} · mín. {rate.contractMinimum}</td>
                       <td className="p-2 tabular-nums">{formatMoney(rate.contractPrice, currency)}</td>
                       <td className="p-2 tabular-nums">{rate.basePrice === null ? '—' : formatMoney(rate.basePrice, currency)}</td>
                       <td className="p-2"><Difference value={rate.differencePercent} /></td>
@@ -156,7 +158,7 @@ export default function ContractApprovalsPage() {
                   ))}
                 </ul>
               </div>
-              {detail.packages?.length > 0 && <section><h3 className="text-sm font-semibold">Paquetes contractuales</h3><ul className="mt-2 space-y-2">{detail.packages.map(item => <li key={item.id ?? item.packageVersionId ?? item.code} className="rounded-lg bg-black/5 p-3 text-xs dark:bg-white/5"><strong>{item.code} · {item.name}</strong> · versión {item.versionNumber} · {item.scope} · base {formatMoney(item.basePrice, item.currencyCode)}</li>)}</ul><p className="mt-2 text-xs text-text-secondary-light">Los servicios cubiertos no se cobrarán individualmente. Las inclusiones y excedentes conservan la versión aprobada del paquete.</p></section>}
+              {detail.packages?.length > 0 && <section><h3 className="text-sm font-semibold">Paquetes contractuales</h3><ul className="mt-2 space-y-2">{detail.packages.map(item => <li key={item.id ?? item.packageVersionId ?? item.code} className="rounded-lg bg-black/5 p-3 text-xs dark:bg-white/5"><strong>{item.code} · {item.name}</strong> · versión {item.versionNumber} · {packageScopeLabel(item.scope)} · base {formatMoney(item.basePrice, item.currencyCode)}</li>)}</ul><p className="mt-2 text-xs text-text-secondary-light">Los servicios cubiertos no se cobrarán individualmente. Las inclusiones y excedentes conservan la versión aprobada del paquete.</p></section>}
               {detail.history.length > 0 && (
                 <div className="text-xs text-text-secondary-light">
                   {detail.history.map(item => <p key={item.decidedAt}>{item.decision === 'Approved' ? 'Aprobado' : 'Devuelto'} por {item.decidedBy} · {new Date(item.decidedAt).toLocaleString('es-DO')}{item.reason ? ` · ${item.reason}` : ''}</p>)}
@@ -165,7 +167,7 @@ export default function ContractApprovalsPage() {
               {canDecide && detail.summary.status === 'PendingFinanceApproval' && (
                 <div className="flex flex-wrap justify-end gap-2">
                   <button type="button" onClick={() => { setDeciding('Returned'); setReason(''); }} className="min-h-[40px] rounded-lg border border-status-danger/40 px-4 text-sm font-semibold text-status-danger">Devolver a Contratos</button>
-                  <button type="button" onClick={() => { setDeciding('Approved'); setReason(''); }} className="min-h-[40px] rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white">Aprobar y activar</button>
+                  <button type="button" onClick={() => { setDeciding('Approved'); setReason(''); }} className="min-h-[40px] rounded-lg bg-accent-600 px-4 text-sm font-semibold text-white">Aprobar precios</button>
                 </div>
               )}
             </section>
@@ -173,11 +175,11 @@ export default function ContractApprovalsPage() {
         </div>
       )}
       <Modal open={Boolean(deciding)} onClose={() => setDeciding(null)} tone={deciding === 'Returned' ? 'danger' : 'default'}
-        title={deciding === 'Approved' ? 'Aprobar contrato' : 'Devolver contrato'}
+        title={deciding === 'Approved' ? 'Aprobar precios' : 'Devolver contrato'}
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setDeciding(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
-          <button type="submit" form="contract-decision-form" disabled={busy} className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${deciding === 'Returned' ? 'bg-status-danger' : 'bg-accent-600'}`}>{deciding === 'Approved' ? 'Aprobar' : 'Devolver'}</button></div>}>
+          <button type="submit" form="contract-decision-form" disabled={busy} className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${deciding === 'Returned' ? 'bg-status-danger' : 'bg-accent-600'}`}>{deciding === 'Approved' ? 'Aprobar precios' : 'Devolver'}</button></div>}>
         <form id="contract-decision-form" onSubmit={decide} className="space-y-3">
-          <p className="text-sm">{deciding === 'Approved' ? 'El contrato quedará activo y el OCC podrá planificar sus operaciones.' : 'Contratos verá el motivo y podrá corregir el borrador. La aerolínea solo verá que la versión fue devuelta, sin el motivo.'}</p>
+          <p className="text-sm">{deciding === 'Approved' ? APPROVAL_EXPLAINED : 'Contratos verá el motivo y podrá corregir el borrador. La aerolínea solo verá que la versión fue devuelta, sin el motivo.'}</p>
           <label className="block text-sm font-semibold">{deciding === 'Approved' ? 'Comentario (opcional)' : 'Motivo'}
             <textarea required={deciding === 'Returned'} minLength={deciding === 'Returned' ? 3 : undefined} maxLength={1000} rows={3} value={reason}
               onChange={event => setReason(event.target.value)} className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark" />

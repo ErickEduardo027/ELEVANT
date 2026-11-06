@@ -44,14 +44,14 @@ internal sealed partial class EfFinanceTariffBookStore
             input.FromCurrency == input.ToCurrency || input.Rate is <= 0 or > 1_000_000m || input.RateDate == default ||
             input.RateDate > DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime.AddDays(1)) ||
             string.IsNullOrWhiteSpace(input.Source) || input.Source.Trim().Length > 120)
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "invalid_exchange_rate");
         return await InTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
             if (await context.ExchangeRates.AnyAsync(rate => rate.IsCurrent && rate.RateDate == input.RateDate &&
                     (rate.FromCurrency == input.FromCurrency && rate.ToCurrency == input.ToCurrency ||
                         rate.FromCurrency == input.ToCurrency && rate.ToCurrency == input.FromCurrency), cancellationToken))
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "exchange_rate_exists");
             var rate = new ExchangeRate
             {
                 PublicId = Guid.CreateVersion7(), RateDate = input.RateDate, FromCurrency = input.FromCurrency,
@@ -75,14 +75,14 @@ internal sealed partial class EfFinanceTariffBookStore
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || input.Rate is <= 0 or > 1_000_000m || string.IsNullOrWhiteSpace(input.Source) ||
             input.Source.Trim().Length > 120 || string.IsNullOrWhiteSpace(input.ExpectedVersion))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "invalid_exchange_rate");
         return await InTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
             var current = await context.ExchangeRates.SingleOrDefaultAsync(rate => rate.PublicId == rateId, cancellationToken);
-            if (current is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+            if (current is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
             if (!current.IsCurrent || Version(current.RowVersion) != input.ExpectedVersion)
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
             current.IsCurrent = false;
             current.UpdatedAt = now;
             await context.SaveChangesAsync(cancellationToken);
@@ -365,7 +365,7 @@ internal sealed partial class EfFinanceTariffBookStore
 
     /// <summary>
     /// Why Finance cannot approve the prices as they are; Finance returns the version so Contratos
-    /// fixes it. The rules match the draft readiness of Contratos (1-N07, 1-N10).
+    /// fixes it. The rules match the draft readiness of Contratos (1-N07, 1-N10, 1-N27).
     /// </summary>
     private async Task<string?> ApprovalBlockAsync(ContractVersion version, Contract contract,
         CancellationToken cancellationToken)
@@ -373,6 +373,9 @@ internal sealed partial class EfFinanceTariffBookStore
         var packageRows = await (from link in context.Set<ContractServicePackage>().AsNoTracking()
             join package in context.Set<ServicePackageVersion>().AsNoTracking() on link.PackageVersionId equals package.Id
             where link.ContractVersionId == version.Id select package).ToArrayAsync(cancellationToken);
+        // 1-N27: a package Finance retired after Contratos linked it is no longer approved.
+        if (packageRows.Any(package => package.Status == TariffVersionStatus.Retired))
+            return ContractDraftIssues.PackageRetired;
         if (packageRows.Any(package => !EfContractDraftStore.PackageFits(package, version.CurrencyCode, version.ValidFrom,
                 version.ValidTo)))
             return ContractDraftIssues.PackageNotEligible;

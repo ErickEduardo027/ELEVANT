@@ -150,7 +150,8 @@ it('creates a catalog service with its own code at the end of the order', async 
 
   await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith(null, expect.objectContaining({
     code: 'RAMP-CARGO', name: 'Carga y descarga', description: 'Atención de carga',
-    billingUnit: 'tonelada', displayOrder: 41, isPublic: false,
+    // 1-E: the catalog stores the unit code of «Unidades de cobro», not its name.
+    billingUnit: 'ton', displayOrder: 41, isPublic: false,
   })));
   expect(await screen.findByText(/Servicio guardado como oculto/)).toBeInTheDocument();
   expect(screen.getByText('Página 2 de 2')).toBeInTheDocument();
@@ -176,7 +177,7 @@ it('creates a new service with «Otro» as its name and a unit maintained by Fin
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
   await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith(null, expect.objectContaining({
-    code: 'SA', name: 'Asistencia especial', billingUnit: 'hora', displayOrder: 2,
+    code: 'SA', name: 'Asistencia especial', billingUnit: 'hour', displayOrder: 2,
   })));
 });
 
@@ -289,7 +290,7 @@ it('edits name and billing unit while keeping code and order', async () => {
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
 
   await waitFor(() => expect(saveManagedService).toHaveBeenCalledWith('service-2', expect.objectContaining({
-    code: 'SERVICE-2', name: 'Remolque', billingUnit: 'hora', displayOrder: 2, version: 'version-2',
+    code: 'SERVICE-2', name: 'Remolque', billingUnit: 'hour', displayOrder: 2, version: 'version-2',
   })));
   await screen.findByText('Servicio actualizado. El catálogo público se refrescará.');
   expect(cardNames()).toEqual(['Servicio 1', 'Remolque', 'Servicio 3']);
@@ -316,8 +317,9 @@ it('edits a service in a right drawer and uploads its selected image before savi
   fireEvent.change(screen.getByLabelText('Foto del servicio'), { target: { files: [image] } });
   await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
   await waitFor(() => expect(uploadCommercialMedia).toHaveBeenCalledWith('service-image', image));
+  // A legacy unit name opens as the unit it names and is saved by its code.
   expect(saveManagedService).toHaveBeenCalledWith('service-1', expect.objectContaining({
-    code: 'RAMP-CARGO', name: 'Carga y descarga', billingUnit: 'operación', displayOrder: 1,
+    code: 'RAMP-CARGO', name: 'Carga y descarga', billingUnit: 'operation', displayOrder: 1,
     imageUrl: '/api/v1/media/00000000-0000-0000-0000-000000000001',
   }));
 });

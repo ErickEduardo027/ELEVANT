@@ -4,17 +4,16 @@ import Modal from '../../../components/Modal';
 import PageHeader from '../../../components/PageHeader';
 import StackedTable from '../../../components/StackedTable';
 import { TariffIcon } from '../components/icons';
+import LoadFailure, { loadFailure } from '../components/LoadFailure';
 import { listBillingUnits, saveBillingUnit } from '../../../services/financeBookService';
+import { financeTariffMessage } from '../../../services/financeErrors';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const SCALE_LABELS = ['Enteros (1, 2, 3)', '1 decimal', '2 decimales', '3 decimales', '4 decimales'];
 
-function saveError(failure) {
-  if (failure?.status === 409) return 'Ya existe una unidad con ese código o la unidad cambió. Recargue y vuelva a intentarlo.';
-  if (failure?.status === 403) return 'No tiene permiso para gestionar las unidades de cobro.';
-  if (failure?.status === 400) return 'Revise el código (2 a 32 letras minúsculas, dígitos o guiones), el nombre y los decimales.';
-  return failure?.message || 'No se pudo guardar la unidad.';
-}
+/** One Spanish message per code (1-E); the server title is never shown. */
+const saveError = failure => financeTariffMessage(failure, { fallback: 'No se pudo guardar la unidad.',
+  forbidden: 'No tiene permiso para gestionar las unidades de cobro.' });
 
 /**
  * Units in which services and charges are measured and priced (per operation, hour, passenger…).
@@ -23,13 +22,20 @@ function saveError(failure) {
 export default function BillingUnitsPage({ canCreate = false, canUpdate = false }) {
   const [units, setUnits] = useState(null);
   const [error, setError] = useState('');
+  // A list that failed to load shows a recoverable error, never «Sin unidades de cobro».
+  const [loadError, setLoadError] = useState(null);
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
-    try { setUnits(await listBillingUnits()); setError(''); }
-    catch (failure) { setUnits([]); setError(failure?.status === 403 ? 'No tiene acceso a las unidades de cobro.' : 'No se pudieron cargar las unidades de cobro.'); }
+    try { setUnits(await listBillingUnits()); setLoadError(null); }
+    catch (failure) {
+      setUnits(null);
+      setLoadError(loadFailure(failure, financeTariffMessage(failure, {
+        fallback: 'No se pudieron cargar las unidades de cobro. Revise la conexión e intente de nuevo.',
+        forbidden: 'No tiene acceso a las unidades de cobro.' })));
+    }
   }, []);
   useEffect(() => { void load(); }, [load]);
 
@@ -63,7 +69,8 @@ export default function BillingUnitsPage({ canCreate = false, canUpdate = false 
       </p>
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
       {error && !form && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
-      {!units ? <p role="status" className="text-sm">Cargando unidades…</p> : units.length === 0 ? (
+      <LoadFailure failure={loadError} onRetry={() => { void load(); }} />
+      {!units ? (loadError ? null : <p role="status" className="text-sm">Cargando unidades…</p>) : units.length === 0 ? (
         <EmptyState icon={TariffIcon} title="Sin unidades de cobro" description="Cree la primera unidad para poder tarifar servicios y cargos." />
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">

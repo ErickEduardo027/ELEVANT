@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OTHER_OPTION } from '../../../components/Combobox';
-import { MAX_DISPLAY_ORDER, REFERENCE_SERVICES, billingUnitOptions, buildServiceCatalog,
+import { MAX_DISPLAY_ORDER, REFERENCE_SERVICES, billingUnitChoice, billingUnitOptions, buildServiceCatalog,
   buildServicePayload, nextDisplayOrder, publicationProblem, sortServicesByOrder, validateServiceForm } from './serviceCatalogForm';
 
 const service = (id, code, name, extra = {}) => ({ id, code, name, displayOrder: 1, billingUnit: 'operación', ...extra });
@@ -46,9 +46,14 @@ it('offers the active units Finance maintains and keeps a legacy unit only for i
   const units = [{ code: 'operation', name: 'Operación', isActive: true }, { code: 'hour', name: 'Hora', isActive: true },
     { code: 'old', name: 'Antigua', isActive: false }];
   expect(billingUnitOptions(units).map(option => option.label)).toEqual(['Por hora', 'Por operación']);
+  // 1-E: the options carry the unit code; a legacy name of an active unit is that unit, not a second option.
+  expect(billingUnitOptions(units).map(option => option.value)).toEqual(['hour', 'operation']);
   expect(billingUnitOptions(units, 'operación')).toHaveLength(2);
   expect(billingUnitOptions(units, 'turno').at(-1)).toMatchObject({ value: 'turno', hint: expect.stringMatching(/heredada/) });
+  expect(billingUnitOptions(units, 'old').at(-1)).toMatchObject({ value: 'old', label: 'Por antigua' });
   expect(billingUnitOptions(null)).toEqual([]);
+  expect([billingUnitChoice('Operación', units), billingUnitChoice('hour', units), billingUnitChoice(' turno ', units)])
+    .toEqual(['operation', 'hour', 'turno']);
 });
 
 it('explains what a service needs before it can be public', () => {

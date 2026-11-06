@@ -1,3 +1,4 @@
+import { billingUnitLabel } from '../../../services/billingUnits';
 import { useApprovedServicesData } from './useApprovedServicesData';
 
 /** Who marked the charge OCC approved (ADR-0034). */
@@ -81,7 +82,7 @@ export default function ApprovedServicesPage({ initialStationId }) {
                   <span className="block text-xs text-text-secondary-light">{date(line.operationDate)}</span></td>
                 <td className="px-3 py-2"><span className="block font-semibold">{line.serviceName}</span>
                   <span className="block font-mono text-xs text-text-secondary-light">{line.serviceCode}</span></td>
-                <td className="px-3 py-2 text-right">{line.executedQuantity} {line.billingUnit}</td>
+                <td className="px-3 py-2 text-right">{line.executedQuantity} {billingUnitLabel(line.billingUnit)}</td>
                 <td className="px-3 py-2 text-right">{money(line.unitPrice, line.currencyCode)}</td>
                 <td className="py-2 pl-3 text-right font-semibold">{money(line.amount, line.currencyCode)}</td>
               </tr>)}
@@ -174,7 +175,7 @@ export default function ApprovedServicesPage({ initialStationId }) {
                     <td className="px-5 py-4">{item.airlineName}<span className="block text-xs text-text-secondary-light">{item.flightNumber || item.operationCode}</span></td>
                     <td className="px-5 py-4 font-mono text-xs">{item.contractCode || 'Sin referencia'}</td>
                     <td className="px-5 py-4">{date(item.operationDate)}</td>
-                    <td className="px-5 py-4">{item.executedQuantity} {item.billingUnit}</td>
+                    <td className="px-5 py-4">{item.executedQuantity} {billingUnitLabel(item.billingUnit)}</td>
                     <td className="px-5 py-4 text-right font-semibold">{money(item.amount, item.frozenCurrency)}</td>
                     <td className="px-5 py-4">{item.preinvoiceId
                       ? <button type="button" onClick={() => data.openDraft(item.preinvoiceId)}

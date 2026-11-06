@@ -7,24 +7,26 @@ import StatusBadge from '../../../components/StatusBadge';
 import Tabs from '../../../components/Tabs';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { TariffIcon } from '../components/icons';
+import LoadFailure, { loadFailure } from '../components/LoadFailure';
 import TariffsPage from './TariffsPage';
+import { billingUnitLabel, proposedBillingUnit } from '../../../services/billingUnits';
 import {
   createServiceTariffDraft, deleteServiceTariffDraft, FINANCE_CURRENCIES, formatMoney, getServiceTariff, listFinanceServices,
   listBillingUnits, listServiceTariffs, publishServiceTariff, saveServiceTariffDraft,
 } from '../../../services/financeBookService';
+import { financeTariffMessage } from '../../../services/financeErrors';
+import { isConflict } from '../../../services/problemMessages';
+import { statusMeta, TARIFF_VERSION_STATUS } from '../financeLabels';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
-export const VERSION_STATUS = {
-  Draft: { label: 'Borrador', tone: 'warning' },
-  Published: { label: 'Vigente', tone: 'success' },
-  Superseded: { label: 'Histórica', tone: 'neutral' },
-};
+export const VERSION_STATUS = TARIFF_VERSION_STATUS;
+const LOAD_FAILED = 'No se pudieron cargar las tarifas. Revise la conexión e intente de nuevo.';
 
 export function VersionList({ versions, selectedId, onSelect }) {
   return (
     <ul className="space-y-2">
       {versions.map(version => {
-        const status = VERSION_STATUS[version.status] ?? { label: version.status, tone: 'info' };
+        const status = statusMeta(VERSION_STATUS, version.status);
         return (
           <li key={version.id}>
             <button type="button" onClick={() => onSelect(version.id)}
@@ -68,6 +70,8 @@ function BaseTariff() {
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(null);
   const [message, setMessage] = useState({ tone: '', text: '' });
+  // A list that failed to load shows a recoverable error, never «Sin tarifa base».
+  const [loadError, setLoadError] = useState(null);
 
   /** Bumped on every list read so the selected detail and its version are re-read after a save. */
   const [reloads, setReloads] = useState(0);
@@ -76,13 +80,15 @@ function BaseTariff() {
     try {
       const list = await listServiceTariffs(currency);
       setVersions(list);
+      setLoadError(null);
       setReloads(value => value + 1);
       const target = keep && list.some(item => item.id === keep) ? keep
         : list.find(item => item.status === 'Draft')?.id ?? list.find(item => item.status === 'Published')?.id ?? list[0]?.id ?? null;
       setSelectedId(target);
     } catch (error) {
-      setVersions([]);
-      setMessage({ tone: 'error', text: error.message });
+      setVersions(null);
+      setLoadError(loadFailure(error, financeTariffMessage(error, { fallback: LOAD_FAILED,
+        forbidden: 'No tiene permiso para consultar la tarifa base.' })));
     }
   }, [currency]);
 
@@ -105,7 +111,7 @@ function BaseTariff() {
       setDetail(result);
       setRates(result.rates.map(rate => ({ ...rate, key: `${rate.serviceId}:${rate.stationId ?? '*'}` })));
       setMeta({ validFrom: result.summary.validFrom, validTo: result.summary.validTo ?? '', note: result.summary.note ?? '' });
-    }).catch(error => active && setMessage({ tone: 'error', text: error.message }));
+    }).catch(error => active && setMessage({ tone: 'error', text: financeTariffMessage(error, { fallback: LOAD_FAILED }) }));
     return () => { active = false; };
   }, [selectedId, reloads]);
 
@@ -116,7 +122,8 @@ function BaseTariff() {
     `${rate.serviceCode} ${rate.serviceName}`.toLowerCase().includes(search.trim().toLowerCase())), [rates, search]);
   const missingServices = services.filter(service => !rates.some(rate => rate.serviceId === service.id && !rate.stationId));
 
-  async function run(action, success, conflict = 'La tarifa cambió o ya existe un borrador para esta moneda. Se actualizó la vista.') {
+  /** Runs a command; a failure is explained by its code (1-E) and a conflict re-reads the versions. */
+  async function run(action, success) {
     setBusy(true);
     setMessage({ tone: '', text: '' });
     try {
@@ -125,8 +132,8 @@ function BaseTariff() {
       await load(result?.id ?? selectedId);
       return true;
     } catch (error) {
-      setMessage({ tone: 'error', text: error.status === 409 ? conflict : error.message });
-      await load(selectedId);
+      setMessage({ tone: 'error', text: financeTariffMessage(error) });
+      if (isConflict(error)) await load(selectedId);
       return false;
     } finally {
       setBusy(false);
@@ -145,8 +152,7 @@ function BaseTariff() {
       setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
       return;
     }
-    await run(() => publishServiceTariff(detail.summary.id, detail.summary.version), 'Tarifa publicada.',
-      `No se pudo publicar: la vigencia debe empezar después de la versión vigente o la tarifa cambió. Se actualizó la vista.`);
+    await run(() => publishServiceTariff(detail.summary.id, detail.summary.version), 'Tarifa publicada.');
   }
 
   const update = (key, patch) => setRates(current => current.map(rate => (rate.key === key ? { ...rate, ...patch } : rate)));
@@ -168,7 +174,8 @@ function BaseTariff() {
         )}
       </div>
       {message.text && <p role={message.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${message.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{message.text}</p>}
-      {!versions ? <p role="status" className="text-sm">Cargando tarifas…</p> : versions.length === 0 ? (
+      <LoadFailure failure={loadError} onRetry={() => { void load(selectedId); }} />
+      {!versions ? (loadError ? null : <p role="status" className="text-sm">Cargando tarifas…</p>) : versions.length === 0 ? (
         <EmptyState icon={TariffIcon} title="Sin tarifa base" description={`Aún no hay una tarifa base en ${currency}.`} />
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(14rem,18rem)_minmax(0,1fr)]">
@@ -192,8 +199,8 @@ function BaseTariff() {
                         <td className="p-2">{editable ? (
                           <select aria-label={`Unidad de ${rate.serviceCode}`} value={rate.billingUnit} onChange={event => update(rate.key, { billingUnit: event.target.value })} className={fieldClass}>
                             {units.map(unit => <option key={unit.code} value={unit.code}>{unit.name}</option>)}
-                            {!units.some(unit => unit.code === rate.billingUnit) && <option value={rate.billingUnit}>{rate.billingUnit}</option>}
-                          </select>) : rate.billingUnit}</td>
+                            {!units.some(unit => unit.code === rate.billingUnit) && <option value={rate.billingUnit}>{billingUnitLabel(rate.billingUnit)} (no activa)</option>}
+                          </select>) : `Por ${billingUnitLabel(rate.billingUnit, units)}`}</td>
                         <td className="p-2">{editable ? <input aria-label={`Precio de ${rate.serviceCode}`} type="number" min="0" step="0.01" value={rate.unitPrice} onChange={event => update(rate.key, { unitPrice: event.target.value })} className={fieldClass} /> : formatMoney(rate.unitPrice, detail.summary.currencyCode)}</td>
                         <td className="p-2">{editable ? <input aria-label={`Mínimo de ${rate.serviceCode}`} type="number" min="0" step="0.01" value={rate.minimumBillableQuantity} onChange={event => update(rate.key, { minimumBillableQuantity: event.target.value })} className={fieldClass} /> : rate.minimumBillableQuantity}</td>
                         {editable && <td className="p-2"><button type="button" onClick={() => setRates(current => current.filter(item => item.key !== rate.key))} className="text-xs font-semibold text-status-danger">Quitar</button></td>}
@@ -206,8 +213,9 @@ function BaseTariff() {
                 <label className="block max-w-sm text-xs font-semibold">Añadir servicio
                   <select value="" onChange={event => {
                     const service = services.find(item => item.id === event.target.value);
+                    // 1-E: the proposed unit is always an active unit code; a legacy name maps to its code.
                     if (service) setRates(current => [...current, { key: `${service.id}:*`, serviceId: service.id, serviceCode: service.code,
-                      serviceName: service.name, stationId: null, stationCode: null, billingUnit: service.defaultBillingUnit || units[0]?.code || 'operation',
+                      serviceName: service.name, stationId: null, stationCode: null, billingUnit: proposedBillingUnit(service.defaultBillingUnit, units),
                       unitPrice: 0, minimumBillableQuantity: 0 }]);
                   }} className={fieldClass}>
                     <option value="">Seleccione…</option>

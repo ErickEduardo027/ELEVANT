@@ -108,6 +108,10 @@ internal sealed partial class EfContractDraftStore
             // The services changed since the editor read the draft (scope saved elsewhere).
             if (rates.Length != input.Rates.Count || rates.Any(rate => input.Rates.All(item => item.Id != rate.PublicId)))
                 return Conflict("version_conflict");
+            // 1-E: every rate keeps a unit code of ref.billing_units; a unit name is saved as its code.
+            var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+            var rateUnits = input.Rates.ToDictionary(item => item.Id, item => units.Resolve(item.BillingUnit));
+            if (rateUnits.Values.Any(unit => unit is null)) return Invalid("billing_unit_unknown");
             var chargeKeys = input.ChargeRates?.Select(rate => rate.ChargeId).ToArray() ?? [];
             var chargeIds = await context.ChargeDefinitions.AsNoTracking()
                 .Where(charge => chargeKeys.Contains(charge.PublicId))
@@ -146,7 +150,7 @@ internal sealed partial class EfContractDraftStore
             foreach (var rate in rates)
             {
                 var inputRate = input.Rates.Single(item => item.Id == rate.PublicId);
-                rate.BillingUnit = inputRate.BillingUnit.Trim();
+                rate.BillingUnit = rateUnits[inputRate.Id]!;
                 rate.UnitPrice = inputRate.UnitPrice;
                 rate.MinimumQuantity = inputRate.MinimumQuantity;
                 // Prices in another currency are other prices: every rate is confirmed again (1-N07).
@@ -272,6 +276,7 @@ internal sealed partial class EfContractDraftStore
                 var baseRates = await FinanceTariffLookup.ServiceRatesAsync(context, row.Version.CurrencyCode,
                     row.Version.ValidFrom, ContractDraftRules.BaseStation(stationIds),
                     added.Select(service => service.Id).ToArray(), cancellationToken);
+                var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
                 foreach (var service in added)
                 {
                     var baseRate = baseRates.GetValueOrDefault(service.Id);
@@ -279,7 +284,7 @@ internal sealed partial class EfContractDraftStore
                     {
                         PublicId = Guid.CreateVersion7(), ContractVersionId = row.Version.Id,
                         ServiceDefinitionId = service.Id,
-                        BillingUnit = baseRate?.BillingUnit ?? service.DefaultBillingUnit,
+                        BillingUnit = baseRate?.BillingUnit ?? units.CodeOrDefault(service.DefaultBillingUnit),
                         UnitPrice = baseRate?.UnitPrice ?? 0, MinimumQuantity = baseRate?.MinimumBillableQuantity ?? 0,
                         IsConfirmed = false, CreatedAt = now, UpdatedAt = now,
                     });

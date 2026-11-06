@@ -22,7 +22,7 @@ export const DepartmentPermissionCodes = {
     service_closures: ['read', 'decide', 'reopen'], reports: ['read'], notifications: ['read'],
   }),
   finance: codes('finance', {
-    home: ['read'], packages: ['read', 'create', 'update', 'publish'], contract_approvals: ['read', 'decide'],
+    home: ['read'], packages: ['read', 'create', 'update', 'delete', 'publish', 'retire'], contract_approvals: ['read', 'decide'],
     approved_services: ['read', 'create'], preinvoices: ['read', 'update', 'issue'], reconciliation: ['read', 'create'],
     adjustments: ['read', 'create'], tariffs: ['read', 'create', 'update', 'delete', 'publish'],
     charges: ['read', 'create', 'update', 'delete', 'publish'], exchange_rates: ['read', 'create', 'update'],

@@ -7,6 +7,7 @@ using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Finance;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -97,6 +98,8 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                         SubmittedAt = DateTimeOffset.UtcNow,
                     };
                     context.ServiceRequests.Add(request);
+                    // 1-E: the request keeps the unit code; a legacy catalog name is stored as its code.
+                    var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
                     foreach (var serviceId in command.ServiceIds)
                     {
                         var service = services.Single(item => item.PublicId == serviceId);
@@ -105,7 +108,7 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                             ServiceRequest = request,
                             ServiceDefinitionId = service.Id,
                             RequestedServiceName = service.Name,
-                            RequestedUnit = service.DefaultBillingUnit,
+                            RequestedUnit = units.Normalize(service.DefaultBillingUnit),
                         });
                     }
 

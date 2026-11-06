@@ -77,14 +77,21 @@ internal sealed partial class EfFinanceTariffBookStore(
         params AuditFieldChangeData[] changes) =>
         CommercialAuditWriter.Add(context, actorId, action, entityType, entityId, reason, changes);
 
-    /// <summary>Catalog services Finance can price, including inactive ones still present in tariffs.</summary>
+    /// <summary>
+    /// Catalog services Finance can price, including inactive ones still present in tariffs. The default
+    /// unit is a unit code (1-E): a legacy name stored by the catalog («operación») is read as its code,
+    /// so the tariff screen proposes a unit the save accepts.
+    /// </summary>
     public async Task<IReadOnlyList<FinanceServiceOptionData>?> ListServicesAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
         if (await AuthorizeAsync(actorId, "finance.tariffs.read", cancellationToken) is null) return null;
-        return await context.ServiceDefinitions.AsNoTracking().OrderBy(service => service.Code)
+        var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+        return (await context.ServiceDefinitions.AsNoTracking().OrderBy(service => service.Code)
+                .Select(service => new { service.PublicId, service.Code, service.Name, service.DefaultBillingUnit, service.IsActive })
+                .ToArrayAsync(cancellationToken))
             .Select(service => new FinanceServiceOptionData(service.PublicId, service.Code, service.Name,
-                service.DefaultBillingUnit, service.IsActive)).ToArrayAsync(cancellationToken);
+                units.Normalize(service.DefaultBillingUnit), service.IsActive)).ToArray();
     }
 
     public async Task<IReadOnlyList<BillingUnitData>?> ListBillingUnitsAsync(Guid actorId,
@@ -111,7 +118,7 @@ internal sealed partial class EfFinanceTariffBookStore(
             !code.All(character => char.IsAsciiLetterLower(character) || char.IsAsciiDigit(character) || character == '-') ||
             string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 80 ||
             input.QuantityScale is < 0 or > 4 || unitId is not null && string.IsNullOrWhiteSpace(input.ExpectedVersion))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "invalid_billing_unit");
         return await InTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
@@ -119,15 +126,17 @@ internal sealed partial class EfFinanceTariffBookStore(
             if (unitId is { } id)
             {
                 unit = await context.BillingUnits.SingleOrDefaultAsync(item => item.PublicId == id, cancellationToken);
-                if (unit is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+                if (unit is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
                 if (Version(unit.RowVersion) != input.ExpectedVersion)
-                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
-                if (unit.Code != code) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
+                // Rates and services keep the code: it never changes once created.
+                if (unit.Code != code)
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "billing_unit_code_locked");
             }
             else
             {
                 if (await context.BillingUnits.AnyAsync(item => item.Code == code, cancellationToken))
-                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "billing_unit_exists");
                 unit = new BillingUnit { PublicId = Guid.CreateVersion7(), Code = code, CreatedAt = now };
                 context.BillingUnits.Add(unit);
             }
@@ -143,7 +152,4 @@ internal sealed partial class EfFinanceTariffBookStore(
         }, cancellationToken);
     }
 
-    private async Task<bool> ActiveUnitAsync(string? code, CancellationToken cancellationToken) =>
-        code is not null && await context.BillingUnits.AnyAsync(unit => unit.Code == code && unit.IsActive,
-            cancellationToken);
 }

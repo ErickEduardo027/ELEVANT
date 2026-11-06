@@ -11393,16 +11393,26 @@
         ]
       }
     },
-    "/api/v1/contracts/versions/{versionId}/amendments": {
+    "/api/v1/finance/packages/{id}/discard": {
       "post": {
         "tags": [
           "FinancePackages"
         ],
-        "operationId": "CreateContractAmendment",
+        "summary": "Finance discards a package draft with a reason (1-N27, `finance.packages.delete`); the draft is\nkept as Discarded. Idempotency-Key and the expected version are required.",
+        "operationId": "DiscardFinancePackage",
         "parameters": [
           {
-            "name": "versionId",
+            "name": "id",
             "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "required": true,
             "schema": {
               "type": "string",
@@ -11416,48 +11426,261 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/FinancePackageCommandRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePackageCommandRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePackageCommandRequest"
+                    "$ref": "#/components/schemas/FinancePackageLifecycleRequest"
                   }
                 ]
               }
             }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePackageIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/packages/{id}/retire": {
+      "post": {
+        "tags": [
+          "FinancePackages"
+        ],
+        "summary": "Finance retires a published package with a reason (1-N27, `finance.packages.retire`): Contratos can\nno longer link it and Finance does not approve drafts that still do; approved contracts keep it.",
+        "operationId": "RetireFinancePackage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePackageLifecycleRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePackageIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/versions/{versionId}/amendments": {
+      "post": {
+        "tags": [
+          "FinancePackages"
+        ],
+        "summary": "Contratos amends an active or suspended contract from any of its versions (1-C): a new draft from\nthe latest approved version, starting on `validFrom` and ending when that version ends, with\nits rates unconfirmed. The token is the contract status the user saw. No client used the earlier\nshape, so the Idempotency-Key is required without an expand phase. Answers the new draft version.",
+        "operationId": "CreateContractAmendment",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateContractAmendmentRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
         },
         "responses": {
           "201": {
             "description": "Created",
             "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FinancePackageIdResponse"
                 }
-              },
-              "text/json": {
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -34463,6 +34686,23 @@
         },
         "additionalProperties": false
       },
+      "CreateContractAmendmentRequest": {
+        "required": [
+          "expectedStatus",
+          "validFrom"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedStatus": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateDepartmentAccountInput": {
         "required": [
           "stationIds",
@@ -37219,6 +37459,22 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePackageLifecycleRequest": {
+        "required": [
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "additionalProperties": false

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Modal from '../../../components/Modal';
+import { billingUnitLabel } from '../../../services/billingUnits';
 import { addPreinvoiceAdjustment, editPreinvoiceLine, formatMoney } from '../../../services/financeBookService';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
@@ -62,7 +63,7 @@ export default function PreinvoiceLinesEditor({ preinvoice, canEdit, onChanged }
             {line.isExcluded && <span className="ml-1 text-xs text-status-danger">excluido</span>}
           </p>
           <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-            {line.executedQuantity} {line.billingUnit}{edited ? ` · calculado ${formatMoney(line.computedAmount, currency)}` : ''}
+            {line.executedQuantity} {billingUnitLabel(line.billingUnit)}{edited ? ` · calculado ${formatMoney(line.computedAmount, currency)}` : ''}
             {line.adjustmentReason ? ` · ${line.adjustmentReason}` : ''}
           </p>
         </div>

@@ -10,6 +10,7 @@ import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { countryName, documentLabel, requestStatusLabel } from './requestLabels';
 import { representativeDomainCheck } from './representativeDomain';
+import { billingUnitLabel } from '../../../services/billingUnits';
 
 const PAGE_SIZE = 25;
 const OPEN = ['Pending', 'InReview'];
@@ -168,7 +169,7 @@ function RequestReview({ request, stations, permissions, onCompleted, onRefresh 
     {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
     <AirlineSection request={request} canVerify={permissions.canVerify && open} busy={busy} onVerify={verify} />
     <RepresentativeSection request={request} canConfirm={permissions.canVerify && open} busy={busy} onConfirm={confirm} />
-    <div><h3 className="text-sm font-bold">Servicios solicitados</h3><ul className="mt-2 space-y-1">{request.services.map((service, index) => <li key={`${service.serviceId}-${index}`} className="rounded bg-accent-600/[.06] px-3 py-2 text-sm">{service.name} <span className="text-xs text-text-secondary-light">· {service.unit}</span></li>)}</ul></div>
+    <div><h3 className="text-sm font-bold">Servicios solicitados</h3><ul className="mt-2 space-y-1">{request.services.map((service, index) => <li key={`${service.serviceId}-${index}`} className="rounded bg-accent-600/[.06] px-3 py-2 text-sm">{service.name} <span className="text-xs text-text-secondary-light">· por {billingUnitLabel(service.unit)}</span></li>)}</ul></div>
     {open && (permissions.canApprove || permissions.canReject) && <DecisionSection request={request} stations={stations} canApprove={permissions.canApprove} canReject={permissions.canReject} busy={busy} onDecide={decide} />}
     {open && permissions.canCancel && <CancelSection busy={busy} onCancel={cancel} />}
     {!open && <p className="rounded-lg bg-black/[.04] p-4 text-sm dark:bg-white/[.04]">Estado: {requestStatusLabel(request.status)}{request.cancelledAt && ` el ${dateTime(request.cancelledAt)}`}{request.decisionReason && ` · ${request.decisionReason}`}{request.contractId && ` · Borrador ${request.contractId.slice(0, 12)}`}</p>}

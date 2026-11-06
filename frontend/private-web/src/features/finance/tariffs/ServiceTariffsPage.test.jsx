@@ -47,6 +47,57 @@ describe('ServiceTariffsPage', () => {
   });
 });
 
+describe('ServiceTariffsPage units and errors (1-E)', () => {
+  const renderPage = () => render(<DepartmentAccessProvider observe={false}
+    initialAccess={administratorAccess('finance', DepartmentPermissionCodes.finance)}><ServiceTariffsPage /></DepartmentAccessProvider>);
+
+  it('proposes an active unit for a service whose catalog unit is a legacy name', async () => {
+    listServiceTariffs.mockResolvedValue([summary('v1')]);
+    getServiceTariff.mockResolvedValue(detail('v1'));
+    listFinanceServices.mockResolvedValue([{ id: 's-2', code: 'RAMP-CARGO', name: 'Carga y descarga',
+      defaultBillingUnit: 'operación', isActive: true }]);
+    listBillingUnits.mockResolvedValue([{ code: 'hour', name: 'Hora', isActive: true },
+      { code: 'operation', name: 'Operación', isActive: true }]);
+    saveServiceTariffDraft.mockResolvedValue({ id: 'tv-2' });
+    renderPage();
+    await screen.findByLabelText('Precio de BAGGAGE');
+    await userEvent.selectOptions(await screen.findByLabelText('Añadir servicio'), 's-2');
+    expect(screen.getByLabelText('Unidad de RAMP-CARGO')).toHaveValue('operation');
+    expect(within(screen.getByLabelText('Unidad de RAMP-CARGO')).queryByRole('option', { name: /no activa/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(saveServiceTariffDraft).toHaveBeenCalledWith('tv-2', expect.objectContaining({
+      rates: expect.arrayContaining([expect.objectContaining({ serviceId: 's-2', billingUnit: 'operation' })]) }));
+  });
+
+  it.each([
+    ['billing_unit_unknown', 400, /La unidad de cobro no existe o está inactiva/],
+    ['tariff_start_not_after_current', 409, /debe empezar después de la versión vigente/],
+  ])('explains %s in Spanish instead of the server title', async (code, status, text) => {
+    listServiceTariffs.mockResolvedValue([summary('v1')]);
+    getServiceTariff.mockResolvedValue(detail('v1'));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([{ code: 'operation', name: 'Operación', isActive: true }]);
+    saveServiceTariffDraft.mockRejectedValue(Object.assign(new Error('Invalid finance data.'), { status, code }));
+    renderPage();
+    await screen.findByLabelText('Precio de BAGGAGE');
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(await screen.findByText(text)).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid finance data/)).not.toBeInTheDocument();
+  });
+
+  it('shows a recoverable error instead of an empty tariff when the list does not load', async () => {
+    listServiceTariffs.mockRejectedValueOnce(new TypeError('offline')).mockResolvedValue([summary('v1')]);
+    getServiceTariff.mockResolvedValue(detail('v1'));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    renderPage();
+    expect(await screen.findByText(/No se pudieron cargar las tarifas/)).toBeInTheDocument();
+    expect(screen.queryByText('Sin tarifa base')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByLabelText('Precio de BAGGAGE')).toBeInTheDocument();
+  });
+});
+
 describe('latestPublishedStart', () => {
   it('ignores drafts and returns the latest published or superseded start', async () => {
     const { latestPublishedStart } = await import('./ServiceTariffsPage');

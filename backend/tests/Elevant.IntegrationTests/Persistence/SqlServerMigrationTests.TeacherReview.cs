@@ -92,6 +92,7 @@ public sealed partial class SqlServerMigrationTests
         await using var provider = await SeededFinanceProviderAsync(database, ct);
         await using var scope = provider.CreateAsyncScope();
         var catalog = scope.ServiceProvider.GetRequiredService<ICommercialCatalogManagementStore>();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
         var hidden = new ManagedServiceInput("RAMP-CATERING", "Catering de aeronaves",
             "Comidas y bebidas a bordo para tripulación y pasajeros", "operación", null, null, 900, false, true, null);
 
@@ -118,6 +119,10 @@ public sealed partial class SqlServerMigrationTests
         // Hidden it can be saved with a unit Finance maintains (any casing), then published with a photo.
         var saved = await catalog.SaveAsync(ContractsAccount, null, hidden with { BillingUnit = "Operación" }, ct);
         Assert.Null(saved.Failure);
+        // 1-E: the catalog stores the unit code the name stands for, as Finance tariffs and packages do.
+        Assert.Equal("operation", saved.Service!.BillingUnit);
+        Assert.Equal("operation", await context.ServiceDefinitions.AsNoTracking()
+            .Where(item => item.PublicId == saved.Service.Id).Select(item => item.DefaultBillingUnit).SingleAsync(ct));
         var published = await catalog.SaveAsync(ContractsAccount, saved.Service!.Id, hidden with
         {
             BillingUnit = "Operación", IsPublic = true, ImageUrl = "/assets/services/cargo-loading.webp",

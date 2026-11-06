@@ -28,6 +28,19 @@ public sealed class ContractDraftRulesTests
         Assert.Equal(["PKG-AC v1", "PKG-TURN v2"], issues.Single(issue => issue.Code == "package_not_eligible").Subjects);
     }
 
+    [Fact]
+    public void ARetiredPackageHasItsOwnCodeRightAfterTheIneligibleOnes()
+    {
+        var issues = ContractDraftRules.Readiness(Ready() with
+        {
+            IneligiblePackages = ["PKG-DOP v1"], RetiredPackages = ["PKG-TURN v3"], CurrentApprovedValidFrom = Start,
+        });
+        Assert.Equal([ContractDraftIssues.PackageNotEligible, ContractDraftIssues.PackageRetired,
+            ContractDraftIssues.ValidFromNotAfterCurrent], issues.Select(issue => issue.Code));
+        Assert.Equal(["PKG-TURN v3"], issues.Single(issue => issue.Code == "package_retired").Subjects);
+        Assert.Empty(ContractDraftRules.Readiness(Ready() with { RetiredPackages = [] }));
+    }
+
     [Theory]
     [InlineData(false, "rates_unconfirmed")]
     [InlineData(null, "rates_unconfirmed")]

@@ -40,3 +40,33 @@ it('creates and edits units with optimistic concurrency', async () => {
   await user.click(screen.getByRole('button', { name: 'Guardar' }));
   expect(saveBillingUnit).toHaveBeenLastCalledWith('u2', expect.objectContaining({ code: 'hour', isActive: true, expectedVersion: 'v2' }));
 });
+
+it('shows a recoverable error instead of an empty list and no retry without permission (1-E)', async () => {
+  listBillingUnits.mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce(units);
+  render(<BillingUnitsPage />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron cargar las unidades de cobro.');
+  expect(screen.queryByText('Sin unidades de cobro')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+  expect(await screen.findByText('Por operación')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  cleanup();
+  listBillingUnits.mockRejectedValueOnce(Object.assign(new Error('Forbidden'), { status: 403 }));
+  render(<BillingUnitsPage />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('No tiene acceso a las unidades de cobro.');
+  expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+});
+
+it('explains a rejected unit by its code instead of the server title (1-E)', async () => {
+  listBillingUnits.mockResolvedValue(units);
+  saveBillingUnit.mockRejectedValue(Object.assign(new Error('Finance record conflicts with current state.'),
+    { status: 409, code: 'billing_unit_exists' }));
+  const user = userEvent.setup();
+  render(<BillingUnitsPage canCreate />);
+  await user.click(await screen.findByRole('button', { name: 'Nueva unidad' }));
+  const dialog = screen.getByRole('dialog', { name: 'Nueva unidad de cobro' });
+  await user.type(within(dialog).getByRole('textbox', { name: /Nombre/ }), 'Operación');
+  await user.type(within(dialog).getByRole('textbox', { name: /Código/ }), 'operation');
+  await user.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Ya existe una unidad con ese código.')).toBeInTheDocument();
+  expect(screen.queryByText(/Finance record/)).not.toBeInTheDocument();
+});

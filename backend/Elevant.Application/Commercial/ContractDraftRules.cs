@@ -13,6 +13,8 @@ public static class ContractDraftIssues
     public const string StationsMissing = "stations_missing";
     public const string ServiceRetired = "service_retired";
     public const string PackageNotEligible = "package_not_eligible";
+    /// <summary>Finance retired a linked package (1-N27): Contratos unlinks it before the submission.</summary>
+    public const string PackageRetired = "package_retired";
     public const string ValidFromNotAfterCurrent = "valid_from_not_after_current";
     public const string FinanceReviewerMissing = "finance_reviewer_missing";
 }
@@ -27,6 +29,7 @@ public static class ContractDraftIssues
 /// <param name="ValidFrom">Start of the version.</param>
 /// <param name="CurrentApprovedValidFrom">Start of the latest approved version of the contract, if any.</param>
 /// <param name="FinanceReviewerAvailable">Someone in Finance may decide and covers every station of the version.</param>
+/// <param name="RetiredPackages">Linked packages Finance retired after they were linked (1-N27).</param>
 public sealed record ContractDraftFacts(
     bool PortalAccountReady,
     string? Terms,
@@ -36,7 +39,8 @@ public sealed record ContractDraftFacts(
     IReadOnlyCollection<string> IneligiblePackages,
     DateOnly ValidFrom,
     DateOnly? CurrentApprovedValidFrom,
-    bool FinanceReviewerAvailable);
+    bool FinanceReviewerAvailable,
+    IReadOnlyCollection<string>? RetiredPackages = null);
 
 /// <summary>One reason the draft is not ready, with the services or packages it is about.</summary>
 public sealed record ContractDraftIssue(string Code, IReadOnlyList<string> Subjects);
@@ -66,6 +70,7 @@ public static class ContractDraftRules
         Add(facts.StationCount == 0, ContractDraftIssues.StationsMissing);
         Add(facts.RetiredServices.Count > 0, ContractDraftIssues.ServiceRetired, facts.RetiredServices);
         Add(facts.IneligiblePackages.Count > 0, ContractDraftIssues.PackageNotEligible, facts.IneligiblePackages);
+        Add(facts.RetiredPackages is { Count: > 0 }, ContractDraftIssues.PackageRetired, facts.RetiredPackages);
         Add(!StartsAfterCurrent(facts.ValidFrom, facts.CurrentApprovedValidFrom), ContractDraftIssues.ValidFromNotAfterCurrent);
         Add(facts.StationCount > 0 && !facts.FinanceReviewerAvailable, ContractDraftIssues.FinanceReviewerMissing);
         return issues;

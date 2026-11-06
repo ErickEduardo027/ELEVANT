@@ -17,6 +17,7 @@ type RunContract = { id: string; code: string; airline: string;
 const AGENT = "Riley Ramp";
 /** Contract days are UTC days on the server (hueco 2-F); local days drive shifts and flights. */
 const utcDay = (offsetDays = 0) => new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+const nextDay = (isoDate: string) => new Date(Date.parse(`${isoDate}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const localDay = () => new Date().toLocaleDateString("en-CA");
 
 // The shift presets Gestión Humana and OCC share (occShiftPresets.js), as minutes after midnight.
@@ -269,6 +270,59 @@ test("OCC revisa el mapa de posiciones y el feed de vuelos sin llamar al proveed
     `/occ/flight-feed?stationId=${station.id}&date=${localDay()}`);
   expect(feed.status).toBe(200);
   saveRun({ feedConfigured: feed.data.budget.configured });
+});
+
+test("hueco 1-C · Contratos crea una enmienda del contrato activo y Finanzas aprueba sus precios", async ({ page }) => {
+  const { contract } = contractOf();
+  type Agreement = { id: string; status: string;
+    approvedVersions: Array<{ id: string; versionNumber: number; status: string; validFrom: string; validTo: string | null }> };
+  const agreement = async () => (await expectCall<{ contracts: Agreement[] }>(200, await login("contracts"), "GET",
+    "/contracts/agreements?page=1&limit=50")).data.contracts.find(item => item.id === contract.id)!;
+  const before = await agreement();
+  expect(before.status, "the contract is active after fase 2").toBe("Active");
+  const approved = before.approvedVersions.filter(item => item.status === "Approved")
+    .sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0]!;
+  // «Vigente desde» falls after the start of the approved version in force and not after its end.
+  const start = [utcDay(30), nextDay(approved.validFrom)].sort().at(-1)!;
+
+  await loginPrivate(page, "contracts");
+  const drawer = await openContractDetail(page, contract.airline, approved.versionNumber);
+  await drawer.getByRole("button", { name: "Crear enmienda" }).click();
+  const amendment = page.getByRole("dialog", { name: /^Crear enmienda del contrato/ });
+  await amendment.getByLabel("Vigente desde").fill(start);
+  await amendment.getByRole("button", { name: "Crear enmienda" }).click();
+  await expect(amendment).toBeHidden();
+  await expect(drawer.getByText(/Se creó la enmienda como borrador/)).toBeVisible();
+  await snap(page, "fase2-contratos-enmienda");
+  await drawer.getByRole("button", { name: "Abrir Borradores" }).click();
+
+  // Contratos confirms the copied prices, changes one and sends the amendment to Finance.
+  await page.getByRole("button", { name: new RegExp(contract.airline) }).first().click();
+  const editor = page.locator("section").filter({ has: page.getByRole("heading", { name: contract.airline }) });
+  await expect(editor.getByLabel("Vigente desde")).toHaveValue(start);
+  await editor.getByLabel("Precio").first().fill("115");
+  const confirms = editor.getByLabel("Confirmar tarifa (0 = cortesía)");
+  for (let index = 0; index < await confirms.count(); index += 1) await confirms.nth(index).check();
+  await editor.getByRole("button", { name: "Guardar borrador" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Borrador actualizado" })).toBeVisible();
+  const checks = editor.getByRole("list", { name: "Requisitos para enviar a Finanzas" });
+  await expect(checks.getByText(/^○/)).toHaveCount(0);
+  await editor.getByRole("button", { name: "Enviar a Finanzas" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Enviar" }).click();
+  await expect(editor.getByText("En revisión por Finanzas")).toBeVisible();
+
+  // Finance approves the prices without any conflict: the amendment starts after the version in force.
+  await loginPrivate(page, "finance");
+  await openModule(page, "Aprobación de contratos");
+  await page.getByRole("button", { name: new RegExp(contract.airline) }).first().click();
+  await page.getByRole("button", { name: "Aprobar precios" }).click();
+  await page.getByRole("dialog", { name: "Aprobar precios" }).getByRole("button", { name: "Aprobar precios" }).click();
+  await expect(page.getByRole("dialog")).toBeHidden();
+  await expect(page.getByRole("status").filter({ hasText: "Precios aprobados" })).toBeVisible();
+  await snap(page, "fase2-finanzas-enmienda-aprobada");
+  const after = await agreement();
+  expect(after.status).toBe("Active");
+  expect(after.approvedVersions.find(item => item.validFrom === start)?.status).toBe("Approved");
 });
 
 test.fixme("hueco 2-A · Superadmin crea una estación y OCC sus terminales, posiciones y tipos de avión", async () => {});

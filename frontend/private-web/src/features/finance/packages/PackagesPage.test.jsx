@@ -3,10 +3,10 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import PackagesPage from './PackagesPage';
 import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
-import { commercialApi } from '../../../services/commercialGovernanceApi';
+import { commercialApi, discardFinancePackage, retireFinancePackage } from '../../../services/commercialGovernanceApi';
 
 vi.mock('../../../services/commercialGovernanceApi', async importOriginal => ({
-  ...(await importOriginal()), commercialApi: vi.fn(),
+  ...(await importOriginal()), commercialApi: vi.fn(), discardFinancePackage: vi.fn(), retireFinancePackage: vi.fn(),
 }));
 
 const component = { serviceId: 'gpu', serviceCode: 'GPU', serviceName: 'Energía', billingUnit: 'minute',
@@ -228,6 +228,70 @@ describe('PackagesPage through the real package and catalog adapters', () => {
     expect(screen.queryByRole('button', { name: 'Nuevo paquete' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Guardar borrador' })).not.toBeInTheDocument();
     expect(commercialApi.mock.calls.map(([path]) => path)).toEqual(['/finance/packages']);
+  });
+
+  it('discards a draft with a reason and retries an uncertain answer with the same key (1-N27)', async () => {
+    discardFinancePackage.mockRejectedValueOnce(new TypeError('Network down')).mockImplementation(async id => {
+      packages = packages.map(item => (item.id === id ? { ...item, status: 'Discarded', version: 'rv-9' } : item));
+      return { id };
+    });
+    mount([...permissions, 'finance.packages.delete']); await screen.findByLabelText('Nombre');
+    expect(screen.queryByRole('button', { name: 'Retirar paquete' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Descartar borrador' }));
+    const dialog = screen.getByRole('alertdialog', { name: /Descartar el borrador BASIC/ });
+    expect(within(dialog).getByText(/Se conserva como descartado en el historial/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Descartar borrador' }));
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Escriba el motivo');
+    expect(discardFinancePackage).not.toHaveBeenCalled();
+    await userEvent.type(within(dialog).getByLabelText('Motivo'), '  Borrador duplicado por error.  ');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Descartar borrador' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('No se pudo completar');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Descartar borrador' }));
+    await screen.findByText('Borrador descartado. Se conserva en el historial.');
+    const [first, second] = discardFinancePackage.mock.calls;
+    expect(first.slice(0, 2)).toEqual(['p1', { expectedVersion: 'rv-1', reason: 'Borrador duplicado por error.' }]);
+    expect(second[2]).toBe(first[2]);
+    expect(within(screen.getByRole('button', { name: /BASIC · v1/ })).getByText('Descartada')).toBeInTheDocument();
+    expect(screen.getByText(/Borrador descartado: se conserva en el historial/)).toBeInTheDocument();
+  });
+
+  it('retires the published version, explaining a stale version by its code and re-reading the list', async () => {
+    packages = [packageVersion({ status: 'Published' })];
+    retireFinancePackage.mockRejectedValueOnce(failure(409, 'version_conflict')).mockImplementation(async id => {
+      packages = packages.map(item => (item.id === id ? { ...item, status: 'Retired', version: 'rv-9' } : item));
+      return { id };
+    });
+    mount([...permissions, 'finance.packages.retire']); await screen.findByLabelText('Nombre');
+    await userEvent.click(screen.getByRole('button', { name: 'Retirar paquete' }));
+    let dialog = screen.getByRole('alertdialog', { name: /Retirar BASIC · versión 1/ });
+    expect(within(dialog).getByText(/los contratos ya aprobados conservan el paquete/i)).toBeInTheDocument();
+    await userEvent.type(within(dialog).getByLabelText('Motivo'), 'Precio publicado por error.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retirar paquete' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('La versión cambió');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Private server/)).not.toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Retirar paquete' }));
+    dialog = screen.getByRole('alertdialog', { name: /Retirar BASIC · versión 1/ });
+    await userEvent.type(within(dialog).getByLabelText('Motivo'), 'Precio publicado por error.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Retirar paquete' }));
+    await screen.findByText('Paquete retirado. Contratos ya no puede asignarlo.');
+    expect(within(screen.getByRole('button', { name: /BASIC · v1/ })).getByText('Retirada')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retirar paquete' })).not.toBeInTheDocument();
+    expect(retireFinancePackage.mock.calls[1][1]).toEqual({ expectedVersion: 'rv-1', reason: 'Precio publicado por error.' });
+  });
+
+  it('names scopes and statuses in Spanish and proposes a valid unit for a legacy service unit (1-E, 1-N26)', async () => {
+    packages = [packageVersion({ status: 'Superseded' })];
+    services.push({ id: 'legacy', code: 'LEGACY', name: 'Heredado', defaultBillingUnit: 'Operación', isActive: true });
+    try {
+      mount(); await screen.findByLabelText('Nombre');
+      expect(within(screen.getByRole('button', { name: /BASIC · v1/ })).getByText('Reemplazada')).toBeInTheDocument();
+      expect(within(screen.getByLabelText('Alcance')).getAllByRole('option').map(option => option.textContent))
+        .toEqual(['Por escala', 'Por vuelo', 'Por período']);
+      await userEvent.click(screen.getByRole('button', { name: 'Nuevo paquete' }));
+      await userEvent.selectOptions(screen.getByLabelText('Añadir servicio'), 'legacy');
+      expect(screen.getByLabelText('Unidad de LEGACY')).toHaveValue('operation');
+    } finally { services.pop(); }
   });
 
   it('does not request data without read permission', () => {

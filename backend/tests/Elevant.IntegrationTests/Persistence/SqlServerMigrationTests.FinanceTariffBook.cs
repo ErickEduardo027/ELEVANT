@@ -43,7 +43,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(FinanceCatalogFailure.Conflict, (await book.CreateServiceTariffDraftAsync(FinanceAccount,
             new CreateTariffDraftInput("USD", new DateOnly(2027, 2, 1), null), cancellationToken)).Failure);
         var copied = (await book.GetServiceTariffAsync(FinanceAccount, draft.Id!.Value, cancellationToken))!;
-        Assert.Equal(2, copied.Rates.Count);
+        // 1-E: the seeded base tariff prices the 7 public catalog services besides the two operational ones.
+        Assert.Equal(9, copied.Rates.Count);
         Assert.Equal(FinanceCatalogFailure.Invalid, (await book.SaveServiceTariffDraftAsync(FinanceAccount, draft.Id.Value,
             new SaveServiceTariffDraftInput(new DateOnly(2027, 1, 1), null, null,
                 copied.Rates.Select(rate => new ServiceTariffRateInput(rate.ServiceId, null, "free-text-unit",

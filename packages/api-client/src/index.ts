@@ -5,6 +5,7 @@ export * from "./charters";
 export * from "./operationalClose";
 export * from "./commercialRequests";
 export * from "./contractDrafts";
+export * from "./financePackages";
 export {
   createElevantApiClient,
   type CreateSessionOptions,

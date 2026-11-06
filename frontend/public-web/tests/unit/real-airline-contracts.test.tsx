@@ -90,6 +90,9 @@ it("shows the airline's real approved contract history and rates", async () => {
   expect(await screen.findByText("DEV-CONTRACT-0001")).toBeInTheDocument();
   expect(screen.getByText("Manejo de equipaje")).toBeInTheDocument();
   expect(screen.getByText(/125/)).toBeInTheDocument();
+  // 1-E: the unit code is shown in Spanish.
+  expect(screen.getByText(/^Precio por operación:/)).toBeInTheDocument();
+  expect(screen.queryByText(/operation/)).not.toBeInTheDocument();
   expect(screen.queryByText("DEMO-CON-001")).not.toBeInTheDocument();
   expect(paths).toContain("/api/v1/airline/portal/contracts");
 });

@@ -554,6 +554,8 @@ internal sealed class EfCommercialWorkflowStore(
                 version.ValidFrom, ContractDraftRules.BaseStation(stations.Select(station => station.Id).ToArray()),
                 requestedServices.Where(item => item.ServiceDefinitionId != null)
                     .Select(item => item.ServiceDefinitionId!.Value).ToArray(), cancellationToken);
+            // 1-E: a rate without a base price keeps the requested unit as a code of ref.billing_units.
+            var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
             foreach (var service in requestedServices)
             {
                 if (service.ServiceDefinitionId is not long definitionId)
@@ -563,7 +565,7 @@ internal sealed class EfCommercialWorkflowStore(
                 {
                     PublicId = Guid.CreateVersion7(), ContractVersionId = version.Id,
                     ServiceDefinitionId = definitionId,
-                    BillingUnit = baseRate?.BillingUnit ?? service.RequestedUnit ?? "operación",
+                    BillingUnit = baseRate?.BillingUnit ?? units.CodeOrDefault(service.RequestedUnit),
                     UnitPrice = baseRate?.UnitPrice ?? 0, MinimumQuantity = baseRate?.MinimumBillableQuantity ?? 0,
                     IsConfirmed = false,
                 });

@@ -57,6 +57,13 @@ import {
   type UpdateManagedContractDraftCommand,
 } from "./contractDrafts";
 import {
+  isFinancePackageIdResponse,
+  normalizedContractAmendment,
+  normalizedPackageLifecycle,
+  type CreateContractAmendmentCommand,
+  type FinancePackageLifecycleCommand,
+} from "./financePackages";
+import {
   isCommercialIdResponse,
   isCommercialInboxData,
   normalizedAirlineVerification,
@@ -99,6 +106,9 @@ import {
   getSetManagedContractDraftScopeUrl,
   getDiscardManagedContractDraftUrl,
   getReplyManagedContractDraftUrl,
+  getCreateContractAmendmentUrl,
+  getDiscardFinancePackageUrl,
+  getRetireFinancePackageUrl,
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
@@ -289,6 +299,7 @@ import {
   type SubmitCommercialRequestRequest,
   type SubmitCommercialRequestResponse,
   type CommercialIdResponse,
+  type FinancePackageIdResponse,
   type CommercialInboxData,
   type ContractDraftReadinessData,
   type ContractDraftScopeData,
@@ -1165,6 +1176,18 @@ export interface ElevantApiClient {
   /** The airline's observation on its draft, also while Finance reviews it; answers the new comment. */
   commentAirlineContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /**
+   * Contratos amends an active or suspended contract from any of its versions (1-C): a new draft from the
+   * latest approved version, starting on `validFrom`; answers the new draft version.
+   */
+  createContractAmendment(versionId: string, command: CreateContractAmendmentCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<FinancePackageIdResponse>;
+  /** Finance discards a package draft with a reason (1-N27); it is kept as Discarded. */
+  discardFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<FinancePackageIdResponse>;
+  /** Finance retires a published package with a reason (1-N27); approved contracts keep it. */
+  retireFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<FinancePackageIdResponse>;
   getOccReport(key: OccReportKey, query: OccReportQuery,
     options?: GetHumanResourcesReportOptions): Promise<OccReportPageResponse>;
   exportOccReport(key: OccReportKey, query: OccReportQuery, format: OccReportFormat,
@@ -5277,6 +5300,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return result.data;
   };
 
+  // A Finance package or amendment command: JSON body, Idempotency-Key and a FinancePackageIdResponse.
+  const packageCommand = async (path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, status: 200 | 201, expectedId: string | undefined) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (result.status !== status || !isFinancePackageIdResponse(result.data, expectedId)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
   const executePdf = async (path: string, init: ElevantRequestInit = {}): Promise<Blob> => {
     const response = await send(path, { ...init, method: "GET" }, true);
     if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
@@ -7037,6 +7071,24 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       options?: GetHumanResourcesReportOptions) {
       return draftCommand("POST", getCommentAirlineContractDraftUrl(validatedUuid(versionId, "versionId")),
         normalizedDraftMessage(command), idempotencyKey, options, 201, undefined);
+    },
+    async createContractAmendment(versionId: string, command: CreateContractAmendmentCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      // The amendment answers its own new version, not the version in the route.
+      return packageCommand(getCreateContractAmendmentUrl(validatedUuid(versionId, "versionId")),
+        normalizedContractAmendment(command), idempotencyKey, options, 201, undefined);
+    },
+    async discardFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(packageId, "packageId");
+      return packageCommand(getDiscardFinancePackageUrl(id), normalizedPackageLifecycle(command), idempotencyKey, options,
+        200, id);
+    },
+    async retireFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(packageId, "packageId");
+      return packageCommand(getRetireFinancePackageUrl(id), normalizedPackageLifecycle(command), idempotencyKey, options,
+        200, id);
     },
     async setContractValidity(versionId: string, request: SetContractValidityRequest,
       options?: GetHumanResourcesReportOptions) {

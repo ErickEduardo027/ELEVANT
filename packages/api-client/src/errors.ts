@@ -32,12 +32,22 @@ const CONTRACT_DRAFT_CODES = ["invalid_draft", "draft_closed", "draft_in_finance
   "valid_from_not_after_current", "finance_reviewer_missing", "service_not_found", "service_in_package", "scope_invalid",
   "comment_required", "ambiguous_package_coverage", "package_service_not_in_contract", "invalid_contract_decision",
   "contract_terminated"] as const;
+/**
+ * Finance (phase 1, block C): the discard and retirement of packages and a retired package in a draft
+ * (1-N27); the contract amendment (1-C); unit codes in the whole cycle (1-E); and the coded failures of
+ * the billing units, the service and charge tariffs and the exchange rates.
+ */
+const FINANCE_COMMAND_CODES = ["package_not_draft", "package_not_published", "package_retired", "billing_unit_unknown",
+  "invalid_amendment", "contract_not_amendable", "draft_in_progress", "no_approved_version", "valid_from_after_current_end",
+  "invalid_billing_unit", "billing_unit_exists", "billing_unit_code_locked", "billing_unit_required", "invalid_tariff",
+  "tariff_draft_exists", "tariff_not_found", "tariff_empty", "tariff_start_not_after_current", "invalid_charge",
+  "charge_code_exists", "charge_not_found", "invalid_exchange_rate", "exchange_rate_exists", "invalid_finance_data"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
-  (typeof CONTRACT_DRAFT_CODES)[number];
+  (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
-  ...CONTRACT_DRAFT_CODES];
+  ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

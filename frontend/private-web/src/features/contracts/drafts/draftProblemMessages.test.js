@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONTRACT_DRAFT_ISSUES } from '@elevant/api-client';
-import { DRAFT_PROBLEM_MESSAGES, PORTAL_ACCOUNT_LABELS, READINESS_CHECKS, draftProblemMessage } from './draftProblemMessages';
+import { DRAFT_PROBLEM_MESSAGES, PORTAL_ACCOUNT_LABELS, READINESS_CHECKS, amendmentProblemMessage,
+  draftProblemMessage } from './draftProblemMessages';
 import { financeContractApprovalMessage } from '../../../services/financeErrors';
 import { describeNotification } from '../../notifications/departmentNotifications';
 
@@ -26,6 +27,20 @@ describe('contract draft problem messages', () => {
     expect(financeContractApprovalMessage(failure(409, 'service_retired'))).toMatch(/dado de baja/);
     expect(financeContractApprovalMessage(failure(404, 'not_found'))).toMatch(/no pertenece a sus estaciones/);
     expect(financeContractApprovalMessage(failure(409))).toBe('El registro cambió; actualice e intente de nuevo.');
+  });
+
+  it('explains a retired package and an unknown unit of the draft (block C)', () => {
+    expect(draftProblemMessage(failure(409, 'package_retired'))).toMatch(/Finanzas retiró un paquete vinculado/);
+    expect(draftProblemMessage(failure(400, 'billing_unit_unknown'))).toMatch(/unidad de cobro activa/);
+  });
+
+  it('explains why an amendment cannot start (1-C)', () => {
+    expect(amendmentProblemMessage(failure(409, 'valid_from_not_after_current'))).toMatch(/después del inicio de la versión aprobada/);
+    expect(amendmentProblemMessage(failure(409, 'valid_from_after_current_end'))).toMatch(/use «Renovar»/);
+    expect(amendmentProblemMessage(failure(409, 'draft_in_progress'))).toMatch(/ya tiene un borrador en curso/);
+    expect(amendmentProblemMessage(failure(409, 'contract_not_amendable'))).toMatch(/activo o suspendido/);
+    expect(amendmentProblemMessage(failure(409, 'version_conflict'))).toMatch(/cambió de estado/);
+    expect(amendmentProblemMessage(new TypeError('offline'))).not.toMatch(/offline/);
   });
 
   it('names the new Contratos notices and opens the right screen', () => {
