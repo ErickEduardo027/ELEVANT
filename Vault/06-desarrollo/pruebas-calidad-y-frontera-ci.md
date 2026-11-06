@@ -69,6 +69,9 @@ cambio transversal se usa la unión de sus filas, no solo la suite más rápida.
 
 ## Recorrido E2E del ciclo completo
 
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 1 del ciclo (`8a79fe70`), que esa verificación no cubre.
+
 Además de las suites de cada subárbol, Public Web tiene un recorrido de
 Playwright que atraviesa el ciclo operativo completo contra el stack local real
 ([configuración](../../frontend/public-web/playwright.cycle.config.ts),

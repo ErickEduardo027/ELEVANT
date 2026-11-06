@@ -28,16 +28,27 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
   - Las acciones se nombran `<módulo>.<entidad>.<verbo>`: `commercial.request.decide`, `contract.draft.submit`, `commercial.catalog.retire`, `governance.provisioning.link`…
   - El hash nunca incluye secretos. El replay del restablecimiento de contraseña de un cliente compara la contraseña con la cuenta resultante.
 - **Versión esperada y fase expand.**
-  - Los endpoints nuevos exigen la cabecera `Idempotency-Key` (UUID) y `expectedVersion` en el cuerpo.
-  - Los que ya existían aceptan ambas como opcionales mientras queden clientes antiguos. Si llega la clave sin la versión, responden `400 expected_version_required`; una clave vacía responde `400 idempotency_key_required`. Los clientes nuevos siempre envían las dos.
-  - La versión esperada es el token `version` que expone la lectura del recurso. El `PUT` del catálogo y el de aerolíneas conservan su campo `version`.
+  - Los endpoints nuevos exigen la cabecera `Idempotency-Key` (UUID) y `expectedVersion` en el cuerpo. Si la cabecera falta o no es un UUID, responde el `400` de validación del framework, sin `code` (ver Problem Details).
+  - En los que ya existían, la clave es opcional mientras queden clientes antiguos. La versión depende del endpoint:
+    - **clave y versión opcionales:** la decisión de solicitudes, el `PUT` y el envío del borrador, el comentario de la aerolínea, el aprovisionamiento, el reenvío de la invitación y la contraseña temporal de clientes. Si llega la clave sin la versión, responden `400 expected_version_required`;
+    - **solo la clave opcional:** el ciclo de vida (su token es el estado, `expectedStatus`), la decisión de Finanzas (`expectedVersion`), el `PUT` del catálogo y el de aerolíneas (`version`), y la decisión (`version`) y la reapertura (`serviceVersion`) de clausuras ya exigían la versión y la siguen exigiendo, con clave o sin ella.
+  - En los endpoints nuevos y en los que ya existían, una clave con el GUID vacío (`00000000-…`) responde `400 idempotency_key_required`. Los clientes nuevos siempre envían la clave y la versión.
+  - La versión esperada es el token `version` que expone la lectura del recurso.
   - La enmienda es la excepción (sección 4).
-- **Problem Details.** Todo 4xx de los endpoints de la fase lleva `extensions.code` en snake_case y un título en español, y cada controlador tiene un código por defecto según el tipo de fallo:
-  - `400` es validación; `403`, permiso; `404`, el recurso de la ruta no existe o está fuera de alcance; `409`, conflicto de estado, de versión o de idempotencia;
+  - **Excepción heredada.** `PUT contracts/commercial-requests/airlines/{profileId}/verification`, anterior a la fase, sigue en la API y en el snapshot OpenAPI: verifica y reescribe la identidad de una ficha que aún no opera, sin `Idempotency-Key` ni versión. Ningún cliente lo usa, porque private-web verifica desde la solicitud (`POST {id}/airline-verification`), y queda por retirar.
+- **Problem Details.** Las fallas de validación, regla, estado, versión e idempotencia que devuelven los comandos y las lecturas de la fase llevan `extensions.code` en snake_case y un título en español. Cada controlador tiene un código por defecto según el tipo de fallo:
+  - `400` es validación; `404`, el recurso de la ruta no existe o está fuera de alcance; `409`, conflicto de estado, de versión o de idempotencia;
   - los códigos comunes son `version_conflict`, `idempotency_conflict`, `idempotency_key_required`, `expected_version_required`, `reason_required` y `not_found`;
   - la lista que reconocen los clientes está en `packages/api-client/src/errors.ts`, sin códigos duplicados.
+- **Respuestas sin código.** Siguen siendo Problem Details genéricos, con título en inglés y sin `code`:
+  - el `401`;
+  - el `403` por falta de permiso: los controladores responden `Forbid()` y `UseStatusCodePages` (`backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs`) escribe el cuerpo. El único `403` con código es `closure_self_decision` (sección 5);
+  - el `400` de enlace de modelo de `[ApiController]`: falta la cabecera `Idempotency-Key` donde es obligatoria, la cabecera no es un UUID, o el cuerpo está mal formado o falta donde es obligatorio. La API no define un `InvalidModelStateResponseFactory` propio;
+  - los rechazos del pipeline por tamaño del cuerpo (`413`) o por límite de uso (`429`).
+
+  Las lecturas de correos del superadministrador (`GET governance/email/deliveries` y `GET governance/email/outbox`) también responden su `403` sin código.
 - **Clientes.**
-  - Las pantallas traducen el `code` y nunca muestran el `title` (`frontend/private-web/src/services/problemMessages.js`).
+  - Las pantallas traducen el `code` y nunca muestran el `title` (`frontend/private-web/src/services/problemMessages.js`). Sin `code`, explican el estado: sesión vencida (`401`), falta de permiso (`403`), registro inexistente (`404`), conflicto (`409`) o datos inválidos (`400`).
   - Una intención conserva su clave mientras se reintenta el mismo cuerpo tras un resultado incierto (sin respuesta o `5xx`) y la descarta tras cualquier `2xx` o `4xx` (`commandKeys.js`).
   - Ante un `409` la pantalla relee antes de formar otra intención.
   - Los adaptadores nuevos validan las respuestas de forma estricta en el cliente compartido.
@@ -104,7 +115,7 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
   - si los servicios cambiaron desde que se abrió el editor, responde `version_conflict`.
 - **Estación base.** Una sola regla (`ContractDraftRules.BaseStation`): la tarifa base de la única estación de la versión, o la general si tiene varias. La usan el alta del borrador, el alcance, el editor y la comparación de Finanzas.
 - **Servicios dados de baja.** Si uno llega por la solicitud, una renovación o una enmienda, se conserva marcado y bloquea el envío y la aprobación (`service_retired`) hasta que Contratos lo quita. El alcance nunca agrega uno.
-- **Revisores de Finanzas.** Enviar exige una cuenta con `finance.contract_approvals.decide` que cubra todas las estaciones de la versión (`finance_reviewer_missing`), y solo se avisa a quien las cubre.
+- **Revisores de Finanzas.** Enviar exige una cuenta con `finance.contract_approvals.decide` que cubra todas las estaciones de la versión (`finance_reviewer_missing`). El aviso del envío llega a las cuentas con `finance.contract_approvals.read` que cubren todas esas estaciones, aunque no puedan decidir.
 - **Observaciones.** La aerolínea comenta en `Draft` y mientras Finanzas revisa. Contratos responde desde Borradores, y el portal muestra la respuesta como «Contratos AVIAM». Un borrador cerrado responde `draft_closed`; uno en revisión rechaza las ediciones con `draft_in_finance_review`.
 - **Privacidad del portal.** La aerolínea no recibe la tarifa base, los valores base de los cargos ni el motivo interno de una devolución de Finanzas: solo ve que la versión fue devuelta. Su línea de tiempo también omite ese motivo.
 - **Avisos a Contratos.** Notificaciones de departamento nuevas: `portal_account_ready` (la cuenta del portal quedó lista, al aprovisionarla o vincularla), `contract_returned` y `contract_approved` (decisión de Finanzas). El recurso de cambios `contract_drafts` hace releer Borradores.
@@ -122,7 +133,7 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
   - Un nombre heredado («operación») se traduce al leer y al guardar, sin reescribir filas (`BillingUnitNames`).
   - Una unidad desconocida responde `billing_unit_unknown`.
   - Las pantallas proponen una unidad activa y la muestran en español; el portal también.
-- **Seed de Development.** Pasa los servicios `RAMP-*` a `operation` y publica, solo insertando, la tarifa base en USD y en DOP de los siete servicios públicos.
+- **Seed de Development.** Crea los servicios `RAMP-*` nuevos con la unidad `operation`; los ya sembrados conservan «operación», que la API traduce al leer y al guardar. También publica, solo insertando, la tarifa base en USD y en DOP de los siete servicios públicos, incluso en bases ya sembradas.
 - **Tarifarios.** Tarifas, cargos, unidades de cobro y tasas de cambio responden un código por causa (`tariff_draft_exists`, `tariff_start_not_after_current`, `billing_unit_exists`, `charge_code_exists`, `exchange_rate_exists`, `invalid_exchange_rate`…).
 - **Paquetes.** Dos comandos nuevos, con clave, versión y motivo de 5 a 500 caracteres:
   - `POST finance/packages/{id}/discard`, con el permiso nuevo `finance.packages.delete`: el borrador pasa a `Discarded`;
@@ -130,7 +141,7 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
 
   Ambos permisos se suman al alias heredado `finance.packages.manage`. Una versión retirada:
   - ya no se puede vincular (`package_retired`);
-  - bloquea el envío y la aprobación de los borradores que la vinculan, y Contratos recibe el aviso;
+  - bloquea el envío y la aprobación de los borradores que la vinculan: las pantallas de Borradores releen esos borradores (`Draft` o `PendingFinanceApproval`) por el recurso de cambios `contract_drafts`, y su readiness muestra `package_retired`. Retirarla no genera una notificación de departamento;
   - no se quita de los contratos aprobados, que conservan el paquete congelado;
   - no revive la versión `Superseded` anterior.
 - **Etiquetas.** Finanzas traduce el ámbito del paquete y los estados `Superseded`, `Discarded` y `Retired`. Un código desconocido nunca se muestra crudo.
@@ -147,13 +158,13 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
   - puede reactivar un servicio dado de baja; la pantalla lo reactiva oculto, y se publica después;
   - acepta la clave como opcional.
 - `DELETE contracts/catalog/services/{id}` queda como alias obsoleto (`deprecated` en OpenAPI), con la misma comprobación y la clave opcional.
-- La baja y la reactivación avisan a los borradores abiertos que incluyen el servicio.
+- La baja y la reactivación hacen releer los borradores `Draft` que incluyen el servicio (recurso de cambios `contract_drafts`); no generan una notificación de departamento.
 - **Clausuras.**
   - Aprobar funciona aunque Contratos ya haya ocultado o dado de baja el servicio; solo lo despublica si seguía público.
   - Republicar (`POST service-closures/services/{id}/reopen`) un servicio dado de baja responde `service_retired`: primero se reactiva en el catálogo. También responde `service_already_public`, `closure_pending` o `no_approved_closure`.
   - La decisión y la reapertura aceptan la clave como opcional (acciones `commercial.closure.decide` y `commercial.closure.reopen`).
   - Quien reportó la clausura no la decide: `403 closure_self_decision`.
-  - La lectura de clausuras incluye `isServiceActive` (solo la usa private-web), y toda falla lleva código.
+  - La lectura de clausuras incluye `isServiceActive` (solo la usa private-web), y toda falla de regla, estado o versión lleva código.
 
 **6. Cuentas del portal, Superadministración y correos.**
 - **Aprovisionamiento** (`POST governance/provisioning/{requestId}`, superadministrador). La invitación por correo es la opción por defecto y la contraseña temporal, la alternativa explícita (ADR-0022). La clave y la versión de la solicitud son opcionales. Si el correo ya tiene cuenta, el código explica qué hacer:
@@ -206,7 +217,7 @@ No necesitan migración:
 
 ### Compatibilidad y orden de despliegue
 
-- La API es retrocompatible gracias a la fase expand: los clientes anteriores siguen llamando sin clave ni versión. A la inversa, en estos endpoints una API anterior ignora los campos nuevos de un cuerpo: sus contratos no rechazan miembros desconocidos.
+- La API es retrocompatible gracias a la fase expand: los clientes anteriores siguen llamando sin clave, y sin versión en los comandos que no la exigían (sección 1). A la inversa, en estos endpoints una API anterior ignora los campos nuevos de un cuerpo: sus contratos no rechazan miembros desconocidos.
 - **La API y private-web salen juntas.** Aprobar ahora exige la confirmación del representante, que la web anterior no puede registrar, y private-web necesita los endpoints nuevos.
 - Public Web puede salir después: la API acepta el cuerpo anterior de la solicitud pública.
 - El APK no cambia. Ninguna respuesta que valida de forma estricta gana claves, y un IATA vacío pasa su validación.
@@ -223,19 +234,15 @@ No necesitan migración:
 - Mientras dure la fase expand conviven dos formas de llamar a los comandos que ya existían.
 
 **Queda pendiente**
-- **Paso «contract».** Cuando no queden clientes antiguos, hacer obligatorias la `Idempotency-Key` y la versión esperada en:
-  - la decisión de solicitudes;
-  - el `PUT` y el envío del borrador, y el comentario de la aerolínea;
-  - el ciclo de vida del contrato y la decisión de Finanzas;
-  - el `PUT` del catálogo, y la decisión y la reapertura de clausuras;
-  - el aprovisionamiento, el reenvío de la invitación, la contraseña temporal de clientes y el `PUT` de aerolíneas.
-
-  También queda retirar el `DELETE` obsoleto del catálogo.
+- **Paso «contract».** Cuando no queden clientes antiguos:
+  - hacer obligatorias la `Idempotency-Key` y la versión esperada en la decisión de solicitudes, el `PUT` y el envío del borrador, el comentario de la aerolínea, el aprovisionamiento, el reenvío de la invitación y la contraseña temporal de clientes;
+  - hacer obligatoria la `Idempotency-Key`, porque la versión ya lo es, en el ciclo de vida del contrato, la decisión de Finanzas, el `PUT` del catálogo, la decisión y la reapertura de clausuras y el `PUT` de aerolíneas;
+  - retirar el `DELETE` obsoleto del catálogo y el `PUT` heredado de verificación de aerolíneas (sección 1).
 - Los comandos de los tarifarios (tarifas, cargos, unidades y tasas) tienen versión esperada, pero no `Idempotency-Key`.
 - Un servicio dado de baja antes de esta corrección que siga en un contrato vigente no se detecta solo; se reactiva desde el catálogo.
-- El restablecimiento de contraseña de los usuarios internos todavía pide un token de Identity (`GeneratePasswordResetTokenAsync`) y la API no registra proveedores de tokens; necesita el mismo arreglo que el de clientes.
+- El restablecimiento de contraseña de los usuarios internos (`POST governance/departments/{department}/users/{id}/password-reset` y `POST governance/users/{id}/password-reset`) todavía pide un token de Identity (`GeneratePasswordResetTokenAsync`), y la API registra Identity sin proveedores de tokens: la llamada falla con un error de servidor. Ninguna prueba cubre esas rutas. Necesita el mismo arreglo que el de clientes.
 - Las pantallas bilingües de OCC y Revisión todavía muestran el código de la unidad (`operation`).
-- `FinancePackageValuation`, del flujo de prefactura, compara la unidad heredada congelada con el código del componente; conviene normalizarla si ese flujo sigue después de la fase 4.
+- **Defecto abierto en la emisión de facturas.** La emisión directa ([ADR-0035](0035-direct-invoicing-simulated-ecf.md)) valora los paquetes con `FinancePackageValuation`, que compara como texto la unidad congelada del servicio ejecutado con la del componente del paquete. Un servicio cuya unidad congelada sigue siendo «operación» (contratos tarifados antes de esta fase), cubierto por un componente guardado como `operation`, bloquea la emisión con `package_unit_mismatch` hasta que la valoración normalice ambas con `BillingUnitNames`.
 - «Contratos listos» de OCC sigue omitiendo sin aviso una aerolínea con dos versiones aplicables el mismo día (ADR-0027). La aprobación ya impide crear contratos nuevos duplicados.
 - Una enmienda o renovación aprobada pero sin firmar ya cubre vuelos desde su inicio: es el hueco 2-C de la fase 2.
 - La imagen de Public Web y su plantilla de Dokploy no pasan `NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL`, así que hoy el portal no muestra ninguna etiqueta de entorno.

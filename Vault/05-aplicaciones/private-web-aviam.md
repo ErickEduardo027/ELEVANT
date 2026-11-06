@@ -479,6 +479,9 @@ reiniciar y no se comparte entre réplicas.
 
 ## Ciclo comercial: Contratos, Finanzas y Superadministración (fase 1)
 
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 1 del ciclo (`8a79fe70`), que esa verificación no cubre.
+
 La fase 1 del ciclo operativo ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md))
 rehízo las pantallas comerciales sobre una convención común:
 
@@ -519,7 +522,7 @@ y cuando Finanzas devuelve o aprueba un borrador. Fuentes:
 | UI | Las rutas, componentes, filtros, formularios y estados son ejecutables. | Ejecutable no equivale a flujo de negocio integrado. |
 | Autenticación | `authService.js` usa el cliente OpenAPI para crear y revalidar la sesión de Development; tests usan identidades sintéticas. | La sesión en el navegador no sustituye el enforcement del backend por rol y estación. |
 | Datos de negocio | Planificación, revisión, chat y notificaciones operativas OCC usan contratos canónicos. Otros servicios combinan snapshots/fixtures y rutas heredadas. | Las formas mock no son OpenAPI vigente. |
-| Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. Desde la fase 1, los comandos de Solicitudes, Borradores, la enmienda, Servicios, clausuras, Paquetes, Aprovisionamiento y Clientes, y la bandeja de correos, usan sus envoltorios validados. | El resto de Contratos y Finanzas no migró de forma general. |
+| Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. Posterior al commit verificado (fase 1, `8a79fe70`): los comandos de Solicitudes, Borradores, la enmienda, Servicios, clausuras, Paquetes, Aprovisionamiento y Clientes, y la bandeja de correos, usan sus envoltorios validados. | El resto de Contratos y Finanzas no migró de forma general. |
 | API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Los módulos aún sintéticos no prueban endpoints financieros o contractuales; los adaptadores heredados pueden seguir fallando hasta su migración. |
 
 En la rama de integración posterior al commit histórico de esta nota,

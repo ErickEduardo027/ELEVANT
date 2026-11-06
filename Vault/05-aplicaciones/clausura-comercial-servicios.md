@@ -87,8 +87,10 @@ Desde la fase 1:
   español y en inglés (el espacio OCC es bilingüe). Ante un `409` relee el
   listado.
 - La decisión y la reapertura aceptan una `Idempotency-Key` y repiten el
-  resultado guardado ante un reintento con el mismo cuerpo. Toda falla trae un
-  código de Problem Details.
+  resultado guardado ante un reintento con el mismo cuerpo. Toda falla de
+  regla, estado o versión trae un código de Problem Details; la falta de
+  permiso responde el `403` genérico, sin código, salvo
+  `closure_self_decision`.
 
 ## Acceso y avisos
 

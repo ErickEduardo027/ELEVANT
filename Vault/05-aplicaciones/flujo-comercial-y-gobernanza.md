@@ -249,9 +249,21 @@ El aviso público `CatalogChangedV1` es una invalidación de mejor esfuerzo post
 
 ## Pendiente
 
-Los comandos que ya existían aceptan todavía llamadas sin `Idempotency-Key` ni
-versión esperada mientras queden clientes antiguos. Hacerlas obligatorias, y
-retirar el `DELETE` obsoleto del catálogo, es el paso «contract» que registra
+Los comandos que ya existían aceptan todavía llamadas sin `Idempotency-Key`
+mientras queden clientes antiguos:
+
+- La decisión de solicitudes, el borrador (guardar y enviar), el comentario de
+  la aerolínea, el aprovisionamiento, el reenvío de la invitación y la
+  contraseña temporal de clientes tampoco exigen la versión esperada.
+- El ciclo de vida del contrato, la decisión de Finanzas, el `PUT` del
+  catálogo, la decisión y la reapertura de clausuras y el `PUT` de aerolíneas
+  ya exigen la versión; solo la clave es opcional.
+- El `PUT` heredado de verificación de aerolíneas
+  (`contracts/commercial-requests/airlines/{profileId}/verification`), que
+  ningún cliente usa, no lleva ni clave ni versión.
+
+Hacer obligatorio lo que falta, y retirar el `DELETE` obsoleto del catálogo y
+ese `PUT` heredado, es el paso «contract» que registra
 [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md),
 junto con los demás pendientes de la fase.
 
