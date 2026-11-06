@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Commercial;
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -153,7 +154,8 @@ internal sealed class EfAirlinePermitStore(ElevantDbContext context, CommercialP
     private Task<long> AccountIdAsync(Guid actorId, CancellationToken cancellationToken) =>
         context.Users.Where(user => user.PublicId == actorId).Select(user => user.Id).SingleAsync(cancellationToken);
 
-    private DateOnly Today() => DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+    /// <summary>2-F: permits expire by AVIAM's business day (America/Santo_Domingo), not the UTC day.</summary>
+    private DateOnly Today() => BusinessCalendar.Today(timeProvider.GetUtcNow());
 
     private static string? Text(string? value, int max) =>
         value?.Trim() is { Length: > 0 } text && text.Length <= max ? text : null;

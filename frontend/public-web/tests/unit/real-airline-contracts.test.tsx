@@ -136,7 +136,8 @@ it("submits a permit with its scanned document and shows the contract timeline",
       if (init?.method === "POST") { submitted = true; return json(permit, 201); }
       return json(submitted ? [permit] : []);
     }
-    if (path.endsWith("/timeline")) return json({ contractId: "c", contractCode: "DEV-CONTRACT-0001", status: "Active",
+    if (path.endsWith("/timeline")) return json({ contractId: "60000000-0000-7000-8000-000000000002",
+      contractCode: "DEV-CONTRACT-0001", status: "Active", terminatesOn: null, earliestTerminationOn: "2026-12-02",
       entries: [{ at: "2026-10-21T12:00:00Z", kind: "status", title: "Contrato activo", detail: "Aprobado por Finanzas…", actor: null }] });
     const body = path.endsWith("/bootstrap") ? bootstrap : path.endsWith("/contracts") ? contracts
       : path.endsWith("/contract-drafts") ? [] : { actor };

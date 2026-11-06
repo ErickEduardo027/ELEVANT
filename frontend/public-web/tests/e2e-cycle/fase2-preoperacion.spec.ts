@@ -15,8 +15,18 @@ type RunContract = { id: string; code: string; airline: string;
   approvedVersions: Array<{ id: string; versionNumber: number; stations: Array<{ id: string; code: string }> }> };
 
 const AGENT = "Riley Ramp";
-/** Contract days are UTC days on the server (hueco 2-F); local days drive shifts and flights. */
-const utcDay = (offsetDays = 0) => new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+/** 1×1 PNG standing in for a drawn signature when a step signs through the API (ADR-0025). */
+const SIGNATURE_PNG =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
+/** The day of an instant in AVIAM's calendar (America/Santo_Domingo, UTC−4 all year). */
+function businessDayOf(instant: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo", year: "numeric", month: "2-digit",
+    day: "2-digit" }).formatToParts(instant);
+  const part = (type: string) => parts.find(item => item.type === type)!.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+/** Contract and permit days are AVIAM's business days on the server (hueco 2-F); local days drive shifts and flights. */
+const businessDay = (offsetDays = 0) => businessDayOf(new Date(Date.now() + offsetDays * 86_400_000));
 const nextDay = (isoDate: string) => new Date(Date.parse(`${isoDate}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const localDay = () => new Date().toLocaleDateString("en-CA");
 
@@ -101,8 +111,8 @@ test("Contratos fija la vigencia y la renovación del contrato aprobado", async 
   if (!before.data.validity) { // a resumed run (--no-deps) may have confirmed it already
     await expect(drawer.getByText("Pendiente: Contratos debe fijar la vigencia y la renovación antes de las firmas.")).toBeVisible();
     const validity = drawer.getByRole("form", { name: "Vigencia y renovación" });
-    await validity.getByLabel("Inicio de la vigencia").fill(utcDay());
-    await validity.getByLabel("Fin de la vigencia").fill(utcDay(365));
+    await validity.getByLabel("Inicio de la vigencia").fill(businessDay());
+    await validity.getByLabel("Fin de la vigencia").fill(businessDay(365));
     // A select inside its label is named by the label plus the chosen option.
     await validity.getByRole("combobox", { name: /^Renovación/ }).selectOption("Manual");
     await validity.getByLabel("Condiciones de terminación")
@@ -171,8 +181,8 @@ test("La aerolínea envía su permiso de operación JAC desde el portal", async 
   await form.getByLabel("Tipo de documento").selectOption("OperatingPermit");
   await form.getByLabel("Número").fill(`JAC-E2E-${run.runId}`);
   await form.getByLabel("Emisor").fill("Junta de Aviación Civil");
-  await form.getByLabel("Fecha de emisión").fill(utcDay(-30));
-  await form.getByLabel("Fecha de vencimiento").fill(utcDay(365));
+  await form.getByLabel("Fecha de emisión").fill(businessDay(-30));
+  await form.getByLabel("Fecha de vencimiento").fill(businessDay(365));
   await form.getByLabel(/Documento escaneado/).setInputFiles(permitPdf());
   await form.getByRole("button", { name: "Enviar permiso" }).click();
   await expect(form.getByRole("status")).toHaveText(/Permiso enviado/);
@@ -283,7 +293,7 @@ test("hueco 1-C · Contratos crea una enmienda del contrato activo y Finanzas ap
   const approved = before.approvedVersions.filter(item => item.status === "Approved")
     .sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0]!;
   // «Vigente desde» falls after the start of the approved version in force and not after its end.
-  const start = [utcDay(30), nextDay(approved.validFrom)].sort().at(-1)!;
+  const start = [businessDay(30), nextDay(approved.validFrom)].sort().at(-1)!;
 
   await loginPrivate(page, "contracts");
   const drawer = await openContractDetail(page, contract.airline, approved.versionNumber);
@@ -327,7 +337,85 @@ test("hueco 1-C · Contratos crea una enmienda del contrato activo y Finanzas ap
 
 test.fixme("hueco 2-A · Superadmin crea una estación y OCC sus terminales, posiciones y tipos de avión", async () => {});
 test.fixme("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posición y charter", async () => {});
-test.fixme("hueco 2-C · una renovación aprobada por Finanzas no cambia precios hasta estar firmada y vigente", async () => {});
+test("hueco 2-C · una renovación aprobada por Finanzas no cambia precios hasta estar firmada y vigente", async ({ page }) => {
+  const { run, contract, version } = contractOf();
+  const representative = run.representative as { email: string; name: string };
+  const station = version.stations.find(item => item.code === "PUJ")!;
+  type Agreement = { id: string; status: string;
+    approvedVersions: Array<{ id: string; versionNumber: number; status: string; validFrom: string; validTo: string | null }> };
+  const agreement = async () => (await expectCall<{ contracts: Agreement[] }>(200, await login("contracts"), "GET",
+    "/contracts/agreements?page=1&limit=50")).data.contracts.find(item => item.id === contract.id)!;
+  type Ready = { contracts: Array<{ contractId: string; versionId: string; versionNumber: number }> };
+  const governingOn = async (date: string) => (await expectCall<Ready>(200, await login("occ"), "GET",
+    `/occ/contracts?stationId=${station.id}&date=${date}`)).data.contracts.find(item => item.contractId === contract.id);
+
+  // The amendment Finance approved in the 1-C step waits for both signatures; the version in force governs.
+  const before = await agreement();
+  const amendment = before.approvedVersions.filter(item => item.status === "Approved")
+    .sort((a, b) => b.validFrom.localeCompare(a.validFrom))[0]!;
+  const inForce = before.approvedVersions.find(item => item.id === version.id)!;
+  expect(amendment.id, "the 1-C step left an approved amendment").not.toBe(inForce.id);
+  expect((await governingOn(amendment.validFrom))?.versionId, "Finance approval alone changes nothing that is billed")
+    .toBe(inForce.id);
+
+  // Contratos fixes the amendment's validity; the airline signs it; prices still do not change.
+  await loginPrivate(page, "contracts");
+  const drawer = await openContractDetail(page, contract.airline, amendment.versionNumber);
+  const validity = drawer.getByRole("form", { name: "Vigencia y renovación" });
+  await expect(validity.getByLabel("Inicio de la vigencia")).toHaveValue(amendment.validFrom);
+  await validity.getByLabel("Condiciones de terminación").fill("Incumplimiento grave de pago. Enmienda E2E.");
+  await validity.getByRole("button", { name: "Confirmar vigencia" }).click();
+  await expect(drawer.getByRole("heading", { name: "Vigencia y renovación confirmadas" })).toBeVisible();
+  const airline = await login({ email: representative.email });
+  const unsigned = await expectCall<{ contentSha256: string; signableBy: string | null }>(200, airline, "GET",
+    `/contract-versions/${amendment.id}/document`);
+  expect(unsigned.data.signableBy).toBe("Airline");
+  await expectCall(200, airline, "POST", `/contract-versions/${amendment.id}/signatures`, {
+    signerName: representative.name, signerTitle: "Gerente de estación", documentSha256: unsigned.data.contentSha256,
+    accepted: true, signatureImagePng: SIGNATURE_PNG });
+  expect((await governingOn(amendment.validFrom))?.versionId, "one signature is not enough").toBe(inForce.id);
+
+  // AVIAM countersigns the same content: from its start the amendment governs, and the day before the
+  // version it replaces still does.
+  await page.reload();
+  const signed = await openContractDetail(page, contract.airline, amendment.versionNumber);
+  const form = signed.locator("form").filter({ has: page.getByRole("heading", { name: "Firmar por AVIAM" }) });
+  await form.getByLabel("Nombre completo").fill("Laura Contratos Prueba");
+  await form.getByLabel("Cargo").fill("Gerente de Contratos");
+  await form.getByRole("checkbox").check();
+  await drawSignature(page, form.getByRole("img", { name: "Firma" }));
+  await form.getByRole("button", { name: "Acepto y firmo" }).click();
+  await expect(signed.getByText(/Firmado por ambas partes el/)).toBeVisible();
+  await snap(page, "fase2-hueco-2c-enmienda-firmada");
+  expect((await governingOn(amendment.validFrom))?.versionId).toBe(amendment.id);
+  const dayBefore = new Date(Date.parse(`${amendment.validFrom}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  expect((await governingOn(dayBefore))?.versionId).toBe(inForce.id);
+  const after = await agreement();
+  expect(after.approvedVersions.find(item => item.id === inForce.id)).toMatchObject({ status: "Superseded", validTo: dayBefore });
+  expect(after.status, "the contract stays active").toBe("Active");
+});
 test.fixme("hueco 2-D · los PDF de Finanzas, Gestión Humana y OCC muestran las tildes", async () => {});
 test.fixme("hueco 2-E · OCC y Gestión Humana muestran el usuario de la sesión, no el de ejemplo", async () => {});
-test.fixme("hueco 2-F · el día de los contratos sigue el calendario de República Dominicana, no UTC", async () => {});
+test("hueco 2-F · el día de los contratos sigue el calendario de República Dominicana, no UTC", async ({ page }) => {
+  const { run, version } = contractOf();
+  const representative = run.representative as { email: string };
+  // The server dates a version's signature by AVIAM's business day of its second signature.
+  const document = await expectCall<{ signedOn: string | null; signatures: Array<{ signedAt: string }> }>(200,
+    await login("contracts"), "GET", `/contract-versions/${version.id}/document`);
+  expect(document.data.signatures).toHaveLength(2);
+  const second = document.data.signatures.map(item => item.signedAt).sort().at(-1)!;
+  expect(document.data.signedOn).toBe(businessDayOf(new Date(second)));
+
+  // At 21:30 in Santo Domingo the UTC day is already tomorrow: the portal still limits permits by today.
+  await openPortalContracts(page, representative.email);
+  const form = page.getByRole("form", { name: "Enviar un permiso" });
+  await expect(form).toBeVisible();
+  const yesterday = businessDay(-1);
+  await page.clock.setFixedTime(new Date(`${yesterday}T21:30:00-04:00`));
+  // Any keystroke renders the form again with the frozen clock.
+  await form.getByLabel("Número").fill("JAC-2F");
+  await expect(form.getByLabel("Fecha de vencimiento")).toHaveAttribute("min", yesterday);
+  await expect(form.getByLabel("Fecha de emisión")).toHaveAttribute("max", yesterday);
+  await form.getByLabel("Número").fill("");
+  await snap(page, "fase2-hueco-2f-dia-habil");
+});

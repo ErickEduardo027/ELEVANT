@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ElevantApiError, type AirlineContractPageResponse } from "@elevant/api-client";
 import type { AirlineDraftData } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { AirlineContractPricing } from "./AirlineContractPricing";
 import { AirlineContractSignature } from "./AirlineContractSignature";
 import { ContractPdfActions } from "./ContractPdfActions";
 import { AirlinePermitsSection, ContractTimeline } from "./AirlinePermitsSection";
@@ -123,6 +124,7 @@ export function AirlineContractPage() {
               <span>Precio por {billingUnitLabel(rate.billingUnit)}: {money(rate.unitPrice, version.currencyCode)} · cantidad mínima {rate.minimumQuantity}</span>
             </div>) : <p>Sin tarifas registradas en esta versión.</p>}
           </div>
+          <AirlineContractPricing versionId={version.id} />
           <AirlineContractSignature versionId={version.id} fileName={`contrato-${contract.code}-v${version.versionNumber}.pdf`} />
           <ContractTimeline versionId={version.id} />
         </section>)}

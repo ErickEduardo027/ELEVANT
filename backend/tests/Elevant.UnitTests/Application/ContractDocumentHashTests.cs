@@ -30,4 +30,32 @@ public sealed class ContractDocumentHashTests
         Assert.NotEqual(hash, (Document() with { ValidTo = new(2026, 12, 31) }).ContentSha256);
         Assert.Matches("^[0-9a-f]{64}$", hash);
     }
+
+    private static ContractPricingTerms Pricing(bool nightExcluded = false, decimal packagePrice = 500m) => new(
+        [
+            new ContractDocumentCharge("NIGHT", "Recargo nocturno", "PercentOfService", null, "One", 0, 0m, nightExcluded,
+                nightExcluded ? null : 25m, nightExcluded ? null : 0m),
+            new ContractDocumentCharge("GPU-OT", "Exceso de GPU", "PerMinute", "minute", "OperationOverrun", 15, 1m, false, 2m, 10m),
+        ],
+        [
+            new ContractDocumentPackage("TAT", "Escala completa", 1, "Turnaround", null, null, packagePrice, "USD",
+                [new ContractDocumentPackageComponent("RAMP", "Rampa", "operation", 1m, 1m, 120m)]),
+        ]);
+
+    [Fact]
+    public void SurchargesAndPackagesJoinTheSignedContentOnlyWhenPresent()
+    {
+        var legacy = Document();
+        var priced = legacy with { Pricing = Pricing() };
+        // A version signed before 2-N04 keeps exactly its hash; one with pricing signs it.
+        Assert.Equal(ContractDocumentHash.Of(legacy with { Pricing = null }), legacy.ContentSha256);
+        Assert.NotEqual(legacy.ContentSha256, priced.ContentSha256);
+        Assert.NotEqual(priced.ContentSha256, (legacy with { Pricing = Pricing(nightExcluded: true) }).ContentSha256);
+        Assert.NotEqual(priced.ContentSha256, (legacy with { Pricing = Pricing(packagePrice: 450m) }).ContentSha256);
+        // The order of surcharges does not matter, nor the names shown next to the codes.
+        var reordered = Pricing() with { Charges = Pricing().Charges.Reverse().ToArray() };
+        Assert.Equal(priced.ContentSha256, (legacy with { Pricing = reordered }).ContentSha256);
+        var renamed = Pricing() with { Charges = Pricing().Charges.Select(charge => charge with { ChargeName = "Otro" }).ToArray() };
+        Assert.Equal(priced.ContentSha256, (legacy with { Pricing = renamed }).ContentSha256);
+    }
 }

@@ -516,16 +516,21 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(ContractStatus.Terminated, (await ContractAsync()).Status);
         Assert.Equal(ContractVersionStatus.Rejected, await context.ContractVersions.AsNoTracking()
             .Where(item => item.PublicId == again.DraftVersionId).Select(item => item.Status).SingleAsync(ct));
-        Assert.Equal(ContractVersionStatus.Approved, await context.ContractVersions.AsNoTracking()
-            .Where(item => item.PublicId == SeededContractVersion).Select(item => item.Status).SingleAsync(ct));
+        // 2-N15: the approved version nobody signed closes too; it keeps its approval and nothing is deleted.
+        var closed = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == SeededContractVersion, ct);
+        Assert.Equal(ContractVersionStatus.Rejected, closed.Status);
+        Assert.NotNull(closed.ApprovedAt);
+        Assert.True(await context.AuditEntries.AnyAsync(item => item.Action == "commercial.contract.version_withdrawn" &&
+            item.EntityPublicId == SeededContractVersion, ct));
         Assert.DoesNotContain((await book.ListContractApprovalsAsync(FinanceAccount, true, ct))!,
             item => item.VersionId == again.DraftVersionId);
         Assert.Equal(1, await context.Set<ContractStatusEvent>().CountAsync(item => item.ContractId == contractId &&
             item.FromStatus == ContractStatus.Draft && item.ToStatus == ContractStatus.Terminated, ct));
-        var document = (await documents.ReadAsync(PortalAirlineAccount, SeededContractVersion, ct)).Document!;
-        Assert.Null(document.SignableBy);
+        // Its document is history now: nobody reads it as an offer, and nobody signs it.
+        Assert.Equal(ContractDocumentFailure.NotFound,
+            (await documents.ReadAsync(PortalAirlineAccount, SeededContractVersion, ct)).Failure);
         var signed = await documents.SignAsync(PortalAirlineAccount, SeededContractVersion, new SignContractInput(
-            Guid.NewGuid(), "Casey Airline", "Director", document.ContentSha256, true, SignaturePng), ct);
-        Assert.Equal(("contract_terminated", ContractDocumentFailure.Conflict), (signed.Code, signed.Failure));
+            Guid.NewGuid(), "Casey Airline", "Director", new string('a', 64), true, SignaturePng), ct);
+        Assert.Equal(("not_found", ContractDocumentFailure.NotFound), (signed.Code, signed.Failure));
     }
 }

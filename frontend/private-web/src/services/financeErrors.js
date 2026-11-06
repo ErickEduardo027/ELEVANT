@@ -16,6 +16,9 @@ export const CONTRACT_APPROVAL_MESSAGES = Object.freeze({
   package_service_not_in_contract: 'Un paquete cubre un servicio que el contrato no incluye. Devuélvalo a Contratos.',
   invalid_contract_decision: 'Para devolver el contrato escriba un motivo de 3 a 1000 caracteres.',
   not_found: 'El contrato ya no está pendiente o no pertenece a sus estaciones.',
+  // Phase 2, block A (2-N15): a terminated contract, or a version that starts on or after its scheduled termination.
+  contract_terminated: 'El contrato está terminado: sus precios ya no se aprueban. Devuélvalo a Contratos.',
+  termination_scheduled: 'La versión empieza en la fecha de terminación programada del contrato o después. Devuélvala a Contratos.',
 });
 
 /** Billing units, the service and charge tariffs, the charge catalog and the exchange rates (1-E). */

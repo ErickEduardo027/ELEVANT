@@ -2,6 +2,7 @@ using System.Globalization;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Commercial;
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Persistence.Finance;
@@ -187,6 +188,9 @@ internal sealed partial class EfContractDraftStore
             // One code per cause, the same the readiness endpoint and the button show (1-D, 1-N14).
             var (issues, _) = await EvaluateAsync(row, now, cancellationToken);
             if (issues.Count > 0) return Conflict(issues[0].Code);
+            // 2-N15: nothing starts on or after the scheduled termination of its contract.
+            if (ContractLifecycle.ClosedFor(row.Contract.Status, row.Contract.TerminatedOn, row.Version.ValidFrom) is { } closed)
+                return Conflict(closed);
             // Contratos submits the reviewed draft to Finance. After approval come the validity step and
             // both signatures (airline first); only then the contract activates (ADR-0024, ADR-0025).
             row.Version.Status = ContractVersionStatus.PendingFinanceApproval;
@@ -330,7 +334,7 @@ internal sealed partial class EfContractDraftStore
                          item.Status == ContractVersionStatus.PendingFinanceApproval ||
                          item.Status == ContractVersionStatus.Approved), cancellationToken))
                 {
-                    var today = DateOnly.FromDateTime(now.UtcDateTime);
+                    var today = BusinessCalendar.Today(now);
                     context.Set<ContractStatusEvent>().Add(new ContractStatusEvent
                     {
                         ContractId = row.Contract.Id, FromStatus = ContractStatus.Draft, ToStatus = ContractStatus.Terminated,

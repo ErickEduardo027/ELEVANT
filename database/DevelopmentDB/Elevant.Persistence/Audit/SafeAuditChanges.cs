@@ -13,6 +13,8 @@ internal static class SafeAuditChanges
         "rate.confirmed", "rate.price",
         // Portal accounts (phase 1, block E): the invitation a temporary password closed, the membership a link reactivated.
         "user.invitation", "membership.status",
+        // Contract lifecycle (phase 2, block A): a version that started or stopped governing and a scheduled termination.
+        "version.status", "version.valid_to", "contract.terminated_on",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

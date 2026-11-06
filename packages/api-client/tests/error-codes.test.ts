@@ -11,4 +11,11 @@ describe("Problem Details codes", () => {
       "email_in_use_internal", "account_disabled", "account_not_found", "airline_identity_locked"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
+
+  it("keeps the contract lifecycle codes of phase 2 (block A)", () => {
+    for (const code of ["content_changed", "contract_terminated", "termination_scheduled", "termination_not_scheduled",
+      "termination_date_required", "termination_notice_not_met", "immediate_cause_invalid", "version_awaiting_signatures",
+      "version_signed", "airline_signed_other_content", "already_signed", "not_approved", "forbidden"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
 });

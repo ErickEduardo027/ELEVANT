@@ -23,6 +23,9 @@ describe('Finance problem messages (1-E, 1-N27)', () => {
 
   it('explains a retired package in the approval and in the package screens', () => {
     expect(financeContractApprovalMessage(failure(409, 'package_retired'))).toMatch(/Devuélvalo a Contratos para que lo quite/);
+    // 2-N15: nothing is approved for a terminated contract or on or after its scheduled termination.
+    expect(financeContractApprovalMessage(failure(409, 'contract_terminated'))).toMatch(/El contrato está terminado/);
+    expect(financeContractApprovalMessage(failure(409, 'termination_scheduled'))).toMatch(/terminación programada/);
     expect(financePackageError(failure(409, 'package_retired'))).toMatch(/Finanzas retiró ese paquete/);
     expect(financePackageError(failure(409, 'package_not_draft'))).toMatch(/Solo se descarta un borrador/);
     expect(financePackageError(failure(409, 'package_not_published'))).toMatch(/Solo se retira la versión publicada/);

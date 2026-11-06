@@ -4,12 +4,13 @@ import userEvent from '@testing-library/user-event';
 import ContractDetailDrawer from './ContractDetailDrawer';
 import {
   createContractAmendment, getContractDocument, loadContractPdf, setContractValidity, signContractVersion,
+  withdrawContractVersion,
 } from '../../../services/commercialGovernanceApi';
 
 vi.mock('../../../services/commercialGovernanceApi', () => ({
   getContractDocument: vi.fn(), loadContractPdf: vi.fn(), signContractVersion: vi.fn(), setContractValidity: vi.fn(),
   getContractTimeline: vi.fn().mockResolvedValue({ contractId: 'c-1', contractCode: 'CT-001', status: 'Active', entries: [] }),
-  applyContractLifecycle: vi.fn(), createContractAmendment: vi.fn(),
+  applyContractLifecycle: vi.fn(), createContractAmendment: vi.fn(), withdrawContractVersion: vi.fn(),
 }));
 
 const sha = 'b'.repeat(64);
@@ -88,9 +89,10 @@ it('lets Contratos confirm validity and renewal before any signature', async () 
   await userEvent.type(within(form).getByLabelText('Aviso de renovación (días antes)'), '45');
   await userEvent.type(within(form).getByLabelText('Condiciones de terminación'), 'Incumplimiento grave.');
   await userEvent.click(within(form).getByRole('button', { name: 'Confirmar vigencia' }));
+  // The validity step carries the intent's Idempotency-Key.
   expect(setContractValidity).toHaveBeenCalledWith('v-1', { validFrom: '2026-11-03', validTo: '2027-11-02',
     renewalMode: 'Automatic', renewalTermMonths: 12, renewalNoticeDays: 45, terminationNoticeDays: 60,
-    terminationTerms: 'Incumplimiento grave.', expectedDocumentSha256: sha });
+    terminationTerms: 'Incumplimiento grave.', expectedDocumentSha256: sha }, expect.stringMatching(/^[0-9a-f-]{36}$/));
   expect(await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Acepto y firmo' })).not.toBeInTheDocument();
 });
@@ -101,7 +103,7 @@ it('offers no signature without «Firmar por AVIAM» and explains a missing docu
   expect(screen.queryByRole('button', { name: 'Acepto y firmo' })).not.toBeInTheDocument();
   expect(screen.queryByRole('form', { name: 'Vigencia y renovación' })).not.toBeInTheDocument();
   cleanup();
-  getContractDocument.mockRejectedValueOnce({ status: 404 });
+  getContractDocument.mockRejectedValueOnce({ status: 404, code: 'not_found' });
   render(<ContractDetailDrawer versionId="v-9" canSign onClose={vi.fn()} />);
   expect(await screen.findByRole('alert')).toHaveTextContent('ya no tiene documento');
 });
@@ -126,4 +128,78 @@ it('creates an amendment from the approved version and keeps the notice and the 
   await userEvent.click(screen.getByRole('button', { name: 'Abrir Borradores' }));
   expect(onClose).toHaveBeenCalled();
   expect(onOpenDrafts).toHaveBeenCalled();
+});
+
+it('explains a refused validity by its code, keeps the key of an uncertain retry and re-reads a conflict', async () => {
+  const unconfirmed = { ...document, contractCode: 'DRAFT-1', validity: null, signatures: [], signableBy: null };
+  getContractDocument.mockResolvedValue(unconfirmed);
+  setContractValidity.mockRejectedValueOnce(new Error('Network down'))
+    .mockRejectedValueOnce(Object.assign(new Error('Invalid'), { status: 400, code: 'valid_from_not_after_current' }));
+  render(<ContractDetailDrawer versionId="v-1" canSetValidity onClose={vi.fn()} />);
+  const form = await screen.findByRole('form', { name: 'Vigencia y renovación' });
+  await userEvent.click(within(form).getByRole('button', { name: 'Confirmar vigencia' }));
+  expect(await within(form).findByRole('alert')).toHaveTextContent('No fue posible guardar la vigencia');
+  await userEvent.click(within(form).getByRole('button', { name: 'Confirmar vigencia' }));
+  expect(await within(form).findByText(/debe empezar después del inicio de la versión vigente/)).toBeInTheDocument();
+  const [first, second] = setContractValidity.mock.calls;
+  expect(second[2]).toBe(first[2]);
+});
+
+it('withdraws an approved version only one party signed, with a reason and the hash on screen (2-N10)', async () => {
+  getContractDocument.mockResolvedValue({ ...document, contractStatus: 'Draft', signableBy: null });
+  withdrawContractVersion.mockRejectedValueOnce(new Error('Network down'))
+    .mockResolvedValueOnce({ versionId: 'v-1', versionStatus: 'Rejected', contractStatus: 'Draft', draftVersionId: 'v-3' });
+  const onSigned = vi.fn();
+  const onOpenDrafts = vi.fn();
+  render(<ContractDetailDrawer versionId="v-1" canManageLifecycle onOpenDrafts={onOpenDrafts} onClose={vi.fn()} onSigned={onSigned} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Retirar versión' }));
+  const dialog = screen.getByRole('dialog', { name: 'Retirar la versión 2 del contrato CTR-2026-0001' });
+  const confirm = within(dialog).getByRole('button', { name: 'Retirar versión' });
+  expect(confirm).toBeDisabled();
+  await userEvent.type(within(dialog).getByLabelText('Motivo'), 'La vigencia quedó mal fijada.');
+  await userEvent.click(confirm);
+  // An uncertain result keeps the dialog and the reason, so the retry is the same intent.
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent(/No fue posible completar la operación/);
+  expect(within(dialog).getByLabelText('Motivo')).toHaveValue('La vigencia quedó mal fijada.');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Retirar versión' }));
+  expect(await screen.findByText('Versión retirada.')).toBeInTheDocument();
+  expect(screen.getByText(/Se creó un borrador con el mismo contenido/)).toBeInTheDocument();
+  const [first, second] = withdrawContractVersion.mock.calls;
+  expect(first.slice(0, 2)).toEqual(['v-1', { reason: 'La vigencia quedó mal fijada.', expectedDocumentSha256: sha }]);
+  // The retry of the same intent keeps the Idempotency-Key.
+  expect(second[2]).toBe(first[2]);
+  expect(onSigned).toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Abrir Borradores' }));
+  expect(onOpenDrafts).toHaveBeenCalled();
+});
+
+it('never offers the withdrawal of a version both parties signed, and explains a refusal by its code', async () => {
+  const aviamSignature = { ...airlineSignature, party: 'Aviam', signerName: 'Ana Pérez', signerTitle: 'Gerente' };
+  getContractDocument.mockResolvedValueOnce({ ...document, contractStatus: 'Active', signableBy: null,
+    signatures: [airlineSignature, aviamSignature], signedOn: '2026-11-03' });
+  const { unmount } = render(<ContractDetailDrawer versionId="v-1" canManageLifecycle onClose={vi.fn()} />);
+  await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 2' });
+  expect(screen.queryByRole('button', { name: 'Retirar versión' })).not.toBeInTheDocument();
+  expect(screen.getByText(/Firmado por ambas partes el/)).toBeInTheDocument();
+  unmount();
+  getContractDocument.mockResolvedValue({ ...document, contractStatus: 'Active', signatures: [], signableBy: null });
+  withdrawContractVersion.mockRejectedValue(Object.assign(new Error('Conflict'), { status: 409, code: 'version_signed' }));
+  render(<ContractDetailDrawer versionId="v-1" canManageLifecycle onClose={vi.fn()} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Retirar versión' }));
+  await userEvent.type(within(screen.getByRole('dialog', { name: /^Retirar la versión/ })).getByLabelText('Motivo'), 'Motivo válido');
+  await userEvent.click(within(screen.getByRole('dialog', { name: /^Retirar la versión/ })).getByRole('button', { name: 'Retirar versión' }));
+  expect(await screen.findByText('La versión ya rige el contrato: no se puede retirar.')).toBeInTheDocument();
+  // A conflict re-reads the document.
+  expect(getContractDocument.mock.calls.length).toBeGreaterThanOrEqual(3);
+});
+
+it('explains a countersignature over other content by its code (2-N28)', async () => {
+  signContractVersion.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409, code: 'airline_signed_other_content' }));
+  render(<ContractDetailDrawer versionId="v-1" canSign onClose={vi.fn()} />);
+  await userEvent.type(await screen.findByLabelText('Nombre completo'), 'Ana Pérez');
+  await userEvent.type(screen.getByLabelText('Cargo'), 'Gerente comercial');
+  await userEvent.click(screen.getByRole('checkbox'));
+  draw();
+  await userEvent.click(screen.getByRole('button', { name: 'Acepto y firmo' }));
+  expect(await screen.findByText(/La aerolínea firmó un contenido distinto al actual/)).toBeInTheDocument();
 });

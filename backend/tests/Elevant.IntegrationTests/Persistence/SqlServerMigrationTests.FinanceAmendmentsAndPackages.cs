@@ -89,12 +89,20 @@ public sealed partial class SqlServerMigrationTests
             new DecideContractApprovalInput("Approved", null, pending.Summary.Version), Guid.NewGuid(), ct);
         Assert.True(decided.IsSuccess, decided.Code);
         context.ChangeTracker.Clear();
-        var replaced = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.Id == original.Id, ct);
-        Assert.Equal((ContractVersionStatus.Superseded, (DateOnly?)start.AddDays(-1)), (replaced.Status, replaced.ValidTo));
+        // 2-C: Finance approval alone replaces nothing; the version in force keeps its end until both sign.
+        var kept = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.Id == original.Id, ct);
+        Assert.Equal((ContractVersionStatus.Approved, original.ValidTo), (kept.Status, kept.ValidTo));
         Assert.Equal(ContractVersionStatus.Approved,
             (await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == created.Id, ct)).Status);
+        // 2-N01: no other amendment starts while one approved version waits for both signatures.
+        Assert.Equal("version_awaiting_signatures",
+            (await AmendAsync(ContractsAccount, Guid.NewGuid(), amendment with { ValidFrom = start.AddDays(5) })).Code);
+        await SignByBothAsync(scope.ServiceProvider.GetRequiredService<IContractDocumentStore>(), created.Id!.Value, ct);
+        context.ChangeTracker.Clear();
+        var replaced = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.Id == original.Id, ct);
+        Assert.Equal((ContractVersionStatus.Superseded, (DateOnly?)start.AddDays(-1)), (replaced.Status, replaced.ValidTo));
 
-        // The next amendment starts from the version just approved; an expired contract is renewed instead.
+        // The next amendment starts from the version just signed; an expired contract is renewed instead.
         Assert.Equal("valid_from_not_after_current",
             (await AmendAsync(ContractsAccount, Guid.NewGuid(), amendment with { ValidFrom = start })).Code);
         await context.Contracts.Where(item => item.Id == contract.Id)

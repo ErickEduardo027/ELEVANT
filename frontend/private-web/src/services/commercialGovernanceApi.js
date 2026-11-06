@@ -222,9 +222,20 @@ export async function downloadContractDocument(versionId, fileName) {
 export const signContractVersion = (versionId, request, idempotencyKey) =>
   contractCall(() => contractClient().signContractVersion(versionId, request, idempotencyKey));
 
-/** Contratos confirms validity, renewal and termination before signatures (ADR-0025). */
-export const setContractValidity = (versionId, request) =>
-  contractCall(() => contractClient().setContractValidity(versionId, request));
+/**
+ * Contratos confirms validity, renewal and termination before signatures (ADR-0025) with the intent's
+ * Idempotency-Key: a retry of the same body after an uncertain result replays the first answer.
+ */
+export const setContractValidity = (versionId, request, idempotencyKey) =>
+  contractCall(() => contractClient().setContractValidity(versionId, request, idempotencyKey));
+
+/**
+ * Contratos withdraws an approved version both parties have not signed, with a reason and the content hash
+ * on screen (2-N10). Answers the version (Rejected), its contract and, for a contract that never activated,
+ * the new draft with the same content (`draftVersionId`).
+ */
+export const withdrawContractVersion = (versionId, command, idempotencyKey) =>
+  contractCall(() => contractClient().withdrawContractVersion(versionId, command, idempotencyKey));
 
 /** Airline permit dossier for Contratos (ADR-0024); review is Submitted, Verified or Rejected. */
 export const getAirlinePermitsForContracts = (review = '') =>
@@ -236,8 +247,11 @@ export const reviewAirlinePermit = (permitId, verified, note, expectedVersion) =
 /** Contract history (request, Finance, signatures, permits and status), oldest first. */
 export const getContractTimeline = versionId => commercialApi(`/contract-versions/${versionId}/timeline`);
 /**
- * Suspend, Reactivate, Terminate (also «Descartar contrato» for one that never activated) or Renew
- * (validFrom/validTo) with a reason, the status the user saw and the intent's Idempotency-Key.
+ * Suspend, Reactivate, Terminate (also «Descartar contrato» for one that never activated), CancelTermination
+ * or Renew (validFrom/validTo) with a reason, the status the user saw and the intent's Idempotency-Key. A
+ * termination of an active or suspended contract carries `effectiveOn` (its first day without coverage) or an
+ * `immediateCause` (`Breach` or `MutualAgreement`) (2-N14). The history (`getContractTimeline`) tells
+ * `terminatesOn` and `earliestTerminationOn`.
  */
 export const applyContractLifecycle = (versionId, values, idempotencyKey) => commercialApi(
   `/contract-versions/${versionId}/lifecycle`, {

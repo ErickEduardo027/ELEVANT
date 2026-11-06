@@ -23,6 +23,13 @@ const KINDS = {
   contract_expired: { title: 'Contrato vencido', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_expiring: { title: 'Un contrato vence en 30 días o menos', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_lifecycle: { title: 'Cambio en el ciclo de un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  // Phase 2, block A: a termination with notice (2-N14), the withdrawal of an unsigned version (2-N10) and an
+  // automatic renewal that could not start (2-N27).
+  contract_termination_scheduled: { title: 'Se programó la terminación de un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  contract_termination_cancelled: { title: 'Se canceló la terminación programada de un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  contract_terminated: { title: 'Un contrato terminó en su fecha efectiva', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  contract_version_withdrawn: { title: 'Contratos retiró una versión sin las dos firmas', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  contract_renewal_blocked: { title: 'La renovación automática de un contrato no pudo iniciarse', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_approval: { title: 'Contrato pendiente de aprobación', target: { moduleId: FINANCE_MODULE_IDS.CONTRACT_APPROVALS } },
   preinvoice_accepted: { title: 'La aerolínea aceptó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
   preinvoice_disputed: { title: 'La aerolínea disputó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },

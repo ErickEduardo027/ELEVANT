@@ -29,7 +29,7 @@ public sealed partial class SqlServerMigrationTests
         var current = (await documents.ReadAsync(ContractsAdministrator, versionId, ct)).Document!;
         var result = await documents.SetValidityAsync(ContractsAdministrator, versionId, new ContractValidityInput(
             from, from.AddYears(1).AddDays(-1), "Automatic", 12, 30, 60, "Incumplimiento grave de pago.",
-            current.ContentSha256), ct);
+            current.ContentSha256), null, ct);
         Assert.Null(result.Code);
         Assert.Null(result.Failure);
         return result.Document!.ContentSha256;
@@ -48,7 +48,8 @@ public sealed partial class SqlServerMigrationTests
         var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
         var permits = scope.ServiceProvider.GetRequiredService<IAirlinePermitStore>();
         var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // 2-F: contract and permit days are AVIAM's business days, whatever the hour of the run.
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var contractId = await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion)
             .Select(item => item.ContractId).SingleAsync(ct);
         async Task<Contract> ContractAsync() => await context.Contracts.AsNoTracking().SingleAsync(item => item.Id == contractId, ct);
@@ -189,7 +190,8 @@ public sealed partial class SqlServerMigrationTests
         var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
         var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
         var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // 2-F: contract and permit days are AVIAM's business days, whatever the hour of the run.
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var contractId = await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion)
             .Select(item => item.ContractId).SingleAsync(ct);
 

@@ -1368,6 +1368,10 @@ export interface ContractLifecycleInput {
   validFrom?: string | null;
   /** @nullable */
   validTo?: string | null;
+  /** @nullable */
+  effectiveOn?: string | null;
+  /** @nullable */
+  immediateCause?: string | null;
 }
 
 export interface ContractLifecycleResult {
@@ -1378,6 +1382,54 @@ export interface ContractLifecycleResult {
   failure?: ContractLifecycleFailure | null;
   /** @nullable */
   code?: string | null;
+}
+
+export interface ContractPricingChargeResponse {
+  chargeCode: string;
+  chargeName: string;
+  method: string;
+  /** @nullable */
+  billingUnit?: string | null;
+  quantityRule: string;
+  graceMinutes: number;
+  roundingIncrement: number;
+  isExcluded: boolean;
+  /** @nullable */
+  value?: number | null;
+  /** @nullable */
+  minimumAmount?: number | null;
+}
+
+export interface ContractPricingPackageComponentResponse {
+  serviceCode: string;
+  serviceName: string;
+  billingUnit: string;
+  includedQuantity: number;
+  excessBlockSize: number;
+  excessBlockPrice: number;
+}
+
+export interface ContractPricingPackageResponse {
+  code: string;
+  name: string;
+  versionNumber: number;
+  scope: string;
+  /** @nullable */
+  flightDirection?: string | null;
+  /** @nullable */
+  periodDays?: number | null;
+  basePrice: number;
+  currencyCode: string;
+  components: ContractPricingPackageComponentResponse[];
+}
+
+export interface ContractPricingTermsResponse {
+  versionId: string;
+  currencyCode: string;
+  inDocument: boolean;
+  signed: boolean;
+  charges: ContractPricingChargeResponse[];
+  packages: ContractPricingPackageResponse[];
 }
 
 export interface ContractTimelineEntry {
@@ -1395,6 +1447,18 @@ export interface ContractTimelineData {
   contractCode: string;
   status: string;
   entries: ContractTimelineEntry[];
+  /** @nullable */
+  terminatesOn?: string | null;
+  /** @nullable */
+  earliestTerminationOn?: string | null;
+}
+
+export interface ContractWithdrawalResponse {
+  versionId: string;
+  versionStatus: string;
+  contractStatus: string;
+  /** @nullable */
+  draftVersionId?: string | null;
 }
 
 export interface CorrectExchangeRateInput {
@@ -6077,6 +6141,11 @@ export interface VerifyRequestAirlineInput {
   verificationSourceUrl?: string | null;
 }
 
+export interface WithdrawContractVersionRequest {
+  reason: string;
+  expectedDocumentSha256: string;
+}
+
 export type GetAccountChangesParams = {
 after?: string;
 limit?: number;
@@ -8776,6 +8845,77 @@ export const getContractDocument = async (versionId: string, options?: RequestIn
 
 
 
+export const getGetContractPricingTermsUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/pricing-terms`
+}
+
+/**
+ * @summary Surcharges and packages that apply to the version (2-N04), for the same readers as the document:
+whether they are part of its signed content and whether both parties signed it.
+ */
+export const getContractPricingTerms = async (versionId: string, options?: RequestInit): Promise<ContractPricingTermsResponse> => {
+
+  const res = await fetch(getGetContractPricingTermsUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractPricingTermsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getWithdrawContractVersionUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contract-versions/${versionId}/withdrawal`
+}
+
+/**
+ * @summary Contratos withdraws, with a reason, an approved version both parties have not signed (2-N10): it
+becomes Rejected and keeps its approval; a one-party signature is voided in the audit trail.
+ */
+export const withdrawContractVersion = async (versionId: string,
+    withdrawContractVersionRequest: WithdrawContractVersionRequest, options?: RequestInit): Promise<ContractWithdrawalResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getWithdrawContractVersionUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(withdrawContractVersionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractWithdrawalResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getDownloadContractDocumentUrl = (versionId: string,) => {
 
 
@@ -8878,7 +9018,8 @@ export const getSetContractValidityUrl = (versionId: string,) => {
 
 /**
  * @summary Contratos confirms validity, renewal and termination of an approved version before anyone
-signs it, and the contract gets its final code (ADR-0025).
+signs it, and the contract gets its final code (ADR-0025). The Idempotency-Key is optional while
+older clients exist (expand); with it a retry replays the first result.
  */
 export const setContractValidity = async (versionId: string,
     setContractValidityRequest: SetContractValidityRequest, options?: RequestInit): Promise<ContractDocumentResponse> => {
@@ -9459,9 +9600,11 @@ export const getApplyContractLifecycleUrl = (versionId: string,) => {
 }
 
 /**
- * @summary Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated) or renew,
-with a reason and the status the user saw. The Idempotency-Key is optional while older clients
-exist (expand); with it a retry replays the first result.
+ * @summary Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated), cancel a
+scheduled termination or renew, with a reason and the status the user saw. A termination of an
+active or suspended contract takes `effectiveOn` (at least today plus the signed notice) or an
+`immediateCause` (`Breach` or `MutualAgreement`, 2-N14). The Idempotency-Key is
+optional while older clients exist (expand); with it a retry replays the first result.
  */
 export const applyContractLifecycle = async (versionId: string,
     contractLifecycleInput: ContractLifecycleInput, options?: RequestInit): Promise<ContractLifecycleResult> => {

@@ -1,18 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { setContractValidity } from '../../../services/commercialGovernanceApi';
-
-const ERRORS = {
-  renewal_mode_invalid: 'Elige si la renovación es manual o automática.',
-  valid_to_required: 'Indica la fecha de fin de la vigencia.',
-  dates_invalid: 'La fecha de fin debe ser posterior a la de inicio.',
-  valid_from_past: 'La vigencia no puede empezar en el pasado (salvo una renovación posterior a la versión anterior).',
-  renewal_term_required: 'La renovación automática necesita el plazo de cada renovación.',
-  renewal_term_invalid: 'El plazo de renovación va de 1 a 60 meses.',
-  renewal_notice_invalid: 'El aviso de renovación va de 0 a 180 días y debe ser menor que la vigencia.',
-  termination_notice_invalid: 'El preaviso de terminación va de 0 a 180 días y debe ser menor que la vigencia.',
-  termination_terms_too_long: 'Las condiciones de terminación admiten hasta 4.000 caracteres.',
-  packages_out_of_range: 'Los paquetes que aprobó Finanzas no cubren esas fechas; ajusta la vigencia o pide una nueva revisión.',
-};
+import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { CONTRACT_VALIDITY_MESSAGES, contractValidityMessage } from '../../../services/commercialProblems';
+import { isConflict } from '../../../services/problemMessages';
 
 const input = 'rounded-lg border border-black/10 px-3 py-2 dark:border-white/10 dark:bg-surface-dark-card';
 
@@ -30,31 +20,34 @@ export default function ContractValidityForm({ document, onSaved }) {
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const keys = useRef(createCommandKeyHolder());
   const set = patch => setForm(value => ({ ...value, ...patch }));
   const number = value => (value === '' || value === null ? null : Number(value));
 
   async function submit(event) {
     event.preventDefault();
     if (!form.validFrom || !form.validTo || form.validTo <= form.validFrom) {
-      setError(ERRORS.dates_invalid);
+      setError(CONTRACT_VALIDITY_MESSAGES.dates_invalid);
       return;
     }
     setBusy(true);
     setError('');
+    const request = {
+      validFrom: form.validFrom, validTo: form.validTo, renewalMode: form.renewalMode,
+      renewalTermMonths: number(form.renewalTermMonths), renewalNoticeDays: number(form.renewalNoticeDays) ?? 0,
+      terminationNoticeDays: number(form.terminationNoticeDays) ?? 0, terminationTerms: form.terminationTerms,
+      expectedDocumentSha256: document.contentSha256,
+    };
     try {
-      const saved = await setContractValidity(document.versionId, {
-        validFrom: form.validFrom, validTo: form.validTo, renewalMode: form.renewalMode,
-        renewalTermMonths: number(form.renewalTermMonths), renewalNoticeDays: number(form.renewalNoticeDays) ?? 0,
-        terminationNoticeDays: number(form.terminationNoticeDays) ?? 0, terminationTerms: form.terminationTerms,
-        expectedDocumentSha256: document.contentSha256,
-      });
+      // The same key goes with a retry of the same intent after an uncertain result.
+      const saved = await keys.current.run('validity', { versionId: document.versionId, ...request },
+        key => setContractValidity(document.versionId, request, key));
       onSaved?.(saved);
     } catch (failure) {
       setError(failure instanceof TypeError ? 'Revisa los datos de la vigencia.'
-        : failure?.status === 409 ? 'El contrato cambió o ya tiene firmas; se volvió a cargar.'
-          : failure?.status === 403 ? 'Tu acceso no permite fijar la vigencia.'
-            : ERRORS[failure?.code] ?? ERRORS[failure?.problem?.code] ?? 'No fue posible guardar la vigencia. Revisa los datos.');
-      if (failure?.status === 409) onSaved?.(null);
+        : contractValidityMessage(failure, { forbidden: 'Tu acceso no permite fijar la vigencia.',
+          fallback: 'No fue posible guardar la vigencia. Revisa los datos e intenta de nuevo.' }));
+      if (isConflict(failure)) onSaved?.(null);
     } finally {
       setBusy(false);
     }

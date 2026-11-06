@@ -199,7 +199,8 @@ internal sealed partial class EfFinanceTariffBookStore
 
     /// <summary>
     /// Finance approves the prices of a version or returns it to Contratos with the reason. Approval
-    /// does not activate the contract: the validity step and both signatures follow (ADR-0024). Each
+    /// does not activate the contract nor replace the version in force: the validity step and both
+    /// signatures follow (ADR-0024, 2-C), and a terminated contract takes no decision (2-N15). Each
     /// blocking cause has its code (1-N07): a package out of the version's currency or validity, a
     /// retired service (1-N10), a start not after the approved version in force. The Idempotency-Key is
     /// optional while older clients exist (expand); with it the same key and body replay the result.
@@ -289,6 +290,11 @@ internal sealed partial class EfFinanceTariffBookStore
         if (row.Version.Status != ContractVersionStatus.PendingFinanceApproval ||
             Version(row.Version.RowVersion) != expectedVersion)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
+        // 2-N15: Finance approves nothing for a terminated contract, nor a version that starts on or after a
+        // scheduled termination; returning such a version to Contratos stays possible.
+        if (decision == ContractFinanceDecision.Approved &&
+            ContractLifecycle.ClosedFor(row.Contract.Status, row.Contract.TerminatedOn, row.Version.ValidFrom) is { } closed)
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, closed);
         var subject = $"{row.Contract.ContractCode} · {row.Airline}";
         if (decision == ContractFinanceDecision.Approved &&
             await ApprovalBlockAsync(row.Version, row.Contract, cancellationToken) is { } blocked)
@@ -312,14 +318,8 @@ internal sealed partial class EfFinanceTariffBookStore
         }
         else
         {
-            var previousVersions = await context.ContractVersions.Where(v => v.ContractId == row.Contract.Id &&
-                v.Id != row.Version.Id && v.Status == ContractVersionStatus.Approved).ToArrayAsync(cancellationToken);
-            foreach (var previous in previousVersions)
-            {
-                previous.Status = ContractVersionStatus.Superseded;
-                previous.ValidTo = row.Version.ValidFrom.AddDays(-1);
-                previous.UpdatedAt = now;
-            }
+            // 2-C: approving prices replaces nothing. The version in force keeps governing (and its end)
+            // until this one gets its second signature over the same content (ContractVersionSupersession).
             var inheritedChargeRates = await FinanceTariffLookup.ChargeRatesAsync(context, row.Version.CurrencyCode, row.Version.ValidFrom, cancellationToken);
             var chargeDefinitions = await context.ChargeDefinitions.Where(c => c.IsActive).ToArrayAsync(cancellationToken);
             var frozenChargeRates = await context.ContractChargeRates.Where(c => c.ContractVersionId == row.Version.Id).ToDictionaryAsync(c => c.ChargeDefinitionId, cancellationToken);
@@ -334,7 +334,8 @@ internal sealed partial class EfFinanceTariffBookStore
                 frozen.DefinitionSnapshotJson = JsonSerializer.Serialize(new ContractChargePolicySnapshot(definition.Code, definition.Name, definition.BillingUnit, definition.Method, definition.QuantityRule, definition.GraceMinutes, definition.RoundingIncrement));
                 frozen.UpdatedAt = now;
             }
-            row.Version.PricingPolicyVersion = 1;
+            // 2-N04: the frozen surcharges and the linked packages are part of the content both parties sign.
+            row.Version.PricingPolicyVersion = ContractDocuments.SignedPricingPolicy;
             row.Version.Status = ContractVersionStatus.Approved;
             row.Version.ApprovedAt = now;
             row.Version.ApprovedByAccountId = actor.Id;

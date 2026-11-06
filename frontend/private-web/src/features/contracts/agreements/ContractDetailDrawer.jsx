@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import Drawer from '../../../components/Drawer';
-import { getContractDocument, signContractVersion } from '../../../services/commercialGovernanceApi';
+import Modal from '../../../components/Modal';
+import { getContractDocument, signContractVersion, withdrawContractVersion } from '../../../services/commercialGovernanceApi';
 import { billingUnitLabel } from '../../../services/billingUnits';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { contractDocumentMessage } from '../../../services/commercialProblems';
+import { isConflict } from '../../../services/problemMessages';
 import SignaturePad from '../../../components/SignaturePad';
 import ContractLifecyclePanel from './ContractLifecyclePanel';
 import ContractPdfButtons from './ContractPdfButtons';
@@ -26,14 +30,15 @@ export function validityLines(document) {
   ];
 }
 
-function problem(error) {
-  if (error?.code === 'airline_signature_pending') return 'AVIAM contrafirma después de que firme la aerolínea.';
-  if (error?.code === 'validity_pending') return 'Primero confirma la vigencia y la renovación.';
-  if (error?.status === 403) return 'Tu acceso no permite consultar o firmar este contrato.';
-  if (error?.status === 404) return 'Esta versión ya no tiene documento disponible.';
-  if (error?.status === 409) return 'El contrato cambió o ya fue firmado; se volvió a cargar. Revísalo antes de firmar.';
-  return 'No fue posible completar la operación. Intenta de nuevo.';
-}
+/** By Problem Details code, then status; the server title is never shown (phase 2, block A). */
+const problem = error => contractDocumentMessage(error, {
+  forbidden: 'Tu acceso no permite consultar, firmar o retirar este contrato.',
+  fallback: 'No fue posible completar la operación. Intenta de nuevo.',
+});
+
+/** Both parties signed the same content: the version governs and is no longer withdrawn (2-C, 2-N28). */
+const signedByBoth = document => document.signatures.some(airline => airline.party === 'Airline' &&
+  document.signatures.some(aviam => aviam.party === 'Aviam' && aviam.documentSha256 === airline.documentSha256));
 
 /**
  * Detail of an approved contract version: parties, validity, stations, rates and terms, the
@@ -47,6 +52,15 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
   const [error, setError] = useState('');
   const requestId = useRef(null);
   const [revision, setRevision] = useState(0);
+  // The withdrawal belongs to the version it was made on: another version opens with neither the dialog nor
+  // the result of the previous one.
+  const [withdrawingId, setWithdrawingId] = useState(null);
+  const [withdrawReason, setWithdrawReason] = useState('');
+  const [withdrawError, setWithdrawError] = useState('');
+  const [withdrawal, setWithdrawal] = useState(null);
+  const withdrawKeys = useRef(createCommandKeyHolder());
+  const withdrawing = withdrawingId !== null && withdrawingId === versionId;
+  const withdrawn = withdrawal?.versionId === versionId ? withdrawal.result : null;
 
   useEffect(() => {
     if (!versionId) return undefined;
@@ -58,6 +72,35 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
   }, [versionId, revision]);
 
   const document = state.status === 'success' ? state.document : null;
+  // 2-N10: Contratos withdraws an approved version both parties have not signed, with a reason.
+  const withdrawable = Boolean(document) && canManageLifecycle && document.versionStatus === 'Approved' &&
+    document.contractStatus !== 'Terminated' && !signedByBoth(document);
+
+  /**
+   * Withdraws with the hash on screen. An uncertain result keeps the dialog open so the retry goes with the
+   * same key and body; a conflict closes it and re-reads the document.
+   */
+  async function withdraw() {
+    setBusy('withdraw');
+    setWithdrawError('');
+    const command = { reason: withdrawReason.trim(), expectedDocumentSha256: document.contentSha256 };
+    try {
+      const result = await withdrawKeys.current.run('withdraw', { versionId, ...command },
+        key => withdrawContractVersion(versionId, command, key));
+      setWithdrawingId(null);
+      setWithdrawReason('');
+      setWithdrawal({ versionId, result });
+      onSigned?.();
+    } catch (failure) {
+      if (isConflict(failure)) {
+        setWithdrawingId(null);
+        setError(problem(failure));
+        setRevision(value => value + 1);
+      } else setWithdrawError(problem(failure));
+    } finally {
+      setBusy('');
+    }
+  }
 
   async function sign(event) {
     event.preventDefault();
@@ -87,12 +130,19 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
     <Drawer open={Boolean(versionId)} onClose={onClose} widthClassName="lg:w-[640px]"
       title={document ? `Contrato ${document.contractCode} · versión ${document.versionNumber}` : 'Detalle de contrato'}
       description={document ? document.airlineName : undefined}
-      footer={document && <ContractPdfButtons versionId={versionId}
+      footer={document && !withdrawn && <ContractPdfButtons versionId={versionId}
         fileName={`contrato-${document.contractCode}-v${document.versionNumber}.pdf`} className="justify-end" />}>
-      {state.status === 'loading' && <p role="status" className="text-sm">Cargando contrato…</p>}
-      {state.status === 'error' && <div role="alert" className="space-y-2 text-sm"><p>{state.message}</p>
+      {withdrawn && <div role="status" className="space-y-2 rounded-lg border border-accent-600/30 p-3 text-sm">
+        <p className="font-semibold">Versión retirada.</p>
+        <p>Queda rechazada y conserva su aprobación de Finanzas; las firmas de una sola parte quedaron anuladas en el historial.</p>
+        {withdrawn.draftVersionId && <p>Se creó un borrador con el mismo contenido: corrígelo en Borradores y envíalo de nuevo a Finanzas.
+          {onOpenDrafts && <button type="button" onClick={() => { onClose?.(); onOpenDrafts(); }}
+            className="ml-2 font-semibold text-accent-600 underline">Abrir Borradores</button>}</p>}
+      </div>}
+      {!withdrawn && state.status === 'loading' && <p role="status" className="text-sm">Cargando contrato…</p>}
+      {!withdrawn && state.status === 'error' && <div role="alert" className="space-y-2 text-sm"><p>{state.message}</p>
         <button type="button" className="font-semibold text-accent-600 underline" onClick={() => setRevision(value => value + 1)}>Reintentar</button></div>}
-      {document && (
+      {document && !withdrawn && (
         <div className="space-y-5 text-sm">
           <section>
             <h3 className="font-semibold">Partes y vigencia</h3>
@@ -162,6 +212,16 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
             </form>
           )}
           {error && <p role="alert" className="text-status-danger">{error}</p>}
+          {withdrawable && <section aria-label="Retirar versión" className="space-y-2 rounded-lg border border-status-danger/30 p-3">
+            <h3 className="font-semibold">Retirar esta versión</h3>
+            <p className="text-xs text-text-secondary-light">Ambas partes todavía no la firmaron. Retirarla la deja rechazada,
+              conserva su aprobación y anula en el historial una firma de una sola parte; nada se borra.</p>
+            <button type="button" onClick={() => {
+              if (withdrawingId !== versionId) setWithdrawReason('');
+              setWithdrawingId(versionId); setError(''); setWithdrawError('');
+            }}
+              className="min-h-[36px] rounded-lg border border-status-danger px-3 text-xs font-semibold text-status-danger">Retirar versión</button>
+          </section>}
           <ContractLifecyclePanel key={revision} versionId={versionId} canManage={canManageLifecycle} canAmend={canAmend}
             currentVersion={document.versionStatus === 'Approved'
               ? { versionNumber: document.versionNumber, validFrom: document.validFrom, validTo: document.validTo } : null}
@@ -169,6 +229,19 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
             onChanged={() => { setRevision(value => value + 1); onSigned?.(); }} />
         </div>
       )}
+      <Modal open={withdrawing} onClose={() => setWithdrawingId(null)}
+        title={document ? `Retirar la versión ${document.versionNumber} del contrato ${document.contractCode}` : 'Retirar versión'}
+        footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setWithdrawingId(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+          <button type="button" disabled={busy === 'withdraw' || withdrawReason.trim().length < 5} onClick={() => void withdraw()}
+            className="rounded-lg bg-status-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === 'withdraw' ? 'Retirando…' : 'Retirar versión'}</button></div>}>
+        <div className="space-y-3 text-sm">
+          <p className="text-xs">La versión deja de poder firmarse. Si el contrato nunca se activó, sus condiciones vuelven como borrador para corregirlas.</p>
+          <label className="block text-xs font-semibold">Motivo
+            <textarea rows={3} maxLength={500} value={withdrawReason} onChange={event => setWithdrawReason(event.target.value)}
+              className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
+          {withdrawError && <p role="alert" className="text-status-danger">{withdrawError}</p>}
+        </div>
+      </Modal>
     </Drawer>
   );
 }

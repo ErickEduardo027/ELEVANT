@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ElevantApiError, type AirlinePermitData, type ContractTimelineData } from "@elevant/api-client";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { businessToday } from "@/lib/business-day";
 import styles from "./AirlinePortalPage.module.css";
 
 const KINDS: Record<string, string> = {
@@ -13,7 +14,8 @@ const KINDS: Record<string, string> = {
 };
 const VALIDITY: Record<string, string> = { Current: "Vigente", Expiring: "Vence en 30 días o menos", Expired: "Vencido" };
 const REVIEW: Record<string, string> = { Submitted: "En revisión por AVIAM", Verified: "Verificado por AVIAM", Rejected: "Rechazado" };
-const today = () => new Date().toISOString().slice(0, 10);
+/** 2-F: permits expire by AVIAM's business day (America/Santo_Domingo), not the UTC day of the browser. */
+const today = () => businessToday();
 const EMPTY = { kind: "OperatingPermit", number: "", issuer: "", issuedOn: "", expiresOn: "" };
 
 function problem(error: unknown): string {

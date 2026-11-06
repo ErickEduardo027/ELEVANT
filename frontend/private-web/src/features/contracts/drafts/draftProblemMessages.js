@@ -27,6 +27,8 @@ export const DRAFT_PROBLEM_MESSAGES = Object.freeze({
   comment_required: 'Escriba la observación (hasta 2000 caracteres).',
   reason_required: 'Indique el motivo (entre 5 y 500 caracteres).',
   version_conflict: 'El borrador cambió mientras lo editaba. Se actualizó; revise los datos e intente de nuevo.',
+  // 2-N15: nothing starts on or after the scheduled termination of the contract.
+  termination_scheduled: 'El contrato termina antes del inicio de este borrador: cambie la vigencia o descártelo.',
 });
 
 /** The readiness checklist, in the order the server reports the causes. */
@@ -62,6 +64,11 @@ export const AMENDMENT_PROBLEM_MESSAGES = Object.freeze({
   invalid_amendment: 'Indique la fecha de inicio de la enmienda.',
   version_conflict: 'El contrato cambió de estado. Se volvió a cargar; revíselo e intente de nuevo.',
   not_found: 'El contrato ya no existe o no pertenece a sus estaciones.',
+  // Phase 2, block A: an approved version still waiting for both signatures, a terminated contract and one
+  // whose scheduled termination falls on or before the start.
+  version_awaiting_signatures: 'Una versión aprobada por Finanzas espera las firmas. Complétela o retírela antes de crear otra enmienda.',
+  contract_terminated: 'El contrato está terminado: no admite enmiendas.',
+  termination_scheduled: 'El contrato tiene una terminación programada en esa fecha o antes: la enmienda debe empezar antes.',
 });
 
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */

@@ -5204,6 +5204,183 @@
         ]
       }
     },
+    "/api/v1/contract-versions/{versionId}/pricing-terms": {
+      "get": {
+        "tags": [
+          "ContractDocuments"
+        ],
+        "summary": "Surcharges and packages that apply to the version (2-N04), for the same readers as the document:\nwhether they are part of its signed content and whether both parties signed it.",
+        "operationId": "GetContractPricingTerms",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractPricingTermsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contract-versions/{versionId}/withdrawal": {
+      "post": {
+        "tags": [
+          "ContractDocuments"
+        ],
+        "summary": "Contratos withdraws, with a reason, an approved version both parties have not signed (2-N10): it\nbecomes Rejected and keeps its approval; a one-party signature is voided in the audit trail.",
+        "operationId": "WithdrawContractVersion",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/WithdrawContractVersionRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractWithdrawalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/contract-versions/{versionId}/document/pdf": {
       "get": {
         "tags": [
@@ -5453,13 +5630,21 @@
         "tags": [
           "ContractDocuments"
         ],
-        "summary": "Contratos confirms validity, renewal and termination of an approved version before anyone\nsigns it, and the contract gets its final code (ADR-0025).",
+        "summary": "Contratos confirms validity, renewal and termination of an approved version before anyone\nsigns it, and the contract gets its final code (ADR-0025). The Idempotency-Key is optional while\nolder clients exist (expand); with it a retry replays the first result.",
         "operationId": "SetContractValidity",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -6713,7 +6898,7 @@
         "tags": [
           "ContractLifecycle"
         ],
-        "summary": "Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated) or renew,\nwith a reason and the status the user saw. The Idempotency-Key is optional while older clients\nexist (expand); with it a retry replays the first result.",
+        "summary": "Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated), cancel a\nscheduled termination or renew, with a reason and the status the user saw. A termination of an\nactive or suspended contract takes `effectiveOn` (at least today plus the signed notice) or an\n`immediateCause` (`Breach` or `MutualAgreement`, 2-N14). The Idempotency-Key is\noptional while older clients exist (expand); with it a retry replays the first result.",
         "operationId": "ApplyContractLifecycle",
         "parameters": [
           {
@@ -35231,6 +35416,15 @@
             "type": "string",
             "format": "date",
             "nullable": true
+          },
+          "effectiveOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "immediateCause": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -35297,6 +35491,182 @@
           },
           "currencyCode": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractPricingChargeResponse": {
+        "required": [
+          "chargeCode",
+          "chargeName",
+          "graceMinutes",
+          "isExcluded",
+          "method",
+          "quantityRule",
+          "roundingIncrement"
+        ],
+        "type": "object",
+        "properties": {
+          "chargeCode": {
+            "type": "string"
+          },
+          "chargeName": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "billingUnit": {
+            "type": "string",
+            "nullable": true
+          },
+          "quantityRule": {
+            "type": "string"
+          },
+          "graceMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "roundingIncrement": {
+            "type": "number",
+            "format": "double"
+          },
+          "isExcluded": {
+            "type": "boolean"
+          },
+          "value": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "minimumAmount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractPricingPackageComponentResponse": {
+        "required": [
+          "billingUnit",
+          "excessBlockPrice",
+          "excessBlockSize",
+          "includedQuantity",
+          "serviceCode",
+          "serviceName"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceCode": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "billingUnit": {
+            "type": "string"
+          },
+          "includedQuantity": {
+            "type": "number",
+            "format": "double"
+          },
+          "excessBlockSize": {
+            "type": "number",
+            "format": "double"
+          },
+          "excessBlockPrice": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractPricingPackageResponse": {
+        "required": [
+          "basePrice",
+          "code",
+          "components",
+          "currencyCode",
+          "name",
+          "scope",
+          "versionNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "versionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "flightDirection": {
+            "type": "string",
+            "nullable": true
+          },
+          "periodDays": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "basePrice": {
+            "type": "number",
+            "format": "double"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractPricingPackageComponentResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractPricingTermsResponse": {
+        "required": [
+          "charges",
+          "currencyCode",
+          "inDocument",
+          "packages",
+          "signed",
+          "versionId"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currencyCode": {
+            "type": "string"
+          },
+          "inDocument": {
+            "type": "boolean"
+          },
+          "signed": {
+            "type": "boolean"
+          },
+          "charges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractPricingChargeResponse"
+            }
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractPricingPackageResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -35375,6 +35745,16 @@
             "items": {
               "$ref": "#/components/schemas/ContractTimelineEntry"
             }
+          },
+          "terminatesOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "earliestTerminationOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -35440,6 +35820,32 @@
           "confirmedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractWithdrawalResponse": {
+        "required": [
+          "contractStatus",
+          "versionId",
+          "versionStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "versionStatus": {
+            "type": "string"
+          },
+          "contractStatus": {
+            "type": "string"
+          },
+          "draftVersionId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -52250,6 +52656,22 @@
           "verificationSourceUrl": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "WithdrawContractVersionRequest": {
+        "required": [
+          "expectedDocumentSha256",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "expectedDocumentSha256": {
+            "type": "string"
           }
         },
         "additionalProperties": false

@@ -1,4 +1,5 @@
 using Elevant.Application.Commercial;
+using Elevant.Application.Common;
 using Elevant.Application.Identity.AccountEmails;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
@@ -11,9 +12,10 @@ namespace Elevant.Persistence.Commercial;
 
 /// <summary>
 /// The single place a contract becomes active (ADR-0024): Finance approved the version that is in
-/// force or about to start, both parties signed it, and the airline holds a verified operating
-/// permit that has not expired. A contract the sweep suspended for an expired permit resumes the
-/// same way once a new permit is verified.
+/// force or about to start, both parties signed that same content (2-N28), and the airline holds a
+/// verified operating permit that has not expired. A contract the sweep suspended for an expired permit
+/// resumes once a new permit is verified, with the version that governs it (2-C): a renewal waiting for
+/// its signatures never blocks it. Days are AVIAM's business days (2-F).
 /// </summary>
 internal static class ContractActivation
 {
@@ -23,29 +25,32 @@ internal static class ContractActivation
     public static async Task<int> ActivateReadyAsync(ElevantDbContext context, long? airlineId, long? actorAccountId,
         DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = BusinessCalendar.Today(now);
         var candidates = await context.Contracts
             .Where(contract => (airlineId == null || contract.AirlineId == airlineId) &&
                 (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Expired ||
-                 contract.Status == ContractStatus.Suspended))
+                 contract.Status == ContractStatus.Suspended) &&
+                // A contract whose scheduled termination already took effect never comes back (2-N14).
+                (contract.TerminatedOn == null || contract.TerminatedOn > today))
             .ToArrayAsync(cancellationToken);
         var activated = 0;
         foreach (var contract in candidates)
         {
             if (contract.Status == ContractStatus.Suspended && !await SuspendedForPermitAsync(context, contract.Id, cancellationToken))
                 continue;
-            var version = await context.ContractVersions.AsNoTracking()
-                .Where(item => item.ContractId == contract.Id && item.Status == ContractVersionStatus.Approved &&
-                    (item.ValidTo == null || item.ValidTo >= today))
+            // A new or expired contract activates only with a version both parties signed over the same
+            // content; a suspended one resumes with the version that governs it, legacy ones included.
+            var source = contract.Status == ContractStatus.Suspended
+                ? GoverningContractVersions.Of(context) : GoverningContractVersions.SignedByBoth(context);
+            var version = await source.AsNoTracking()
+                .Where(item => item.ContractId == contract.Id && (item.ValidTo == null || item.ValidTo >= today))
                 .OrderByDescending(item => item.ValidFrom).FirstOrDefaultAsync(cancellationToken);
-            if (version is null) continue;
-            var parties = await context.ContractSignatures.AsNoTracking().Where(item => item.ContractVersionId == version.Id)
-                .Select(item => item.Party).Distinct().CountAsync(cancellationToken);
-            if (parties < 2 || !await HasUsablePermitAsync(context, contract.AirlineId, today, cancellationToken)) continue;
+            if (version is null || !await HasUsablePermitAsync(context, contract.AirlineId, today, cancellationToken)) continue;
 
             var from = contract.Status;
             contract.Status = ContractStatus.Active;
-            contract.SignedOn ??= DateOnly.FromDateTime(now.UtcDateTime);
+            // 2-N05: SignedOn is the business day the contract first became active; renewals never move it.
+            contract.SignedOn ??= today;
             contract.UpdatedAt = now;
             context.Set<ContractStatusEvent>().Add(new ContractStatusEvent
             {

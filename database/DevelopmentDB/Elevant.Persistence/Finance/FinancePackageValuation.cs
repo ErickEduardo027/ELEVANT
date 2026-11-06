@@ -1,3 +1,4 @@
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Operations;
 using System.Globalization;
 using System.Text.Json;
@@ -26,6 +27,11 @@ internal static class FinancePackageValuation
         var contractIds = versions.Values.Where(v => v.Status == ContractVersionStatus.Superseded).Select(v => v.ContractId).Distinct().ToArray();
         var replacements = await context.ContractVersions.AsNoTracking().Where(v => contractIds.Contains(v.ContractId) &&
             v.ApprovedAt != null && (v.Status == ContractVersionStatus.Approved || v.Status == ContractVersionStatus.Superseded)).ToArrayAsync(ct);
+        // 2-C: a replacement takes over at its second signature; a legacy one (no signatures) at its approval.
+        var secondSignatures = await GoverningContractVersions.SecondSignatureAtAsync(context,
+            replacements.Select(v => v.Id).ToArray(), ct);
+        DateTimeOffset? TakesOverAt(ContractVersion next) =>
+            secondSignatures.TryGetValue(next.Id, out var signedAt) ? signedAt : next.ApprovedAt;
         var supersededIds = versions.Values.Where(v => v.Status == ContractVersionStatus.Superseded).Select(v => v.Id).ToHashSet();
         var historicalServiceIds = services.Where(s => s.RateId is { } id && contractRates.TryGetValue(id, out var r) &&
             supersededIds.Contains(r.ContractVersionId)).Select(s => s.ServiceId).ToArray();
@@ -50,12 +56,13 @@ internal static class FinancePackageValuation
             if (matches.Length != 1) return new("ambiguous_package_coverage", result);
             var binding = matches[0]; var package = binding.Package; var component = binding.Component;
             var contractVersion = versions[rate.ContractVersionId];
-            // Approval may shorten an older version retrospectively. Preserve its server-bound rate for execution
-            // already completed (or submitted) before approval, including evidence submitted after the amendment.
+            // The second signature of a backdated amendment shortens an older version retrospectively. Preserve its
+            // server-bound rate for execution already completed (or submitted) before it took over, including
+            // evidence submitted after the amendment.
             var capturedAt = completionEvents[source.ServiceId].LastOrDefault(e => e.OccurredAt <= source.SubmittedAt)?.OccurredAt ?? source.SubmittedAt;
             var historicalExecution = contractVersion.Status == ContractVersionStatus.Superseded && contractVersion.ValidTo is { } intervalEnd &&
                 replacements.Any(next => next.ContractId == contractVersion.ContractId && next.VersionNumber > contractVersion.VersionNumber &&
-                    next.ValidFrom.DayNumber == intervalEnd.DayNumber + 1 && next.ValidFrom <= source.OperationDate && next.ApprovedAt > capturedAt);
+                    next.ValidFrom.DayNumber == intervalEnd.DayNumber + 1 && next.ValidFrom <= source.OperationDate && TakesOverAt(next) > capturedAt);
             if (contractVersion.Status is not (ContractVersionStatus.Approved or ContractVersionStatus.Superseded) ||
                 package.CurrencyCode != currency || contractVersion.CurrencyCode != currency ||
                 source.OperationDate < contractVersion.ValidFrom ||

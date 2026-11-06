@@ -41,11 +41,38 @@ public interface IAirlinePermitStore
 /// <summary>One dated step of a contract's history, oldest first.</summary>
 public sealed record ContractTimelineEntry(DateTimeOffset At, string Kind, string Title, string? Detail, string? Actor);
 
+/// <summary>History of a contract and what its termination looks like today (2-N14).</summary>
+/// <param name="ContractId">The contract.</param>
+/// <param name="ContractCode">Its code, final once Contratos confirmed the validity.</param>
+/// <param name="Status">Draft, Active, Suspended, Terminated or Expired.</param>
+/// <param name="Entries">Dated steps, oldest first; the upcoming ones close the list.</param>
+/// <param name="TerminatesOn">
+/// A termination scheduled for a later date: the contract's first day without coverage. Null when none is
+/// scheduled, and once the contract is terminated.
+/// </param>
+/// <param name="EarliestTerminationOn">
+/// For an active or suspended contract without a scheduled termination, the earliest effective date a
+/// termination with notice may take: today plus the notice days the version in force signed.
+/// </param>
 public sealed record ContractTimelineData(Guid ContractId, string ContractCode, string Status,
-    IReadOnlyList<ContractTimelineEntry> Entries);
+    IReadOnlyList<ContractTimelineEntry> Entries, DateOnly? TerminatesOn = null, DateOnly? EarliestTerminationOn = null);
 
+/// <summary>A manual lifecycle action of Contratos with the status the user saw (the expected version).</summary>
+/// <param name="Action">Suspend, Reactivate, Terminate, CancelTermination or Renew.</param>
+/// <param name="Reason">Why, 5 to 500 characters; kept in the history.</param>
+/// <param name="ExpectedStatus">The contract status on screen; another one answers 409 <c>status_changed</c>.</param>
+/// <param name="ValidFrom">Start of the renewal.</param>
+/// <param name="ValidTo">End of the renewal, optional.</param>
+/// <param name="EffectiveOn">
+/// Termination of an active or suspended contract (2-N14): its first day without coverage, at least
+/// today plus the notice days of the version in force.
+/// </param>
+/// <param name="ImmediateCause">
+/// Instead of a date, an explicit cause that ends the contract at once: <c>Breach</c> or
+/// <c>MutualAgreement</c>; the reason is its note.
+/// </param>
 public sealed record ContractLifecycleInput(string Action, string Reason, string ExpectedStatus,
-    DateOnly? ValidFrom = null, DateOnly? ValidTo = null);
+    DateOnly? ValidFrom = null, DateOnly? ValidTo = null, DateOnly? EffectiveOn = null, string? ImmediateCause = null);
 
 public enum ContractLifecycleFailure { Forbidden, NotFound, Invalid, Conflict }
 
@@ -57,8 +84,13 @@ public sealed record ContractLifecycleResult(string? Status, Guid? DraftVersionI
         new(null, null, failure, code);
 }
 
-/// <summary>Counts of one sweep, for logs and tests.</summary>
-public sealed record ContractLifecycleSweep(int Activated, int Expired, int Suspended, int PermitNotices, int ContractNotices);
+/// <summary>
+/// Counts of one sweep, for logs and tests: <see cref="Terminated"/> are scheduled terminations that took
+/// effect (2-N14), <see cref="RenewalsBlocked"/> automatic renewals that could not start and will be
+/// retried (2-N27).
+/// </summary>
+public sealed record ContractLifecycleSweep(int Activated, int Expired, int Suspended, int PermitNotices, int ContractNotices,
+    int Terminated = 0, int RenewalsBlocked = 0);
 
 public interface IContractLifecycleStore
 {
@@ -66,9 +98,10 @@ public interface IContractLifecycleStore
     Task<ContractTimelineData?> TimelineAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Suspend, reactivate, terminate (also a contract that never activated, 1-B) or renew, with a
-    /// reason and the status the user saw (<c>contracts.agreements.lifecycle</c>). The Idempotency-Key
-    /// is optional while older clients exist (expand); with it a retry replays the first result.
+    /// Suspend, reactivate, terminate (also a contract that never activated, 1-B; now or after the signed
+    /// notice, 2-N14), cancel a scheduled termination or renew, with a reason and the status the user saw
+    /// (<c>contracts.agreements.lifecycle</c>). The Idempotency-Key is optional while older clients exist
+    /// (expand); with it a retry replays the first result.
     /// </summary>
     Task<ContractLifecycleResult> ApplyAsync(Guid actorId, Guid versionId, ContractLifecycleInput input,
         Guid? idempotencyKey, CancellationToken cancellationToken = default);

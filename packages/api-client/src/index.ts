@@ -8,6 +8,7 @@ export * from "./governanceAccounts";
 export * from "./contractDrafts";
 export * from "./financePackages";
 export * from "./catalog";
+export * from "./contractDocuments";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -309,6 +310,14 @@ export {
   type SignContractRequest,
   type SetContractValidityRequest,
   type ContractValidityResponse,
+  type ContractWithdrawalResponse,
+  type WithdrawContractVersionRequest,
+  type ContractPricingTermsResponse,
+  type ContractPricingChargeResponse,
+  type ContractPricingPackageResponse,
+  type ContractPricingPackageComponentResponse,
+  type ContractLifecycleInput,
+  type ContractLifecycleResult,
   type RampAgentReadinessData,
   type RampAgentReadinessItem,
   type RampAgentScheduleData,

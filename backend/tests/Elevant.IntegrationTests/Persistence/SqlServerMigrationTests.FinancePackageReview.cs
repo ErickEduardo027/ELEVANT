@@ -101,20 +101,27 @@ public sealed partial class SqlServerMigrationTests
             FinanceAccount, next.PublicId, new("Approved", "Synthetic backdated amendment", Convert.ToBase64String(next.RowVersion)), null, ct);
         Assert.True(approval.IsSuccess);
         db.ChangeTracker.Clear();
+        // 2-C: the backdated amendment takes over at its second signature, not at Finance approval.
+        var kept = await db.ContractVersions.AsNoTracking().SingleAsync(v => v.Id == fixture.VersionKey, ct);
+        Assert.Equal((ContractVersionStatus.Approved, (DateOnly?)null), (kept.Status, kept.ValidTo));
+        await SignByBothAsync(scope.ServiceProvider.GetRequiredService<Elevant.Application.Abstractions.Commercial.IContractDocumentStore>(),
+            amendment.Id!.Value, ct, validTo: new DateOnly(2027, 8, 14));
+        db.ChangeTracker.Clear();
         original = await db.ContractVersions.SingleAsync(v => v.Id == fixture.VersionKey, ct);
         next = await db.ContractVersions.SingleAsync(v => v.PublicId == amendment.Id, ct);
         Assert.Equal(ContractVersionStatus.Superseded, original.Status);
         Assert.Equal(new DateOnly(2026, 8, 14), original.ValidTo);
+        var takeover = await db.ContractSignatures.Where(s => s.ContractVersionId == next.Id).MaxAsync(s => s.SignedAt, ct);
         if (submittedAfterAmendment)
         {
             var submission = await db.OperationSubmissions.SingleAsync(s => s.Id == fixture.SubmissionKey, ct);
-            submission.SubmittedAt = next.ApprovedAt!.Value.AddHours(3);
+            submission.SubmittedAt = takeover.AddHours(3);
             if (executedAfterAmendment)
             {
                 // A newly executed stale binding cannot gain eligibility merely from Superseded status.
                 var events = await db.Set<OperationServiceStatusEvent>().Where(e => e.OperationServiceId == fixture.ServiceKey).ToArrayAsync(ct);
                 foreach (var item in events)
-                    item.OccurredAt = next.ApprovedAt.Value.AddHours(item.ToStatus == ServiceExecutionStatus.InProgress ? 1 : 2);
+                    item.OccurredAt = takeover.AddHours(item.ToStatus == ServiceExecutionStatus.InProgress ? 1 : 2);
             }
             await db.SaveChangesAsync(ct);
         }

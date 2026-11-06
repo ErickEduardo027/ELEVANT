@@ -250,8 +250,10 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
     }
 
     /// <summary>
-    /// 1-C: a new Draft from the latest approved version with «Vigente desde» after its start and not
-    /// after its end, which it inherits. Rates are copied unconfirmed (units as codes, 1-E), with the
+    /// 1-C: a new Draft from the latest approved version that governs (signed by both parties, 2-C) with
+    /// «Vigente desde» after its start and not after its end, which it inherits. Not while another
+    /// approved version waits for its signatures (version_awaiting_signatures), nor on a terminated
+    /// contract or on or after a scheduled termination (2-N15). Rates are copied unconfirmed (units as codes, 1-E), with the
     /// stations, the negotiated charges and the packages. The status the user saw is the token
     /// (the same one the contract lifecycle uses); the serializable transaction re-checks that no
     /// other draft is in progress.
@@ -272,11 +274,18 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             if (route is null || !await ContractInScopeAsync(actorId, route.Id, cancellationToken)) return PackageWriteResult.Fail("not_found");
             var contract = await context.Contracts.SingleAsync(x => x.Id == route.ContractId, cancellationToken);
             if (contract.Status != expected) return PackageWriteResult.Fail("version_conflict");
+            // 2-N15: a terminated contract is not amended, and nothing starts on or after a scheduled termination.
+            if (ContractLifecycle.ClosedFor(contract.Status, contract.TerminatedOn, input.ValidFrom) is { } closed)
+                return PackageWriteResult.Fail(closed);
             if (!ContractAmendment.CanAmend(contract.Status)) return PackageWriteResult.Fail(ContractAmendmentIssues.ContractNotAmendable);
             if (await context.ContractVersions.AnyAsync(x => x.ContractId == contract.Id &&
                     (x.Status == ContractVersionStatus.Draft || x.Status == ContractVersionStatus.PendingFinanceApproval), cancellationToken))
                 return PackageWriteResult.Fail(ContractAmendmentIssues.DraftInProgress);
-            var source = await context.ContractVersions.AsNoTracking()
+            // 2-N01: an approved version still waiting for both signatures is finished or withdrawn first.
+            if (await GoverningContractVersions.AwaitingSignatures(context).AnyAsync(x => x.ContractId == contract.Id, cancellationToken))
+                return PackageWriteResult.Fail(ContractLifecycleIssues.VersionAwaitingSignatures);
+            // The amendment starts from the version that governs (2-C), never from one nobody signed.
+            var source = await GoverningContractVersions.Of(context).AsNoTracking()
                 .Where(x => x.ContractId == contract.Id && x.Status == ContractVersionStatus.Approved)
                 .OrderByDescending(x => x.ValidFrom).ThenByDescending(x => x.VersionNumber).FirstOrDefaultAsync(cancellationToken);
             if (source is null) return PackageWriteResult.Fail(ContractAmendmentIssues.NoApprovedVersion);

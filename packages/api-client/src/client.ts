@@ -76,6 +76,13 @@ import {
   type UpdateManagedServiceCommand,
 } from "./catalog";
 import {
+  isContractPricingTerms,
+  isContractTimeline,
+  isContractWithdrawal,
+  normalizedContractWithdrawal,
+  type WithdrawContractVersionCommand,
+} from "./contractDocuments";
+import {
   isCommercialAccountResponse,
   isEmailOutboxPage,
   isInvoiceEmailStatus,
@@ -265,6 +272,8 @@ import {
   getDownloadContractDraftPdfUrl,
   getSignContractVersionUrl,
   getSetContractValidityUrl,
+  getWithdrawContractVersionUrl,
+  getGetContractPricingTermsUrl,
   getRemoveHumanResourcesShiftUrl,
   getListRampAgentReadinessUrl,
   getGetOwnRampScheduleUrl,
@@ -419,6 +428,8 @@ import {
   type SignContractRequest,
   type SetContractValidityRequest,
   type ContractValidityResponse,
+  type ContractWithdrawalResponse,
+  type ContractPricingTermsResponse,
   type RampAgentReadinessData,
   type RampAgentReadinessItem,
   type RampAgentScheduleData,
@@ -1220,9 +1231,22 @@ export interface ElevantApiClient {
   /** Approves (returns the draft contract) or rejects with a reason. */
   decideCommercialRequest(requestId: string, command: DecideCommercialRequestCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
-  /** Contratos confirms validity, renewal and termination before signatures (ADR-0025). */
-  setContractValidity(versionId: string, request: SetContractValidityRequest,
+  /**
+   * Contratos confirms validity, renewal and termination before signatures (ADR-0025), with the intent's
+   * Idempotency-Key (optional while older callers exist): a retry with the same key and body replays it.
+   */
+  setContractValidity(versionId: string, request: SetContractValidityRequest, idempotencyKey?: string | null,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
+  /**
+   * Contratos withdraws an approved version both parties have not signed (2-N10): it becomes Rejected and a
+   * one-party signature is voided in the audit trail. Answers the version, its contract and, for a contract
+   * that never activated, the new draft with the same content.
+   */
+  withdrawContractVersion(versionId: string, command: WithdrawContractVersionCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ContractWithdrawalResponse>;
+  /** Surcharges and packages that apply to an approved or superseded version and whether they are signed (2-N04). */
+  getContractPricingTerms(versionId: string,
+    options?: GetHumanResourcesReportOptions): Promise<ContractPricingTermsResponse>;
   /** Whether a draft can go to Finance, each blocking cause and the airline's portal account (phase 1, B). */
   getContractDraftReadiness(versionId: string,
     options?: GetHumanResourcesReportOptions): Promise<ContractDraftReadinessData>;
@@ -2954,11 +2978,6 @@ function isAirlinePermit(value: unknown): value is AirlinePermitData {
     ["Submitted", "Verified", "Rejected"].includes(value.review as string) &&
     isOptionalNullable(value.reviewNote, isString) && isOptionalNullable(value.documentUrl, isString) &&
     typeof value.version === "string";
-}
-
-function isTimelineEntry(value: unknown): boolean {
-  return isRecord(value) && isDateTimeOffset(value.at) && typeof value.kind === "string" &&
-    typeof value.title === "string" && isOptionalNullable(value.detail, isString) && isOptionalNullable(value.actor, isString);
 }
 
 function validatedPermitInput(input: SubmitAirlinePermitInput): SubmitAirlinePermitInput {
@@ -7114,11 +7133,9 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     },
     async getContractTimeline(versionId: string, options?: GetHumanResourcesReportOptions) {
       const result = await execute(getGetContractTimelineUrl(validatedUuid(versionId, "versionId")), { ...options, method: "GET" }, true);
-      const data = result.data;
-      if (!isRecord(data) || typeof data.contractCode !== "string" || typeof data.status !== "string" ||
-          !Array.isArray(data.entries) || !data.entries.every(isTimelineEntry))
-        throw malformedResponse(result.status);
-      return data as unknown as ContractTimelineData;
+      // 2-N14: the history carries the scheduled termination or the earliest date of a new one.
+      if (!isContractTimeline(result.data)) throw malformedResponse(result.status);
+      return result.data;
     },
     downloadContractDraftPdf(versionId: string, options?: GetHumanResourcesReportOptions) {
       return executeReportDocument(getDownloadContractDraftPdfUrl(validatedUuid(versionId, "versionId")), "pdf", options);
@@ -7260,9 +7277,10 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return catalogCommand("POST", getReopenServiceUrl(id), normalizedServiceReopen(command),
         idempotencyKey, options, (value): value is ServiceClosureData => isServiceClosure(value, { serviceId: id }));
     },
-    async setContractValidity(versionId: string, request: SetContractValidityRequest,
+    async setContractValidity(versionId: string, request: SetContractValidityRequest, idempotencyKey?: string | null,
       options?: GetHumanResourcesReportOptions) {
       const version = validatedUuid(versionId, "versionId");
+      const key = idempotencyKey == null ? null : validatedUuid(idempotencyKey, "idempotencyKey");
       if (!isRecord(request) || !isDateOnly(request.validFrom) || !isDateOnly(request.validTo) ||
           request.validTo <= request.validFrom || !RENEWAL_MODES.has(request.renewalMode) ||
           (request.renewalTermMonths != null && (!Number.isInteger(request.renewalTermMonths) ||
@@ -7277,6 +7295,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw new TypeError("The contract validity is invalid.");
       const headers = headersFrom(options?.headers, "Request headers");
       headers.set("content-type", "application/json");
+      if (key) headers.set("idempotency-key", key);
       const result = await execute(getSetContractValidityUrl(version), { ...options, method: "PUT", headers,
         body: JSON.stringify({ validFrom: request.validFrom, validTo: request.validTo, renewalMode: request.renewalMode,
           renewalTermMonths: request.renewalTermMonths ?? null, renewalNoticeDays: request.renewalNoticeDays,
@@ -7284,6 +7303,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           terminationTerms: request.terminationTerms?.trim() || null,
           expectedDocumentSha256: request.expectedDocumentSha256.toLowerCase() }) }, true);
       if (!isContractDocument(result.data, version)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async withdrawContractVersion(versionId: string, command: WithdrawContractVersionCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      // The withdrawal answers the version of the route; a new draft is another version.
+      const version = validatedUuid(versionId, "versionId");
+      return catalogCommand("POST", getWithdrawContractVersionUrl(version), normalizedContractWithdrawal(command),
+        idempotencyKey, options, (value): value is ContractWithdrawalResponse => isContractWithdrawal(value, version));
+    },
+    async getContractPricingTerms(versionId: string, options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      const result = await execute(getGetContractPricingTermsUrl(version), { ...options, method: "GET" }, true);
+      if (!isContractPricingTerms(result.data, version)) throw malformedResponse(result.status);
       return result.data;
     },
     async getOccPositions(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {

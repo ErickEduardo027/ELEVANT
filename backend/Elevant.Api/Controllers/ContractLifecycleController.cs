@@ -85,9 +85,11 @@ public sealed class ContractLifecycleController(IAirlinePermitStore permits, ICo
     }
 
     /// <summary>
-    /// Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated) or renew,
-    /// with a reason and the status the user saw. The Idempotency-Key is optional while older clients
-    /// exist (expand); with it a retry replays the first result.
+    /// Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated), cancel a
+    /// scheduled termination or renew, with a reason and the status the user saw. A termination of an
+    /// active or suspended contract takes <c>effectiveOn</c> (at least today plus the signed notice) or an
+    /// <c>immediateCause</c> (<c>Breach</c> or <c>MutualAgreement</c>, 2-N14). The Idempotency-Key is
+    /// optional while older clients exist (expand); with it a retry replays the first result.
     /// </summary>
     [HttpPost("contract-versions/{versionId:guid}/lifecycle", Name = "ApplyContractLifecycle")]
     [RequestSizeLimit(4096)]
