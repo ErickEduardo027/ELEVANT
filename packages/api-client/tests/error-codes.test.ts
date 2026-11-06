@@ -18,4 +18,10 @@ describe("Problem Details codes", () => {
       "version_signed", "airline_signed_other_content", "already_signed", "not_approved", "forbidden"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
+
+  it("keeps the airline permit codes of phase 2 (block B)", () => {
+    for (const code of ["review_closed", "permit_not_verified", "review_note_required", "invalid_permit",
+      "permit_dates_invalid", "permit_expired", "document_invalid", "document_expired"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
 });

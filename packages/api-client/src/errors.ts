@@ -69,14 +69,22 @@ const CONTRACT_LIFECYCLE_CODES = ["content_changed", "already_signed", "not_appr
   "invalid_contract_document", "airline_signed_other_content", "version_signed", "version_awaiting_signatures",
   "termination_scheduled", "termination_not_scheduled", "termination_date_required", "termination_notice_not_met",
   "immediate_cause_invalid", "forbidden"] as const;
+/**
+ * Airline permit dossier (phase 2, block B): only a submitted permit is reviewed and only a verified one is revoked
+ * (2-N09), the note a rejection needs, the dates, kind, number and issuer of a submission, and a scan that is not the
+ * airline's upload or was uploaded before the media link window and must be uploaded again (2-N37).
+ */
+const AIRLINE_PERMIT_CODES = ["review_closed", "permit_not_verified", "review_note_required", "invalid_permit",
+  "permit_dates_invalid", "permit_expired", "document_invalid", "document_expired"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
-  (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number];
+  (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number] |
+  (typeof AIRLINE_PERMIT_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
-  ...CONTRACT_LIFECYCLE_CODES];
+  ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

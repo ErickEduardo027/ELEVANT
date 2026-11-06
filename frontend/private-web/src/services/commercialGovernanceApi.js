@@ -237,13 +237,24 @@ export const setContractValidity = (versionId, request, idempotencyKey) =>
 export const withdrawContractVersion = (versionId, command, idempotencyKey) =>
   contractCall(() => contractClient().withdrawContractVersion(versionId, command, idempotencyKey));
 
-/** Airline permit dossier for Contratos (ADR-0024); review is Submitted, Verified or Rejected. */
+/**
+ * Airline permit dossier for Contratos (ADR-0024): one review state (Submitted, Verified, Rejected or Revoked) or
+ * every permit, validated by the shared client.
+ */
 export const getAirlinePermitsForContracts = (review = '') =>
-  commercialApi(`/contracts/permits${review ? `?review=${encodeURIComponent(review)}` : ''}`);
-export const reviewAirlinePermit = (permitId, verified, note, expectedVersion) =>
-  commercialApi(`/contracts/permits/${permitId}/review`, {
-    method: 'POST', body: JSON.stringify({ verified, note: note || null, expectedVersion }),
-  });
+  contractCall(() => contractClient().getContractsAirlinePermits(review || null, { cache: 'no-store' }));
+/**
+ * Verifies or rejects a submitted permit: `{ verified, note, expectedVersion }` with the intent's Idempotency-Key.
+ * Answers the permit and the contracts the review activated or resumed (2-N30).
+ */
+export const reviewAirlinePermit = (permitId, command, idempotencyKey) =>
+  contractCall(() => contractClient().reviewAirlinePermit(permitId, command, idempotencyKey));
+/**
+ * Revokes a verified permit: `{ reason, expectedVersion }` with the intent's Idempotency-Key (2-N09). The active
+ * contracts left without a usable operating permit are suspended at once; the answer names them.
+ */
+export const revokeAirlinePermit = (permitId, command, idempotencyKey) =>
+  contractCall(() => contractClient().revokeAirlinePermit(permitId, command, idempotencyKey));
 /** Contract history (request, Finance, signatures, permits and status), oldest first. */
 export const getContractTimeline = versionId => commercialApi(`/contract-versions/${versionId}/timeline`);
 /**

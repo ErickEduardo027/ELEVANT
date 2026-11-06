@@ -19,10 +19,15 @@ const KINDS = {
   permit_submitted: { title: 'La aerolínea envió un permiso para verificar', target: { moduleId: CONTRACT_MODULE_IDS.PERMITS } },
   permit_expiring: { title: 'Un permiso de aerolínea vence en 30 días o menos', target: { moduleId: CONTRACT_MODULE_IDS.PERMITS } },
   contract_activated: { title: 'Contrato activo', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
-  contract_suspended: { title: 'Contrato suspendido por permiso vencido', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  // 2-N09: the sweep (expired permit) and a revoked verification both suspend for the operating permit.
+  contract_suspended: { title: 'Contrato suspendido por falta de un permiso de operación vigente', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_expired: { title: 'Contrato vencido', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
-  contract_expiring: { title: 'Un contrato vence en 30 días o menos', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  // 2-N12: announced the notice days its version signed before the end (30 when it signed none).
+  contract_expiring: { title: 'Un contrato está por vencer', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_lifecycle: { title: 'Cambio en el ciclo de un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  // 2-N29 (phase 2, block B): kinds the server already sent without a title or a destination.
+  contract_validity: { title: 'Se fijó la vigencia de un contrato: ya puede firmarse', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
+  contract_renewal_started: { title: 'Empezó la renovación automática de un contrato: complete el borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
   // Phase 2, block A: a termination with notice (2-N14), the withdrawal of an unsigned version (2-N10) and an
   // automatic renewal that could not start (2-N27).
   contract_termination_scheduled: { title: 'Se programó la terminación de un contrato', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },

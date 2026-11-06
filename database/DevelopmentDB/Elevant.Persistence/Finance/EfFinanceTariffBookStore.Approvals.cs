@@ -341,9 +341,8 @@ internal sealed partial class EfFinanceTariffBookStore
             row.Version.ApprovedByAccountId = actor.Id;
             row.Version.UpdatedAt = now;
             // Approval does not activate the contract: both parties sign this version first and the
-            // airline needs a verified operating permit (ADR-0024). A new version restarts the
-            // expiry notice.
-            row.Contract.ExpiryNoticeSentAt = null;
+            // airline needs a verified operating permit (ADR-0024). Nor does it move the coverage end, so
+            // the expiry notice restarts at the second signature (ContractVersionSupersession, 2-N12).
             row.Contract.UpdatedAt = now;
             foreach (var account in await ContractDraftAudience.AirlineAccountsAsync(context, row.Contract.AirlineId,
                          cancellationToken))

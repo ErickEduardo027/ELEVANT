@@ -33,6 +33,7 @@ public static class DependencyInjection
         services.AddScoped<Elevant.Application.Identity.RefreshSession.RefreshSessionHandler>();
         services.AddScoped<Elevant.Application.Identity.ChangePassword.ChangePasswordHandler>();
         services.AddScoped<GetAirlinePortalBootstrapHandler>();
+        services.AddScoped<GetAirlinePortalStandingHandler>();
         services.AddScoped<GetAirlineContractsHandler>();
         services.AddScoped<GetAirlineOperationsHandler>();
         services.AddScoped<GetAirlineOperationHandler>();

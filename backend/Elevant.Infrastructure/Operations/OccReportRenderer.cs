@@ -65,8 +65,8 @@ public sealed class OccReportRenderer : IOccReportRenderer
         document.Info.Title = $"{table.Definition.Title} · {table.StationCode}";
         document.Info.Author = "ELEVANT";
         document.Info.Subject = "OCC · datos autorizados";
-        var heading = new XFont(ElevantPdfFontResolver.Typeface, 15, XFontStyleEx.Regular);
-        var body = new XFont(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Regular);
+        var heading = ElevantPdfFonts.Regular(15);
+        var body = ElevantPdfFonts.Regular(8);
         var muted = XColor.FromArgb(77, 93, 118);
         var navy = XColor.FromArgb(8, 27, 58);
         var rowIndex = 0;

@@ -221,20 +221,17 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
 
     private sealed class Writer
     {
-        // PdfSharp's subsetter drops the components of composite glyphs, so «á», «í» or «ó» print
-        // without accents; embedding the complete Noto Sans faces keeps Spanish text intact.
-        private static readonly XPdfFontOptions Embedded = new(PdfSharp.Pdf.PdfFontEncoding.Unicode,
-            PdfSharp.Pdf.PdfFontEmbedding.EmbedCompleteFontFile);
+        // 2-D: every ELEVANT PDF embeds the complete Unicode Noto Sans faces (ElevantPdfFonts).
         private readonly PdfDocument pdf;
-        private readonly XFont body = new(ElevantPdfFontResolver.Typeface, 9.5, XFontStyleEx.Regular, Embedded);
-        private readonly XFont bodyBold = new(ElevantPdfFontResolver.Typeface, 9.5, XFontStyleEx.Bold, Embedded);
-        private readonly XFont small = new(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Regular, Embedded);
-        private readonly XFont smallBold = new(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Bold, Embedded);
-        private readonly XFont label = new(ElevantPdfFontResolver.Typeface, 7, XFontStyleEx.Bold, Embedded);
-        private readonly XFont heading = new(ElevantPdfFontResolver.Typeface, 12, XFontStyleEx.Bold, Embedded);
-        private readonly XFont title = new(ElevantPdfFontResolver.Typeface, 17, XFontStyleEx.Bold, Embedded);
-        private readonly XFont watermark = new(ElevantPdfFontResolver.Typeface, 72, XFontStyleEx.Bold, Embedded);
-        private readonly XFont watermarkNote = new(ElevantPdfFontResolver.Typeface, 22, XFontStyleEx.Bold, Embedded);
+        private readonly XFont body = ElevantPdfFonts.Regular(9.5);
+        private readonly XFont bodyBold = ElevantPdfFonts.Bold(9.5);
+        private readonly XFont small = ElevantPdfFonts.Regular(8);
+        private readonly XFont smallBold = ElevantPdfFonts.Bold(8);
+        private readonly XFont label = ElevantPdfFonts.Bold(7);
+        private readonly XFont heading = ElevantPdfFonts.Bold(12);
+        private readonly XFont title = ElevantPdfFonts.Bold(17);
+        private readonly XFont watermark = ElevantPdfFonts.Bold(72);
+        private readonly XFont watermarkNote = ElevantPdfFonts.Bold(22);
         private PdfPage page = null!;
         private XGraphics graphics = null!;
         private double y;

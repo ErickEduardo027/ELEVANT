@@ -4,6 +4,7 @@ using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Commercial;
 using Elevant.Application.Common;
+using Elevant.Application.Identity.AccountEmails;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -213,6 +214,10 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
         }
         CommercialAuditWriter.Add(context, actor, auditAction, "commercial.contracts", contract.PublicId, eventReason, changes);
         await ContractActivation.AnnounceAsync(context, contract, kind, now, cancellationToken);
+        // 2-N12: the airline learns about a manual suspension by email, never with the internal reason.
+        if (action == ContractLifecycleAction.Suspend)
+            await ContractActivation.QueueSuspensionEmailsAsync(context, contract, ContractSuspensionCause.Manual, now,
+                cancellationToken);
         return new(new ContractLifecycleResult(contract.Status.ToString(), draftId, null), contract.PublicId);
     }
 
@@ -334,13 +339,14 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
             expired++;
         }
 
-        // Suspended: the airline had a verified operating permit, but none is usable today. Contracts
-        // signed before the permit dossier existed are left alone (expand phase, ADR-0024).
+        // Suspended: the airline had a verified operating permit (or one Contratos revoked, 2-N09), but none is
+        // usable today. Contracts signed before the permit dossier existed are left alone (expand phase, ADR-0024).
         var suspended = 0;
         foreach (var contract in await context.Contracts
                      .Where(item => item.Status == ContractStatus.Active &&
                          context.AirlinePermits.Any(permit => permit.AirlineId == item.AirlineId &&
-                             permit.Kind == AirlinePermitKind.OperatingPermit && permit.Review == AirlinePermitReview.Verified) &&
+                             permit.Kind == AirlinePermitKind.OperatingPermit &&
+                             (permit.Review == AirlinePermitReview.Verified || permit.Review == AirlinePermitReview.Revoked)) &&
                          !context.AirlinePermits.Any(permit => permit.AirlineId == item.AirlineId &&
                              permit.Kind == AirlinePermitKind.OperatingPermit && permit.Review == AirlinePermitReview.Verified &&
                              permit.ExpiresOn >= today))
@@ -348,10 +354,13 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
         {
             Change(contract, ContractStatus.Suspended, ContractActivation.PermitSuspensionReason, now);
             await ContractActivation.AnnounceAsync(context, contract, "contract_suspended", now, cancellationToken);
+            // 2-N12: the airline learns it by email, with how the contract resumes.
+            await ContractActivation.QueueSuspensionEmailsAsync(context, contract, ContractSuspensionCause.PermitExpired, now,
+                cancellationToken);
             suspended++;
         }
 
-        // 30-day notices, once per permit and per version in force.
+        // 30-day notices of the verified permits, once per permit, to Contratos and to the airline (2-N12).
         var limit = today.AddDays(ContractLifecycle.NoticeDays);
         var permitNotices = 0;
         foreach (var permit in await context.AirlinePermits
@@ -364,24 +373,56 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
                 .Select(item => item.Name).SingleAsync(cancellationToken);
             await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts, "contracts.permits.read",
                 "permit_expiring", permit.PublicId, $"{airline} · vence el {permit.ExpiresOn:dd/MM/yyyy}", now, cancellationToken);
+            await AirlineNoticeEmails.QueueAsync(context, permit.AirlineId, EmailPurpose.PermitExpiring,
+                (email, name) => AccountEmailTemplates.PermitExpiring(email, name, AirlinePermitNames.Of(permit.Kind),
+                    permit.Number, permit.ExpiresOn, permit.Kind == AirlinePermitKind.OperatingPermit), now, cancellationToken);
             permitNotices++;
         }
-        var contractNotices = 0;
-        foreach (var contract in await context.Contracts
-                     .Where(item => item.Status == ContractStatus.Active && item.ExpiryNoticeSentAt == null &&
-                         governing.Any(version => version.ContractId == item.Id && version.ValidTo != null &&
-                             version.ValidTo >= today && version.ValidTo <= limit) &&
-                         !governing.Any(version => version.ContractId == item.Id &&
-                             (version.ValidTo == null || version.ValidTo > limit)))
-                     .ToArrayAsync(cancellationToken))
-        {
-            contract.ExpiryNoticeSentAt = now;
-            await ContractActivation.AnnounceAsync(context, contract, "contract_expiring", now, cancellationToken);
-            contractNotices++;
-        }
+        var contractNotices = await ContractExpiryNoticesAsync(today, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         var blocked = await StartAutomaticRenewalsAsync(today, now, cancellationToken);
         return new ContractLifecycleSweep(activated, expired, suspended, permitNotices, contractNotices, terminated, blocked);
+    }
+
+    /// <summary>
+    /// 2-N12: an active contract is announced as expiring the RenewalNoticeDays its last version signed before
+    /// its end («AVIAM avisa con N días de antelación»), or <see cref="ContractLifecycle.NoticeDays"/> for a
+    /// version without validity terms; once per version in force (the validity step resets the mark). Contratos
+    /// and the airline hear about it, the airline by email too. A scheduled termination that comes first is
+    /// what ends the contract, so it is not announced as expiring.
+    /// </summary>
+    private async Task<int> ContractExpiryNoticesAsync(DateOnly today, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var governing = GoverningContractVersions.Of(context);
+        var horizon = today.AddDays(ContractValidity.MaximumNoticeDays);
+        var candidates = await context.Contracts
+            .Where(item => item.Status == ContractStatus.Active && item.ExpiryNoticeSentAt == null &&
+                governing.Any(version => version.ContractId == item.Id && version.ValidTo != null &&
+                    version.ValidTo >= today && version.ValidTo <= horizon) &&
+                !governing.Any(version => version.ContractId == item.Id &&
+                    (version.ValidTo == null || version.ValidTo > horizon)))
+            .ToArrayAsync(cancellationToken);
+        var notices = 0;
+        foreach (var contract in candidates)
+        {
+            // The version whose end is the contract's end: the notice days it signed are the promise kept.
+            var last = await GoverningContractVersions.Of(context).AsNoTracking()
+                .Where(version => version.ContractId == contract.Id && version.ValidTo != null)
+                .OrderByDescending(version => version.ValidTo).ThenByDescending(version => version.ValidFrom)
+                .Select(version => new { version.ValidTo, version.RenewalNoticeDays, version.RenewalMode, version.RenewalTermMonths })
+                .FirstAsync(cancellationToken);
+            var end = last.ValidTo!.Value;
+            if (contract.TerminatedOn is { } terminatesOn && terminatesOn <= end) continue;
+            if (!ContractLifecycle.ExpiryNoticeDue(end, ContractLifecycle.ExpiryNoticeDays(last.RenewalNoticeDays), today))
+                continue;
+            contract.ExpiryNoticeSentAt = now;
+            await ContractActivation.AnnounceAsync(context, contract, "contract_expiring", now, cancellationToken);
+            await AirlineNoticeEmails.QueueAsync(context, contract.AirlineId, EmailPurpose.ContractExpiring,
+                (email, airline) => AccountEmailTemplates.ContractExpiring(email, airline, contract.ContractCode, end,
+                    last.RenewalMode == ContractRenewalMode.Automatic ? last.RenewalTermMonths : null), now, cancellationToken);
+            notices++;
+        }
+        return notices;
     }
 
     /// <summary>
@@ -544,15 +585,27 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
                      .Where(item => item.ContractId == contract.Id).ToArrayAsync(cancellationToken))
             entries.Add(new(change.OccurredAt, "status", change is { FromStatus: ContractStatus.Draft, ToStatus: ContractStatus.Terminated }
                 ? "Contrato descartado antes de activarse" : StatusTitle(change.ToStatus), change.Reason, await Name(change.ActorAccountId)));
-        foreach (var permit in await context.AirlinePermits.AsNoTracking().Where(item => item.AirlineId == contract.AirlineId)
-                     .ToArrayAsync(cancellationToken))
+        var permits = await context.AirlinePermits.AsNoTracking().Where(item => item.AirlineId == contract.AirlineId)
+            .ToArrayAsync(cancellationToken);
+        // 2-N09: a revoked permit keeps its verification; the revocation, with its reason, is in the audit trail.
+        var revokedIds = permits.Where(item => item.Review == AirlinePermitReview.Revoked).Select(item => (Guid?)item.PublicId).ToArray();
+        var revocations = await context.AuditEntries.AsNoTracking()
+            .Where(entry => entry.Action == EfAirlinePermitStore.RevokedAudit && revokedIds.Contains(entry.EntityPublicId))
+            .Select(entry => new { entry.EntityPublicId, entry.Reason, entry.ActorAccountId }).ToArrayAsync(cancellationToken);
+        foreach (var permit in permits)
         {
             entries.Add(new(permit.CreatedAt, "permit", $"Permiso enviado: {PermitTitle(permit.Kind)}",
                 $"{permit.Number} · {permit.Issuer} · vence el {permit.ExpiresOn:dd/MM/yyyy}", null));
             if (permit.ReviewedAt is { } reviewed)
-                entries.Add(new(reviewed, "permit", permit.Review == AirlinePermitReview.Verified
+                entries.Add(new(reviewed, "permit", permit.Review is AirlinePermitReview.Verified or AirlinePermitReview.Revoked
                     ? $"Contratos verificó {PermitTitle(permit.Kind)}" : $"Contratos rechazó {PermitTitle(permit.Kind)}",
                     permit.ReviewNote, await Name(permit.ReviewedByAccountId)));
+            if (permit.Review == AirlinePermitReview.Revoked)
+            {
+                var revocation = revocations.LastOrDefault(entry => entry.EntityPublicId == permit.PublicId);
+                entries.Add(new(permit.UpdatedAt, "permit", $"Contratos revocó la verificación: {PermitTitle(permit.Kind)}",
+                    revocation?.Reason, await Name(revocation?.ActorAccountId)));
+            }
         }
         // What comes next, so the cycle can be read forward too: the end of the version that governs
         // (2-C) and a scheduled termination (2-N14), at the close or start of AVIAM's business day.
@@ -595,11 +648,5 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
         _ => "Contrato en borrador",
     };
 
-    private static string PermitTitle(AirlinePermitKind kind) => kind switch
-    {
-        AirlinePermitKind.OperatingPermit => "permiso de operación",
-        AirlinePermitKind.AirOperatorCertificate => "certificado de explotador",
-        AirlinePermitKind.Insurance => "póliza de seguro",
-        _ => "documento",
-    };
+    private static string PermitTitle(AirlinePermitKind kind) => AirlinePermitNames.Of(kind);
 }

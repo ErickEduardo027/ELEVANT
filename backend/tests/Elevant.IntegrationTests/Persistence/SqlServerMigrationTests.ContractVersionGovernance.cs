@@ -130,6 +130,12 @@ public sealed partial class SqlServerMigrationTests
         Assert.True(await context.Set<ContractVersionStation>().AnyAsync(item => item.ContractVersionId == draftKey &&
             item.StationId == puj, ct));
 
+        // 2-N12: the expiry notice of the version in force went out; the renewal restarts it only once it governs.
+        await context.Contracts.Where(item => item.Id == contract.Id)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.ExpiryNoticeSentAt, clock.Now), ct);
+        async Task<DateTimeOffset?> NoticeSentAsync() => await context.Contracts.AsNoTracking()
+            .Where(item => item.Id == contract.Id).Select(item => item.ExpiryNoticeSentAt).SingleAsync(ct);
+
         // Contratos raises the prices and Finance approves them.
         var draft = Assert.Single((await drafts.ListForContractsAsync(ContractsAdministrator, ct))!,
             item => item.Id == renewal.DraftVersionId);
@@ -153,6 +159,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((ContractVersionStatus.Approved, (DateOnly?)end), (inForce.Status, inForce.ValidTo));
         Assert.Equal(v1.Id, await GoverningAsync(SantoDomingoToday));
         Assert.Null(await GoverningAsync(new DateOnly(2027, 1, 15)));
+        Assert.NotNull(await NoticeSentAsync());
         // 2-N01: no other renewal or amendment starts while an approved version waits for both signatures.
         Assert.Equal("version_awaiting_signatures", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
             new ContractLifecycleInput("Renew", "Otra renovación", "Active", new DateOnly(2028, 1, 1), null), null, ct)).Code);
@@ -177,8 +184,16 @@ public sealed partial class SqlServerMigrationTests
         var confirmed = await documents.SetValidityAsync(ContractsAdministrator, draft.Id, validity, validityKey, ct);
         Assert.Null(confirmed.Code);
         var hash = confirmed.Document!.ContentSha256;
+        // 2-N13: the airline is emailed that the renewal can be signed; the replay below queues nothing more.
+        var ready = await context.EmailOutbox.AsNoTracking().Where(item => item.Purpose == EmailPurpose.ContractReadyToSign)
+            .Select(item => item.TextBody).ToArrayAsync(ct);
+        Assert.NotEmpty(ready);
+        Assert.All(ready, body => Assert.Contains("sigue vigente la versión actual", body));
         Assert.Equal(hash, (await documents.SetValidityAsync(ContractsAdministrator, draft.Id, validity, validityKey, ct))
             .Document!.ContentSha256);
+        Assert.Equal(ready.Length, await context.EmailOutbox.CountAsync(item => item.Purpose == EmailPurpose.ContractReadyToSign, ct));
+        // 2-N12: the coverage end did not move, so the notice is not sent again.
+        Assert.NotNull(await NoticeSentAsync());
         Assert.Equal("idempotency_conflict", (await documents.SetValidityAsync(ContractsAdministrator, draft.Id,
             validity with { RenewalNoticeDays = 45 }, validityKey, ct)).Code);
         Assert.Equal(1, await context.AuditEntries.CountAsync(item => item.Action == "commercial.contract.validity_confirmed" &&
@@ -214,6 +229,8 @@ public sealed partial class SqlServerMigrationTests
         // Santo Domingo; the contract keeps the day it first became active.
         Assert.Equal(SantoDomingoToday, countersigned.Document!.SignedOn);
         context.ChangeTracker.Clear();
+        // 2-N12: the coverage end moved with the renewal that now governs, so its expiry notice starts again.
+        Assert.Null(await NoticeSentAsync());
         Assert.Equal(contract.SignedOn, (await context.Contracts.AsNoTracking().SingleAsync(item => item.Id == contract.Id, ct))
             .SignedOn);
         // 2-C: the second signature makes the renewal govern its dates; the version it replaces keeps the dates before.
@@ -513,9 +530,9 @@ public sealed partial class SqlServerMigrationTests
         Assert.True((await book.DecideContractApprovalAsync(FinanceAccount, draft.Id,
             new DecideContractApprovalInput("Approved", null, pending.Summary.Version), Guid.NewGuid(), ct)).IsSuccess);
         var permit = (await permits.SubmitAsync(PortalAirlineAccount, new SubmitAirlinePermitInput("OperatingPermit",
-            "JAC-2027-A", "Junta de Aviación Civil", end, end.AddYears(1), null), ct)).Permit!;
+            "JAC-2027-A", "Junta de Aviación Civil", end, end.AddYears(1), null), null, ct)).Permit!;
         Assert.Equal("Verified", (await permits.ReviewAsync(ContractsAdministrator, permit.Id,
-            new ReviewAirlinePermitInput(true, null, permit.Version), ct)).Permit!.Review);
+            new ReviewAirlinePermitInput(true, null, permit.Version), null, ct)).Permit!.Review);
         // The permit alone reactivates nothing: no version both parties signed is in force.
         Assert.Equal(ContractStatus.Expired, await StatusAsync());
         await SignByBothAsync(documents, draft.Id, ct);
@@ -554,10 +571,10 @@ public sealed partial class SqlServerMigrationTests
         // The validity may still start today, and a permit that expires today is still current.
         var hash = await ConfirmValidityAsync(documents, SeededContractVersion, SantoDomingoToday, ct);
         var submitted = await permits.SubmitAsync(PortalAirlineAccount, new SubmitAirlinePermitInput("OperatingPermit",
-            "JAC-2F", "Junta de Aviación Civil", SantoDomingoToday.AddDays(-30), SantoDomingoToday, null), ct);
+            "JAC-2F", "Junta de Aviación Civil", SantoDomingoToday.AddDays(-30), SantoDomingoToday, null), null, ct);
         Assert.Null(submitted.Code);
         Assert.Equal("Verified", (await permits.ReviewAsync(ContractsAdministrator, submitted.Permit!.Id,
-            new ReviewAirlinePermitInput(true, null, submitted.Permit.Version), ct)).Permit!.Review);
+            new ReviewAirlinePermitInput(true, null, submitted.Permit.Version), null, ct)).Permit!.Review);
         Assert.Null((await documents.SignAsync(PortalAirlineAccount, SeededContractVersion, new SignContractInput(Guid.NewGuid(),
             "Casey Airline", "Director", hash, true, SignaturePng), ct)).Code);
         var countersigned = await documents.SignAsync(ContractsAdministrator, SeededContractVersion, new SignContractInput(

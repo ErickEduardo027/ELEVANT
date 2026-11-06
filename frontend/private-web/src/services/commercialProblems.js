@@ -111,6 +111,24 @@ export const CONTRACT_VALIDITY_MESSAGES = Object.freeze({
   termination_scheduled: 'La vigencia no puede empezar en la fecha de terminación programada o después.',
 });
 
+/**
+ * The airline permit dossier (phase 2, block B): only a submitted permit is reviewed, only a verified one is
+ * revoked, and both the rejection note and the revocation reason reach the airline (2-N09).
+ */
+export const AIRLINE_PERMIT_MESSAGES = Object.freeze({
+  review_closed: 'Ese permiso ya fue revisado; se volvió a cargar la lista.',
+  permit_not_verified: 'Solo se revoca un permiso verificado; se volvió a cargar la lista.',
+  review_note_required: 'Escribe el motivo del rechazo (entre 5 y 500 caracteres); la aerolínea lo verá.',
+  reason_required: 'Escribe el motivo de la revocación (entre 5 y 500 caracteres); la aerolínea lo verá.',
+  permit_expired: 'No se puede verificar un permiso vencido.',
+  version_conflict: 'El permiso cambió mientras lo revisabas; se volvió a cargar la lista.',
+  not_found: 'El permiso ya no existe; se volvió a cargar la lista.',
+});
+
+/** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
+export const airlinePermitMessage = (error, options) =>
+  problemMessage(error, AIRLINE_PERMIT_MESSAGES, options);
+
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const contractLifecycleMessage = (error, options) =>
   problemMessage(error, CONTRACT_LIFECYCLE_MESSAGES, options);

@@ -119,4 +119,10 @@ public enum AirlinePermitReview
     Submitted,
     Verified,
     Rejected,
+
+    /// <summary>
+    /// Contratos withdrew a verification with a reason (2-N09): the permit no longer counts, its original
+    /// verification stays on the row and the revocation lives in the audit trail. It never changes again.
+    /// </summary>
+    Revoked,
 }

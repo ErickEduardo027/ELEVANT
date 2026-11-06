@@ -15,6 +15,8 @@ internal static class SafeAuditChanges
         "user.invitation", "membership.status",
         // Contract lifecycle (phase 2, block A): a version that started or stopped governing and a scheduled termination.
         "version.status", "version.valid_to", "contract.terminated_on",
+        // Permit dossier (phase 2, block B): a verification Contratos revoked (2-N09).
+        "permit.review",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

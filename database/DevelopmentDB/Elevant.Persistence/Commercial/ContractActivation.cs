@@ -21,6 +21,12 @@ internal static class ContractActivation
 {
     public const string PermitSuspensionReason = "Permiso de operación vencido o sin verificar.";
 
+    /// <summary>
+    /// Reason of the suspension a revocation causes (2-N09): written by the system in the revocation's own
+    /// transaction, so verifying a new operating permit resumes the contract like after an expired one.
+    /// </summary>
+    public const string PermitRevokedSuspensionReason = "Contratos revocó la verificación del permiso de operación.";
+
     /// <summary>Activates the ready contracts of one airline (or of all when null) and saves.</summary>
     public static async Task<int> ActivateReadyAsync(ElevantDbContext context, long? airlineId, long? actorAccountId,
         DateTimeOffset now, CancellationToken cancellationToken)
@@ -118,15 +124,32 @@ internal static class ContractActivation
             .Select(user => user.Email!).ToArrayAsync(cancellationToken);
         foreach (var email in emails.Distinct(StringComparer.OrdinalIgnoreCase))
             EfEmailOutboxStore.Add(context,
-                AccountEmailTemplates.ContractActivated(email, head.Name, head.ContractCode, head.ValidFrom, head.ValidTo),
+                // 2-N30: a version that starts later is signed, not in force; the email says from when it is.
+                AccountEmailTemplates.ContractActivated(email, head.Name, head.ContractCode, head.ValidFrom, head.ValidTo,
+                    BusinessCalendar.Today(now)),
                 EmailPurpose.ContractActivated, now, EfContractDocumentStore.AttachmentPrefix + head.PublicId);
     }
 
+    /// <summary>
+    /// Queues the suspension email for the airline's portal accounts (2-N12). A manual suspension never
+    /// carries the internal reason of Contratos.
+    /// </summary>
+    public static Task<int> QueueSuspensionEmailsAsync(ElevantDbContext context, Contract contract,
+        ContractSuspensionCause cause, DateTimeOffset now, CancellationToken cancellationToken) =>
+        AirlineNoticeEmails.QueueAsync(context, contract.AirlineId, EmailPurpose.ContractSuspended,
+            (email, airline) => AccountEmailTemplates.ContractSuspended(email, airline, contract.ContractCode, cause), now,
+            cancellationToken);
+
+    /// <summary>
+    /// A contract the system suspended for its operating permit (expired, or revoked by Contratos, 2-N09)
+    /// resumes once a new one is verified; one Contratos suspended by hand waits for a manual reactivation.
+    /// </summary>
     private static async Task<bool> SuspendedForPermitAsync(ElevantDbContext context, long contractId,
         CancellationToken cancellationToken)
     {
         var last = await context.Set<ContractStatusEvent>().AsNoTracking().Where(item => item.ContractId == contractId)
             .OrderByDescending(item => item.OccurredAt).ThenByDescending(item => item.Id).FirstOrDefaultAsync(cancellationToken);
-        return last is { ToStatus: ContractStatus.Suspended, ActorAccountId: null, Reason: PermitSuspensionReason };
+        return last is { ToStatus: ContractStatus.Suspended, ActorAccountId: null } &&
+            last.Reason is PermitSuspensionReason or PermitRevokedSuspensionReason;
     }
 }

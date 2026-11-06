@@ -339,6 +339,62 @@
         ]
       }
     },
+    "/api/v1/airline/portal/standing": {
+      "get": {
+        "tags": [
+          "AirlinePortal"
+        ],
+        "summary": "Where the airline stands with AVIAM (2-N32, 2-N35): overall status, read-only when no contract covers a\nstation today, the stations of its approved contracts (the treasury scope) and why each contract that\nnever activated is still waiting. The bootstrap keeps describing only what is in force today.",
+        "operationId": "GetAirlinePortalStanding",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlinePortalStandingResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/invoices/{invoiceId}/statement": {
       "get": {
         "tags": [
@@ -6619,7 +6675,18 @@
         "tags": [
           "ContractLifecycle"
         ],
+        "summary": "The airline submits a permit of its dossier. The Idempotency-Key is optional while older portals exist\n(expand, 2-N09); with it a retry answers the permit the first attempt created. A scan uploaded before\nthe media link window answers `document_expired` and must be uploaded again (2-N37).",
         "operationId": "SubmitAirlinePermit",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -6675,6 +6742,26 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6743,12 +6830,21 @@
         "tags": [
           "ContractLifecycle"
         ],
+        "summary": "Contratos verifies or rejects a submitted permit with the version it saw; any other permit answers 409\n`review_closed` (2-N09). The answer adds the contracts the review activated or resumed (2-N30). The\nIdempotency-Key is optional while older clients exist (expand).",
         "operationId": "ReviewAirlinePermit",
         "parameters": [
           {
             "name": "permitId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -6793,7 +6889,125 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AirlinePermitData"
+                  "$ref": "#/components/schemas/AirlinePermitDecisionData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/permits/{permitId}/revocation": {
+      "post": {
+        "tags": [
+          "ContractLifecycle"
+        ],
+        "summary": "Contratos revokes a verified permit with a reason and the version it saw (2-N09). The permit becomes\nRevoked and keeps its original verification; the active contracts left without a usable operating\npermit are suspended in the same transaction and the airline is emailed. The answer names them.",
+        "operationId": "RevokeAirlinePermit",
+        "parameters": [
+          {
+            "name": "permitId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RevokeAirlinePermitInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RevokeAirlinePermitInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RevokeAirlinePermitInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AirlinePermitDecisionData"
                 }
               }
             }
@@ -32231,6 +32445,27 @@
         },
         "additionalProperties": false
       },
+      "AirlinePermitContractChange": {
+        "required": [
+          "contractCode",
+          "contractId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "contractId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "contractCode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "AirlinePermitData": {
         "required": [
           "airline",
@@ -32301,6 +32536,105 @@
           },
           "version": {
             "type": "string"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revocationReason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlinePermitDecisionData": {
+        "required": [
+          "airline",
+          "airlineId",
+          "contracts",
+          "expiresOn",
+          "id",
+          "issuedOn",
+          "issuer",
+          "kind",
+          "number",
+          "review",
+          "submittedAt",
+          "validity",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airline": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "number": {
+            "type": "string"
+          },
+          "issuer": {
+            "type": "string"
+          },
+          "issuedOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "expiresOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "validity": {
+            "type": "string"
+          },
+          "review": {
+            "type": "string"
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "documentUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "version": {
+            "type": "string"
+          },
+          "revokedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "revocationReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "contracts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlinePermitContractChange"
+            }
           }
         },
         "additionalProperties": false
@@ -32398,6 +32732,103 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlinePortalStandingContractResponse": {
+        "required": [
+          "code",
+          "id",
+          "status",
+          "versionsAwaitingSignatures"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "pendingReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "versionsAwaitingSignatures": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlinePortalStandingResponse": {
+        "required": [
+          "contracts",
+          "organizationId",
+          "readOnly",
+          "stations",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "readOnly": {
+            "type": "boolean"
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlinePortalStandingStationResponse"
+            }
+          },
+          "contracts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AirlinePortalStandingContractResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "AirlinePortalStandingStationResponse": {
+        "required": [
+          "code",
+          "current",
+          "ianaTimeZone",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          },
+          "current": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -50618,6 +51049,22 @@
           "expectedVersion": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RevokeAirlinePermitInput": {
+        "required": [
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
           }
         },
         "additionalProperties": false

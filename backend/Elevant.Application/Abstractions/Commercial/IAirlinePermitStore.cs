@@ -2,17 +2,41 @@ namespace Elevant.Application.Abstractions.Commercial;
 
 /// <summary>
 /// A permit of the airline dossier (ADR-0024). <see cref="Validity"/> is Current, Expiring
-/// (30 days or less) or Expired; <see cref="Review"/> is Submitted, Verified or Rejected.
+/// (30 days or less) or Expired; <see cref="Review"/> is Submitted, Verified, Rejected or Revoked.
+/// <see cref="ReviewNote"/> and <see cref="ReviewedAt"/> are the verification or the rejection, which a
+/// revocation keeps (2-N09); <see cref="RevokedAt"/> and <see cref="RevocationReason"/> (also read by the
+/// airline) are set only on a revoked permit. <see cref="Version"/> is the rowversion in base64, the expected
+/// version of the next command.
 /// </summary>
-public sealed record AirlinePermitData(Guid Id, Guid AirlineId, string Airline, string Kind, string Number,
+public record AirlinePermitData(Guid Id, Guid AirlineId, string Airline, string Kind, string Number,
     string Issuer, DateOnly IssuedOn, DateOnly ExpiresOn, string Validity, string Review, string? ReviewNote,
-    string? DocumentUrl, DateTimeOffset SubmittedAt, DateTimeOffset? ReviewedAt, string Version);
+    string? DocumentUrl, DateTimeOffset SubmittedAt, DateTimeOffset? ReviewedAt, string Version,
+    DateTimeOffset? RevokedAt = null, string? RevocationReason = null);
+
+/// <summary>A contract whose status a permit command changed: activated, resumed or suspended (2-N30).</summary>
+public sealed record AirlinePermitContractChange(Guid ContractId, string ContractCode, string Status);
+
+/// <summary>
+/// The permit after a review or a revocation (2-N09, 2-N30), with the contracts that command activated,
+/// resumed or suspended: the screen tells Contratos what really happened instead of a fixed promise. A
+/// replay answers the same contracts.
+/// </summary>
+public sealed record AirlinePermitDecisionData : AirlinePermitData
+{
+    public AirlinePermitDecisionData(AirlinePermitData permit, IReadOnlyList<AirlinePermitContractChange> contracts)
+        : base(permit) => Contracts = contracts;
+
+    public IReadOnlyList<AirlinePermitContractChange> Contracts { get; init; }
+}
 
 public sealed record SubmitAirlinePermitInput(string Kind, string Number, string Issuer, DateOnly IssuedOn,
     DateOnly ExpiresOn, string? DocumentUrl);
 
-/// <summary>Contratos verifies or rejects a permit; a rejection needs a note.</summary>
+/// <summary>Contratos verifies or rejects a submitted permit with the version it saw; a rejection needs a note.</summary>
 public sealed record ReviewAirlinePermitInput(bool Verified, string? Note, string ExpectedVersion);
+
+/// <summary>Contratos revokes a verified permit with a reason (5 to 500 characters) and the version it saw (2-N09).</summary>
+public sealed record RevokeAirlinePermitInput(string Reason, string ExpectedVersion);
 
 public enum AirlinePermitFailure { Forbidden, NotFound, Invalid, Conflict }
 
@@ -27,14 +51,31 @@ public interface IAirlinePermitStore
     /// <summary>Permits of the portal user's own airline; null when the caller is not an airline user.</summary>
     Task<IReadOnlyList<AirlinePermitData>?> ListForAirlineAsync(Guid actorId, CancellationToken cancellationToken = default);
 
-    Task<AirlinePermitResult> SubmitAsync(Guid actorId, SubmitAirlinePermitInput input,
+    /// <summary>
+    /// The airline submits a permit. The Idempotency-Key is optional while older portals exist (expand); with
+    /// it a retry answers the permit the first attempt created instead of a duplicate (2-N09).
+    /// </summary>
+    Task<AirlinePermitResult> SubmitAsync(Guid actorId, SubmitAirlinePermitInput input, Guid? idempotencyKey,
         CancellationToken cancellationToken = default);
 
     /// <summary>Every permit for Contratos (<c>contracts.permits.read</c>), optionally one review state.</summary>
     Task<IReadOnlyList<AirlinePermitData>?> ListForContractsAsync(Guid actorId, string? review,
         CancellationToken cancellationToken = default);
 
-    Task<AirlinePermitResult> ReviewAsync(Guid actorId, Guid permitId, ReviewAirlinePermitInput input,
+    /// <summary>
+    /// Contratos verifies or rejects a submitted permit (<c>review_closed</c> otherwise). The Idempotency-Key is
+    /// optional while older clients exist (expand). A verified operating permit activates or resumes the
+    /// contracts that waited for it; a rejection queues the email with the note (2-N13).
+    /// </summary>
+    Task<AirlinePermitResult> ReviewAsync(Guid actorId, Guid permitId, ReviewAirlinePermitInput input, Guid? idempotencyKey,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Contratos revokes a verified permit with a reason (<c>contracts.permits.verify</c>, 2-N09). In the same
+    /// transaction the active contracts left without a usable operating permit are suspended, and the airline
+    /// is emailed; verifying a new operating permit resumes them.
+    /// </summary>
+    Task<AirlinePermitResult> RevokeAsync(Guid actorId, Guid permitId, RevokeAirlinePermitInput input, Guid idempotencyKey,
         CancellationToken cancellationToken = default);
 }
 

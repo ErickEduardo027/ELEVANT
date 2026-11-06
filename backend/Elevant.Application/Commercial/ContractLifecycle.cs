@@ -28,6 +28,41 @@ public static class ContractLifecycleIssues
     public const string RenewalBlocked = "contract_renewal_blocked";
 }
 
+/// <summary>
+/// Why a contract was suspended, as the airline's email tells it (2-N12): by hand (never with the internal
+/// reason of Contratos), because its operating permit expired, or because Contratos revoked the
+/// verification of that permit (2-N09).
+/// </summary>
+public enum ContractSuspensionCause { Manual, PermitExpired, PermitRevoked }
+
+/// <summary>Stable codes of the airline permit dossier and its commands (phase 2, block B).</summary>
+public static class AirlinePermitIssues
+{
+    /// <summary>The permit was already verified, rejected or revoked: only a submitted one is reviewed.</summary>
+    public const string ReviewClosed = "review_closed";
+    /// <summary>Only a verified permit can be revoked.</summary>
+    public const string NotVerified = "permit_not_verified";
+    public const string NoteRequired = "review_note_required";
+    public const string Invalid = "invalid_permit";
+    public const string DatesInvalid = "permit_dates_invalid";
+    public const string Expired = "permit_expired";
+    public const string DocumentInvalid = "document_invalid";
+    /// <summary>The scan was uploaded before the media link window: it may be cleaned up, upload it again (2-N37).</summary>
+    public const string DocumentExpired = "document_expired";
+}
+
+/// <summary>Spanish names of the permits of the dossier, for the history and the airline's emails.</summary>
+public static class AirlinePermitNames
+{
+    public static string Of(AirlinePermitKind kind) => kind switch
+    {
+        AirlinePermitKind.OperatingPermit => "permiso de operación",
+        AirlinePermitKind.AirOperatorCertificate => "certificado de explotador",
+        AirlinePermitKind.Insurance => "póliza de seguro",
+        _ => "documento",
+    };
+}
+
 /// <summary>Explicit causes that end an active or suspended contract at once, without the signed notice (2-N14).</summary>
 public static class ContractTerminationCauses
 {
@@ -65,6 +100,22 @@ public static class ContractLifecycle
     /// <summary>An operating permit counts only once Contratos verified it and until it expires.</summary>
     public static bool IsUsable(AirlinePermitKind kind, AirlinePermitReview review, DateOnly expiresOn, DateOnly today) =>
         kind == AirlinePermitKind.OperatingPermit && review == AirlinePermitReview.Verified && expiresOn >= today;
+
+    /// <summary>
+    /// Days before its end a contract is announced as expiring (2-N12): the RenewalNoticeDays its version
+    /// signed («AVIAM avisa con N días de antelación»), or <see cref="NoticeDays"/> for a version without
+    /// validity terms.
+    /// </summary>
+    public static int ExpiryNoticeDays(int? renewalNoticeDays) =>
+        renewalNoticeDays is { } days && days >= 0 ? days : NoticeDays;
+
+    /// <summary>
+    /// Whether the expiry notice of a contract whose coverage ends on <paramref name="lastDay"/> is due today:
+    /// the end is not past and falls within the notice days.
+    /// </summary>
+    public static bool ExpiryNoticeDue(DateOnly lastDay, int noticeDays, DateOnly today) =>
+        lastDay >= today && lastDay <= today.AddDays(Math.Max(0, noticeDays));
+
 
     /// <summary>States a manual action may start from, and the state it leads to.</summary>
     public static ContractStatus? Target(ContractLifecycleAction action, ContractStatus current) => (action, current) switch

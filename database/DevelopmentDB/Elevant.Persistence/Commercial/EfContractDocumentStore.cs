@@ -5,6 +5,7 @@ using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Commercial;
 using Elevant.Application.Common;
 using Elevant.Application.Identity;
+using Elevant.Application.Identity.AccountEmails;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -369,12 +370,22 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
                 .Select(item => item.ContractCode).ToArrayAsync(cancellationToken);
             contract.ContractCode = ContractValidity.FinalCode(now.Year, ContractValidity.NextSequence(issued, now.Year));
         }
-        contract.ExpiryNoticeSentAt = null;
+        // 2-N12: the expiry notice restarts only when the coverage end changes: here for a version that already
+        // governs (the legacy exemption); a renewal or an amendment restarts it at its second signature
+        // (ContractVersionSupersession), so the airline is not told twice about the same end.
+        if (await GoverningContractVersions.Of(context).AnyAsync(item => item.Id == version.Id, cancellationToken))
+            contract.ExpiryNoticeSentAt = null;
         contract.UpdatedAt = now;
         CommercialAuditWriter.Add(context, accountId, "commercial.contract.validity_confirmed",
             "commercial.contract_versions", version.PublicId,
             $"{input.ValidFrom:yyyy-MM-dd} – {input.ValidTo:yyyy-MM-dd} · {input.RenewalMode}");
         await ContractActivation.AnnounceAsync(context, contract, "contract_validity", now, cancellationToken);
+        // 2-N13: the version can be signed from now on, so the airline is told by email, not when Finance approves.
+        // Queued in this transaction: a replay of the validity step never repeats it.
+        await AirlineNoticeEmails.QueueAsync(context, contract.AirlineId, EmailPurpose.ContractReadyToSign,
+            (email, airline) => AccountEmailTemplates.ContractReadyToSign(email, airline, contract.ContractCode,
+                version.VersionNumber, input.ValidFrom, input.ValidTo,
+                contract.Status is ContractStatus.Active or ContractStatus.Suspended), now, cancellationToken);
         return null;
     }
 

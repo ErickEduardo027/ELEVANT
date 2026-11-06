@@ -9,6 +9,7 @@ export * from "./contractDrafts";
 export * from "./financePackages";
 export * from "./catalog";
 export * from "./contractDocuments";
+export * from "./airlinePermits";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -304,6 +305,11 @@ export {
   type LocateOccStandRequest,
   type ContractDocumentResponse,
   type AirlinePermitData,
+  type AirlinePermitDecisionData,
+  type AirlinePermitContractChange,
+  type AirlinePortalStandingResponse,
+  type AirlinePortalStandingStationResponse,
+  type AirlinePortalStandingContractResponse,
   type SubmitAirlinePermitInput,
   type ContractTimelineData,
   type ContractTimelineEntry,

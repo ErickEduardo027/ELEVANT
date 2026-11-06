@@ -20,6 +20,9 @@ internal static class ContractVersionSupersession
     public static async Task ApplyAsync(ElevantDbContext context, ContractVersion next, long actor, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // 2-N12: the coverage end moves with the version that now governs, so its expiry notice restarts.
+        var contract = await context.Contracts.SingleAsync(item => item.Id == next.ContractId, cancellationToken);
+        contract.ExpiryNoticeSentAt = null;
         var replaced = await context.ContractVersions.Where(item => item.ContractId == next.ContractId &&
                 item.Id != next.Id && item.Status == ContractVersionStatus.Approved && item.ValidFrom < next.ValidFrom)
             .ToArrayAsync(cancellationToken);

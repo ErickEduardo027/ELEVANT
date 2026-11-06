@@ -391,6 +391,12 @@ export interface AirlineOperationalRequestPageResponse {
   requests: AirlineOperationalRequestResponse[];
 }
 
+export interface AirlinePermitContractChange {
+  contractId: string;
+  contractCode: string;
+  status: string;
+}
+
 export interface AirlinePermitData {
   id: string;
   airlineId: string;
@@ -410,6 +416,36 @@ export interface AirlinePermitData {
   /** @nullable */
   reviewedAt?: string | null;
   version: string;
+  /** @nullable */
+  revokedAt?: string | null;
+  /** @nullable */
+  revocationReason?: string | null;
+}
+
+export interface AirlinePermitDecisionData {
+  id: string;
+  airlineId: string;
+  airline: string;
+  kind: string;
+  number: string;
+  issuer: string;
+  issuedOn: string;
+  expiresOn: string;
+  validity: string;
+  review: string;
+  /** @nullable */
+  reviewNote?: string | null;
+  /** @nullable */
+  documentUrl?: string | null;
+  submittedAt: string;
+  /** @nullable */
+  reviewedAt?: string | null;
+  version: string;
+  /** @nullable */
+  revokedAt?: string | null;
+  /** @nullable */
+  revocationReason?: string | null;
+  contracts: AirlinePermitContractChange[];
 }
 
 export interface AirlinePortalStationResponse {
@@ -427,6 +463,31 @@ export interface AirlinePortalBootstrapResponse {
   name: string;
   stations: AirlinePortalStationResponse[];
   currentOperations: AirlinePortalOperationResponse[];
+}
+
+export interface AirlinePortalStandingContractResponse {
+  id: string;
+  code: string;
+  status: string;
+  /** @nullable */
+  pendingReason?: string | null;
+  versionsAwaitingSignatures: string[];
+}
+
+export interface AirlinePortalStandingStationResponse {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+  current: boolean;
+}
+
+export interface AirlinePortalStandingResponse {
+  organizationId: string;
+  status: string;
+  readOnly: boolean;
+  stations: AirlinePortalStandingStationResponse[];
+  contracts: AirlinePortalStandingContractResponse[];
 }
 
 export interface AirlinePreinvoiceLineResponse {
@@ -5577,6 +5638,11 @@ export interface ReviewCommercialInput {
   expectedVersion?: string | null;
 }
 
+export interface RevokeAirlinePermitInput {
+  reason: string;
+  expectedVersion: string;
+}
+
 export interface SaveAccessProfileInput {
   name: string;
   /** @nullable */
@@ -6822,6 +6888,39 @@ export const getAirlinePaymentReceipt = async (invoiceId: string, options?: Requ
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
   const data: Blob = body as Blob
+  return data
+}
+
+
+
+export const getGetAirlinePortalStandingUrl = () => {
+
+
+
+
+  return `/api/v1/airline/portal/standing`
+}
+
+/**
+ * @summary Where the airline stands with AVIAM (2-N32, 2-N35): overall status, read-only when no contract covers a
+station today, the stations of its approved contracts (the treasury scope) and why each contract that
+never activated is still waiting. The bootstrap keeps describing only what is in force today.
+ */
+export const getAirlinePortalStanding = async ( options?: RequestInit): Promise<AirlinePortalStandingResponse> => {
+
+  const res = await fetch(getGetAirlinePortalStandingUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePortalStandingResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -9463,6 +9562,11 @@ export const getSubmitAirlinePermitUrl = () => {
   return `/api/v1/airline/permits`
 }
 
+/**
+ * @summary The airline submits a permit of its dossier. The Idempotency-Key is optional while older portals exist
+(expand, 2-N09); with it a retry answers the permit the first attempt created. A scan uploaded before
+the media link window answers `document_expired` and must be uploaded again (2-N37).
+ */
 export const submitAirlinePermit = async (submitAirlinePermitInput: SubmitAirlinePermitInput, options?: RequestInit): Promise<AirlinePermitData> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
@@ -9532,8 +9636,13 @@ export const getReviewAirlinePermitUrl = (permitId: string,) => {
   return `/api/v1/contracts/permits/${permitId}/review`
 }
 
+/**
+ * @summary Contratos verifies or rejects a submitted permit with the version it saw; any other permit answers 409
+`review_closed` (2-N09). The answer adds the contracts the review activated or resumed (2-N30). The
+Idempotency-Key is optional while older clients exist (expand).
+ */
 export const reviewAirlinePermit = async (permitId: string,
-    reviewAirlinePermitInput: ReviewAirlinePermitInput, options?: RequestInit): Promise<AirlinePermitData> => {
+    reviewAirlinePermitInput: ReviewAirlinePermitInput, options?: RequestInit): Promise<AirlinePermitDecisionData> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -9553,7 +9662,47 @@ const res = await fetch(getReviewAirlinePermitUrl(permitId),
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: AirlinePermitData = body ? JSON.parse(body) : {}
+  const data: AirlinePermitDecisionData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRevokeAirlinePermitUrl = (permitId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/permits/${permitId}/revocation`
+}
+
+/**
+ * @summary Contratos revokes a verified permit with a reason and the version it saw (2-N09). The permit becomes
+Revoked and keeps its original verification; the active contracts left without a usable operating
+permit are suspended in the same transaction and the airline is emailed. The answer names them.
+ */
+export const revokeAirlinePermit = async (permitId: string,
+    revokeAirlinePermitInput: RevokeAirlinePermitInput, options?: RequestInit): Promise<AirlinePermitDecisionData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRevokeAirlinePermitUrl(permitId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(revokeAirlinePermitInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePermitDecisionData = body ? JSON.parse(body) : {}
   return data
 }
 

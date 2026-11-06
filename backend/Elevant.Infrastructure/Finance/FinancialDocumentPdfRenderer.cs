@@ -12,7 +12,6 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
 {
     private const double Margin = 46;
     private const double RowHeight = 23;
-    private const string Typeface = ElevantPdfFontResolver.Typeface;
     private static readonly XColor Navy = XColor.FromArgb(8, 27, 58);
     private static readonly XColor Blue = XColor.FromArgb(18, 84, 190);
     private static readonly XColor Muted = XColor.FromArgb(87, 102, 122);
@@ -35,9 +34,9 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         document.Info.Title = $"Factura no fiscal {invoice.Number}";
         document.Info.Subject = "NonFiscal Development invoice; not a tax document";
         document.Info.Author = "ELEVANT";
-        var body = new XFont(Typeface, 9, XFontStyleEx.Regular);
-        var caption = new XFont(Typeface, 8, XFontStyleEx.Regular);
-        var heading = new XFont(Typeface, 16, XFontStyleEx.Regular);
+        var body = ElevantPdfFonts.Regular(9);
+        var caption = ElevantPdfFonts.Regular(8);
+        var heading = ElevantPdfFonts.Regular(16);
 
         var lineIndex = 0;
         while (lineIndex < invoice.Lines.Count)
@@ -91,9 +90,9 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         document.Info.Title = $"Factura de crédito fiscal {fiscal.FiscalNumber} ({invoice.Number})";
         document.Info.Subject = FinanceInvoicePolicy.Disclaimer;
         document.Info.Author = "ELEVANT";
-        var body = new XFont(Typeface, 9, XFontStyleEx.Regular);
-        var caption = new XFont(Typeface, 8, XFontStyleEx.Regular);
-        var heading = new XFont(Typeface, 16, XFontStyleEx.Regular);
+        var body = ElevantPdfFonts.Regular(9);
+        var caption = ElevantPdfFonts.Regular(8);
+        var heading = ElevantPdfFonts.Regular(16);
         var net = fiscal.NetTotal ?? invoice.Lines.Sum(line => line.NetAmount ?? line.Amount);
         var tax = fiscal.TaxTotal ?? invoice.Lines.Sum(line => line.TaxAmount ?? 0m);
         var lineIndex = 0;
@@ -209,9 +208,9 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         document.Info.Title = $"Recibo no fiscal {payment.Reference}";
         document.Info.Subject = "NonFiscal Development payment receipt; not an external settlement";
         document.Info.Author = "ELEVANT";
-        var body = new XFont(Typeface, 11, XFontStyleEx.Regular);
-        var caption = new XFont(Typeface, 8, XFontStyleEx.Regular);
-        var heading = new XFont(Typeface, 16, XFontStyleEx.Regular);
+        var body = ElevantPdfFonts.Regular(11);
+        var caption = ElevantPdfFonts.Regular(8);
+        var heading = ElevantPdfFonts.Regular(16);
         var page = document.AddPage();
         page.Size = PageSize.A4;
         using (var graphics = XGraphics.FromPdfPage(page))
@@ -240,9 +239,9 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         document.Info.Title = $"Recibo de pago {receipt.AuthorizationCode} · factura {receipt.FiscalNumber ?? receipt.InvoiceNumber}";
         document.Info.Subject = FinanceInvoicePolicy.Disclaimer;
         document.Info.Author = "ELEVANT";
-        var body = new XFont(Typeface, 11, XFontStyleEx.Regular);
-        var caption = new XFont(Typeface, 8, XFontStyleEx.Regular);
-        var heading = new XFont(Typeface, 16, XFontStyleEx.Regular);
+        var body = ElevantPdfFonts.Regular(11);
+        var caption = ElevantPdfFonts.Regular(8);
+        var heading = ElevantPdfFonts.Regular(16);
         var page = document.AddPage();
         page.Size = PageSize.A4;
         using (var graphics = XGraphics.FromPdfPage(page))
@@ -279,9 +278,9 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         document.Info.Title = report.Title;
         document.Info.Subject = "Non-fiscal finance report";
         document.Info.Author = "ELEVANT";
-        var body = new XFont(Typeface, 8, XFontStyleEx.Regular);
-        var caption = new XFont(Typeface, 8, XFontStyleEx.Regular);
-        var heading = new XFont(Typeface, 16, XFontStyleEx.Regular);
+        var body = ElevantPdfFonts.Regular(8);
+        var caption = ElevantPdfFonts.Regular(8);
+        var heading = ElevantPdfFonts.Regular(16);
         var generatedAt = DateTimeOffset.UtcNow;
         var columns = report.Columns.Count == 0 ? 1 : report.Columns.Count;
         var rowIndex = 0;

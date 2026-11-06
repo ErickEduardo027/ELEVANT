@@ -83,6 +83,18 @@ import {
   type WithdrawContractVersionCommand,
 } from "./contractDocuments";
 import {
+  AIRLINE_PERMIT_KINDS,
+  AIRLINE_PERMIT_REVIEWS,
+  isAirlinePermit,
+  isAirlinePermitDecision,
+  isAirlinePortalStanding,
+  normalizedPermitReview,
+  normalizedPermitRevocation,
+  type AirlinePermitReview,
+  type ReviewAirlinePermitCommand,
+  type RevokeAirlinePermitCommand,
+} from "./airlinePermits";
+import {
   isCommercialAccountResponse,
   isEmailOutboxPage,
   isInvoiceEmailStatus,
@@ -266,6 +278,10 @@ import {
   getGetContractDocumentUrl,
   getGetAirlinePermitsUrl,
   getSubmitAirlinePermitUrl,
+  getGetContractsAirlinePermitsUrl,
+  getReviewAirlinePermitUrl,
+  getRevokeAirlinePermitUrl,
+  getGetAirlinePortalStandingUrl,
   getGetContractTimelineUrl,
   getUploadCommercialMediaUrl,
   getDownloadContractDocumentUrl,
@@ -423,6 +439,8 @@ import {
   type ImportOccFlightResponse,
   type ContractDocumentResponse,
   type AirlinePermitData,
+  type AirlinePermitDecisionData,
+  type AirlinePortalStandingResponse,
   type SubmitAirlinePermitInput,
   type ContractTimelineData,
   type SignContractRequest,
@@ -1210,7 +1228,30 @@ export interface ElevantApiClient {
   downloadContractDraftPdf(versionId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
   /** Permit dossier of the portal user's airline (ADR-0024). */
   getAirlinePermits(options?: GetHumanResourcesReportOptions): Promise<AirlinePermitData[]>;
-  submitAirlinePermit(input: SubmitAirlinePermitInput, options?: GetHumanResourcesReportOptions): Promise<AirlinePermitData>;
+  /**
+   * The airline submits a permit with the intent's Idempotency-Key (optional while older portals exist, 2-N09): a
+   * retry with the same key and body answers the permit the first attempt created. A scan uploaded before the media
+   * link window answers `document_expired` (2-N37).
+   */
+  submitAirlinePermit(input: SubmitAirlinePermitInput, idempotencyKey?: string | null,
+    options?: GetHumanResourcesReportOptions): Promise<AirlinePermitData>;
+  /** Every permit for Contratos (`contracts.permits.read`), optionally of one review state. */
+  getContractsAirlinePermits(review?: AirlinePermitReview | null,
+    options?: GetHumanResourcesReportOptions): Promise<AirlinePermitData[]>;
+  /**
+   * Contratos verifies or rejects a submitted permit with the version on screen (`review_closed` otherwise). Answers
+   * the permit and the contracts the review activated or resumed (2-N30).
+   */
+  reviewAirlinePermit(permitId: string, command: ReviewAirlinePermitCommand, idempotencyKey?: string | null,
+    options?: GetHumanResourcesReportOptions): Promise<AirlinePermitDecisionData>;
+  /**
+   * Contratos revokes a verified permit with a reason (2-N09): the active contracts left without a usable operating
+   * permit are suspended at once and named in the answer.
+   */
+  revokeAirlinePermit(permitId: string, command: RevokeAirlinePermitCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<AirlinePermitDecisionData>;
+  /** Where the session's airline stands: historical stations, read-only and what each contract waits for (2-N32). */
+  getAirlinePortalStanding(options?: GetHumanResourcesReportOptions): Promise<AirlinePortalStandingResponse>;
   /** Uploads the scanned permit (PDF, JPG or PNG, up to 8 MB) and returns its private media URL. */
   uploadAirlinePermitDocument(file: Blob, options?: GetHumanResourcesReportOptions): Promise<string>;
   /** History of the contract of a version, oldest first (request, Finance, signatures, permits, status). */
@@ -2968,20 +3009,8 @@ function isRefreshOccFlightFeed(value: unknown): value is RefreshOccFlightFeedRe
 
 const CONTRACT_PARTIES = new Set<string>(["Aviam", "Airline"]);
 
-const PERMIT_KINDS = ["OperatingPermit", "AirOperatorCertificate", "Insurance", "Other"];
-
-function isAirlinePermit(value: unknown): value is AirlinePermitData {
-  return isRecord(value) && typeof value.id === "string" && typeof value.airline === "string" &&
-    typeof value.kind === "string" && PERMIT_KINDS.includes(value.kind) && typeof value.number === "string" &&
-    typeof value.issuer === "string" && isDateOnly(value.issuedOn) && isDateOnly(value.expiresOn) &&
-    ["Current", "Expiring", "Expired"].includes(value.validity as string) &&
-    ["Submitted", "Verified", "Rejected"].includes(value.review as string) &&
-    isOptionalNullable(value.reviewNote, isString) && isOptionalNullable(value.documentUrl, isString) &&
-    typeof value.version === "string";
-}
-
 function validatedPermitInput(input: SubmitAirlinePermitInput): SubmitAirlinePermitInput {
-  if (!isRecord(input) || !PERMIT_KINDS.includes(input.kind) || !isNonEmptyString(input.number) || input.number.trim().length > 60 ||
+  if (!isRecord(input) || !(AIRLINE_PERMIT_KINDS as readonly string[]).includes(input.kind) || !isNonEmptyString(input.number) || input.number.trim().length > 60 ||
       !isNonEmptyString(input.issuer) || input.issuer.trim().length > 120 || !isDateOnly(input.issuedOn) ||
       !isDateOnly(input.expiresOn) || input.expiresOn < input.issuedOn ||
       input.documentUrl != null && !/^\/api\/v1\/media\/[0-9a-f-]{36}$/i.test(input.documentUrl))
@@ -7108,13 +7137,52 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!Array.isArray(result.data) || !result.data.every(isAirlinePermit)) throw malformedResponse(result.status);
       return result.data;
     },
-    async submitAirlinePermit(input: SubmitAirlinePermitInput, options?: GetHumanResourcesReportOptions) {
-      const result = await execute(getSubmitAirlinePermitUrl(), {
-        ...options, method: "POST",
-        headers: { ...Object.fromEntries(headersFrom(options?.headers, "Request headers")), "content-type": "application/json" },
-        body: JSON.stringify(validatedPermitInput(input)),
-      }, true);
-      if (!isAirlinePermit(result.data)) throw malformedResponse(result.status);
+    async submitAirlinePermit(input: SubmitAirlinePermitInput, idempotencyKey?: string | null,
+      options?: GetHumanResourcesReportOptions) {
+      const body = validatedPermitInput(input);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getSubmitAirlinePermitUrl(), { ...options, method: "POST", headers,
+        body: JSON.stringify(body) }, true);
+      if (result.status !== 201 || !isAirlinePermit(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getContractsAirlinePermits(review?: AirlinePermitReview | null, options?: GetHumanResourcesReportOptions) {
+      if (review != null && !(AIRLINE_PERMIT_REVIEWS as readonly string[]).includes(review))
+        throw new TypeError("review must be Submitted, Verified, Rejected or Revoked.");
+      const result = await execute(getGetContractsAirlinePermitsUrl(review == null ? undefined : { review }),
+        { ...options, method: "GET" }, true);
+      if (!Array.isArray(result.data) || !result.data.every(isAirlinePermit) ||
+          review != null && !result.data.every(permit => permit.review === review)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async reviewAirlinePermit(permitId: string, command: ReviewAirlinePermitCommand, idempotencyKey?: string | null,
+      options?: GetHumanResourcesReportOptions) {
+      const permit = validatedUuid(permitId, "permitId");
+      const body = normalizedPermitReview(command);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getReviewAirlinePermitUrl(permit), { ...options, method: "POST", headers,
+        body: JSON.stringify(body) }, true);
+      // A replay answers the permit as it is now: a verification revoked later reads Revoked.
+      if (result.status !== 200 || !isAirlinePermitDecision(result.data, permit) ||
+          result.data.review !== (body.verified ? "Verified" : "Rejected") && result.data.review !== "Revoked")
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async revokeAirlinePermit(permitId: string, command: RevokeAirlinePermitCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const permit = validatedUuid(permitId, "permitId");
+      const revoked = await catalogCommand("POST", getRevokeAirlinePermitUrl(permit), normalizedPermitRevocation(command),
+        idempotencyKey, options, (value): value is AirlinePermitDecisionData => isAirlinePermitDecision(value, permit));
+      if (revoked.review !== "Revoked") throw malformedResponse(200);
+      return revoked;
+    },
+    async getAirlinePortalStanding(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getGetAirlinePortalStandingUrl(), { ...options, method: "GET" }, true);
+      if (!isAirlinePortalStanding(result.data)) throw malformedResponse(result.status);
       return result.data;
     },
     async uploadAirlinePermitDocument(file: Blob, options?: GetHumanResourcesReportOptions) {

@@ -5,6 +5,7 @@ import { call, expectCall, login } from "./support/api";
 import { drawSignature, goPrivate, loginPortal, loginPrivate, openModule, snap } from "./support/browser";
 import { API, loadRun, PUBLIC_WEB, saveRun, SHOTS_DIR } from "./support/env";
 import { attachment, waitForEmail } from "./support/mailpit";
+import { pdfFonts, pdfText } from "./support/pdf";
 
 // Fase 2 · Pre-operación: Contratos fixes the validity, the airline and AVIAM sign with a drawn
 // signature, the airline submits its JAC permit and Contratos verifies it, so the contract becomes
@@ -102,7 +103,8 @@ test.beforeAll(async () => {
 test.afterEach(async ({ page }) => { await page.unrouteAll({ behavior: "ignoreErrors" }); });
 
 test("Contratos fija la vigencia y la renovación del contrato aprobado", async ({ page }) => {
-  const { contract, version } = contractOf();
+  const { run, contract, version } = contractOf();
+  const representative = run.representative as { email: string };
   await loginPrivate(page, "contracts");
   const drawer = await openContractDetail(page, contract.airline, version.versionNumber);
   const confirmed = drawer.getByRole("heading", { name: "Vigencia y renovación confirmadas" });
@@ -117,9 +119,13 @@ test("Contratos fija la vigencia y la renovación del contrato aprobado", async 
     await validity.getByRole("combobox", { name: /^Renovación/ }).selectOption("Manual");
     await validity.getByLabel("Condiciones de terminación")
       .fill("Incumplimiento grave de pago o de las normas de seguridad en rampa. Corrida E2E.");
+    const since = Date.now();
     await validity.getByRole("button", { name: "Confirmar vigencia" }).click();
     await expect(confirmed).toBeVisible();
     await snap(page, "fase2-contratos-vigencia");
+    // Hueco 2-N13: the airline learns by email that it can sign, when the validity is fixed.
+    const ready = await waitForEmail(representative.email, /listo para firmar/, since);
+    expect(ready.text).toContain("Entra al portal de aerolíneas");
   }
 
   const token = await login("contracts");
@@ -218,7 +224,8 @@ test("Contratos verifica el permiso y el contrato queda activo con el PDF firmad
   fs.mkdirSync(SHOTS_DIR, { recursive: true });
   fs.writeFileSync(path.join(SHOTS_DIR, `contrato-${active!.code}-firmado.pdf`), pdf);
   await openModule(page, /^Contratos$/);
-  await expect(page.locator("article").filter({ hasText: contract.airline }).first()).toContainText("Active");
+  // Hueco 2-N26: the status reads in Spanish, never its code.
+  await expect(page.locator("article").filter({ hasText: contract.airline }).first()).toContainText("Activo");
   await snap(page, "fase2-contratos-activo");
 });
 
@@ -394,7 +401,36 @@ test("hueco 2-C · una renovación aprobada por Finanzas no cambia precios hasta
   expect(after.approvedVersions.find(item => item.id === inForce.id)).toMatchObject({ status: "Superseded", validTo: dayBefore });
   expect(after.status, "the contract stays active").toBe("Active");
 });
-test.fixme("hueco 2-D · los PDF de Finanzas, Gestión Humana y OCC muestran las tildes", async () => {});
+test("hueco 2-D · los PDF de Finanzas, Gestión Humana y OCC muestran las tildes", async () => {
+  const { version } = contractOf();
+  const station = version.stations.find(item => item.code === "PUJ")!;
+  const day = businessDay();
+  const reports = [
+    { who: "occ" as const, name: "OCC", route: `/occ/reports/operations/export?stationId=${station.id}&from=${day}&to=${day}&format=pdf`,
+      words: ["Operaciones del período", "Aerolínea", "Página 1"] },
+    { who: "hr" as const, name: "Gestión Humana",
+      route: `/human-resources/reports/staff-distribution/export?stationId=${station.id}&from=${day}&to=${day}&format=pdf`,
+      words: ["GESTIÓN HUMANA", "Página 1"] },
+    { who: "finance" as const, name: "Finanzas", route: `/finance/reports/receivables/export?format=pdf&from=${day}&to=${day}`,
+      words: ["Cuentas por cobrar y antigüedad", "Pág. 1"] },
+  ];
+  fs.mkdirSync(SHOTS_DIR, { recursive: true });
+  for (const report of reports) {
+    const result = await expectCall<Buffer>(200, await login(report.who), "GET", report.route);
+    const pdf = result.data;
+    expect(pdf.subarray(0, 5).toString("latin1"), report.name).toBe("%PDF-");
+    fs.writeFileSync(path.join(SHOTS_DIR, `hueco-2d-${report.who}.pdf`), pdf);
+    // Unicode Type0 fonts with the complete Noto Sans faces: a WinAnsi subset loses the accent components.
+    const fonts = pdfFonts(pdf);
+    expect(fonts.subtypes, report.name).toContain("Type0");
+    expect(fonts.subtypes, report.name).not.toContain("TrueType");
+    expect(fonts.encodings.every(encoding => encoding === "Identity-H"), report.name).toBe(true);
+    expect(fonts.fontFileLengths.length, report.name).toBeGreaterThan(0);
+    expect(fonts.fontFileLengths.every(length => length > 400_000), `${report.name}: complete font file`).toBe(true);
+    const text = pdfText(pdf);
+    for (const word of report.words) expect(text, `${report.name}: «${word}»`).toContain(word);
+  }
+});
 test.fixme("hueco 2-E · OCC y Gestión Humana muestran el usuario de la sesión, no el de ejemplo", async () => {});
 test("hueco 2-F · el día de los contratos sigue el calendario de República Dominicana, no UTC", async ({ page }) => {
   const { run, version } = contractOf();

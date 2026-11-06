@@ -157,11 +157,15 @@ it("derives overview counts from the authorized API operations instead of protot
     { ...bootstrap.currentOperations[0], id: "30000000-0000-7000-8000-000000000005", code: "DEV-TAT-0004", status: "Approved" },
   ];
   render(<AirlinePortalPage view="overview" />);
-  expect(within(screen.getByText("Operaciones visibles").parentElement!).getByText("3")).toBeInTheDocument();
-  expect(within(screen.getByText("En curso").parentElement!).getByText("1")).toBeInTheDocument();
-  expect(within(screen.getByText("En revisión").parentElement!).getByText("1")).toBeInTheDocument();
-  expect(within(screen.getByText("Aprobadas").parentElement!).getByText("1")).toBeInTheDocument();
+  const metrics = within(screen.getByLabelText("Estado de las operaciones visibles"));
+  expect(within(metrics.getByText("Operaciones visibles").parentElement!).getByText("3")).toBeInTheDocument();
+  expect(within(metrics.getByText("En curso").parentElement!).getByText("1")).toBeInTheDocument();
+  expect(within(metrics.getByText("En revisión").parentElement!).getByText("1")).toBeInTheDocument();
+  expect(within(metrics.getByText("Aprobadas").parentElement!).getByText("1")).toBeInTheDocument();
   expect(screen.queryByText("EV 311")).not.toBeInTheDocument();
+  // 2-N26: each operation shows its status in Spanish, never the code.
+  expect(screen.getByText("Pendiente de revisión")).toBeInTheDocument();
+  expect(screen.queryByText(/in_progress|PendingReview/)).not.toBeInTheDocument();
 });
 
 it("filters only authorized flights by operation code or flight number", async () => {

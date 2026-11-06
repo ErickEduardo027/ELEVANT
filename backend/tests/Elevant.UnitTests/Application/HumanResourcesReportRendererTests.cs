@@ -80,7 +80,7 @@ public sealed class HumanResourcesReportRendererTests
         using var measureDocument = new PdfDocument();
         var measurePage = measureDocument.AddPage();
         using var graphics = XGraphics.FromPdfPage(measurePage);
-        var font = new XFont(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Regular);
+        var font = ElevantPdfFonts.Regular(8);
         var name = string.Concat(Enumerable.Repeat("NombreCompletoDeAgente", 80));
         var lines = HumanResourcesReportPdfRenderer.WrapCellText(graphics, name, font, 100);
         Assert.True(lines.Count > 40);

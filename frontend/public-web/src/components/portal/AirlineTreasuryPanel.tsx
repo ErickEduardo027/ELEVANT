@@ -3,6 +3,7 @@
 import { useEffect, useId, useState } from "react";
 import { ElevantApiError } from "@elevant/api-client";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import type { AirlineTreasuryStatement, AirlineTreasuryInvoiceDetail, AirlineTreasuryReceipt, AirlineTreasuryNote } from "@/lib/airline-treasury-service";
 import styles from "./AirlinePortalPage.module.css";
 
@@ -16,6 +17,9 @@ type Snapshot = { key: string; data: Data | null; error: string };
 /** Customer finance projection: navigation and dated reads only. */
 export function AirlineTreasuryPanel({ invoiceId }: { invoiceId?: string }) {
   const { status, session, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, financeRevision } = useAirlineSession();
+  const { standing } = useAirlineStanding();
+  // 2-N32: invoices keep their stations after a contract is suspended or expires; the filter offers them all.
+  const stationOptions = standing.status === "ready" ? standing.data.stations : session?.bootstrap.stations ?? [];
   const [date, setDate] = useState(today); const [station, setStation] = useState("");
   const [query, setQuery] = useState(() => ({ asOf: today(), stationId: "" }));
   const [selectedInvoice, setSelectedInvoice] = useState<string | null>(null);
@@ -67,7 +71,7 @@ export function AirlineTreasuryPanel({ invoiceId }: { invoiceId?: string }) {
       {(receiptId || selectedInvoice) && <button type="button" className={styles.loadMore} onClick={() => { if (receiptId) setSelectedReceipt(null); else setSelectedInvoice(null); }}>Volver</button>}</div>
     {mode === "statement" && <form className={styles.disputeForm} onSubmit={event => { event.preventDefault(); if (date && date <= today()) setQuery({ asOf: date, stationId: station }); }}>
       <label>Fecha de corte<input required type="date" value={date} max={today()} onChange={event => setDate(event.target.value)} /></label>
-      <label>Estación<select value={station} onChange={event => setStation(event.target.value)}><option value="">Todas las estaciones autorizadas</option>{session?.bootstrap.stations.map(s => <option key={s.id} value={s.id}>{s.code}</option>)}</select></label>
+      <label>Estación<select value={station} onChange={event => setStation(event.target.value)}><option value="">Todas las estaciones autorizadas</option>{stationOptions.map(s => <option key={s.id} value={s.id}>{s.code}</option>)}</select></label>
       <button type="submit" className={styles.loadMore}>Consultar estado</button>
     </form>}
     {!live && <p role="status">Cargando estado financiero…</p>}

@@ -7,14 +7,10 @@ import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { contractLifecycleMessage } from '../../../services/commercialProblems';
 import { isConflict } from '../../../services/problemMessages';
 import { amendmentProblemMessage } from '../drafts/draftProblemMessages';
+import { CONTRACT_STATUS } from '../contractStatus';
 
-export const CONTRACT_STATUS = {
-  Draft: { label: 'Pendiente de firmas y permiso', tone: 'warning' },
-  Active: { label: 'Activo', tone: 'success' },
-  Suspended: { label: 'Suspendido', tone: 'danger' },
-  Terminated: { label: 'Terminado', tone: 'neutral' },
-  Expired: { label: 'Vencido', tone: 'neutral' },
-};
+// 2-N26: one Spanish map of contract statuses for every Contratos screen.
+export { CONTRACT_STATUS };
 const ACTIONS = {
   Suspend: { label: 'Suspender', from: ['Active'], danger: true },
   Reactivate: { label: 'Reactivar', from: ['Suspended'] },

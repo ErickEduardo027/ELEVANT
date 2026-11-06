@@ -63,6 +63,18 @@ public enum EmailPurpose
     PaymentReceived,
     /// <summary>Approval, rejection or cancellation of a public commercial request, sent to its applicant.</summary>
     CommercialDecision,
+    /// <summary>Contratos confirmed the validity of a version: the airline can review and sign it (2-N13).</summary>
+    ContractReadyToSign,
+    /// <summary>Contratos rejected a permit of the airline dossier, with its note (2-N13).</summary>
+    PermitRejected,
+    /// <summary>Contratos revoked the verification of a permit, with its reason (2-N09).</summary>
+    PermitRevoked,
+    /// <summary>A verified permit expires within the notice days (2-N12).</summary>
+    PermitExpiring,
+    /// <summary>The contract ends within the notice days its version signed (2-N12).</summary>
+    ContractExpiring,
+    /// <summary>The contract was suspended by Contratos or for lack of a usable operating permit (2-N12).</summary>
+    ContractSuspended,
 }
 
 /// <summary>Delivery state of an email in the outbox.</summary>

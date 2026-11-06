@@ -68,3 +68,15 @@ it('distinguishes permission denial from a recoverable transport failure', async
   expect(await screen.findByRole('alert')).toHaveTextContent('No se pudieron consultar');
   expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
 });
+it('shows the contract status and the billing unit in Spanish, never their codes (2-N26)', async () => {
+  getManagedContracts.mockResolvedValue({ page: 1, limit: 20, hasMore: false,
+    contracts: [agreement, { ...agreement, id: 'contract-two', code: 'CTR-2026-2', status: 'Draft' }] });
+  const { unmount } = render(<ManagedAgreementsPage mode="contracts" />);
+  expect(await screen.findByText('SY · Activo')).toBeInTheDocument();
+  expect(screen.getByText('SY · Pendiente de firmas y permiso')).toBeInTheDocument();
+  expect(screen.queryByText(/· Active|· Draft/)).not.toBeInTheDocument();
+  unmount();
+  render(<ManagedAgreementsPage mode="services" />);
+  expect(await screen.findAllByText(/Por operación · mínimo 1/)).not.toHaveLength(0);
+  expect(screen.queryByText(/Por operation/)).not.toBeInTheDocument();
+});

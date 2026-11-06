@@ -8,6 +8,7 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import type { AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
 import { invoiceStatus, invoiceTitle } from "./AirlineFinancePage";
 import styles from "./AirlinePortalPage.module.css";
+import { operationStatusLabel } from "@/lib/operation-status";
 
 type ReportSnapshot = {
   revision: string;
@@ -69,7 +70,7 @@ export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
           {visible.operations.operations.map(operation => <li key={operation.id}>
             <span className={styles.kicker}>{operation.stationCode} · {operation.operationDate}</span>
             <strong><Link href={`/portal/vuelos/${encodeURIComponent(operation.id)}`}>{operation.code}</Link></strong>
-            <p>Estado: {operation.status}</p>
+            <p>Estado: {operationStatusLabel(operation.status)}</p>
           </li>)}
         </ul> : <p className={styles.empty}>No hay operaciones registradas para esta aerolínea.</p>}
         {visible.operations.hasMore && <p className={styles.scopeLine}>Hay más operaciones en el historial de vuelos.</p>}
