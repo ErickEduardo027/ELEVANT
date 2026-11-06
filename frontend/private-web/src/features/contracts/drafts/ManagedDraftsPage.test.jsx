@@ -105,6 +105,27 @@ it('submits to Finance without promising an activation the approval does not do 
   expect(await screen.findByText(/Contrato enviado a Finanzas para aprobar los precios/)).toBeInTheDocument();
 });
 
+it.each([
+  ['Active', /reemplaza a la vigente desde el 1 de octubre de 2026: el contrato ya está activo, así que los precios nuevos se aplican desde esa fecha sin esperar firmas ni otra activación/],
+  ['Suspended', /reemplaza a la vigente desde el 1 de octubre de 2026; el contrato sigue suspendido y los precios nuevos se aplican cuando se reactive/],
+])('explains that the amendment of a %s contract replaces the version in force once approved (1-F)', async (status, text) => {
+  // An amendment (1-C) or a renewal of a contract in force: draft.status is the status of the contract.
+  getManagedDrafts.mockResolvedValue([draft({ status })]);
+  getContractDraftReadiness.mockResolvedValue(readiness());
+  await open();
+  const submit = screen.getByRole('button', { name: 'Enviar a Finanzas' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await userEvent.click(submit);
+  const dialog = screen.getByRole('alertdialog');
+  expect(within(dialog).getByText(text)).toBeInTheDocument();
+  // Nothing «activates» again: there is no pending signature, validity or permit step to wait for.
+  expect(within(dialog).queryByText(/entonces el contrato se activa/)).not.toBeInTheDocument();
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Enviar' }));
+  const notice = await screen.findByText(/Contrato enviado a Finanzas para aprobar los precios/);
+  expect(notice).toHaveTextContent(text);
+  expect(notice).not.toHaveTextContent(/firman la aerolínea y AVIAM/);
+});
+
 it('offers the active units Finance maintains, saves the unit code and lists a retired package (1-E, 1-N27)', async () => {
   commercialApi.mockImplementation(async path => (path === '/finance/billing-units'
     ? [{ code: 'operation', name: 'Operación', isActive: true }, { code: 'hour', name: 'Hora', isActive: true },

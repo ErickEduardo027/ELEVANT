@@ -252,9 +252,10 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
     /// <summary>
     /// 1-C: a new Draft from the latest approved version with «Vigente desde» after its start and not
     /// after its end, which it inherits. Rates are copied unconfirmed (units as codes, 1-E), with the
-    /// stations, the negotiated charges and the packages. The status the user saw is the token
-    /// (the same one the contract lifecycle uses); the serializable transaction re-checks that no
-    /// other draft is in progress.
+    /// stations, the negotiated charges and the packages; the actor's station scope covers both the
+    /// version in the route and the approved version copied, otherwise the contract is not found. The
+    /// status the user saw is the token (the same one the contract lifecycle uses); the serializable
+    /// transaction re-checks that no other draft is in progress.
     /// </summary>
     public async Task<PackageWriteResult> CreateAmendmentAsync(Guid actorId, Guid versionId, Guid idempotencyKey,
         CreateAmendmentInput input, CancellationToken cancellationToken = default)
@@ -271,14 +272,19 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             var route = await context.ContractVersions.AsNoTracking().SingleOrDefaultAsync(x => x.PublicId == versionId, cancellationToken);
             if (route is null || !await ContractInScopeAsync(actorId, route.Id, cancellationToken)) return PackageWriteResult.Fail("not_found");
             var contract = await context.Contracts.SingleAsync(x => x.Id == route.ContractId, cancellationToken);
+            var source = await context.ContractVersions.AsNoTracking()
+                .Where(x => x.ContractId == contract.Id && x.Status == ContractVersionStatus.Approved)
+                .OrderByDescending(x => x.ValidFrom).ThenByDescending(x => x.VersionNumber).FirstOrDefaultAsync(cancellationToken);
+            // The amendment copies the stations, rates, charges and packages of that approved version, which may
+            // cover stations the route version does not (a renewal or a draft scope can add them): the actor's
+            // station scope must cover the version copied, before anything about the contract is answered.
+            if (source is not null && !await ContractInScopeAsync(actorId, source.Id, cancellationToken))
+                return PackageWriteResult.Fail("not_found");
             if (contract.Status != expected) return PackageWriteResult.Fail("version_conflict");
             if (!ContractAmendment.CanAmend(contract.Status)) return PackageWriteResult.Fail(ContractAmendmentIssues.ContractNotAmendable);
             if (await context.ContractVersions.AnyAsync(x => x.ContractId == contract.Id &&
                     (x.Status == ContractVersionStatus.Draft || x.Status == ContractVersionStatus.PendingFinanceApproval), cancellationToken))
                 return PackageWriteResult.Fail(ContractAmendmentIssues.DraftInProgress);
-            var source = await context.ContractVersions.AsNoTracking()
-                .Where(x => x.ContractId == contract.Id && x.Status == ContractVersionStatus.Approved)
-                .OrderByDescending(x => x.ValidFrom).ThenByDescending(x => x.VersionNumber).FirstOrDefaultAsync(cancellationToken);
             if (source is null) return PackageWriteResult.Fail(ContractAmendmentIssues.NoApprovedVersion);
             if (ContractAmendment.StartIssue(input.ValidFrom, source.ValidFrom, source.ValidTo) is { } issue)
                 return PackageWriteResult.Fail(issue);

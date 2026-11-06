@@ -1116,6 +1116,7 @@ export interface ContractApprovalSummaryData {
   ratesBelowBase: number;
   ratesWithoutBase: number;
   version: string;
+  contractStatus: string;
 }
 
 export interface ContractRateComparisonData {

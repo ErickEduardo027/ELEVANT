@@ -41,7 +41,7 @@ internal sealed partial class EfFinanceTariffBookStore
     };
 
     public async Task<FinanceCatalogResult> SaveChargeAsync(Guid actorId, Guid? chargeId, SaveChargeDefinitionInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, chargeId is null ? "finance.charges.create" : "finance.charges.update", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
@@ -60,19 +60,21 @@ internal sealed partial class EfFinanceTariffBookStore
         var requestedUnit = string.IsNullOrWhiteSpace(input.BillingUnit) ? null : input.BillingUnit.Trim();
         if (method == ChargeCalculationMethod.PerUnit && requestedUnit is null)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "billing_unit_required");
-        // 1-E: the charge keeps the code of an active unit; a unit name is saved as its code.
-        var unit = requestedUnit is null ? null
-            : (await BillingUnitCodes.LoadAsync(context, cancellationToken)).Resolve(requestedUnit);
-        if (requestedUnit is not null && unit is null)
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "billing_unit_unknown");
         var serviceIds = input.AppliesToAllServices ? [] : input.ServiceIds!.Distinct().ToArray();
-        var services = await context.ServiceDefinitions.AsNoTracking().Where(service => serviceIds.Contains(service.PublicId))
-            .Select(service => service.Id).ToArrayAsync(cancellationToken);
-        if (services.Length != serviceIds.Length)
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "service_not_found");
 
-        return await InTransactionAsync(async () =>
+        // The unit and the services are checked after the receipt: a retry replays even if they changed.
+        return await CommandAsync(actor, idempotencyKey, chargeId is null ? "finance.charge.create" : "finance.charge.update",
+            new { chargeId, input = input with { Code = code, BillingUnit = requestedUnit } }, async () =>
         {
+            // 1-E: the charge keeps the code of an active unit; a unit name is saved as its code.
+            var unit = requestedUnit is null ? null
+                : (await BillingUnitCodes.LoadAsync(context, cancellationToken)).Resolve(requestedUnit);
+            if (requestedUnit is not null && unit is null)
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "billing_unit_unknown");
+            var services = await context.ServiceDefinitions.AsNoTracking().Where(service => serviceIds.Contains(service.PublicId))
+                .Select(service => service.Id).ToArrayAsync(cancellationToken);
+            if (services.Length != serviceIds.Length)
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "service_not_found");
             var now = timeProvider.GetUtcNow();
             ChargeDefinition? charge;
             string? before = null;
@@ -162,13 +164,14 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     public async Task<FinanceCatalogResult> CreateChargeTariffDraftAsync(Guid actorId, CreateTariffDraftInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.charges.create", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || !ValidCurrency(input.CurrencyCode) || input.ValidFrom == default || input.Note?.Length > 500)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
-        return await InTransactionAsync(async () =>
+        return await CommandAsync(actor, idempotencyKey, "finance.charge_tariff.create",
+            new { input.CurrencyCode, input.ValidFrom, note = input.Note?.Trim(), input.CopyFromVersionId }, async () =>
         {
             var now = timeProvider.GetUtcNow();
             if (await context.ChargeTariffVersions.AnyAsync(version => version.CurrencyCode == input.CurrencyCode &&
@@ -214,7 +217,7 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     public async Task<FinanceCatalogResult> SaveChargeTariffDraftAsync(Guid actorId, Guid versionId,
-        SaveChargeTariffDraftInput input, CancellationToken cancellationToken = default)
+        SaveChargeTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.charges.update", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
@@ -223,16 +226,20 @@ internal sealed partial class EfFinanceTariffBookStore
             input.Rates.Any(rate => rate.Value is < 0 or > 900_000_000m || rate.MinimumAmount is < 0 or > 900_000_000m) ||
             input.Rates.Select(rate => rate.ChargeId).Distinct().Count() != input.Rates.Count)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
-        var chargeIds = input.Rates.Select(rate => rate.ChargeId).ToArray();
-        var charges = await context.ChargeDefinitions.AsNoTracking().Where(charge => chargeIds.Contains(charge.PublicId))
-            .ToDictionaryAsync(charge => charge.PublicId, cancellationToken);
-        if (charges.Count != chargeIds.Length)
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "charge_not_found");
-        if (input.Rates.Any(rate => charges[rate.ChargeId].Method == ChargeCalculationMethod.PercentOfService && rate.Value > 1000m))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
 
-        return await InTransactionAsync(async () =>
+        // The charges are checked after the receipt: a retry replays even if the catalog changed.
+        return await CommandAsync(actor, idempotencyKey, "finance.charge_tariff.save",
+            new { versionId, input.ValidFrom, input.ValidTo, note = input.Note?.Trim(), input.Rates, input.ExpectedVersion },
+            async () =>
         {
+            var chargeIds = input.Rates.Select(rate => rate.ChargeId).ToArray();
+            var charges = await context.ChargeDefinitions.AsNoTracking().Where(charge => chargeIds.Contains(charge.PublicId))
+                .ToDictionaryAsync(charge => charge.PublicId, cancellationToken);
+            if (charges.Count != chargeIds.Length)
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "charge_not_found");
+            if (input.Rates.Any(rate => charges[rate.ChargeId].Method == ChargeCalculationMethod.PercentOfService &&
+                    rate.Value > 1000m))
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
             var now = timeProvider.GetUtcNow();
             var draft = await context.ChargeTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
                 cancellationToken);
@@ -261,13 +268,14 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     public async Task<FinanceCatalogResult> PublishChargeTariffAsync(Guid actorId, Guid versionId,
-        string expectedVersion, CancellationToken cancellationToken = default)
+        string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.charges.publish", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (string.IsNullOrWhiteSpace(expectedVersion))
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "expected_version_required");
-        return await InTransactionAsync(async () =>
+        return await CommandAsync(actor, idempotencyKey, "finance.charge_tariff.publish", new { versionId, expectedVersion },
+            async () =>
         {
             var now = timeProvider.GetUtcNow();
             var draft = await context.ChargeTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
@@ -301,11 +309,13 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     public async Task<FinanceCatalogResult> DeleteChargeTariffDraftAsync(Guid actorId, Guid versionId,
-        string expectedVersion, CancellationToken cancellationToken = default)
+        string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.charges.delete", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
-        return await InTransactionAsync(async () =>
+        // A replay answers the id of the draft the first attempt deleted.
+        return await CommandAsync(actor, idempotencyKey, "finance.charge_tariff.delete", new { versionId, expectedVersion },
+            async () =>
         {
             var draft = await context.ChargeTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
                 cancellationToken);

@@ -108,7 +108,11 @@ it('shows a refused action inside its dialog and closes it once the contract mov
   // The contract activated meanwhile: discarding no longer applies, so the dialog closes and the panel explains it.
   await userEvent.click(within(dialog).getByRole('button', { name: 'Confirmar' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-  expect(screen.getByRole('status')).toHaveTextContent('El contrato cambió de estado; se volvió a cargar.');
+  // The refusal is an alert, not a status that reads like a success.
+  const refused = screen.getByRole('alert');
+  expect(refused).toHaveTextContent('El contrato cambió de estado; se volvió a cargar.');
+  expect(refused).toHaveClass('text-status-danger');
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Terminar' })).toBeInTheDocument();
   expect(screen.queryByText('The contract changed.')).not.toBeInTheDocument();
 });
@@ -131,12 +135,15 @@ it('creates an amendment from «Vigente desde» with the status on screen and op
   expect(within(dialog).getByRole('button', { name: 'Crear enmienda' })).toBeDisabled();
   await userEvent.type(start, '2026-09-01');
   await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
-  expect(await screen.findByText(/No se pudo completar la acción/)).toBeInTheDocument();
+  // An uncertain result stays inside the dialog as an alert, so the same intent is retried from there.
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent(/No se pudo completar la acción/);
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
   // The retry of the same intent keeps the date and the Idempotency-Key.
-  await userEvent.click(screen.getByRole('button', { name: 'Crear enmienda' }));
-  expect(within(screen.getByRole('dialog')).getByLabelText('Vigente desde')).toHaveValue('2026-09-01');
-  await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Crear enmienda' }));
+  expect(within(dialog).getByLabelText('Vigente desde')).toHaveValue('2026-09-01');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
   expect(await screen.findByText(/Se creó la enmienda como borrador/)).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent(/Se creó la enmienda como borrador/);
   const [first, second] = createContractAmendment.mock.calls;
   expect(first.slice(0, 2)).toEqual(['v-1', { expectedStatus: 'Active', validFrom: '2026-09-01' }]);
   expect(second[2]).toBe(first[2]);
@@ -146,6 +153,41 @@ it('creates an amendment from «Vigente desde» with the status on screen and op
   expect(onOpenDrafts).toHaveBeenCalled();
 });
 
+it.each([
+  ['valid_from_not_after_current', 409, /debe empezar después del inicio de la versión aprobada vigente/],
+  ['valid_from_after_current_end', 409, /no puede empezar después del fin de la versión aprobada vigente/],
+  ['invalid_amendment', 400, /Indique la fecha de inicio de la enmienda/],
+])('keeps the amendment dialog open with %s next to «Vigente desde» (1-C)', async (code, status, text) => {
+  getContractTimeline.mockResolvedValue(timeline('Active'));
+  createContractAmendment.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status, code }))
+    .mockResolvedValueOnce({ id: 'v-2' });
+  render(<ContractLifecyclePanel versionId="v-1" canAmend
+    currentVersion={{ versionNumber: 1, validFrom: '2026-01-01', validTo: '2026-12-31' }} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Crear enmienda' }));
+  const dialog = screen.getByRole('dialog', { name: 'Crear enmienda del contrato CT-001' });
+  const start = within(dialog).getByLabelText('Vigente desde');
+  // The browser bounds do not stop a typed date: the server refuses it.
+  await userEvent.type(start, '2026-01-01');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
+  const error = await within(dialog).findByRole('alert');
+  expect(error).toHaveTextContent(text);
+  expect(error).toHaveClass('text-status-danger');
+  expect(start).toHaveAttribute('aria-invalid', 'true');
+  expect(start).toHaveAccessibleDescription(text);
+  // Nothing is announced behind the dialog as if it had worked.
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  // Correcting the date clears the error; the corrected date is a new intent with its own key.
+  await userEvent.clear(start);
+  await userEvent.type(start, '2026-09-01');
+  expect(within(dialog).queryByRole('alert')).not.toBeInTheDocument();
+  expect(start).not.toHaveAttribute('aria-invalid');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
+  expect(await screen.findByText(/Se creó la enmienda como borrador/)).toBeInTheDocument();
+  const [first, second] = createContractAmendment.mock.calls;
+  expect(second[1]).toEqual({ expectedStatus: 'Active', validFrom: '2026-09-01' });
+  expect(second[2]).not.toBe(first[2]);
+});
+
 it('explains why an amendment cannot start by its code and offers it only on active or suspended contracts', async () => {
   getContractTimeline.mockResolvedValue(timeline('Suspended'));
   createContractAmendment.mockRejectedValue(Object.assign(new Error('Conflict'), { status: 409, code: 'draft_in_progress' }));
@@ -153,7 +195,13 @@ it('explains why an amendment cannot start by its code and offers it only on act
   await userEvent.click(await screen.findByRole('button', { name: 'Crear enmienda' }));
   await userEvent.type(within(screen.getByRole('dialog')).getByLabelText('Vigente desde'), '2026-09-01');
   await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Crear enmienda' }));
-  expect(await screen.findByText(/ya tiene un borrador en curso/)).toBeInTheDocument();
+  // The dialog cannot fix a draft in progress: it closes and the panel shows the refusal as an alert.
+  const refused = await screen.findByRole('alert');
+  expect(refused).toHaveTextContent(/ya tiene un borrador en curso/);
+  expect(refused).toHaveClass('text-status-danger');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Abrir Borradores' })).not.toBeInTheDocument();
   expect(getContractTimeline).toHaveBeenCalledTimes(2);
   unmount();
   getContractTimeline.mockResolvedValue(timeline('Expired'));

@@ -47,8 +47,9 @@ export const FINANCE_PACKAGE_MESSAGES = Object.freeze({
   not_found: 'La versión ya no está disponible. Actualice la vista.',
 });
 
-/** @param {unknown} error */
-export const financePackageError = error => problemMessage(error, FINANCE_PACKAGE_MESSAGES, {
+/** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
+export const financePackageError = (error, options) => problemMessage(error, FINANCE_PACKAGE_MESSAGES, {
   fallback: 'No se pudo completar la operación de paquetes. Intente de nuevo.',
   forbidden: 'No tiene permiso para realizar esta operación de paquetes.',
+  ...options,
 });

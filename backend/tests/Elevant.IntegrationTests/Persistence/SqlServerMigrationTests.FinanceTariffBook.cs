@@ -34,30 +34,30 @@ public sealed partial class SqlServerMigrationTests
         var usd = Assert.Single((await book.ListServiceTariffsAsync(FinanceAccount, "USD", cancellationToken))!);
         Assert.Equal("Published", usd.Status);
         Assert.Equal(FinanceCatalogFailure.Forbidden, (await book.CreateServiceTariffDraftAsync(ContractsAccount,
-            new CreateTariffDraftInput("USD", new DateOnly(2027, 1, 1), null), cancellationToken)).Failure);
+            new CreateTariffDraftInput("USD", new DateOnly(2027, 1, 1), null), null, cancellationToken)).Failure);
 
         // A copied draft is edited and published; the previous version ends the day before.
         var draft = await book.CreateServiceTariffDraftAsync(FinanceAccount,
-            new CreateTariffDraftInput("USD", new DateOnly(2027, 1, 1), "Tarifa 2027", usd.Id), cancellationToken);
+            new CreateTariffDraftInput("USD", new DateOnly(2027, 1, 1), "Tarifa 2027", usd.Id), null, cancellationToken);
         Assert.True(draft.IsSuccess);
         Assert.Equal(FinanceCatalogFailure.Conflict, (await book.CreateServiceTariffDraftAsync(FinanceAccount,
-            new CreateTariffDraftInput("USD", new DateOnly(2027, 2, 1), null), cancellationToken)).Failure);
+            new CreateTariffDraftInput("USD", new DateOnly(2027, 2, 1), null), null, cancellationToken)).Failure);
         var copied = (await book.GetServiceTariffAsync(FinanceAccount, draft.Id!.Value, cancellationToken))!;
         // 1-E: the seeded base tariff prices the 7 public catalog services besides the two operational ones.
         Assert.Equal(9, copied.Rates.Count);
         Assert.Equal(FinanceCatalogFailure.Invalid, (await book.SaveServiceTariffDraftAsync(FinanceAccount, draft.Id.Value,
             new SaveServiceTariffDraftInput(new DateOnly(2027, 1, 1), null, null,
                 copied.Rates.Select(rate => new ServiceTariffRateInput(rate.ServiceId, null, "free-text-unit",
-                    rate.UnitPrice, 1)).ToArray(), copied.Summary.Version), cancellationToken)).Failure);
+                    rate.UnitPrice, 1)).ToArray(), copied.Summary.Version), null, cancellationToken)).Failure);
         Assert.True((await book.SaveServiceTariffDraftAsync(FinanceAccount, draft.Id.Value,
             new SaveServiceTariffDraftInput(new DateOnly(2027, 1, 1), null, "Tarifa 2027",
                 copied.Rates.Select(rate => new ServiceTariffRateInput(rate.ServiceId, null, rate.BillingUnit,
-                    rate.UnitPrice * 1.1m, 1)).ToArray(), copied.Summary.Version), cancellationToken)).IsSuccess);
+                    rate.UnitPrice * 1.1m, 1)).ToArray(), copied.Summary.Version), null, cancellationToken)).IsSuccess);
         var saved = (await book.GetServiceTariffAsync(FinanceAccount, draft.Id.Value, cancellationToken))!;
         Assert.Equal(FinanceCatalogFailure.Conflict, (await book.PublishServiceTariffAsync(FinanceAccount, draft.Id.Value,
-            copied.Summary.Version, cancellationToken)).Failure);
+            copied.Summary.Version, null, cancellationToken)).Failure);
         Assert.True((await book.PublishServiceTariffAsync(FinanceAccount, draft.Id.Value, saved.Summary.Version,
-            cancellationToken)).IsSuccess);
+            null, cancellationToken)).IsSuccess);
         var versions = (await book.ListServiceTariffsAsync(FinanceAccount, "USD", cancellationToken))!;
         Assert.Equal(["Published", "Superseded"], versions.Select(version => version.Status));
         Assert.Equal(new DateOnly(2026, 12, 31), versions[1].ValidTo);
@@ -65,28 +65,28 @@ public sealed partial class SqlServerMigrationTests
         // Charges: shapes are validated and the catalog is CRUD-editable.
         Assert.Equal(FinanceCatalogFailure.Invalid, (await book.SaveChargeAsync(FinanceAccount, null,
             new SaveChargeDefinitionInput("BAD", "Mal", null, "Surcharge", "PerHour", "One", 0, 0, true, null, false,
-                true, true, null), cancellationToken)).Failure);
+                true, true, null), null, cancellationToken)).Failure);
         var created = await book.SaveChargeAsync(FinanceAccount, null,
             new SaveChargeDefinitionInput("PUSHBACK-EXTRA", "Remolque adicional", null, "AdditionalCharge", "PerUnit",
-                "One", 0, 0, true, null, true, true, true, "unit"), cancellationToken);
+                "One", 0, 0, true, null, true, true, true, "unit"), null, cancellationToken);
         Assert.True(created.IsSuccess);
         Assert.Equal(FinanceCatalogFailure.Conflict, (await book.SaveChargeAsync(FinanceAccount, null,
             new SaveChargeDefinitionInput("pushback-extra", "Duplicado", null, "AdditionalCharge", "FixedAmount", "One",
-                0, 0, true, null, false, true, true, null), cancellationToken)).Failure);
+                0, 0, true, null, false, true, true, null), null, cancellationToken)).Failure);
         var charge = Assert.Single((await book.ListChargesAsync(FinanceAccount, cancellationToken))!,
             item => item.Id == created.Id);
         Assert.True((await book.SaveChargeAsync(FinanceAccount, charge.Id, new SaveChargeDefinitionInput(charge.Code,
             charge.Name, "Desactivado", charge.Category, charge.Method, charge.QuantityRule, 0, 0, true, null, true,
-            false, false, "unit", charge.Version), cancellationToken)).IsSuccess);
+            false, false, "unit", charge.Version), null, cancellationToken)).IsSuccess);
 
         // Exchange rates: one current rate per date; a correction keeps the history.
         Assert.Equal(FinanceCatalogFailure.Conflict, (await book.RecordExchangeRateAsync(FinanceAccount,
             new RecordExchangeRateInput(new DateOnly(2026, 8, 18), "DOP", "USD", 0.017m, "Duplicada"),
-            cancellationToken)).Failure);
+            null, cancellationToken)).Failure);
         var current = Assert.Single((await book.ListExchangeRatesAsync(FinanceAccount, new DateOnly(2026, 8, 1),
             new DateOnly(2026, 8, 31), false, cancellationToken))!);
         Assert.True((await book.CorrectExchangeRateAsync(FinanceAccount, current.Id,
-            new CorrectExchangeRateInput(58.75m, "Banco Central", current.Version), cancellationToken)).IsSuccess);
+            new CorrectExchangeRateInput(58.75m, "Banco Central", current.Version), null, cancellationToken)).IsSuccess);
         var history = (await book.ListExchangeRatesAsync(FinanceAccount, new DateOnly(2026, 8, 1),
             new DateOnly(2026, 8, 31), true, cancellationToken))!;
         Assert.Equal(2, history.Count);
@@ -142,6 +142,8 @@ public sealed partial class SqlServerMigrationTests
         await context.SaveChangesAsync(cancellationToken);
         Assert.Null(await book.ListContractApprovalsAsync(ContractsAccount, true, cancellationToken));
         var detail = (await book.GetContractApprovalAsync(FinanceAccount, version.PublicId, cancellationToken))!;
+        // 1-F: a contract that never activated still needs the validity, the signatures and the permit.
+        Assert.Equal("Draft", detail.Summary.ContractStatus);
         var rate = Assert.Single(detail.Rates);
         Assert.Equal(130m, rate.BasePrice);
         Assert.Equal(-20m, rate.DifferencePercent);

@@ -421,24 +421,24 @@ public sealed class ContractDraftEndpointsTests(ElevantApiFactory factory) : ICl
 
         public Task<IReadOnlyList<FinanceServiceOptionData>?> ListServicesAsync(Guid actorId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<BillingUnitData>?> ListBillingUnitsAsync(Guid actorId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> SaveBillingUnitAsync(Guid actorId, Guid? unitId, SaveBillingUnitInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> SaveBillingUnitAsync(Guid actorId, Guid? unitId, SaveBillingUnitInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<TariffVersionSummaryData>?> ListServiceTariffsAsync(Guid actorId, string? currencyCode, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ServiceTariffVersionData?> GetServiceTariffAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> CreateServiceTariffDraftAsync(Guid actorId, CreateTariffDraftInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> SaveServiceTariffDraftAsync(Guid actorId, Guid versionId, SaveServiceTariffDraftInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> PublishServiceTariffAsync(Guid actorId, Guid versionId, string expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> DeleteServiceTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> CreateServiceTariffDraftAsync(Guid actorId, CreateTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> SaveServiceTariffDraftAsync(Guid actorId, Guid versionId, SaveServiceTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> PublishServiceTariffAsync(Guid actorId, Guid versionId, string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> DeleteServiceTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ChargeDefinitionData>?> ListChargesAsync(Guid actorId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> SaveChargeAsync(Guid actorId, Guid? chargeId, SaveChargeDefinitionInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> SaveChargeAsync(Guid actorId, Guid? chargeId, SaveChargeDefinitionInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<TariffVersionSummaryData>?> ListChargeTariffsAsync(Guid actorId, string? currencyCode, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ChargeTariffVersionData?> GetChargeTariffAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> CreateChargeTariffDraftAsync(Guid actorId, CreateTariffDraftInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> SaveChargeTariffDraftAsync(Guid actorId, Guid versionId, SaveChargeTariffDraftInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> PublishChargeTariffAsync(Guid actorId, Guid versionId, string expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> DeleteChargeTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> CreateChargeTariffDraftAsync(Guid actorId, CreateTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> SaveChargeTariffDraftAsync(Guid actorId, Guid versionId, SaveChargeTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> PublishChargeTariffAsync(Guid actorId, Guid versionId, string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> DeleteChargeTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ExchangeRateData>?> ListExchangeRatesAsync(Guid actorId, DateOnly from, DateOnly to, bool includeHistory, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> RecordExchangeRateAsync(Guid actorId, RecordExchangeRateInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> CorrectExchangeRateAsync(Guid actorId, Guid rateId, CorrectExchangeRateInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> RecordExchangeRateAsync(Guid actorId, RecordExchangeRateInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> CorrectExchangeRateAsync(Guid actorId, Guid rateId, CorrectExchangeRateInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ContractApprovalSummaryData>?> ListContractApprovalsAsync(Guid actorId, bool pendingOnly, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ContractApprovalDetailData?> GetContractApprovalAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }

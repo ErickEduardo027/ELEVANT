@@ -14,14 +14,13 @@ import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { financeContractApprovalMessage } from '../../../services/financeErrors';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { CONTRACT_APPROVAL_STATUS, packageScopeLabel, statusMeta } from '../financeLabels';
+import { financeApprovalEffect } from '../../contracts/approvalEffect';
 
 const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revise la conexión e intente de nuevo.';
 const DETAIL_FAILED = 'No se pudo cargar el contrato. Revise la conexión e intente de nuevo.';
 const DETAIL_FORBIDDEN = 'No tiene permiso para ver este contrato: alguna de sus estaciones no está en su alcance.';
 /** No contract read yet: the detail of a new selection starts here, so the previous one is never shown. */
 const NO_DETAIL = Object.freeze({ versionId: null, detail: null, error: null });
-/** 1-F: approving the prices does not activate the contract; validity, signatures and the permit follow. */
-const APPROVAL_EXPLAINED = 'Los precios quedarán aprobados. Después Contratos confirma la vigencia y la renovación, firman la aerolínea y AVIAM, y Contratos verifica el permiso de operación de la aerolínea: solo entonces el contrato se activa y el OCC puede planificar sus operaciones.';
 
 function Difference({ value }) {
   if (value === null || value === undefined) return <span className="text-xs text-text-secondary-light">Sin tarifa base</span>;
@@ -30,8 +29,9 @@ function Difference({ value }) {
 }
 
 /**
- * Finance reviews the prices of each contract version against the base tariff. Approving them does not
- * activate the contract (ADR-0024): the validity, both signatures and a verified permit come after.
+ * Finance reviews the prices of each contract version against the base tariff. Approving a new or expired contract
+ * does not activate it (ADR-0024): the validity, both signatures and a verified permit come after. An amendment or a
+ * renewal of a contract in force replaces the version in force from its start once approved (1-F).
  */
 export default function ContractApprovalsPage() {
   const { access } = useDepartmentAccess();
@@ -88,6 +88,8 @@ export default function ContractApprovalsPage() {
   }, [selected, items, detailAttempt]);
   const read = selected && detailRead.versionId === selected ? detailRead : null;
   const detail = read?.detail ?? null;
+  // 1-F: what approving does depends on the status of the contract (in force, or still to activate).
+  const effect = detail ? financeApprovalEffect(detail.summary.contractStatus, detail.summary.validFrom) : null;
   function select(versionId) {
     if (versionId === selected) return;
     setSelected(versionId);
@@ -102,13 +104,12 @@ export default function ContractApprovalsPage() {
     event.preventDefault();
     setBusy(true);
     const values = { decision: deciding, reason: reason.trim() || null, expectedVersion: detail.summary.version };
+    const approved = effect.done;
     try {
       // The same key goes with a retry of the same decision after an uncertain result.
       await decideKeys.current.run('decide', { versionId: detail.summary.versionId, ...values },
         key => decideContractApproval(detail.summary.versionId, values, key));
-      setMessage({ tone: 'success', text: deciding === 'Approved'
-        ? 'Precios aprobados. Contratos continúa con la vigencia y las firmas; el contrato se activa después.'
-        : 'Contrato devuelto a Contratos con el motivo.' });
+      setMessage({ tone: 'success', text: deciding === 'Approved' ? approved : 'Contrato devuelto a Contratos con el motivo.' });
       setDeciding(null);
       select(null);
       await load();
@@ -165,7 +166,7 @@ export default function ContractApprovalsPage() {
               <div>
                 <h2 className="text-lg font-bold">{detail.summary.airline} · {detail.summary.contractCode}</h2>
                 <p className="text-xs text-text-secondary-light">{currency} · {detail.summary.validFrom}{detail.summary.validTo ? ` a ${detail.summary.validTo}` : ''} · Estaciones {detail.stations.join(', ') || '—'}</p>
-                <p className="text-xs text-text-secondary-light">Vigencia propuesta, solo lectura: Contratos la confirma después de tu aprobación, junto con la renovación, antes de las firmas.</p>
+                <p className="text-xs text-text-secondary-light">{effect.validity}</p>
               </div>
               <StackedTable>
                 <table className="table-stack w-full min-w-[640px] text-left text-sm">
@@ -213,7 +214,7 @@ export default function ContractApprovalsPage() {
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setDeciding(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="submit" form="contract-decision-form" disabled={busy} className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${deciding === 'Returned' ? 'bg-status-danger' : 'bg-accent-600'}`}>{deciding === 'Approved' ? 'Aprobar precios' : 'Devolver'}</button></div>}>
         <form id="contract-decision-form" onSubmit={decide} className="space-y-3">
-          <p className="text-sm">{deciding === 'Approved' ? APPROVAL_EXPLAINED : 'Contratos verá el motivo y podrá corregir el borrador. La aerolínea solo verá que la versión fue devuelta, sin el motivo.'}</p>
+          <p className="text-sm">{deciding === 'Approved' ? effect?.explained : 'Contratos verá el motivo y podrá corregir el borrador. La aerolínea solo verá que la versión fue devuelta, sin el motivo.'}</p>
           <label className="block text-sm font-semibold">{deciding === 'Approved' ? 'Comentario (opcional)' : 'Motivo'}
             <textarea required={deciding === 'Returned'} minLength={deciding === 'Returned' ? 3 : undefined} maxLength={1000} rows={3} value={reason}
               onChange={event => setReason(event.target.value)} className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark" />

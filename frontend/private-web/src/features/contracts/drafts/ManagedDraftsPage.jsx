@@ -15,6 +15,7 @@ import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { listBillingUnits } from '../../../services/financeBookService';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { DRAFT_PROBLEM_MESSAGES, PORTAL_ACCOUNT_LABELS, READINESS_CHECKS, draftProblemMessage } from './draftProblemMessages';
+import { afterFinanceApproval } from '../approvalEffect';
 
 const LOAD_FAILED = 'No se pudieron cargar los borradores. Revise la conexión e intente de nuevo.';
 // Comments, scope and discards (contract_drafts) and Finance decisions (contract_approvals) re-read the list.
@@ -26,8 +27,6 @@ const VERSION_STATUS = {
   Draft: 'Borrador',
   PendingFinanceApproval: 'Pendiente de aprobación de Finanzas',
 };
-/** 1-F: Finance approves prices; the contract activates later, after the validity, both signatures and the permit. */
-const AFTER_FINANCE = 'Tras la aprobación de precios, Contratos fija la vigencia, firman la aerolínea y AVIAM y se verifica el permiso de operación; entonces el contrato se activa.';
 /**
  * 409 codes after which the draft on screen is stale: it changed or moved on, so the editor drops its edits
  * and reads it again before a new attempt. Any other 409 is a rule the server refused (package_not_eligible,
@@ -159,6 +158,8 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
   const scopeKeys = useRef(createCommandKeyHolder());
   const discardKeys = useRef(createCommandKeyHolder());
   const replyKeys = useRef(createCommandKeyHolder());
+  // 1-F: an amendment or a renewal of a contract in force replaces the version in force; a new contract activates later.
+  const afterFinance = afterFinanceApproval(draft.status, draft.validFrom);
 
   /**
    * Sends one command of the editor. `intent` names it for its Idempotency-Key; with `command` the body is
@@ -210,7 +211,7 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
     setConfirmSubmit(false);
     const command = { expectedVersion: draft.version };
     void run(submitKeys, 'submit', { id: draft.id, ...command }, key => activateManagedDraft(draft.id, command, key),
-      `Contrato enviado a Finanzas para aprobar los precios. ${AFTER_FINANCE}`);
+      `Contrato enviado a Finanzas para aprobar los precios. ${afterFinance}`);
   }
   const saveScope = command => run(scopeKeys, 'scope', { id: draft.id, ...command },
     key => setContractDraftScope(draft.id, command, key),
@@ -287,7 +288,7 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
       <button type="button" disabled={!canSubmit} onClick={() => setConfirmSubmit(true)} className="mt-3 rounded-lg border border-status-success px-4 py-2 text-sm font-semibold text-status-success disabled:opacity-50">Enviar a Finanzas</button></div>}
     {pending && <p className="mt-6 rounded-lg bg-status-warning/10 p-3 text-sm">En revisión por Finanzas. Si lo devuelve, podrá editarlo de nuevo.</p>}
     {canDiscard && <DiscardSection draft={draft} busy={busy === 'discard'} locked={locked} onDiscard={discard} />}
-    <ConfirmDialog open={confirmSubmit} title="Enviar a Finanzas" description={`¿Enviar ${draft.contractCode} a Finanzas para aprobar los precios? ${AFTER_FINANCE}`} confirmLabel="Enviar" onClose={() => setConfirmSubmit(false)} onConfirm={submitToFinance} busy={busy === 'submit'} />
+    <ConfirmDialog open={confirmSubmit} title="Enviar a Finanzas" description={`¿Enviar ${draft.contractCode} a Finanzas para aprobar los precios? ${afterFinance}`} confirmLabel="Enviar" onClose={() => setConfirmSubmit(false)} onConfirm={submitToFinance} busy={busy === 'submit'} />
   </div>;
 }
 

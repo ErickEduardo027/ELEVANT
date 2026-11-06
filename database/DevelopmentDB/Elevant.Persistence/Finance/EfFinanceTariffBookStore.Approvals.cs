@@ -36,7 +36,7 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     public async Task<FinanceCatalogResult> RecordExchangeRateAsync(Guid actorId, RecordExchangeRateInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.exchange_rates.create", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
@@ -45,7 +45,10 @@ internal sealed partial class EfFinanceTariffBookStore
             input.RateDate > DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime.AddDays(1)) ||
             string.IsNullOrWhiteSpace(input.Source) || input.Source.Trim().Length > 120)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "invalid_exchange_rate");
-        return await InTransactionAsync(async () =>
+        // A replay answers the rate the first attempt recorded instead of exchange_rate_exists.
+        return await CommandAsync(actor, idempotencyKey, "finance.exchange_rate.record",
+            new { input.RateDate, input.FromCurrency, input.ToCurrency, rate = decimal.Round(input.Rate, 6),
+                source = input.Source.Trim() }, async () =>
         {
             var now = timeProvider.GetUtcNow();
             if (await context.ExchangeRates.AnyAsync(rate => rate.IsCurrent && rate.RateDate == input.RateDate &&
@@ -69,14 +72,15 @@ internal sealed partial class EfFinanceTariffBookStore
 
     /// <summary>A correction never overwrites: the old row stops being current and the new one points to it.</summary>
     public async Task<FinanceCatalogResult> CorrectExchangeRateAsync(Guid actorId, Guid rateId,
-        CorrectExchangeRateInput input, CancellationToken cancellationToken = default)
+        CorrectExchangeRateInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.exchange_rates.update", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || input.Rate is <= 0 or > 1_000_000m || string.IsNullOrWhiteSpace(input.Source) ||
             input.Source.Trim().Length > 120 || string.IsNullOrWhiteSpace(input.ExpectedVersion))
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "invalid_exchange_rate");
-        return await InTransactionAsync(async () =>
+        return await CommandAsync(actor, idempotencyKey, "finance.exchange_rate.correct",
+            new { rateId, rate = decimal.Round(input.Rate, 6), source = input.Source.Trim(), input.ExpectedVersion }, async () =>
         {
             var now = timeProvider.GetUtcNow();
             var current = await context.ExchangeRates.SingleOrDefaultAsync(rate => rate.PublicId == rateId, cancellationToken);
@@ -186,7 +190,8 @@ internal sealed partial class EfFinanceTariffBookStore
         var summary = new ContractApprovalSummaryData(row.version.PublicId, row.contract.PublicId, row.contract.ContractCode,
             row.Airline, row.version.CurrencyCode, row.version.ValidFrom, row.version.ValidTo, row.version.Status.ToString(),
             row.version.UpdatedAt, comparisons.Count(item => item.DifferencePercent < 0),
-            comparisons.Count(item => item.BasePrice is null), Version(row.version.RowVersion));
+            comparisons.Count(item => item.BasePrice is null), Version(row.version.RowVersion),
+            row.contract.Status.ToString());
         var packages = await (from link in context.Set<ContractServicePackage>().AsNoTracking()
             join package in context.Set<ServicePackageVersion>().AsNoTracking() on link.PackageVersionId equals package.Id
             where link.ContractVersionId == versionId
