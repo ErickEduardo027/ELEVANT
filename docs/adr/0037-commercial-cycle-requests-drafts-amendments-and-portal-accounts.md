@@ -35,7 +35,8 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
   - En los endpoints nuevos y en los que ya existían, una clave con el GUID vacío (`00000000-…`) responde `400 idempotency_key_required`. Los clientes nuevos siempre envían la clave y la versión.
   - La versión esperada es el token `version` que expone la lectura del recurso.
   - La enmienda es la excepción (sección 4).
-  - **Excepción heredada.** `PUT contracts/commercial-requests/airlines/{profileId}/verification`, anterior a la fase, sigue en la API y en el snapshot OpenAPI: verifica y reescribe la identidad de una ficha que aún no opera, sin `Idempotency-Key` ni versión. Ningún cliente lo usa, porque private-web verifica desde la solicitud (`POST {id}/airline-verification`), y queda por retirar.
+  - En las solicitudes, ese token une la `rowversion` de la solicitud y la de su ficha de aerolínea: si la identidad cambia desde otra solicitud de la misma aerolínea o en Superadministración, la pantalla vieja recibe `version_conflict` y aprobar no congela una identidad que el revisor no vio.
+  - **PUT heredado retirado.** `PUT contracts/commercial-requests/airlines/{profileId}/verification`, anterior a la fase, reescribía la identidad de una ficha sin `Idempotency-Key` ni versión. Ningún cliente lo usaba, porque private-web verifica desde la solicitud (`POST {id}/airline-verification`), así que salió de la API, del snapshot OpenAPI y del cliente generado.
 - **Problem Details.** Las fallas de validación, regla, estado, versión e idempotencia que devuelven los comandos y las lecturas de la fase llevan `extensions.code` en snake_case y un título en español. Cada controlador tiene un código por defecto según el tipo de fallo:
   - `400` es validación; `404`, el recurso de la ruta no existe o está fuera de alcance; `409`, conflicto de estado, de versión o de idempotencia;
   - los códigos comunes son `version_conflict`, `idempotency_conflict`, `idempotency_key_required`, `expected_version_required`, `reason_required` y `not_found`;
@@ -237,7 +238,7 @@ No necesitan migración:
 - **Paso «contract».** Cuando no queden clientes antiguos:
   - hacer obligatorias la `Idempotency-Key` y la versión esperada en la decisión de solicitudes, el `PUT` y el envío del borrador, el comentario de la aerolínea, el aprovisionamiento, el reenvío de la invitación y la contraseña temporal de clientes;
   - hacer obligatoria la `Idempotency-Key`, porque la versión ya lo es, en el ciclo de vida del contrato, la decisión de Finanzas, el `PUT` del catálogo, la decisión y la reapertura de clausuras y el `PUT` de aerolíneas;
-  - retirar el `DELETE` obsoleto del catálogo y el `PUT` heredado de verificación de aerolíneas (sección 1).
+  - retirar el `DELETE` obsoleto del catálogo.
 - Los comandos de los tarifarios (tarifas, cargos, unidades y tasas) tienen versión esperada, pero no `Idempotency-Key`.
 - Un servicio dado de baja antes de esta corrección que siga en un contrato vigente no se detecta solo; se reactiva desde el catálogo.
 - El restablecimiento de contraseña de los usuarios internos (`POST governance/departments/{department}/users/{id}/password-reset` y `POST governance/users/{id}/password-reset`) todavía pide un token de Identity (`GeneratePasswordResetTokenAsync`), y la API registra Identity sin proveedores de tokens: la llamada falla con un error de servidor. Ninguna prueba cubre esas rutas. Necesita el mismo arreglo que el de clientes.
