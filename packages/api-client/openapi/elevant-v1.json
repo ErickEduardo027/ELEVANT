@@ -4615,73 +4615,6 @@
         ]
       }
     },
-    "/api/v1/contracts/commercial-requests/airlines/{profileId}/verification": {
-      "put": {
-        "tags": [
-          "CommercialRequestsManagement"
-        ],
-        "operationId": "VerifyCommercialAirline",
-        "parameters": [
-          {
-            "name": "profileId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommercialIdResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/contracts/commercial-requests/{id}/airline-verification": {
       "post": {
         "tags": [
@@ -52164,38 +52097,6 @@
             "type": "string"
           },
           "reason": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "VerifyAirlineInput": {
-        "required": [
-          "countryCode",
-          "icaoCode",
-          "legalName",
-          "verificationSourceUrl"
-        ],
-        "type": "object",
-        "properties": {
-          "legalName": {
-            "type": "string"
-          },
-          "countryCode": {
-            "type": "string"
-          },
-          "iataCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "icaoCode": {
-            "type": "string"
-          },
-          "verificationSourceUrl": {
-            "type": "string"
-          },
-          "logoUrl": {
             "type": "string",
             "nullable": true
           }

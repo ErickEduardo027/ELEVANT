@@ -6044,17 +6044,6 @@ export interface ValidateAttendanceRequest {
   reason?: string | null;
 }
 
-export interface VerifyAirlineInput {
-  legalName: string;
-  countryCode: string;
-  /** @nullable */
-  iataCode?: string | null;
-  icaoCode: string;
-  verificationSourceUrl: string;
-  /** @nullable */
-  logoUrl?: string | null;
-}
-
 export interface VerifyLoginCodeRequest {
   challengeId: string;
   code: string;
@@ -8553,41 +8542,6 @@ export const listCommercialStations = async ( options?: RequestInit): Promise<Co
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CommercialStationData[] = body ? JSON.parse(body) : {}
-  return data
-}
-
-
-
-export const getVerifyCommercialAirlineUrl = (profileId: string,) => {
-
-
-
-
-  return `/api/v1/contracts/commercial-requests/airlines/${profileId}/verification`
-}
-
-export const verifyCommercialAirline = async (profileId: string,
-    verifyAirlineInput?: VerifyAirlineInput, options?: RequestInit): Promise<CommercialIdResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-const res = await fetch(getVerifyCommercialAirlineUrl(profileId),
-  {
-    ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(verifyAirlineInput)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
   return data
 }
 

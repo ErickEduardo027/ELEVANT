@@ -13,7 +13,9 @@ namespace Elevant.Api.Controllers;
 
 /// <summary>
 /// Contratos' review of the public commercial requests. Commands take an Idempotency-Key and the
-/// request rowversion the reviewer saw; every failure is Problem Details with a stable code.
+/// inbox version the reviewer saw (the request's rowversion and its airline profile's); every
+/// failure is Problem Details with a stable code. The airline is verified from its request: the
+/// former profile-level PUT, without key or version, was retired once no client used it.
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
@@ -61,18 +63,6 @@ public sealed class CommercialRequestsManagementController(
         if (!TryActor(out var actorId)) return Unauthorized();
         var stations = await store.ListStationsAsync(actorId, cancellationToken);
         return stations is null ? Forbid() : Ok(stations);
-    }
-
-    [HttpPut("airlines/{profileId:guid}/verification", Name = "VerifyCommercialAirline")]
-    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
-    [RequestSizeLimit(16384)]
-    public async Task<IActionResult> VerifyAirline(Guid profileId,
-        [FromBody] VerifyAirlineInput input, CancellationToken cancellationToken)
-    {
-        if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await store.VerifyAirlineAsync(actorId, profileId, input, cancellationToken);
-        if (result.IsSuccess) await InvalidateCatalogAsync();
-        return Respond(result);
     }
 
     /// <summary>

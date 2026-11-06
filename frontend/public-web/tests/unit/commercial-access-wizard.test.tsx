@@ -548,3 +548,40 @@ it("offers the proposal right away when no airline is published and points to a 
   fireEvent.click(screen.getByRole("button", { name: "Elegir Copa Airlines" }));
   expect(screen.getByRole("combobox", { name: "Seleccione una aerolínea" })).toHaveValue(airlineId);
 });
+
+it("describes each field of a proposed airline with its error and its help (1-N25)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Mi aerolínea no aparece" }));
+  const name = screen.getByRole("textbox", { name: "Nombre de la aerolínea" });
+  const icao = screen.getByRole("textbox", { name: "Código ICAO" });
+  const iataHelp = "Déjelo vacío si la aerolínea no tiene código IATA.";
+  // Before an attempt only the help describes a field.
+  expect(icao).toHaveAccessibleDescription("Obligatorio: 3 letras, por ejemplo CMP.");
+  expect(name).not.toHaveAttribute("aria-describedby");
+
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(name).toHaveFocus();
+  expect(name).toHaveAccessibleDescription("Escriba el nombre de la aerolínea.");
+  expect(field("País de la aerolínea")).toHaveAccessibleDescription("Seleccione el país de la aerolínea.");
+  expect(icao).toHaveAccessibleDescription(
+    "Escriba el código ICAO de la aerolínea: 3 letras. Obligatorio: 3 letras, por ejemplo CMP.");
+  expect(screen.getByRole("textbox", { name: "Código IATA (opcional)" })).toHaveAccessibleDescription(iataHelp);
+  expect(screen.getByRole("textbox", { name: "Sitio web oficial (opcional)" }))
+    .toHaveAccessibleDescription("Ayuda a Contratos a confirmar la aerolínea y a su representante.");
+
+  // The focus goes to the field still wrong, which says why.
+  fireEvent.change(name, { target: { value: "Caribe Cargo Express" } });
+  choose("País de la aerolínea", "DO");
+  fireEvent.change(icao, { target: { value: "cm" } });
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(icao).toHaveFocus();
+  expect(icao).toHaveAttribute("aria-invalid", "true");
+  expect(icao).toHaveAccessibleDescription(
+    "Escriba el código ICAO de la aerolínea: 3 letras. Obligatorio: 3 letras, por ejemplo CMP.");
+  expect(name).not.toHaveAttribute("aria-describedby");
+});

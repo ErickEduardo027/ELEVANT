@@ -23,8 +23,9 @@ namespace Elevant.Persistence.Commercial;
 /// <summary>
 /// Contratos' review of the public commercial requests: inbox, airline verification, representative
 /// confirmation, cancellation and decision. Commands run serializable with an idempotency receipt
-/// (<see cref="CommercialCommandReceipts"/>) and expect the request rowversion; approval rejects an
-/// airline that already operates with AVIAM (1-N01) and every decision emails the applicant (1-N02).
+/// (<see cref="CommercialCommandReceipts"/>) and expect the version the reviewer saw (the request's
+/// rowversion and its airline profile's); approval rejects an airline that already operates with
+/// AVIAM (1-N01) and every decision emails the applicant (1-N02).
 /// </summary>
 internal sealed class EfCommercialWorkflowStore(
     ElevantDbContext context, CommercialPermissionGuard permissions)
@@ -202,60 +203,13 @@ internal sealed class EfCommercialWorkflowStore(
                         request.ProposedAirlineWebsiteUrl)
                     : null,
                 profile?.CanonicalAirlineId is long airlineId && customers.Contains(airlineId),
-                ServicesOf(items, request.Id, servicePublicIds), Version(request));
+                ServicesOf(items, request.Id, servicePublicIds), Version(request, profile));
         }).ToArray();
         return new CommercialInboxData(query.Page, query.Limit, total, (long)query.Page * query.Limit < total,
             new CommercialInboxCountsData(CountOf(CommercialRequestStatus.Pending),
                 CountOf(CommercialRequestStatus.InReview), CountOf(CommercialRequestStatus.Approved),
                 CountOf(CommercialRequestStatus.Rejected), CountOf(CommercialRequestStatus.Cancelled)),
             requests);
-    }
-
-    public async Task<CommercialWorkflowResult> VerifyAirlineAsync(Guid actorId,
-        Guid profileId, VerifyAirlineInput input, CancellationToken cancellationToken = default)
-    {
-        if (!await permissions.HasAsync(actorId, "contracts.requests.verify", cancellationToken))
-            return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Forbidden);
-        var identity = input is null ? null : Identity(input.LegalName, input.CountryCode, input.IataCode,
-            input.IcaoCode, input.VerificationSourceUrl);
-        if (identity is null || !ValidLegacyLogo(input!.LogoUrl))
-            return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid, "invalid_airline");
-        var profile = await context.CommercialAirlineProfiles.SingleOrDefaultAsync(
-            item => item.PublicId == profileId && item.IsPublished, cancellationToken);
-        if (profile is null)
-            return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.NotFound, "not_found");
-        var accountId = await ActorDatabaseIdAsync(actorId, cancellationToken);
-        var now = DateTimeOffset.UtcNow;
-        if (await ApplyIdentityAsync(profile, identity, accountId, now, cancellationToken) is { } conflict)
-            return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, conflict);
-        // Older independently deployed clients still send this optional v1 field.
-        // An empty field must not erase a logo uploaded in Superadministración.
-        if (!string.IsNullOrWhiteSpace(input.LogoUrl))
-            profile.LogoObjectKey = input.LogoUrl.Trim();
-        // The resource invalidates the list, so one existing request is sufficient per reader.
-        var affectedRequestId = await context.ServiceRequests.AsNoTracking()
-            .Where(request => request.AirlineProfileId == profile.Id &&
-                (request.Status == CommercialRequestStatus.Pending ||
-                 request.Status == CommercialRequestStatus.InReview))
-            .Select(request => request.PublicId).FirstOrDefaultAsync(cancellationToken);
-        if (affectedRequestId != Guid.Empty)
-            await NotifyRequestReadersAsync(affectedRequestId, cancellationToken);
-        await NotifyAirlineReadersAsync(profile.PublicId, now, cancellationToken);
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            context.ChangeTracker.Clear();
-            return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "version_conflict");
-        }
-        catch (DbUpdateException exception) when (UniqueViolationCode(exception) is { } code)
-        {
-            context.ChangeTracker.Clear();
-            return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, code);
-        }
-        return CommercialWorkflowResult.Success(profile.PublicId);
     }
 
     public async Task<CommercialWorkflowResult> VerifyRequestAirlineAsync(Guid actorId, Guid requestId,
@@ -279,11 +233,11 @@ internal sealed class EfCommercialWorkflowStore(
             var request = await context.ServiceRequests.SingleOrDefaultAsync(
                 item => item.PublicId == requestId, cancellationToken);
             if (request is null) return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.NotFound, "not_found");
-            if (Version(request) != input.ExpectedVersion)
+            var profile = await LinkedProfileAsync(request, cancellationToken);
+            if (Version(request, profile) != input.ExpectedVersion)
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "version_conflict");
             if (!IsOpen(request.Status))
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "request_closed");
-            CommercialAirlineProfile? profile = null;
             if (input.LinkProfileId is { } linkId)
             {
                 // Linking is how a proposed airline (1-N25) joins a profile that already exists.
@@ -296,9 +250,6 @@ internal sealed class EfCommercialWorkflowStore(
                 if (identity is null && (profile.VerifiedAt is null || profile.VerifiedByAccountId is null))
                     return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Invalid, "invalid_airline");
             }
-            else if (request.AirlineProfileId is long profileKey)
-                profile = await context.CommercialAirlineProfiles.SingleAsync(
-                    item => item.Id == profileKey, cancellationToken);
             var previousProfile = request.AirlineProfileId;
             if (identity is not null)
             {
@@ -344,7 +295,7 @@ internal sealed class EfCommercialWorkflowStore(
                 var request = await context.ServiceRequests.SingleOrDefaultAsync(
                     item => item.PublicId == requestId, cancellationToken);
                 if (request is null) return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.NotFound, "not_found");
-                if (Version(request) != input.ExpectedVersion)
+                if (Version(request, await LinkedProfileAsync(request, cancellationToken)) != input.ExpectedVersion)
                     return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "version_conflict");
                 if (!IsOpen(request.Status))
                     return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "request_closed");
@@ -380,7 +331,7 @@ internal sealed class EfCommercialWorkflowStore(
                 var request = await context.ServiceRequests.SingleOrDefaultAsync(
                     item => item.PublicId == requestId, cancellationToken);
                 if (request is null) return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.NotFound, "not_found");
-                if (Version(request) != input.ExpectedVersion)
+                if (Version(request, await LinkedProfileAsync(request, cancellationToken)) != input.ExpectedVersion)
                     return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "version_conflict");
                 if (!IsOpen(request.Status))
                     return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "request_closed");
@@ -429,7 +380,9 @@ internal sealed class EfCommercialWorkflowStore(
                 item => item.PublicId == requestId, cancellationToken);
             if (request is null)
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.NotFound, "not_found");
-            if (input.ExpectedVersion is { } expected && Version(request) != expected)
+            // The approval freezes the profile's identity: a screen older than either row is stale (1-D).
+            var profile = await LinkedProfileAsync(request, cancellationToken);
+            if (input.ExpectedVersion is { } expected && Version(request, profile) != expected)
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "version_conflict");
             if (!IsOpen(request.Status))
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "request_closed");
@@ -454,10 +407,6 @@ internal sealed class EfCommercialWorkflowStore(
             // Approval rests on two recorded checks: the representative (1-N18) and the airline identity.
             if (request.RepresentativeConfirmedAt is null)
                 return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "representative_unconfirmed");
-            var profile = request.AirlineProfileId is long profileKey
-                ? await context.CommercialAirlineProfiles.SingleOrDefaultAsync(
-                    item => item.Id == profileKey, cancellationToken)
-                : null;
             if (profile is null || profile.VerifiedAt is null || profile.VerifiedByAccountId is null ||
                 string.IsNullOrWhiteSpace(profile.LegalName) ||
                 string.IsNullOrWhiteSpace(profile.IcaoCode) ||
@@ -882,15 +831,23 @@ internal sealed class EfCommercialWorkflowStore(
     private static bool IsOpen(CommercialRequestStatus status) =>
         status is CommercialRequestStatus.Pending or CommercialRequestStatus.InReview;
 
-    private static string Version(ServiceRequest request) => Convert.ToBase64String(request.RowVersion);
+    /// <summary>The airline profile the request is linked to; none for a proposal not linked yet (1-N25).</summary>
+    private async Task<CommercialAirlineProfile?> LinkedProfileAsync(ServiceRequest request,
+        CancellationToken cancellationToken) =>
+        request.AirlineProfileId is long profileId
+            ? await context.CommercialAirlineProfiles.SingleOrDefaultAsync(item => item.Id == profileId, cancellationToken)
+            : null;
+
+    /// <summary>
+    /// What a command expects (1-D): the request's rowversion followed by its airline profile's. The approval
+    /// freezes the profile's identity, which another request of the same airline or Superadministración may
+    /// change without touching this request, so a change of either row makes the reviewer's screen stale.
+    /// </summary>
+    private static string Version(ServiceRequest request, CommercialAirlineProfile? profile) =>
+        Convert.ToBase64String(profile is null ? request.RowVersion : [.. request.RowVersion, .. profile.RowVersion]);
 
     private static string Truncate(string value, int length) => value.Length > length ? value[..length] : value;
 
     private static bool ValidText(string? value, int max) =>
         !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;
-    private static bool ValidLegacyLogo(string? value) =>
-        string.IsNullOrWhiteSpace(value) || value.Length <= 512 &&
-        (value.StartsWith("/assets/", StringComparison.Ordinal) ||
-         Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
-         uri.Scheme == Uri.UriSchemeHttps && uri.UserInfo.Length == 0);
 }

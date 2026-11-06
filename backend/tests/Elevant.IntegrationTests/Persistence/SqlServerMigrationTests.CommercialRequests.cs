@@ -194,6 +194,76 @@ public sealed partial class SqlServerMigrationTests
     }
 
     [Fact]
+    public async Task AnApprovalOnAScreenOlderThanTheSharedAirlineIdentityIsAVersionConflict()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var catalog = await scope.ServiceProvider.GetRequiredService<ICommercialCatalogStore>().GetPublicAsync(ct);
+        var intake = new SubmitCommercialRequestHandler(scope.ServiceProvider.GetRequiredService<ICommercialIntakeStore>());
+        var workflow = scope.ServiceProvider.GetRequiredService<ICommercialWorkflowStore>();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var profile = catalog.Airlines.First(item => !item.IsVerified);
+        var service = catalog.Services[0].Id;
+        var station = (await workflow.ListStationsAsync(ContractsAdministrator, ct))!.Single();
+        // Two open requests of the same airline share its catalog profile.
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        Assert.True((await intake.HandleAsync(CommercialApplication(first, profile.Id, service, "ana@carrier.example.com"), ct)).IsSuccess);
+        Assert.True((await intake.HandleAsync(CommercialApplication(second, profile.Id, service, "luis@carrier.example.com"), ct)).IsSuccess);
+        async Task<CommercialInboxRequestData> ItemAsync(Guid id) => (await workflow.ListInboxAsync(ContractsAdministrator,
+                new CommercialInboxQuery(CommercialInboxQuery.All, null, 1, 50), ct))!
+            .Requests.Single(item => item.Id == id);
+        static VerifyRequestAirlineInput Identity(string version, string legalName, string icao) =>
+            new(version, null, legalName, "DO", null, icao, $"https://aoc.example.gob.do/{icao.ToLowerInvariant()}");
+
+        // Reviewer 1 verifies the airline from the first request and confirms its representative.
+        Assert.True((await workflow.VerifyRequestAirlineAsync(ContractsAdministrator, first, Guid.NewGuid(),
+            Identity((await ItemAsync(first)).Version, "Carrier Uno S.A.", "QWA"), ct)).IsSuccess);
+        Assert.True((await workflow.ConfirmRepresentativeAsync(ContractsAdministrator, first, Guid.NewGuid(),
+            new ConfirmCommercialRepresentativeInput((await ItemAsync(first)).Version,
+                "Llamada a la central de la aerolínea: confirmó la gerencia comercial."), ct)).IsSuccess);
+        var seen = await ItemAsync(first);
+        Assert.Equal(("Carrier Uno S.A.", "QWA"), (seen.LegalName, seen.IcaoCode));
+        var firstRow = await context.ServiceRequests.AsNoTracking().SingleAsync(item => item.PublicId == first, ct);
+
+        // Reviewer 2 corrects the shared profile from the second request; the first request's row is untouched.
+        Assert.True((await workflow.VerifyRequestAirlineAsync(ContractsAdministrator, second, Guid.NewGuid(),
+            Identity((await ItemAsync(second)).Version, "Carrier Dos Corp.", "QWB"), ct)).IsSuccess);
+        Assert.Equal(firstRow.RowVersion, (await context.ServiceRequests.AsNoTracking()
+            .SingleAsync(item => item.PublicId == first, ct)).RowVersion);
+
+        // 1-D: reviewer 1's screen is stale, so the approval freezes nothing; any other command is stale too.
+        var approval = new ReviewCommercialInput(true, null, [station.Id], seen.Version);
+        Assert.Equal("version_conflict", (await workflow.DecideAsync(ContractsAdministrator, first, approval,
+            Guid.NewGuid(), ct)).Code);
+        Assert.Equal("version_conflict", (await workflow.CancelAsync(ContractsAdministrator, first, Guid.NewGuid(),
+            new CancelCommercialRequestInput(seen.Version, "Solicitud duplicada de otra referencia."), ct)).Code);
+        Assert.False(await context.Contracts.AnyAsync(item => item.OriginatingServiceRequestId == firstRow.Id, ct));
+        Assert.False(await context.Airlines.AnyAsync(item => item.IcaoCode == "QWA" || item.IcaoCode == "QWB", ct));
+
+        // A change of the profile made outside the review (Superadministración) makes the screen stale as well.
+        var reread = await ItemAsync(first);
+        Assert.Equal(("Carrier Dos Corp.", "QWB"), (reread.LegalName, reread.IcaoCode));
+        await context.CommercialAirlineProfiles.Where(item => item.PublicId == profile.Id)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.DisplayName, "Carrier Dos"), ct);
+        Assert.Equal("version_conflict", (await workflow.DecideAsync(ContractsAdministrator, first,
+            approval with { ExpectedVersion = reread.Version }, Guid.NewGuid(), ct)).Code);
+
+        // Once re-read, the approval freezes exactly the identity on screen.
+        var approved = await workflow.DecideAsync(ContractsAdministrator, first,
+            approval with { ExpectedVersion = (await ItemAsync(first)).Version }, Guid.NewGuid(), ct);
+        Assert.True(approved.IsSuccess, approved.Code);
+        var decided = await context.ServiceRequests.AsNoTracking().SingleAsync(item => item.PublicId == first, ct);
+        Assert.Equal("Carrier Dos Corp.", decided.AirlineLegalNameSnapshot);
+        var airline = await context.Airlines.AsNoTracking().SingleAsync(item => item.Id == decided.AirlineId, ct);
+        Assert.Equal(("QWB", "Carrier Dos"), (airline.IcaoCode, airline.Name));
+    }
+
+    [Fact]
     public async Task ProposedAirlineWithoutIataIsVerifiedApprovedAndAffiliatesAgainOnlyWhenFree()
     {
         var ct = TestContext.Current.CancellationToken;

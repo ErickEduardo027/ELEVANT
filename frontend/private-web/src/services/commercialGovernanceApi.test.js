@@ -54,3 +54,28 @@ it('saves an airline update with its Idempotency-Key and creates without one (1-
   expect(fetch.mock.calls[0][1].method).toBe('PUT');
   expect(fetch.mock.calls[1][1].headers['Idempotency-Key']).toBeUndefined();
 });
+
+it('reports an airline identity the api-client refuses as invalid_airline without calling the API (1-N16)', async () => {
+  const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ id: '70000000-0000-7000-8000-0000000000a1' }),
+    { status: 200, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetch);
+  const { verifyCommercialRequestAirline } = await import('./commercialGovernanceApi');
+  const requestId = '70000000-0000-7000-8000-0000000000a1';
+  const key = 'a0000000-0000-7000-8000-0000000000e4';
+  const identity = { expectedVersion: 'AAAAAAAAB9EAAAAAAAAH0g==', legalName: 'Copa S.A.', countryCode: 'PA', iataCode: '',
+    icaoCode: 'CMP', verificationSourceUrl: 'https://www.copaair.com/' };
+  for (const verificationSourceUrl of ['www.copaair.com', 'http://www.copaair.com/']) {
+    const refused = await verifyCommercialRequestAirline(requestId, { ...identity, verificationSourceUrl }, key)
+      .catch(error => error);
+    expect(refused).toMatchObject({ code: 'invalid_airline' });
+    expect(refused.status).toBeUndefined();
+  }
+  expect(fetch).not.toHaveBeenCalled();
+
+  await expect(verifyCommercialRequestAirline(requestId, identity, key))
+    .resolves.toEqual({ id: '70000000-0000-7000-8000-0000000000a1' });
+  const [url, init] = fetch.mock.calls[0];
+  expect(String(url)).toBe(`https://api.example.test/api/v1/contracts/commercial-requests/${requestId}/airline-verification`);
+  expect(new Headers(init.headers).get('idempotency-key')).toBe(key);
+  expect(JSON.parse(init.body)).toMatchObject({ expectedVersion: 'AAAAAAAAB9EAAAAAAAAH0g==', iataCode: null });
+});

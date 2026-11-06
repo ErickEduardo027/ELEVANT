@@ -26,9 +26,10 @@ public sealed record CommercialRepresentativeConfirmationData(DateTimeOffset Con
     string Note);
 
 /// <summary>
-/// One request of the Contratos inbox. <paramref name="Version"/> is the request's rowversion that
-/// every command on it expects; <paramref name="ExistingCustomer"/> tells that the airline already has
-/// a live contract or active portal accounts, so approving it would be rejected.
+/// One request of the Contratos inbox. <paramref name="Version"/> is what every command on it expects:
+/// the request's rowversion and, once linked, its airline profile's, because the approval freezes the
+/// profile's identity (1-D). <paramref name="ExistingCustomer"/> tells that the airline already has a
+/// live contract or active portal accounts, so approving it would be rejected.
 /// </summary>
 public sealed record CommercialInboxRequestData(
     Guid Id, string Reference, string Airline, Guid? AirlineProfileId,
@@ -73,12 +74,9 @@ public sealed record CommercialInboxQuery(string Status, string? Search, int Pag
         (Search is null || Search.Trim().Length <= MaximumSearchLength);
 }
 
-public sealed record VerifyAirlineInput(string LegalName, string CountryCode,
-    string? IataCode, string IcaoCode, string VerificationSourceUrl, string? LogoUrl);
-
 /// <summary>
-/// Decision on a request. <paramref name="ExpectedVersion"/> is the request rowversion the reviewer
-/// saw; it is optional while older clients exist and required together with an Idempotency-Key.
+/// Decision on a request. <paramref name="ExpectedVersion"/> is the inbox version the reviewer saw; it
+/// is optional while older clients exist and required together with an Idempotency-Key.
 /// </summary>
 public sealed record ReviewCommercialInput(bool Approve, string? Reason,
     IReadOnlyList<Guid> StationIds, string? ExpectedVersion = null);
@@ -121,8 +119,6 @@ public interface ICommercialWorkflowStore
         CancellationToken cancellationToken = default);
     Task<IReadOnlyList<CommercialStationData>?> ListStationsAsync(Guid actorId,
         CancellationToken cancellationToken = default);
-    Task<CommercialWorkflowResult> VerifyAirlineAsync(Guid actorId, Guid profileId,
-        VerifyAirlineInput input, CancellationToken cancellationToken = default);
     Task<CommercialWorkflowResult> VerifyRequestAirlineAsync(Guid actorId, Guid requestId,
         Guid idempotencyKey, VerifyRequestAirlineInput input, CancellationToken cancellationToken = default);
     Task<CommercialWorkflowResult> ConfirmRepresentativeAsync(Guid actorId, Guid requestId,
