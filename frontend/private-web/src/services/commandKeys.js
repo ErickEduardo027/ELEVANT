@@ -16,11 +16,19 @@ export function createCommandKeyHolder(newKey = () => globalThis.crypto.randomUU
       if (!current || current.signature !== signature) current = { signature, key: newKey() };
       return current.key;
     },
-    /** Sends the command with its key and settles the intent according to the answer. */
-    async run(action, body, send) {
+    /**
+     * Sends the command with its key and settles the intent according to the answer. With
+     * `buildCommand` the command is built once, at the first attempt of the intent, and every retry of
+     * the same intent sends it as it was (`send(key, command)`): the server sees the same key with the
+     * same body, and replays the first result, even if the record on screen moved to a newer version
+     * in between (for example the expected version of a reply).
+     */
+    async run(action, body, send, buildCommand) {
       const key = this.keyFor(action, body);
+      if (buildCommand && !Object.hasOwn(current, 'command')) current.command = buildCommand();
+      const { command } = current;
       try {
-        const result = await send(key);
+        const result = await send(key, command);
         current = null;
         return result;
       } catch (error) {

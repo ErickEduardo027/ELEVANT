@@ -142,17 +142,18 @@ function AirlineDraftCard({ draft, onComment, onDownload, onReload }: {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
-  // The key of an uncertain attempt is reused for the same text, so a retry never comments twice.
-  const pending = useRef<{ key: string; body: string } | null>(null);
+  // An uncertain attempt is retried for the same text with its key and the version it was sent with: the
+  // same command, so the server replays it and a retry never comments twice, even if the draft changed since.
+  const pending = useRef<{ key: string; body: string; version: string } | null>(null);
   const inFinance = draft.versionStatus === "PendingFinanceApproval";
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = body.trim();
     if (!draft.version) { setMessage(COMMENT_ERRORS.expected_version_required); return; }
-    if (pending.current?.body !== text) pending.current = { key: crypto.randomUUID(), body: text };
+    if (pending.current?.body !== text) pending.current = { key: crypto.randomUUID(), body: text, version: draft.version };
     setBusy(true); setMessage("");
     try {
-      await onComment(draft.id, text, draft.version, pending.current.key);
+      await onComment(draft.id, text, pending.current.version, pending.current.key);
       pending.current = null;
       setBody("");
       setMessage("Observación enviada a Contratos.");

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ContractLifecyclePanel from './ContractLifecyclePanel';
 import { applyContractLifecycle, createContractAmendment, getContractTimeline } from '../../../services/commercialGovernanceApi';
@@ -87,6 +87,30 @@ it('explains a conflict by its code and re-reads the contract', async () => {
   expect(await screen.findByText('El contrato cambió de estado; se volvió a cargar.')).toBeInTheDocument();
   expect(screen.queryByText(/reload and retry/)).not.toBeInTheDocument();
   expect(getContractTimeline).toHaveBeenCalledTimes(2);
+});
+
+it('shows a refused action inside its dialog and closes it once the contract moved on', async () => {
+  getContractTimeline.mockResolvedValueOnce(timeline('Draft')).mockResolvedValue(timeline('Active'));
+  applyContractLifecycle.mockRejectedValueOnce(Object.assign(new Error('Invalid'), { status: 400, code: 'reason_required' }))
+    .mockRejectedValueOnce(Object.assign(new Error('The contract changed.'), { status: 409, code: 'status_changed' }));
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Descartar contrato' }));
+  const dialog = screen.getByRole('dialog', { name: 'Descartar el contrato CT-001' });
+  // The reason says its bounds and what is missing while «Confirmar» waits.
+  const reason = within(dialog).getByLabelText('Motivo');
+  await userEvent.type(reason, 'Dup');
+  expect(within(dialog).getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+  expect(reason).toHaveAccessibleDescription(/Entre 5 y 500 caracteres\..*Faltan 2 caracteres\./);
+  await userEvent.type(reason, 'licado');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Confirmar' }));
+  // A refusal shows inside the dialog, not behind it.
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('Escribe el motivo (5 a 500 caracteres).');
+  // The contract activated meanwhile: discarding no longer applies, so the dialog closes and the panel explains it.
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Confirmar' }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  expect(screen.getByRole('status')).toHaveTextContent('El contrato cambió de estado; se volvió a cargar.');
+  expect(screen.getByRole('button', { name: 'Terminar' })).toBeInTheDocument();
+  expect(screen.queryByText('The contract changed.')).not.toBeInTheDocument();
 });
 
 it('creates an amendment from «Vigente desde» with the status on screen and opens Borradores (1-C)', async () => {

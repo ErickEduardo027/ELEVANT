@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from '../../../components/Modal';
+import ReasonField, { validReason } from '../../../components/ReasonField';
 import StatusBadge from '../../../components/StatusBadge';
 import { applyContractLifecycle, createContractAmendment, getContractTimeline } from '../../../services/commercialGovernanceApi';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
@@ -57,20 +58,32 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
   const [form, setForm] = useState({ reason: '', validFrom: '', validTo: '' });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  // Why the action of the open dialog was refused, shown inside it rather than behind it.
+  const [dialogError, setDialogError] = useState('');
   const keys = useRef(createCommandKeyHolder());
   const [amending, setAmending] = useState(false);
   const [amendFrom, setAmendFrom] = useState('');
   const [amended, setAmended] = useState(false);
   const amendKeys = useRef(createCommandKeyHolder());
 
+  /** Reads the history again; answers the timeline read, or null when it could not be read. */
   const load = useCallback(async () => {
-    try { setState({ status: 'ready', timeline: await getContractTimeline(versionId) }); }
-    catch { setState({ status: 'error', timeline: null }); }
+    try {
+      const timeline = await getContractTimeline(versionId);
+      setState({ status: 'ready', timeline });
+      return timeline;
+    } catch {
+      setState({ status: 'error', timeline: null });
+      return null;
+    }
   }, [versionId]);
   useEffect(() => { void load(); }, [load]);
 
+  function openAction(key) { setAction(key); setMessage(''); setAmended(false); setDialogError(''); }
+  function closeAction() { setAction(null); setDialogError(''); }
+
   async function submit() {
-    setBusy(true); setMessage('');
+    setBusy(true); setMessage(''); setDialogError('');
     const discarding = action === 'Terminate' && state.timeline.status === 'Draft';
     const values = {
       action, reason: form.reason.trim(), expectedStatus: state.timeline.status,
@@ -88,8 +101,13 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
       await load();
       onChanged?.();
     } catch (failure) {
-      setMessage(problemMessage(failure, MESSAGES));
-      if (isConflict(failure)) await load();
+      const text = problemMessage(failure, MESSAGES);
+      const reloaded = isConflict(failure) ? await load() : undefined;
+      // The contract moved on (or could not be read again): the dialog's intent is stale, so it closes and the
+      // panel explains why. Otherwise the cause shows inside the dialog, next to the reason.
+      if (reloaded === null || (reloaded && reloaded.status !== values.expectedStatus)) {
+        closeAction(); setMessage(text);
+      } else setDialogError(text);
     } finally { setBusy(false); }
   }
 
@@ -130,7 +148,7 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
       {((canManage && available.length > 0) || amendable) && (
         <div className="flex flex-wrap gap-2">
           {canManage && available.map(([key, meta]) => (
-            <button key={key} type="button" onClick={() => { setAction(key); setMessage(''); setAmended(false); }}
+            <button key={key} type="button" onClick={() => openAction(key)}
               className={`min-h-[36px] rounded-lg border px-3 text-xs font-semibold ${meta.danger ? 'border-status-danger text-status-danger' : 'border-accent-600 text-accent-600'}`}>{actionLabel(key, timeline.status)}</button>
           ))}
           {amendable && <button type="button" onClick={() => { setAmending(true); setMessage(''); setAmended(false); }}
@@ -150,19 +168,18 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
           </li>
         ))}
       </ol>
-      <Modal open={Boolean(action)} onClose={() => setAction(null)} title={action === 'Terminate' && timeline.status === 'Draft'
+      <Modal open={Boolean(action)} onClose={closeAction} title={action === 'Terminate' && timeline.status === 'Draft'
         ? `Descartar el contrato ${timeline.contractCode}` : `${ACTIONS[action]?.label ?? ''} contrato ${timeline.contractCode}`}
-        footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setAction(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
-          <button type="button" disabled={busy || form.reason.trim().length < 5 || action === 'Renew' && !form.validFrom} onClick={() => void submit()}
+        footer={<div className="flex justify-end gap-2"><button type="button" onClick={closeAction} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+          <button type="button" disabled={busy || !validReason(form.reason) || action === 'Renew' && !form.validFrom} onClick={() => void submit()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Aplicando…' : 'Confirmar'}</button></div>}>
         <div className="space-y-3 text-sm">
+          {dialogError && <p role="alert" className="rounded-lg bg-status-danger/10 p-2 text-xs text-status-danger">{dialogError}</p>}
           {action === 'Renew' && <div className="grid grid-cols-2 gap-3">
             <label className="text-xs font-semibold">Nueva vigencia desde<input type="date" value={form.validFrom} onChange={event => setForm(current => ({ ...current, validFrom: event.target.value }))} className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
             <label className="text-xs font-semibold">Hasta (opcional)<input type="date" value={form.validTo} onChange={event => setForm(current => ({ ...current, validTo: event.target.value }))} className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
           </div>}
-          <label className="block text-xs font-semibold">Motivo
-            <textarea rows={3} maxLength={500} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))}
-              className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
+          <ReasonField value={form.reason} onChange={reason => setForm(current => ({ ...current, reason }))} />
           {action === 'Terminate' && (timeline.status === 'Draft'
             ? <p className="text-xs text-status-danger">El contrato nunca se activó. Descartarlo es definitivo: se cierra sin firmas, sus versiones abiertas salen de Borradores y de Finanzas, y nada se borra del historial.</p>
             : <p className="text-xs text-status-danger">Terminar es definitivo: el contrato deja de habilitar operaciones.</p>)}

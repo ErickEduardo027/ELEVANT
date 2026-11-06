@@ -69,6 +69,29 @@ describe('createCommandKeyHolder', () => {
     holder.reset();
   });
 
+  it('resends the command of the first attempt on every retry of the same intent', async () => {
+    let next = 0;
+    const holder = createCommandKeyHolder(() => `key-${++next}`);
+    const sent = [];
+    let version = 'v1';
+    const send = outcome => (key, command) => {
+      sent.push([key, command]);
+      return outcome ? Promise.reject(outcome) : Promise.resolve('ok');
+    };
+    const build = () => ({ expectedVersion: version, body: 'Hola' });
+    await expect(holder.run('reply', { id: 1, body: 'Hola' }, send(new TypeError('offline')), build)).rejects.toThrow('offline');
+    // The record moved on while the result was uncertain: the retry is still the first command, with its key.
+    version = 'v2';
+    await expect(holder.run('reply', { id: 1, body: 'Hola' }, send(null), build)).resolves.toBe('ok');
+    // A settled intent builds the next command with the version on screen.
+    await holder.run('reply', { id: 1, body: 'Hola' }, send(null), build);
+    expect(sent).toEqual([
+      ['key-1', { expectedVersion: 'v1', body: 'Hola' }],
+      ['key-1', { expectedVersion: 'v1', body: 'Hola' }],
+      ['key-2', { expectedVersion: 'v2', body: 'Hola' }],
+    ]);
+  });
+
   it('uses random UUIDs by default', () => {
     expect(createCommandKeyHolder().keyFor('decide', {})).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });

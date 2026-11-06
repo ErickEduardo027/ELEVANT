@@ -130,6 +130,40 @@ describe('ContractApprovalsPage', () => {
     expect(screen.queryByText(/activado/)).not.toBeInTheDocument();
   });
 
+  it('never shows the previous contract while another one loads or fails, and retries it', async () => {
+    const other = { ...summary, versionId: 'v-2', contractId: 'c-2', contractCode: 'QA-2', airline: 'Otra Aerolínea' };
+    listContractApprovals.mockResolvedValue([summary, other]);
+    let failOther;
+    getContractApproval.mockImplementation(id => (id === 'v-1'
+      ? Promise.resolve({ summary, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] })
+      : new Promise((_, reject) => { failOther = reject; })));
+    renderWith(<ContractApprovalsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    expect(await screen.findByRole('heading', { name: 'Demo Airlines · QA-1' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Otra Aerolínea/ }));
+    // While the other contract loads, neither the first one nor its decisions stay on screen.
+    expect(screen.getByText('Cargando contrato…')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Demo Airlines · QA-1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
+    failOther(new TypeError('offline'));
+    expect(await screen.findByText('No se pudo cargar el contrato. Revise la conexión e intente de nuevo.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
+    getContractApproval.mockResolvedValue({ summary: other, terms: null, stations: ['SDQ'], history: [], rates: [], charges: [] });
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByRole('heading', { name: 'Otra Aerolínea · QA-2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aprobar precios' })).toBeInTheDocument();
+  });
+
+  it('shows the unauthorized state of a contract the analyst cannot read, without its decisions', async () => {
+    listContractApprovals.mockResolvedValue([summary]);
+    getContractApproval.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
+    renderWith(<ContractApprovalsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    expect(await screen.findByText(/No tiene permiso para ver este contrato/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+  });
+
   it('names package scopes, units and replaced versions in Spanish (1-N26)', async () => {
     const replaced = { ...summary, versionId: 'v-0', status: 'Superseded', airline: 'Old Airlines' };
     listContractApprovals.mockResolvedValue([replaced]);

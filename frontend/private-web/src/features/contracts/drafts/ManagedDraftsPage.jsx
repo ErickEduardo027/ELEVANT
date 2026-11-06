@@ -3,6 +3,7 @@ import { createPrivateWebAccountChangeObserver } from '../../../services/account
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import Modal from '../../../components/Modal';
+import ReasonField, { validReason } from '../../../components/ReasonField';
 import ContractPackagesPanel from './ContractPackagesPanel';
 import ContractPdfButtons from '../agreements/ContractPdfButtons';
 import {
@@ -27,6 +28,18 @@ const VERSION_STATUS = {
 };
 /** 1-F: Finance approves prices; the contract activates later, after the validity, both signatures and the permit. */
 const AFTER_FINANCE = 'Tras la aprobación de precios, Contratos fija la vigencia, firman la aerolínea y AVIAM y se verifica el permiso de operación; entonces el contrato se activa.';
+/**
+ * 409 codes after which the draft on screen is stale: it changed or moved on, so the editor drops its edits
+ * and reads it again before a new attempt. Any other 409 is a rule the server refused (package_not_eligible,
+ * valid_from_not_after_current, a readiness cause…): the edits stay on screen to be corrected.
+ */
+const STALE_DRAFT_CODES = new Set(['version_conflict', 'idempotency_conflict', 'draft_closed', 'draft_in_finance_review']);
+/** The draft changed, moved on or no longer exists. */
+const staleDraft = failure => failure?.status === 404 || (isConflict(failure) && STALE_DRAFT_CODES.has(failure.code));
+/** The draft left the list (closed or gone): its editor closes with it, so the page keeps the message. */
+const goneDraft = failure => failure?.status === 404 || (isConflict(failure) && failure.code === 'draft_closed');
+/** 1-N07: only an exclusion or a plain percentage survives a change of currency; an amount goes back to the base. */
+const repricedByCurrency = charge => charge.mode === 'negotiated' && charge.method !== 'PercentOfService';
 
 /**
  * Contract drafts of Contratos (phase 1, block B): the list, and the editor of one draft with its
@@ -37,7 +50,9 @@ const AFTER_FINANCE = 'Tras la aprobación de precios, Contratos fija la vigenci
 export default function ManagedDraftsPage({ canEdit = true, canActivate = true, canDiscard = false }) {
   const [view, setView] = useState({ status: 'loading', drafts: [], error: '' });
   const [selectedId, setSelectedId] = useState(null);
-  const [notice, setNotice] = useState('');
+  // { text, tone }: a success, or the error of a draft that left the list with its editor.
+  const [notice, setNotice] = useState(null);
+  const showNotice = useCallback((text, tone = 'success') => setNotice(text ? { text, tone } : null), []);
   // 1-E: rates keep a unit code; the editor offers the active units Finance maintains.
   const [units, setUnits] = useState([]);
   useEffect(() => {
@@ -78,15 +93,15 @@ export default function ManagedDraftsPage({ canEdit = true, canActivate = true, 
   const selected = drafts.find(item => item.id === selectedId) ?? null;
   const retry = <button type="button" onClick={() => { void reload(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button>;
   return <div className="mx-auto max-w-[1440px] 3xl:max-w-[1760px] space-y-5"><header className="flex items-end justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-signal-500">Gestión contractual / Versiones</p><h1 className="mt-1 text-2xl font-bold">Borradores</h1><p className="mt-1 text-sm text-text-secondary-light">Revise las observaciones de la aerolínea, configure alcance, condiciones y tarifas y envíe el contrato a Finanzas para su aprobación.</p></div><button type="button" onClick={() => { void reload(); }} className="rounded-lg border px-4 py-2 text-sm">Actualizar</button></header>
-    {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
+    {notice && <p role={notice.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${notice.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{notice.text}</p>}
     {view.status === 'forbidden' ? <p role="alert" className="rounded-xl border border-status-danger/30 bg-white p-8 text-center text-sm dark:bg-surface-dark-card">No tiene permiso para ver los borradores de contrato. Pida acceso al administrador de Contratos.</p> : <>
       {view.status === 'ready' && view.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{view.error}</span>{retry}</div>}
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_500px]"><section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card"><h2 className="font-bold">Versiones pendientes</h2>
         {view.status === 'loading' ? <p className="mt-5 text-sm">Cargando…</p>
           : view.status === 'error' ? <div role="alert" className="mt-5 space-y-2 text-sm text-status-danger"><p>{view.error}</p>{retry}</div>
-            : drafts.length ? <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">{drafts.map(item => <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(''); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span className="text-xs text-text-secondary-light">{item.contractCode} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {item.rates.length} servicios · {item.comments.length} observaciones</span></button>)}</div>
+            : drafts.length ? <div className="mt-4 divide-y divide-black/5 dark:divide-white/5">{drafts.map(item => <button type="button" key={item.id} onClick={() => { setSelectedId(item.id); setNotice(null); }} className={`w-full py-4 text-left hover:text-accent-600 ${selectedId === item.id ? 'text-accent-600' : ''}`}><strong className="block">{item.airline}</strong><span className="text-xs text-text-secondary-light">{item.contractCode} · {VERSION_STATUS[item.versionStatus] ?? 'Borrador'} · {item.rates.length} servicios · {item.comments.length} observaciones</span></button>)}</div>
               : <p className="mt-5 text-sm text-text-secondary-light">No hay borradores pendientes.</p>}</section>
-        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={setNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Seleccione un borrador para revisarlo.</p>}</section></div>
+        <section className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">{selected ? <DraftEditor key={selected.id} draft={selected} units={units} canEdit={canEdit} canActivate={canActivate} canDiscard={canDiscard} onNotice={showNotice} onChanged={reload} /> : <p className="py-12 text-center text-sm text-text-secondary-light">Seleccione un borrador para revisarlo.</p>}</section></div>
     </>}
   </div>;
 }
@@ -145,20 +160,34 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
   const discardKeys = useRef(createCommandKeyHolder());
   const replyKeys = useRef(createCommandKeyHolder());
 
-  async function run(holder, action, body, send, success, { resetsForm = false } = {}) {
+  /**
+   * Sends one command of the editor. `intent` names it for its Idempotency-Key; with `command` the body is
+   * built at the first attempt and a retry resends it as it was. A command answered inside a dialog
+   * (`inDialog`) gets its message back to show there, instead of behind the dialog.
+   */
+  async function run(holder, action, intent, send, success, { command, resetsForm = false, inDialog = false } = {}) {
     setBusy(action); setError('');
     try {
-      await holder.current.run(action, body, key => send(key));
+      await holder.current.run(action, intent, send, command);
       if (resetsForm) setDirty(false);
       onNotice(success);
       setRefresh(value => value + 1);
       await onChanged();
-      return true;
+      return { ok: true };
     } catch (failure) {
-      setError(draftProblemMessage(failure));
-      // The draft changed or moved on: re-read it before a new attempt.
-      if (isConflict(failure)) { setDirty(false); setRefresh(value => value + 1); await onChanged(); }
-      return false;
+      const message = draftProblemMessage(failure);
+      const gone = goneDraft(failure);
+      // A draft that left the list takes its editor with it: the page keeps the message.
+      if (gone) onNotice(message, 'error');
+      else if (!inDialog) setError(message);
+      if (staleDraft(failure)) {
+        // The draft changed or moved on: the edits are dropped and it is read again before a new attempt.
+        setDirty(false); setRefresh(value => value + 1); await onChanged();
+      } else if (isConflict(failure)) {
+        // A rule refused the command: the edits stay to be corrected; the checks are read again.
+        setRefresh(value => value + 1); await onChanged();
+      }
+      return { ok: false, message, gone };
     } finally {
       setBusy('');
     }
@@ -186,12 +215,16 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
   const saveScope = command => run(scopeKeys, 'scope', { id: draft.id, ...command },
     key => setContractDraftScope(draft.id, command, key),
     'Alcance actualizado. Los servicios nuevos parten de la tarifa base de Finanzas y deben confirmarse.');
+  // The version of the first attempt goes with every retry of the same reason or answer: a retry after an
+  // uncertain result is the same command, so the server replays it even if the draft moved on meanwhile.
   const discard = reason => run(discardKeys, 'discard', { id: draft.id, reason },
-    key => discardContractDraft(draft.id, { expectedVersion: draft.version, reason }, key),
-    'Borrador descartado. Se conserva en el historial del contrato.');
+    (key, command) => discardContractDraft(draft.id, command, key),
+    'Borrador descartado. Se conserva en el historial del contrato.',
+    { command: () => ({ expectedVersion: draft.version, reason }), inDialog: true });
   const reply = body => run(replyKeys, 'reply', { id: draft.id, body },
-    key => replyContractDraft(draft.id, { expectedVersion: draft.version, body }, key),
-    'Respuesta enviada. La aerolínea la verá en su portal.');
+    (key, command) => replyContractDraft(draft.id, command, key),
+    'Respuesta enviada. La aerolínea la verá en su portal.',
+    { command: () => ({ expectedVersion: draft.version, body }) });
 
   const updateForm = patch => { setForm(current => ({ ...current, ...patch })); setDirty(true); };
   const updateRate = (index, patch) => updateForm({ rates: form.rates.map((item, position) => (position === index ? { ...item, ...patch } : item)) });
@@ -201,6 +234,8 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
   const locked = Boolean(busy) || packagesBusy || packagesDirty;
   const ready = readiness.data?.version === draft.version && readiness.data.ready && !readiness.loading;
   const canSubmit = ready && !dirty && !locked;
+  const currencyChanged = form.currencyCode !== draft.currencyCode;
+  const repriced = currencyChanged ? form.charges.filter(repricedByCurrency).map(charge => charge.code) : [];
 
   return <div><p className="text-xs font-mono text-signal-500">{draft.contractCode}</p><h2 className="mt-1 text-xl font-bold">{draft.airline}</h2><p className="mt-1 text-xs text-text-secondary-light">Estaciones: {draft.stations.join(' · ') || 'sin estaciones'}</p>
     <ContractPdfButtons versionId={draft.id} fileName={`borrador-${draft.contractCode}.pdf`} draft className="mt-3" />
@@ -217,7 +252,7 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
           <label className="text-xs font-semibold">Hasta (opcional)<input type="date" value={form.validTo} onChange={event => updateForm({ validTo: event.target.value })} className="mt-1 block w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
           <label className="text-xs font-semibold">Moneda<select value={form.currencyCode} onChange={event => updateForm({ currencyCode: event.target.value })} className="mt-1 block w-full rounded-lg border p-2 text-sm dark:bg-surface-dark"><option>USD</option><option>DOP</option></select></label>
         </div>
-        {form.currencyCode !== draft.currencyCode && <p role="note" className="rounded-lg border border-status-warning/40 bg-status-warning/10 p-3 text-xs">Al cambiar la moneda todas las tarifas quedarán sin confirmar: revíselas y confírmelas de nuevo. Los paquetes vinculados deben existir en la nueva moneda.</p>}
+        {currencyChanged && <p role="note" className="rounded-lg border border-status-warning/40 bg-status-warning/10 p-3 text-xs">Al cambiar la moneda todas las tarifas quedarán sin confirmar: revíselas y confírmelas de nuevo. {repriced.length > 0 ? `Los cargos con importe negociado (${repriced.join(', ')}) volverán a la tarifa base de Finanzas en ${form.currencyCode}: negócielos de nuevo después de guardar. ` : ''}Las exclusiones y los porcentajes negociados se conservan. Los paquetes vinculados deben existir en la nueva moneda.</p>}
         <div><h3 className="text-sm font-bold">Tarifas</h3>
           <p className="text-xs text-text-secondary-light">Parten de la tarifa base de Finanzas en {draft.currencyCode}; Finanzas revisa las diferencias antes de aprobar.</p>
           {form.rates.map((rate, index) => {
@@ -237,7 +272,7 @@ function DraftEditor({ draft, units = [], canEdit, canActivate, canDiscard, onNo
         {form.charges.length > 0 && <div><h3 className="text-sm font-bold">Cargos y recargos</h3>
           <p className="text-xs text-text-secondary-light">Sin cambios se aplica el tarifario de cargos de Finanzas.</p>
           {form.charges.map(charge => <div key={charge.chargeId} className="mt-2 grid grid-cols-1 items-end gap-2 rounded-lg border border-black/10 p-3 text-xs dark:border-white/10 min-[400px]:grid-cols-[minmax(0,1fr)_9rem_7rem]">
-            <span><strong>{charge.code}</strong> · {charge.name}<span className="block text-text-secondary-light">Base {charge.baseValue ?? 'sin importe'}{charge.method === 'PercentOfService' ? ' %' : ''}</span></span>
+            <span><strong>{charge.code}</strong> · {charge.name}<span className="block text-text-secondary-light">Base {charge.baseValue ?? 'sin importe'}{charge.method === 'PercentOfService' ? ' %' : ''}</span>{currencyChanged && repricedByCurrency(charge) && <span className="block text-status-warning">Vuelve a la tarifa base en {form.currencyCode} al guardar.</span>}</span>
             <label>Trato<select aria-label={`Trato de ${charge.code}`} value={charge.mode} onChange={event => updateCharge(charge.chargeId, { mode: event.target.value, value: event.target.value === 'negotiated' ? (charge.value ?? charge.baseValue ?? 0) : charge.value })} className={fieldClass}>
               <option value="base">Tarifa base</option><option value="negotiated">Negociado</option><option value="excluded">Excluido</option></select></label>
             {charge.mode === 'negotiated' ? <label>Importe<input aria-label={`Importe de ${charge.code}`} type="number" min="0" step="0.01" required value={charge.value ?? ''} onChange={event => updateCharge(charge.chargeId, { value: event.target.value })} className={fieldClass} /></label> : <span />}
@@ -316,7 +351,7 @@ function Observations({ draft, canReply, busy, onReply }) {
   const [body, setBody] = useState('');
   async function submit(event) {
     event.preventDefault();
-    if (await onReply(body.trim())) setBody('');
+    if ((await onReply(body.trim())).ok) setBody('');
   }
   return <section aria-label="Observaciones" className="mt-5 rounded-lg bg-black/[.03] p-4 dark:bg-white/[.04]"><h3 className="text-sm font-bold">Observaciones de la aerolínea</h3>
     {draft.comments.length ? <ul className="mt-3 space-y-2">{draft.comments.map(comment => <li key={comment.id} className="border-b border-black/5 pb-2 text-sm"><strong>{comment.author}</strong>{!comment.isAirline && <span className="text-xs text-text-secondary-light"> · Respuesta de Contratos</span>}<p>{comment.body}</p><time className="text-xs text-text-secondary-light">{new Date(comment.at).toLocaleString('es-DO')}</time></li>)}</ul> : <p className="mt-2 text-xs text-text-secondary-light">Aún no hay comentarios.</p>}
@@ -324,23 +359,32 @@ function Observations({ draft, canReply, busy, onReply }) {
   </section>;
 }
 
-/** Discard with a reason (1-B): the version is kept, closed; a never-active contract closes with it. */
+/**
+ * Discard with a reason (1-B): the version is kept, closed; a never-active contract closes with it. A refusal
+ * shows inside the dialog, where the user is looking; a draft that left the list closes it (the page explains).
+ */
 function DiscardSection({ draft, busy, locked, onDiscard }) {
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
-  const valid = reason.trim().length >= 5 && reason.trim().length <= 500;
+  const [error, setError] = useState('');
+  const close = () => { setOpen(false); setError(''); };
   async function confirm() {
-    if (await onDiscard(reason.trim())) { setOpen(false); setReason(''); }
+    setError('');
+    const result = await onDiscard(reason.trim());
+    if (result.ok) { close(); setReason(''); }
+    else if (result.gone) close();
+    else setError(result.message);
   }
   return <div className="mt-6 border-t border-black/10 pt-4 dark:border-white/10">
-    <button type="button" disabled={locked} onClick={() => setOpen(true)} className="rounded-lg border border-status-danger px-4 py-2 text-sm font-semibold text-status-danger disabled:opacity-50">Descartar borrador</button>
-    <Modal open={open} onClose={() => { if (!busy) setOpen(false); }} tone="danger" title={`Descartar el borrador de ${draft.contractCode}`}
-      footer={<><button type="button" disabled={busy} onClick={() => setOpen(false)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
-        <button type="button" disabled={busy || !valid} onClick={() => { void confirm(); }} className="rounded-lg bg-status-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Descartando…' : 'Descartar'}</button></>}>
+    <button type="button" disabled={locked} onClick={() => { setError(''); setOpen(true); }} className="rounded-lg border border-status-danger px-4 py-2 text-sm font-semibold text-status-danger disabled:opacity-50">Descartar borrador</button>
+    <Modal open={open} onClose={() => { if (!busy) close(); }} tone="danger" title={`Descartar el borrador de ${draft.contractCode}`}
+      footer={<><button type="button" disabled={busy} onClick={close} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+        <button type="button" disabled={busy || !validReason(reason)} onClick={() => { void confirm(); }} className="rounded-lg bg-status-danger px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Descartando…' : 'Descartar'}</button></>}>
       <div className="space-y-3 text-sm">
+        {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-status-danger">{error}</p>}
         <p>La versión queda descartada: sale de Borradores{draft.versionStatus === 'PendingFinanceApproval' ? ' y de la bandeja de Finanzas' : ''} y la aerolínea deja de verla. Nada se borra: queda en el historial del contrato.</p>
         {draft.status === 'Draft' && <p className="text-status-danger">Si el contrato nunca se activó y no tiene otra versión vigente, también quedará terminado.</p>}
-        <label className="block text-xs font-semibold">Motivo<textarea rows={3} maxLength={500} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
+        <ReasonField value={reason} onChange={setReason} />
       </div>
     </Modal>
   </div>;

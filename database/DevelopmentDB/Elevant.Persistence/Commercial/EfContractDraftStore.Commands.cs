@@ -113,10 +113,10 @@ internal sealed partial class EfContractDraftStore
             var rateUnits = input.Rates.ToDictionary(item => item.Id, item => units.Resolve(item.BillingUnit));
             if (rateUnits.Values.Any(unit => unit is null)) return Invalid("billing_unit_unknown");
             var chargeKeys = input.ChargeRates?.Select(rate => rate.ChargeId).ToArray() ?? [];
-            var chargeIds = await context.ChargeDefinitions.AsNoTracking()
+            var chargeDefinitions = await context.ChargeDefinitions.AsNoTracking()
                 .Where(charge => chargeKeys.Contains(charge.PublicId))
-                .ToDictionaryAsync(charge => charge.PublicId, charge => charge.Id, cancellationToken);
-            if (chargeIds.Count != chargeKeys.Length) return Invalid("invalid_draft");
+                .ToDictionaryAsync(charge => charge.PublicId, charge => (charge.Id, charge.Method), cancellationToken);
+            if (chargeDefinitions.Count != chargeKeys.Length) return Invalid("invalid_draft");
             // A renewal or an amendment starts after the approved version in force (1-C, 1-B).
             if (!ContractDraftRules.StartsAfterCurrent(input.ValidFrom,
                     await CurrentApprovedStartAsync(row.Contract.Id, row.Version.Id, cancellationToken)))
@@ -127,17 +127,35 @@ internal sealed partial class EfContractDraftStore
                 (await LinkedPackagesAsync(row.Version.Id, cancellationToken)).Any(package =>
                     !PackageFits(package, input.CurrencyCode, input.ValidFrom, input.ValidTo)))
                 return Conflict(ContractDraftIssues.PackageNotEligible);
-            if (input.ChargeRates is not null)
+            // 1-N07: an amount in another currency is another amount. A save that changes the currency keeps
+            // only the charge treatments that do not depend on it (an exclusion, a plain percentage), whether
+            // the editor sent the charges again or not; every other charge falls back to the Finance base of
+            // the new currency until Contratos negotiates it again, as every rate is confirmed again below.
+            if (input.ChargeRates is not null || currencyChanged)
             {
-                context.ContractChargeRates.RemoveRange(await context.ContractChargeRates
-                    .Where(rate => rate.ContractVersionId == row.Version.Id).ToArrayAsync(cancellationToken));
-                foreach (var charge in input.ChargeRates.Where(rate => rate.IsExcluded || rate.Value is not null))
-                    context.ContractChargeRates.Add(new ContractChargeRate
+                var stored = await (from rate in context.ContractChargeRates
+                                    join charge in context.ChargeDefinitions on rate.ChargeDefinitionId equals charge.Id
+                                    where rate.ContractVersionId == row.Version.Id
+                                    select new { Rate = rate, charge.Method }).ToArrayAsync(cancellationToken);
+                if (input.ChargeRates is null)
+                    context.ContractChargeRates.RemoveRange(stored.Where(item => !ContractDraftRules.ChargeKeepsAcrossCurrencies(
+                        item.Rate.IsExcluded, item.Method, item.Rate.MinimumAmount)).Select(item => item.Rate));
+                else
+                {
+                    context.ContractChargeRates.RemoveRange(stored.Select(item => item.Rate));
+                    foreach (var charge in input.ChargeRates.Where(rate => rate.IsExcluded || rate.Value is not null))
                     {
-                        PublicId = Guid.CreateVersion7(), ContractVersionId = row.Version.Id,
-                        ChargeDefinitionId = chargeIds[charge.ChargeId], IsExcluded = charge.IsExcluded,
-                        Value = charge.IsExcluded ? null : charge.Value, CreatedAt = now, UpdatedAt = now,
-                    });
+                        var (chargeId, method) = chargeDefinitions[charge.ChargeId];
+                        if (currencyChanged && !ContractDraftRules.ChargeKeepsAcrossCurrencies(charge.IsExcluded, method, null))
+                            continue;
+                        context.ContractChargeRates.Add(new ContractChargeRate
+                        {
+                            PublicId = Guid.CreateVersion7(), ContractVersionId = row.Version.Id,
+                            ChargeDefinitionId = chargeId, IsExcluded = charge.IsExcluded,
+                            Value = charge.IsExcluded ? null : charge.Value, CreatedAt = now, UpdatedAt = now,
+                        });
+                    }
+                }
             }
             var beforePrices = Prices(rates);
             var beforeConfirmation = Confirmations(rates);

@@ -81,6 +81,12 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
                 ? new(await DocumentAsync(row.Value.VersionId, cancellationToken), null, true)
                 : Failed(ContractDocumentFailure.Conflict);
 
+        // 1-B: the contract is read, tracked, before every check and the signature always writes it, so its
+        // rowversion turns a termination (or a validity change) committed in between into a conflict
+        // instead of a signature on a closed contract. The tracker starts empty: an entity tracked by an
+        // earlier command of this context would carry an old status and rowversion.
+        context.ChangeTracker.Clear();
+        var contract = await context.Contracts.SingleAsync(item => item.Id == row.Value.ContractId, cancellationToken);
         var document = await DocumentAsync(row.Value.VersionId, cancellationToken);
         if (row.Value.Status != ContractVersionStatus.Approved) return Failed(ContractDocumentFailure.Conflict);
         if (!string.Equals(document.ContentSha256, input.DocumentSha256, StringComparison.OrdinalIgnoreCase))
@@ -88,7 +94,7 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         if (document.Signatures.Any(item => item.Party == reader.Party.ToString()))
             return Failed(ContractDocumentFailure.AlreadySigned);
         // A discarded or terminated contract is closed: its approved version is history, not an offer.
-        if (document.ContractStatus == nameof(ContractStatus.Terminated))
+        if (contract.Status == ContractStatus.Terminated)
             return Failed(ContractDocumentFailure.Conflict, "contract_terminated");
         if (document.Validity is null) return Failed(ContractDocumentFailure.ValidityPending, "validity_pending");
         // The airline signs first; AVIAM countersigns what the airline already accepted.
@@ -106,12 +112,8 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
             SignatureImage = image, SignatureImageSha256 = imageSha256,
         });
         // The contract counts as signed once both parties accepted the version in force.
-        if (document.Signatures.Count == 1)
-        {
-            var contract = await context.Contracts.SingleAsync(item => item.Id == row.Value.ContractId, cancellationToken);
-            contract.SignedOn = DateOnly.FromDateTime(now.UtcDateTime);
-            contract.UpdatedAt = now;
-        }
+        if (document.Signatures.Count == 1) contract.SignedOn = DateOnly.FromDateTime(now.UtcDateTime);
+        contract.UpdatedAt = now;
         CommercialAuditWriter.Add(context, reader.AccountId, "commercial.contract.signed",
             "commercial.contract_versions", versionId, $"{reader.Party}: {name}, {title}");
         foreach (var recipient in await CommercialNotificationRecipients.WithPermissionAsync(context,
@@ -131,8 +133,10 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         }
         catch (DbUpdateConcurrencyException)
         {
+            // The contract changed after the checks; nothing was signed.
             context.ChangeTracker.Clear();
-            return Failed(ContractDocumentFailure.Conflict);
+            return Failed(ContractDocumentFailure.Conflict,
+                await TerminatedAsync(row.Value.ContractId, cancellationToken) ? "contract_terminated" : null);
         }
         // The second signature may complete the activation conditions (ADR-0024). A renewal of a
         // contract already in force activates nothing, so its signed PDF is sent from here.
@@ -165,9 +169,15 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         var row = await VersionAsync(versionId, cancellationToken);
         if (row is null) return Failed(ContractDocumentFailure.NotFound);
         if (row.Value.Status != ContractVersionStatus.Approved) return Failed(ContractDocumentFailure.Conflict, "not_approved");
+        // 1-B: version and contract are read, tracked, before the checks and both are written, so their
+        // rowversions turn a termination or a signature committed in between into a conflict. The tracker
+        // starts empty: an entity tracked by an earlier command of this context would be stale.
+        context.ChangeTracker.Clear();
+        var version = await context.ContractVersions.SingleAsync(item => item.Id == row.Value.VersionId, cancellationToken);
+        var contract = await context.Contracts.SingleAsync(item => item.Id == row.Value.ContractId, cancellationToken);
         var current = await DocumentAsync(row.Value.VersionId, cancellationToken);
         if (current.Signatures.Count > 0) return Failed(ContractDocumentFailure.Conflict, "already_signed");
-        if (current.ContractStatus == nameof(ContractStatus.Terminated))
+        if (contract.Status == ContractStatus.Terminated)
             return Failed(ContractDocumentFailure.Conflict, "contract_terminated");
         if (!string.Equals(current.ContentSha256, input.ExpectedDocumentSha256, StringComparison.OrdinalIgnoreCase))
             return Failed(ContractDocumentFailure.Conflict, "content_changed");
@@ -193,8 +203,6 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
                 package.ValidTo is { } until && until < input.ValidTo!.Value))
             return Failed(ContractDocumentFailure.Invalid, "packages_out_of_range");
 
-        var version = await context.ContractVersions.SingleAsync(item => item.Id == row.Value.VersionId, cancellationToken);
-        var contract = await context.Contracts.SingleAsync(item => item.Id == row.Value.ContractId, cancellationToken);
         var accountId = await context.Users.AsNoTracking().Where(user => user.PublicId == actorId)
             .Select(user => user.Id).SingleAsync(cancellationToken);
         // Finance approval already ended the versions this one replaces the day before its start;
@@ -245,7 +253,8 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         catch (DbUpdateConcurrencyException)
         {
             context.ChangeTracker.Clear();
-            return Failed(ContractDocumentFailure.Conflict, "content_changed");
+            return Failed(ContractDocumentFailure.Conflict,
+                await TerminatedAsync(row.Value.ContractId, cancellationToken) ? "contract_terminated" : "content_changed");
         }
         catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
@@ -267,6 +276,11 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
 
     private static ContractDocumentResult Failed(ContractDocumentFailure failure, string? code = null) =>
         new(null, failure, Code: code);
+
+    /// <summary>Whether the contract is terminated now, read past the change tracker (after a conflict).</summary>
+    private Task<bool> TerminatedAsync(long contractId, CancellationToken cancellationToken) =>
+        context.Contracts.AsNoTracking()
+            .AnyAsync(item => item.Id == contractId && item.Status == ContractStatus.Terminated, cancellationToken);
 
     /// <summary>The party may sign now: validity confirmed, not signed yet and, for AVIAM, after the airline.</summary>
     private static string? SignableBy(ContractDocumentData document, Reader reader) =>
