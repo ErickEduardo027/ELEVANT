@@ -65,6 +65,10 @@ describe('ApprovedServicesPage', () => {
       expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(screen.getByText('Lista para prefactura')).toBeInTheDocument();
     expect(screen.getByText('Sin cantidad ejecutada')).toBeInTheDocument();
+    // 1-E: the unit codes are shown in Spanish.
+    expect(screen.getByText('2 operación')).toBeInTheDocument();
+    expect(screen.getByText('0 hora')).toBeInTheDocument();
+    expect(screen.queryByText(/\boperation\b/)).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Marcar revisado' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Filtrar por aerolínea'),
       { target: { value: 'Demo Airlines' } });

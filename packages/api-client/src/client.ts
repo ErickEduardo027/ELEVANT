@@ -43,6 +43,69 @@ import {
 } from "./operationalClose";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
+  isContractDraftReadiness,
+  isContractDraftScope,
+  normalizedDraftDiscard,
+  normalizedDraftMessage,
+  normalizedDraftScope,
+  normalizedDraftSubmission,
+  normalizedDraftUpdate,
+  type ContractDraftMessageCommand,
+  type DiscardContractDraftCommand,
+  type SetContractDraftScopeCommand,
+  type SubmitManagedContractDraftCommand,
+  type UpdateManagedContractDraftCommand,
+} from "./contractDrafts";
+import {
+  isFinancePackageIdResponse,
+  normalizedContractAmendment,
+  normalizedPackageLifecycle,
+  type CreateContractAmendmentCommand,
+  type FinancePackageLifecycleCommand,
+} from "./financePackages";
+import {
+  isManagedService,
+  isServiceClosure,
+  normalizedClosureDecision,
+  normalizedManagedServiceUpdate,
+  normalizedServiceReopen,
+  normalizedServiceRetirement,
+  type DecideServiceClosureCommand,
+  type ReopenServiceCommand,
+  type RetireManagedServiceCommand,
+  type UpdateManagedServiceCommand,
+} from "./catalog";
+import {
+  isCommercialAccountResponse,
+  isEmailOutboxPage,
+  isInvoiceEmailStatus,
+  isProvisioningTaskList,
+  normalizedAccountLink,
+  normalizedClientPasswordReset,
+  normalizedEmailOutboxQuery,
+  normalizedInvitationResend,
+  normalizedProvisioning,
+  type EmailOutboxQuery,
+  type LinkProvisioningAccountCommand,
+  type ProvisionAirlineAccountCommand,
+  type ResendAirlineInvitationCommand,
+  type ResetClientUserPasswordCommand,
+} from "./governanceAccounts";
+import {
+  isCommercialIdResponse,
+  isCommercialInboxData,
+  normalizedAirlineVerification,
+  normalizedCommercialDecision,
+  normalizedCommercialInboxQuery,
+  normalizedRepresentativeConfirmation,
+  normalizedRequestCancellation,
+  type CancelCommercialRequestCommand,
+  type CommercialInboxQuery,
+  type ConfirmCommercialRepresentativeCommand,
+  type DecideCommercialRequestCommand,
+  type VerifyCommercialRequestAirlineCommand,
+} from "./commercialRequests";
+import {
   getGetAccountChangesUrl,
   getGetAirlineContractsUrl,
   getGetAirlineOperationsUrl,
@@ -58,6 +121,26 @@ import {
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
   getLookupCommercialRequestReceiptUrl,
+  getListCommercialRequestInboxUrl,
+  getVerifyCommercialRequestAirlineUrl,
+  getConfirmCommercialRepresentativeUrl,
+  getCancelCommercialRequestUrl,
+  getDecideCommercialRequestUrl,
+  getCommentAirlineContractDraftUrl,
+  getUpdateManagedContractDraftUrl,
+  getActivateManagedContractDraftUrl,
+  getGetManagedContractDraftReadinessUrl,
+  getGetManagedContractDraftScopeUrl,
+  getSetManagedContractDraftScopeUrl,
+  getDiscardManagedContractDraftUrl,
+  getReplyManagedContractDraftUrl,
+  getCreateContractAmendmentUrl,
+  getDiscardFinancePackageUrl,
+  getRetireFinancePackageUrl,
+  getUpdateCommercialServiceUrl,
+  getRetireCommercialServiceUrl,
+  getDecideServiceClosureUrl,
+  getReopenServiceUrl,
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
@@ -114,6 +197,12 @@ import {
   getResendAirlineInvitationUrl,
   getSendTestEmailUrl,
   getListEmailDeliveriesUrl,
+  getListEmailOutboxUrl,
+  getListCommercialProvisioningUrl,
+  getProvisionCommercialAirlineUrl,
+  getLinkCommercialAirlineAccountUrl,
+  getResetGovernanceClientUserPasswordUrl,
+  getGetFinanceInvoiceEmailDeliveriesUrl,
   getChangePasswordUrl,
   getGetCurrentSessionUrl,
   getGetOccPlanningOptionsUrl,
@@ -247,6 +336,13 @@ import {
   type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest,
   type SubmitCommercialRequestResponse,
+  type CommercialIdResponse,
+  type FinancePackageIdResponse,
+  type ManagedServiceData,
+  type ServiceClosureData,
+  type CommercialInboxData,
+  type ContractDraftReadinessData,
+  type ContractDraftScopeData,
   type FinanceApprovedServicesResponse,
   type FinancePreinvoicePageData,
   type ListFinancePreinvoicesParams,
@@ -390,6 +486,10 @@ import {
   type LoginChallengeResponse,
   type EmailDeliveryResponse,
   type EmailDeliveriesResponse,
+  type EmailOutboxPageResponse,
+  type InvoiceEmailStatusResponse,
+  type ProvisioningTaskData,
+  type CommercialAccountResponse,
   type SubmitRampOperationChecklistRequest,
   type SystemPingResponse,
   type TransitionRampOperationServiceRequest,
@@ -627,9 +727,35 @@ export interface ElevantApiClient {
   /** Always resolves when the request is well formed, whether or not the email has an account. */
   requestPasswordReset(email: string, options?: CreateSessionOptions): Promise<void>;
   resetPassword(token: string, newPassword: string, options?: CreateSessionOptions): Promise<void>;
-  resendAirlineInvitation(accountId: string, options?: CreateSessionOptions): Promise<void>;
+  /**
+   * Queues a new activation link for an account that has not activated yet; the earlier links stop working and
+   * their queued emails are discarded (ADR-0022, 1-N09). `expectedVersion` is the account version on screen.
+   */
+  resendAirlineInvitation(accountId: string, command: ResendAirlineInvitationCommand, idempotencyKey: string,
+    options?: CreateSessionOptions): Promise<CommercialAccountResponse>;
   sendTestEmail(to: string, options?: CreateSessionOptions): Promise<EmailDeliveryResponse>;
   listEmailDeliveries(options?: CreateSessionOptions): Promise<EmailDeliveriesResponse>;
+  /** The superadmin outbox: status filter, paging, the reason of each email and what it is about (1-N22). */
+  getEmailOutbox(query?: EmailOutboxQuery, options?: CreateSessionOptions): Promise<EmailOutboxPageResponse>;
+  /** Approved requests waiting for their portal account, each with the request version (1-N13). */
+  listProvisioningTasks(options?: CreateSessionOptions): Promise<ProvisioningTaskData[]>;
+  /**
+   * Creates the airline's portal account: an emailed invitation, or the temporary password chosen instead. An email
+   * that already has an account fails with `email_has_account` when it can be linked instead.
+   */
+  provisionAirlineAccount(requestId: string, command: ProvisionAirlineAccountCommand, idempotencyKey: string,
+    options?: CreateSessionOptions): Promise<CommercialAccountResponse>;
+  /** Links the existing portal account of the email to the request; its credentials do not change (1-N13). */
+  linkProvisioningAccount(requestId: string, command: LinkProvisioningAccountCommand, idempotencyKey: string,
+    options?: CreateSessionOptions): Promise<CommercialAccountResponse>;
+  /**
+   * Sets a temporary password the user must change at the next sign-in; on a pending invitation it accepts the
+   * invitation, retires its links and discards its queued email (1-N12).
+   */
+  resetClientUserPassword(organizationId: string, userId: string, command: ResetClientUserPasswordCommand,
+    idempotencyKey: string, options?: CreateSessionOptions): Promise<CommercialIdResponse>;
+  /** The «Factura emitida» emails of an invoice and their delivery state; none when nobody could receive it (1-N08). */
+  getInvoiceEmailDeliveries(invoiceId: string, options?: CreateSessionOptions): Promise<InvoiceEmailStatusResponse>;
   /** Renews the session; a 409 with code refresh_rotated means another tab already did (ADR-0021). */
   refreshSession(refreshToken: string, options?: CreateSessionOptions): Promise<SessionResponse>;
   /** Ends the session: the refresh token and every renewal of it stop working. */
@@ -1080,9 +1206,73 @@ export interface ElevantApiClient {
   getContractTimeline(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractTimelineData>;
   signContractVersion(versionId: string, request: SignContractRequest, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
+  /** Contratos inbox of public requests: server filter, search, paging and counters per status. */
+  getCommercialRequestInbox(query?: CommercialInboxQuery,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialInboxData>;
+  /** Verifies the request's airline, or links the proposed one to an existing profile. */
+  verifyCommercialRequestAirline(requestId: string, command: VerifyCommercialRequestAirlineCommand,
+    idempotencyKey: string, options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Records who confirmed the representative, when and how; approval requires it. */
+  confirmCommercialRepresentative(requestId: string, command: ConfirmCommercialRepresentativeCommand,
+    idempotencyKey: string, options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  cancelCommercialRequest(requestId: string, command: CancelCommercialRequestCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Approves (returns the draft contract) or rejects with a reason. */
+  decideCommercialRequest(requestId: string, command: DecideCommercialRequestCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
   /** Contratos confirms validity, renewal and termination before signatures (ADR-0025). */
   setContractValidity(versionId: string, request: SetContractValidityRequest,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
+  /** Whether a draft can go to Finance, each blocking cause and the airline's portal account (phase 1, B). */
+  getContractDraftReadiness(versionId: string,
+    options?: GetHumanResourcesReportOptions): Promise<ContractDraftReadinessData>;
+  /** The services and stations of a draft and the active ones that can be added. */
+  getContractDraftScope(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractDraftScopeData>;
+  /** Sets the services and stations of a draft; new services start from the base tariff, unconfirmed. */
+  setContractDraftScope(versionId: string, command: SetContractDraftScopeCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Saves terms, validity, currency, rates and charges of a draft. */
+  updateManagedContractDraft(versionId: string, command: UpdateManagedContractDraftCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** «Enviar a Finanzas»; answers the contract of the draft. */
+  submitManagedContractDraft(versionId: string, command: SubmitManagedContractDraftCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Discards a draft or a version awaiting Finance with a reason; nothing is deleted. */
+  discardContractDraft(versionId: string, command: DiscardContractDraftCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Contratos answers the airline on its draft; answers the new comment. */
+  replyContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** The airline's observation on its draft, also while Finance reviews it; answers the new comment. */
+  commentAirlineContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /**
+   * Contratos amends an active or suspended contract from any of its versions (1-C): a new draft from the
+   * latest approved version, starting on `validFrom`; answers the new draft version.
+   */
+  createContractAmendment(versionId: string, command: CreateContractAmendmentCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<FinancePackageIdResponse>;
+  /** Finance discards a package draft with a reason (1-N27); it is kept as Discarded. */
+  discardFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<FinancePackageIdResponse>;
+  /** Finance retires a published package with a reason (1-N27); approved contracts keep it. */
+  retireFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<FinancePackageIdResponse>;
+  /**
+   * Contratos edits a catalog service: hides it from the public catalog, shows it or reactivates it, never
+   * retires it (1-N03). Answers the service as stored.
+   */
+  updateManagedService(serviceId: string, command: UpdateManagedServiceCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ManagedServiceData>;
+  /** «Dar de baja» with a reason; refused while a contract in force or in approval uses the service (1-N03). */
+  retireManagedService(serviceId: string, command: RetireManagedServiceCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ManagedServiceData>;
+  /** Contratos approves or denies an OCC closure request, also of a hidden or retired service (1-N11). */
+  decideServiceClosure(closureId: string, command: DecideServiceClosureCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ServiceClosureData>;
+  /** Republishes the service its approved closure hid; a retired service is reactivated first (1-N11). */
+  reopenService(serviceId: string, command: ReopenServiceCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ServiceClosureData>;
   getOccReport(key: OccReportKey, query: OccReportQuery,
     options?: GetHumanResourcesReportOptions): Promise<OccReportPageResponse>;
   exportOccReport(key: OccReportKey, query: OccReportQuery, format: OccReportFormat,
@@ -3109,7 +3299,8 @@ function isAirlinePortalBootstrapResponse(
   return isRecord(value) &&
     hasOnlyKeys(value, ["airlineId", "organizationId", "iataCode", "icaoCode", "name", "stations", "currentOperations"]) &&
     isUuid(value.airlineId) && isUuid(value.organizationId) &&
-    isNonEmptyString(value.iataCode) && isNonEmptyString(value.icaoCode) &&
+    // An operator without IATA designator sends an empty code; the ICAO code is always there (1-N17).
+    isString(value.iataCode) && isNonEmptyString(value.icaoCode) &&
     isNonEmptyString(value.name) && Array.isArray(value.stations) &&
     value.stations.every((station) => isRecord(station) &&
       hasOnlyKeys(station, ["id", "code", "name", "ianaTimeZone"]) &&
@@ -3559,8 +3750,12 @@ function validatedCommercialRequest(
     "representativeEmail", "representativePhone", "authorityDeclared",
     "representativeNationalityCode", "representativeAddress", "representativeCountry",
     "representativeProvince", "representativeMunicipality",
-    "representativeDocumentType", "representativeDocumentNumber", "representativeDistrict"]) ||
-    !isUuid(request.requestId) || !isUuid(request.airlineProfileId) ||
+    "representativeDocumentType", "representativeDocumentNumber", "representativeDistrict",
+    "proposedAirline"]) ||
+    !isUuid(request.requestId) ||
+    // A catalog profile, or an airline proposed because it is not listed (1-N25); never both.
+    (request.proposedAirline == null ? !isUuid(request.airlineProfileId)
+      : request.airlineProfileId != null || !isProposedAirline(request.proposedAirline)) ||
     !Array.isArray(request.serviceIds) || request.serviceIds.length < 1 ||
     request.serviceIds.length > 20 || !request.serviceIds.every(isUuid) ||
     new Set(request.serviceIds.map(id => id.toLowerCase())).size !== request.serviceIds.length ||
@@ -3595,6 +3790,25 @@ function validatedCommercialRequest(
     request.authorityDeclared !== true)
     throw new TypeError("Commercial application is invalid.");
   return request as unknown as SubmitCommercialRequestRequest;
+}
+
+/** ICAO is required; IATA only when the airline has one; the website must be HTTPS. */
+function isProposedAirline(value: unknown) {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["name", "countryCode", "iataCode", "icaoCode", "websiteUrl"]) ||
+      typeof value.name !== "string" || value.name.trim().length < 2 || value.name.trim().length > 160 ||
+      typeof value.countryCode !== "string" || !/^[A-Z]{2}$/.test(value.countryCode) ||
+      !isOptionalNullable(value.iataCode, code => typeof code === "string" && /^[A-Z0-9]{2}$/.test(code) &&
+        !/^\d{2}$/.test(code)) ||
+      typeof value.icaoCode !== "string" || !/^[A-Z]{3}$/.test(value.icaoCode))
+    return false;
+  if (value.websiteUrl == null) return true;
+  if (typeof value.websiteUrl !== "string" || value.websiteUrl.length > 512) return false;
+  try {
+    const url = new URL(value.websiteUrl);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 function isCommercialRequestReceipt(value: unknown): value is SubmitCommercialRequestResponse {
@@ -5150,6 +5364,60 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     };
   };
 
+  // A portal account command (phase 1, block E): JSON body, Idempotency-Key and the status the endpoint answers.
+  const accountCommand = async <T>(path: string, body: unknown, idempotencyKey: string,
+    options: CreateSessionOptions | undefined, status: 200 | 201 | 202, valid: (value: unknown) => value is T): Promise<T> => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (result.status !== status || !valid(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  const commercialCommand = async (path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, expectedId: string | undefined) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (result.status !== 200 || !isCommercialIdResponse(result.data, expectedId)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  // A draft command: JSON body, Idempotency-Key, and the expected status with a CommercialIdResponse.
+  const draftCommand = async (method: "POST" | "PUT", path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, status: 200 | 201, expectedId: string | undefined) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
+    if (result.status !== status || !isCommercialIdResponse(result.data, expectedId)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  // A catalog or closure command: JSON body, Idempotency-Key and the resource the strict validator accepts.
+  const catalogCommand = async <T>(method: "POST" | "PUT", path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, valid: (value: unknown) => value is T): Promise<T> => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
+    if (result.status !== 200 || !valid(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  // A Finance package or amendment command: JSON body, Idempotency-Key and a FinancePackageIdResponse.
+  const packageCommand = async (path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, status: 200 | 201, expectedId: string | undefined) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (result.status !== status || !isFinancePackageIdResponse(result.data, expectedId)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
   const executePdf = async (path: string, init: ElevantRequestInit = {}): Promise<Blob> => {
     const response = await send(path, { ...init, method: "GET" }, true);
     if (response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !==
@@ -5362,9 +5630,47 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       await execute(getConfirmPasswordResetUrl(), jsonPost(options,
         { token: validatedLinkToken(token), newPassword: validatedNewPassword(newPassword) }), false);
     },
-    async resendAirlineInvitation(accountId: string, options?: CreateSessionOptions) {
-      await execute(getResendAirlineInvitationUrl(validatedUuid(accountId, "accountId")),
-        { ...options, method: "POST", headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+    async resendAirlineInvitation(accountId: string, command: ResendAirlineInvitationCommand, idempotencyKey: string,
+      options?: CreateSessionOptions) {
+      const id = validatedUuid(accountId, "accountId");
+      return accountCommand(getResendAirlineInvitationUrl(id), normalizedInvitationResend(command), idempotencyKey,
+        options, 202, value => isCommercialAccountResponse(value, id));
+    },
+    async getEmailOutbox(query?: EmailOutboxQuery, options?: CreateSessionOptions) {
+      const params = normalizedEmailOutboxQuery(query);
+      const result = await execute(getListEmailOutboxUrl(params), { ...options, method: "GET",
+        headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+      if (!isEmailOutboxPage(result.data, params)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async listProvisioningTasks(options?: CreateSessionOptions) {
+      const result = await execute(getListCommercialProvisioningUrl(), { ...options, method: "GET",
+        headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+      if (!isProvisioningTaskList(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async provisionAirlineAccount(requestId: string, command: ProvisionAirlineAccountCommand, idempotencyKey: string,
+      options?: CreateSessionOptions) {
+      return accountCommand(getProvisionCommercialAirlineUrl(validatedUuid(requestId, "requestId")),
+        normalizedProvisioning(command), idempotencyKey, options, 201, value => isCommercialAccountResponse(value));
+    },
+    async linkProvisioningAccount(requestId: string, command: LinkProvisioningAccountCommand, idempotencyKey: string,
+      options?: CreateSessionOptions) {
+      return accountCommand(getLinkCommercialAirlineAccountUrl(validatedUuid(requestId, "requestId")),
+        normalizedAccountLink(command), idempotencyKey, options, 200, value => isCommercialAccountResponse(value));
+    },
+    async resetClientUserPassword(organizationId: string, userId: string, command: ResetClientUserPasswordCommand,
+      idempotencyKey: string, options?: CreateSessionOptions) {
+      const id = validatedUuid(userId, "userId");
+      return accountCommand(getResetGovernanceClientUserPasswordUrl(validatedUuid(organizationId, "organizationId"), id),
+        normalizedClientPasswordReset(command), idempotencyKey, options, 200, value => isCommercialIdResponse(value, id));
+    },
+    async getInvoiceEmailDeliveries(invoiceId: string, options?: CreateSessionOptions) {
+      const id = validatedUuid(invoiceId, "invoiceId");
+      const result = await execute(getGetFinanceInvoiceEmailDeliveriesUrl(id), { ...options, method: "GET",
+        headers: Object.fromEntries(headersFrom(options?.headers, "Request headers")) }, true);
+      if (!isInvoiceEmailStatus(result.data, id)) throw malformedResponse(result.status);
+      return result.data;
     },
     async sendTestEmail(to: string, options?: CreateSessionOptions) {
       const result = await execute(getSendTestEmailUrl(), jsonPost(options, { to: validatedEmailAddress(to) }), true);
@@ -6836,6 +7142,123 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           accepted: true, signatureImagePng }) }, true);
       if (!isContractDocument(result.data, version)) throw malformedResponse(result.status);
       return result.data;
+    },
+    async getCommercialRequestInbox(query?: CommercialInboxQuery, options?: GetHumanResourcesReportOptions) {
+      const params = normalizedCommercialInboxQuery(query);
+      const result = await execute(getListCommercialRequestInboxUrl(params), { ...options, method: "GET" }, true);
+      if (!isCommercialInboxData(result.data, params)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async verifyCommercialRequestAirline(requestId: string, command: VerifyCommercialRequestAirlineCommand,
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      return commercialCommand(getVerifyCommercialRequestAirlineUrl(validatedUuid(requestId, "requestId")),
+        normalizedAirlineVerification(command), idempotencyKey, options, requestId);
+    },
+    async confirmCommercialRepresentative(requestId: string, command: ConfirmCommercialRepresentativeCommand,
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      return commercialCommand(getConfirmCommercialRepresentativeUrl(validatedUuid(requestId, "requestId")),
+        normalizedRepresentativeConfirmation(command), idempotencyKey, options, requestId);
+    },
+    async cancelCommercialRequest(requestId: string, command: CancelCommercialRequestCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      return commercialCommand(getCancelCommercialRequestUrl(validatedUuid(requestId, "requestId")),
+        normalizedRequestCancellation(command), idempotencyKey, options, requestId);
+    },
+    async decideCommercialRequest(requestId: string, command: DecideCommercialRequestCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedCommercialDecision(command);
+      // An approval answers with the new draft contract; a rejection with the request itself.
+      return commercialCommand(getDecideCommercialRequestUrl(validatedUuid(requestId, "requestId")), body,
+        idempotencyKey, options, body.approve ? undefined : requestId);
+    },
+    async getContractDraftReadiness(versionId: string, options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      const result = await execute(getGetManagedContractDraftReadinessUrl(version), { ...options, method: "GET" }, true);
+      if (!isContractDraftReadiness(result.data, version)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getContractDraftScope(versionId: string, options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      const result = await execute(getGetManagedContractDraftScopeUrl(version), { ...options, method: "GET" }, true);
+      if (!isContractDraftScope(result.data, version)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async setContractDraftScope(versionId: string, command: SetContractDraftScopeCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      return draftCommand("PUT", getSetManagedContractDraftScopeUrl(version), normalizedDraftScope(command), idempotencyKey,
+        options, 200, version);
+    },
+    async updateManagedContractDraft(versionId: string, command: UpdateManagedContractDraftCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      return draftCommand("PUT", getUpdateManagedContractDraftUrl(version), normalizedDraftUpdate(command), idempotencyKey,
+        options, 200, version);
+    },
+    async submitManagedContractDraft(versionId: string, command: SubmitManagedContractDraftCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      // The submission answers the draft's contract, not the version.
+      return draftCommand("POST", getActivateManagedContractDraftUrl(validatedUuid(versionId, "versionId")),
+        normalizedDraftSubmission(command), idempotencyKey, options, 200, undefined);
+    },
+    async discardContractDraft(versionId: string, command: DiscardContractDraftCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const version = validatedUuid(versionId, "versionId");
+      return draftCommand("POST", getDiscardManagedContractDraftUrl(version), normalizedDraftDiscard(command),
+        idempotencyKey, options, 200, version);
+    },
+    async replyContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      return draftCommand("POST", getReplyManagedContractDraftUrl(validatedUuid(versionId, "versionId")),
+        normalizedDraftMessage(command), idempotencyKey, options, 201, undefined);
+    },
+    async commentAirlineContractDraft(versionId: string, command: ContractDraftMessageCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      return draftCommand("POST", getCommentAirlineContractDraftUrl(validatedUuid(versionId, "versionId")),
+        normalizedDraftMessage(command), idempotencyKey, options, 201, undefined);
+    },
+    async createContractAmendment(versionId: string, command: CreateContractAmendmentCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      // The amendment answers its own new version, not the version in the route.
+      return packageCommand(getCreateContractAmendmentUrl(validatedUuid(versionId, "versionId")),
+        normalizedContractAmendment(command), idempotencyKey, options, 201, undefined);
+    },
+    async discardFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(packageId, "packageId");
+      return packageCommand(getDiscardFinancePackageUrl(id), normalizedPackageLifecycle(command), idempotencyKey, options,
+        200, id);
+    },
+    async retireFinancePackage(packageId: string, command: FinancePackageLifecycleCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(packageId, "packageId");
+      return packageCommand(getRetireFinancePackageUrl(id), normalizedPackageLifecycle(command), idempotencyKey, options,
+        200, id);
+    },
+    async updateManagedService(serviceId: string, command: UpdateManagedServiceCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(serviceId, "serviceId");
+      return catalogCommand("PUT", getUpdateCommercialServiceUrl(id), normalizedManagedServiceUpdate(command),
+        idempotencyKey, options, (value): value is ManagedServiceData => isManagedService(value, id));
+    },
+    async retireManagedService(serviceId: string, command: RetireManagedServiceCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(serviceId, "serviceId");
+      return catalogCommand("POST", getRetireCommercialServiceUrl(id), normalizedServiceRetirement(command),
+        idempotencyKey, options, (value): value is ManagedServiceData => isManagedService(value, id));
+    },
+    async decideServiceClosure(closureId: string, command: DecideServiceClosureCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const id = validatedUuid(closureId, "closureId");
+      return catalogCommand("POST", getDecideServiceClosureUrl(id), normalizedClosureDecision(command),
+        idempotencyKey, options, (value): value is ServiceClosureData => isServiceClosure(value, { id }));
+    },
+    async reopenService(serviceId: string, command: ReopenServiceCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      // The reopening answers the closure it reopened, for the service in the route.
+      const id = validatedUuid(serviceId, "serviceId");
+      return catalogCommand("POST", getReopenServiceUrl(id), normalizedServiceReopen(command),
+        idempotencyKey, options, (value): value is ServiceClosureData => isServiceClosure(value, { serviceId: id }));
     },
     async setContractValidity(versionId: string, request: SetContractValidityRequest,
       options?: GetHumanResourcesReportOptions) {

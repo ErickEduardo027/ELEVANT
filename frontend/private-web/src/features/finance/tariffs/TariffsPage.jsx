@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { billingUnitLabel } from '../../../services/billingUnits';
 import { getFinanceTariffs } from '../../../services/financeTariffsService';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 
@@ -104,7 +105,7 @@ export default function TariffsPage({ initialStationId, embedded = false }) {
               <td className="px-5 py-4">{item.serviceName}<span className="block text-xs text-text-secondary-light">{item.serviceCode}</span></td>
               <td className="px-5 py-4 font-mono text-xs">{item.contractCode}</td>
               <td className="px-5 py-4 font-semibold">{item.currencyCode} <span>{Number(item.unitPrice).toFixed(4)}</span>
-                <span className="block text-xs font-normal text-text-secondary-light">{item.billingUnit} · mínimo {item.minimumQuantity}</span></td>
+                <span className="block text-xs font-normal text-text-secondary-light">Por {billingUnitLabel(item.billingUnit)} · mínimo {item.minimumQuantity}</span></td>
               <td className="px-5 py-4">{item.versionNumber} · {item.versionStatus === 'Superseded' ? 'Histórica' : 'Aprobada'}</td>
               <td className="px-5 py-4">{date(item.validFrom)} — {date(item.validTo)}</td>
             </tr>)}

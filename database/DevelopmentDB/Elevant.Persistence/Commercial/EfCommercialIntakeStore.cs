@@ -7,6 +7,7 @@ using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Finance;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -50,10 +51,13 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                     IsolationLevel.Serializable, cancellationToken);
                 try
                 {
-                    var airline = await context.CommercialAirlineProfiles.AsNoTracking()
+                    // A proposed airline (1-N25) is kept on the request only; Contratos verifies it and links
+                    // or creates the catalog profile before any approval.
+                    var proposal = command.ProposedAirline;
+                    var airline = proposal is not null ? null : await context.CommercialAirlineProfiles.AsNoTracking()
                         .SingleOrDefaultAsync(profile => profile.PublicId == command.AirlineProfileId &&
                             profile.IsPublished, cancellationToken);
-                    if (airline is null)
+                    if (proposal is null && airline is null)
                         return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.AirlineUnavailable);
 
                     var services = await context.ServiceDefinitions.AsNoTracking()
@@ -67,10 +71,14 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                     {
                         PublicId = command.RequestId,
                         RequestCode = reference,
-                        AirlineProfileId = airline.Id,
-                        AirlineId = airline.CanonicalAirlineId,
-                        RequestedAirlineName = airline.DisplayName,
-                        AirlineLegalNameSnapshot = airline.LegalName,
+                        AirlineProfileId = airline?.Id,
+                        AirlineId = airline?.CanonicalAirlineId,
+                        RequestedAirlineName = airline?.DisplayName ?? proposal!.Name,
+                        AirlineLegalNameSnapshot = airline?.LegalName,
+                        ProposedAirlineCountryCode = proposal?.CountryCode,
+                        ProposedAirlineIataCode = proposal?.IataCode,
+                        ProposedAirlineIcaoCode = proposal?.IcaoCode,
+                        ProposedAirlineWebsiteUrl = proposal?.WebsiteUrl,
                         SubmissionHash = hash,
                         Type = CommercialRequestType.Affiliation,
                         Status = CommercialRequestStatus.Pending,
@@ -90,6 +98,8 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                         SubmittedAt = DateTimeOffset.UtcNow,
                     };
                     context.ServiceRequests.Add(request);
+                    // 1-E: the request keeps the unit code; a legacy catalog name is stored as its code.
+                    var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
                     foreach (var serviceId in command.ServiceIds)
                     {
                         var service = services.Single(item => item.PublicId == serviceId);
@@ -98,7 +108,7 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                             ServiceRequest = request,
                             ServiceDefinitionId = service.Id,
                             RequestedServiceName = service.Name,
-                            RequestedUnit = service.DefaultBillingUnit,
+                            RequestedUnit = units.Normalize(service.DefaultBillingUnit),
                         });
                     }
 
@@ -152,6 +162,9 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
             Optional(command.RepresentativeDocumentNumber) ?? string.Empty);
         // Appended only when present so requests sent before districts existed keep their hash.
         if (Optional(command.RepresentativeDistrict) is { } district) canonical += "\n" + district;
+        if (command.ProposedAirline is { } proposal)
+            canonical += string.Join('\n', "", "proposal", proposal.Name, proposal.CountryCode,
+                proposal.IataCode ?? string.Empty, proposal.IcaoCode, proposal.WebsiteUrl ?? string.Empty);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

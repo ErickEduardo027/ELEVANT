@@ -34,6 +34,15 @@ cuentas internas de AVIAM quedan fuera.
   que el destinatario no descarga nada externo: la web Development solo se alcanza por la
   tailnet. La bandeja de salida guarda solo el HTML con la referencia.
 
+> **Actualización (6 de noviembre de 2026).** La bandeja suma el estado `Discarded`. Un enlace o
+> un código que vence en la cola, o que otro reemplaza, se descarta con su motivo y pierde el
+> cuerpo, también sin SMTP: en ese caso el worker revisa la cola cada minuto y no envía nada.
+> Los fallos guardan un motivo normalizado en lugar del texto del proveedor, y el código de
+> inicio de sesión ya no va en el asunto. El superadministrador revisa la bandeja con
+> `GET governance/email/outbox`. Una contraseña temporal asignada sobre una invitación pendiente
+> la cierra y descarta su correo. Ver
+> [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).
+
 ### Secretos de un solo uso
 
 `iam.account_email_tokens` guarda solo el SHA-256 del secreto, su propósito, su vencimiento,

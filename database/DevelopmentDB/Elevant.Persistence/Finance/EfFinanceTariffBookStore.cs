@@ -40,9 +40,22 @@ internal sealed partial class EfFinanceTariffBookStore(
 
     private static bool ValidCurrency(string? code) => code is not null && Currencies.Contains(code);
 
-    private async Task<FinanceCatalogResult> InTransactionAsync(Func<Task<FinanceCatalogResult>> work,
-        CancellationToken cancellationToken)
+    private const string IdempotencyConflict = "idempotency_conflict";
+
+    /// <summary>
+    /// Runs a command of the tariff books serializable. With an Idempotency-Key the receipt is resolved
+    /// first, before the rules and the expected version: a retry of a command whose answer was lost replays
+    /// the first result instead of failing on the rowversion it already changed. The receipt of a success is
+    /// written in the same transaction, so a replay never repeats the audit or the notices. Without a key
+    /// (older clients, expand) the command runs as before; an empty key is <c>idempotency_key_required</c>.
+    /// The payload is the route identifier and the normalized body, never the key.
+    /// </summary>
+    private async Task<FinanceCatalogResult> CommandAsync(Actor actor, Guid? idempotencyKey, string action,
+        object payload, Func<Task<FinanceCatalogResult>> work, CancellationToken cancellationToken)
     {
+        if (idempotencyKey == Guid.Empty)
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "idempotency_key_required");
+        var hash = CommercialCommandReceipts.Hash(payload);
         var strategy = context.Database.CreateExecutionStrategy();
         try
         {
@@ -51,16 +64,45 @@ internal sealed partial class EfFinanceTariffBookStore(
                 context.ChangeTracker.Clear();
                 await using var transaction = await context.Database.BeginTransactionAsync(
                     IsolationLevel.Serializable, cancellationToken);
+                if (idempotencyKey is { } key)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, key, actor.Id, action, hash,
+                        cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                        return FinanceCatalogResult.Success(prior.ResultId);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, IdempotencyConflict);
+                }
                 var result = await work();
-                if (result.IsSuccess) await transaction.CommitAsync(cancellationToken);
-                else await transaction.RollbackAsync(cancellationToken);
+                if (!result.IsSuccess)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    context.ChangeTracker.Clear();
+                    return result;
+                }
+                if (idempotencyKey is { } receipt)
+                    CommercialCommandReceipts.Add(context, receipt, actor.Id, action, hash, result.Id!.Value,
+                        timeProvider.GetUtcNow());
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
                 return result;
             });
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is { } key &&
+            CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent command with the same key committed first: its receipt decides.
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, actor.Id, action, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? FinanceCatalogResult.Success(concurrent.ResultId)
+                : FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, IdempotencyConflict);
         }
         catch (DbUpdateException)
         {
             context.ChangeTracker.Clear();
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
         }
     }
 
@@ -77,14 +119,21 @@ internal sealed partial class EfFinanceTariffBookStore(
         params AuditFieldChangeData[] changes) =>
         CommercialAuditWriter.Add(context, actorId, action, entityType, entityId, reason, changes);
 
-    /// <summary>Catalog services Finance can price, including inactive ones still present in tariffs.</summary>
+    /// <summary>
+    /// Catalog services Finance can price, including inactive ones still present in tariffs. The default
+    /// unit is a unit code (1-E): a legacy name stored by the catalog («operación») is read as its code,
+    /// so the tariff screen proposes a unit the save accepts.
+    /// </summary>
     public async Task<IReadOnlyList<FinanceServiceOptionData>?> ListServicesAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
         if (await AuthorizeAsync(actorId, "finance.tariffs.read", cancellationToken) is null) return null;
-        return await context.ServiceDefinitions.AsNoTracking().OrderBy(service => service.Code)
+        var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+        return (await context.ServiceDefinitions.AsNoTracking().OrderBy(service => service.Code)
+                .Select(service => new { service.PublicId, service.Code, service.Name, service.DefaultBillingUnit, service.IsActive })
+                .ToArrayAsync(cancellationToken))
             .Select(service => new FinanceServiceOptionData(service.PublicId, service.Code, service.Name,
-                service.DefaultBillingUnit, service.IsActive)).ToArrayAsync(cancellationToken);
+                units.Normalize(service.DefaultBillingUnit), service.IsActive)).ToArray();
     }
 
     public async Task<IReadOnlyList<BillingUnitData>?> ListBillingUnitsAsync(Guid actorId,
@@ -101,7 +150,7 @@ internal sealed partial class EfFinanceTariffBookStore(
     }
 
     public async Task<FinanceCatalogResult> SaveBillingUnitAsync(Guid actorId, Guid? unitId, SaveBillingUnitInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, unitId is null ? "finance.billing_units.create" : "finance.billing_units.update",
             cancellationToken);
@@ -111,23 +160,28 @@ internal sealed partial class EfFinanceTariffBookStore(
             !code.All(character => char.IsAsciiLetterLower(character) || char.IsAsciiDigit(character) || character == '-') ||
             string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length > 80 ||
             input.QuantityScale is < 0 or > 4 || unitId is not null && string.IsNullOrWhiteSpace(input.ExpectedVersion))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
-        return await InTransactionAsync(async () =>
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "invalid_billing_unit");
+        return await CommandAsync(actor, idempotencyKey,
+            unitId is null ? "finance.billing_unit.create" : "finance.billing_unit.update",
+            new { unitId, code, name = input.Name.Trim(), input.QuantityScale, input.IsActive, input.ExpectedVersion },
+            async () =>
         {
             var now = timeProvider.GetUtcNow();
             BillingUnit? unit = null;
             if (unitId is { } id)
             {
                 unit = await context.BillingUnits.SingleOrDefaultAsync(item => item.PublicId == id, cancellationToken);
-                if (unit is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+                if (unit is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
                 if (Version(unit.RowVersion) != input.ExpectedVersion)
-                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
-                if (unit.Code != code) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
+                // Rates and services keep the code: it never changes once created.
+                if (unit.Code != code)
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "billing_unit_code_locked");
             }
             else
             {
                 if (await context.BillingUnits.AnyAsync(item => item.Code == code, cancellationToken))
-                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "billing_unit_exists");
                 unit = new BillingUnit { PublicId = Guid.CreateVersion7(), Code = code, CreatedAt = now };
                 context.BillingUnits.Add(unit);
             }
@@ -143,7 +197,4 @@ internal sealed partial class EfFinanceTariffBookStore(
         }, cancellationToken);
     }
 
-    private async Task<bool> ActiveUnitAsync(string? code, CancellationToken cancellationToken) =>
-        code is not null && await context.BillingUnits.AnyAsync(unit => unit.Code == code && unit.IsActive,
-            cancellationToken);
 }

@@ -31,6 +31,10 @@ public sealed class DepartmentPermissionCatalogTests
 
     [Theory]
     [InlineData("contracts.requests.read", Department.Contracts)]
+    [InlineData("contracts.requests.cancel", Department.Contracts)]
+    [InlineData("contracts.drafts.delete", Department.Contracts)]
+    [InlineData("finance.packages.delete", Department.Finance)]
+    [InlineData("finance.packages.retire", Department.Finance)]
     [InlineData("operations.review.decide", Department.Operations)]
     [InlineData("human_resources.access_requests.validate", Department.HumanResources)]
     [InlineData("finance.preinvoices.issue", Department.Finance)]
@@ -77,6 +81,8 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("contracts.catalog.retire", new[] { "contracts.catalog.delete", "contracts.catalog.read" })]
     [InlineData("contracts.agreements.read", new[] { "contracts.agreed_services.read", "contracts.agreements.read", "contracts.permits.read" })]
     [InlineData("finance.receipts.read", new[] { "finance.receipts.read", "finance.statements.read" })]
+    [InlineData("finance.packages.manage", new[] { "finance.packages.create", "finance.packages.delete", "finance.packages.publish",
+        "finance.packages.read", "finance.packages.retire", "finance.packages.update" })]
     public void LegacyGrantsKeepTheirAccessAsCrudActions(string legacy, string[] expected)
     {
         Assert.False(DepartmentPermissionCatalog.IsKnown(legacy) && legacy.EndsWith(".manage", StringComparison.Ordinal));
@@ -87,9 +93,12 @@ public sealed class DepartmentPermissionCatalogTests
     [Fact]
     public void NoOptionStillOffersTheCombinedManageAction()
     {
-        var codes = DepartmentPermissionCatalog.Departments.SelectMany(DepartmentPermissionCatalog.CodesOf);
+        var codes = DepartmentPermissionCatalog.Departments.SelectMany(DepartmentPermissionCatalog.CodesOf).ToArray();
         Assert.DoesNotContain(codes, code => code.EndsWith(".manage", StringComparison.Ordinal) ||
-            code.EndsWith(".edit", StringComparison.Ordinal) || code.EndsWith(".retire", StringComparison.Ordinal));
+            code.EndsWith(".edit", StringComparison.Ordinal));
+        // «Retirar» of the catalog became its delete action; retiring a published package is a workflow of its own (1-N27).
+        Assert.DoesNotContain("contracts.catalog.retire", codes);
+        Assert.Equal(["finance.packages.retire"], codes.Where(code => code.EndsWith(".retire", StringComparison.Ordinal)));
     }
 
     [Fact]

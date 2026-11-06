@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Drawer from '../../../components/Drawer';
 import { getContractDocument, signContractVersion } from '../../../services/commercialGovernanceApi';
+import { billingUnitLabel } from '../../../services/billingUnits';
 import SignaturePad from '../../../components/SignaturePad';
 import ContractLifecyclePanel from './ContractLifecyclePanel';
 import ContractPdfButtons from './ContractPdfButtons';
@@ -39,7 +40,7 @@ function problem(error) {
  * printable PDF and the signature of each party over the content hash.
  */
 export default function ContractDetailDrawer({ versionId, canSign = false, canManageLifecycle = false, canSetValidity = false,
-  onClose, onSigned }) {
+  canAmend = false, onOpenDrafts, onClose, onSigned }) {
   const [state, setState] = useState({ status: 'loading' });
   const [form, setForm] = useState({ signerName: '', signerTitle: '', accepted: false, signatureImagePng: null });
   const [busy, setBusy] = useState('');
@@ -114,7 +115,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
                 <thead><tr className="border-b border-black/10 dark:border-white/10"><th className="py-2">Servicio</th><th>Unidad</th><th className="text-right">Precio</th><th className="text-right">Mínimo</th></tr></thead>
                 <tbody>{document.rates.map(rate => <tr key={`${rate.serviceCode}-${rate.billingUnit}`} className="border-b border-black/5 dark:border-white/5">
                   <td className="py-2"><strong>{rate.serviceName}</strong> <span className="text-text-secondary-light">{rate.serviceCode}</span></td>
-                  <td>{rate.billingUnit}</td><td className="text-right tabular-nums">{document.currencyCode} {Number(rate.unitPrice).toFixed(2)}</td>
+                  <td>{billingUnitLabel(rate.billingUnit)}</td><td className="text-right tabular-nums">{document.currencyCode} {Number(rate.unitPrice).toFixed(2)}</td>
                   <td className="text-right tabular-nums">{rate.minimumQuantity}</td></tr>)}</tbody>
               </table></div>
             )}
@@ -161,7 +162,11 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
             </form>
           )}
           {error && <p role="alert" className="text-status-danger">{error}</p>}
-          <ContractLifecyclePanel key={revision} versionId={versionId} canManage={canManageLifecycle} onChanged={() => { setRevision(value => value + 1); onSigned?.(); }} />
+          <ContractLifecyclePanel key={revision} versionId={versionId} canManage={canManageLifecycle} canAmend={canAmend}
+            currentVersion={document.versionStatus === 'Approved'
+              ? { versionNumber: document.versionNumber, validFrom: document.validFrom, validTo: document.validTo } : null}
+            onOpenDrafts={onOpenDrafts ? () => { onClose?.(); onOpenDrafts(); } : undefined}
+            onChanged={() => { setRevision(value => value + 1); onSigned?.(); }} />
         </div>
       )}
     </Drawer>

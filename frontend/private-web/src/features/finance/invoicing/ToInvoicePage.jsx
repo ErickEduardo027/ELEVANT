@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
-import { downloadInvoiceDocument } from '../../../services/invoicingService';
+import { downloadInvoiceDocument, getInvoiceEmailDeliveries } from '../../../services/invoicingService';
+import { reasonLabel, statusLabel } from '../../../services/emailDeliveries';
 import { useToInvoiceData } from './useToInvoiceData';
 
 const BLOCKING_LABELS = {
@@ -30,7 +31,51 @@ function date(value) {
     .format(new Date(`${value}T12:00:00Z`));
 }
 
-function IssuedInvoice({ issue, onDismiss }) {
+const MAX_EMAIL_POLLS = 12;
+
+/**
+ * 1-N08: what the invoice really queued for the airline, read from the server. A queued email is «en cola», never
+ * «enviado» (ADR-0022); an invoice nobody could receive says so, so Finance delivers the PDF another way.
+ */
+function InvoiceEmailStatus({ invoiceId, pollMs }) {
+  const [state, setState] = useState({ status: 'loading', data: null });
+  const [reads, setReads] = useState(0);
+  useEffect(() => {
+    let active = true;
+    getInvoiceEmailDeliveries(invoiceId)
+      .then(data => { if (active) setState({ status: 'ready', data }); })
+      .catch(failure => { if (active) setState({ status: failure?.status === 403 ? 'forbidden' : 'error', data: null }); });
+    return () => { active = false; };
+  }, [invoiceId, reads]);
+  const reread = () => setReads(current => current + 1);
+  const deliveries = state.data?.deliveries ?? [];
+  const waiting = state.data?.smtpConfigured && deliveries.some(item => item.status === 'Pending');
+  // While the mail server works, re-read a few times until the queue settles.
+  useEffect(() => {
+    if (!waiting || reads >= MAX_EMAIL_POLLS) return undefined;
+    const timer = setTimeout(() => setReads(current => current + 1), pollMs);
+    return () => clearTimeout(timer);
+  }, [pollMs, reads, waiting]);
+
+  if (state.status === 'loading') return <p role="status" className="mt-2 text-xs">Consultando el correo de la factura…</p>;
+  if (state.status === 'forbidden') return <p className="mt-2 text-xs">No tiene permiso para ver el estado del correo de esta factura.</p>;
+  if (state.status === 'error') return <p role="alert" className="mt-2 text-xs text-status-danger">No se pudo consultar el estado del correo.{' '}
+    <button type="button" onClick={reread} className="font-semibold underline">Reintentar</button></p>;
+  if (deliveries.length === 0) return <p role="status" className="mt-2 text-xs text-amber-700">
+    No quedó ningún correo en cola: la aerolínea no tiene cuentas activas del portal ni correo de facturación. Descargue el PDF y entréguelo por otro canal.</p>;
+  const pending = deliveries.filter(item => item.status === 'Pending');
+  return <div aria-label="Correo de la factura" className="mt-2 text-xs">
+    <p role="status">{pending.length === 0 ? 'Estado del correo a la aerolínea:'
+      : state.data.smtpConfigured ? `Correo en cola para ${pending.length} destinatario(s); se confirmará al salir.`
+        : `Correo en cola para ${pending.length} destinatario(s), pero el servidor de correo no está configurado: no saldrá hasta configurarlo. Descargue el PDF si la aerolínea lo necesita ya.`}</p>
+    <ul className="mt-1 space-y-0.5">{deliveries.map(item => <li key={`${item.recipient}-${item.createdAt}`} className="[overflow-wrap:anywhere]">
+      <strong>{item.recipient}</strong> · {statusLabel(item.status).label}{reasonLabel(item.reason) ? ` · ${reasonLabel(item.reason)}` : ''}
+    </li>)}</ul>
+    {pending.length > 0 && <button type="button" onClick={reread} className="mt-1 font-semibold text-accent-600 underline">Actualizar estado del correo</button>}
+  </div>;
+}
+
+function IssuedInvoice({ issue, onDismiss, emailPollMs }) {
   const [download, setDownload] = useState('idle');
   const { invoice } = issue;
   async function save() {
@@ -50,8 +95,9 @@ function IssuedInvoice({ issue, onDismiss }) {
       <h2 className="mt-1 text-lg font-bold">e-NCF {invoice.fiscalNumber}</h2>
       <p className="mt-1 text-sm">{issue.airlineName} · {money(invoice.total, invoice.currencyCode)} con ITBIS 18 %</p>
       <p className="mt-1 text-xs text-text-secondary-light">
-        Interno {invoice.number}. Se envió por correo a la aerolínea con el PDF. Simulación — sin validez fiscal.
+        Interno {invoice.number}. Simulación — sin validez fiscal.
       </p>
+      <InvoiceEmailStatus invoiceId={invoice.invoiceId} pollMs={emailPollMs} />
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" onClick={save} disabled={download === 'loading'}
           className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
@@ -65,7 +111,7 @@ function IssuedInvoice({ issue, onDismiss }) {
 }
 
 /** «Por facturar»: approved operations not yet invoiced, issued as one simulated e-CF invoice (ADR-0035). */
-export default function ToInvoicePage({ initialStationId }) {
+export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) {
   const data = useToInvoiceData(initialStationId);
   const { access } = useDepartmentAccess();
   const canIssue = Boolean(access?.can('finance.invoicing.issue'));
@@ -81,7 +127,7 @@ export default function ToInvoicePage({ initialStationId }) {
         </p>
       </header>
 
-      {data.issue.status === 'issued' && <IssuedInvoice issue={data.issue} onDismiss={data.dismissIssue} />}
+      {data.issue.status === 'issued' && <IssuedInvoice issue={data.issue} onDismiss={data.dismissIssue} emailPollMs={emailPollMs} />}
       {data.issue.status === 'error' && <p role="alert" className="rounded-xl bg-status-danger/10 p-4 text-sm">{data.issue.message}</p>}
 
       <section className="rounded-2xl border border-black/5 bg-white/70 p-4 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">

@@ -53,6 +53,17 @@ describe("airline portal bootstrap client", () => {
       .toBe("Bearer airline-token");
   });
 
+  it("accepts an operator without IATA designator, identified by its ICAO code", async () => {
+    const icaoOnly = { ...bootstrap, iataCode: "" };
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify(icaoOnly), { headers: { "content-type": "application/json" } }) });
+    await expect(client.getAirlinePortalBootstrap()).resolves.toEqual(icaoOnly);
+    const withoutIcao = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify({ ...icaoOnly, icaoCode: "" }),
+        { headers: { "content-type": "application/json" } }) });
+    await expect(withoutIcao.getAirlinePortalBootstrap()).rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
   it("rejects a malformed or mixed-tenant response", async () => {
     const client = createElevantApiClient({
       baseUrl: "https://api.example.test",

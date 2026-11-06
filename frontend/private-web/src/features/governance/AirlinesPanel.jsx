@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { commercialGovernanceMessage } from '../../services/commercialProblems';
+import { createCommandKeyHolder } from '../../services/commandKeys';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import FileDropField from '../../components/FileDropField';
 import PrivateMediaImage from '../../components/PrivateMediaImage';
@@ -7,8 +9,11 @@ import { uploadCommercialMedia } from '../../services/commercialGovernanceApi';
 const blank = {
   sourceName: '', displayName: '', legalName: '', region: '', countryCode: '',
   iataCode: '', icaoCode: '', logoUrl: '', sourceUrl: '', verificationSourceUrl: '',
-  isVerified: false, isPublished: false, version: null,
+  isVerified: false, isPublished: false, version: null, identityLocked: false,
 };
+
+/** 1-N20: the operating identity of an airline that already works with AVIAM is fixed. */
+const LOCKED_FIELDS = ['legalName', 'iataCode', 'icaoCode'];
 
 const REGISTRY = {
   Found: { label: 'Verificada en registro', tone: 'border-status-success/40 bg-status-success/10 text-status-success', icon: '✓' },
@@ -36,7 +41,8 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
       const result = await onCheckRegistry(airline.id);
       setChecks(current => ({ ...current, [airline.id]: result.check }));
     } catch (error) {
-      setChecks(current => ({ ...current, [airline.id]: { status: 'Unavailable', differences: [error.message] } }));
+      setChecks(current => ({ ...current, [airline.id]: { status: 'Unavailable', differences: [
+        commercialGovernanceMessage(error, { fallback: 'No se pudo consultar el registro público. Intente de nuevo.' })] } }));
     } finally {
       setChecking(null);
     }
@@ -49,6 +55,7 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
   const [logo, setLogo] = useState(null);
   const [uploadError, setUploadError] = useState('');
   const [pendingArchive, setPendingArchive] = useState(null);
+  const saveKeys = useRef(createCommandKeyHolder());
   const visible = useMemo(() => airlines.filter((airline) =>
     (showArchived || airline.isPublished) &&
     `${airline.displayName} ${airline.sourceName} ${airline.iataCode ?? ''} ${airline.icaoCode ?? ''}`
@@ -63,12 +70,12 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
       icaoCode: airline.icaoCode ?? '', logoUrl: airline.logoUrl ?? '',
       verificationSourceUrl: airline.verificationSourceUrl ?? '' });
   }
-  function clear() { setEditingId(null); setForm(blank); setLogo(null); }
+  function clear() { setEditingId(null); setForm(blank); setLogo(null); saveKeys.current.reset(); }
   async function save(event) {
     event.preventDefault(); setBusy(true); setUploadError('');
     try {
       const uploadedLogo = logo ? await uploadCommercialMedia('airline-logo', logo) : null;
-      const saved = await onSave(editingId, {
+      const values = {
         ...form, sourceName: form.sourceName.trim(), displayName: form.displayName.trim(),
         legalName: form.legalName.trim() || null, region: form.region.trim(),
         countryCode: form.countryCode.trim().toUpperCase() || null,
@@ -76,11 +83,15 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
         icaoCode: form.icaoCode.trim().toUpperCase() || null,
         logoUrl: uploadedLogo?.url ?? (form.logoUrl.trim() || null), sourceUrl: form.sourceUrl.trim(),
         verificationSourceUrl: form.verificationSourceUrl.trim() || null,
-      });
+      };
+      // An update keeps its Idempotency-Key while the same save is retried after an uncertain answer.
+      const key = editingId ? saveKeys.current.keyFor('save-airline', { id: editingId, ...values }) : undefined;
+      const saved = await onSave(editingId, values, key);
       if (saved) clear();
-    } catch (error) { setUploadError(error.message); }
+    } catch (error) { setUploadError(commercialGovernanceMessage(error, { fallback: 'No se pudo cargar el logo. Verifique el formato y el tamaño.' })); }
     finally { setBusy(false); }
   }
+  const locked = Boolean(editingId && form.identityLocked);
   const change = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
   return <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] xl:grid-cols-[minmax(0,1fr)_410px]">
@@ -96,7 +107,7 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
       <div className="mt-5 space-y-3">{visible.map((airline) => <article key={airline.id} className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
         <div className="flex min-w-0 items-center gap-3">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-accent-600/10 text-sm font-bold text-accent-600">{airline.logoUrl ? <PrivateMediaImage url={airline.logoUrl} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.displayName}` : `Logo de ${airline.displayName}`} className="max-h-10 max-w-10 object-contain" /> : airline.displayName.slice(0, 2)}</div>
-          <div className="min-w-0 [overflow-wrap:anywhere]"><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada manualmente' : 'Sin verificación manual'} · {[airline.iataCode, airline.icaoCode].filter(Boolean).join(' / ') || 'sin códigos'}</p>
+          <div className="min-w-0 [overflow-wrap:anywhere]"><strong>{airline.displayName}</strong><p className="text-xs text-text-secondary-light">{airline.legalName || 'Sin dato confirmado'} · {airline.region}</p><p className="text-xs text-text-secondary-light">{airline.isPublished ? 'Publicada' : 'Archivada'} · {airline.isVerified ? 'Verificada manualmente' : 'Sin verificación manual'} · {[airline.iataCode, airline.icaoCode].filter(Boolean).join(' / ') || 'sin códigos'}{airline.identityLocked ? ' · Opera con AVIAM' : ''}</p>
             <div className="mt-1"><RegistryBadge status={checks[airline.id]?.status === 'Unavailable' ? 'Unavailable' : airline.registryStatus} source={airline.registrySource} url={airline.registryEntityUrl} /></div>
             {checks[airline.id]?.differences?.length > 0 && <ul role="status" className="mt-1 list-disc pl-4 text-xs text-text-secondary-light">{checks[airline.id].differences.map(item => <li key={item}>{item}</li>)}</ul>}
           </div>
@@ -107,13 +118,14 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
     <form onSubmit={save} className="h-fit rounded-xl border border-black/5 bg-white p-5 dark:bg-surface-dark-card">
       <h2 className="text-lg font-bold">{editingId ? 'Editar aerolínea' : 'Nueva aerolínea'}</h2>
       <p className="mt-1 text-xs text-text-secondary-light">Registre únicamente datos sustentados por la fuente indicada.</p>
+      {locked && <p role="note" className="mt-2 rounded-lg border border-status-warning/40 bg-status-warning/10 p-2 text-xs">Esta aerolínea ya opera con AVIAM: su razón social, sus códigos IATA e ICAO y su verificación están en contratos, facturas y vuelos, y no pueden cambiar desde aquí. El nombre visible, el logo, la publicación y las fuentes siguen editables.</p>}
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {[['sourceName', 'Nombre de origen', 160], ['displayName', 'Nombre visible', 160], ['legalName', 'Razón social', 200], ['region', 'Región', 64], ['countryCode', 'País ISO (2 letras)', 2], ['iataCode', 'Código IATA', 2], ['icaoCode', 'Código ICAO', 3], ['sourceUrl', 'Sitio o fuente oficial', 512], ['verificationSourceUrl', 'Fuente de verificación', 512]].map(([key, label, max]) =>
-          <label key={key} className="text-xs font-semibold">{label}<input required={['sourceName', 'displayName', 'region', 'sourceUrl'].includes(key)} readOnly={key === 'sourceName' && !!editingId} maxLength={max} value={form[key]} onChange={(event) => change(key, event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm dark:bg-surface-dark" /></label>)}
+          <label key={key} className="text-xs font-semibold">{label}<input required={['sourceName', 'displayName', 'region', 'sourceUrl'].includes(key)} readOnly={key === 'sourceName' && !!editingId || locked && LOCKED_FIELDS.includes(key)} maxLength={max} value={form[key]} onChange={(event) => change(key, event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2 text-sm read-only:bg-black/[.03] dark:bg-surface-dark" /></label>)}
       </div>
       <FileDropField label="Logo de la aerolínea" accept="image/png,image/jpeg,image/webp" file={logo} onFile={setLogo} currentUrl={form.logoUrl} hint="PNG, JPG o WebP. Máximo 8 MB. El logo seleccionado se carga al guardar." />
       {uploadError && <p role="alert" className="mt-2 text-sm text-status-danger">{uploadError}</p>}
-      <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isVerified} onChange={(event) => change('isVerified', event.target.checked)} /> Datos verificados con la fuente indicada</label>
+      <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isVerified} disabled={locked && form.isVerified} onChange={(event) => change('isVerified', event.target.checked)} /> Datos verificados con la fuente indicada</label>
       <label className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isPublished} onChange={(event) => change('isPublished', event.target.checked)} /> Disponible para nuevas solicitudes</label>
       <p className="mt-1 text-xs text-text-secondary-light">Para publicarla hace falta un check verde en el registro público o la verificación manual con su fuente. Cambiar el nombre visible o los códigos anula el check.</p>
       <div className="mt-5 flex gap-2"><button disabled={busy} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">{busy ? 'Guardando…' : 'Guardar aerolínea'}</button>{editingId && <button type="button" onClick={clear} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button>}</div>

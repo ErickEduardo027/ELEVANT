@@ -9,6 +9,7 @@ import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse, type Ai
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { AirlineContractPage } from "./AirlineContractPage";
+import { billingUnitLabel } from "@/lib/billing-units";
 import { AirlineFinancePage } from "./AirlineFinancePage";
 import { AirlineDocumentsPage } from "./AirlineDocumentsPage";
 import { AirlineReportsPage } from "./AirlineReportsPage";
@@ -249,7 +250,7 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
         <ul className={styles.operations}>{evidence.services.map(service => <li className={styles.operation} key={service.id}>
           <div><strong>{service.name}</strong><span className={styles.kicker}>{service.code}</span></div>
           <div className={styles.operationSide}><span>{service.status === "Completed" ? "Completado" : service.status === "NotPerformed" ? "No realizado" : "Con excepción"}</span>
-            <span>{service.executedQuantity} / {service.contractedQuantity} {service.billingUnit}</span></div>
+            <span>{service.executedQuantity} / {service.contractedQuantity} · por {billingUnitLabel(service.billingUnit)}</span></div>
         </li>)}</ul>
       </div> : evidenceResult?.status === "ready" && <p className={styles.note}>La evidencia aprobada aún no está disponible para esta operación.</p>}
       <ServiceOrderCard operationId={operationId} revision={operationRevision} />

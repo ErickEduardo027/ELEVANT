@@ -525,6 +525,7 @@ export interface ManagedAirlineData {
   registryCheckedAt?: string | null;
   /** @nullable */
   registryEntityUrl?: string | null;
+  identityLocked: boolean;
 }
 
 export interface AirlineRegistryCheckResult {
@@ -775,6 +776,13 @@ export interface BillingUnitData {
   version: string;
 }
 
+export interface CancelCommercialRequestInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface CancelRequisitionInput {
   expectedVersion: string;
   reason: string;
@@ -929,10 +937,103 @@ export interface CommercialIdResponse {
   id: string;
 }
 
+export interface CommercialInboxCountsData {
+  pending: number;
+  inReview: number;
+  approved: number;
+  rejected: number;
+  cancelled: number;
+}
+
+export interface CommercialRepresentativeConfirmationData {
+  confirmedAt: string;
+  confirmedBy: string;
+  note: string;
+}
+
+export interface CommercialProposedAirlineData {
+  name: string;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  icaoCode: string;
+  /** @nullable */
+  websiteUrl?: string | null;
+}
+
 export interface CommercialRequestItemData {
   serviceId: string;
   name: string;
   unit: string;
+}
+
+export interface CommercialInboxRequestData {
+  id: string;
+  reference: string;
+  airline: string;
+  /** @nullable */
+  airlineProfileId?: string | null;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  airlineVerified: boolean;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  /** @nullable */
+  airlineWebsiteUrl?: string | null;
+  representativeName: string;
+  representativeTitle: string;
+  representativeEmail: string;
+  representativePhone: string;
+  /** @nullable */
+  representativeNationalityCode?: string | null;
+  /** @nullable */
+  representativeAddress?: string | null;
+  /** @nullable */
+  representativeCountry?: string | null;
+  /** @nullable */
+  representativeProvince?: string | null;
+  /** @nullable */
+  representativeMunicipality?: string | null;
+  /** @nullable */
+  representativeDistrict?: string | null;
+  /** @nullable */
+  representativeDocumentType?: string | null;
+  /** @nullable */
+  representativeDocumentNumber?: string | null;
+  authorityDeclared: boolean;
+  status: string;
+  submittedAt: string;
+  /** @nullable */
+  reviewedAt?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  contractId?: string | null;
+  representativeConfirmation?: CommercialRepresentativeConfirmationData | null;
+  proposedAirline?: CommercialProposedAirlineData | null;
+  existingCustomer: boolean;
+  services: CommercialRequestItemData[];
+  version: string;
+}
+
+export interface CommercialInboxData {
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  counts: CommercialInboxCountsData;
+  requests: CommercialInboxRequestData[];
 }
 
 export interface CommercialRequestData {
@@ -994,6 +1095,13 @@ export interface ConfirmCharterPrepaymentRequest {
   reference: string;
 }
 
+export interface ConfirmCommercialRepresentativeInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  note?: string | null;
+}
+
 export interface ContractApprovalSummaryData {
   versionId: string;
   contractId: string;
@@ -1008,6 +1116,7 @@ export interface ContractApprovalSummaryData {
   ratesBelowBase: number;
   ratesWithoutBase: number;
   version: string;
+  contractStatus: string;
 }
 
 export interface ContractRateComparisonData {
@@ -1143,8 +1252,13 @@ export interface ContractDraftCommentData {
   isAirline: boolean;
 }
 
+/**
+ * An airline observation; `expectedVersion` is the draft rowversion the airline read.
+ */
 export interface ContractDraftCommentRequest {
   body: string;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ContractDraftRateData {
@@ -1185,6 +1299,11 @@ export interface ContractDraftData {
   version: string;
 }
 
+export interface ContractDraftIssueData {
+  code: string;
+  subjects: string[];
+}
+
 export interface ContractDraftOverviewItemData {
   id: string;
   contractCode: string;
@@ -1194,6 +1313,42 @@ export interface ContractDraftOverviewItemData {
 export interface ContractDraftOverviewData {
   count: number;
   recent: ContractDraftOverviewItemData[];
+}
+
+export interface ContractDraftReadinessData {
+  versionId: string;
+  version: string;
+  versionStatus: string;
+  ready: boolean;
+  portalAccount: string;
+  issues: ContractDraftIssueData[];
+}
+
+export interface ContractDraftScopeServiceData {
+  serviceId: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  selected: boolean;
+  /** @nullable */
+  rateId?: string | null;
+  coveredByPackage: boolean;
+}
+
+export interface ContractDraftScopeStationData {
+  stationId: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  selected: boolean;
+}
+
+export interface ContractDraftScopeData {
+  versionId: string;
+  version: string;
+  versionStatus: string;
+  services: ContractDraftScopeServiceData[];
+  stations: ContractDraftScopeStationData[];
 }
 
 export type ContractLifecycleFailure = typeof ContractLifecycleFailure[keyof typeof ContractLifecycleFailure];
@@ -1255,6 +1410,11 @@ export interface CreateClientUserInput {
   email: string;
   /** @nullable */
   temporaryPassword?: string | null;
+}
+
+export interface CreateContractAmendmentRequest {
+  expectedStatus: string;
+  validFrom: string;
 }
 
 export interface CreateDepartmentAccountInput {
@@ -1515,7 +1675,8 @@ export interface DecideServiceClosureRequest {
   approve: boolean;
   /** @nullable */
   reason?: string | null;
-  version: string;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface DecideUserAccessInput {
@@ -1629,6 +1790,11 @@ export interface DepartmentsOverviewData {
   departments: DepartmentSummaryData[];
 }
 
+export interface DiscardContractDraftInput {
+  expectedVersion: string;
+  reason: string;
+}
+
 export interface DisputeAirlinePreinvoiceRequest {
   requestId: string;
   subject: string;
@@ -1667,6 +1833,38 @@ export interface EmailDeliveryResponse {
 export interface EmailDeliveriesResponse {
   smtpConfigured: boolean;
   deliveries: EmailDeliveryResponse[];
+}
+
+export interface EmailReferenceResponse {
+  kind: string;
+  /** @nullable */
+  id?: string | null;
+  label: string;
+  /** @nullable */
+  context?: string | null;
+}
+
+export interface EmailOutboxEntryResponse {
+  id: string;
+  recipient: string;
+  purpose: string;
+  status: string;
+  attempts: number;
+  createdAt: string;
+  /** @nullable */
+  sentAt?: string | null;
+  updatedAt: string;
+  /** @nullable */
+  reason?: string | null;
+  reference?: EmailReferenceResponse | null;
+}
+
+export interface EmailOutboxPageResponse {
+  smtpConfigured: boolean;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+  entries: EmailOutboxEntryResponse[];
 }
 
 export interface EmployeeAccountRefData {
@@ -2229,6 +2427,11 @@ export interface FinancePackageComponentResponse {
 
 export interface FinancePackageIdResponse {
   id: string;
+}
+
+export interface FinancePackageLifecycleRequest {
+  expectedVersion: string;
+  reason: string;
 }
 
 export interface FinancePackageResponse {
@@ -3339,6 +3542,22 @@ export interface ImportOccFlightResponse {
   replayed: boolean;
 }
 
+export interface InvoiceEmailDeliveryResponse {
+  recipient: string;
+  status: string;
+  /** @nullable */
+  reason?: string | null;
+  createdAt: string;
+  /** @nullable */
+  sentAt?: string | null;
+}
+
+export interface InvoiceEmailStatusResponse {
+  invoiceId: string;
+  smtpConfigured: boolean;
+  deliveries: InvoiceEmailDeliveryResponse[];
+}
+
 export interface IssueCreditNoteInput {
   requestId: string;
   amount: number;
@@ -3383,6 +3602,11 @@ export interface LegacyRoleData {
   name: string;
   permissions: string[];
   activeUsers: number;
+}
+
+export interface LinkProvisioningAccountInput {
+  email: string;
+  expectedVersion: string;
 }
 
 export interface LocateOccStandRequest {
@@ -4514,10 +4738,22 @@ export interface ProgramOccShiftResponse {
   replayed: boolean;
 }
 
+export interface ProposedAirlineRequest {
+  name: string;
+  countryCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  icaoCode: string;
+  /** @nullable */
+  websiteUrl?: string | null;
+}
+
 export interface ProvisionAirlineInput {
   email: string;
   /** @nullable */
   temporaryPassword?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ProvisioningTaskData {
@@ -4528,6 +4764,7 @@ export interface ProvisioningTaskData {
   suggestedEmail: string;
   contractId: string;
   approvedAt: string;
+  version: string;
 }
 
 export interface PublicAirlineData {
@@ -5150,8 +5387,15 @@ export interface RemoveOccReviewChargeRequest {
 }
 
 export interface ReopenServiceRequest {
-  reason: string;
-  serviceVersion: string;
+  /** @nullable */
+  reason?: string | null;
+  /** @nullable */
+  serviceVersion?: string | null;
+}
+
+export interface ReplyContractDraftInput {
+  expectedVersion: string;
+  body: string;
 }
 
 export interface ReportRampIncidentRequest {
@@ -5209,8 +5453,19 @@ export interface RequestUserAccessInput {
   employeeId?: string | null;
 }
 
+export interface ResendInvitationInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface ResendLoginCodeRequest {
   challengeId: string;
+}
+
+export interface ResetClientUserPasswordInput {
+  temporaryPassword: string;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ResetGovernancePasswordRequest {
@@ -5236,6 +5491,13 @@ export interface ResolvePreinvoiceDisputeResponse {
   replayed: boolean;
 }
 
+export interface RetireServiceInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface ReviewAirlinePermitInput {
   verified: boolean;
   /** @nullable */
@@ -5248,6 +5510,8 @@ export interface ReviewCommercialInput {
   /** @nullable */
   reason?: string | null;
   stationIds: string[];
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface SaveAccessProfileInput {
@@ -5409,6 +5673,7 @@ export interface ServiceClosureData {
   /** @nullable */
   reopenReason?: string | null;
   isCurrentlyPublic: boolean;
+  isServiceActive: boolean;
   serviceVersion: string;
   version: string;
 }
@@ -5447,6 +5712,12 @@ export interface SessionResponse {
   refreshToken?: string | null;
   /** @nullable */
   refreshExpiresAt?: string | null;
+}
+
+export interface SetContractDraftScopeInput {
+  expectedVersion: string;
+  serviceIds: string[];
+  stationIds: string[];
 }
 
 export interface SetContractPackagesRequest {
@@ -5533,7 +5804,8 @@ export interface SubmitAirlinePermitInput {
 
 export interface SubmitCommercialRequestRequest {
   requestId: string;
-  airlineProfileId: string;
+  /** @nullable */
+  airlineProfileId?: string | null;
   serviceIds: string[];
   representativeName: string;
   representativeTitle: string;
@@ -5556,11 +5828,17 @@ export interface SubmitCommercialRequestRequest {
   representativeDocumentNumber?: string | null;
   /** @nullable */
   representativeDistrict?: string | null;
+  proposedAirline?: ProposedAirlineRequest | null;
 }
 
 export interface SubmitCommercialRequestResponse {
   reference: string;
   replayed: boolean;
+}
+
+export interface SubmitContractDraftInput {
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface SubmitPreinvoiceRequest {
@@ -5701,6 +5979,8 @@ export interface UpdateContractDraftInput {
   rates: UpdateDraftRateInput[];
   /** @nullable */
   chargeRates?: UpdateDraftChargeInput[] | null;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface UpdateDepartmentUserInput {
@@ -5765,19 +6045,26 @@ export interface ValidateAttendanceRequest {
   reason?: string | null;
 }
 
-export interface VerifyAirlineInput {
-  legalName: string;
-  countryCode: string;
-  iataCode: string;
-  icaoCode: string;
-  verificationSourceUrl: string;
-  /** @nullable */
-  logoUrl?: string | null;
-}
-
 export interface VerifyLoginCodeRequest {
   challengeId: string;
   code: string;
+}
+
+export interface VerifyRequestAirlineInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  linkProfileId?: string | null;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
 }
 
 export type GetAccountChangesParams = {
@@ -5830,6 +6117,13 @@ version?: string;
 export type UploadCommercialMediaBody = {
   purpose?: string;
   file?: Blob;
+};
+
+export type ListCommercialRequestInboxParams = {
+status?: string;
+search?: string;
+page?: number;
+limit?: number;
 };
 
 export type GetContractsAirlinePermitsParams = {
@@ -6265,6 +6559,12 @@ offset?: number;
 
 export type GetOperationalPresenceParams = {
 operationIds?: string[];
+};
+
+export type ListEmailOutboxParams = {
+status?: string;
+page?: number;
+limit?: number;
 };
 
 export type GetFinancePreinvoiceDisputesParams = {
@@ -7689,6 +7989,11 @@ export const getUpdateManagedAirlineUrl = (id: string,) => {
   return `/api/v1/governance/airlines/${id}`
 }
 
+/**
+ * @summary Saves the profile with the `version` the superadministrator saw. The Idempotency-Key is
+optional while older clients exist (expand). The legal name, codes and verification of an
+airline that already operates with AVIAM are fixed (`airline_identity_locked`, 1-N20).
+ */
 export const updateManagedAirline = async (id: string,
     managedAirlineInput?: ManagedAirlineInput, options?: RequestInit): Promise<ManagedAirlineData> => {
 
@@ -7823,6 +8128,11 @@ export const getUpdateCommercialServiceUrl = (id: string,) => {
   return `/api/v1/contracts/catalog/services/${id}`
 }
 
+/**
+ * @summary Edits the service, hides it from or shows it in the public catalog, or reactivates a retired one;
+it never retires (`retirement_command_required`). The Idempotency-Key is optional while older
+clients exist (expand); `version` is the rowversion on screen.
+ */
 export const updateCommercialService = async (id: string,
     managedServiceInput?: ManagedServiceInput, options?: RequestInit): Promise<ManagedServiceData> => {
 
@@ -7866,6 +8176,10 @@ export const getDeleteCommercialServiceUrl = (id: string,
   return stringifiedParams.length > 0 ? `/api/v1/contracts/catalog/services/${id}?${stringifiedParams}` : `/api/v1/contracts/catalog/services/${id}`
 }
 
+/**
+ * @deprecated
+ * @summary Deprecated alias of the retirement without a reason; the same checks apply.
+ */
 export const deleteCommercialService = async (id: string,
     params?: DeleteCommercialServiceParams, options?: RequestInit): Promise<ManagedServiceData> => {
 
@@ -7875,6 +8189,46 @@ export const deleteCommercialService = async (id: string,
     method: 'DELETE'
 
 
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ManagedServiceData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRetireCommercialServiceUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/catalog/services/${id}/retirement`
+}
+
+/**
+ * @summary «Dar de baja» (1-N03): the service leaves the public catalog, new contracts and the operation. It is
+refused with `service_in_active_contract` while a contract in force or in approval uses it, as a
+rate or inside a package. The Idempotency-Key and `expectedVersion` are required.
+ */
+export const retireCommercialService = async (id: string,
+    retireServiceInput: RetireServiceInput, options?: RequestInit): Promise<ManagedServiceData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRetireCommercialServiceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(retireServiceInput)
   }
 )
 
@@ -7986,6 +8340,13 @@ export const getProvisionCommercialAirlineUrl = (requestId: string,) => {
   return `/api/v1/governance/provisioning/${requestId}`
 }
 
+/**
+ * @summary Creates the airline's portal account: an emailed invitation by default, a temporary password
+as the explicit alternative. The Idempotency-Key and `expectedVersion` (the request
+version) are optional while older clients exist (expand); a key without the version is
+rejected. An email that already has an account answers `email_has_account` when it can be
+linked instead.
+ */
 export const provisionCommercialAirline = async (requestId: string,
     provisionAirlineInput?: ProvisionAirlineInput, options?: RequestInit): Promise<CommercialAccountResponse> => {
 
@@ -8013,6 +8374,45 @@ const res = await fetch(getProvisionCommercialAirlineUrl(requestId),
 
 
 
+export const getLinkCommercialAirlineAccountUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/v1/governance/provisioning/${requestId}/account-link`
+}
+
+/**
+ * @summary Completes the request with the existing portal account of the email (1-N13): one of the same
+airline, or one without an airline, which joins it. Its credentials do not change.
+ */
+export const linkCommercialAirlineAccount = async (requestId: string,
+    linkProvisioningAccountInput: LinkProvisioningAccountInput, options?: RequestInit): Promise<CommercialAccountResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getLinkCommercialAirlineAccountUrl(requestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(linkProvisioningAccountInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialAccountResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getResendAirlineInvitationUrl = (accountId: string,) => {
 
 
@@ -8022,16 +8422,25 @@ export const getResendAirlineInvitationUrl = (accountId: string,) => {
 }
 
 /**
- * @summary Sends a new activation link to an airline account that has not activated yet (ADR-0022).
+ * @summary Queues a new activation link for an airline account that has not activated yet (ADR-0022); the
+earlier links stop working and their queued emails are discarded. The Idempotency-Key and
+`expectedVersion` (the account version) are optional while older clients exist (expand).
  */
-export const resendAirlineInvitation = async (accountId: string, options?: RequestInit): Promise<CommercialAccountResponse> => {
+export const resendAirlineInvitation = async (accountId: string,
+    resendInvitationInput?: ResendInvitationInput, options?: RequestInit): Promise<CommercialAccountResponse> => {
 
-  const res = await fetch(getResendAirlineInvitationUrl(accountId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getResendAirlineInvitationUrl(accountId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(resendInvitationInput)
   }
 )
 
@@ -8072,6 +8481,45 @@ export const listCommercialRequests = async ( options?: RequestInit): Promise<Co
 
 
 
+export const getListCommercialRequestInboxUrl = (params?: ListCommercialRequestInboxParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/commercial-requests/inbox?${stringifiedParams}` : `/api/v1/contracts/commercial-requests/inbox`
+}
+
+/**
+ * @summary Inbox with server-side filter, search and paging, and the counters per status. By default it
+lists the open requests (pending and in review), oldest first.
+ */
+export const listCommercialRequestInbox = async (params?: ListCommercialRequestInboxParams, options?: RequestInit): Promise<CommercialInboxData> => {
+
+  const res = await fetch(getListCommercialRequestInboxUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialInboxData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getListCommercialStationsUrl = () => {
 
 
@@ -8100,16 +8548,21 @@ export const listCommercialStations = async ( options?: RequestInit): Promise<Co
 
 
 
-export const getVerifyCommercialAirlineUrl = (profileId: string,) => {
+export const getVerifyCommercialRequestAirlineUrl = (id: string,) => {
 
 
 
 
-  return `/api/v1/contracts/commercial-requests/airlines/${profileId}/verification`
+  return `/api/v1/contracts/commercial-requests/${id}/airline-verification`
 }
 
-export const verifyCommercialAirline = async (profileId: string,
-    verifyAirlineInput?: VerifyAirlineInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+/**
+ * @summary Verifies the request's airline with an official source; the first verification moves the
+request to «En revisión». A proposed airline is linked to an existing profile or gets a new
+verified and published one.
+ */
+export const verifyCommercialRequestAirline = async (id: string,
+    verifyRequestAirlineInput: VerifyRequestAirlineInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -8117,12 +8570,88 @@ export const verifyCommercialAirline = async (profileId: string,
     if (Array.isArray(h)) return Object.fromEntries(h);
     return h;
   };
-const res = await fetch(getVerifyCommercialAirlineUrl(profileId),
+const res = await fetch(getVerifyCommercialRequestAirlineUrl(id),
   {
     ...options,
-    method: 'PUT',
+    method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(verifyAirlineInput)
+    body: JSON.stringify(verifyRequestAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getConfirmCommercialRepresentativeUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests/${id}/representative-confirmation`
+}
+
+/**
+ * @summary Records who confirmed the representative, when and how; approval requires it.
+ */
+export const confirmCommercialRepresentative = async (id: string,
+    confirmCommercialRepresentativeInput: ConfirmCommercialRepresentativeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getConfirmCommercialRepresentativeUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(confirmCommercialRepresentativeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCancelCommercialRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests/${id}/cancellation`
+}
+
+/**
+ * @summary Cancels a pending or in-review request with a reason; nothing is deleted.
+ */
+export const cancelCommercialRequest = async (id: string,
+    cancelCommercialRequestInput: CancelCommercialRequestInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCancelCommercialRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(cancelCommercialRequestInput)
   }
 )
 
@@ -8143,6 +8672,10 @@ export const getDecideCommercialRequestUrl = (id: string,) => {
   return `/api/v1/contracts/commercial-requests/${id}/decision`
 }
 
+/**
+ * @summary Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older
+clients exist (expand); a key without the version is rejected. Approval returns the contract.
+ */
 export const decideCommercialRequest = async (id: string,
     reviewCommercialInput?: ReviewCommercialInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -8365,6 +8898,10 @@ export const getCommentAirlineContractDraftUrl = (versionId: string,) => {
   return `/api/v1/airline/contract-drafts/${versionId}/comments`
 }
 
+/**
+ * @summary The airline comments its draft, also while Finance reviews it. The Idempotency-Key and
+`expectedVersion` are optional while older portals exist; a key without the version is rejected.
+ */
 export const commentAirlineContractDraft = async (versionId: string,
     contractDraftCommentRequest?: ContractDraftCommentRequest, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -8456,6 +8993,10 @@ export const getUpdateManagedContractDraftUrl = (versionId: string,) => {
   return `/api/v1/contracts/drafts/${versionId}`
 }
 
+/**
+ * @summary Saves terms, validity, currency, rates and charges. The Idempotency-Key and `expectedVersion`
+are optional while older clients exist (expand); a key without the version is rejected.
+ */
 export const updateManagedContractDraft = async (versionId: string,
     updateContractDraftInput?: UpdateContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -8491,14 +9032,203 @@ export const getActivateManagedContractDraftUrl = (versionId: string,) => {
   return `/api/v1/contracts/drafts/${versionId}/activate`
 }
 
-export const activateManagedContractDraft = async (versionId: string, options?: RequestInit): Promise<CommercialIdResponse> => {
+/**
+ * @summary «Enviar a Finanzas» when every readiness rule holds; answers the contract. The body with
+`expectedVersion` and the Idempotency-Key are optional while older clients exist (expand).
+ */
+export const activateManagedContractDraft = async (versionId: string,
+    submitContractDraftInput?: SubmitContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
-  const res = await fetch(getActivateManagedContractDraftUrl(versionId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getActivateManagedContractDraftUrl(versionId),
   {
     ...options,
-    method: 'POST'
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(submitContractDraftInput)
+  }
+)
 
 
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManagedContractDraftReadinessUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/readiness`
+}
+
+/**
+ * @summary Whether the draft can go to Finance, every blocking cause and the portal account status.
+ */
+export const getManagedContractDraftReadiness = async (versionId: string, options?: RequestInit): Promise<ContractDraftReadinessData> => {
+
+  const res = await fetch(getGetManagedContractDraftReadinessUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDraftReadinessData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetManagedContractDraftScopeUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/scope`
+}
+
+/**
+ * @summary The services and stations of the draft and the active ones that can be added.
+ */
+export const getManagedContractDraftScope = async (versionId: string, options?: RequestInit): Promise<ContractDraftScopeData> => {
+
+  const res = await fetch(getGetManagedContractDraftScopeUrl(versionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: ContractDraftScopeData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetManagedContractDraftScopeUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/scope`
+}
+
+/**
+ * @summary Sets the services and stations of a draft: kept services keep their rates, new ones start from
+the Finance base tariff unconfirmed, and only active catalog services can be added.
+ */
+export const setManagedContractDraftScope = async (versionId: string,
+    setContractDraftScopeInput: SetContractDraftScopeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetManagedContractDraftScopeUrl(versionId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setContractDraftScopeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getDiscardManagedContractDraftUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/discard`
+}
+
+/**
+ * @summary Discards a draft or a version awaiting Finance with a reason. When it was the only live version of
+a contract that never activated, the contract is terminated too. Nothing is deleted.
+ */
+export const discardManagedContractDraft = async (versionId: string,
+    discardContractDraftInput: DiscardContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDiscardManagedContractDraftUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(discardContractDraftInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReplyManagedContractDraftUrl = (versionId: string,) => {
+
+
+
+
+  return `/api/v1/contracts/drafts/${versionId}/comments`
+}
+
+/**
+ * @summary Contratos answers the airline on the draft; the answer appears in the portal.
+ */
+export const replyManagedContractDraft = async (versionId: string,
+    replyContractDraftInput: ReplyContractDraftInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReplyManagedContractDraftUrl(versionId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(replyContractDraftInput)
   }
 )
 
@@ -8651,6 +9381,10 @@ export const getGetContractTimelineUrl = (versionId: string,) => {
   return `/api/v1/contract-versions/${versionId}/timeline`
 }
 
+/**
+ * @summary History of the contract. The airline reads its own contracts without internal names or the
+internal reason of a Finance return (1-N05).
+ */
 export const getContractTimeline = async (versionId: string, options?: RequestInit): Promise<ContractTimelineData> => {
 
   const res = await fetch(getGetContractTimelineUrl(versionId),
@@ -8679,6 +9413,11 @@ export const getApplyContractLifecycleUrl = (versionId: string,) => {
   return `/api/v1/contract-versions/${versionId}/lifecycle`
 }
 
+/**
+ * @summary Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated) or renew,
+with a reason and the status the user saw. The Idempotency-Key is optional while older clients
+exist (expand); with it a retry replays the first result.
+ */
 export const applyContractLifecycle = async (versionId: string,
     contractLifecycleInput: ContractLifecycleInput, options?: RequestInit): Promise<ContractLifecycleResult> => {
 
@@ -9808,9 +10547,15 @@ export const getResetGovernanceClientUserPasswordUrl = (organizationId: string,
   return `/api/v1/governance/clients/${organizationId}/users/${id}/password-reset`
 }
 
+/**
+ * @summary Sets a temporary password the user must change at the next sign-in. On an invitation that is
+still pending it accepts the invitation, retires its links and discards its queued email (1-N12).
+The Idempotency-Key and `expectedVersion` (the account version) are optional while older
+clients exist (expand); a key without the version is rejected.
+ */
 export const resetGovernanceClientUserPassword = async (organizationId: string,
     id: string,
-    resetGovernancePasswordRequest?: ResetGovernancePasswordRequest, options?: RequestInit): Promise<CommercialIdResponse> => {
+    resetClientUserPasswordInput?: ResetClientUserPasswordInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -9823,7 +10568,7 @@ const res = await fetch(getResetGovernanceClientUserPasswordUrl(organizationId,i
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(resetGovernancePasswordRequest)
+    body: JSON.stringify(resetClientUserPasswordInput)
   }
 )
 
@@ -10925,6 +11670,38 @@ const res = await fetch(getIssueInvoiceFromOperationsUrl(),
 
 
 
+export const getGetFinanceInvoiceEmailDeliveriesUrl = (invoiceId: string,) => {
+
+
+
+
+  return `/api/v1/finance/invoices/${invoiceId}/email-deliveries`
+}
+
+/**
+ * @summary The «Factura emitida» emails of the invoice and their delivery state (1-N08): queued, sent,
+failed or discarded, or none when the airline has no active portal account nor billing email.
+ */
+export const getFinanceInvoiceEmailDeliveries = async (invoiceId: string, options?: RequestInit): Promise<InvoiceEmailStatusResponse> => {
+
+  const res = await fetch(getGetFinanceInvoiceEmailDeliveriesUrl(invoiceId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: InvoiceEmailStatusResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getListFinanceInvoicesUrl = (params?: ListFinanceInvoicesParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -11280,6 +12057,84 @@ const res = await fetch(getPublishFinancePackageUrl(id),
 
 
 
+export const getDiscardFinancePackageUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/packages/${id}/discard`
+}
+
+/**
+ * @summary Finance discards a package draft with a reason (1-N27, `finance.packages.delete`); the draft is
+kept as Discarded. Idempotency-Key and the expected version are required.
+ */
+export const discardFinancePackage = async (id: string,
+    financePackageLifecycleRequest: FinancePackageLifecycleRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDiscardFinancePackageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePackageLifecycleRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRetireFinancePackageUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/packages/${id}/retire`
+}
+
+/**
+ * @summary Finance retires a published package with a reason (1-N27, `finance.packages.retire`): Contratos can
+no longer link it and Finance does not approve drafts that still do; approved contracts keep it.
+ */
+export const retireFinancePackage = async (id: string,
+    financePackageLifecycleRequest: FinancePackageLifecycleRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRetireFinancePackageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePackageLifecycleRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePackageIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getCreateContractAmendmentUrl = (versionId: string,) => {
 
 
@@ -11288,8 +12143,14 @@ export const getCreateContractAmendmentUrl = (versionId: string,) => {
   return `/api/v1/contracts/versions/${versionId}/amendments`
 }
 
+/**
+ * @summary Contratos amends an active or suspended contract from any of its versions (1-C): a new draft from
+the latest approved version, starting on `validFrom` and ending when that version ends, with
+its rates unconfirmed. The token is the contract status the user saw. No client used the earlier
+shape, so the Idempotency-Key is required without an expand phase. Answers the new draft version.
+ */
 export const createContractAmendment = async (versionId: string,
-    financePackageCommandRequest?: FinancePackageCommandRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
+    createContractAmendmentRequest: CreateContractAmendmentRequest, options?: RequestInit): Promise<FinancePackageIdResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -11302,14 +12163,14 @@ const res = await fetch(getCreateContractAmendmentUrl(versionId),
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(financePackageCommandRequest)
+    body: JSON.stringify(createContractAmendmentRequest)
   }
 )
 
-  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: FinancePackageIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  const data: FinancePackageIdResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -12962,6 +13823,11 @@ export const getDecideFinanceContractApprovalUrl = (versionId: string,) => {
   return `/api/v1/finance/contract-approvals/${versionId}/decision`
 }
 
+/**
+ * @summary Finance approves the prices or returns the version to Contratos. Every failure carries a code,
+one per blocking cause (1-N07). The Idempotency-Key is optional while older clients exist
+(expand); with it the same key and body replay the first result.
+ */
 export const decideFinanceContractApproval = async (versionId: string,
     decideContractApprovalInput?: DecideContractApprovalInput, options?: RequestInit): Promise<FinanceIdResponse> => {
 
@@ -17211,6 +18077,46 @@ export const listEmailDeliveries = async ( options?: RequestInit): Promise<Email
 
 
 
+export const getListEmailOutboxUrl = (params?: ListEmailOutboxParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/governance/email/outbox?${stringifiedParams}` : `/api/v1/governance/email/outbox`
+}
+
+/**
+ * @summary The outbox for the superadmin (1-N22): filter by status (`All`, `Pending`, `Sent`,
+`Failed` or `Discarded`), the normalized reason of each email and the contract,
+invoice, payment, account or request it is about. Bodies are never returned.
+ */
+export const listEmailOutbox = async (params?: ListEmailOutboxParams, options?: RequestInit): Promise<EmailOutboxPageResponse> => {
+
+  const res = await fetch(getListEmailOutboxUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: EmailOutboxPageResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetFinancePreinvoiceDisputesUrl = (draftId: string,
     params?: GetFinancePreinvoiceDisputesParams,) => {
   const normalizedParams = new URLSearchParams();
@@ -18352,6 +19258,10 @@ export const getDecideServiceClosureUrl = (id: string,) => {
   return `/api/v1/service-closures/${id}/decision`
 }
 
+/**
+ * @summary Approves or denies a pending request. The Idempotency-Key is optional while older clients exist
+(expand); `version` is the request rowversion on screen.
+ */
 export const decideServiceClosure = async (id: string,
     decideServiceClosureRequest?: DecideServiceClosureRequest, options?: RequestInit): Promise<ServiceClosureData> => {
 
@@ -18387,6 +19297,11 @@ export const getReopenServiceUrl = (id: string,) => {
   return `/api/v1/service-closures/services/${id}/reopen`
 }
 
+/**
+ * @summary Republishes a service its approved closure hid, with a reason; a retired service answers
+`service_retired` until it is reactivated. The Idempotency-Key is optional while older
+clients exist (expand); `serviceVersion` is the service rowversion on screen.
+ */
 export const reopenService = async (id: string,
     reopenServiceRequest?: ReopenServiceRequest, options?: RequestInit): Promise<ServiceClosureData> => {
 

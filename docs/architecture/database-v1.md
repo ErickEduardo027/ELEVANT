@@ -158,6 +158,29 @@ la emisión. La aerolínea relee su propia factura mediante una ruta tenant-scop
 no se infiere un documento tributario ni un pago. La migración es aditiva,
 sin DML de negocio y aún no está desplegada.
 
+## Revisión comercial y aerolíneas sin IATA
+
+`20261106020045_AddCommercialRequestReviewAndIcaoOnlyAirlines`, posterior a
+`AddSimulatedCardPayments`, es la única migración de la fase 1 del ciclo
+([ADR-0037](../adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+Es aditiva y no lleva DML de negocio.
+
+- `commercial.service_requests` gana siete columnas opcionales: la confirmación
+  del representante (fecha, cuenta con FK `NO ACTION` indexada y nota) y la
+  aerolínea que propuso el solicitante (país, IATA, ICAO y sitio). La propuesta
+  vive en la solicitud, no en el catálogo de aerolíneas.
+- `ref.airlines.iata_code` pasa a `char(2) NULL`: el ICAO identifica a un
+  operador sin designador IATA. El índice único de IATA se filtra por
+  `iata_code IS NOT NULL`, y `ck_airline_iata` no cambia.
+- El `Down` se detiene (`THROW 52370`) si ya hay confirmaciones, propuestas o
+  aerolíneas sin IATA, porque esa historia comercial no se descarta.
+
+Los estados que el ciclo comercial empieza a usar se guardan como texto en
+columnas que ya existían: la solicitud en revisión o cancelada, la versión de
+contrato descartada (`Rejected`), el paquete descartado o retirado y el correo
+descartado. Los recibos de idempotencia de esos comandos reutilizan
+`commercial.finance_pricing_commands`.
+
 ## Diferido explícitamente
 
 - emisión fiscal, documentos PDF, recibos y ledger de conciliación;

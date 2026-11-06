@@ -2,21 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
+import { billingUnitLabel } from '../../../services/billingUnits';
 import { formatMoney } from '../../../services/financeBookService';
 import {
   createPackageCommand, financePackageError, listContractPackages, listFinancePackages, setContractPackages,
 } from '../../../services/financePackagesService';
+import { FLIGHT_DIRECTION_LABELS, PACKAGE_STATUS, packageScopeLabel, statusMeta } from '../../finance/financeLabels';
 
-const scopeNames = { Turnaround: 'Rotación', Flight: 'Vuelo', Period: 'Período' };
-const statuses = { Draft: 'Borrador', Published: 'Publicada', Superseded: 'Histórica' };
 const buttonClass = 'rounded-lg border border-black/15 px-3 py-2 text-xs font-semibold disabled:opacity-50 dark:border-white/15';
 
 // DateOnly values arrive as ISO dates: compare calendar days without timezone conversion.
+// A retired publication stays in the history: it is never offered, and it never lets the version it
+// replaced become effective again (1-N27).
 function eligiblePackages(catalog, draft) {
   if (!draft.validFrom) return [];
   const effective = new Map();
   for (const item of catalog) {
-    if (!['Published', 'Superseded'].includes(item.status) ||
+    if (!['Published', 'Superseded', 'Retired'].includes(item.status) ||
         item.currencyCode !== draft.currencyCode || item.validFrom > draft.validFrom) continue;
     const previous = effective.get(item.code);
     if (!previous || item.validFrom > previous.validFrom ||
@@ -24,19 +26,20 @@ function eligiblePackages(catalog, draft) {
       effective.set(item.code, item);
   }
   // Check coverage after selecting the effective version; an expired replacement must not revive an older one.
-  return [...effective.values()].filter(item => !item.validTo || (draft.validTo && item.validTo >= draft.validTo));
+  return [...effective.values()].filter(item => item.status !== 'Retired' &&
+    (!item.validTo || (draft.validTo && item.validTo >= draft.validTo)));
 }
 
 function PackageDefinition({ item }) {
   return <div className="min-w-0 text-xs">
     <strong className="block break-words text-sm">{item.code} · v{item.versionNumber} · {item.name}</strong>
-    <p className="mt-1">{statuses[item.status] ?? item.status} · {formatMoney(item.basePrice, item.currencyCode)} · {scopeNames[item.scope] ?? item.scope}
-      {item.scope === 'Flight' && ` · ${item.flightDirection === 'Arrival' ? 'Llegada' : 'Salida'}`}
+    <p className="mt-1">{statusMeta(PACKAGE_STATUS, item.status).label} · {formatMoney(item.basePrice, item.currencyCode)} · {packageScopeLabel(item.scope)}
+      {item.scope === 'Flight' && ` · ${FLIGHT_DIRECTION_LABELS[item.flightDirection] ?? 'Sin dirección'}`}
       {item.scope === 'Period' && ` · ${item.periodDays} días`}</p>
     <p className="mt-1 text-text-secondary-light">Desde {item.validFrom}{item.validTo ? ` hasta ${item.validTo}` : ' · sin fecha final'}</p>
     <ul className="mt-2 space-y-1 text-text-secondary-light dark:text-text-secondary-dark">
       {item.components.map(component => <li key={component.serviceId} className="break-words">
-        {component.serviceCode} · {component.serviceName}: incluye {component.includedQuantity} {component.billingUnit}; excedente de {component.excessBlockSize} por {formatMoney(component.excessBlockPrice, item.currencyCode)}.
+        {component.serviceCode} · {component.serviceName}: incluye {component.includedQuantity} (unidad: {billingUnitLabel(component.billingUnit)}); excedente de {component.excessBlockSize} por {formatMoney(component.excessBlockPrice, item.currencyCode)}.
       </li>)}
     </ul>
   </div>;

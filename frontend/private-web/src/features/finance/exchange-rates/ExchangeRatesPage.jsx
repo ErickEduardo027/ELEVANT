@@ -1,11 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import EmptyState from '../../../components/EmptyState';
 import Modal from '../../../components/Modal';
 import PageHeader from '../../../components/PageHeader';
 import StackedTable from '../../../components/StackedTable';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { TariffIcon } from '../components/icons';
+import LoadFailure, { loadFailure } from '../components/LoadFailure';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { correctExchangeRate, listExchangeRates, recordExchangeRate } from '../../../services/financeBookService';
+import { financeTariffMessage } from '../../../services/financeErrors';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const isoDate = date => date.toISOString().slice(0, 10);
@@ -21,11 +24,20 @@ export default function ExchangeRatesPage() {
   const [rates, setRates] = useState(null);
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
+  // A period that failed to load shows a recoverable error, never «Sin tasas en el período».
+  const [loadError, setLoadError] = useState(null);
   const [notice, setNotice] = useState('');
+  // One Idempotency-Key per intent (1-E): a retry of an uncertain result sends the same key with the same body.
+  const commandKeys = useRef({ record: createCommandKeyHolder(), correct: createCommandKeyHolder() });
 
   const load = useCallback(async () => {
-    try { setRates(await listExchangeRates(range.from, range.to, history)); setError(''); }
-    catch (failure) { setRates([]); setError(failure.message); }
+    try { setRates(await listExchangeRates(range.from, range.to, history)); setLoadError(null); }
+    catch (failure) {
+      setRates(null);
+      setLoadError(loadFailure(failure, financeTariffMessage(failure, {
+        fallback: 'No se pudieron cargar las tasas. Revise la conexión e intente de nuevo.',
+        forbidden: 'No tiene permiso para consultar las tasas de cambio.' })));
+    }
   }, [range, history]);
   useEffect(() => { void load(); }, [load]);
 
@@ -33,13 +45,19 @@ export default function ExchangeRatesPage() {
     event.preventDefault();
     setError('');
     try {
-      if (form.correcting) await correctExchangeRate(form.correcting.id, { rate: Number(form.rate), source: form.source, expectedVersion: form.correcting.version });
-      else await recordExchangeRate({ rateDate: form.rateDate, fromCurrency: 'USD', toCurrency: 'DOP', rate: Number(form.rate), source: form.source });
+      if (form.correcting) {
+        const { id } = form.correcting;
+        const values = { rate: Number(form.rate), source: form.source, expectedVersion: form.correcting.version };
+        await commandKeys.current.correct.run('correct', { id, ...values }, key => correctExchangeRate(id, values, key));
+      } else {
+        const values = { rateDate: form.rateDate, fromCurrency: 'USD', toCurrency: 'DOP', rate: Number(form.rate), source: form.source };
+        await commandKeys.current.record.run('record', values, key => recordExchangeRate(values, key));
+      }
       setNotice(form.correcting ? 'Tasa corregida; la anterior queda en el historial.' : 'Tasa registrada.');
       setForm(null);
       await load();
     } catch (failure) {
-      setError(failure.status === 409 ? 'Ya existe una tasa vigente para esa fecha o cambió. Corríjala en lugar de registrar otra.' : failure.message);
+      setError(financeTariffMessage(failure, { fallback: 'No se pudo guardar la tasa. Intente de nuevo.' }));
     }
   }
 
@@ -56,7 +74,8 @@ export default function ExchangeRatesPage() {
       </div>
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
       {error && !form && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
-      {!rates ? <p role="status" className="text-sm">Cargando tasas…</p> : rates.length === 0 ? (
+      <LoadFailure failure={loadError} onRetry={() => { void load(); }} />
+      {!rates ? (loadError ? null : <p role="status" className="text-sm">Cargando tasas…</p>) : rates.length === 0 ? (
         <EmptyState icon={TariffIcon} title="Sin tasas en el período" description="Registre la tasa del día para consolidar reportes en USD." />
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">

@@ -4,28 +4,33 @@ namespace Elevant.Api.Messaging;
 
 /// <summary>
 /// Drains the email outbox (ADR-0022). Without SMTP settings it sends nothing and messages stay
-/// pending, so the UI never claims an email went out. Failure reasons are logged without bodies.
+/// pending, so the UI never claims an email went out; even then it discards the links and codes
+/// that expire in the queue (1-N09). Failures store a normalized reason, never bodies or the
+/// provider's text.
 /// </summary>
 internal sealed partial class EmailDispatchWorker(
     IServiceScopeFactory scopeFactory, IEmailSender sender, ILogger<EmailDispatchWorker> logger) : BackgroundService
 {
     private static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan IdleInterval = TimeSpan.FromMinutes(1);
     private const int BatchSize = 20;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!sender.IsConfigured)
-        {
-            LogDisabled(logger);
-            return;
-        }
-        using var timer = new PeriodicTimer(Interval);
-        while (await timer.WaitForNextTickAsync(stoppingToken))
+        if (!sender.IsConfigured) LogDisabled(logger);
+        using var timer = new PeriodicTimer(sender.IsConfigured ? Interval : IdleInterval);
+        // The first successful run also removes the login codes that older subjects still carry.
+        var scrubHistory = true;
+        do
         {
             try
             {
                 await using var scope = scopeFactory.CreateAsyncScope();
                 var outbox = scope.ServiceProvider.GetRequiredService<IEmailOutboxStore>();
+                var discarded = await outbox.DiscardExpiredAsync(scrubHistory, stoppingToken);
+                scrubHistory = false;
+                if (discarded > 0) LogDiscarded(logger, discarded);
+                if (!sender.IsConfigured) continue;
                 foreach (var email in await outbox.ClaimDueAsync(BatchSize, stoppingToken))
                 {
                     try
@@ -36,7 +41,7 @@ internal sealed partial class EmailDispatchWorker(
                             // Resolved now, from current data; a missing file fails and retries like any send.
                             var attachment = await scope.ServiceProvider.GetRequiredService<IEmailAttachmentResolver>()
                                 .ResolveAsync(reference, stoppingToken)
-                                ?? throw new InvalidOperationException("The email attachment is no longer available.");
+                                ?? throw EmailSendException.For(EmailDeliveryReasons.AttachmentUnavailable);
                             attachments = [attachment];
                         }
                         await sender.SendAsync(new EmailMessage(email.To, email.Subject, email.HtmlBody, email.TextBody,
@@ -45,8 +50,9 @@ internal sealed partial class EmailDispatchWorker(
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     {
-                        await outbox.MarkFailedAsync(email.Id, exception.GetType().Name + ": " + exception.Message, stoppingToken);
-                        LogSendFailure(logger, email.Id, exception.GetType().Name);
+                        var reason = exception is EmailSendException send ? send.Reason : EmailDeliveryReasons.SendFailed;
+                        await outbox.MarkFailedAsync(email.Id, reason, stoppingToken);
+                        LogSendFailure(logger, email.Id, reason);
                     }
                 }
             }
@@ -58,11 +64,11 @@ internal sealed partial class EmailDispatchWorker(
             {
                 LogDispatchFailure(logger, exception);
             }
-        }
+        } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
     [LoggerMessage(EventId = 6201, Level = LogLevel.Warning,
-        Message = "SMTP is not configured; portal emails stay pending in the outbox")]
+        Message = "SMTP is not configured; portal emails stay pending in the outbox and expired ones are discarded")]
     private static partial void LogDisabled(ILogger logger);
 
     [LoggerMessage(EventId = 6202, Level = LogLevel.Warning,
@@ -71,4 +77,8 @@ internal sealed partial class EmailDispatchWorker(
 
     [LoggerMessage(EventId = 6203, Level = LogLevel.Error, Message = "Email dispatch failed; next run will retry")]
     private static partial void LogDispatchFailure(ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 6204, Level = LogLevel.Information,
+        Message = "{Count} queued emails expired before they could be sent and were discarded")]
+    private static partial void LogDiscarded(ILogger logger, int count);
 }

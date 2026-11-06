@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { getApprovedServices } from '../../../services/approvedServicesService';
-import { downloadInvoiceDocument, issueInvoiceFromOperations } from '../../../services/invoicingService';
+import { downloadInvoiceDocument, getInvoiceEmailDeliveries, issueInvoiceFromOperations } from '../../../services/invoicingService';
 import ToInvoicePage from './ToInvoicePage';
 import { calendarMonth, groupOperations } from './useToInvoiceData';
 
@@ -12,6 +12,7 @@ vi.mock('../../auth/authService', () => ({ readSession: vi.fn() }));
 vi.mock('../../../services/approvedServicesService', () => ({ getApprovedServices: vi.fn() }));
 vi.mock('../../../services/invoicingService', async importOriginal => ({
   ...(await importOriginal()), issueInvoiceFromOperations: vi.fn(), downloadInvoiceDocument: vi.fn(),
+  getInvoiceEmailDeliveries: vi.fn(),
 }));
 vi.mock('../../../services/accountChangeObserver', () => ({ createPrivateWebAccountChangeObserver: observer.factory }));
 
@@ -47,6 +48,8 @@ beforeEach(() => {
   vi.mocked(getApprovedServices).mockResolvedValue({ services: SERVICES, hasMore: false });
   vi.mocked(issueInvoiceFromOperations).mockReset();
   vi.mocked(downloadInvoiceDocument).mockReset();
+  vi.mocked(getInvoiceEmailDeliveries).mockReset();
+  vi.mocked(getInvoiceEmailDeliveries).mockResolvedValue({ invoiceId: 'inv-1', smtpConfigured: true, deliveries: [] });
 });
 
 describe('groupOperations', () => {
@@ -87,6 +90,30 @@ describe('ToInvoicePage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
     await waitFor(() => expect(downloadInvoiceDocument).toHaveBeenCalledWith('inv-1', 'factura-E310000000001.pdf'));
+    // 1-N08: an invoice nobody could receive says so; nothing claims an email went out.
+    expect(await screen.findByText(/No quedó ningún correo en cola/)).toBeInTheDocument();
+    expect(screen.queryByText(/Se envió por correo/)).not.toBeInTheDocument();
+    expect(getInvoiceEmailDeliveries).toHaveBeenCalledWith('inv-1');
+  });
+
+  it('reads what the invoice queued and follows the queue until the server reports it (1-N08)', async () => {
+    vi.mocked(issueInvoiceFromOperations).mockResolvedValue({ invoiceId: 'inv-1', number: 'NF-1',
+      fiscalNumber: 'E310000000001', total: 295, currencyCode: 'USD', replayed: false });
+    const queued = { recipient: 'billing@demo.example.com', status: 'Pending', reason: null,
+      createdAt: '2026-11-06T10:00:00Z', sentAt: null };
+    vi.mocked(getInvoiceEmailDeliveries)
+      .mockResolvedValueOnce({ invoiceId: 'inv-1', smtpConfigured: true, deliveries: [queued] })
+      .mockResolvedValue({ invoiceId: 'inv-1', smtpConfigured: true,
+        deliveries: [{ ...queued, status: 'Failed', reason: 'smtp_rejected' }] });
+    render(<DepartmentAccessProvider observe={false} initialAccess={{ kind: 'Member', department: 'finance',
+      permissions: ['finance.invoicing.read', 'finance.invoicing.issue'] }}><ToInvoicePage emailPollMs={10} /></DepartmentAccessProvider>);
+    fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
+    fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+    const status = await screen.findByLabelText('Correo de la factura');
+    expect(status).toHaveTextContent('Correo en cola para 1 destinatario(s)');
+    expect(status).toHaveTextContent('billing@demo.example.com · En cola');
+    await waitFor(() => expect(screen.getByLabelText('Correo de la factura'))
+      .toHaveTextContent('Falló · El servidor de correo rechazó el mensaje o el destinatario.'));
   });
 
   it('explains a mixed-airline rejection from the server', async () => {

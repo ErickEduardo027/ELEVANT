@@ -3,13 +3,13 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import ContractDetailDrawer from './ContractDetailDrawer';
 import {
-  getContractDocument, loadContractPdf, setContractValidity, signContractVersion,
+  createContractAmendment, getContractDocument, loadContractPdf, setContractValidity, signContractVersion,
 } from '../../../services/commercialGovernanceApi';
 
 vi.mock('../../../services/commercialGovernanceApi', () => ({
   getContractDocument: vi.fn(), loadContractPdf: vi.fn(), signContractVersion: vi.fn(), setContractValidity: vi.fn(),
   getContractTimeline: vi.fn().mockResolvedValue({ contractId: 'c-1', contractCode: 'CT-001', status: 'Active', entries: [] }),
-  applyContractLifecycle: vi.fn(),
+  applyContractLifecycle: vi.fn(), createContractAmendment: vi.fn(),
 }));
 
 const sha = 'b'.repeat(64);
@@ -104,4 +104,26 @@ it('offers no signature without «Firmar por AVIAM» and explains a missing docu
   getContractDocument.mockRejectedValueOnce({ status: 404 });
   render(<ContractDetailDrawer versionId="v-9" canSign onClose={vi.fn()} />);
   expect(await screen.findByRole('alert')).toHaveTextContent('ya no tiene documento');
+});
+
+it('creates an amendment from the approved version and keeps the notice and the link to Borradores (1-C)', async () => {
+  createContractAmendment.mockResolvedValue({ id: 'v-3' });
+  const onClose = vi.fn();
+  const onOpenDrafts = vi.fn();
+  render(<ContractDetailDrawer versionId="v-1" canAmend onOpenDrafts={onOpenDrafts} onClose={onClose} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Crear enmienda' }));
+  const dialog = screen.getByRole('dialog', { name: 'Crear enmienda del contrato CT-001' });
+  // «Vigente desde» falls after the start of the approved version on screen and not after its end.
+  const start = within(dialog).getByLabelText('Vigente desde');
+  expect([start.getAttribute('min'), start.getAttribute('max')]).toEqual(['2026-11-04', '2027-11-02']);
+  await userEvent.type(start, '2027-03-01');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Crear enmienda' }));
+  expect(await screen.findByText(/Se creó la enmienda como borrador/)).toBeInTheDocument();
+  expect(createContractAmendment).toHaveBeenCalledWith('v-1', { expectedStatus: 'Active', validFrom: '2027-03-01' },
+    expect.stringMatching(/^[0-9a-f-]{36}$/));
+  // The approved version did not change: the drawer keeps its document and the notice stays on screen.
+  expect(getContractDocument).toHaveBeenCalledTimes(1);
+  await userEvent.click(screen.getByRole('button', { name: 'Abrir Borradores' }));
+  expect(onClose).toHaveBeenCalled();
+  expect(onOpenDrafts).toHaveBeenCalled();
 });

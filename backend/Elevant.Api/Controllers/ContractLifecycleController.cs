@@ -70,6 +70,10 @@ public sealed class ContractLifecycleController(IAirlinePermitStore permits, ICo
         return result.Failure is { } failure ? PermitFailure(failure, result.Code) : Ok(result.Permit);
     }
 
+    /// <summary>
+    /// History of the contract. The airline reads its own contracts without internal names or the
+    /// internal reason of a Finance return (1-N05).
+    /// </summary>
     [HttpGet("contract-versions/{versionId:guid}/timeline", Name = "GetContractTimeline")]
     [ProducesResponseType<ContractTimelineData>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
@@ -77,9 +81,14 @@ public sealed class ContractLifecycleController(IAirlinePermitStore permits, ICo
     {
         if (!TryActor(out var actorId)) return Unauthorized();
         var timeline = await lifecycle.TimelineAsync(actorId, versionId, cancellationToken);
-        return timeline is null ? Problem(statusCode: 404, title: "Contract not found.") : Ok(timeline);
+        return timeline is null ? Coded(404, "El contrato ya no existe.", "not_found") : Ok(timeline);
     }
 
+    /// <summary>
+    /// Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated) or renew,
+    /// with a reason and the status the user saw. The Idempotency-Key is optional while older clients
+    /// exist (expand); with it a retry replays the first result.
+    /// </summary>
     [HttpPost("contract-versions/{versionId:guid}/lifecycle", Name = "ApplyContractLifecycle")]
     [RequestSizeLimit(4096)]
     [ProducesResponseType<ContractLifecycleResult>(StatusCodes.Status200OK, "application/json")]
@@ -88,17 +97,18 @@ public sealed class ContractLifecycleController(IAirlinePermitStore permits, ICo
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Apply(Guid versionId, [FromBody, BindRequired] ContractLifecycleInput input,
-        CancellationToken cancellationToken)
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await lifecycle.ApplyAsync(actorId, versionId, input, cancellationToken);
+        var result = await lifecycle.ApplyAsync(actorId, versionId, input, idempotencyKey, cancellationToken);
         return result.Failure switch
         {
             null => Ok(result),
             ContractLifecycleFailure.Forbidden => Forbid(),
-            ContractLifecycleFailure.NotFound => Problem(statusCode: 404, title: "Contract not found."),
-            ContractLifecycleFailure.Conflict => Coded(409, "The contract changed; reload and retry.", result.Code),
-            _ => Coded(400, "Invalid lifecycle action.", result.Code),
+            ContractLifecycleFailure.NotFound => Coded(404, "El contrato ya no existe.", result.Code ?? "not_found"),
+            ContractLifecycleFailure.Conflict => Coded(409, "El contrato cambió; vuelva a cargarlo.",
+                result.Code ?? "status_changed"),
+            _ => Coded(400, "La acción sobre el contrato no es válida.", result.Code ?? "invalid_lifecycle_action"),
         };
     }
 

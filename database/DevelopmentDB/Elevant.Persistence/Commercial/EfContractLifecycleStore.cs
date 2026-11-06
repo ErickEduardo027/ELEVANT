@@ -4,7 +4,9 @@ using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Finance;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Realtime;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Persistence.Commercial;
@@ -21,68 +23,169 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
     private static readonly string[] Readers = ["contracts.agreements.read", "finance.contract_approvals.read"];
 
     public async Task<ContractLifecycleResult> ApplyAsync(Guid actorId, Guid versionId, ContractLifecycleInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         if (!await permissions.HasAnyAsync(actorId, [LifecyclePermission], cancellationToken))
             return ContractLifecycleResult.Failed(ContractLifecycleFailure.Forbidden);
+        // Expand phase: the key is optional; the expected status is the version token it goes with.
+        if (idempotencyKey == Guid.Empty)
+            return ContractLifecycleResult.Failed(ContractLifecycleFailure.Invalid, "idempotency_key_required");
+        if (input is not null && string.IsNullOrWhiteSpace(input.ExpectedStatus))
+            return ContractLifecycleResult.Failed(ContractLifecycleFailure.Invalid, "expected_version_required");
         if (input is null || !Enum.TryParse<ContractLifecycleAction>(input.Action, true, out var action) ||
             !Enum.IsDefined(action) || !Enum.TryParse<ContractStatus>(input.ExpectedStatus, out var expected))
-            return ContractLifecycleResult.Failed(ContractLifecycleFailure.Invalid);
+            return ContractLifecycleResult.Failed(ContractLifecycleFailure.Invalid, "invalid_lifecycle_action");
         if (!ContractLifecycle.ValidReason(input.Reason))
             return ContractLifecycleResult.Failed(ContractLifecycleFailure.Invalid, "reason_required");
+        var reason = input.Reason.Trim();
+        var commandAction = $"contract.lifecycle.{action.ToString().ToLowerInvariant()}";
+        var hash = CommercialCommandReceipts.Hash(new { versionId, action, reason, expected, input.ValidFrom, input.ValidTo });
+        var actor = await context.Users.Where(user => user.PublicId == actorId).Select(user => user.Id)
+            .SingleAsync(cancellationToken);
 
         var strategy = context.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        try
         {
-            await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-            var contractId = await context.ContractVersions.Where(item => item.PublicId == versionId)
-                .Select(item => (long?)item.ContractId).SingleOrDefaultAsync(cancellationToken);
-            if (contractId is null) return ContractLifecycleResult.Failed(ContractLifecycleFailure.NotFound);
-            var contract = await context.Contracts.SingleAsync(item => item.Id == contractId, cancellationToken);
-            if (contract.Status != expected) return ContractLifecycleResult.Failed(ContractLifecycleFailure.Conflict, "status_changed");
-            if (ContractLifecycle.Target(action, contract.Status) is not { } target)
-                return ContractLifecycleResult.Failed(ContractLifecycleFailure.Conflict, "transition_not_allowed");
-
-            var now = timeProvider.GetUtcNow();
-            var today = DateOnly.FromDateTime(now.UtcDateTime);
-            var reason = input.Reason.Trim();
-            var actor = await context.Users.Where(user => user.PublicId == actorId).Select(user => user.Id).SingleAsync(cancellationToken);
-            Guid? draftId = null;
-            switch (action)
+            return await strategy.ExecuteAsync(async () =>
             {
-                case ContractLifecycleAction.Reactivate:
-                    if (!await ContractActivation.HasUsablePermitAsync(context, contract.AirlineId, today, cancellationToken))
-                        return ContractLifecycleResult.Failed(ContractLifecycleFailure.Invalid, "permit_required");
-                    if (!await context.ContractVersions.AnyAsync(item => item.ContractId == contract.Id &&
-                            item.Status == ContractVersionStatus.Approved && (item.ValidTo == null || item.ValidTo >= today), cancellationToken))
-                        return ContractLifecycleResult.Failed(ContractLifecycleFailure.Invalid, "no_version_in_force");
-                    break;
-                case ContractLifecycleAction.Terminate:
-                    contract.TerminatedOn = contract.SignedOn is { } signed && signed > today ? signed : today;
-                    break;
-                case ContractLifecycleAction.Renew:
-                    var renewal = await RenewAsync(contract, input, now, cancellationToken);
-                    if (renewal.Failure is not null) return renewal;
-                    draftId = renewal.DraftVersionId;
-                    break;
-            }
-            if (target != contract.Status)
-            {
-                context.Set<ContractStatusEvent>().Add(new ContractStatusEvent
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+                if (idempotencyKey is { } key)
                 {
-                    ContractId = contract.Id, FromStatus = contract.Status, ToStatus = target, OccurredAt = now,
-                    ActorAccountId = actor, Reason = reason,
-                });
-                contract.Status = target;
-                contract.UpdatedAt = now;
-            }
-            CommercialAuditWriter.Add(context, actor, $"commercial.contract.{action.ToString().ToLowerInvariant()}",
-                "commercial.contracts", contract.PublicId, reason);
-            await ContractActivation.AnnounceAsync(context, contract, "contract_lifecycle", now, cancellationToken);
-            await context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return new ContractLifecycleResult(contract.Status.ToString(), draftId, null);
-        });
+                    var prior = await CommercialCommandReceipts.FindAsync(context, key, actor, commandAction, hash,
+                        cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return ContractLifecycleResult.Failed(ContractLifecycleFailure.Conflict, "idempotency_conflict");
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                        return await ReplayAsync(versionId, action, prior.ResultId, cancellationToken);
+                }
+                var result = await ApplyInTransactionAsync(actor, versionId, input, action, expected, reason,
+                    cancellationToken);
+                if (result.Failure is not null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    context.ChangeTracker.Clear();
+                    return result.Public;
+                }
+                if (idempotencyKey is { } receipt)
+                    CommercialCommandReceipts.Add(context, receipt, actor, commandAction, hash,
+                        result.DraftVersionId ?? result.ContractId, timeProvider.GetUtcNow());
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return result.Public;
+            });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return ContractLifecycleResult.Failed(ContractLifecycleFailure.Conflict, "status_changed");
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is { } key &&
+            CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, actor, commandAction, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? await ReplayAsync(versionId, action, concurrent.ResultId, cancellationToken)
+                : ContractLifecycleResult.Failed(ContractLifecycleFailure.Conflict, "idempotency_conflict");
+        }
+    }
+
+    /// <summary>A retry answers the contract's current status and, for a renewal, its draft.</summary>
+    private async Task<ContractLifecycleResult> ReplayAsync(Guid versionId, ContractLifecycleAction action, Guid resultId,
+        CancellationToken cancellationToken)
+    {
+        var status = await (from version in context.ContractVersions.AsNoTracking()
+                            join contract in context.Contracts.AsNoTracking() on version.ContractId equals contract.Id
+                            where version.PublicId == versionId
+                            select contract.Status).SingleAsync(cancellationToken);
+        return new ContractLifecycleResult(status.ToString(), action == ContractLifecycleAction.Renew ? resultId : null, null);
+    }
+
+    private sealed record Applied(ContractLifecycleResult Public, Guid ContractId)
+    {
+        public ContractLifecycleFailure? Failure => Public.Failure;
+        public Guid? DraftVersionId => Public.DraftVersionId;
+    }
+
+    private async Task<Applied> ApplyInTransactionAsync(long actor, Guid versionId, ContractLifecycleInput input,
+        ContractLifecycleAction action, ContractStatus expected, string reason, CancellationToken cancellationToken)
+    {
+        Applied Failed(ContractLifecycleFailure failure, string? code = null) =>
+            new(ContractLifecycleResult.Failed(failure, code), Guid.Empty);
+        var contractId = await context.ContractVersions.Where(item => item.PublicId == versionId)
+            .Select(item => (long?)item.ContractId).SingleOrDefaultAsync(cancellationToken);
+        if (contractId is null) return Failed(ContractLifecycleFailure.NotFound, "not_found");
+        var contract = await context.Contracts.SingleAsync(item => item.Id == contractId, cancellationToken);
+        if (contract.Status != expected) return Failed(ContractLifecycleFailure.Conflict, "status_changed");
+        if (ContractLifecycle.Target(action, contract.Status) is not { } target)
+            return Failed(ContractLifecycleFailure.Conflict, "transition_not_allowed");
+
+        var now = timeProvider.GetUtcNow();
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        Guid? draftId = null;
+        switch (action)
+        {
+            case ContractLifecycleAction.Reactivate:
+                if (!await ContractActivation.HasUsablePermitAsync(context, contract.AirlineId, today, cancellationToken))
+                    return Failed(ContractLifecycleFailure.Invalid, "permit_required");
+                if (!await context.ContractVersions.AnyAsync(item => item.ContractId == contract.Id &&
+                        item.Status == ContractVersionStatus.Approved && (item.ValidTo == null || item.ValidTo >= today), cancellationToken))
+                    return Failed(ContractLifecycleFailure.Invalid, "no_version_in_force");
+                break;
+            case ContractLifecycleAction.Terminate:
+                contract.TerminatedOn = contract.SignedOn is { } signed && signed > today ? signed : today;
+                // A terminated contract («Descartar contrato» too, 1-B) closes its open versions: they
+                // leave Borradores and the Finance inbox.
+                await CloseOpenVersionsAsync(contract, actor, reason, now, cancellationToken);
+                break;
+            case ContractLifecycleAction.Renew:
+                var renewal = await RenewAsync(contract, input, now, cancellationToken);
+                if (renewal.Failure is not null) return new(renewal, Guid.Empty);
+                draftId = renewal.DraftVersionId;
+                break;
+        }
+        if (target != contract.Status)
+        {
+            context.Set<ContractStatusEvent>().Add(new ContractStatusEvent
+            {
+                ContractId = contract.Id, FromStatus = contract.Status, ToStatus = target, OccurredAt = now,
+                ActorAccountId = actor, Reason = reason,
+            });
+            contract.Status = target;
+            contract.UpdatedAt = now;
+        }
+        CommercialAuditWriter.Add(context, actor, $"commercial.contract.{action.ToString().ToLowerInvariant()}",
+            "commercial.contracts", contract.PublicId, reason);
+        await ContractActivation.AnnounceAsync(context, contract, "contract_lifecycle", now, cancellationToken);
+        return new(new ContractLifecycleResult(contract.Status.ToString(), draftId, null), contract.PublicId);
+    }
+
+    /// <summary>
+    /// The drafts and versions awaiting Finance of a terminated contract become Rejected: nothing is
+    /// deleted, and Finance no longer sees them as pending.
+    /// </summary>
+    private async Task CloseOpenVersionsAsync(Contract contract, long actor, string reason, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var open = await context.ContractVersions.Where(item => item.ContractId == contract.Id &&
+                (item.Status == ContractVersionStatus.Draft || item.Status == ContractVersionStatus.PendingFinanceApproval))
+            .ToArrayAsync(cancellationToken);
+        foreach (var version in open)
+        {
+            var pending = version.Status == ContractVersionStatus.PendingFinanceApproval;
+            version.Status = ContractVersionStatus.Rejected;
+            version.UpdatedAt = now;
+            CommercialAuditWriter.Add(context, actor, "commercial.draft.discarded", "commercial.contract_versions",
+                version.PublicId, reason);
+            await ContractDraftAudience.NotifyContractsAsync(context, ContractDraftAudience.DraftsResource,
+                version.PublicId, now, cancellationToken);
+            if (!pending) continue;
+            foreach (var recipient in await CommercialNotificationRecipients.WithPermissionAsync(context,
+                         "finance.contract_approvals.read", cancellationToken))
+                AccountChangeOutboxWriter.Add(context, recipient, null, "contract_approvals", version.PublicId, now);
+        }
     }
 
     /// <summary>Copies the latest approved version into a new draft with the new validity; Finance approves it as usual.</summary>
@@ -110,12 +213,14 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
         };
         context.ContractVersions.Add(draft);
         await context.SaveChangesAsync(cancellationToken);
+        // 1-E: the renewal keeps unit codes; a legacy unit name of the source becomes its code.
+        var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
         foreach (var rate in await context.ContractServiceRates.AsNoTracking().Where(item => item.ContractVersionId == source.Id)
                      .ToArrayAsync(cancellationToken))
             context.ContractServiceRates.Add(new ContractServiceRate
             {
                 PublicId = Guid.CreateVersion7(), ContractVersionId = draft.Id, ServiceDefinitionId = rate.ServiceDefinitionId,
-                BillingUnit = rate.BillingUnit, UnitPrice = rate.UnitPrice, MinimumQuantity = rate.MinimumQuantity,
+                BillingUnit = units.Normalize(rate.BillingUnit), UnitPrice = rate.UnitPrice, MinimumQuantity = rate.MinimumQuantity,
                 IsConfirmed = true, CreatedAt = now, UpdatedAt = now,
             });
         foreach (var station in await context.Set<ContractVersionStation>().AsNoTracking()
@@ -290,6 +395,9 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
             if (version.ApprovedAt is { } approved)
                 entries.Add(new(approved, "finance", $"Finanzas aprobó la versión {version.VersionNumber}", null,
                     await Name(version.ApprovedByAccountId)));
+            // A discarded version keeps its history; the reason stays in the audit trail.
+            if (version.Status == ContractVersionStatus.Rejected)
+                entries.Add(new(version.UpdatedAt, "draft", $"Contratos descartó la versión {version.VersionNumber}", null, null));
             if (version.ValidityConfirmedAt is { } confirmed)
                 entries.Add(new(confirmed, "validity", $"Contratos fijó la vigencia de la versión {version.VersionNumber}",
                     $"{version.ValidFrom:dd/MM/yyyy} – {version.ValidTo:dd/MM/yyyy} · renovación " +
@@ -299,8 +407,8 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
         foreach (var review in await context.ContractFinanceReviews.AsNoTracking()
                      .Where(item => versionIds.Contains(item.ContractVersionId) && item.Decision == ContractFinanceDecision.Returned)
                      .ToArrayAsync(cancellationToken))
-            entries.Add(new(review.DecidedAt, "finance", "Finanzas devolvió la versión a Contratos", review.Reason,
-                await Name(review.DecidedByAccountId)));
+            entries.Add(new(review.DecidedAt, "finance", "Finanzas devolvió la versión a Contratos",
+                internalReader ? review.Reason : null, await Name(review.DecidedByAccountId)));
         foreach (var signature in await context.ContractSignatures.AsNoTracking()
                      .Where(item => versionIds.Contains(item.ContractVersionId)).ToArrayAsync(cancellationToken))
             entries.Add(new(signature.SignedAt, "signature",
@@ -308,7 +416,8 @@ internal sealed class EfContractLifecycleStore(ElevantDbContext context, Commerc
                 $"{signature.SignerName} · {signature.SignerTitle}", null));
         foreach (var change in await context.Set<ContractStatusEvent>().AsNoTracking()
                      .Where(item => item.ContractId == contract.Id).ToArrayAsync(cancellationToken))
-            entries.Add(new(change.OccurredAt, "status", StatusTitle(change.ToStatus), change.Reason, await Name(change.ActorAccountId)));
+            entries.Add(new(change.OccurredAt, "status", change is { FromStatus: ContractStatus.Draft, ToStatus: ContractStatus.Terminated }
+                ? "Contrato descartado antes de activarse" : StatusTitle(change.ToStatus), change.Reason, await Name(change.ActorAccountId)));
         foreach (var permit in await context.AirlinePermits.AsNoTracking().Where(item => item.AirlineId == contract.AirlineId)
                      .ToArrayAsync(cancellationToken))
         {

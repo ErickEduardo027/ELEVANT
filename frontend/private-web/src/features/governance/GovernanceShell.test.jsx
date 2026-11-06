@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import GovernanceShell from './GovernanceShell';
 import { DepartmentAccessProvider } from '../access/DepartmentAccessContext';
-import { getGovernance, getProvisioning, provisionAirline } from '../../services/commercialGovernanceApi';
+import { getGovernance, getProvisioning, linkProvisioningAccount, provisionAirline } from '../../services/commercialGovernanceApi';
 import { convertLegacyRole, getDepartmentsOverview, listLegacyRoles } from '../../services/departmentGovernanceService';
 
 vi.mock('../../services/commercialGovernanceApi', () => ({
@@ -13,6 +13,7 @@ vi.mock('../../services/commercialGovernanceApi', () => ({
   getProvisioning: vi.fn().mockResolvedValue([]),
   getManagedAirlines: vi.fn().mockResolvedValue([]),
   provisionAirline: vi.fn().mockResolvedValue({ accountId: 'acc-1' }),
+  linkProvisioningAccount: vi.fn().mockResolvedValue({ accountId: 'acc-2' }),
 }));
 vi.mock('../../services/departmentGovernanceService', async importOriginal => ({
   ...(await importOriginal()),
@@ -74,14 +75,77 @@ describe('GovernanceShell', () => {
     expect(convertLegacyRole).toHaveBeenCalledWith('role-1');
   });
 
+  const task = { requestId: 'req-1', reference: 'REQ-2026-000001', airline: 'Demo Air', representativeName: 'Ana Pérez',
+    suggestedEmail: 'ana@demo-air.test', contractId: 'c-1', approvedAt: '2026-11-01T00:00:00Z', version: 'AAAAAAAAB9E=' };
+
   it('creates the airline account by emailed invitation unless a temporary password is chosen', async () => {
-    getProvisioning.mockResolvedValue([{ requestId: 'req-1', reference: 'REQ-2026-000001', airline: 'Demo Air',
-      representativeName: 'Ana Pérez', suggestedEmail: 'ana@demo-air.test', contractId: 'c-1', approvedAt: '2026-11-01T00:00:00Z' }]);
+    getProvisioning.mockResolvedValue([task]);
     renderShell();
     const create = await screen.findByRole('button', { name: 'Crear y enviar invitación' });
     expect(screen.queryByLabelText('Contraseña temporal')).not.toBeInTheDocument();
+    // 1-N21: the invitation is the default and the temporary password the explicit alternative.
+    expect(screen.getByText(/Por defecto, ELEVANT deja en cola una invitación por correo/)).toBeInTheDocument();
     await userEvent.click(create);
-    expect(provisionAirline).toHaveBeenCalledWith('req-1', 'ana@demo-air.test', '');
-    expect(await screen.findByText(/enlace de activación válido por 72 horas/)).toBeInTheDocument();
+    expect(provisionAirline).toHaveBeenCalledWith('req-1',
+      { email: 'ana@demo-air.test', temporaryPassword: null, expectedVersion: 'AAAAAAAAB9E=' }, expect.any(String));
+    // ADR-0022, 1-N08: the email is queued, never claimed as sent.
+    const notice = await screen.findByText(/La invitación quedó en cola para ana@demo-air.test/);
+    expect(notice).toHaveTextContent('vence en 72 horas');
+    expect(notice).not.toHaveTextContent(/Enviamos/);
+  });
+
+  it('explains a refused provisioning by its code, never by the server title', async () => {
+    getProvisioning.mockResolvedValue([task]);
+    provisionAirline.mockRejectedValueOnce(Object.assign(new Error('Provisioning request is no longer available.'),
+      { status: 409, code: 'email_in_use_internal' }));
+    renderShell();
+    await userEvent.click(await screen.findByRole('button', { name: 'Crear y enviar invitación' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Ese correo es una cuenta interna de AVIAM.');
+    expect(alert).not.toHaveTextContent('Provisioning request');
+    expect(screen.queryByRole('button', { name: 'Vincular cuenta existente' })).not.toBeInTheDocument();
+  });
+
+  it('says an email in use for provisioning is not a portal account, which only provisioning knows', async () => {
+    getProvisioning.mockResolvedValue([task]);
+    provisionAirline.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409, code: 'email_in_use' }));
+    renderShell();
+    await userEvent.click(await screen.findByRole('button', { name: 'Crear y enviar invitación' }));
+    expect(await screen.findByRole('alert'))
+      .toHaveTextContent('Ese correo ya está registrado en ELEVANT y no es una cuenta del portal. Use otro correo.');
+    expect(screen.queryByRole('button', { name: 'Vincular cuenta existente' })).not.toBeInTheDocument();
+  });
+
+  it('offers to link the existing portal account of the email and keeps one key per intent (1-N13)', async () => {
+    getProvisioning.mockResolvedValue([task]);
+    provisionAirline.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409, code: 'email_has_account' }));
+    linkProvisioningAccount.mockRejectedValueOnce(Object.assign(new Error('timeout'), { status: 503 }));
+    renderShell();
+    await userEvent.click(await screen.findByRole('button', { name: 'Crear y enviar invitación' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Puede vincularla a esta solicitud sin cambiar su contraseña.');
+    const link = screen.getByRole('button', { name: 'Vincular cuenta existente' });
+    await userEvent.click(link);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Revise la conexión');
+    await userEvent.click(screen.getByRole('button', { name: 'Vincular cuenta existente' }));
+    expect(await screen.findByText(/La cuenta existente de ana@demo-air.test quedó vinculada a Demo Air/)).toBeInTheDocument();
+    const [first, second] = linkProvisioningAccount.mock.calls;
+    expect(first[1]).toEqual({ email: 'ana@demo-air.test', expectedVersion: 'AAAAAAAAB9E=' });
+    // The uncertain attempt is retried with the same Idempotency-Key.
+    expect(second[2]).toBe(first[2]);
+  });
+
+  it('describes the invitation by email as the credential delivery in the access policy (1-N21)', async () => {
+    renderShell();
+    await userEvent.click(within(await screen.findByRole('navigation')).getByRole('button', { name: 'Configuración' }));
+    expect(await screen.findByText('Invitación por correo (en cola); contraseña temporal como alternativa')).toBeInTheDocument();
+    expect(screen.queryByText('Manual, sin correo automático')).not.toBeInTheDocument();
+  });
+
+  it('offers a retry when governance cannot be loaded', async () => {
+    getGovernance.mockRejectedValueOnce(Object.assign(new Error('Internal'), { status: 503 }));
+    renderShell();
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar la gobernanza.');
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(getGovernance).toHaveBeenCalledTimes(2);
   });
 });

@@ -41,10 +41,17 @@ Esta matriz es un **índice de brechas verificables**, no una lista de tareas ya
 | Simulacros periódicos de recuperación | Política de frecuencia, alcance, custodio y entorno seguro | Ensayo fechado con restauración, RPO/RTO medidos y acciones correctivas | [Backups](../09-operaciones/backups-y-restore-check.md) y [recuperación](../09-operaciones/mantenimiento-reboot-y-recuperacion.md) |
 | Production | Plan independiente, secretos, datos, red, backup, monitoreo y aprobación | Infraestructura y gates propios, aceptación de seguridad y restauración; jamás inferirla de Development | [Ambientes](../../docs/deployment/environments.md) |
 | Contract de empleados (ADR-0017) | Todas las cuentas internas con expediente y clientes web publicados que envían `employeeId` | Solicitudes escritas a mano rechazadas, creación directa de miembros y alta móvil heredada retiradas, `employee_id` obligatorio en solicitudes nuevas | [ADR-0017](../../docs/adr/0017-employees-positions-and-access.md) |
+| Contract de los comandos comerciales (ADR-0037) | Private Web y Public Web publicadas con las versiones que siempre envían `Idempotency-Key` y la versión esperada | Los comandos que hoy aceptan llamadas sin clave o sin versión las rechazan, y el `DELETE` obsoleto del catálogo sale del contrato OpenAPI | [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md) |
+| Restablecer la clave de usuarios internos | Registrar en la API los proveedores de tokens de Identity, o asignar la contraseña temporal sin token, como ya hace Clientes | `POST governance/departments/{department}/users/{id}/password-reset` y `POST governance/users/{id}/password-reset` asignan la contraseña temporal, el primer ingreso exige cambiarla y una prueba de integración cubre ambas rutas | [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md) y [Gobernanza por departamento](../03-dominio/gobernanza-por-departamento.md) |
 | Correo de contratos (revisión docente) | Proveedor de correo, plantillas y consentimiento; hoy el PDF se descarga y se firma en la aplicación | Envío del PDF a la aerolínea al aprobar y al firmar, con reintento y auditoría | [Correcciones de la revisión](../05-aplicaciones/correcciones-revision-docente-2026-10.md) |
 | Posiciones combinadas (9-Alfa, 32-Bravo) | Definir en datos qué posiciones se bloquean entre sí | La API rechaza ocupar una posición bloqueada por su combinada y el mapa lo muestra | [Correcciones de la revisión](../05-aplicaciones/correcciones-revision-docente-2026-10.md) |
 | Notificaciones fuera de la aplicación | Canal (correo o push del navegador) y preferencias por usuario | Una alerta llega con la aplicación cerrada y respeta las preferencias | [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md) |
 | Historia anterior a Git | Entrevista consentida y fuente contemporánea si existe | Testimonio fechado atribuido por rol, incertidumbres separadas de hechos | [Orígenes](../01-historia/origenes-y-limites-de-evidencia.md) |
+
+Las filas «Contract de los comandos comerciales» y «Restablecer la clave de
+usuarios internos» se añadieron el 6 de noviembre de 2026, después del commit
+verificado de esta nota; describen el código de la fase 1 del ciclo
+(`8a79fe70`).
 
 ## Cómo convertir una fila en trabajo
 

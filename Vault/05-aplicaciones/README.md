@@ -33,8 +33,9 @@ Su evidencia y commit se documentan en esa nota; no actualizan la
 verificación histórica de las tablas siguientes.
 
 La [clausura comercial de servicios](clausura-comercial-servicios.md) describe
-el flujo OCC → Contratos implementado en una rama local y sus límites de
-evidencia; tampoco cambia la fotografía histórica de este índice.
+el flujo OCC → Contratos, que se integró en `Development` por el merge #128,
+después del commit verificado de esta nota, y sus límites de evidencia;
+tampoco cambia la fotografía histórica de este índice.
 
 > El [flujo comercial y de gobernanza](flujo-comercial-y-gobernanza.md) se integró en `Development` después del commit verificado de esta nota. Las tablas siguientes son una fotografía histórica de ese commit: no describen el alcance actual del merge #114 ni prueban su despliegue en el VPS.
 

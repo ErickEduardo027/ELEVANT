@@ -1,4 +1,5 @@
 import { OTHER_OPTION } from '../../../components/Combobox';
+import { billingUnitCode, billingUnitLabel } from '../../../services/billingUnits';
 
 // Servicios de rampa con código formal en ELEVANT aunque todavía no estén en el
 // catálogo. Fuente: los códigos que reconoce `CommercialServiceMediaDefaults.cs`
@@ -53,20 +54,25 @@ export function buildServiceCatalog(services) {
   return [...byCode.values()].sort((left, right) => collator.compare(left.name, right.name));
 }
 
-/** Spanish noun the catalog stores for a billing unit, e.g. «operación» for the unit «Operación». */
+/** Spanish noun of a billing unit for «Por …», e.g. «operación» for the unit «Operación». */
 export const unitValue = unit => normalizeText(unit.name).toLocaleLowerCase('es');
 
-// Unidades activas que mantiene Finanzas en «Unidades de cobro». Un servicio antiguo
-// con una unidad escrita a mano la conserva como «heredada» hasta que se cambie.
+// Unidades activas que mantiene Finanzas en «Unidades de cobro», por su código: el catálogo guarda el
+// código (1-E). Un servicio antiguo con una unidad escrita a mano que no nombra ninguna unidad la
+// conserva como «heredada» hasta que se cambie.
 export function billingUnitOptions(units, currentUnit = '') {
   const options = (units ?? []).filter(unit => unit.isActive)
-    .map(unit => ({ value: unitValue(unit), label: `Por ${unitValue(unit)}`, hint: unit.code }))
+    .map(unit => ({ value: unit.code, label: `Por ${unitValue(unit)}`, hint: unit.code }))
     .sort((left, right) => collator.compare(left.label, right.label));
   const current = normalizeText(currentUnit);
-  if (current && !options.some(option => sameText(option.value, current)))
-    options.push({ value: current, label: `Por ${current}`, hint: 'Unidad heredada: elija una de la lista para cambiarla' });
+  if (current && !billingUnitCode(current, units))
+    options.push({ value: current, label: `Por ${billingUnitLabel(current, units ?? [])}`,
+      hint: 'Unidad heredada: elija una de la lista para cambiarla' });
   return options;
 }
+
+/** The value the unit field starts with: the code the stored unit names, else the legacy text itself. */
+export const billingUnitChoice = (unit, units) => billingUnitCode(unit, units ?? []) ?? normalizeText(unit);
 
 /** Text that explains why the service cannot be public yet, or ''. */
 export function publicationProblem(form, { hasNewImage = false } = {}) {

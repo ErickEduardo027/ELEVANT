@@ -3463,12 +3463,21 @@
         "tags": [
           "CommercialAirlineManagement"
         ],
+        "summary": "Saves the profile with the `version` the superadministrator saw. The Idempotency-Key is\noptional while older clients exist (expand). The legal name, codes and verification of an\nairline that already operates with AVIAM are fixed (`airline_identity_locked`, 1-N20).",
         "operationId": "UpdateManagedAirline",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -3513,6 +3522,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ManagedAirlineData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3639,6 +3678,26 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3653,12 +3712,21 @@
         "tags": [
           "CommercialCatalogManagement"
         ],
+        "summary": "Edits the service, hides it from or shows it in the public catalog, or reactivates a retired one;\nit never retires (`retirement_command_required`). The Idempotency-Key is optional while older\nclients exist (expand); `version` is the rowversion on screen.",
         "operationId": "UpdateCommercialService",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -3706,6 +3774,46 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3718,6 +3826,7 @@
         "tags": [
           "CommercialCatalogManagement"
         ],
+        "summary": "Deprecated alias of the retirement without a reason; the same checks apply.",
         "operationId": "DeleteCommercialService",
         "parameters": [
           {
@@ -3735,6 +3844,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -3744,6 +3861,137 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ManagedServiceData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/catalog/services/{id}/retirement": {
+      "post": {
+        "tags": [
+          "CommercialCatalogManagement"
+        ],
+        "summary": "«Dar de baja» (1-N03): the service leaves the public catalog, new contracts and the operation. It is\nrefused with `service_in_active_contract` while a contract in force or in approval uses it, as a\nrate or inside a package. The Idempotency-Key and `expectedVersion` are required.",
+        "operationId": "RetireCommercialService",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RetireServiceInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedServiceData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3864,12 +4112,21 @@
         "tags": [
           "CommercialProvisioning"
         ],
+        "summary": "Creates the airline's portal account: an emailed invitation by default, a temporary password\nas the explicit alternative. The Idempotency-Key and `expectedVersion` (the request\nversion) are optional while older clients exist (expand); a key without the version is\nrejected. An email that already has an account answers `email_has_account` when it can be\nlinked instead.",
         "operationId": "ProvisionCommercialAirline",
         "parameters": [
           {
             "name": "requestId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -3917,6 +4174,166 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/provisioning/{requestId}/account-link": {
+      "post": {
+        "tags": [
+          "CommercialProvisioning"
+        ],
+        "summary": "Completes the request with the existing portal account of the email (1-N13): one of the same\nairline, or one without an airline, which joins it. Its credentials do not change.",
+        "operationId": "LinkCommercialAirlineAccount",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/LinkProvisioningAccountInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialAccountResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -3931,7 +4348,7 @@
         "tags": [
           "CommercialProvisioning"
         ],
-        "summary": "Sends a new activation link to an airline account that has not activated yet (ADR-0022).",
+        "summary": "Queues a new activation link for an airline account that has not activated yet (ADR-0022); the\nearlier links stop working and their queued emails are discarded. The Idempotency-Key and\n`expectedVersion` (the account version) are optional while older clients exist (expand).",
         "operationId": "ResendAirlineInvitation",
         "parameters": [
           {
@@ -3942,8 +4359,47 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ResendInvitationInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ResendInvitationInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ResendInvitationInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Accepted",
@@ -3951,6 +4407,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialAccountResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -3991,6 +4497,96 @@
         ]
       }
     },
+    "/api/v1/contracts/commercial-requests/inbox": {
+      "get": {
+        "tags": [
+          "CommercialRequestsManagement"
+        ],
+        "summary": "Inbox with server-side filter, search and paging, and the counters per status. By default it\nlists the open requests (pending and in review), oldest first.",
+        "operationId": "ListCommercialRequestInbox",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialInboxData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/contracts/commercial-requests/stations": {
       "get": {
         "tags": [
@@ -4019,16 +4615,26 @@
         ]
       }
     },
-    "/api/v1/contracts/commercial-requests/airlines/{profileId}/verification": {
-      "put": {
+    "/api/v1/contracts/commercial-requests/{id}/airline-verification": {
+      "post": {
         "tags": [
           "CommercialRequestsManagement"
         ],
-        "operationId": "VerifyCommercialAirline",
+        "summary": "Verifies the request's airline with an official source; the first verification moves the\nrequest to «En revisión». A proposed airline is linked to an existing profile or gets a new\nverified and published one.",
+        "operationId": "VerifyCommercialRequestAirline",
         "parameters": [
           {
-            "name": "profileId",
+            "name": "id",
             "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "required": true,
             "schema": {
               "type": "string",
@@ -4042,30 +4648,13 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
+                    "$ref": "#/components/schemas/VerifyRequestAirlineInput"
                   }
                 ]
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -4074,6 +4663,276 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/commercial-requests/{id}/representative-confirmation": {
+      "post": {
+        "tags": [
+          "CommercialRequestsManagement"
+        ],
+        "summary": "Records who confirmed the representative, when and how; approval requires it.",
+        "operationId": "ConfirmCommercialRepresentative",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ConfirmCommercialRepresentativeInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/commercial-requests/{id}/cancellation": {
+      "post": {
+        "tags": [
+          "CommercialRequestsManagement"
+        ],
+        "summary": "Cancels a pending or in-review request with a reason; nothing is deleted.",
+        "operationId": "CancelCommercialRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CancelCommercialRequestInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -4091,12 +4950,21 @@
         "tags": [
           "CommercialRequestsManagement"
         ],
+        "summary": "Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older\nclients exist (expand); a key without the version is rejected. Approval returns the contract.",
         "operationId": "DecideCommercialRequest",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -4141,6 +5009,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -4597,12 +5515,21 @@
         "tags": [
           "ContractDrafts"
         ],
+        "summary": "The airline comments its draft, also while Finance reviews it. The Idempotency-Key and\n`expectedVersion` are optional while older portals exist; a key without the version is rejected.",
         "operationId": "CommentAirlineContractDraft",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -4617,7 +5544,8 @@
                   {
                     "$ref": "#/components/schemas/ContractDraftCommentRequest"
                   }
-                ]
+                ],
+                "description": "An airline observation; `expectedVersion` is the draft rowversion the airline read."
               }
             },
             "text/json": {
@@ -4626,7 +5554,8 @@
                   {
                     "$ref": "#/components/schemas/ContractDraftCommentRequest"
                   }
-                ]
+                ],
+                "description": "An airline observation; `expectedVersion` is the draft rowversion the airline read."
               }
             },
             "application/*+json": {
@@ -4635,7 +5564,8 @@
                   {
                     "$ref": "#/components/schemas/ContractDraftCommentRequest"
                   }
-                ]
+                ],
+                "description": "An airline observation; `expectedVersion` is the draft rowversion the airline read."
               }
             }
           }
@@ -4647,6 +5577,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -4717,12 +5687,21 @@
         "tags": [
           "ContractDrafts"
         ],
+        "summary": "Saves terms, validity, currency, rates and charges. The Idempotency-Key and `expectedVersion`\nare optional while older clients exist (expand); a key without the version is rejected.",
         "operationId": "UpdateManagedContractDraft",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -4770,6 +5749,46 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -4784,7 +5803,124 @@
         "tags": [
           "ContractDrafts"
         ],
+        "summary": "«Enviar a Finanzas» when every readiness rule holds; answers the contract. The body with\n`expectedVersion` and the Idempotency-Key are optional while older clients exist (expand).",
         "operationId": "ActivateManagedContractDraft",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitContractDraftInput"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitContractDraftInput"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SubmitContractDraftInput"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/drafts/{versionId}/readiness": {
+      "get": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "Whether the draft can go to Finance, every blocking cause and the portal account status.",
+        "operationId": "GetManagedContractDraftReadiness",
         "parameters": [
           {
             "name": "versionId",
@@ -4802,7 +5938,382 @@
             "content": {
               "application/json": {
                 "schema": {
+                  "$ref": "#/components/schemas/ContractDraftReadinessData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/drafts/{versionId}/scope": {
+      "get": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "The services and stations of the draft and the active ones that can be added.",
+        "operationId": "GetManagedContractDraftScope",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContractDraftScopeData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "Sets the services and stations of a draft: kept services keep their rates, new ones start from\nthe Finance base tariff unconfirmed, and only active catalog services can be added.",
+        "operationId": "SetManagedContractDraftScope",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SetContractDraftScopeInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/drafts/{versionId}/discard": {
+      "post": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "Discards a draft or a version awaiting Finance with a reason. When it was the only live version of\na contract that never activated, the contract is terminated too. Nothing is deleted.",
+        "operationId": "DiscardManagedContractDraft",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DiscardContractDraftInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/drafts/{versionId}/comments": {
+      "post": {
+        "tags": [
+          "ContractDrafts"
+        ],
+        "summary": "Contratos answers the airline on the draft; the answer appears in the portal.",
+        "operationId": "ReplyManagedContractDraft",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReplyContractDraftInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -5088,6 +6599,7 @@
         "tags": [
           "ContractLifecycle"
         ],
+        "summary": "History of the contract. The airline reads its own contracts without internal names or the\ninternal reason of a Finance return (1-N05).",
         "operationId": "GetContractTimeline",
         "parameters": [
           {
@@ -5134,12 +6646,21 @@
         "tags": [
           "ContractLifecycle"
         ],
+        "summary": "Suspend, reactivate, terminate (also «Descartar contrato» for one that never activated) or renew,\nwith a reason and the status the user saw. The Idempotency-Key is optional while older clients\nexist (expand); with it a retry replays the first result.",
         "operationId": "ApplyContractLifecycle",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -7108,6 +8629,7 @@
         "tags": [
           "DepartmentGovernance"
         ],
+        "summary": "Sets a temporary password the user must change at the next sign-in. On an invitation that is\nstill pending it accepts the invitation, retires its links and discards its queued email (1-N12).\nThe Idempotency-Key and `expectedVersion` (the account version) are optional while older\nclients exist (expand); a key without the version is rejected.",
         "operationId": "ResetGovernanceClientUserPassword",
         "parameters": [
           {
@@ -7127,6 +8649,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
@@ -7135,7 +8665,7 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/ResetGovernancePasswordRequest"
+                    "$ref": "#/components/schemas/ResetClientUserPasswordInput"
                   }
                 ]
               }
@@ -7144,7 +8674,7 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/ResetGovernancePasswordRequest"
+                    "$ref": "#/components/schemas/ResetClientUserPasswordInput"
                   }
                 ]
               }
@@ -7153,7 +8683,7 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/ResetGovernancePasswordRequest"
+                    "$ref": "#/components/schemas/ResetClientUserPasswordInput"
                   }
                 ]
               }
@@ -7167,6 +8697,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -9556,6 +11116,63 @@
         ]
       }
     },
+    "/api/v1/finance/invoices/{invoiceId}/email-deliveries": {
+      "get": {
+        "tags": [
+          "FinanceInvoiceIssuance"
+        ],
+        "summary": "The «Factura emitida» emails of the invoice and their delivery state (1-N08): queued, sent,\nfailed or discarded, or none when the airline has no active portal account nor billing email.",
+        "operationId": "GetFinanceInvoiceEmailDeliveries",
+        "parameters": [
+          {
+            "name": "invoiceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvoiceEmailStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/invoices": {
       "get": {
         "tags": [
@@ -10311,16 +11928,26 @@
         ]
       }
     },
-    "/api/v1/contracts/versions/{versionId}/amendments": {
+    "/api/v1/finance/packages/{id}/discard": {
       "post": {
         "tags": [
           "FinancePackages"
         ],
-        "operationId": "CreateContractAmendment",
+        "summary": "Finance discards a package draft with a reason (1-N27, `finance.packages.delete`); the draft is\nkept as Discarded. Idempotency-Key and the expected version are required.",
+        "operationId": "DiscardFinancePackage",
         "parameters": [
           {
-            "name": "versionId",
+            "name": "id",
             "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "required": true,
             "schema": {
               "type": "string",
@@ -10334,48 +11961,261 @@
               "schema": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/FinancePackageCommandRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePackageCommandRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePackageCommandRequest"
+                    "$ref": "#/components/schemas/FinancePackageLifecycleRequest"
                   }
                 ]
               }
             }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePackageIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/packages/{id}/retire": {
+      "post": {
+        "tags": [
+          "FinancePackages"
+        ],
+        "summary": "Finance retires a published package with a reason (1-N27, `finance.packages.retire`): Contratos can\nno longer link it and Finance does not approve drafts that still do; approved contracts keep it.",
+        "operationId": "RetireFinancePackage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePackageLifecycleRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePackageIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/versions/{versionId}/amendments": {
+      "post": {
+        "tags": [
+          "FinancePackages"
+        ],
+        "summary": "Contratos amends an active or suspended contract from any of its versions (1-C): a new draft from\nthe latest approved version, starting on `validFrom` and ending when that version ends, with\nits rates unconfirmed. The token is the contract status the user saw. No client used the earlier\nshape, so the Idempotency-Key is required without an expand phase. Answers the new draft version.",
+        "operationId": "CreateContractAmendment",
+        "parameters": [
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateContractAmendmentRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
         },
         "responses": {
           "201": {
             "description": "Created",
             "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
-                }
-              },
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FinancePackageIdResponse"
                 }
-              },
-              "text/json": {
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -12449,6 +14289,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "CreateFinanceBillingUnit",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -12510,6 +14360,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -12607,6 +14465,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "CreateFinanceServiceTariffDraft",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -12706,6 +14574,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
@@ -12778,6 +14654,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -12810,6 +14694,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -12898,6 +14790,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "CreateFinanceCharge",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -12959,6 +14861,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -13056,6 +14966,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "CreateFinanceChargeTariffDraft",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13155,6 +15075,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
@@ -13227,6 +15155,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -13259,6 +15195,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -13373,6 +15317,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "RecordFinanceExchangeRate",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -13434,6 +15388,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -13569,12 +15531,21 @@
         "tags": [
           "FinanceTariffBook"
         ],
+        "summary": "Finance approves the prices or returns the version to Contratos. Every failure carries a code,\none per blocking cause (1-N07). The Idempotency-Key is optional while older clients exist\n(expand); with it the same key and body replay the first result.",
         "operationId": "DecideFinanceContractApproval",
         "parameters": [
           {
             "name": "versionId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -13619,6 +15590,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FinanceIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -24850,6 +26861,89 @@
         ]
       }
     },
+    "/api/v1/governance/email/outbox": {
+      "get": {
+        "tags": [
+          "PortalAccount"
+        ],
+        "summary": "The outbox for the superadmin (1-N22): filter by status (`All`, `Pending`, `Sent`,\n`Failed` or `Discarded`), the normalized reason of each email and the contract,\ninvoice, payment, account or request it is about. Bodies are never returned.",
+        "operationId": "ListEmailOutbox",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmailOutboxPageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/preinvoices/{draftId}/disputes": {
       "get": {
         "tags": [
@@ -27934,6 +30028,26 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -27948,12 +30062,21 @@
         "tags": [
           "ServiceClosures"
         ],
+        "summary": "Approves or denies a pending request. The Idempotency-Key is optional while older clients exist\n(expand); `version` is the request rowversion on screen.",
         "operationId": "DecideServiceClosure",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -28001,6 +30124,46 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -28015,12 +30178,21 @@
         "tags": [
           "ServiceClosures"
         ],
+        "summary": "Republishes a service its approved closure hid, with a reason; a retired service answers\n`service_retired` until it is reactivated. The Idempotency-Key is optional while older\nclients exist (expand); `serviceVersion` is the service rowversion on screen.",
         "operationId": "ReopenService",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -28065,6 +30237,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ServiceClosureData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -31279,6 +33491,20 @@
         },
         "additionalProperties": false
       },
+      "CancelCommercialRequestInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CancelRequisitionInput": {
         "required": [
           "expectedVersion",
@@ -31754,6 +33980,299 @@
         },
         "additionalProperties": false
       },
+      "CommercialInboxCountsData": {
+        "required": [
+          "approved",
+          "cancelled",
+          "inReview",
+          "pending",
+          "rejected"
+        ],
+        "type": "object",
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "inReview": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "approved": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cancelled": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialInboxData": {
+        "required": [
+          "counts",
+          "hasMore",
+          "limit",
+          "page",
+          "requests",
+          "total"
+        ],
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "counts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialInboxCountsData"
+              }
+            ]
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommercialInboxRequestData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialInboxRequestData": {
+        "required": [
+          "airline",
+          "airlineVerified",
+          "authorityDeclared",
+          "existingCustomer",
+          "id",
+          "reference",
+          "representativeEmail",
+          "representativeName",
+          "representativePhone",
+          "representativeTitle",
+          "services",
+          "status",
+          "submittedAt",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "airline": {
+            "type": "string"
+          },
+          "airlineProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "legalName": {
+            "type": "string",
+            "nullable": true
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "airlineVerified": {
+            "type": "boolean"
+          },
+          "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "airlineWebsiteUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeName": {
+            "type": "string"
+          },
+          "representativeTitle": {
+            "type": "string"
+          },
+          "representativeEmail": {
+            "type": "string"
+          },
+          "representativePhone": {
+            "type": "string"
+          },
+          "representativeNationalityCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeCountry": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeProvince": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeMunicipality": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDistrict": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDocumentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDocumentNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorityDeclared": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "decisionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "representativeConfirmation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialRepresentativeConfirmationData"
+              }
+            ],
+            "nullable": true
+          },
+          "proposedAirline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialProposedAirlineData"
+              }
+            ],
+            "nullable": true
+          },
+          "existingCustomer": {
+            "type": "boolean"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommercialRequestItemData"
+            }
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialProposedAirlineData": {
+        "required": [
+          "icaoCode",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialRepresentativeConfirmationData": {
+        "required": [
+          "confirmedAt",
+          "confirmedBy",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "confirmedBy": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CommercialRequestData": {
         "required": [
           "airline",
@@ -31944,6 +34463,20 @@
         },
         "additionalProperties": false
       },
+      "ConfirmCommercialRepresentativeInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ContractApprovalDetailData": {
         "required": [
           "charges",
@@ -32004,6 +34537,7 @@
           "airline",
           "contractCode",
           "contractId",
+          "contractStatus",
           "currencyCode",
           "ratesBelowBase",
           "ratesWithoutBase",
@@ -32057,6 +34591,9 @@
             "format": "int32"
           },
           "version": {
+            "type": "string"
+          },
+          "contractStatus": {
             "type": "string"
           }
         },
@@ -32348,9 +34885,14 @@
         "properties": {
           "body": {
             "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "description": "An airline observation; `expectedVersion` is the draft rowversion the airline read."
       },
       "ContractDraftData": {
         "required": [
@@ -32444,6 +34986,25 @@
         },
         "additionalProperties": false
       },
+      "ContractDraftIssueData": {
+        "required": [
+          "code",
+          "subjects"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "subjects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "ContractDraftOverviewData": {
         "required": [
           "count",
@@ -32526,6 +35087,144 @@
             "type": "number",
             "format": "double",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftReadinessData": {
+        "required": [
+          "issues",
+          "portalAccount",
+          "ready",
+          "version",
+          "versionId",
+          "versionStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "versionStatus": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "portalAccount": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractDraftIssueData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftScopeData": {
+        "required": [
+          "services",
+          "stations",
+          "version",
+          "versionId",
+          "versionStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "versionStatus": {
+            "type": "string"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractDraftScopeServiceData"
+            }
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ContractDraftScopeStationData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftScopeServiceData": {
+        "required": [
+          "code",
+          "coveredByPackage",
+          "isActive",
+          "name",
+          "selected",
+          "serviceId"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "boolean"
+          },
+          "rateId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "coveredByPackage": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ContractDraftScopeStationData": {
+        "required": [
+          "code",
+          "isActive",
+          "name",
+          "selected",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -32845,6 +35544,23 @@
           "temporaryPassword": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateContractAmendmentRequest": {
+        "required": [
+          "expectedStatus",
+          "validFrom"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedStatus": {
+            "type": "string"
+          },
+          "validFrom": {
+            "type": "string",
+            "format": "date"
           }
         },
         "additionalProperties": false
@@ -33419,8 +36135,7 @@
       },
       "DecideServiceClosureRequest": {
         "required": [
-          "approve",
-          "version"
+          "approve"
         ],
         "type": "object",
         "properties": {
@@ -33432,7 +36147,8 @@
             "nullable": true
           },
           "version": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -33770,6 +36486,22 @@
         },
         "additionalProperties": false
       },
+      "DiscardContractDraftInput": {
+        "required": [
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "DisputeAirlinePreinvoiceRequest": {
         "required": [
           "description",
@@ -33907,6 +36639,121 @@
             "nullable": true
           },
           "lastError": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailOutboxEntryResponse": {
+        "required": [
+          "attempts",
+          "createdAt",
+          "id",
+          "purpose",
+          "recipient",
+          "status",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recipient": {
+            "type": "string"
+          },
+          "purpose": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "attempts": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "reference": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmailReferenceResponse"
+              }
+            ],
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailOutboxPageResponse": {
+        "required": [
+          "entries",
+          "hasMore",
+          "limit",
+          "page",
+          "smtpConfigured"
+        ],
+        "type": "object",
+        "properties": {
+          "smtpConfigured": {
+            "type": "boolean"
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EmailOutboxEntryResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "EmailReferenceResponse": {
+        "required": [
+          "kind",
+          "label"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "label": {
+            "type": "string"
+          },
+          "context": {
             "type": "string",
             "nullable": true
           }
@@ -35589,6 +38436,22 @@
           "id": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePackageLifecycleRequest": {
+        "required": [
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -40034,6 +42897,60 @@
         },
         "additionalProperties": false
       },
+      "InvoiceEmailDeliveryResponse": {
+        "required": [
+          "createdAt",
+          "recipient",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "recipient": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sentAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "InvoiceEmailStatusResponse": {
+        "required": [
+          "deliveries",
+          "invoiceId",
+          "smtpConfigured"
+        ],
+        "type": "object",
+        "properties": {
+          "invoiceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "smtpConfigured": {
+            "type": "boolean"
+          },
+          "deliveries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InvoiceEmailDeliveryResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "IssueCreditNoteInput": {
         "required": [
           "amount",
@@ -40271,6 +43188,22 @@
         },
         "additionalProperties": false
       },
+      "LinkProvisioningAccountInput": {
+        "required": [
+          "email",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "LocateOccStandRequest": {
         "required": [
           "operationDate"
@@ -40325,6 +43258,7 @@
         "required": [
           "displayName",
           "id",
+          "identityLocked",
           "isPublished",
           "isVerified",
           "region",
@@ -40399,6 +43333,9 @@
           "registryEntityUrl": {
             "type": "string",
             "nullable": true
+          },
+          "identityLocked": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -44487,6 +47424,34 @@
         },
         "additionalProperties": false
       },
+      "ProposedAirlineRequest": {
+        "required": [
+          "countryCode",
+          "icaoCode",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ProvisionAirlineInput": {
         "required": [
           "email"
@@ -44497,6 +47462,10 @@
             "type": "string"
           },
           "temporaryPassword": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedVersion": {
             "type": "string",
             "nullable": true
           }
@@ -44511,7 +47480,8 @@
           "reference",
           "representativeName",
           "requestId",
-          "suggestedEmail"
+          "suggestedEmail",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -44538,6 +47508,9 @@
           "approvedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -46863,16 +49836,30 @@
         "additionalProperties": false
       },
       "ReopenServiceRequest": {
-        "required": [
-          "reason",
-          "serviceVersion"
-        ],
         "type": "object",
         "properties": {
           "reason": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "serviceVersion": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReplyContractDraftInput": {
+        "required": [
+          "body",
+          "expectedVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "body": {
             "type": "string"
           }
         },
@@ -47112,6 +50099,16 @@
         },
         "additionalProperties": false
       },
+      "ResendInvitationInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ResendLoginCodeRequest": {
         "required": [
           "challengeId"
@@ -47121,6 +50118,22 @@
           "challengeId": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ResetClientUserPasswordInput": {
+        "required": [
+          "temporaryPassword"
+        ],
+        "type": "object",
+        "properties": {
+          "temporaryPassword": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -47200,6 +50213,20 @@
         },
         "additionalProperties": false
       },
+      "RetireServiceInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ReviewAirlinePermitInput": {
         "required": [
           "expectedVersion",
@@ -47240,6 +50267,10 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -47746,6 +50777,7 @@
         "required": [
           "id",
           "isCurrentlyPublic",
+          "isServiceActive",
           "reason",
           "requestedAt",
           "requestedBy",
@@ -47806,6 +50838,9 @@
             "nullable": true
           },
           "isCurrentlyPublic": {
+            "type": "boolean"
+          },
+          "isServiceActive": {
             "type": "boolean"
           },
           "serviceVersion": {
@@ -48142,6 +51177,34 @@
         },
         "additionalProperties": false
       },
+      "SetContractDraftScopeInput": {
+        "required": [
+          "expectedVersion",
+          "serviceIds",
+          "stationIds"
+        ],
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string"
+          },
+          "serviceIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "stationIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "SetContractPackagesRequest": {
         "required": [
           "expectedVersion",
@@ -48400,7 +51463,6 @@
       },
       "SubmitCommercialRequestRequest": {
         "required": [
-          "airlineProfileId",
           "authorityDeclared",
           "representativeEmail",
           "representativeName",
@@ -48417,7 +51479,8 @@
           },
           "airlineProfileId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true
           },
           "serviceIds": {
             "type": "array",
@@ -48472,6 +51535,14 @@
           "representativeDistrict": {
             "type": "string",
             "nullable": true
+          },
+          "proposedAirline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProposedAirlineRequest"
+              }
+            ],
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -48488,6 +51559,16 @@
           },
           "replayed": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "SubmitContractDraftInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -48895,6 +51976,10 @@
               "$ref": "#/components/schemas/UpdateDraftChargeInput"
             },
             "nullable": true
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -49144,38 +52229,6 @@
         },
         "additionalProperties": false
       },
-      "VerifyAirlineInput": {
-        "required": [
-          "countryCode",
-          "iataCode",
-          "icaoCode",
-          "legalName",
-          "verificationSourceUrl"
-        ],
-        "type": "object",
-        "properties": {
-          "legalName": {
-            "type": "string"
-          },
-          "countryCode": {
-            "type": "string"
-          },
-          "iataCode": {
-            "type": "string"
-          },
-          "icaoCode": {
-            "type": "string"
-          },
-          "verificationSourceUrl": {
-            "type": "string"
-          },
-          "logoUrl": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
       "VerifyLoginCodeRequest": {
         "required": [
           "challengeId",
@@ -49189,6 +52242,41 @@
           },
           "code": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VerifyRequestAirlineInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "linkProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "legalName": {
+            "type": "string",
+            "nullable": true
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

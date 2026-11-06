@@ -61,15 +61,89 @@ public sealed class ServiceClosuresEndpointsTests(ElevantApiFactory factory)
             new { approve = false, reason = "Se reparará hoy.", version = "version-1" },
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, decision.StatusCode);
-        Assert.Equal((AccountId, RequestId, false, "Se reparará hoy.", "version-1"),
+        Assert.Equal((AccountId, RequestId, false, "Se reparará hoy.", "version-1", (Guid?)null),
             store.LastDecision);
         using var reopen = await client.PostAsJsonAsync(
             $"/api/v1/service-closures/services/{ServiceId}/reopen",
             new { reason = "Equipo reparado.", serviceVersion = "service-version" },
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, reopen.StatusCode);
-        Assert.Equal((AccountId, ServiceId, "Equipo reparado.", "service-version"),
+        Assert.Equal((AccountId, ServiceId, "Equipo reparado.", "service-version", (Guid?)null),
             store.LastReopen);
+        // 1-N11: the response tells whether the service is active, so «Republicar» is offered only then.
+        using var body = JsonDocument.Parse(await reopen.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.True(body.RootElement.GetProperty("isServiceActive").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ForwardsTheOptionalIdempotencyKeyOfTheDecisionAndTheReopening()
+    {
+        var store = new StubStore();
+        await using var application = Application(store);
+        using var client = Authorized(application);
+        var key = Guid.Parse("90000000-0000-7000-8000-000000000001");
+        using var decision = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/service-closures/{RequestId}/decision")
+        {
+            Content = JsonContent.Create(new { approve = true, reason = (string?)null, version = "version-1" }),
+        };
+        decision.Headers.Add("Idempotency-Key", key.ToString("D"));
+        using var decided = await client.SendAsync(decision, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, decided.StatusCode);
+        Assert.Equal((AccountId, RequestId, true, (string?)null, "version-1", (Guid?)key), store.LastDecision);
+        using var reopen = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/service-closures/services/{ServiceId}/reopen")
+        {
+            Content = JsonContent.Create(new { reason = "Equipo reparado y probado.", serviceVersion = "service-version" }),
+        };
+        reopen.Headers.Add("Idempotency-Key", key.ToString("D"));
+        using var reopened = await client.SendAsync(reopen, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
+        Assert.Equal((AccountId, ServiceId, "Equipo reparado y probado.", "service-version", (Guid?)key),
+            store.LastReopen);
+    }
+
+    public static TheoryData<ServiceClosureFailure, string?, HttpStatusCode, string> CodedFailures => new()
+    {
+        { ServiceClosureFailure.Invalid, null, HttpStatusCode.BadRequest, "invalid_closure" },
+        { ServiceClosureFailure.Invalid, "reason_required", HttpStatusCode.BadRequest, "reason_required" },
+        { ServiceClosureFailure.NotFound, null, HttpStatusCode.NotFound, "not_found" },
+        { ServiceClosureFailure.Conflict, null, HttpStatusCode.Conflict, "version_conflict" },
+        { ServiceClosureFailure.Conflict, "service_retired", HttpStatusCode.Conflict, "service_retired" },
+        { ServiceClosureFailure.Forbidden, "closure_self_decision", HttpStatusCode.Forbidden, "closure_self_decision" },
+    };
+
+    [Theory]
+    [MemberData(nameof(CodedFailures))]
+    public async Task EveryFailureOfTheReopeningCarriesItsCode(ServiceClosureFailure failure, string? code,
+        HttpStatusCode status, string expected)
+    {
+        var store = new StubStore { CommandFailure = failure, CommandCode = code };
+        await using var application = Application(store);
+        using var client = Authorized(application);
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/service-closures/services/{ServiceId}/reopen",
+            new { reason = "Equipo reparado y probado.", serviceVersion = "service-version" },
+            TestContext.Current.CancellationToken);
+        Assert.Equal(status, response.StatusCode);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal(expected, problem.RootElement.GetProperty("code").GetString());
+        // The title is Spanish; the clients explain the code and never show it.
+        Assert.DoesNotContain("reload", problem.RootElement.GetProperty("title").GetString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnInvalidFilterCarriesItsCode()
+    {
+        await using var application = Application(new StubStore());
+        using var client = Authorized(application);
+        using var response = await client.GetAsync("/api/v1/service-closures?status=Reopened",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("invalid_closure_query", problem.RootElement.GetProperty("code").GetString());
     }
 
     [Fact]
@@ -160,13 +234,14 @@ public sealed class ServiceClosuresEndpointsTests(ElevantApiFactory factory)
         private readonly ServiceClosureData data = new(RequestId, ServiceId, "Aire acondicionado",
             "El equipo no está disponible.", "Pending", AccountId,
             new DateTimeOffset(2026, 10, 5, 10, 0, 0, TimeSpan.Zero), null, null, null,
-            null, null, true, "service-version", "version-1");
+            null, null, true, true, "service-version", "version-1");
         public bool DenyList { get; init; }
         public ServiceClosureFailure? CommandFailure { get; set; }
+        public string? CommandCode { get; init; }
         public (Guid, string?, int, int) LastList { get; private set; }
         public (Guid, Guid, Guid, string) LastRequest { get; private set; }
-        public (Guid, Guid, bool, string?, string) LastDecision { get; private set; }
-        public (Guid, Guid, string, string) LastReopen { get; private set; }
+        public (Guid, Guid, bool, string?, string?, Guid?) LastDecision { get; private set; }
+        public (Guid, Guid, string?, string?, Guid?) LastReopen { get; private set; }
 
         public Task<ServiceClosurePage?> ListAsync(Guid actorId, string? status,
             int page, int limit, CancellationToken cancellationToken = default)
@@ -184,22 +259,22 @@ public sealed class ServiceClosuresEndpointsTests(ElevantApiFactory factory)
         }
 
         public Task<ServiceClosureResult> DecideAsync(Guid actorId, Guid requestId,
-            bool approve, string? reason, string expectedVersion,
+            bool approve, string? reason, string? expectedVersion, Guid? idempotencyKey,
             CancellationToken cancellationToken = default)
         {
-            LastDecision = (actorId, requestId, approve, reason, expectedVersion);
+            LastDecision = (actorId, requestId, approve, reason, expectedVersion, idempotencyKey);
             return Task.FromResult(Result());
         }
 
         public Task<ServiceClosureResult> ReopenAsync(Guid actorId, Guid serviceId,
-            string reason, string expectedServiceVersion,
+            string? reason, string? expectedServiceVersion, Guid? idempotencyKey,
             CancellationToken cancellationToken = default)
         {
-            LastReopen = (actorId, serviceId, reason, expectedServiceVersion);
+            LastReopen = (actorId, serviceId, reason, expectedServiceVersion, idempotencyKey);
             return Task.FromResult(Result());
         }
 
         private ServiceClosureResult Result() => CommandFailure is { } failure
-            ? ServiceClosureResult.Failed(failure) : ServiceClosureResult.Success(data);
+            ? ServiceClosureResult.Failed(failure, CommandCode) : ServiceClosureResult.Success(data);
     }
 }

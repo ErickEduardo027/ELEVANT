@@ -11,6 +11,9 @@ import {
   type DivisionsState, effectiveTitle, REPRESENTATIVE_TITLES, type RepresentativeDraft,
   type RepresentativeField, TITLE_OTHER, validateRepresentative,
 } from "@/lib/access-request";
+import {
+  type AirlineProposalDraft, type AirlineProposalField, emptyAirlineProposal, validateAirlineProposal,
+} from "@/lib/airline-proposal";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import { countryCodes, countryName, loadDivisions } from "@/lib/geo/catalog";
 import { serviceImageFallback } from "@/lib/serviceImages";
@@ -34,6 +37,13 @@ export function formatDocumentNumber(type: string, value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 9);
 }
 const fieldId = (field: RepresentativeField) => `representative-${field}`;
+const proposalId = (field: AirlineProposalField) => `proposal-${field}`;
+// Help shown under a field of «Mi aerolínea no aparece»; its control is described by the help and the error.
+const PROPOSAL_HINTS: Partial<Record<AirlineProposalField, string>> = {
+  icaoCode: "Obligatorio: 3 letras, por ejemplo CMP.",
+  iataCode: "Déjelo vacío si la aerolínea no tiene código IATA.",
+  websiteUrl: "Ayuda a Contratos a confirmar la aerolínea y a su representante.",
+};
 const apiOrigin = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, "");
 const mediaUrl = (path: string | null | undefined) => path?.startsWith("/api/v1/media/") ? `${apiOrigin}${path}` : path ?? undefined;
 
@@ -47,6 +57,10 @@ export function AccessRequestWizard() {
   const [withdrawnNotice, setWithdrawnNotice] = useState("");
   const [requiresServiceReview, setRequiresServiceReview] = useState(false);
   const [airlineId, setAirlineId] = useState("");
+  // «Mi aerolínea no aparece» (1-N25): the applicant describes the airline instead of choosing it.
+  const [proposalChosen, setProposalChosen] = useState(false);
+  const [proposal, setProposal] = useState<AirlineProposalDraft>(emptyAirlineProposal);
+  const [showProposalErrors, setShowProposalErrors] = useState(false);
   const [representative, setRepresentative] = useState(emptyRepresentative);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -76,7 +90,22 @@ export function AccessRequestWizard() {
   const divisionsCountry = useRef("");
   const [touched, setTouched] = useState<ReadonlySet<RepresentativeField>>(new Set());
   const [showAllErrors, setShowAllErrors] = useState(false);
-  const airline = catalog?.airlines.find((item) => item.id === airlineId);
+  // With an empty catalog the only way forward is to describe the airline.
+  const proposing = proposalChosen || catalog?.airlines.length === 0;
+  const airline = proposing ? undefined : catalog?.airlines.find((item) => item.id === airlineId);
+  const proposalCheck = validateAirlineProposal(proposal);
+  const proposalError = (field: AirlineProposalField) => showProposalErrors ? proposalCheck.errors[field] : undefined;
+  const proposalControl = (field: AirlineProposalField) => {
+    const message = proposalError(field);
+    const describedBy = [message && `${proposalId(field)}-error`, PROPOSAL_HINTS[field] && `${proposalId(field)}-hint`]
+      .filter(Boolean).join(" ");
+    return { id: proposalId(field), "aria-invalid": message ? true : undefined, "aria-describedby": describedBy || undefined };
+  };
+  const airlineName = proposing ? proposal.name.trim() : airline?.name;
+  // A proposed ICAO code that is already listed points to the existing profile.
+  const listedMatch = proposing && /^[A-Z]{3}$/.test(proposal.icaoCode.trim().toUpperCase())
+    ? catalog?.airlines.find((item) => item.icaoCode?.toUpperCase() === proposal.icaoCode.trim().toUpperCase())
+    : undefined;
   const validation = validateRepresentative(representative, divisions);
   const fieldError = (field: RepresentativeField) => !validation.ok && (showAllErrors || touched.has(field))
     ? validation.errors[field] : undefined;
@@ -185,6 +214,18 @@ export function AccessRequestWizard() {
     return () => { if (hub.state !== HubConnectionState.Disconnected) void hub.stop(); };
   }, [reload]);
 
+  const changeProposal = (changes: Partial<AirlineProposalDraft>) => {
+    setProposal((current) => ({ ...current, ...changes }));
+    setProposalChosen(true);
+    requestId.current = null;
+    setError("");
+  };
+  const toggleProposal = (next: boolean) => {
+    setProposalChosen(next);
+    setShowProposalErrors(false);
+    requestId.current = null;
+    setError("");
+  };
   const changeRepresentative = (changes: Partial<Representative>) => {
     setRepresentative((current) => ({ ...current, ...changes }));
     requestId.current = null;
@@ -222,7 +263,15 @@ export function AccessRequestWizard() {
       setRequiresServiceReview(false);
       setWithdrawnNotice("");
     }
-    if (step === 2 && !airlineId) { setError("Seleccione la aerolínea que representa."); return; }
+    if (step === 2 && proposing && !proposalCheck.ok) {
+      setShowProposalErrors(true);
+      document.getElementById(`proposal-${proposalCheck.firstInvalidField}`)?.focus();
+      setError("Revise los datos de la aerolínea antes de continuar.");
+      return;
+    }
+    if (step === 2 && !proposing && !airlineId) {
+      setError("Seleccione la aerolínea que representa o indique que no aparece en el listado."); return;
+    }
     if (step === 3 && !validation.ok) {
       setShowAllErrors(true);
       document.getElementById(fieldId(validation.firstInvalidField))?.focus();
@@ -233,7 +282,13 @@ export function AccessRequestWizard() {
   };
   const submit = async () => {
     if (pendingSubmission.current) { await reconcilePending(); return; }
-    if (!apiOrigin || !airline || !selected.length || requiresServiceReview ||
+    if (proposing && !proposalCheck.ok) {
+      setShowProposalErrors(true);
+      setError("Revise los datos de la aerolínea antes de enviar la solicitud.");
+      setStep(2);
+      return;
+    }
+    if (!apiOrigin || (!proposing && !airline) || !selected.length || requiresServiceReview ||
       selected.some((id) => !catalog?.services.some((service) => service.id === id))) {
       setError("Revise los servicios disponibles antes de enviar la solicitud.");
       setStep(1);
@@ -248,7 +303,10 @@ export function AccessRequestWizard() {
     setBusy(true); setError("");
     requestId.current ??= crypto.randomUUID();
     const payload: SubmitCommercialRequestRequest = {
-      requestId: requestId.current, airlineProfileId: airlineId,
+      requestId: requestId.current,
+      ...(proposing && proposalCheck.ok
+        ? { airlineProfileId: null, proposedAirline: proposalCheck.value }
+        : { airlineProfileId: airlineId }),
       serviceIds: selected, representativeName: representative.name.trim(),
       representativeTitle: effectiveTitle(representative), representativeEmail: representative.email.trim(),
       representativePhone: representative.phone.trim(), authorityDeclared: representative.authorityDeclared,
@@ -276,6 +334,12 @@ export function AccessRequestWizard() {
         requestId.current = null;
         setError("El catálogo cambió o la solicitud fue modificada. Revise los datos y vuelva a enviarla.");
         await reload();
+      } else if (failure instanceof ElevantApiError && failure.status === 400) {
+        // The server refused the data: nothing was stored, so a corrected application is a new one.
+        pendingSubmission.current = null;
+        setHasPendingSubmission(false);
+        requestId.current = null;
+        setError("La solicitud no superó la validación. Revise los datos de la aerolínea y del representante y vuelva a enviarla.");
       } else if (failure instanceof ElevantApiError && failure.status === 429)
         setError("Demasiados intentos. Espere un momento antes de reintentar.");
       else
@@ -293,7 +357,7 @@ export function AccessRequestWizard() {
   if (reference) return <section className="access-complete" role="status">
     <p className="access-kicker">SOLICITUD RECIBIDA / AVIAM</p>
     <h1>Su solicitud ya está en revisión.</h1>
-    <p>Contratos verificará la información de {airline?.name ?? "su aerolínea"} y los servicios seleccionados. Conserve esta referencia para cualquier consulta.</p>
+    <p>Contratos verificará la información de {airlineName || "su aerolínea"} y los servicios seleccionados, y le escribirá a {representative.email.trim()} con su decisión. Conserve esta referencia: identifica su solicitud.</p>
     <strong>{reference}</strong><Link href="/">Volver al inicio <span aria-hidden="true">↗</span></Link>
   </section>;
 
@@ -336,11 +400,44 @@ export function AccessRequestWizard() {
         </div>
       </> : step === 2 ? <>
         <div className="access-panel__heading"><p>02 / AEROLÍNEA</p><h2>¿A cuál aerolínea representa?</h2><span>La ficha se carga desde el catálogo de AVIAM y se revisará antes de aprobar el contrato.</span></div>
-        <label className="access-label" htmlFor="airline-select">Seleccione una aerolínea</label>
-        <select id="airline-select" className="access-select" value={airlineId} onChange={(event) => { setAirlineId(event.target.value); requestId.current = null; setError(""); }} required>
-          <option value="">Buscar en el listado de aerolíneas</option>
-          {[...new Set(catalog?.airlines.map((item) => item.region))].map((region) => <optgroup key={region} label={region}>{catalog?.airlines.filter((item) => item.region === region).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</optgroup>)}
-        </select>
+        {catalog?.airlines.length === 0 && <p className="access-airline__verification" role="note">Aún no hay aerolíneas publicadas en el listado. Indique los datos de la suya y Contratos la verificará.</p>}
+        {!proposing && catalog?.airlines.length !== 0 && <>
+          <label className="access-label" htmlFor="airline-select">Seleccione una aerolínea</label>
+          <select id="airline-select" className="access-select" value={airlineId} onChange={(event) => { setAirlineId(event.target.value); requestId.current = null; setError(""); }} required>
+            <option value="">Buscar en el listado de aerolíneas</option>
+            {[...new Set(catalog?.airlines.map((item) => item.region))].map((region) => <optgroup key={region} label={region}>{catalog?.airlines.filter((item) => item.region === region).map((item) => <option value={item.id} key={item.id}>{item.name}</option>)}</optgroup>)}
+          </select>
+        </>}
+        <div className="access-missing">
+          {proposing ? <>
+            <span>Describa la aerolínea: Contratos la verificará con una fuente oficial antes de aprobar.</span>
+            {catalog?.airlines.length !== 0 && <button type="button" onClick={() => toggleProposal(false)}>Elegir del listado</button>}
+          </> : <>
+            <span>¿No encuentra su aerolínea?</span>
+            <button type="button" onClick={() => toggleProposal(true)}>Mi aerolínea no aparece</button>
+          </>}
+        </div>
+        {proposing && <div className="access-representative access-proposal" role="group" aria-label="Aerolínea que no aparece en el listado">
+          <ProposalField field="name" label="Nombre de la aerolínea" error={proposalError("name")} wide>
+            <input {...proposalControl("name")} required maxLength={160} autoComplete="organization" value={proposal.name} onChange={(event) => changeProposal({ name: event.target.value })} />
+          </ProposalField>
+          <ProposalField field="countryCode" label="País de la aerolínea" error={proposalError("countryCode")}>
+            <select {...proposalControl("countryCode")} className="access-select" required value={proposal.countryCode} onChange={(event) => changeProposal({ countryCode: event.target.value })}>
+              <option value="">Seleccione el país</option>
+              {countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}
+            </select>
+          </ProposalField>
+          <ProposalField field="icaoCode" label="Código ICAO" error={proposalError("icaoCode")}>
+            <input {...proposalControl("icaoCode")} required maxLength={3} autoCapitalize="characters" value={proposal.icaoCode} onChange={(event) => changeProposal({ icaoCode: event.target.value.toUpperCase() })} />
+          </ProposalField>
+          <ProposalField field="iataCode" label="Código IATA (opcional)" error={proposalError("iataCode")}>
+            <input {...proposalControl("iataCode")} maxLength={2} autoCapitalize="characters" value={proposal.iataCode} onChange={(event) => changeProposal({ iataCode: event.target.value.toUpperCase() })} />
+          </ProposalField>
+          <ProposalField field="websiteUrl" label="Sitio web oficial (opcional)" error={proposalError("websiteUrl")} wide>
+            <input {...proposalControl("websiteUrl")} type="url" maxLength={512} inputMode="url" placeholder="https://" value={proposal.websiteUrl} onChange={(event) => changeProposal({ websiteUrl: event.target.value })} />
+          </ProposalField>
+          {listedMatch && <p className="access-representative__note" role="note">El código {listedMatch.icaoCode} corresponde a {listedMatch.name}, que ya figura en el listado. <button type="button" className="access-inline-link" onClick={() => { setAirlineId(listedMatch.id); toggleProposal(false); }}>Elegir {listedMatch.name}</button></p>}
+        </div>}
         {airline && <div className="access-airline">
           <div className="access-airline__logo">{airline.logoUrl ? <Image src={mediaUrl(airline.logoUrl)!} alt={airline.logoUrl.includes('/reference-') ? `Referencia visual de ${airline.name}` : `Logo de ${airline.name}`} width={92} height={92} unoptimized /> : <span aria-label="Monograma de aerolínea">{airline.name.slice(0, 2)}</span>}<small>{airline.logoUrl?.includes('/reference-') ? "REFERENCIA AVIAM" : airline.logoUrl ? "LOGO" : "MONOGRAMA"}</small></div>
           <div className="access-airline__fields">
@@ -419,7 +516,7 @@ export function AccessRequestWizard() {
             </select>
           </FormField>}
           <div className="access-authority-field">
-            <label className="access-authority"><input {...control("authorityDeclared")} required type="checkbox" checked={representative.authorityDeclared} onChange={(event) => changeRepresentative({ authorityDeclared: event.target.checked })} /><span>Declaro que estoy autorizado para presentar esta solicitud en nombre de {airline?.name}.</span></label>
+            <label className="access-authority"><input {...control("authorityDeclared")} required type="checkbox" checked={representative.authorityDeclared} onChange={(event) => changeRepresentative({ authorityDeclared: event.target.checked })} /><span>Declaro que estoy autorizado para presentar esta solicitud en nombre de {airlineName}.</span></label>
             {fieldError("authorityDeclared") && <p className="access-field-error" id={`${fieldId("authorityDeclared")}-error`}>{fieldError("authorityDeclared")}</p>}
           </div>
           <p className="access-representative__note">Servicios solicitados: {catalog?.services.filter((service) => selected.includes(service.id)).map((service) => service.name).join(" · ")}</p>
@@ -428,7 +525,9 @@ export function AccessRequestWizard() {
         <div className="access-panel__heading"><p>04 / CONFIRMACIÓN</p><h2>Revise su solicitud.</h2><span>Contratos recibirá exactamente estos datos al confirmar el envío.</span></div>
         <div className="access-summary">
           <section><div className="access-summary__header"><h3>Servicios solicitados</h3><button type="button" onClick={() => setStep(1)}>Editar servicios</button></div><ul>{catalog?.services.filter((service) => selected.includes(service.id)).map((service) => <li key={service.id}>{service.name}</li>)}</ul></section>
-          <section><div className="access-summary__header"><h3>Aerolínea</h3><button type="button" onClick={() => setStep(2)}>Editar aerolínea</button></div><p>{airline?.name}</p><small>{airline?.legalName ?? "Sin razón social confirmada"} · {airline?.countryCode ?? "Sin país confirmado"}</small></section>
+          <section><div className="access-summary__header"><h3>Aerolínea</h3><button type="button" onClick={() => setStep(2)}>Editar aerolínea</button></div><p>{airlineName}</p>{proposing
+            ? <small>No figura en el listado · {countryName(proposal.countryCode)} · ICAO {proposal.icaoCode.trim().toUpperCase()} · {proposal.iataCode.trim() ? `IATA ${proposal.iataCode.trim().toUpperCase()}` : "Sin IATA"}{proposal.websiteUrl.trim() ? ` · ${proposal.websiteUrl.trim()}` : ""}</small>
+            : <small>{airline?.legalName ?? "Sin razón social confirmada"} · {airline?.countryCode ?? "Sin país confirmado"}</small>}</section>
           <section><div className="access-summary__header"><h3>Representante</h3><button type="button" onClick={() => setStep(3)}>Editar representante</button></div><dl>
             <div><dt>Nombre y cargo</dt><dd>{representative.name} · {effectiveTitle(representative)}</dd></div>
             <div><dt>Contacto</dt><dd>{representative.email} · {representative.phone}</dd></div>
@@ -456,6 +555,18 @@ function FormField({ field, label, error, wide, children }: {
     <label htmlFor={fieldId(field)}>{label}</label>
     {children}
     {error && <p className="access-field-error" id={`${fieldId(field)}-error`}>{error}</p>}
+  </div>;
+}
+
+function ProposalField({ field, label, error, wide, children }: {
+  field: AirlineProposalField; label: string; error?: string; wide?: boolean; children: ReactNode;
+}) {
+  const hint = PROPOSAL_HINTS[field];
+  return <div className={wide ? "access-field access-representative__wide" : "access-field"}>
+    <label htmlFor={proposalId(field)}>{label}</label>
+    {children}
+    {hint && <small className="access-field-hint" id={`${proposalId(field)}-hint`}>{hint}</small>}
+    {error && <p className="access-field-error" id={`${proposalId(field)}-error`}>{error}</p>}
   </div>;
 }
 

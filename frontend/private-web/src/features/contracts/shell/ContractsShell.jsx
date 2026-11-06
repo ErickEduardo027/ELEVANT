@@ -63,8 +63,8 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout, observeN
   useEffect(() => {
     if (process.env.NODE_ENV === 'test') return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.some(resource => ['commercial_requests',
-        'contract_draft_comments', 'airline_contracts'].includes(resource))) {
+      if (resources.some(resource => ['commercial_requests', 'contract_draft_comments', 'contract_drafts',
+        'contract_approvals', 'airline_contracts'].includes(resource))) {
         revalidateHome();
       }
       if (resources.includes('service_closures')) void revalidateClosures();
@@ -105,14 +105,16 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout, observeN
             <ContractsHomePage status={home.status} data={home.data} error={home.error} onRetry={revalidateHome} onNavigate={handleSelectModule} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CONTRACTS ? (
             <ManagedAgreementsPage mode="contracts" canSign={can('contracts.agreements.sign')} canManageLifecycle={can('contracts.agreements.lifecycle')}
-              canSetValidity={can('contracts.agreements.validity')}
+              canSetValidity={can('contracts.agreements.validity')} canAmend={can('contracts.drafts.update')}
+              onOpenDrafts={can('contracts.drafts.read') ? () => handleSelectModule(CONTRACT_MODULE_IDS.DRAFTS) : undefined}
               onNewContract={can('contracts.requests.read') ? () => handleSelectModule(CONTRACT_MODULE_IDS.REQUESTS) : undefined} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.PERMITS ? (
             <AirlinePermitsPage canVerify={can('contracts.permits.verify')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (
-            <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')} />
+            <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')}
+              canDiscard={can('contracts.drafts.delete')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (
-            <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} />
+            <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} canCancel={can('contracts.requests.cancel')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CATALOG ? (
             <CommercialCatalogPage canCreate={can('contracts.catalog.create')} canEdit={can('contracts.catalog.update')} canRetire={can('contracts.catalog.delete')} canSeeClosures={can('contracts.service_closures.read')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.SERVICES ? (

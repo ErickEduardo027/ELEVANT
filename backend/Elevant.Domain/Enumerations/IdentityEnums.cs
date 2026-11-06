@@ -61,6 +61,8 @@ public enum EmailPurpose
     /// <summary>Simulated e-CF invoice PDF sent to the airline when Finance issues it (ADR-0035).</summary>
     InvoiceIssued,
     PaymentReceived,
+    /// <summary>Approval, rejection or cancellation of a public commercial request, sent to its applicant.</summary>
+    CommercialDecision,
 }
 
 /// <summary>Delivery state of an email in the outbox.</summary>
@@ -69,4 +71,6 @@ public enum EmailDeliveryStatus
     Pending,
     Sent,
     Failed,
+    /// <summary>Never sent: its link or code expired, or a newer one replaced it (1-N09).</summary>
+    Discarded,
 }

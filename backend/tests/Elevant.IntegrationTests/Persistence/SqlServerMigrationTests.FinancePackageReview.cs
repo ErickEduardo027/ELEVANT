@@ -89,14 +89,16 @@ public sealed partial class SqlServerMigrationTests
         var fixture = await PackageReviewFixtureAsync(scope.ServiceProvider, ct);
         var packages = scope.ServiceProvider.GetRequiredService<IFinancePackageStore>();
         var original = await db.ContractVersions.SingleAsync(v => v.Id == fixture.VersionKey, ct);
-        var amendment = await packages.CreateAmendmentAsync(ContractsAccount, original.PublicId,
-            new(Guid.NewGuid(), Convert.ToBase64String(original.RowVersion)), ct);
+        // 1-C: the amendment asks its own start; Contratos' review and submission are covered by the amendment tests.
+        var amendment = await packages.CreateAmendmentAsync(ContractsAccount, original.PublicId, Guid.NewGuid(),
+            new CreateAmendmentInput("Active", new DateOnly(2026, 8, 15)), ct);
         Assert.True(amendment.IsSuccess, amendment.Code);
         var next = await db.ContractVersions.SingleAsync(v => v.PublicId == amendment.Id, ct);
-        next.ValidFrom = new DateOnly(2026, 8, 15); next.Status = ContractVersionStatus.PendingFinanceApproval;
+        Assert.Equal(new DateOnly(2026, 8, 15), next.ValidFrom);
+        next.Status = ContractVersionStatus.PendingFinanceApproval;
         await db.SaveChangesAsync(ct);
         var approval = await scope.ServiceProvider.GetRequiredService<IFinanceTariffBookStore>().DecideContractApprovalAsync(
-            FinanceAccount, next.PublicId, new("Approved", "Synthetic backdated amendment", Convert.ToBase64String(next.RowVersion)), ct);
+            FinanceAccount, next.PublicId, new("Approved", "Synthetic backdated amendment", Convert.ToBase64String(next.RowVersion)), null, ct);
         Assert.True(approval.IsSuccess);
         db.ChangeTracker.Clear();
         original = await db.ContractVersions.SingleAsync(v => v.Id == fixture.VersionKey, ct);

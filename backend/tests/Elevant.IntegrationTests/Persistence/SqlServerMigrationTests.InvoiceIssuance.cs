@@ -75,6 +75,26 @@ public sealed partial class SqlServerMigrationTests
         Assert.Contains(email, item => item.Subject.Contains("E310000000001", StringComparison.Ordinal));
         Assert.Equal(1, await setup.AuditEntries.CountAsync(item => item.Action == "finance.invoice.issued", ct));
 
+        // 1-N08: the issuing screen reads what the invoice really queued, never «sent» by default.
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var status = scope.ServiceProvider.GetRequiredService<IInvoiceEmailStatusStore>();
+            var deliveries = (await status.ListAsync(FinanceAccount, invoice.PublicId, ct))!;
+            Assert.Equal(email.Select(item => item.Recipient).Order(), deliveries.Select(item => item.Recipient).Order());
+            Assert.All(deliveries, item => Assert.Equal(("Pending", (string?)null), (item.Status, item.Reason)));
+            Assert.Null(await status.ListAsync(ContractsAccount, invoice.PublicId, ct));
+            Assert.Null(await status.ListAsync(FinanceAccount, Guid.NewGuid(), ct));
+            // A failure reads as its normalized reason; an invoice nobody could receive has no deliveries.
+            await setup.Set<EmailOutboxMessage>().Where(item => item.Purpose == EmailPurpose.InvoiceIssued)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, EmailDeliveryStatus.Failed)
+                    .SetProperty(item => item.LastError, "SmtpException: mailbox unavailable"), ct);
+            Assert.All((await status.ListAsync(FinanceAccount, invoice.PublicId, ct))!,
+                item => Assert.Equal(("Failed", (string?)"send_failed"), (item.Status, item.Reason)));
+            await setup.Set<EmailOutboxMessage>().Where(item => item.Purpose == EmailPurpose.InvoiceIssued)
+                .ExecuteDeleteAsync(ct);
+            Assert.Empty((await status.ListAsync(FinanceAccount, invoice.PublicId, ct))!);
+        }
+
         // The airline reads its own invoice with the e-NCF in the portal (Demo Airlines owns DEV-TAT-0001).
         await using (var portalContext = CreateContext(database.ConnectionString))
         {

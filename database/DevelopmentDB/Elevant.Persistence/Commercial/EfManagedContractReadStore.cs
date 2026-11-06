@@ -25,7 +25,7 @@ internal sealed class EfManagedContractReadStore(
             orderby contract.ContractCode, contract.Id
             select new { contract.Id, contract.PublicId, contract.ContractCode,
                 contract.Status, contract.SignedOn, contract.TerminatedOn,
-                Airline = airline.Name, AirlineCode = airline.IataCode })
+                Airline = airline.Name, AirlineCode = airline.IataCode ?? airline.IcaoCode })
             .Skip((page - 1) * limit).Take(limit + 1).ToArrayAsync(cancellationToken);
         var selected = rows.Take(limit).ToArray();
         var contractIds = selected.Select(item => item.Id).ToArray();

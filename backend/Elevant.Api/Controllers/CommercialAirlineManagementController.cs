@@ -66,20 +66,28 @@ public sealed class CommercialAirlineManagementController(
         CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await store.SaveAsync(actorId, null, input, cancellationToken);
+        var result = await store.SaveAsync(actorId, null, input, null, cancellationToken);
         if (result.Failure is not null) return Failure(result.Failure.Value, result.Code);
         await InvalidateAsync();
         return StatusCode(201, result.Airline);
     }
 
+    /// <summary>
+    /// Saves the profile with the <c>version</c> the superadministrator saw. The Idempotency-Key is
+    /// optional while older clients exist (expand). The legal name, codes and verification of an
+    /// airline that already operates with AVIAM are fixed (<c>airline_identity_locked</c>, 1-N20).
+    /// </summary>
     [HttpPut("{id:guid}", Name = "UpdateManagedAirline")]
     [RequestSizeLimit(32768)]
     [ProducesResponseType<ManagedAirlineData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Update(Guid id, [FromBody] ManagedAirlineInput input,
-        CancellationToken cancellationToken)
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await store.SaveAsync(actorId, id, input, cancellationToken);
+        var result = await store.SaveAsync(actorId, id, input, idempotencyKey, cancellationToken);
         if (result.Failure is not null) return Failure(result.Failure.Value, result.Code);
         await InvalidateAsync();
         return Ok(result.Airline);
@@ -104,17 +112,25 @@ public sealed class CommercialAirlineManagementController(
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
 
+    // Every failure carries a code (the screens explain it); the defaults name the usual cause.
     private IActionResult Failure(CatalogMutationFailure failure, string? code = null) => failure switch
     {
         CatalogMutationFailure.Forbidden => Forbid(),
-        CatalogMutationFailure.Invalid when code == "registry_check_required" => new ObjectResult(new ProblemDetails
-        {
-            Status = 400, Title = "Publishing needs a green registry check or a manual verification.",
-            Extensions = { ["code"] = code },
-        }) { StatusCode = 400 },
-        CatalogMutationFailure.Invalid => Problem(statusCode: 400, title: "Invalid airline profile."),
-        CatalogMutationFailure.NotFound => Problem(statusCode: 404, title: "Airline profile not found."),
-        CatalogMutationFailure.Conflict => Problem(statusCode: 409, title: "Airline profile changed; reload and retry."),
+        CatalogMutationFailure.Invalid when code == "registry_check_required" =>
+            Coded(400, "Para publicarla hace falta el registro público en verde o una verificación manual.", code),
+        CatalogMutationFailure.Invalid => Coded(400, "La ficha de la aerolínea no es válida.", code ?? "invalid_airline"),
+        CatalogMutationFailure.Conflict when code == "airline_identity_locked" =>
+            Coded(409, "La identidad de una aerolínea que ya opera con AVIAM no puede cambiarse.", code),
+        CatalogMutationFailure.NotFound => Coded(404, "La ficha de la aerolínea ya no existe.", code ?? "not_found"),
+        CatalogMutationFailure.Conflict => Coded(409, "La ficha cambió o entra en conflicto con otra aerolínea.",
+            code ?? "version_conflict"),
         _ => throw new InvalidOperationException(),
     };
+
+    private ObjectResult Coded(int status, string title, string code)
+    {
+        var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
+    }
 }

@@ -16,7 +16,12 @@ autorizadas; inicio, detalle y perfil muestran únicamente esa consulta. El
 layout activo solo monta `AirlineSessionProvider`; el proveedor de sesión mock
 permanece en componentes prototípicos no montados y no concede acceso al portal.
 La tarjeta del login describe la verificación pendiente sin mostrar rutas ni
-estados autenticados ficticios. Vuelos
+estados autenticados ficticios. El login, `/activar` y `/recuperar` no nombran
+ningún entorno: solo muestran una etiqueta si el build define
+`NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL` (por ejemplo «Pruebas»), que es
+configuración pública de build, nunca un secreto. El código de acceso y los
+enlaces quedan en la cola de correo de la API; la pantalla nunca afirma que ya
+se enviaron. Vuelos
 consulta además el historial paginado de su tenant
 mediante `GET /api/v1/airline/portal/operations`. El detalle de una operación
 histórica se relee por su ID público con autorización en la API, aunque ya no
@@ -78,11 +83,13 @@ npm run build
 
 Para E2E, instale los navegadores de Playwright según su documentación y ejecute `npm run test:e2e`.
 
-`npm run test:e2e:stack` recorre el portal contra el stack local real: API en `127.0.0.1:18088`, SQL Server y Mailpit en `127.0.0.1:8025`. Cubre la recuperación de contraseña por correo, la nueva contraseña y el inicio de sesión con el código de 6 dígitos, y lee los correos desde la API de Mailpit. Requisitos:
+`npm run test:e2e:stack` recorre el portal contra el stack local real: API en `127.0.0.1:8080` (el puerto que publica `compose.local.yml`; otro puerto con `E2E_STACK_API`), SQL Server y Mailpit en `127.0.0.1:8025`. Cubre la recuperación de contraseña por correo, la nueva contraseña y el inicio de sesión con el código de 6 dígitos, y lee los correos desde la API de Mailpit. Requisitos:
 - Levantar antes el stack con `compose.local.yml`.
 - Usar la cuenta sembrada `airline.client@dev.elevant.test`, a la que la prueba cambia la contraseña.
 
 El navegador usa el nombre HTTPS `api.stack.elevant.test`, que exige la CSP, y la prueba lo reenvía a la API local. No corre en CI: sin el stack, la prueba se omite.
+
+`npm run test:e2e:cycle` recorre el ciclo operativo completo (ADR-0037) con cuatro proyectos encadenados, uno por fase: comercial, pre-operación, operación y facturación. Levanta public-web en `localhost:4174` y private-web en `localhost:4175` y crea en cada corrida su propia aerolínea sintética. Necesita el stack con el overlay `compose.local.e2e.yml` (almacenamiento S3 con Garage, CORS de los puertos del arnés y límites de uso altos) y `E2E_CYCLE_ENV_FILE` apuntando al `.env` del stack; las credenciales se leen de ahí y nunca se imprimen. El estado de la corrida y las capturas quedan fuera del repositorio, en la carpeta temporal del sistema (`elevant-e2e-cycle`). Con `E2E_CYCLE_HEADED=1` el recorrido se ve en Chrome, y con `--project faseN --no-deps` se reanuda una fase sobre la corrida en curso. Los huecos aún abiertos figuran como `test.fixme("hueco …")`.
 
 Variables públicas actuales:
 

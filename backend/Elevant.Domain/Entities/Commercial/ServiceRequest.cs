@@ -58,4 +58,27 @@ public sealed class ServiceRequest : AuditableEntity
     public string? DecisionReason { get; set; }
 
     public DateTimeOffset? CancelledAt { get; set; }
+
+    /// <summary>
+    /// When Contratos confirmed through the airline's own channels that the representative speaks
+    /// for it; approval needs it (1-N18).
+    /// </summary>
+    public DateTimeOffset? RepresentativeConfirmedAt { get; set; }
+
+    public long? RepresentativeConfirmedByAccountId { get; set; }
+
+    /// <summary>How the representative was confirmed: who answered, through which channel.</summary>
+    public string? RepresentativeConfirmationNote { get; set; }
+
+    /// <summary>
+    /// Airline the applicant proposed when it was not in the public catalog (1-N25); its name is
+    /// <see cref="RequestedAirlineName"/>. Kept after Contratos links or creates the profile.
+    /// </summary>
+    public string? ProposedAirlineCountryCode { get; set; }
+
+    public string? ProposedAirlineIataCode { get; set; }
+
+    public string? ProposedAirlineIcaoCode { get; set; }
+
+    public string? ProposedAirlineWebsiteUrl { get; set; }
 }

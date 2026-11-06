@@ -1,13 +1,14 @@
 namespace Elevant.Application.Abstractions.Commercial;
 
 /// <param name="RegistryStatus">Last public-registry check (ADR-0023): Found, Mismatch, Defunct or NotFound; null when never checked or stale.</param>
+/// <param name="IdentityLocked">The airline already operates with AVIAM: its legal name, codes and verification are fixed (1-N20).</param>
 public sealed record ManagedAirlineData(
     Guid Id, string SourceName, string DisplayName, string? LegalName,
     string Region, string? CountryCode, string? IataCode, string? IcaoCode,
     string? LogoUrl, string SourceUrl, string? VerificationSourceUrl,
     bool IsVerified, bool IsPublished, string Version,
     string? RegistryStatus = null, string? RegistrySource = null, DateTimeOffset? RegistryCheckedAt = null,
-    string? RegistryEntityUrl = null);
+    string? RegistryEntityUrl = null, bool IdentityLocked = false);
 
 /// <summary>What a registry check is about; the record step refuses it if these changed meanwhile.</summary>
 public sealed record AirlineRegistryKey(Guid Id, string Name, string? IataCode, string? IcaoCode);
@@ -73,8 +74,12 @@ public interface ICommercialAirlineManagementStore
 {
     Task<IReadOnlyList<ManagedAirlineData>?> ListAsync(Guid actorId,
         CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Creates (no id) or updates a profile. An update takes an optional Idempotency-Key (expand) and
+    /// refuses to change the identity of an operating airline (<c>airline_identity_locked</c>).
+    /// </summary>
     Task<AirlineMutationResult> SaveAsync(Guid actorId, Guid? profileId,
-        ManagedAirlineInput input, CancellationToken cancellationToken = default);
+        ManagedAirlineInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<AirlineMutationResult> ArchiveAsync(Guid actorId, Guid profileId,
         string version, CancellationToken cancellationToken = default);
     Task<AirlineEnrichmentResult> EnrichHistoricalCatalogAsync(Guid actorId,

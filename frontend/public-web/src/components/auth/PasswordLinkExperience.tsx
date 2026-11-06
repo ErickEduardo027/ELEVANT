@@ -19,7 +19,7 @@ const COPY: Record<Mode, { kicker: string; title: string; lead: string; action: 
     title: "Crea la contraseña de tu cuenta.",
     lead: "Al guardarla confirmamos tu correo y la cuenta queda lista para entrar al portal.",
     action: "Activar cuenta",
-    done: "Cuenta activada. Ya puedes iniciar sesión; te enviaremos un código a tu correo.",
+    done: "Cuenta activada. Ya puedes iniciar sesión: al entrar te pediremos el código que llega a tu correo.",
   },
   reset: {
     kicker: "Recuperación de contraseña",
@@ -37,7 +37,7 @@ function linkMessage(result: Exclude<AirlineLinkResult, { ok: true }>, mode: Mod
       : "El enlace no es válido, ya se usó o venció. Solicita uno nuevo.";
     case "policy": return "La contraseña no cumple la política de seguridad: usa al menos 14 caracteres y evita contraseñas comunes.";
     case "rate-limited": return "Demasiados intentos. Espera un momento antes de reintentar.";
-    case "unavailable": return "No se pudo conectar con la API. Reintenta en unos minutos.";
+    case "unavailable": return "No se pudo conectar con ELEVANT. Reintenta en unos minutos.";
   }
 }
 

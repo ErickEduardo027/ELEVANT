@@ -27,12 +27,17 @@ export interface AirlineSessionData {
   expiresAt: string;
 }
 
+/**
+ * A draft of the airline's contract. `version` is the rowversion an observation expects; the API never
+ * sends the portal Finance base prices nor the internal reason of a Finance return (1-N05).
+ */
 export interface AirlineDraftData {
   id: string; contractId: string; contractCode: string; airline: string; status: string;
   validFrom: string; validTo: string | null; currencyCode: string; terms: string | null;
   stations: string[];
   rates: { id: string; serviceName: string; billingUnit: string; unitPrice: number; minimumQuantity: number; isConfirmed: boolean }[];
   comments: { id: string; author: string; body: string; at: string; isAirline: boolean }[];
+  versionStatus?: string; financeDecision?: string | null; version?: string;
 }
 
 export type AirlineSessionStatus = "loading" | "anonymous" | "ready" | "unavailable";
@@ -99,7 +104,8 @@ interface AirlineSessionContextValue {
   operationRevision: number;
   financeRevision: number;
   getDrafts(): Promise<AirlineDraftData[]>;
-  commentDraft(versionId: string, body: string): Promise<void>;
+  /** An observation on a draft, with the draft version on screen and the intent's Idempotency-Key. */
+  commentDraft(versionId: string, body: string, expectedVersion: string, idempotencyKey: string): Promise<void>;
   draftRevision: number;
 }
 
@@ -797,12 +803,12 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     return result as AirlineDraftData[];
   }, [draftRequest]);
 
-  const commentDraft = useCallback(async (versionId: string, body: string): Promise<void> => {
-    await draftRequest(`/airline/contract-drafts/${encodeURIComponent(versionId)}/comments`, {
-      method: "POST", body: JSON.stringify({ body }),
-    });
+  const commentDraft = useCallback(async (versionId: string, body: string, expectedVersion: string,
+    idempotencyKey: string): Promise<void> => {
+    await withContractClient(client => client.commentAirlineContractDraft(versionId, { expectedVersion, body },
+      idempotencyKey));
     setDraftRevision(current => current + 1);
-  }, [draftRequest]);
+  }, [withContractClient]);
 
   return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, submitPermit, getContractTimeline, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}

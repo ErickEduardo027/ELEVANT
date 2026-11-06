@@ -1,0 +1,75 @@
+# Optional overlay for the full-cycle E2E (ADR-0037). It adds, on top of compose.local.yml:
+# - S3-compatible private storage (Garage single node) so financial PDFs, contract and operation
+#   evidence work locally like on the VPS (MediaStorage__*);
+# - CORS for the Playwright dev servers (4174 public-web, 4175 private-web);
+# - higher request limits, because every E2E call comes from 127.0.0.1.
+#
+# docker compose --env-file database/DevelopmentDB/.env \
+#   -f database/DevelopmentDB/compose.local.yml -f database/DevelopmentDB/compose.local.e2e.yml up --build
+#
+# The bucket and its access key are created by Garage itself at start (--default-bucket). The
+# secrets come from .env (see .env.example); nothing secret lives in this file.
+
+configs:
+  garage-local:
+    content: |
+      metadata_dir = "/var/lib/garage/meta"
+      data_dir = "/var/lib/garage/data"
+      db_engine = "sqlite"
+      replication_factor = 1
+      rpc_bind_addr = "[::]:3901"
+
+      [s3_api]
+      s3_region = "garage"
+      api_bind_addr = "[::]:3900"
+      root_domain = ".s3.invalid"
+
+services:
+  media:
+    image: dxflrs/garage:v2.4.1@sha256:9c96caa2612d3411acc5b0e6701fb238dbfba33e533a6d7d3d811a4b12d0d020
+    command: ["/garage", "server", "--single-node", "--default-bucket"]
+    environment:
+      GARAGE_RPC_SECRET: "${ELEVANT_LOCAL_GARAGE_RPC_SECRET:?ELEVANT_LOCAL_GARAGE_RPC_SECRET must be set (64 hex characters)}"
+      GARAGE_DEFAULT_ACCESS_KEY: "${ELEVANT_LOCAL_MEDIA_ACCESS_KEY:?ELEVANT_LOCAL_MEDIA_ACCESS_KEY must be set (GK + 24 hex characters)}"
+      GARAGE_DEFAULT_SECRET_KEY: "${ELEVANT_LOCAL_MEDIA_SECRET_KEY:?ELEVANT_LOCAL_MEDIA_SECRET_KEY must be set (64 hex characters)}"
+      GARAGE_DEFAULT_BUCKET: "${ELEVANT_LOCAL_MEDIA_BUCKET:-elevant-local-media}"
+    configs:
+      - source: garage-local
+        target: /etc/garage.toml
+    volumes:
+      - media-local-meta:/var/lib/garage/meta
+      - media-local-data:/var/lib/garage/data
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      data:
+        aliases:
+          - elevant-local-media
+
+  api:
+    environment:
+      MediaStorage__Endpoint: "http://elevant-local-media:3900"
+      MediaStorage__Region: "garage"
+      MediaStorage__Bucket: "${ELEVANT_LOCAL_MEDIA_BUCKET:-elevant-local-media}"
+      MediaStorage__AccessKey: "${ELEVANT_LOCAL_MEDIA_ACCESS_KEY:?ELEVANT_LOCAL_MEDIA_ACCESS_KEY must be set}"
+      MediaStorage__SecretKey: "${ELEVANT_LOCAL_MEDIA_SECRET_KEY:?ELEVANT_LOCAL_MEDIA_SECRET_KEY must be set}"
+      Cors__AllowedOrigins__2: "http://localhost:4174"
+      Cors__AllowedOrigins__3: "http://localhost:4175"
+      RateLimiting__PermitLimit: "2000"
+      RateLimiting__SessionPermitLimit: "200"
+      AccountEmail__PublicWebBaseUrl: "${AccountEmail__PublicWebBaseUrl:-http://localhost:4174}"
+    depends_on:
+      media:
+        condition: service_started
+
+volumes:
+  media-local-meta:
+  media-local-data:

@@ -65,9 +65,13 @@ public interface IContractLifecycleStore
     /// <summary>History of the contract of a version, for Contratos readers and the owning airline.</summary>
     Task<ContractTimelineData?> TimelineAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default);
 
-    /// <summary>Suspend, reactivate, terminate or renew, with a reason (<c>contracts.agreements.lifecycle</c>).</summary>
+    /// <summary>
+    /// Suspend, reactivate, terminate (also a contract that never activated, 1-B) or renew, with a
+    /// reason and the status the user saw (<c>contracts.agreements.lifecycle</c>). The Idempotency-Key
+    /// is optional while older clients exist (expand); with it a retry replays the first result.
+    /// </summary>
     Task<ContractLifecycleResult> ApplyAsync(Guid actorId, Guid versionId, ContractLifecycleInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
 
     /// <summary>Daily rules: activate signed contracts, expire old ones, suspend on expired permits, send notices.</summary>
     Task<ContractLifecycleSweep> SweepAsync(CancellationToken cancellationToken = default);

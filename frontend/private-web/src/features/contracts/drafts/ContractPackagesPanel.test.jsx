@@ -4,11 +4,14 @@ import userEvent from '@testing-library/user-event';
 import ContractPackagesPanel from './ContractPackagesPanel';
 import ManagedDraftsPage from './ManagedDraftsPage';
 import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
-import { commercialApi, getManagedDrafts, updateManagedDraft } from '../../../services/commercialGovernanceApi';
+import {
+  commercialApi, getContractDraftReadiness, getContractDraftScope, getManagedDrafts, updateManagedDraft,
+} from '../../../services/commercialGovernanceApi';
 
 // All components, state, permissions and package services are real. Only HTTP adapters are replaced.
 vi.mock('../../../services/commercialGovernanceApi', async importOriginal => ({
   ...(await importOriginal()), commercialApi: vi.fn(), getManagedDrafts: vi.fn(), updateManagedDraft: vi.fn(),
+  getContractDraftReadiness: vi.fn(), getContractDraftScope: vi.fn(),
 }));
 
 const component = (id = 'gpu') => ({ serviceId: id, serviceCode: id.toUpperCase(), serviceName: id === 'gpu' ? 'Energía' : 'Equipaje',
@@ -56,6 +59,11 @@ beforeEach(() => {
   });
   getManagedDrafts.mockImplementation(async () => [structuredClone(currentDraft)]);
   updateManagedDraft.mockResolvedValue({ id: 'd1' });
+  // The server reports the current version ready for Finance and its scope.
+  getContractDraftReadiness.mockImplementation(async () => ({ versionId: 'd1', version: currentDraft.version,
+    versionStatus: 'Draft', ready: true, portalAccount: 'Active', issues: [] }));
+  getContractDraftScope.mockImplementation(async () => ({ versionId: 'd1', version: currentDraft.version,
+    versionStatus: 'Draft', services: [], stations: [] }));
   // Keeps the real parent observers from making network calls during integration tests.
   vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', 'https://api.example.test');
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Offline test transport')));
@@ -93,8 +101,8 @@ describe('ContractPackagesPanel', () => {
     mount();
     const group = await screen.findByRole('group', { name: 'Paquete GPU v1' });
     expect(within(group).getByRole('checkbox')).toBeChecked();
-    expect(within(group).getByText(/Histórica · USD 500.00/)).toBeInTheDocument();
-    expect(within(group).getByText(/incluye 60 minute; excedente de 15 por USD 20.00/)).toBeInTheDocument();
+    expect(within(group).getByText(/Reemplazada · USD 500.00/)).toBeInTheDocument();
+    expect(within(group).getByText(/incluye 60 \(unidad: minuto\); excedente de 15 por USD 20.00/)).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: 'Seleccionar GPU v2' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar BAGS v2' }));
@@ -112,7 +120,7 @@ describe('ContractPackagesPanel', () => {
     mount();
     const oldBox = await screen.findByRole('checkbox', { name: 'Seleccionar GPU v1' });
     expect(oldBox).toBeChecked();
-    expect(within(screen.getByRole('group', { name: 'Paquete GPU v1' })).getByText(/Histórica · USD 450.00/)).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Paquete GPU v1' })).getByText(/Reemplazada · USD 450.00/)).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('no es elegible');
     await userEvent.click(screen.getByRole('checkbox', { name: 'Seleccionar GPU v2' }));
     expect(screen.getByRole('button', { name: 'Guardar paquetes' })).toBeDisabled();
@@ -192,8 +200,8 @@ describe('ContractPackagesPanel', () => {
     const historic = packageVersion({ id: 'history', code: 'HISTORY', status: 'Superseded', scope: 'Flight', flightDirection: 'Arrival', versionNumber: 1 });
     bound = [historic]; mount();
     const historicBox = await screen.findByRole('checkbox', { name: 'Seleccionar HISTORY v1' });
-    expect(historicBox).toBeChecked(); expect(screen.getByText(/Histórica · USD 500.00 · Vuelo · Llegada/)).toBeInTheDocument();
-    expect(within(screen.getByRole('group', { name: 'Paquete HISTORY v1' })).getByText(/incluye 60 minute; excedente de 15 por USD 20.00/)).toBeInTheDocument();
+    expect(historicBox).toBeChecked(); expect(screen.getByText(/Reemplazada · USD 500.00 · Por vuelo · Llegada/)).toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Paquete HISTORY v1' })).getByText(/incluye 60 \(unidad: minuto\); excedente de 15 por USD 20.00/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Guardar paquetes' })).toBeDisabled();
     await userEvent.click(historicBox);
     expect(historicBox).toBeDisabled();
@@ -233,7 +241,7 @@ describe('ContractPackagesPanel', () => {
   it.each(['PendingFinanceApproval', 'Approved'])('renders %s contracts as read only without fetching the selection catalog', async status => {
     currentDraft = draft({ versionStatus: status }); bound = [packageVersion({ scope: 'Period', periodDays: 30 })]; mount();
     await screen.findByText('BASIC · v2 · Rampa básica');
-    expect(screen.getByText(/Período · 30 días/)).toBeInTheDocument();
+    expect(screen.getByText(/Por período · 30 días/)).toBeInTheDocument();
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Guardar paquetes' })).not.toBeInTheDocument();
     expect(commercialApi.mock.calls.map(([path]) => path)).toEqual(['/contracts/drafts/d1/packages']);
@@ -298,6 +306,35 @@ describe('ManagedDraftsPage package integration', () => {
     await waitFor(() => expect(writes()).toHaveLength(2));
     expect(lastBody()).toMatchObject({ expectedVersion: 'contract-rv-2', packageVersionIds: ['p1', 'p2'] });
     expect(getManagedDrafts).toHaveBeenCalledTimes(3);
+  });
+
+  it('never offers a retired package nor the version it replaced, and flags a bound retired one', async () => {
+    currentDraft = draft({ validFrom: '2027-01-01' });
+    const retired = packageVersion({ id: 'gpu-v2', code: 'GPU', versionNumber: 2, status: 'Retired', validFrom: '2026-12-01' });
+    bound = [retired];
+    catalog = [retired, packageVersion({ id: 'gpu-v1', code: 'GPU', versionNumber: 1, status: 'Superseded' }),
+      packageVersion({ id: 'bags', code: 'BAGS', components: [component('bags')] })];
+    mount();
+    const group = await screen.findByRole('group', { name: 'Paquete GPU v2' });
+    expect(within(group).getByText(/Retirada · USD 500.00 · Por escala/)).toBeInTheDocument();
+    // 1-N27: retiring the current publication never makes the previous one assignable again.
+    expect(screen.queryByRole('checkbox', { name: 'Seleccionar GPU v1' })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Seleccionar BAGS v2' })).toBeEnabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('no es elegible');
+    expect(screen.getByRole('button', { name: 'Guardar paquetes' })).toBeDisabled();
+    await userEvent.click(within(group).getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar paquetes' }));
+    await screen.findByText('Paquetes guardados.');
+    expect(lastBody().packageVersionIds).toEqual([]);
+  });
+
+  it('explains a package Finance retired meanwhile by its code', async () => {
+    failures = [failure(409, 'package_retired')];
+    mount();
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Seleccionar BASIC v2' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar paquetes' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Finanzas retiró ese paquete');
+    expect(screen.queryByText(/Private server detail/)).not.toBeInTheDocument();
   });
 
   it('requires saving local contract changes before selecting packages', async () => {

@@ -8,6 +8,13 @@ namespace Elevant.Persistence.Finance;
 
 internal sealed partial class EfFinanceTariffBookStore
 {
+    // Problem Details codes of the tariff books (services and charges), explained in Spanish by the UI (1-E).
+    private const string InvalidTariff = "invalid_tariff";
+    private const string TariffDraftExists = "tariff_draft_exists";
+    private const string TariffNotFound = "tariff_not_found";
+    private const string TariffEmpty = "tariff_empty";
+    private const string TariffStartNotAfterCurrent = "tariff_start_not_after_current";
+
     public async Task<IReadOnlyList<TariffVersionSummaryData>?> ListServiceTariffsAsync(Guid actorId,
         string? currencyCode, CancellationToken cancellationToken = default)
     {
@@ -52,24 +59,25 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     public async Task<FinanceCatalogResult> CreateServiceTariffDraftAsync(Guid actorId, CreateTariffDraftInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.tariffs.create", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || !ValidCurrency(input.CurrencyCode) || input.ValidFrom == default || input.Note?.Length > 500)
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
-        return await InTransactionAsync(async () =>
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
+        return await CommandAsync(actor, idempotencyKey, "finance.service_tariff.create",
+            new { input.CurrencyCode, input.ValidFrom, note = input.Note?.Trim(), input.CopyFromVersionId }, async () =>
         {
             var now = timeProvider.GetUtcNow();
             if (await context.ServiceTariffVersions.AnyAsync(version => version.CurrencyCode == input.CurrencyCode &&
                     version.Status == TariffVersionStatus.Draft, cancellationToken))
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, TariffDraftExists);
             ServiceTariffVersion? source = null;
             if (input.CopyFromVersionId is { } sourceId)
             {
                 source = await context.ServiceTariffVersions.AsNoTracking()
                     .SingleOrDefaultAsync(item => item.PublicId == sourceId, cancellationToken);
-                if (source is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+                if (source is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, TariffNotFound);
             }
             var draft = new ServiceTariffVersion
             {
@@ -102,7 +110,7 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     public async Task<FinanceCatalogResult> SaveServiceTariffDraftAsync(Guid actorId, Guid versionId,
-        SaveServiceTariffDraftInput input, CancellationToken cancellationToken = default)
+        SaveServiceTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.tariffs.update", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
@@ -111,28 +119,35 @@ internal sealed partial class EfFinanceTariffBookStore
             input.Rates.Any(rate => rate.UnitPrice < 0 || rate.UnitPrice > 900_000_000m ||
                 rate.MinimumBillableQuantity < 0 || rate.MinimumBillableQuantity > 1_000_000m) ||
             input.Rates.Select(rate => (rate.ServiceId, rate.StationId)).Distinct().Count() != input.Rates.Count)
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
-        var serviceIds = input.Rates.Select(rate => rate.ServiceId).Distinct().ToArray();
-        var services = await context.ServiceDefinitions.AsNoTracking().Where(service => serviceIds.Contains(service.PublicId))
-            .ToDictionaryAsync(service => service.PublicId, service => service.Id, cancellationToken);
-        var stationIds = input.Rates.Where(rate => rate.StationId != null).Select(rate => rate.StationId!.Value).Distinct().ToArray();
-        var stations = await context.Stations.AsNoTracking().Where(station => stationIds.Contains(station.PublicId))
-            .ToDictionaryAsync(station => station.PublicId, station => station.Id, cancellationToken);
-        var units = input.Rates.Select(rate => rate.BillingUnit?.Trim()).Distinct().ToArray();
-        var activeUnits = await context.BillingUnits.AsNoTracking().Where(unit => units.Contains(unit.Code) && unit.IsActive)
-            .Select(unit => unit.Code).ToArrayAsync(cancellationToken);
-        if (services.Count != serviceIds.Length || stations.Count != stationIds.Length ||
-            units.Any(unit => unit is null || !activeUnits.Contains(unit)))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, InvalidTariff);
 
-        return await InTransactionAsync(async () =>
+        // The services, stations and units are checked after the receipt: a retry replays even if they changed.
+        return await CommandAsync(actor, idempotencyKey, "finance.service_tariff.save",
+            new { versionId, input.ValidFrom, input.ValidTo, note = input.Note?.Trim(), input.Rates, input.ExpectedVersion },
+            async () =>
         {
+            var serviceIds = input.Rates.Select(rate => rate.ServiceId).Distinct().ToArray();
+            var services = await context.ServiceDefinitions.AsNoTracking().Where(service => serviceIds.Contains(service.PublicId))
+                .ToDictionaryAsync(service => service.PublicId, service => service.Id, cancellationToken);
+            var stationIds = input.Rates.Where(rate => rate.StationId != null).Select(rate => rate.StationId!.Value).Distinct()
+                .ToArray();
+            var stations = await context.Stations.AsNoTracking().Where(station => stationIds.Contains(station.PublicId))
+                .ToDictionaryAsync(station => station.PublicId, station => station.Id, cancellationToken);
+            if (services.Count != serviceIds.Length)
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "service_not_found");
+            if (stations.Count != stationIds.Length)
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "stations_invalid");
+            // 1-E: a rate keeps the code of an active unit; a unit name («Operación») is saved as its code.
+            var activeUnits = await BillingUnitCodes.LoadAsync(context, cancellationToken);
+            var rateUnits = input.Rates.Select(rate => activeUnits.Resolve(rate.BillingUnit)).ToArray();
+            if (rateUnits.Any(unit => unit is null))
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "billing_unit_unknown");
             var now = timeProvider.GetUtcNow();
             var draft = await context.ServiceTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
                 cancellationToken);
-            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
             if (draft.Status != TariffVersionStatus.Draft || Version(draft.RowVersion) != input.ExpectedVersion)
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
             draft.ValidFrom = input.ValidFrom;
             draft.ValidTo = input.ValidTo;
             draft.Note = input.Note?.Trim();
@@ -140,13 +155,13 @@ internal sealed partial class EfFinanceTariffBookStore
             context.ServiceTariffRates.RemoveRange(await context.ServiceTariffRates
                 .Where(rate => rate.ServiceTariffVersionId == draft.Id).ToArrayAsync(cancellationToken));
             await context.SaveChangesAsync(cancellationToken);
-            foreach (var rate in input.Rates)
+            foreach (var (rate, unit) in input.Rates.Zip(rateUnits))
                 context.ServiceTariffRates.Add(new ServiceTariffRate
                 {
                     PublicId = Guid.CreateVersion7(), ServiceTariffVersionId = draft.Id,
                     ServiceDefinitionId = services[rate.ServiceId],
                     StationId = rate.StationId is { } station ? stations[station] : null,
-                    BillingUnit = rate.BillingUnit.Trim(), UnitPrice = rate.UnitPrice,
+                    BillingUnit = unit!, UnitPrice = rate.UnitPrice,
                     MinimumBillableQuantity = rate.MinimumBillableQuantity, CreatedAt = now, UpdatedAt = now,
                 });
             Audit(actor.Id, "finance.service_tariff.draft_saved", "commercial.service_tariff_versions", draft.PublicId,
@@ -161,25 +176,28 @@ internal sealed partial class EfFinanceTariffBookStore
     /// day before, so historic dates still resolve to the price that applied then.
     /// </summary>
     public async Task<FinanceCatalogResult> PublishServiceTariffAsync(Guid actorId, Guid versionId,
-        string expectedVersion, CancellationToken cancellationToken = default)
+        string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.tariffs.publish", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
-        if (string.IsNullOrWhiteSpace(expectedVersion)) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
-        return await InTransactionAsync(async () =>
+        if (string.IsNullOrWhiteSpace(expectedVersion))
+            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "expected_version_required");
+        return await CommandAsync(actor, idempotencyKey, "finance.service_tariff.publish", new { versionId, expectedVersion },
+            async () =>
         {
             var now = timeProvider.GetUtcNow();
             var draft = await context.ServiceTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
                 cancellationToken);
-            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
-            if (draft.Status != TariffVersionStatus.Draft || Version(draft.RowVersion) != expectedVersion ||
-                !await context.ServiceTariffRates.AnyAsync(rate => rate.ServiceTariffVersionId == draft.Id, cancellationToken))
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
+            if (draft.Status != TariffVersionStatus.Draft || Version(draft.RowVersion) != expectedVersion)
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
+            if (!await context.ServiceTariffRates.AnyAsync(rate => rate.ServiceTariffVersionId == draft.Id, cancellationToken))
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, TariffEmpty);
             var previous = await context.ServiceTariffVersions.Where(version => version.CurrencyCode == draft.CurrencyCode &&
                     version.Status != TariffVersionStatus.Draft && (version.ValidTo == null || version.ValidTo >= draft.ValidFrom))
                 .ToArrayAsync(cancellationToken);
             if (previous.Any(version => version.ValidFrom >= draft.ValidFrom))
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, TariffStartNotAfterCurrent);
             foreach (var version in previous)
             {
                 version.ValidTo = draft.ValidFrom.AddDays(-1);
@@ -200,17 +218,19 @@ internal sealed partial class EfFinanceTariffBookStore
     }
 
     public async Task<FinanceCatalogResult> DeleteServiceTariffDraftAsync(Guid actorId, Guid versionId,
-        string expectedVersion, CancellationToken cancellationToken = default)
+        string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizeAsync(actorId, "finance.tariffs.delete", cancellationToken);
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
-        return await InTransactionAsync(async () =>
+        // A replay answers the id of the draft the first attempt deleted.
+        return await CommandAsync(actor, idempotencyKey, "finance.service_tariff.delete", new { versionId, expectedVersion },
+            async () =>
         {
             var draft = await context.ServiceTariffVersions.SingleOrDefaultAsync(item => item.PublicId == versionId,
                 cancellationToken);
-            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
+            if (draft is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound, "not_found");
             if (draft.Status != TariffVersionStatus.Draft || Version(draft.RowVersion) != expectedVersion)
-                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
+                return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "version_conflict");
             context.ServiceTariffRates.RemoveRange(await context.ServiceTariffRates
                 .Where(rate => rate.ServiceTariffVersionId == draft.Id).ToArrayAsync(cancellationToken));
             context.ServiceTariffVersions.Remove(draft);

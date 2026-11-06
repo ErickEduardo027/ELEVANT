@@ -175,6 +175,59 @@ public sealed class SubmitCommercialRequestHandlerTests
         Assert.Null(store.Written);
     }
 
+    [Fact]
+    public async Task AnAirlineOutsideTheCatalogIsProposedWithItsIcaoCodeAndNoIata()
+    {
+        var store = new RecordingStore();
+        var command = ValidCommand() with
+        {
+            AirlineProfileId = Guid.Empty,
+            ProposedAirline = new CommercialAirlineProposal("  Caribe Cargo Express ", "do", " ", "ccx",
+                " https://caribecargo.example.com/ "),
+        };
+
+        var result = await new SubmitCommercialRequestHandler(store)
+            .HandleAsync(command, TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(new CommercialAirlineProposal("Caribe Cargo Express", "DO", null, "CCX",
+            "https://caribecargo.example.com/"), store.Written!.ProposedAirline);
+        Assert.Equal(Guid.Empty, store.Written.AirlineProfileId);
+    }
+
+    [Theory]
+    [InlineData(true, "Caribe Cargo", "DO", null, "CCX", null)]
+    [InlineData(false, "Caribe Cargo", "DO", null, "CC", null)]
+    [InlineData(false, "Caribe Cargo", "DO", "ZZ", "CCX", null)]
+    [InlineData(false, "Caribe Cargo", "D", null, "CCX", null)]
+    [InlineData(false, "C", "DO", null, "CCX", null)]
+    [InlineData(false, "Caribe Cargo", "DO", null, "CCX", "http://caribecargo.example.com")]
+    [InlineData(false, "Caribe Cargo", "DO", null, "CCX", "https://user:secret@caribecargo.example.com")]
+    public async Task AProposalNeedsAValidIcaoCountryAndHttpsSiteAndNeverACatalogProfileToo(bool withProfile,
+        string name, string country, string? iata, string icao, string? website)
+    {
+        var store = new RecordingStore();
+        var result = await new SubmitCommercialRequestHandler(store).HandleAsync(ValidCommand() with
+        {
+            AirlineProfileId = withProfile ? Guid.NewGuid() : Guid.Empty,
+            ProposedAirline = new CommercialAirlineProposal(name, country, iata, icao, website),
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest, result.Failure);
+        Assert.Null(store.Written);
+    }
+
+    [Fact]
+    public async Task WithoutAProfileTheApplicationMustProposeTheAirline()
+    {
+        var store = new RecordingStore();
+        var result = await new SubmitCommercialRequestHandler(store).HandleAsync(
+            ValidCommand() with { AirlineProfileId = Guid.Empty }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(CommercialSubmissionFailure.InvalidRequest, result.Failure);
+        Assert.Null(store.Written);
+    }
+
     private static SubmitCommercialRequestCommand ValidCommand() => new(
         Guid.NewGuid(), Guid.NewGuid(), [Guid.NewGuid()],
         "María Pérez", "Representante legal", "maria@example.test", "+1 809 555 0100", true,

@@ -27,3 +27,23 @@ public sealed record EmailDeliveryResponse(Guid Id, string Recipient, string Pur
     DateTimeOffset CreatedAt, DateTimeOffset? SentAt, string? LastError);
 
 public sealed record EmailDeliveriesResponse(bool SmtpConfigured, IReadOnlyList<EmailDeliveryResponse> Deliveries);
+
+/// <summary>
+/// What an outbox email is about (1-N22): <c>Kind</c> is <c>contract</c>, <c>invoice</c>, <c>payment</c>,
+/// <c>account</c> or <c>request</c>; <c>Label</c> is the document code or the person and <c>Context</c>
+/// the airline or organization.
+/// </summary>
+public sealed record EmailReferenceResponse(string Kind, Guid? Id, string Label, string? Context);
+
+/// <summary>
+/// An email of the superadmin outbox, without its body. <c>Reason</c> is the normalized code of a
+/// failed or discarded email (expired, superseded, invitation_closed, smtp_rejected,
+/// smtp_authentication, smtp_unavailable, attachment_unavailable or send_failed).
+/// </summary>
+public sealed record EmailOutboxEntryResponse(Guid Id, string Recipient, string Purpose, string Status, int Attempts,
+    DateTimeOffset CreatedAt, DateTimeOffset? SentAt, DateTimeOffset UpdatedAt, string? Reason,
+    EmailReferenceResponse? Reference);
+
+/// <summary>A page of the superadmin outbox, newest first, and whether SMTP is configured (1-N22).</summary>
+public sealed record EmailOutboxPageResponse(bool SmtpConfigured, int Page, int Limit, bool HasMore,
+    IReadOnlyList<EmailOutboxEntryResponse> Entries);

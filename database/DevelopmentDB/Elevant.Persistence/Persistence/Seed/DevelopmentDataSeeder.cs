@@ -248,7 +248,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             }, DeterministicGuid("service-definition:PASSENGER-BRIDGE").ToString("D")),
             cancellationToken);
 
-        await SeedPublicCommercialCatalogAsync(cancellationToken);
+        var publicServices = await SeedPublicCommercialCatalogAsync(cancellationToken);
 
         var gpuType = await GetOrAddAsync(
             context.EquipmentTypes,
@@ -589,8 +589,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 MinimumQuantity = 1m,
             }, DeterministicGuid("contract-rate:DEV-CONTRACT-0001:PASSENGER-BRIDGE").ToString("D")),
             cancellationToken);
-        await SeedFinanceAsync(financeAccount.Id, airline.Id, [baggageService.Id, passengerBridgeService.Id],
-            cancellationToken);
+        await SeedFinanceAsync(financeAccount.Id, airline.Id,
+            [(baggageService.Id, 130m), (passengerBridgeService.Id, 100m), .. publicServices], cancellationToken);
 
         var turnaround = await GetOrAddAsync(
             context.Turnarounds,
@@ -969,9 +969,12 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             cancellationToken);
     }
 
-    /// <summary>Synthetic Finance reference data: units, base tariffs, charges and one exchange rate.</summary>
-    private async Task SeedFinanceAsync(long financeAccountId, long airlineId, long[] serviceIds,
-        CancellationToken cancellationToken)
+    /// <summary>
+    /// Synthetic Finance reference data: units, base tariffs, charges and one exchange rate. The base
+    /// tariff prices every seeded service, the public catalog included (1-E), in USD and in DOP.
+    /// </summary>
+    private async Task SeedFinanceAsync(long financeAccountId, long airlineId,
+        IReadOnlyList<(long ServiceId, decimal UsdPrice)> basePrices, CancellationToken cancellationToken)
     {
         foreach (var (code, name, scale) in new[]
                  {
@@ -995,7 +998,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                     Note = "Synthetic Development base tariff.", CreatedByAccountId = financeAccountId,
                     PublishedAt = published, PublishedByAccountId = financeAccountId,
                 }, DeterministicGuid($"service-tariff:{currency}:2026").ToString("D")), cancellationToken);
-            foreach (var (serviceId, price) in serviceIds.Zip(new[] { 130m, 100m }))
+            foreach (var (serviceId, price) in basePrices)
                 await GetOrAddAsync(context.ServiceTariffRates,
                     rate => rate.ServiceTariffVersionId == tariff.Id && rate.ServiceDefinitionId == serviceId &&
                         rate.StationId == null,
@@ -1073,35 +1076,43 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 DeterministicGuid($"airline-billing-profile:{airlineId}").ToString("D")), cancellationToken);
     }
 
-    private async Task SeedPublicCommercialCatalogAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// The public catalog services with the synthetic USD base price Finance publishes for each (1-E). They
+    /// are priced per operation, by the unit code. Rows seeded earlier keep their stored unit: the API reads
+    /// and saves a legacy unit name as its code.
+    /// </summary>
+    private async Task<IReadOnlyList<(long ServiceId, decimal UsdPrice)>> SeedPublicCommercialCatalogAsync(
+        CancellationToken cancellationToken)
     {
-        var services = new (string Code, string Name, string Description, string Image)[]
+        var services = new (string Code, string Name, string Description, string Image, decimal UsdPrice)[]
         {
-            ("RAMP-CARGO", "Carga y descarga", "Traslado y manipulación de equipaje y carga entre aeronave y plataforma.", "cargo-loading.webp"),
-            ("RAMP-TOW", "Remolque de aeronaves", "Movimiento de aeronaves en plataforma con equipos y personal de rampa.", "aircraft-towing.webp"),
-            ("RAMP-AC", "Aire acondicionado", "Suministro de aire acondicionado en tierra durante la escala.", "ground-air-conditioning.webp"),
-            ("RAMP-GPU", "Unidad generadora de energía", "Energía eléctrica en tierra para la aeronave durante la operación.", "ground-power.webp"),
-            ("RAMP-ASU", "Unidad generadora a reacción", "Suministro de aire de arranque mediante unidad de apoyo en tierra.", "air-start-unit.webp"),
-            ("RAMP-PARKING", "Asistencia de parqueo de aeronaves", "Guiado y asistencia durante el ingreso y posicionamiento en plataforma.", "aircraft-marshalling.webp"),
-            ("RAMP-STAIRS", "Escaleras móviles", "Posicionamiento de escaleras para embarque y desembarque remoto.", "mobile-stairs.webp"),
+            ("RAMP-CARGO", "Carga y descarga", "Traslado y manipulación de equipaje y carga entre aeronave y plataforma.", "cargo-loading.webp", 85m),
+            ("RAMP-TOW", "Remolque de aeronaves", "Movimiento de aeronaves en plataforma con equipos y personal de rampa.", "aircraft-towing.webp", 120m),
+            ("RAMP-AC", "Aire acondicionado", "Suministro de aire acondicionado en tierra durante la escala.", "ground-air-conditioning.webp", 95m),
+            ("RAMP-GPU", "Unidad generadora de energía", "Energía eléctrica en tierra para la aeronave durante la operación.", "ground-power.webp", 75m),
+            ("RAMP-ASU", "Unidad generadora a reacción", "Suministro de aire de arranque mediante unidad de apoyo en tierra.", "air-start-unit.webp", 140m),
+            ("RAMP-PARKING", "Asistencia de parqueo de aeronaves", "Guiado y asistencia durante el ingreso y posicionamiento en plataforma.", "aircraft-marshalling.webp", 45m),
+            ("RAMP-STAIRS", "Escaleras móviles", "Posicionamiento de escaleras para embarque y desembarque remoto.", "mobile-stairs.webp", 60m),
         };
+        var prices = new List<(long ServiceId, decimal UsdPrice)>(services.Length);
         for (var index = 0; index < services.Length; index++)
         {
             var service = services[index];
-            await GetOrAddAsync(context.ServiceDefinitions,
+            var definition = await GetOrAddAsync(context.ServiceDefinitions,
                 item => item.Code == service.Code,
                 () => Stamp(new ServiceDefinition
                 {
                     Code = service.Code,
                     Name = service.Name,
                     Description = service.Description,
-                    DefaultBillingUnit = "operación",
+                    DefaultBillingUnit = "operation",
                     IsActive = true,
                     IsPublic = true,
                     DisplayOrder = index + 1,
                     ImageUrl = $"/assets/services/{service.Image}",
                 }, DeterministicGuid($"public-service:{service.Code}").ToString("D")),
                 cancellationToken);
+            prices.Add((definition.Id, service.UsdPrice));
         }
 
         var airlines = new (string Region, string Names)[]
@@ -1138,6 +1149,7 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                 }, DeterministicGuid($"aviam-client:{name}").ToString("D")),
                 cancellationToken);
         }
+        return prices;
     }
 
     /// <summary>

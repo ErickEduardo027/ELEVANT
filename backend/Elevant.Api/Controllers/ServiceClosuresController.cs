@@ -13,9 +13,14 @@ namespace Elevant.Api.Controllers;
 public sealed record CreateServiceClosureRequest(Guid RequestId, Guid ServiceId,
     string Reason);
 public sealed record DecideServiceClosureRequest(bool Approve, string? Reason,
-    string Version);
-public sealed record ReopenServiceRequest(string Reason, string ServiceVersion);
+    string? Version);
+public sealed record ReopenServiceRequest(string? Reason, string? ServiceVersion);
 
+/// <summary>
+/// OCC reports that a service cannot be performed, Contratos decides with four eyes and republishes
+/// it with a reason. Approval works on a service that is already hidden or retired; a retired service
+/// is reactivated in the catalog before it is republished (1-N11). Every failure carries a code.
+/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
@@ -36,7 +41,7 @@ public sealed class ServiceClosuresController(IServiceClosureStore store,
             page > int.MaxValue / limit ||
             status is not null && !new[] { "Pending", "Approved", "Denied" }
                 .Contains(status, StringComparer.OrdinalIgnoreCase))
-            return Problem(statusCode: 400, title: "Invalid filter.");
+            return Coded(400, "El filtro no es válido.", "invalid_closure_query");
         var result = await store.ListAsync(actorId, status, page, limit,
             cancellationToken);
         return result is null ? Forbid() : Ok(result);
@@ -44,6 +49,8 @@ public sealed class ServiceClosuresController(IServiceClosureStore store,
 
     [HttpPost(Name = "CreateServiceClosure")]
     [ProducesResponseType<ServiceClosureData>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(16 * 1024)]
     public async Task<IActionResult> Create([FromBody] CreateServiceClosureRequest input,
         CancellationToken cancellationToken)
@@ -51,35 +58,54 @@ public sealed class ServiceClosuresController(IServiceClosureStore store,
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.RequestAsync(actorId, input.RequestId,
             input.ServiceId, input.Reason, cancellationToken);
-        return result.Failure is { } failure ? Failure(failure) :
+        return result.Failure is { } failure ? Failure(failure, result.Code) :
             StatusCode(201, result.Request);
     }
 
+    /// <summary>
+    /// Approves or denies a pending request. The Idempotency-Key is optional while older clients exist
+    /// (expand); <c>version</c> is the request rowversion on screen.
+    /// </summary>
     [HttpPost("{id:guid}/decision", Name = "DecideServiceClosure")]
     [ProducesResponseType<ServiceClosureData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(16 * 1024)]
     public async Task<IActionResult> Decide(Guid id,
         [FromBody] DecideServiceClosureRequest input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
         CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.DecideAsync(actorId, id, input.Approve,
-            input.Reason, input.Version, cancellationToken);
-        if (result.Failure is { } failure) return Failure(failure);
+            input.Reason, input.Version, idempotencyKey, cancellationToken);
+        if (result.Failure is { } failure) return Failure(failure, result.Code);
         if (input.Approve) await BroadcastCatalogChangeAsync();
         return Ok(result.Request);
     }
 
+    /// <summary>
+    /// Republishes a service its approved closure hid, with a reason; a retired service answers
+    /// <c>service_retired</c> until it is reactivated. The Idempotency-Key is optional while older
+    /// clients exist (expand); <c>serviceVersion</c> is the service rowversion on screen.
+    /// </summary>
     [HttpPost("services/{id:guid}/reopen", Name = "ReopenService")]
     [ProducesResponseType<ServiceClosureData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(16 * 1024)]
     public async Task<IActionResult> Reopen(Guid id, [FromBody] ReopenServiceRequest input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
         CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.ReopenAsync(actorId, id, input.Reason,
-            input.ServiceVersion, cancellationToken);
-        if (result.Failure is { } failure) return Failure(failure);
+            input.ServiceVersion, idempotencyKey, cancellationToken);
+        if (result.Failure is { } failure) return Failure(failure, result.Code);
         await BroadcastCatalogChangeAsync();
         return Ok(result.Request);
     }
@@ -92,13 +118,23 @@ public sealed class ServiceClosuresController(IServiceClosureStore store,
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
 
-    private IActionResult Failure(ServiceClosureFailure failure) => failure switch
+    // Every failure carries a code; the clients explain the code, never the title.
+    private IActionResult Failure(ServiceClosureFailure failure, string? code) => failure switch
     {
+        ServiceClosureFailure.Forbidden when code is not null =>
+            Coded(403, "No puede decidir esta solicitud de clausura.", code),
         ServiceClosureFailure.Forbidden => Forbid(),
-        ServiceClosureFailure.Invalid => Problem(statusCode: 400, title: "Invalid closure data."),
-        ServiceClosureFailure.NotFound => Problem(statusCode: 404, title: "Service or request not found."),
-        ServiceClosureFailure.Conflict => Problem(statusCode: 409,
-            title: "Service or request changed; reload and retry."),
+        ServiceClosureFailure.Invalid => Coded(400, "Los datos de la clausura no son válidos.", code ?? "invalid_closure"),
+        ServiceClosureFailure.NotFound => Coded(404, "El servicio o la solicitud ya no existe.", code ?? "not_found"),
+        ServiceClosureFailure.Conflict => Coded(409, "El servicio o la solicitud cambió; actualice e intente de nuevo.",
+            code ?? "version_conflict"),
         _ => throw new InvalidOperationException(),
     };
+
+    private ObjectResult Coded(int status, string title, string code)
+    {
+        var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
+    }
 }

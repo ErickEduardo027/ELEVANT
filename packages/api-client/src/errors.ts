@@ -4,10 +4,68 @@ export type ElevantApiErrorKind = "http" | "malformed-response";
 const CONTRACT_CODES = ["validity_pending", "airline_signature_pending", "signature_image_invalid", "renewal_mode_invalid",
   "valid_to_required", "dates_invalid", "valid_from_past", "renewal_term_required", "renewal_term_invalid",
   "renewal_notice_invalid", "termination_notice_invalid", "termination_terms_too_long", "packages_out_of_range"] as const;
+/**
+ * Generic command codes, the same in every module: stale rowversion, reused Idempotency-Key, missing
+ * key or expected version, missing or invalid reason, and a route resource that does not exist.
+ */
+const COMMON_COMMAND_CODES = ["version_conflict", "idempotency_conflict", "idempotency_key_required",
+  "expected_version_required", "reason_required", "not_found"] as const;
+/**
+ * Review of public commercial requests (phase 1): inbox, airline verification, representative
+ * confirmation, cancellation and decision; the public intake; and the default codes of the
+ * provisioning and airline-catalog screens of Superadministración.
+ */
+const COMMERCIAL_REQUEST_CODES = ["request_closed", "airline_unverified", "representative_unconfirmed",
+  "representative_already_confirmed", "airline_already_contracted", "airline_has_portal_account",
+  "airline_code_in_use", "airline_profile_conflict", "airline_identity_locked", "airline_already_linked",
+  "profile_not_found", "invalid_airline", "stations_invalid", "confirmation_note_required",
+  "invalid_commercial_request", "invalid_inbox_query", "invalid_application", "airline_unavailable",
+  "service_unavailable", "receipt_not_found", "request_unavailable", "email_in_use", "invalid_provisioning",
+  "invitations_unavailable", "invitation_already_accepted", "registry_check_required"] as const;
+/**
+ * Contract drafts (phase 1, block B): one code per cause that blocks the submission to Finance (the
+ * readiness), the scope, the discard and the observations; the Finance approval codes of each blocking
+ * cause; and a contract closed before it activated.
+ */
+const CONTRACT_DRAFT_CODES = ["invalid_draft", "draft_closed", "draft_in_finance_review", "portal_account_missing",
+  "terms_missing", "services_missing", "rates_unconfirmed", "stations_missing", "service_retired", "package_not_eligible",
+  "valid_from_not_after_current", "finance_reviewer_missing", "service_not_found", "service_in_package", "scope_invalid",
+  "comment_required", "ambiguous_package_coverage", "package_service_not_in_contract", "invalid_contract_decision",
+  "contract_terminated"] as const;
+/**
+ * Finance (phase 1, block C): the discard and retirement of packages and a retired package in a draft
+ * (1-N27); the contract amendment (1-C); unit codes in the whole cycle (1-E); and the coded failures of
+ * the billing units, the service and charge tariffs and the exchange rates.
+ */
+const FINANCE_COMMAND_CODES = ["package_not_draft", "package_not_published", "package_retired", "billing_unit_unknown",
+  "invalid_amendment", "contract_not_amendable", "draft_in_progress", "no_approved_version", "valid_from_after_current_end",
+  "invalid_billing_unit", "billing_unit_exists", "billing_unit_code_locked", "billing_unit_required", "invalid_tariff",
+  "tariff_draft_exists", "tariff_not_found", "tariff_empty", "tariff_start_not_after_current", "invalid_charge",
+  "charge_code_exists", "charge_not_found", "invalid_exchange_rate", "exchange_rate_exists", "invalid_finance_data"] as const;
+/**
+ * Catalog of services and closures (phase 1, block D): «Dar de baja» refused while a contract uses the service, the
+ * form that never retires, a closure that keeps the service hidden until it is reopened, the publication rules of a
+ * service, and the closure workflow. A retired service is `service_retired` (CONTRACT_DRAFT_CODES).
+ */
+const CATALOG_CODES = ["service_in_active_contract", "retirement_command_required", "closure_requires_reopen",
+  "service_code_exists", "invalid_service", "media_invalid", "image_required", "description_too_short",
+  "placeholder_name", "invalid_closure", "invalid_closure_query", "closure_pending", "closure_not_pending",
+  "closure_self_decision", "service_not_published", "service_already_public", "no_approved_closure"] as const;
+/**
+ * Superadministración (phase 1, block E): the email of a provisioning that already has an account and why it can or
+ * cannot be linked (1-N13), the invalid portal user data of Clientes and the invalid outbox filter (1-N22). The
+ * provisioning codes it shares with Contratos (`email_in_use`, `request_unavailable`…) live in
+ * COMMERCIAL_REQUEST_CODES.
+ */
+const GOVERNANCE_ACCOUNT_CODES = ["email_has_account", "email_in_use_other_airline", "email_in_use_internal",
+  "account_disabled", "account_not_found", "invalid_client_user", "invalid_email_outbox_query"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
-  (typeof CONTRACT_CODES)[number];
+  (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
+  (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
+  (typeof GOVERNANCE_ACCOUNT_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
-  "invalid_link", "refresh_rotated", ...CONTRACT_CODES];
+  "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
+  ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

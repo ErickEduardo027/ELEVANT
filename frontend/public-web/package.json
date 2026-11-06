@@ -19,7 +19,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "test:e2e:stack": "playwright test --config playwright.stack.config.ts"
+    "test:e2e:stack": "playwright test --config playwright.stack.config.ts",
+    "test:e2e:cycle": "playwright test --config playwright.cycle.config.ts"
   },
   "dependencies": {
     "@elevant/api-client": "file:../../packages/api-client",

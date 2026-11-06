@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const API = process.env.E2E_STACK_API ?? "http://127.0.0.1:18088";
+const API = process.env.E2E_STACK_API ?? "http://127.0.0.1:8080";
 const MAILPIT = process.env.E2E_STACK_MAILPIT ?? "http://127.0.0.1:8025";
 const PUBLIC_API = "https://api.stack.elevant.test";
 const EMAIL = "airline.client@dev.elevant.test";

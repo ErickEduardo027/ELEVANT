@@ -94,6 +94,35 @@ public sealed class PortalAccountController(IAccountEmailStore accountEmails, IE
             : Ok(new EmailDeliveriesResponse(sender.IsConfigured, deliveries.Select(Map).ToArray()));
     }
 
+    /// <summary>
+    /// The outbox for the superadmin (1-N22): filter by status (<c>All</c>, <c>Pending</c>, <c>Sent</c>,
+    /// <c>Failed</c> or <c>Discarded</c>), the normalized reason of each email and the contract,
+    /// invoice, payment, account or request it is about. Bodies are never returned.
+    /// </summary>
+    [Authorize]
+    [HttpGet("~/api/v{version:apiVersion}/governance/email/outbox", Name = "ListEmailOutbox")]
+    [ProducesResponseType<EmailOutboxPageResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    public async Task<IActionResult> Outbox([FromQuery] string? status = null, [FromQuery] int page = 1,
+        [FromQuery] int limit = 25, CancellationToken cancellationToken = default)
+    {
+        if (!TryAccount(out var actorId)) return Problem(statusCode: 401, title: "Authentication failed.");
+        var query = new EmailOutboxQuery(string.IsNullOrWhiteSpace(status) ? EmailOutboxQuery.All : status.Trim(), page, limit);
+        if (!query.IsValid)
+            return CodedProblem("invalid_email_outbox_query", "El filtro de la bandeja de correos no es válido.");
+        var outboxPage = await outbox.ListOutboxAsync(actorId, query, cancellationToken);
+        return outboxPage is null
+            ? Problem(statusCode: 403, title: "Solo el superadministrador revisa la bandeja de correos.")
+            : Ok(new EmailOutboxPageResponse(sender.IsConfigured, outboxPage.Page, outboxPage.Limit, outboxPage.HasMore,
+                outboxPage.Entries.Select(item => new EmailOutboxEntryResponse(item.Id, item.Recipient, item.Purpose,
+                    item.Status, item.Attempts, item.CreatedAt, item.SentAt, item.UpdatedAt, item.Reason,
+                    item.Reference is { } reference
+                        ? new EmailReferenceResponse(reference.Kind, reference.Id, reference.Label, reference.Context)
+                        : null)).ToArray()));
+    }
+
     private IActionResult Outcome(AccountEmailResult result) => result.Failure switch
     {
         null => NoContent(),

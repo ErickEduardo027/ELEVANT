@@ -469,3 +469,119 @@ it("shows the public-registry seal in step 2 only for airlines the registry conf
   choose("Seleccione una aerolínea", confirmedId);
   expect(await screen.findByText(/Verificada en registro público \(Wikidata\)/)).toBeInTheDocument();
 });
+
+async function fillRepresentative() {
+  fireEvent.change(screen.getByRole("textbox", { name: "Nombre completo" }), { target: { value: "Alex Test" } });
+  choose("Cargo", "Gerente de operaciones");
+  fireEvent.change(screen.getByRole("textbox", { name: "Correo corporativo" }),
+    { target: { value: "alex@caribecargo.example.com" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Teléfono" }), { target: { value: "+1 809 555 0100" } });
+  choose("Tipo de documento", "NationalId");
+  fireEvent.change(screen.getByRole("textbox", { name: "Número de documento" }), { target: { value: "00112345673" } });
+  await chooseDominicanLocation();
+  fireEvent.click(screen.getByRole("checkbox", { name: /Declaro que estoy autorizado/i }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+}
+
+it("proposes an airline that is not in the listing, with its ICAO code and no IATA", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  const posts: Array<Record<string, unknown>> = [];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (url, init) => {
+    if (String(url).endsWith("commercial-catalog"))
+      return new Response(JSON.stringify(catalog), { headers: { "content-type": "application/json" } });
+    if (String(url).endsWith("commercial-requests") && init?.method === "POST") {
+      posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ reference: "REQ-PROPOSAL", replayed: false }),
+        { status: 201, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Mi aerolínea no aparece" }));
+  expect(screen.queryByRole("combobox", { name: "Seleccione una aerolínea" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(screen.getByText("Escriba el nombre de la aerolínea.")).toBeInTheDocument();
+  expect(screen.getByText("Escriba el código ICAO de la aerolínea: 3 letras.")).toBeInTheDocument();
+  expect(screen.getByText(/PASO 02 \/ 04/i)).toBeInTheDocument();
+
+  fireEvent.change(screen.getByRole("textbox", { name: "Nombre de la aerolínea" }), { target: { value: "Caribe Cargo Express" } });
+  choose("País de la aerolínea", "DO");
+  fireEvent.change(screen.getByRole("textbox", { name: "Código ICAO" }), { target: { value: "ccx" } });
+  fireEvent.change(screen.getByRole("textbox", { name: "Sitio web oficial (opcional)" }),
+    { target: { value: "https://caribecargo.example.com" } });
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(screen.getByText(/en nombre de Caribe Cargo Express/)).toBeInTheDocument();
+  await fillRepresentative();
+  expect(screen.getByText(/No figura en el listado · República Dominicana · ICAO CCX · Sin IATA/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /Enviar solicitud/i }));
+  expect(await screen.findByText("REQ-PROPOSAL")).toBeInTheDocument();
+  expect(screen.getByRole("status")).toHaveTextContent("le escribirá a alex@caribecargo.example.com con su decisión");
+  expect(posts[0]).toMatchObject({ airlineProfileId: null, proposedAirline: { name: "Caribe Cargo Express",
+    countryCode: "DO", iataCode: null, icaoCode: "CCX", websiteUrl: "https://caribecargo.example.com" } });
+});
+
+it("offers the proposal right away when no airline is published and points to a listed ICAO code", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ ...catalog, airlines: [] }),
+    { headers: { "content-type": "application/json" } })));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(screen.getByRole("note")).toHaveTextContent("Aún no hay aerolíneas publicadas");
+  expect(screen.getByRole("textbox", { name: "Nombre de la aerolínea" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Elegir del listado" })).not.toBeInTheDocument();
+  cleanup();
+
+  const listed = { ...catalog.airlines[0], name: "Copa Airlines", icaoCode: "CMP", iataCode: "CM" };
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ ...catalog, airlines: [listed] }),
+    { headers: { "content-type": "application/json" } })));
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Mi aerolínea no aparece" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Código ICAO" }), { target: { value: "cmp" } });
+  expect(screen.getByRole("note")).toHaveTextContent("ya figura en el listado");
+  fireEvent.click(screen.getByRole("button", { name: "Elegir Copa Airlines" }));
+  expect(screen.getByRole("combobox", { name: "Seleccione una aerolínea" })).toHaveValue(airlineId);
+});
+
+it("describes each field of a proposed airline with its error and its help (1-N25)", async () => {
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_API_URL", "https://api.example.test");
+  const { AccessRequestWizard } = await import("@/components/commercial/AccessRequestWizard");
+  stubCatalogOnly();
+  render(<AccessRequestWizard />);
+  fireEvent.click(await screen.findByRole("button", { name: "Añadir servicio +" }));
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  fireEvent.click(screen.getByRole("button", { name: "Mi aerolínea no aparece" }));
+  const name = screen.getByRole("textbox", { name: "Nombre de la aerolínea" });
+  const icao = screen.getByRole("textbox", { name: "Código ICAO" });
+  const iataHelp = "Déjelo vacío si la aerolínea no tiene código IATA.";
+  // Before an attempt only the help describes a field.
+  expect(icao).toHaveAccessibleDescription("Obligatorio: 3 letras, por ejemplo CMP.");
+  expect(name).not.toHaveAttribute("aria-describedby");
+
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(name).toHaveFocus();
+  expect(name).toHaveAccessibleDescription("Escriba el nombre de la aerolínea.");
+  expect(field("País de la aerolínea")).toHaveAccessibleDescription("Seleccione el país de la aerolínea.");
+  expect(icao).toHaveAccessibleDescription(
+    "Escriba el código ICAO de la aerolínea: 3 letras. Obligatorio: 3 letras, por ejemplo CMP.");
+  expect(screen.getByRole("textbox", { name: "Código IATA (opcional)" })).toHaveAccessibleDescription(iataHelp);
+  expect(screen.getByRole("textbox", { name: "Sitio web oficial (opcional)" }))
+    .toHaveAccessibleDescription("Ayuda a Contratos a confirmar la aerolínea y a su representante.");
+
+  // The focus goes to the field still wrong, which says why.
+  fireEvent.change(name, { target: { value: "Caribe Cargo Express" } });
+  choose("País de la aerolínea", "DO");
+  fireEvent.change(icao, { target: { value: "cm" } });
+  fireEvent.click(screen.getByRole("button", { name: /Continuar/i }));
+  expect(icao).toHaveFocus();
+  expect(icao).toHaveAttribute("aria-invalid", "true");
+  expect(icao).toHaveAccessibleDescription(
+    "Escriba el código ICAO de la aerolínea: 3 letras. Obligatorio: 3 letras, por ejemplo CMP.");
+  expect(name).not.toHaveAttribute("aria-describedby");
+});

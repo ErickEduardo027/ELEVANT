@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// End-to-end against the real local stack (API on 127.0.0.1:18088, SQL Server and Mailpit on
+// End-to-end against the real local stack (API on 127.0.0.1:8080, SQL Server and Mailpit on
 // 127.0.0.1:8025): emails are really sent and read back from Mailpit. Not part of CI; run with
 // `npm run test:e2e:stack` after `docker compose ... up` (see docs/deployment).
 const port = Number(process.env.E2E_STACK_PORT ?? 4174);

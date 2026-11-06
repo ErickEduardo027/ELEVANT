@@ -35,6 +35,8 @@ public static class ContractLifecycle
         (ContractLifecycleAction.Reactivate, ContractStatus.Suspended) => ContractStatus.Active,
         (ContractLifecycleAction.Terminate, ContractStatus.Active or ContractStatus.Suspended or ContractStatus.Expired) =>
             ContractStatus.Terminated,
+        // «Descartar contrato»: a contract that never activated is closed with its open versions (1-B).
+        (ContractLifecycleAction.Terminate, ContractStatus.Draft) => ContractStatus.Terminated,
         // Renewal adds a draft version; the contract keeps its state until that version is approved and signed.
         (ContractLifecycleAction.Renew, ContractStatus.Active or ContractStatus.Suspended or ContractStatus.Expired) => current,
         _ => null,

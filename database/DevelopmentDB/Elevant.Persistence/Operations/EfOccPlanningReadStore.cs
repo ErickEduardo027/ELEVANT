@@ -81,7 +81,7 @@ internal sealed class EfOccPlanningReadStore(
                     turnaround.CurrentStatus,
                     Airline = new OccAirlineData(
                         airline.PublicId,
-                        airline.IataCode,
+                        airline.IataCode ?? string.Empty,
                         airline.IcaoCode,
                         airline.Name),
                     Aircraft = aircraft == null

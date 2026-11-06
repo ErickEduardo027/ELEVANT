@@ -35,8 +35,14 @@ public static class AccountEmailTemplates
         action: ("Activar mi cuenta", link),
         security: "Si no esperabas este correo, ignóralo: nadie podrá entrar sin este enlace.");
 
+    /// <summary>
+    /// Subject of every login-code email. The code never goes in the subject: the outbox keeps the
+    /// subject after it clears the body, and a code must not outlive its email (1-N09).
+    /// </summary>
+    public const string LoginCodeSubject = "Tu código de acceso ELEVANT";
+
     public static EmailMessage LoginCode(string to, string code) => Build(to,
-        subject: $"Tu código de acceso ELEVANT: {code}",
+        subject: LoginCodeSubject,
         preheader: $"Tu código es {code}. Vence en 10 minutos.",
         kicker: "Seguridad de tu cuenta",
         title: "Tu código de acceso",
@@ -112,6 +118,52 @@ public static class AccountEmailTemplates
         code: null,
         action: null,
         security: "Si no reconoces este pago, contacta a Finanzas de AVIAM.");
+
+    /// <summary>Contratos approved the public request; the contract and the portal access follow (1-N02).</summary>
+    public static EmailMessage CommercialRequestApproved(string to, string name, string airline, string reference) => Build(to,
+        subject: "Tu solicitud de servicios a AVIAM fue aprobada · ELEVANT",
+        preheader: $"AVIAM aprobó la solicitud de servicios de {airline}.",
+        kicker: "Solicitud de servicios",
+        title: "Solicitud aprobada",
+        greeting: $"Hola, {name}:",
+        paragraphs: [$"Contratos de AVIAM aprobó la solicitud de servicios de rampa de {airline} (referencia {reference}).",
+            "AVIAM preparará el borrador del contrato y el acceso de tu aerolínea al portal. Te escribiremos a este correo con el siguiente paso."],
+        validity: "Decisión de Contratos",
+        code: null,
+        action: null,
+        security: "Si no presentaste esta solicitud, avisa a AVIAM respondiendo por los canales de contacto de su sitio.");
+
+    /// <summary>Contratos rejected the public request; the applicant learns why (1-N02).</summary>
+    public static EmailMessage CommercialRequestRejected(string to, string name, string airline, string reference,
+        string reason) => Build(to,
+        subject: "Tu solicitud de servicios a AVIAM no fue aprobada · ELEVANT",
+        preheader: $"Contratos revisó la solicitud de servicios de {airline}.",
+        kicker: "Solicitud de servicios",
+        title: "Solicitud no aprobada",
+        greeting: $"Hola, {name}:",
+        paragraphs: [$"Contratos de AVIAM revisó la solicitud de servicios de {airline} (referencia {reference}) y no la aprobó.",
+            $"Motivo: {reason}",
+            "Si corresponde, puedes enviar una solicitud nueva con los datos corregidos desde el sitio de AVIAM."],
+        validity: "Decisión de Contratos",
+        code: null,
+        action: null,
+        security: "Si no presentaste esta solicitud, ignora este correo.");
+
+    /// <summary>Contratos cancelled the public request, for example a duplicate one (1-A, 1-N02).</summary>
+    public static EmailMessage CommercialRequestCancelled(string to, string name, string airline, string reference,
+        string reason) => Build(to,
+        subject: "Tu solicitud de servicios a AVIAM fue cancelada · ELEVANT",
+        preheader: $"Contratos canceló la solicitud de servicios de {airline}.",
+        kicker: "Solicitud de servicios",
+        title: "Solicitud cancelada",
+        greeting: $"Hola, {name}:",
+        paragraphs: [$"Contratos de AVIAM canceló la solicitud de servicios de {airline} (referencia {reference}).",
+            $"Motivo: {reason}",
+            "Si aún necesitas los servicios, puedes enviar una solicitud nueva desde el sitio de AVIAM."],
+        validity: "Cancelada por Contratos",
+        code: null,
+        action: null,
+        security: "Si no presentaste esta solicitud, ignora este correo.");
 
     public static EmailMessage Test(string to, DateTimeOffset? sentAt = null) => Build(to,
         subject: "Prueba de correo ELEVANT",

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
+import { billingUnitLabel } from '../../../services/billingUnits';
 import { getManagedContracts } from '../../../services/commercialGovernanceApi';
 import ContractDetailDrawer from './ContractDetailDrawer';
 
@@ -15,7 +16,7 @@ function date(value) {
 }
 
 export default function ManagedAgreementsPage({ mode = 'contracts', canSign = false, canManageLifecycle = false,
-  canSetValidity = false, onNewContract }) {
+  canSetValidity = false, canAmend = false, onOpenDrafts, onNewContract }) {
   const [detailId, setDetailId] = useState(null);
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
@@ -80,7 +81,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
         <tbody>{rates.map(rate => <tr key={`${rate.version.id}-${rate.id}`} className="border-t border-black/5 dark:border-white/10">
           <td className="p-3"><strong>{rate.serviceName}</strong><span className="block text-xs">{rate.serviceCode}</span></td>
           <td className="p-3">{rate.contract.code}<span className="block text-xs">{rate.contract.airline}</span></td>
-          <td className="p-3">{rate.version.currencyCode} {Number(rate.unitPrice).toFixed(4)}<span className="block text-xs">{rate.billingUnit} · mínimo {rate.minimumQuantity}</span></td>
+          <td className="p-3">{rate.version.currencyCode} {Number(rate.unitPrice).toFixed(4)}<span className="block text-xs">Por {billingUnitLabel(rate.billingUnit)} · mínimo {rate.minimumQuantity}</span></td>
           <td className="p-3">{rate.version.stations.map(station => station.code).join(', ') || 'Sin estación'}</td>
           <td className="p-3">{rate.version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'}</td>
           <td className="p-3">{date(rate.version.validFrom)} — {date(rate.version.validTo)}</td>
@@ -98,6 +99,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
         <button type="button" disabled={!state.result?.hasMore} onClick={() => setPage(value => value + 1)} className="rounded-lg border px-3 py-2 disabled:opacity-40">Siguiente página</button>
       </nav>
     </>}
-    <ContractDetailDrawer versionId={detailId} canSign={canSign} canManageLifecycle={canManageLifecycle} canSetValidity={canSetValidity} onClose={() => setDetailId(null)} onSigned={refresh} />
+    <ContractDetailDrawer versionId={detailId} canSign={canSign} canManageLifecycle={canManageLifecycle} canSetValidity={canSetValidity}
+      canAmend={canAmend} onOpenDrafts={onOpenDrafts} onClose={() => setDetailId(null)} onSigned={refresh} />
   </div>;
 }

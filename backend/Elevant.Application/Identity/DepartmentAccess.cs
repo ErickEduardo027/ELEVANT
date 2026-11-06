@@ -137,7 +137,9 @@ public static class DepartmentAccessResolver
                     yield return "contracts.requests.verify";
                     yield return "contracts.requests.approve";
                     yield return "contracts.requests.reject";
+                    yield return "contracts.requests.cancel";
                     yield return "contracts.drafts.edit";
+                    yield return "contracts.drafts.delete";
                     yield return "contracts.drafts.activate";
                     break;
                 case "commercial.service_closures.read": yield return "contracts.service_closures.read"; break;

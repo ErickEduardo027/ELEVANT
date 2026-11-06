@@ -11,6 +11,13 @@ const query = params => {
   return text ? `?${text}` : '';
 };
 
+/**
+ * The intent's Idempotency-Key in the header (1-E): a retry of an uncertain result sends the same key with the
+ * same body, so the API replays the first result. Without a key the API still accepts the command (expand).
+ */
+const keyed = (options, idempotencyKey) =>
+  (idempotencyKey ? { ...options, headers: { ...options.headers, 'Idempotency-Key': idempotencyKey } } : options);
+
 export const FINANCE_CURRENCIES = ['USD', 'DOP'];
 
 // Catalog services Finance can price
@@ -18,45 +25,52 @@ export const listFinanceServices = () => commercialApi('/finance/services');
 
 // Billing units
 export const listBillingUnits = () => commercialApi('/finance/billing-units');
-export const saveBillingUnit = (id, values) =>
-  commercialApi(id ? `/finance/billing-units/${id}` : '/finance/billing-units', json(id ? 'PUT' : 'POST', values));
+export const saveBillingUnit = (id, values, idempotencyKey) =>
+  commercialApi(id ? `/finance/billing-units/${id}` : '/finance/billing-units',
+    keyed(json(id ? 'PUT' : 'POST', values), idempotencyKey));
 
 // Base service tariff
 export const listServiceTariffs = currency => commercialApi(`/finance/service-tariffs${query({ currency })}`);
 export const getServiceTariff = id => commercialApi(`/finance/service-tariffs/${id}`);
-export const createServiceTariffDraft = values => commercialApi('/finance/service-tariffs', json('POST', values));
-export const saveServiceTariffDraft = (id, values) => commercialApi(`/finance/service-tariffs/${id}`, json('PUT', values));
-export const publishServiceTariff = (id, expectedVersion) =>
-  commercialApi(`/finance/service-tariffs/${id}/publish`, json('POST', { expectedVersion }));
-export const deleteServiceTariffDraft = (id, expectedVersion) =>
-  commercialApi(`/finance/service-tariffs/${id}${query({ expectedVersion })}`, { method: 'DELETE' });
+export const createServiceTariffDraft = (values, idempotencyKey) =>
+  commercialApi('/finance/service-tariffs', keyed(json('POST', values), idempotencyKey));
+export const saveServiceTariffDraft = (id, values, idempotencyKey) =>
+  commercialApi(`/finance/service-tariffs/${id}`, keyed(json('PUT', values), idempotencyKey));
+export const publishServiceTariff = (id, expectedVersion, idempotencyKey) =>
+  commercialApi(`/finance/service-tariffs/${id}/publish`, keyed(json('POST', { expectedVersion }), idempotencyKey));
+export const deleteServiceTariffDraft = (id, expectedVersion, idempotencyKey) =>
+  commercialApi(`/finance/service-tariffs/${id}${query({ expectedVersion })}`, keyed({ method: 'DELETE' }, idempotencyKey));
 
 // Charges
 export const listCharges = () => commercialApi('/finance/charges');
-export const saveCharge = (id, values) =>
-  commercialApi(id ? `/finance/charges/${id}` : '/finance/charges', json(id ? 'PUT' : 'POST', values));
+export const saveCharge = (id, values, idempotencyKey) =>
+  commercialApi(id ? `/finance/charges/${id}` : '/finance/charges', keyed(json(id ? 'PUT' : 'POST', values), idempotencyKey));
 export const listChargeTariffs = currency => commercialApi(`/finance/charge-tariffs${query({ currency })}`);
 export const getChargeTariff = id => commercialApi(`/finance/charge-tariffs/${id}`);
-export const createChargeTariffDraft = values => commercialApi('/finance/charge-tariffs', json('POST', values));
-export const saveChargeTariffDraft = (id, values) => commercialApi(`/finance/charge-tariffs/${id}`, json('PUT', values));
-export const publishChargeTariff = (id, expectedVersion) =>
-  commercialApi(`/finance/charge-tariffs/${id}/publish`, json('POST', { expectedVersion }));
-export const deleteChargeTariffDraft = (id, expectedVersion) =>
-  commercialApi(`/finance/charge-tariffs/${id}${query({ expectedVersion })}`, { method: 'DELETE' });
+export const createChargeTariffDraft = (values, idempotencyKey) =>
+  commercialApi('/finance/charge-tariffs', keyed(json('POST', values), idempotencyKey));
+export const saveChargeTariffDraft = (id, values, idempotencyKey) =>
+  commercialApi(`/finance/charge-tariffs/${id}`, keyed(json('PUT', values), idempotencyKey));
+export const publishChargeTariff = (id, expectedVersion, idempotencyKey) =>
+  commercialApi(`/finance/charge-tariffs/${id}/publish`, keyed(json('POST', { expectedVersion }), idempotencyKey));
+export const deleteChargeTariffDraft = (id, expectedVersion, idempotencyKey) =>
+  commercialApi(`/finance/charge-tariffs/${id}${query({ expectedVersion })}`, keyed({ method: 'DELETE' }, idempotencyKey));
 
 // Exchange rates
 export const listExchangeRates = (from, to, includeHistory = false) =>
   commercialApi(`/finance/exchange-rates${query({ from, to, includeHistory })}`);
-export const recordExchangeRate = values => commercialApi('/finance/exchange-rates', json('POST', values));
-export const correctExchangeRate = (id, values) =>
-  commercialApi(`/finance/exchange-rates/${id}/correction`, json('POST', values));
+export const recordExchangeRate = (values, idempotencyKey) =>
+  commercialApi('/finance/exchange-rates', keyed(json('POST', values), idempotencyKey));
+export const correctExchangeRate = (id, values, idempotencyKey) =>
+  commercialApi(`/finance/exchange-rates/${id}/correction`, keyed(json('POST', values), idempotencyKey));
 
 // Contract approvals
 export const listContractApprovals = (pendingOnly = true) =>
   commercialApi(`/finance/contract-approvals${query({ pendingOnly })}`);
 export const getContractApproval = versionId => commercialApi(`/finance/contract-approvals/${versionId}`);
-export const decideContractApproval = (versionId, values) =>
-  commercialApi(`/finance/contract-approvals/${versionId}/decision`, json('POST', values));
+/** Approves or returns a version with the version on screen and the intent's Idempotency-Key. */
+export const decideContractApproval = (versionId, values, idempotencyKey) =>
+  commercialApi(`/finance/contract-approvals/${versionId}/decision`, keyed(json('POST', values), idempotencyKey));
 
 // Preinvoice draft edits
 export const editPreinvoiceLine = (preinvoiceId, lineId, values) =>

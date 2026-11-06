@@ -148,6 +148,9 @@ it("asks for the emailed code, resends it and enters the portal with it (ADR-002
 
     const code = await screen.findByRole("textbox", { name: /Código de verificación/ });
     expect(screen.getByText(/a••••t@dev\.elevant\.test/, { selector: "strong" })).toBeInTheDocument();
+    // ADR-0022, 1-N08: the code was only queued; the screen never claims it was sent.
+    expect(screen.getByRole("status")).toHaveTextContent("Pedimos un código de 6 dígitos");
+    expect(document.body).not.toHaveTextContent(/Enviamos|enviamos/);
     expect(screen.getByRole("button", { name: /Reenviar código en \d+ s/ })).toBeDisabled();
     // Jump past the 30 s resend cooldown; the 1 s countdown tick picks it up.
     vi.spyOn(Date, "now").mockImplementation(() => realNow() + 31_000);
@@ -162,6 +165,27 @@ it("asks for the emailed code, resends it and enters the portal with it (ADR-002
     expect(sessionStorage.length + localStorage.length).toBeGreaterThan(0);
   } finally {
     vi.restoreAllMocks();
+  }
+});
+
+it("names no environment nor technical jargon unless the deployment sets a label (1-N24)", async () => {
+  const { unmount } = render(<AirlineSessionProvider baseUrl="https://api.example.test">
+    <AuthExperience returnTo="/portal" />
+  </AirlineSessionProvider>);
+  await screen.findByRole("textbox", { name: "Correo corporativo" });
+  expect(screen.getByText("Portal de aerolíneas")).toBeInTheDocument();
+  expect(document.body).not.toHaveTextContent(/Development|API|producción/);
+  unmount();
+
+  vi.stubEnv("NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL", "Pruebas");
+  try {
+    render(<AirlineSessionProvider baseUrl="https://api.example.test">
+      <AuthExperience returnTo="/portal" />
+    </AirlineSessionProvider>);
+    expect(await screen.findByText("Portal de aerolíneas · Pruebas")).toBeInTheDocument();
+    expect(screen.getByText("Entorno: Pruebas")).toBeInTheDocument();
+  } finally {
+    vi.unstubAllEnvs();
   }
 });
 

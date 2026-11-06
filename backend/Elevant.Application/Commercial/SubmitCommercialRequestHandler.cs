@@ -5,6 +5,10 @@ using Elevant.Domain.Validation;
 
 namespace Elevant.Application.Commercial;
 
+/// <summary>
+/// Public application. It names a catalog profile with <paramref name="AirlineProfileId"/>, or proposes
+/// an airline that is not listed with <paramref name="ProposedAirline"/> (and an empty profile ID).
+/// </summary>
 public sealed record SubmitCommercialRequestCommand(
     Guid RequestId, Guid AirlineProfileId, IReadOnlyList<Guid> ServiceIds,
     string RepresentativeName, string RepresentativeTitle,
@@ -16,7 +20,15 @@ public sealed record SubmitCommercialRequestCommand(
     string? RepresentativeMunicipality = null,
     string? RepresentativeDocumentType = null,
     string? RepresentativeDocumentNumber = null,
-    string? RepresentativeDistrict = null);
+    string? RepresentativeDistrict = null,
+    CommercialAirlineProposal? ProposedAirline = null);
+
+/// <summary>
+/// Airline the applicant could not find in the public catalog (1-N25). Only the ICAO designator is
+/// required: an operator without IATA omits it. Contratos verifies it before any approval.
+/// </summary>
+public sealed record CommercialAirlineProposal(string Name, string CountryCode, string? IataCode,
+    string IcaoCode, string? WebsiteUrl = null);
 
 public enum CommercialSubmissionFailure
 {
@@ -80,12 +92,34 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
         var document = CanonicalDocument(command.RepresentativeDocumentType,
             command.RepresentativeDocumentNumber, command.RepresentativeNationalityCode);
         if (document is { Valid: false }) return null;
+        var proposal = command.ProposedAirline is { } proposed ? CanonicalProposal(proposed) : null;
+        if (command.ProposedAirline is not null && proposal is null) return null;
         return command with
         {
             RepresentativePhone = phone,
             RepresentativeDocumentNumber = document?.Number,
+            ProposedAirline = proposal,
         };
     }
+
+    /// <summary>Trimmed, upper-case designators; an HTTPS website without credentials when given.</summary>
+    private static CommercialAirlineProposal? CanonicalProposal(CommercialAirlineProposal proposal)
+    {
+        var name = proposal.Name?.Trim();
+        var country = proposal.CountryCode?.Trim().ToUpperInvariant();
+        var iata = string.IsNullOrWhiteSpace(proposal.IataCode) ? null : proposal.IataCode.Trim().ToUpperInvariant();
+        var icao = proposal.IcaoCode?.Trim().ToUpperInvariant();
+        var website = string.IsNullOrWhiteSpace(proposal.WebsiteUrl) ? null : proposal.WebsiteUrl.Trim();
+        if (name is not { Length: >= 2 and <= 160 } || !AirlineCodes.IsCountry(country) ||
+            iata is not null && !AirlineCodes.IsIata(iata) || !AirlineCodes.IsIcao(icao) ||
+            website is not null && !IsPublicHttpsUrl(website, 512))
+            return null;
+        return new CommercialAirlineProposal(name, country!, iata, icao!, website);
+    }
+
+    internal static bool IsPublicHttpsUrl(string value, int maxLength) =>
+        value.Length <= maxLength && Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+        uri.Scheme == Uri.UriSchemeHttps && uri.UserInfo.Length == 0 && uri.Host.Contains('.');
 
     /// <summary>
     /// The representative identifies with a Dominican cédula or a passport whose nationality is
@@ -108,7 +142,9 @@ public sealed class SubmitCommercialRequestHandler(ICommercialIntakeStore store)
     }
 
     private static bool IsValid(SubmitCommercialRequestCommand command) =>
-        command.RequestId != Guid.Empty && command.AirlineProfileId != Guid.Empty &&
+        command.RequestId != Guid.Empty &&
+        // Either a catalog profile or a proposed airline, never both.
+        (command.AirlineProfileId != Guid.Empty) != (command.ProposedAirline is not null) &&
         !(
             command.ServiceIds is null or { Count: < 1 or > 20 } ||
             command.ServiceIds.Any(id => id == Guid.Empty) ||
