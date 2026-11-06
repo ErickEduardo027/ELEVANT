@@ -19,7 +19,7 @@ import {
   getManagedAirlines, saveManagedAirline, archiveManagedAirline, enrichManagedAirlines, checkManagedAirlineRegistry,
 } from '../../services/commercialGovernanceApi';
 import { convertLegacyRole, getDepartmentsOverview, listLegacyRoles } from '../../services/departmentGovernanceService';
-import { commercialGovernanceMessage } from '../../services/commercialProblems';
+import { commercialGovernanceMessage, provisioningMessage } from '../../services/commercialProblems';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import { isConflict } from '../../services/problemMessages';
 
@@ -192,7 +192,7 @@ function ProvisioningCard({ task, onDone, onRefresh }) {
   const linkKeys = useRef(createCommandKeyHolder());
 
   async function fail(failure) {
-    setError(commercialGovernanceMessage(failure));
+    setError(provisioningMessage(failure));
     // A changed or completed request is re-read before a new attempt.
     if (isConflict(failure) && !['email_has_account', 'email_in_use', 'email_in_use_other_airline',
       'email_in_use_internal', 'account_disabled'].includes(failure?.code)) await onRefresh();
