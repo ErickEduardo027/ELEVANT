@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { CATALOG_FORBIDDEN_MESSAGE, catalogProblemMessage } from './catalogErrorMessages';
+import { CATALOG_FORBIDDEN_MESSAGE, catalogProblemMessage, serviceProblemMessage } from './catalogErrorMessages';
 import { closureProblemMessage, serviceClosureMessages } from './serviceClosureMessages';
 
 const failure = (status, code) => Object.assign(new Error('Service changed; reload and retry.'), { status, code });
@@ -15,6 +15,22 @@ it('explains the catalog codes and never the server title', () => {
   expect(catalogProblemMessage(failure(409))).toBe('El registro cambió; actualice e intente de nuevo.');
   expect(catalogProblemMessage(failure(401, 'service_retired'))).toBe('La sesión expiró. Vuelva a iniciar sesión.');
   expect(catalogProblemMessage(new Error('Service changed; reload and retry.'))).not.toMatch(/reload/);
+});
+
+it('only asks to hide a service a contract keeps while it is public', () => {
+  const refused = failure(409, 'service_in_active_contract');
+  expect(serviceProblemMessage(refused, { isPublic: true })).toBe(catalogProblemMessage(refused));
+  expect(serviceProblemMessage(refused, { isPublic: true })).toMatch(/ocúltelo del catálogo público/);
+  expect(serviceProblemMessage(refused, { isPublic: false })).toBe('No se puede dar de baja: un contrato vigente o '
+    + 'en aprobación incluye este servicio, como tarifa o dentro de un paquete. Ya está oculto del catálogo público; '
+    + 'podrá darlo de baja cuando ningún contrato lo incluya.');
+  // Without a service (the form) and for every other answer the catalog messages apply.
+  expect(serviceProblemMessage(refused)).toBe(catalogProblemMessage(refused));
+  expect(serviceProblemMessage(failure(409, 'version_conflict'), { isPublic: false }))
+    .toBe(catalogProblemMessage(failure(409, 'version_conflict')));
+  expect(serviceProblemMessage(failure(403), { isPublic: false })).toBe(CATALOG_FORBIDDEN_MESSAGE);
+  expect(serviceProblemMessage(failure(401, 'service_in_active_contract'), { isPublic: false }))
+    .toBe('La sesión expiró. Vuelva a iniciar sesión.');
 });
 
 it('explains the closure codes in the language of the space', () => {
