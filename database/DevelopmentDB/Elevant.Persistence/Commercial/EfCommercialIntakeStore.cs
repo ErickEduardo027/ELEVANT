@@ -50,10 +50,13 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                     IsolationLevel.Serializable, cancellationToken);
                 try
                 {
-                    var airline = await context.CommercialAirlineProfiles.AsNoTracking()
+                    // A proposed airline (1-N25) is kept on the request only; Contratos verifies it and links
+                    // or creates the catalog profile before any approval.
+                    var proposal = command.ProposedAirline;
+                    var airline = proposal is not null ? null : await context.CommercialAirlineProfiles.AsNoTracking()
                         .SingleOrDefaultAsync(profile => profile.PublicId == command.AirlineProfileId &&
                             profile.IsPublished, cancellationToken);
-                    if (airline is null)
+                    if (proposal is null && airline is null)
                         return CommercialSubmissionResult.Failed(CommercialSubmissionFailure.AirlineUnavailable);
 
                     var services = await context.ServiceDefinitions.AsNoTracking()
@@ -67,10 +70,14 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
                     {
                         PublicId = command.RequestId,
                         RequestCode = reference,
-                        AirlineProfileId = airline.Id,
-                        AirlineId = airline.CanonicalAirlineId,
-                        RequestedAirlineName = airline.DisplayName,
-                        AirlineLegalNameSnapshot = airline.LegalName,
+                        AirlineProfileId = airline?.Id,
+                        AirlineId = airline?.CanonicalAirlineId,
+                        RequestedAirlineName = airline?.DisplayName ?? proposal!.Name,
+                        AirlineLegalNameSnapshot = airline?.LegalName,
+                        ProposedAirlineCountryCode = proposal?.CountryCode,
+                        ProposedAirlineIataCode = proposal?.IataCode,
+                        ProposedAirlineIcaoCode = proposal?.IcaoCode,
+                        ProposedAirlineWebsiteUrl = proposal?.WebsiteUrl,
                         SubmissionHash = hash,
                         Type = CommercialRequestType.Affiliation,
                         Status = CommercialRequestStatus.Pending,
@@ -152,6 +159,9 @@ internal sealed class EfCommercialIntakeStore(ElevantDbContext context) : IComme
             Optional(command.RepresentativeDocumentNumber) ?? string.Empty);
         // Appended only when present so requests sent before districts existed keep their hash.
         if (Optional(command.RepresentativeDistrict) is { } district) canonical += "\n" + district;
+        if (command.ProposedAirline is { } proposal)
+            canonical += string.Join('\n', "", "proposal", proposal.Name, proposal.CountryCode,
+                proposal.IataCode ?? string.Empty, proposal.IcaoCode, proposal.WebsiteUrl ?? string.Empty);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)));
     }
 

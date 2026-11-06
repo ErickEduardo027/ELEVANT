@@ -192,7 +192,9 @@ internal static class IdentityReferenceConfiguration
                 table.HasCheckConstraint("ck_airline_iata", "LEN([iata_code]) = 2");
                 table.HasCheckConstraint("ck_airline_icao", "LEN([icao_code]) = 3");
             });
-            builder.Property(airline => airline.IataCode).HasColumnType("char(2)").IsRequired();
+            // An operator without an IATA designator is identified by its ICAO code; the unique
+            // index on the IATA code is filtered to the airlines that have one.
+            builder.Property(airline => airline.IataCode).HasColumnType("char(2)");
             builder.Property(airline => airline.IcaoCode).HasColumnType("char(3)").IsRequired();
             builder.Property(airline => airline.Name).HasMaxLength(160).IsRequired();
             builder.HasIndex(airline => airline.OrganizationId).IsUnique();

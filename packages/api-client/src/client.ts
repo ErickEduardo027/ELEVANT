@@ -43,6 +43,20 @@ import {
 } from "./operationalClose";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
+  isCommercialIdResponse,
+  isCommercialInboxData,
+  normalizedAirlineVerification,
+  normalizedCommercialDecision,
+  normalizedCommercialInboxQuery,
+  normalizedRepresentativeConfirmation,
+  normalizedRequestCancellation,
+  type CancelCommercialRequestCommand,
+  type CommercialInboxQuery,
+  type ConfirmCommercialRepresentativeCommand,
+  type DecideCommercialRequestCommand,
+  type VerifyCommercialRequestAirlineCommand,
+} from "./commercialRequests";
+import {
   getGetAccountChangesUrl,
   getGetAirlineContractsUrl,
   getGetAirlineOperationsUrl,
@@ -58,6 +72,11 @@ import {
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
   getLookupCommercialRequestReceiptUrl,
+  getListCommercialRequestInboxUrl,
+  getVerifyCommercialRequestAirlineUrl,
+  getConfirmCommercialRepresentativeUrl,
+  getCancelCommercialRequestUrl,
+  getDecideCommercialRequestUrl,
   getGetFinanceApprovedServicesUrl,
   getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
@@ -247,6 +266,8 @@ import {
   type PublicCommercialCatalog,
   type SubmitCommercialRequestRequest,
   type SubmitCommercialRequestResponse,
+  type CommercialIdResponse,
+  type CommercialInboxData,
   type FinanceApprovedServicesResponse,
   type FinancePreinvoicePageData,
   type ListFinancePreinvoicesParams,
@@ -1080,6 +1101,20 @@ export interface ElevantApiClient {
   getContractTimeline(versionId: string, options?: GetHumanResourcesReportOptions): Promise<ContractTimelineData>;
   signContractVersion(versionId: string, request: SignContractRequest, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
+  /** Contratos inbox of public requests: server filter, search, paging and counters per status. */
+  getCommercialRequestInbox(query?: CommercialInboxQuery,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialInboxData>;
+  /** Verifies the request's airline, or links the proposed one to an existing profile. */
+  verifyCommercialRequestAirline(requestId: string, command: VerifyCommercialRequestAirlineCommand,
+    idempotencyKey: string, options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Records who confirmed the representative, when and how; approval requires it. */
+  confirmCommercialRepresentative(requestId: string, command: ConfirmCommercialRepresentativeCommand,
+    idempotencyKey: string, options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  cancelCommercialRequest(requestId: string, command: CancelCommercialRequestCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
+  /** Approves (returns the draft contract) or rejects with a reason. */
+  decideCommercialRequest(requestId: string, command: DecideCommercialRequestCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<CommercialIdResponse>;
   /** Contratos confirms validity, renewal and termination before signatures (ADR-0025). */
   setContractValidity(versionId: string, request: SetContractValidityRequest,
     options?: GetHumanResourcesReportOptions): Promise<ContractDocumentResponse>;
@@ -3109,7 +3144,8 @@ function isAirlinePortalBootstrapResponse(
   return isRecord(value) &&
     hasOnlyKeys(value, ["airlineId", "organizationId", "iataCode", "icaoCode", "name", "stations", "currentOperations"]) &&
     isUuid(value.airlineId) && isUuid(value.organizationId) &&
-    isNonEmptyString(value.iataCode) && isNonEmptyString(value.icaoCode) &&
+    // An operator without IATA designator sends an empty code; the ICAO code is always there (1-N17).
+    isString(value.iataCode) && isNonEmptyString(value.icaoCode) &&
     isNonEmptyString(value.name) && Array.isArray(value.stations) &&
     value.stations.every((station) => isRecord(station) &&
       hasOnlyKeys(station, ["id", "code", "name", "ianaTimeZone"]) &&
@@ -3559,8 +3595,12 @@ function validatedCommercialRequest(
     "representativeEmail", "representativePhone", "authorityDeclared",
     "representativeNationalityCode", "representativeAddress", "representativeCountry",
     "representativeProvince", "representativeMunicipality",
-    "representativeDocumentType", "representativeDocumentNumber", "representativeDistrict"]) ||
-    !isUuid(request.requestId) || !isUuid(request.airlineProfileId) ||
+    "representativeDocumentType", "representativeDocumentNumber", "representativeDistrict",
+    "proposedAirline"]) ||
+    !isUuid(request.requestId) ||
+    // A catalog profile, or an airline proposed because it is not listed (1-N25); never both.
+    (request.proposedAirline == null ? !isUuid(request.airlineProfileId)
+      : request.airlineProfileId != null || !isProposedAirline(request.proposedAirline)) ||
     !Array.isArray(request.serviceIds) || request.serviceIds.length < 1 ||
     request.serviceIds.length > 20 || !request.serviceIds.every(isUuid) ||
     new Set(request.serviceIds.map(id => id.toLowerCase())).size !== request.serviceIds.length ||
@@ -3595,6 +3635,25 @@ function validatedCommercialRequest(
     request.authorityDeclared !== true)
     throw new TypeError("Commercial application is invalid.");
   return request as unknown as SubmitCommercialRequestRequest;
+}
+
+/** ICAO is required; IATA only when the airline has one; the website must be HTTPS. */
+function isProposedAirline(value: unknown) {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["name", "countryCode", "iataCode", "icaoCode", "websiteUrl"]) ||
+      typeof value.name !== "string" || value.name.trim().length < 2 || value.name.trim().length > 160 ||
+      typeof value.countryCode !== "string" || !/^[A-Z]{2}$/.test(value.countryCode) ||
+      !isOptionalNullable(value.iataCode, code => typeof code === "string" && /^[A-Z0-9]{2}$/.test(code) &&
+        !/^\d{2}$/.test(code)) ||
+      typeof value.icaoCode !== "string" || !/^[A-Z]{3}$/.test(value.icaoCode))
+    return false;
+  if (value.websiteUrl == null) return true;
+  if (typeof value.websiteUrl !== "string" || value.websiteUrl.length > 512) return false;
+  try {
+    const url = new URL(value.websiteUrl);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 function isCommercialRequestReceipt(value: unknown): value is SubmitCommercialRequestResponse {
@@ -5148,6 +5207,16 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       data: await readSuccessBody(response),
       etag: response.headers.get("etag"),
     };
+  };
+
+  const commercialCommand = async (path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, expectedId: string | undefined) => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (result.status !== 200 || !isCommercialIdResponse(result.data, expectedId)) throw malformedResponse(result.status);
+    return result.data;
   };
 
   const executePdf = async (path: string, init: ElevantRequestInit = {}): Promise<Blob> => {
@@ -6836,6 +6905,34 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           accepted: true, signatureImagePng }) }, true);
       if (!isContractDocument(result.data, version)) throw malformedResponse(result.status);
       return result.data;
+    },
+    async getCommercialRequestInbox(query?: CommercialInboxQuery, options?: GetHumanResourcesReportOptions) {
+      const params = normalizedCommercialInboxQuery(query);
+      const result = await execute(getListCommercialRequestInboxUrl(params), { ...options, method: "GET" }, true);
+      if (!isCommercialInboxData(result.data, params)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async verifyCommercialRequestAirline(requestId: string, command: VerifyCommercialRequestAirlineCommand,
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      return commercialCommand(getVerifyCommercialRequestAirlineUrl(validatedUuid(requestId, "requestId")),
+        normalizedAirlineVerification(command), idempotencyKey, options, requestId);
+    },
+    async confirmCommercialRepresentative(requestId: string, command: ConfirmCommercialRepresentativeCommand,
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      return commercialCommand(getConfirmCommercialRepresentativeUrl(validatedUuid(requestId, "requestId")),
+        normalizedRepresentativeConfirmation(command), idempotencyKey, options, requestId);
+    },
+    async cancelCommercialRequest(requestId: string, command: CancelCommercialRequestCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      return commercialCommand(getCancelCommercialRequestUrl(validatedUuid(requestId, "requestId")),
+        normalizedRequestCancellation(command), idempotencyKey, options, requestId);
+    },
+    async decideCommercialRequest(requestId: string, command: DecideCommercialRequestCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedCommercialDecision(command);
+      // An approval answers with the new draft contract; a rejection with the request itself.
+      return commercialCommand(getDecideCommercialRequestUrl(validatedUuid(requestId, "requestId")), body,
+        idempotencyKey, options, body.approve ? undefined : requestId);
     },
     async setContractValidity(versionId: string, request: SetContractValidityRequest,
       options?: GetHumanResourcesReportOptions) {

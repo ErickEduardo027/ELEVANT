@@ -311,6 +311,12 @@ internal static class WorkforceCommercialConfiguration
             builder.Property(request => request.ReviewedAt).HasPrecision(3);
             builder.Property(request => request.DecisionReason).HasMaxLength(1000);
             builder.Property(request => request.CancelledAt).HasPrecision(3);
+            builder.Property(request => request.RepresentativeConfirmedAt).HasPrecision(3);
+            builder.Property(request => request.RepresentativeConfirmationNote).HasMaxLength(1000);
+            builder.Property(request => request.ProposedAirlineCountryCode).HasMaxLength(2);
+            builder.Property(request => request.ProposedAirlineIataCode).HasMaxLength(2);
+            builder.Property(request => request.ProposedAirlineIcaoCode).HasMaxLength(3);
+            builder.Property(request => request.ProposedAirlineWebsiteUrl).HasMaxLength(512);
             builder.HasIndex(request => request.RequestCode).IsUnique();
             builder.HasIndex(request => new { request.AirlineId, request.Status, request.SubmittedAt });
             AddNoActionReference<Airline, ServiceRequest>(builder, request => request.AirlineId);
@@ -318,6 +324,8 @@ internal static class WorkforceCommercialConfiguration
                 request => request.AirlineProfileId);
             AddNoActionReference<ApplicationUser, ServiceRequest>(builder, request => request.ReviewedByAccountId);
             AddNoActionReference<ApplicationUser, ServiceRequest>(builder, request => request.ProvisionedAccountId);
+            AddNoActionReference<ApplicationUser, ServiceRequest>(builder,
+                request => request.RepresentativeConfirmedByAccountId);
         });
 
         modelBuilder.Entity<ServiceRequestStation>(builder =>

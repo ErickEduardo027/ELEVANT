@@ -84,4 +84,24 @@ describe('GovernanceShell', () => {
     expect(provisionAirline).toHaveBeenCalledWith('req-1', 'ana@demo-air.test', '');
     expect(await screen.findByText(/enlace de activación válido por 72 horas/)).toBeInTheDocument();
   });
+
+  it('explains a refused provisioning by its code, never by the server title', async () => {
+    getProvisioning.mockResolvedValue([{ requestId: 'req-1', reference: 'REQ-2026-000001', airline: 'Demo Air',
+      representativeName: 'Ana Pérez', suggestedEmail: 'ana@demo-air.test', contractId: 'c-1', approvedAt: '2026-11-01T00:00:00Z' }]);
+    provisionAirline.mockRejectedValueOnce(Object.assign(new Error('Provisioning request is no longer available.'),
+      { status: 409, code: 'email_in_use' }));
+    renderShell();
+    await userEvent.click(await screen.findByRole('button', { name: 'Crear y enviar invitación' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Ese correo ya tiene una cuenta en ELEVANT.');
+    expect(alert).not.toHaveTextContent('Provisioning request');
+  });
+
+  it('offers a retry when governance cannot be loaded', async () => {
+    getGovernance.mockRejectedValueOnce(Object.assign(new Error('Internal'), { status: 503 }));
+    renderShell();
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo cargar la gobernanza.');
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(getGovernance).toHaveBeenCalledTimes(2);
+  });
 });

@@ -46,8 +46,10 @@ internal sealed class EfCommercialProvisioningStore(
             return ProvisioningResult.Failed(ProvisioningFailure.Forbidden);
         var invite = string.IsNullOrWhiteSpace(input?.TemporaryPassword);
         // An invitation needs the portal origin for its activation link.
-        if (input is null || !ValidEmail(input.Email) || invite && emailOptions.Link("/activar", "x") is null)
-            return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
+        if (input is null || !ValidEmail(input.Email))
+            return ProvisioningResult.Failed(ProvisioningFailure.Invalid, "invalid_provisioning");
+        if (invite && emailOptions.Link("/activar", "x") is null)
+            return ProvisioningResult.Failed(ProvisioningFailure.Invalid, "invitations_unavailable");
         var email = input.Email.Trim();
         var strategy = context.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
@@ -57,10 +59,10 @@ internal sealed class EfCommercialProvisioningStore(
             var request = await context.ServiceRequests.SingleOrDefaultAsync(
                 item => item.PublicId == requestId, cancellationToken);
             if (request is null)
-                return ProvisioningResult.Failed(ProvisioningFailure.NotFound);
+                return ProvisioningResult.Failed(ProvisioningFailure.NotFound, "not_found");
             if (request.Status != CommercialRequestStatus.Approved ||
                 request.ProvisionedAccountId is not null || request.AirlineId is null)
-                return ProvisioningResult.Failed(ProvisioningFailure.Conflict);
+                return ProvisioningResult.Failed(ProvisioningFailure.Conflict, "request_unavailable");
             var airline = await context.Airlines.SingleOrDefaultAsync(
                 item => item.Id == request.AirlineId && item.IsActive, cancellationToken);
             var organization = airline is null ? null : await context.Organizations.SingleOrDefaultAsync(
@@ -70,12 +72,12 @@ internal sealed class EfCommercialProvisioningStore(
                 item.NormalizedName == "AIRLINE_CLIENT" && item.IsActive,
                 cancellationToken);
             if (organization is null || role is null)
-                return ProvisioningResult.Failed(ProvisioningFailure.Conflict);
+                return ProvisioningResult.Failed(ProvisioningFailure.Conflict, "request_unavailable");
             var normalizedEmail = email.ToUpperInvariant();
             if (await context.Users.AnyAsync(item => item.NormalizedEmail == normalizedEmail,
                 cancellationToken) || await context.Persons.AnyAsync(item =>
                 item.PrimaryEmail == email, cancellationToken))
-                return ProvisioningResult.Failed(ProvisioningFailure.Conflict);
+                return ProvisioningResult.Failed(ProvisioningFailure.Conflict, "email_in_use");
 
             var words = request.ContactName.Trim().Split(' ',
                 StringSplitOptions.RemoveEmptyEntries);
@@ -106,7 +108,7 @@ internal sealed class EfCommercialProvisioningStore(
             var created = invite ? await userManager.CreateAsync(account)
                 : await userManager.CreateAsync(account, input.TemporaryPassword!);
             if (!created.Succeeded)
-                return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
+                return ProvisioningResult.Failed(ProvisioningFailure.Invalid, "password_policy");
             context.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long>
             { UserId = account.Id, RoleId = role.Id });
             context.OrganizationMemberships.Add(new OrganizationMembership
@@ -135,7 +137,7 @@ internal sealed class EfCommercialProvisioningStore(
                 "airline_contracts", request.PublicId, DateTimeOffset.UtcNow);
             if (invite && !EfAccountEmailStore.AddActivation(context, emailOptions, account,
                     person.FirstName, airline!.Name, DateTimeOffset.UtcNow))
-                return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
+                return ProvisioningResult.Failed(ProvisioningFailure.Invalid, "invitations_unavailable");
             await context.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return ProvisioningResult.Success(account.PublicId);
@@ -153,9 +155,9 @@ internal sealed class EfCommercialProvisioningStore(
                                   context.UserRoles.Any(link => link.UserId == user.Id && context.Roles.Any(role =>
                                       role.Id == link.RoleId && role.Portal == PortalKind.AirlinePortal))
                             select new { User = user, person.FirstName }).SingleOrDefaultAsync(cancellationToken);
-        if (target is null) return ProvisioningResult.Failed(ProvisioningFailure.NotFound);
+        if (target is null) return ProvisioningResult.Failed(ProvisioningFailure.NotFound, "not_found");
         if (target.User.InvitationStatus == InvitationStatus.Accepted)
-            return ProvisioningResult.Failed(ProvisioningFailure.Conflict);
+            return ProvisioningResult.Failed(ProvisioningFailure.Conflict, "invitation_already_accepted");
         var airline = await (from membership in context.OrganizationMemberships
                              join organization in context.Organizations on membership.OrganizationId equals organization.Id
                              where membership.AccountId == target.User.Id && membership.Status == MembershipStatus.Active
@@ -166,7 +168,7 @@ internal sealed class EfCommercialProvisioningStore(
                 item.Purpose == EmailPurpose.Activation && item.UsedAt == null)
             .ExecuteUpdateAsync(update => update.SetProperty(item => item.UsedAt, now), cancellationToken);
         if (!EfAccountEmailStore.AddActivation(context, emailOptions, target.User, target.FirstName, airline, now))
-            return ProvisioningResult.Failed(ProvisioningFailure.Invalid);
+            return ProvisioningResult.Failed(ProvisioningFailure.Invalid, "invitations_unavailable");
         target.User.InvitationStatus = InvitationStatus.Sent;
         await context.SaveChangesAsync(cancellationToken);
         return ProvisioningResult.Success(target.User.PublicId);

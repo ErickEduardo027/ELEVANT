@@ -56,7 +56,7 @@ internal sealed class EfManualTurnaroundOptionsStore(
             .Where(group => group.Count() == 1)
             .Select(group => group.Single())
             .Select(item => new ManualTurnaroundAirlineData(item.PublicId,
-                item.IataCode, item.Name))
+                item.IataCode ?? string.Empty, item.Name))
             .ToArray();
 
         // Carriers flying without any contract that day can only be entered as charters (ADR-0033).
@@ -68,7 +68,7 @@ internal sealed class EfManualTurnaroundOptionsStore(
                 .Select(airline => new { airline.PublicId, airline.IataCode, airline.Name })
                 .ToArrayAsync(cancellationToken))
             .Where(airline => !contractedIds.Contains(airline.PublicId))
-            .Select(airline => new ManualTurnaroundAirlineData(airline.PublicId, airline.IataCode, airline.Name))
+            .Select(airline => new ManualTurnaroundAirlineData(airline.PublicId, airline.IataCode ?? string.Empty, airline.Name))
             .ToArray();
 
         var airports = await context.Airports.AsNoTracking()

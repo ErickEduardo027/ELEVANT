@@ -189,7 +189,8 @@ internal sealed class EfCommercialAirlineManagementStore(
         catch (DbUpdateException exception) when (
             exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
-            return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict);
+            // Another profile already uses this source name or verified designator.
+            return AirlineMutationResult.Failed(CatalogMutationFailure.Conflict, "airline_profile_conflict");
         }
     }
 

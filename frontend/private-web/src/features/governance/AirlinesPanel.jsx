@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { commercialGovernanceMessage } from '../../services/commercialProblems';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import FileDropField from '../../components/FileDropField';
 import PrivateMediaImage from '../../components/PrivateMediaImage';
@@ -36,7 +37,8 @@ export default function AirlinesPanel({ airlines, onSave, onArchive, onEnrich, o
       const result = await onCheckRegistry(airline.id);
       setChecks(current => ({ ...current, [airline.id]: result.check }));
     } catch (error) {
-      setChecks(current => ({ ...current, [airline.id]: { status: 'Unavailable', differences: [error.message] } }));
+      setChecks(current => ({ ...current, [airline.id]: { status: 'Unavailable', differences: [
+        commercialGovernanceMessage(error, { fallback: 'No se pudo consultar el registro público. Intente de nuevo.' })] } }));
     } finally {
       setChecking(null);
     }

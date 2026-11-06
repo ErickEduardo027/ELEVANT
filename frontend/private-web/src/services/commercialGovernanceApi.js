@@ -59,14 +59,7 @@ export const provisionAirline = (requestId, email, temporaryPassword) => commerc
 export const resendAirlineInvitation = accountId => commercialApi(`/governance/provisioning/accounts/${accountId}/resend-invitation`, {
   method: 'POST',
 });
-export const getCommercialRequests = () => commercialApi('/contracts/commercial-requests');
 export const getCommercialStations = () => commercialApi('/contracts/commercial-requests/stations');
-export const verifyCommercialAirline = (profileId, values) => commercialApi(`/contracts/commercial-requests/airlines/${profileId}/verification`, {
-  method: 'PUT', body: JSON.stringify(values),
-});
-export const decideCommercialRequest = (id, values) => commercialApi(`/contracts/commercial-requests/${id}/decision`, {
-  method: 'POST', body: JSON.stringify(values),
-});
 export const getManagedServices = () => commercialApi('/contracts/catalog/services');
 export const getPublishedCommercialServices = () => createPrivateWebApiClient()
   .getPublicCommercialCatalog({ cache: 'no-store' });
@@ -134,6 +127,26 @@ async function contractCall(request) {
     throw error;
   }
 }
+
+/**
+ * Contratos inbox of public requests (1-N23): status filter, server search, paging and the
+ * counters per status. Commands carry an Idempotency-Key and the request `version` they saw.
+ */
+export const getCommercialRequestInbox = query => contractCall(() => contractClient().getCommercialRequestInbox(query));
+/** Verifies the airline from the request; a proposed airline is linked or gets a verified profile. */
+export const verifyCommercialRequestAirline = (requestId, command, idempotencyKey) =>
+  contractCall(() => contractClient().verifyCommercialRequestAirline(requestId, command, idempotencyKey));
+/** Records who confirmed the representative, when and how (1-N18); approval requires it. */
+export const confirmCommercialRepresentative = (requestId, command, idempotencyKey) =>
+  contractCall(() => contractClient().confirmCommercialRepresentative(requestId, command, idempotencyKey));
+export const cancelCommercialRequest = (requestId, command, idempotencyKey) =>
+  contractCall(() => contractClient().cancelCommercialRequest(requestId, command, idempotencyKey));
+/** Approves (answers with the draft contract) or rejects with a reason. */
+export const decideCommercialRequest = (requestId, command, idempotencyKey) =>
+  contractCall(() => contractClient().decideCommercialRequest(requestId, command, idempotencyKey));
+/** Published airline profiles, to link a proposed airline to an existing one. */
+export const getPublishedAirlineProfiles = () => createPrivateWebApiClient()
+  .getPublicCommercialCatalog({ cache: 'no-store' }).then(catalog => catalog.airlines);
 
 /** Formal document of an approved contract version, with its signatures and content hash. */
 export const getContractDocument = versionId => contractCall(() => contractClient().getContractDocument(versionId));

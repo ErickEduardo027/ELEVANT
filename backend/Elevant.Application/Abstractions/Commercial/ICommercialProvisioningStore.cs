@@ -9,11 +9,12 @@ public sealed record ProvisionAirlineInput(string Email, string? TemporaryPasswo
     public override string ToString() => $"{nameof(ProvisionAirlineInput)} {{ TemporaryPassword = [REDACTED] }}";
 }
 public enum ProvisioningFailure { Forbidden, NotFound, Conflict, Invalid }
-public sealed record ProvisioningResult(Guid? AccountId, ProvisioningFailure? Failure)
+/// <summary>Result of a provisioning command; <paramref name="Code"/> is the Problem Details code of a failure.</summary>
+public sealed record ProvisioningResult(Guid? AccountId, ProvisioningFailure? Failure, string? Code = null)
 {
     public bool IsSuccess => AccountId is not null;
     public static ProvisioningResult Success(Guid id) => new(id, null);
-    public static ProvisioningResult Failed(ProvisioningFailure failure) => new(null, failure);
+    public static ProvisioningResult Failed(ProvisioningFailure failure, string? code = null) => new(null, failure, code);
 }
 public interface ICommercialProvisioningStore
 {

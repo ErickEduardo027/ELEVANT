@@ -59,6 +59,11 @@
 .access-airline__registry { grid-column: 1 / -1; padding: 12px 18px; background: #e8f6ee; color: #145c36; font-size: .78rem; font-weight: 700; line-height: 1.5; margin: 0; }
 .access-airline__verification { grid-column: 1 / -1; padding: 14px 18px; background: #fff1e9; color: #81401f; font-size: .78rem; line-height: 1.5; margin: 0; }
 .access-representative { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.access-missing { margin-top: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: #425e79; font-size: .84rem; line-height: 1.5; }
+.access-missing button { border: 1px solid #0a2846; background: transparent; color: #092746; padding: 10px 14px; font-weight: 650; cursor: pointer; }
+.access-missing button:focus-visible, .access-inline-link:focus-visible { outline: 3px solid #ff641f; outline-offset: 2px; }
+.access-proposal { margin-top: 22px; }
+.access-inline-link { border: 0; padding: 0; background: none; color: #c34d19; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .access-representative input:not([type="checkbox"]) { display: block; margin-top: 9px; }
 .access-representative__wide { grid-column: 1 / -1; }
 .access-representative select { display: block; margin-top: 9px; }

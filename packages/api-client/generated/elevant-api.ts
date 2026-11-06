@@ -775,6 +775,13 @@ export interface BillingUnitData {
   version: string;
 }
 
+export interface CancelCommercialRequestInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface CancelRequisitionInput {
   expectedVersion: string;
   reason: string;
@@ -929,10 +936,103 @@ export interface CommercialIdResponse {
   id: string;
 }
 
+export interface CommercialInboxCountsData {
+  pending: number;
+  inReview: number;
+  approved: number;
+  rejected: number;
+  cancelled: number;
+}
+
+export interface CommercialRepresentativeConfirmationData {
+  confirmedAt: string;
+  confirmedBy: string;
+  note: string;
+}
+
+export interface CommercialProposedAirlineData {
+  name: string;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  icaoCode: string;
+  /** @nullable */
+  websiteUrl?: string | null;
+}
+
 export interface CommercialRequestItemData {
   serviceId: string;
   name: string;
   unit: string;
+}
+
+export interface CommercialInboxRequestData {
+  id: string;
+  reference: string;
+  airline: string;
+  /** @nullable */
+  airlineProfileId?: string | null;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  logoUrl?: string | null;
+  airlineVerified: boolean;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
+  /** @nullable */
+  airlineWebsiteUrl?: string | null;
+  representativeName: string;
+  representativeTitle: string;
+  representativeEmail: string;
+  representativePhone: string;
+  /** @nullable */
+  representativeNationalityCode?: string | null;
+  /** @nullable */
+  representativeAddress?: string | null;
+  /** @nullable */
+  representativeCountry?: string | null;
+  /** @nullable */
+  representativeProvince?: string | null;
+  /** @nullable */
+  representativeMunicipality?: string | null;
+  /** @nullable */
+  representativeDistrict?: string | null;
+  /** @nullable */
+  representativeDocumentType?: string | null;
+  /** @nullable */
+  representativeDocumentNumber?: string | null;
+  authorityDeclared: boolean;
+  status: string;
+  submittedAt: string;
+  /** @nullable */
+  reviewedAt?: string | null;
+  /** @nullable */
+  cancelledAt?: string | null;
+  /** @nullable */
+  decisionReason?: string | null;
+  /** @nullable */
+  contractId?: string | null;
+  representativeConfirmation?: CommercialRepresentativeConfirmationData | null;
+  proposedAirline?: CommercialProposedAirlineData | null;
+  existingCustomer: boolean;
+  services: CommercialRequestItemData[];
+  version: string;
+}
+
+export interface CommercialInboxData {
+  page: number;
+  limit: number;
+  total: number;
+  hasMore: boolean;
+  counts: CommercialInboxCountsData;
+  requests: CommercialInboxRequestData[];
 }
 
 export interface CommercialRequestData {
@@ -992,6 +1092,13 @@ export interface CommercialStationData {
 export interface ConfirmCharterPrepaymentRequest {
   amount: number;
   reference: string;
+}
+
+export interface ConfirmCommercialRepresentativeInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  note?: string | null;
 }
 
 export interface ContractApprovalSummaryData {
@@ -4514,6 +4621,16 @@ export interface ProgramOccShiftResponse {
   replayed: boolean;
 }
 
+export interface ProposedAirlineRequest {
+  name: string;
+  countryCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  icaoCode: string;
+  /** @nullable */
+  websiteUrl?: string | null;
+}
+
 export interface ProvisionAirlineInput {
   email: string;
   /** @nullable */
@@ -5248,6 +5365,8 @@ export interface ReviewCommercialInput {
   /** @nullable */
   reason?: string | null;
   stationIds: string[];
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface SaveAccessProfileInput {
@@ -5533,7 +5652,8 @@ export interface SubmitAirlinePermitInput {
 
 export interface SubmitCommercialRequestRequest {
   requestId: string;
-  airlineProfileId: string;
+  /** @nullable */
+  airlineProfileId?: string | null;
   serviceIds: string[];
   representativeName: string;
   representativeTitle: string;
@@ -5556,6 +5676,7 @@ export interface SubmitCommercialRequestRequest {
   representativeDocumentNumber?: string | null;
   /** @nullable */
   representativeDistrict?: string | null;
+  proposedAirline?: ProposedAirlineRequest | null;
 }
 
 export interface SubmitCommercialRequestResponse {
@@ -5768,7 +5889,8 @@ export interface ValidateAttendanceRequest {
 export interface VerifyAirlineInput {
   legalName: string;
   countryCode: string;
-  iataCode: string;
+  /** @nullable */
+  iataCode?: string | null;
   icaoCode: string;
   verificationSourceUrl: string;
   /** @nullable */
@@ -5778,6 +5900,23 @@ export interface VerifyAirlineInput {
 export interface VerifyLoginCodeRequest {
   challengeId: string;
   code: string;
+}
+
+export interface VerifyRequestAirlineInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  linkProfileId?: string | null;
+  /** @nullable */
+  legalName?: string | null;
+  /** @nullable */
+  countryCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  verificationSourceUrl?: string | null;
 }
 
 export type GetAccountChangesParams = {
@@ -5830,6 +5969,13 @@ version?: string;
 export type UploadCommercialMediaBody = {
   purpose?: string;
   file?: Blob;
+};
+
+export type ListCommercialRequestInboxParams = {
+status?: string;
+search?: string;
+page?: number;
+limit?: number;
 };
 
 export type GetContractsAirlinePermitsParams = {
@@ -8072,6 +8218,45 @@ export const listCommercialRequests = async ( options?: RequestInit): Promise<Co
 
 
 
+export const getListCommercialRequestInboxUrl = (params?: ListCommercialRequestInboxParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/contracts/commercial-requests/inbox?${stringifiedParams}` : `/api/v1/contracts/commercial-requests/inbox`
+}
+
+/**
+ * @summary Inbox with server-side filter, search and paging, and the counters per status. By default it
+lists the open requests (pending and in review), oldest first.
+ */
+export const listCommercialRequestInbox = async (params?: ListCommercialRequestInboxParams, options?: RequestInit): Promise<CommercialInboxData> => {
+
+  const res = await fetch(getListCommercialRequestInboxUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialInboxData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getListCommercialStationsUrl = () => {
 
 
@@ -8135,6 +8320,122 @@ const res = await fetch(getVerifyCommercialAirlineUrl(profileId),
 
 
 
+export const getVerifyCommercialRequestAirlineUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests/${id}/airline-verification`
+}
+
+/**
+ * @summary Verifies the request's airline with an official source; the first verification moves the
+request to «En revisión». A proposed airline is linked to an existing profile or gets a new
+verified and published one.
+ */
+export const verifyCommercialRequestAirline = async (id: string,
+    verifyRequestAirlineInput: VerifyRequestAirlineInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getVerifyCommercialRequestAirlineUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(verifyRequestAirlineInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getConfirmCommercialRepresentativeUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests/${id}/representative-confirmation`
+}
+
+/**
+ * @summary Records who confirmed the representative, when and how; approval requires it.
+ */
+export const confirmCommercialRepresentative = async (id: string,
+    confirmCommercialRepresentativeInput: ConfirmCommercialRepresentativeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getConfirmCommercialRepresentativeUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(confirmCommercialRepresentativeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCancelCommercialRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/contracts/commercial-requests/${id}/cancellation`
+}
+
+/**
+ * @summary Cancels a pending or in-review request with a reason; nothing is deleted.
+ */
+export const cancelCommercialRequest = async (id: string,
+    cancelCommercialRequestInput: CancelCommercialRequestInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCancelCommercialRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(cancelCommercialRequestInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getDecideCommercialRequestUrl = (id: string,) => {
 
 
@@ -8143,6 +8444,10 @@ export const getDecideCommercialRequestUrl = (id: string,) => {
   return `/api/v1/contracts/commercial-requests/${id}/decision`
 }
 
+/**
+ * @summary Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older
+clients exist (expand); a key without the version is rejected. Approval returns the contract.
+ */
 export const decideCommercialRequest = async (id: string,
     reviewCommercialInput?: ReviewCommercialInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 

@@ -4,10 +4,28 @@ export type ElevantApiErrorKind = "http" | "malformed-response";
 const CONTRACT_CODES = ["validity_pending", "airline_signature_pending", "signature_image_invalid", "renewal_mode_invalid",
   "valid_to_required", "dates_invalid", "valid_from_past", "renewal_term_required", "renewal_term_invalid",
   "renewal_notice_invalid", "termination_notice_invalid", "termination_terms_too_long", "packages_out_of_range"] as const;
+/**
+ * Generic command codes, the same in every module: stale rowversion, reused Idempotency-Key, missing
+ * key or expected version, missing or invalid reason, and a route resource that does not exist.
+ */
+const COMMON_COMMAND_CODES = ["version_conflict", "idempotency_conflict", "idempotency_key_required",
+  "expected_version_required", "reason_required", "not_found"] as const;
+/**
+ * Review of public commercial requests (phase 1): inbox, airline verification, representative
+ * confirmation, cancellation and decision; the public intake; and the default codes of the
+ * provisioning and airline-catalog screens of Superadministración.
+ */
+const COMMERCIAL_REQUEST_CODES = ["request_closed", "airline_unverified", "representative_unconfirmed",
+  "representative_already_confirmed", "airline_already_contracted", "airline_has_portal_account",
+  "airline_code_in_use", "airline_profile_conflict", "airline_identity_locked", "airline_already_linked",
+  "profile_not_found", "invalid_airline", "stations_invalid", "confirmation_note_required",
+  "invalid_commercial_request", "invalid_inbox_query", "invalid_application", "airline_unavailable",
+  "service_unavailable", "receipt_not_found", "request_unavailable", "email_in_use", "invalid_provisioning",
+  "invitations_unavailable", "invitation_already_accepted", "registry_check_required"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
-  (typeof CONTRACT_CODES)[number];
+  (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
-  "invalid_link", "refresh_rotated", ...CONTRACT_CODES];
+  "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

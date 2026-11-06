@@ -3,6 +3,7 @@ export * from "./flightReport";
 export * from "./operationDocuments";
 export * from "./charters";
 export * from "./operationalClose";
+export * from "./commercialRequests";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -170,6 +171,13 @@ export {
   type PublicServiceData,
   type SubmitCommercialRequestRequest,
   type SubmitCommercialRequestResponse,
+  type ProposedAirlineRequest,
+  type CommercialIdResponse,
+  type CommercialInboxData,
+  type CommercialInboxCountsData,
+  type CommercialInboxRequestData,
+  type CommercialProposedAirlineData,
+  type CommercialRepresentativeConfirmationData,
   type FinanceApprovedServiceResponse,
   type FinanceApprovedServicesResponse,
   type FinancePreinvoiceListItem,

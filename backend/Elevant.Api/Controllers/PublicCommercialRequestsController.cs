@@ -30,30 +30,21 @@ public sealed class PublicCommercialRequestsController(
         [FromBody] SubmitCommercialRequestRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await handler.HandleAsync(new SubmitCommercialRequestCommand(
-            request.RequestId, request.AirlineProfileId, request.ServiceIds,
-            request.RepresentativeName, request.RepresentativeTitle,
-            request.RepresentativeEmail, request.RepresentativePhone,
-            request.AuthorityDeclared, request.RepresentativeNationalityCode,
-            request.RepresentativeAddress, request.RepresentativeCountry,
-            request.RepresentativeProvince, request.RepresentativeMunicipality,
-            request.RepresentativeDocumentType, request.RepresentativeDocumentNumber,
-            request.RepresentativeDistrict),
-            cancellationToken);
+        var result = await handler.HandleAsync(Command(request), cancellationToken);
         if (!result.IsSuccess)
         {
-            var (status, title) = result.Failure!.Value switch
+            var (status, title, code) = result.Failure!.Value switch
             {
-                CommercialSubmissionFailure.InvalidRequest => (400, "Invalid commercial application."),
-                CommercialSubmissionFailure.AirlineUnavailable => (404, "Airline profile is unavailable."),
-                CommercialSubmissionFailure.ServiceUnavailable => (409, "Selected service is unavailable."),
-                CommercialSubmissionFailure.Conflict => (409, "Request identifier conflicts with an earlier application."),
+                CommercialSubmissionFailure.InvalidRequest => (400, "La solicitud no es válida.", "invalid_application"),
+                CommercialSubmissionFailure.AirlineUnavailable =>
+                    (404, "La aerolínea ya no está disponible.", "airline_unavailable"),
+                CommercialSubmissionFailure.ServiceUnavailable =>
+                    (409, "Un servicio seleccionado ya no está disponible.", "service_unavailable"),
+                CommercialSubmissionFailure.Conflict =>
+                    (409, "El identificador ya se usó en otra solicitud.", "idempotency_conflict"),
                 _ => throw new InvalidOperationException("Unsupported commercial submission failure."),
             };
-            return new ObjectResult(new ProblemDetails
-            {
-                Status = status, Title = title, Instance = HttpContext.Request.Path,
-            }) { StatusCode = status, ContentTypes = { "application/problem+json" } };
+            return Coded(status, title, code);
         }
 
         var response = new SubmitCommercialRequestResponse(result.Reference!, result.Replayed);
@@ -74,24 +65,32 @@ public sealed class PublicCommercialRequestsController(
         [FromBody] SubmitCommercialRequestRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await handler.LookupReceiptAsync(new SubmitCommercialRequestCommand(
-            request.RequestId, request.AirlineProfileId, request.ServiceIds,
-            request.RepresentativeName, request.RepresentativeTitle,
-            request.RepresentativeEmail, request.RepresentativePhone,
-            request.AuthorityDeclared, request.RepresentativeNationalityCode,
-            request.RepresentativeAddress, request.RepresentativeCountry,
-            request.RepresentativeProvince, request.RepresentativeMunicipality,
-            request.RepresentativeDocumentType, request.RepresentativeDocumentNumber,
-            request.RepresentativeDistrict),
-            cancellationToken);
+        var result = await handler.LookupReceiptAsync(Command(request), cancellationToken);
         if (result.IsSuccess)
             return Ok(new SubmitCommercialRequestResponse(result.Reference!, true));
-        var status = result.Failure == CommercialSubmissionFailure.InvalidRequest ? 400 : 404;
-        return new ObjectResult(new ProblemDetails
-        {
-            Status = status,
-            Title = status == 400 ? "Invalid commercial application." : "Receipt not found.",
-            Instance = HttpContext.Request.Path,
-        }) { StatusCode = status, ContentTypes = { "application/problem+json" } };
+        return result.Failure == CommercialSubmissionFailure.InvalidRequest
+            ? Coded(400, "La solicitud no es válida.", "invalid_application")
+            : Coded(404, "No se encontró un envío con estos datos.", "receipt_not_found");
     }
+
+    private static SubmitCommercialRequestCommand Command(SubmitCommercialRequestRequest request) => new(
+        request.RequestId, request.AirlineProfileId ?? Guid.Empty, request.ServiceIds,
+        request.RepresentativeName, request.RepresentativeTitle,
+        request.RepresentativeEmail, request.RepresentativePhone,
+        request.AuthorityDeclared, request.RepresentativeNationalityCode,
+        request.RepresentativeAddress, request.RepresentativeCountry,
+        request.RepresentativeProvince, request.RepresentativeMunicipality,
+        request.RepresentativeDocumentType, request.RepresentativeDocumentNumber,
+        request.RepresentativeDistrict,
+        request.ProposedAirline is { } proposed
+            ? new CommercialAirlineProposal(proposed.Name, proposed.CountryCode, proposed.IataCode,
+                proposed.IcaoCode, proposed.WebsiteUrl)
+            : null);
+
+    private ObjectResult Coded(int status, string title, string code) =>
+        new(new ProblemDetails
+        {
+            Status = status, Title = title, Instance = HttpContext.Request.Path,
+            Extensions = { ["code"] = code },
+        }) { StatusCode = status, ContentTypes = { "application/problem+json" } };
 }

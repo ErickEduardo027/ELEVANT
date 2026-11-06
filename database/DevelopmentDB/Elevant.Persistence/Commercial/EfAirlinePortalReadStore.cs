@@ -578,7 +578,8 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
         return new AirlinePortalBootstrapData(
             airline.PublicId,
             airline.OrganizationId,
-            airline.IataCode,
+            // An ICAO-only operator keeps the non-null field empty; the portal shows its ICAO code.
+            airline.IataCode ?? string.Empty,
             airline.IcaoCode,
             airline.Name,
             stationRows.Select(station => new AirlinePortalStationData(

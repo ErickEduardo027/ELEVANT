@@ -5777,6 +5777,26 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("nvarchar(1000)")
                         .HasColumnName("decision_reason");
 
+                    b.Property<string>("ProposedAirlineCountryCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasColumnName("proposed_airline_country_code");
+
+                    b.Property<string>("ProposedAirlineIataCode")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)")
+                        .HasColumnName("proposed_airline_iata_code");
+
+                    b.Property<string>("ProposedAirlineIcaoCode")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)")
+                        .HasColumnName("proposed_airline_icao_code");
+
+                    b.Property<string>("ProposedAirlineWebsiteUrl")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)")
+                        .HasColumnName("proposed_airline_website_url");
+
                     b.Property<long?>("ProvisionedAccountId")
                         .HasColumnType("bigint")
                         .HasColumnName("provisioned_account_id");
@@ -5786,6 +5806,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("public_id")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
+
+                    b.Property<string>("RepresentativeConfirmationNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)")
+                        .HasColumnName("representative_confirmation_note");
+
+                    b.Property<DateTimeOffset?>("RepresentativeConfirmedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("representative_confirmed_at");
+
+                    b.Property<long?>("RepresentativeConfirmedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("representative_confirmed_by_account_id");
 
                     b.Property<string>("RequestCode")
                         .IsRequired()
@@ -5852,6 +5886,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("PublicId")
                         .IsUnique();
+
+                    b.HasIndex("RepresentativeConfirmedByAccountId");
 
                     b.HasIndex("RequestCode")
                         .IsUnique();
@@ -11385,7 +11421,6 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasDefaultValueSql("SYSUTCDATETIME()");
 
                     b.Property<string>("IataCode")
-                        .IsRequired()
                         .HasColumnType("char(2)")
                         .HasColumnName("iata_code");
 
@@ -11431,7 +11466,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("IataCode")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[iata_code] IS NOT NULL");
 
                     b.HasIndex("IcaoCode")
                         .IsUnique();
@@ -14835,6 +14871,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("ProvisionedAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RepresentativeConfirmedByAccountId")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)

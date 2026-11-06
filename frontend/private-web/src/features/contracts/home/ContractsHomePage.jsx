@@ -1,4 +1,5 @@
 import KpiCard from '../../../components/KpiCard';
+import { commercialRequestMessage } from '../../../services/commercialProblems';
 import { ContractIcon, RequestIcon, ArrowIcon } from '../components/icons';
 
 const statusLabels = {
@@ -21,7 +22,10 @@ function SectionCard({ title, actionLabel, onAction, children }) {
 export default function ContractsHomePage({ status, data, error, onRetry, onNavigate }) {
   if (status === 'error') return <div role="alert" className="rounded-2xl border border-status-danger/30 bg-white/70 p-6 dark:bg-surface-dark-card">
     <p className="font-semibold text-status-danger">No se pudo cargar el resumen contractual.</p>
-    <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{error?.message ?? 'Intente nuevamente.'}</p>
+    <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{commercialRequestMessage(error, {
+      fallback: 'Revise la conexión e intente nuevamente.',
+      forbidden: 'No tiene permiso para ver las solicitudes o los borradores.',
+    })}</p>
     <button type="button" onClick={onRetry} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Reintentar</button>
   </div>;
 
@@ -32,7 +36,7 @@ export default function ContractsHomePage({ status, data, error, onRetry, onNavi
       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Departamento de Contratos</p>
       <h1 className="mt-1 text-2xl font-bold text-ink-900 dark:text-text-primary-dark">Resumen contractual</h1>
       <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">Solicitudes comerciales y borradores contractuales en Development.</p>
-      <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">La API devuelve hasta 200 solicitudes recientes y 100 borradores; los indicadores reflejan ese alcance.</p>
+      <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">Los indicadores de solicitudes cuentan todas las registradas; los de borradores, hasta 100.</p>
       {status === 'refreshing' && <p role="status" className="mt-2 text-xs font-semibold text-accent-600">Actualizando datos…</p>}
     </div>
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

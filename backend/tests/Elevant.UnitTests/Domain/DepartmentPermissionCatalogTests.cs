@@ -31,6 +31,7 @@ public sealed class DepartmentPermissionCatalogTests
 
     [Theory]
     [InlineData("contracts.requests.read", Department.Contracts)]
+    [InlineData("contracts.requests.cancel", Department.Contracts)]
     [InlineData("operations.review.decide", Department.Operations)]
     [InlineData("human_resources.access_requests.validate", Department.HumanResources)]
     [InlineData("finance.preinvoices.issue", Department.Finance)]

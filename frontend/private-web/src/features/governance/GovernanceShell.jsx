@@ -19,6 +19,9 @@ import {
   getManagedAirlines, saveManagedAirline, archiveManagedAirline, enrichManagedAirlines, checkManagedAirlineRegistry,
 } from '../../services/commercialGovernanceApi';
 import { convertLegacyRole, getDepartmentsOverview, listLegacyRoles } from '../../services/departmentGovernanceService';
+import { commercialGovernanceMessage } from '../../services/commercialProblems';
+
+const LOAD_FAILED = 'No se pudo cargar la gobernanza. Revise la conexión e intente de nuevo.';
 
 const MODULE_INFO = {
   home: { label: 'Inicio', description: 'Resumen de solicitudes y cuentas.' },
@@ -70,7 +73,7 @@ export default function GovernanceShell({ user, onLogout }) {
     } catch (failure) {
       if (version !== refreshVersion.current) return;
       setStatus(current => (current === 'ready' ? current : 'error'));
-      setError(failure.message);
+      setError(commercialGovernanceMessage(failure, { fallback: LOAD_FAILED }));
     }
   }, []);
 
@@ -93,9 +96,8 @@ export default function GovernanceShell({ user, onLogout }) {
     setError(''); setNotice('');
     try { await action(); setNotice(successMessage); await refresh(); return true; }
     catch (failure) {
-      setError(failure.code === 'registry_check_required'
-        ? 'Para publicarla, verifica la aerolínea en el registro público (check verde) o marca la verificación manual con su fuente.'
-        : failure.message);
+      // The code explains the failure in Spanish; the server title is never shown.
+      setError(commercialGovernanceMessage(failure));
       return false;
     }
   }
@@ -124,7 +126,7 @@ export default function GovernanceShell({ user, onLogout }) {
               <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{active.description}</p></header>
           )}
           {notice && <div role="status" className="rounded-lg border border-status-success/30 bg-status-success/10 p-3 text-sm">{notice}</div>}
-          {error && <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{error}</div>}
+          {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger"><span>{error}</span>{status === 'error' && <button type="button" onClick={() => { void refresh(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button>}</div>}
           {moduleId === 'internal' && <InternalUsersPanel />}
           {moduleId === 'clients' && <ClientsPanel />}
           {moduleId === 'validations' && <AccessValidationsPage />}
@@ -199,7 +201,8 @@ function LegacyRoles({ run }) {
   const [error, setError] = useState('');
   const [converting, setConverting] = useState(null);
   const load = useCallback(async () => {
-    try { setRoles(await listLegacyRoles()); setError(''); } catch (failure) { setError(failure.message); }
+    try { setRoles(await listLegacyRoles()); setError(''); }
+    catch (failure) { setError(commercialGovernanceMessage(failure, { fallback: 'No se pudieron cargar los roles heredados.' })); }
   }, []);
   useEffect(() => { void load(); }, [load]);
   return <section className="rounded-xl border border-black/5 bg-white p-6 dark:bg-surface-dark-card">
@@ -225,7 +228,7 @@ function GovernanceSettings({ snapshot, run }) {
   useEffect(() => {
     let active = true;
     getGovernanceAudit(page).then(result => { if (active) { setAudit(result); setAuditError(''); } })
-      .catch(error => { if (active) setAuditError(error.message); });
+      .catch(error => { if (active) setAuditError(commercialGovernanceMessage(error, { fallback: 'No se pudo cargar la auditoría.' })); });
     return () => { active = false; };
   }, [page, snapshot]);
   return <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">

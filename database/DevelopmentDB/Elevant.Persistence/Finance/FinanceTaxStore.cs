@@ -27,7 +27,7 @@ public sealed class FinanceTaxStore(ElevantDbContext context, IActorContextResol
         var actor = await AuthorizeAsync(actorId, "finance.taxes.read", ct); if (actor is null) return null;
         var ids = actor.StationScopes.Select(s => s.StationId).ToArray();
         return new(await context.Airlines.AsNoTracking().Where(a => a.IsActive).OrderBy(a => a.Name)
-            .Select(a => new FinanceTaxOption(a.PublicId, a.IataCode, a.Name)).ToArrayAsync(ct),
+            .Select(a => new FinanceTaxOption(a.PublicId, a.IataCode ?? a.IcaoCode, a.Name)).ToArrayAsync(ct),
             await context.Stations.AsNoTracking().Where(s => s.IsActive && ids.Contains(s.PublicId)).OrderBy(s => s.Code)
                 .Select(s => new FinanceTaxOption(s.PublicId, s.Code, s.Name)).ToArrayAsync(ct));
     }

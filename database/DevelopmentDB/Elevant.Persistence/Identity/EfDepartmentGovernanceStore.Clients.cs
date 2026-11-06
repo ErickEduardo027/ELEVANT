@@ -30,7 +30,7 @@ internal sealed partial class EfDepartmentGovernanceStore
                            select new { membership.OrganizationId, user.Status, Membership = membership.Status })
             .ToArrayAsync(cancellationToken);
         var byOrganization = users.ToLookup(item => item.OrganizationId);
-        return airlines.Select(airline => new ClientAirlineData(airline.PublicId, airline.Name, airline.IataCode,
+        return airlines.Select(airline => new ClientAirlineData(airline.PublicId, airline.Name, airline.IataCode ?? string.Empty,
             byOrganization[airline.Id].Count(),
             byOrganization[airline.Id].Count(item => item.Status == AccountLifecycleStatus.Active &&
                 item.Membership == MembershipStatus.Active))).ToArray();

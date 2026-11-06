@@ -2396,8 +2396,17 @@ public sealed partial class SqlServerMigrationTests
                 message.PayloadJson.Contains("commercial_requests"), cancellationToken);
         var station = (await workflow.ListStationsAsync(contractsAccountId, cancellationToken))!.Single();
         var approval = new ReviewCommercialInput(true, null, [station.Id]);
+        async Task<string> VersionOfAsync(Guid id) => (await workflow.ListInboxAsync(contractsAccountId,
+                new CommercialInboxQuery(CommercialInboxQuery.All, null, 1, 50), cancellationToken))!
+            .Requests.Single(item => item.Id == id).Version;
+        // Approval needs the representative confirmed by Contratos (1-N18) and the airline verified.
+        Assert.Equal("representative_unconfirmed",
+            (await workflow.DecideAsync(contractsAccountId, requestId, approval, null, cancellationToken)).Code);
+        Assert.True((await workflow.ConfirmRepresentativeAsync(contractsAccountId, requestId, Guid.NewGuid(),
+            new ConfirmCommercialRepresentativeInput(await VersionOfAsync(requestId),
+                "Llamada a la central de la aerolínea: confirmó la gerencia comercial."), cancellationToken)).IsSuccess);
         Assert.Equal(CommercialWorkflowFailure.AirlineUnverified,
-            (await workflow.DecideAsync(contractsAccountId, requestId, approval, cancellationToken)).Failure);
+            (await workflow.DecideAsync(contractsAccountId, requestId, approval, null, cancellationToken)).Failure);
         var requestChangesBeforeVerification = await CountCommercialRequestChangesAsync();
         Assert.True((await workflow.VerifyAirlineAsync(contractsAccountId,
             catalog.Airlines[0].Id, new VerifyAirlineInput("Test Carrier LLC", "DO",
@@ -2412,12 +2421,12 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken)).IsSuccess);
         var requestChangesBeforeRejection = await CountCommercialRequestChangesAsync();
         Assert.True((await workflow.DecideAsync(contractsAccountId, rejectedRequestId,
-            new ReviewCommercialInput(false, "No se acreditó la representación.", []),
+            new ReviewCommercialInput(false, "No se acreditó la representación.", []), null,
             cancellationToken)).IsSuccess);
         Assert.True(await CountCommercialRequestChangesAsync() > requestChangesBeforeRejection,
             "Rejecting a request must invalidate other Contracts sessions.");
         var requestChangesBeforeDecision = await CountCommercialRequestChangesAsync();
-        var decided = await workflow.DecideAsync(contractsAccountId, requestId, approval,
+        var decided = await workflow.DecideAsync(contractsAccountId, requestId, approval, null,
             cancellationToken);
         Assert.True(decided.IsSuccess, decided.Failure?.ToString());
         Assert.True(await CountCommercialRequestChangesAsync() > requestChangesBeforeDecision,

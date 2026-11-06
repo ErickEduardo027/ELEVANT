@@ -33,15 +33,9 @@ public sealed class CommercialProvisioningController(
     {
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.ProvisionAsync(actorId, requestId, input, cancellationToken);
-        return result.Failure switch
-        {
-            null => StatusCode(201, new CommercialAccountResponse(result.AccountId!.Value)),
-            ProvisioningFailure.Forbidden => Forbid(),
-            ProvisioningFailure.NotFound => Problem(statusCode: 404, title: "Provisioning request not found."),
-            ProvisioningFailure.Conflict => Problem(statusCode: 409, title: "Provisioning request is no longer available."),
-            ProvisioningFailure.Invalid => Problem(statusCode: 400, title: "Email or temporary password is invalid, or invitations are not configured."),
-            _ => throw new InvalidOperationException(),
-        };
+        return result.Failure is null
+            ? StatusCode(201, new CommercialAccountResponse(result.AccountId!.Value))
+            : Failure(result, "request_unavailable", "invalid_provisioning");
     }
 
     /// <summary>Sends a new activation link to an airline account that has not activated yet (ADR-0022).</summary>
@@ -51,14 +45,25 @@ public sealed class CommercialProvisioningController(
     {
         if (!TryActor(out var actorId)) return Unauthorized();
         var result = await store.ResendInvitationAsync(actorId, accountId, cancellationToken);
-        return result.Failure switch
+        return result.Failure is null
+            ? Accepted(new CommercialAccountResponse(result.AccountId!.Value))
+            : Failure(result, "invitation_already_accepted", "invitations_unavailable");
+    }
+
+    // Every failure carries a code (the screens explain it); the defaults name the usual cause.
+    private IActionResult Failure(ProvisioningResult result, string conflictCode, string invalidCode)
+    {
+        if (result.Failure == ProvisioningFailure.Forbidden) return Forbid();
+        var (status, title, code) = result.Failure switch
         {
-            null => Accepted(new CommercialAccountResponse(result.AccountId!.Value)),
-            ProvisioningFailure.Forbidden => Forbid(),
-            ProvisioningFailure.NotFound => Problem(statusCode: 404, title: "Airline account not found."),
-            ProvisioningFailure.Conflict => Problem(statusCode: 409, title: "The account is already active."),
-            _ => Problem(statusCode: 400, title: "The portal origin for activation links is not configured."),
+            ProvisioningFailure.NotFound => (404, "El registro ya no existe.", result.Code ?? "not_found"),
+            ProvisioningFailure.Conflict => (409, "El aprovisionamiento ya no es posible en el estado actual.",
+                result.Code ?? conflictCode),
+            _ => (400, "Los datos del acceso no son válidos.", result.Code ?? invalidCode),
         };
+        var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
     }
 
     private bool TryActor(out Guid accountId) =>

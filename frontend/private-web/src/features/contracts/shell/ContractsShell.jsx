@@ -112,7 +112,7 @@ export default function ContractsShell({ user = CURRENT_USER, onLogout, observeN
           ) : activeModule.id === CONTRACT_MODULE_IDS.DRAFTS ? (
             <ManagedDraftsPage canEdit={can('contracts.drafts.update')} canActivate={can('contracts.drafts.activate')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.REQUESTS ? (
-            <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} />
+            <CommercialIntakePage canVerify={can('contracts.requests.verify')} canApprove={can('contracts.requests.approve')} canReject={can('contracts.requests.reject')} canCancel={can('contracts.requests.cancel')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.CATALOG ? (
             <CommercialCatalogPage canCreate={can('contracts.catalog.create')} canEdit={can('contracts.catalog.update')} canRetire={can('contracts.catalog.delete')} canSeeClosures={can('contracts.service_closures.read')} />
           ) : activeModule.id === CONTRACT_MODULE_IDS.SERVICES ? (

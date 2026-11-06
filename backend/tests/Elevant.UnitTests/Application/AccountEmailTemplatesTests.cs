@@ -10,13 +10,20 @@ public sealed class AccountEmailTemplatesTests
 {
     private const string Link = "https://portal.example.test/activar?token=aB3-dE5_fG7hI9jK1lM3nO5pQ7rS9tU1";
 
-    public static TheoryData<string> Kinds => new() { "activation", "code", "reset", "test" };
+    public static TheoryData<string> Kinds => new()
+        { "activation", "code", "reset", "test", "request-approved", "request-rejected", "request-cancelled" };
 
     private static EmailMessage Render(string kind) => kind switch
     {
         "activation" => AccountEmailTemplates.Activation("ana@example.test", "Ana", "Demo Airlines", Link),
         "code" => AccountEmailTemplates.LoginCode("ana@example.test", "246810"),
         "reset" => AccountEmailTemplates.PasswordReset("ana@example.test", Link.Replace("activar", "recuperar")),
+        "request-approved" => AccountEmailTemplates.CommercialRequestApproved("ana@example.test", "Ana", "Demo Airlines",
+            "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e"),
+        "request-rejected" => AccountEmailTemplates.CommercialRequestRejected("ana@example.test", "Ana", "Demo Airlines",
+            "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e", "No se acreditó la representación."),
+        "request-cancelled" => AccountEmailTemplates.CommercialRequestCancelled("ana@example.test", "Ana", "Demo Airlines",
+            "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e", "Solicitud duplicada."),
         _ => AccountEmailTemplates.Test("ana@example.test", new DateTimeOffset(2026, 11, 2, 20, 17, 0, TimeSpan.Zero)),
     };
 
@@ -59,6 +66,33 @@ public sealed class AccountEmailTemplatesTests
         Assert.DoesNotContain("<script>", email.HtmlBody);
         Assert.Contains("&lt;script&gt;", email.HtmlBody);
         Assert.Contains("A&amp;B Air", email.HtmlBody);
+    }
+
+    [Fact]
+    public void TheRequestDecisionTellsTheReasonWithoutPuttingTheReferenceInTheSubject()
+    {
+        const string reference = "0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e";
+        var rejected = AccountEmailTemplates.CommercialRequestRejected("ana@example.test", "Ana", "A&B Air", reference,
+            "Faltan <b>códigos</b> ICAO válidos.");
+        var cancelled = AccountEmailTemplates.CommercialRequestCancelled("ana@example.test", "Ana", "A&B Air", reference,
+            "Solicitud duplicada.");
+        var approved = AccountEmailTemplates.CommercialRequestApproved("ana@example.test", "Ana", "A&B Air", reference);
+
+        foreach (var email in new[] { rejected, cancelled, approved })
+        {
+            Assert.DoesNotContain(reference, email.Subject);
+            Assert.Contains(reference, email.TextBody);
+            Assert.Contains("A&amp;B Air", email.HtmlBody);
+            Assert.Equal("ana@example.test", email.To);
+        }
+        Assert.Contains("Motivo: Faltan <b>códigos</b> ICAO válidos.", rejected.TextBody);
+        Assert.Contains("Faltan &lt;b&gt;", rejected.HtmlBody);
+        Assert.DoesNotContain("<b>", rejected.HtmlBody);
+        Assert.Contains("Motivo: Solicitud duplicada.", cancelled.TextBody);
+        Assert.Contains("no fue aprobada", rejected.Subject);
+        Assert.Contains("cancelada", cancelled.Subject);
+        Assert.Contains("aprobada", approved.Subject);
+        Assert.DoesNotContain("Motivo", approved.TextBody);
     }
 
     [Fact]

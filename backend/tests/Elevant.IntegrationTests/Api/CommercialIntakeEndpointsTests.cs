@@ -45,6 +45,42 @@ public sealed class CommercialIntakeEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task AnAirlineOutsideTheCatalogIsProposedAndAnIncompleteOneIsACodedProblem()
+    {
+        var stub = new IntakeStub();
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<ICommercialIntakeStore>();
+                services.AddSingleton<ICommercialIntakeStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        object Payload(object? proposedAirline) => new
+        {
+            requestId = Guid.NewGuid(), airlineProfileId = (Guid?)null, serviceIds = new[] { Guid.NewGuid() },
+            representativeName = "Ana López", representativeTitle = "Representante legal",
+            representativeEmail = "ana@caribecargo.example.com", representativePhone = "+1 809 555 0100",
+            authorityDeclared = true, representativeDocumentType = "NationalId",
+            representativeDocumentNumber = "001-1234567-3", proposedAirline,
+        };
+
+        using var proposed = await client.PostAsJsonAsync("/api/v1/public/commercial-requests",
+            Payload(new { name = "Caribe Cargo Express", countryCode = "DO", iataCode = (string?)null, icaoCode = "CCX",
+                websiteUrl = "https://caribecargo.example.com" }), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Created, proposed.StatusCode);
+        Assert.Equal(Guid.Empty, stub.Written?.AirlineProfileId);
+        Assert.Equal(new CommercialAirlineProposal("Caribe Cargo Express", "DO", null, "CCX",
+            "https://caribecargo.example.com"), stub.Written?.ProposedAirline);
+
+        using var incomplete = await client.PostAsJsonAsync("/api/v1/public/commercial-requests", Payload(null),
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, incomplete.StatusCode);
+        using var problem = JsonDocument.Parse(await incomplete.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("invalid_application", problem.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task ReceiptLookupIsReadOnlyAndReturnsNotFoundWithoutOriginalSubmission()
     {
         var stub = new IntakeStub();

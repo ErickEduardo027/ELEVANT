@@ -32,9 +32,14 @@ describe('ContractsHomePage', () => {
     const { rerender } = render(<ContractsHomePage status="loading" data={null} onRetry={() => {}} onNavigate={() => {}} />);
     expect(screen.getAllByTestId('kpi-skeleton')).toHaveLength(4);
     const onRetry = vi.fn();
-    rerender(<ContractsHomePage status="error" error={new Error('sin conexión')} onRetry={onRetry} onNavigate={() => {}} />);
-    expect(screen.getByRole('alert')).toHaveTextContent('sin conexión');
+    // The server title or exception text never reaches the screen.
+    rerender(<ContractsHomePage status="error" error={Object.assign(new Error('Internal failure'), { status: 503 })}
+      onRetry={onRetry} onNavigate={() => {}} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('Revise la conexión e intente nuevamente.');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Internal failure');
     await userEvent.click(screen.getByRole('button', { name: /reintentar/i }));
     expect(onRetry).toHaveBeenCalledOnce();
+    rerender(<ContractsHomePage status="error" error={{ status: 403 }} onRetry={onRetry} onNavigate={() => {}} />);
+    expect(screen.getByRole('alert')).toHaveTextContent('No tiene permiso para ver las solicitudes o los borradores.');
   });
 });

@@ -3991,6 +3991,96 @@
         ]
       }
     },
+    "/api/v1/contracts/commercial-requests/inbox": {
+      "get": {
+        "tags": [
+          "CommercialRequestsManagement"
+        ],
+        "summary": "Inbox with server-side filter, search and paging, and the counters per status. By default it\nlists the open requests (pending and in review), oldest first.",
+        "operationId": "ListCommercialRequestInbox",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialInboxData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/contracts/commercial-requests/stations": {
       "get": {
         "tags": [
@@ -4086,17 +4176,356 @@
         ]
       }
     },
+    "/api/v1/contracts/commercial-requests/{id}/airline-verification": {
+      "post": {
+        "tags": [
+          "CommercialRequestsManagement"
+        ],
+        "summary": "Verifies the request's airline with an official source; the first verification moves the\nrequest to «En revisión». A proposed airline is linked to an existing profile or gets a new\nverified and published one.",
+        "operationId": "VerifyCommercialRequestAirline",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/VerifyRequestAirlineInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/commercial-requests/{id}/representative-confirmation": {
+      "post": {
+        "tags": [
+          "CommercialRequestsManagement"
+        ],
+        "summary": "Records who confirmed the representative, when and how; approval requires it.",
+        "operationId": "ConfirmCommercialRepresentative",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ConfirmCommercialRepresentativeInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/contracts/commercial-requests/{id}/cancellation": {
+      "post": {
+        "tags": [
+          "CommercialRequestsManagement"
+        ],
+        "summary": "Cancels a pending or in-review request with a reason; nothing is deleted.",
+        "operationId": "CancelCommercialRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CancelCommercialRequestInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/contracts/commercial-requests/{id}/decision": {
       "post": {
         "tags": [
           "CommercialRequestsManagement"
         ],
+        "summary": "Approves or rejects. The Idempotency-Key and `expectedVersion` are optional while older\nclients exist (expand); a key without the version is rejected. Approval returns the contract.",
         "operationId": "DecideCommercialRequest",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -4141,6 +4570,56 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -31279,6 +31758,20 @@
         },
         "additionalProperties": false
       },
+      "CancelCommercialRequestInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CancelRequisitionInput": {
         "required": [
           "expectedVersion",
@@ -31754,6 +32247,299 @@
         },
         "additionalProperties": false
       },
+      "CommercialInboxCountsData": {
+        "required": [
+          "approved",
+          "cancelled",
+          "inReview",
+          "pending",
+          "rejected"
+        ],
+        "type": "object",
+        "properties": {
+          "pending": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "inReview": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "approved": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rejected": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "cancelled": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialInboxData": {
+        "required": [
+          "counts",
+          "hasMore",
+          "limit",
+          "page",
+          "requests",
+          "total"
+        ],
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "total": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "hasMore": {
+            "type": "boolean"
+          },
+          "counts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialInboxCountsData"
+              }
+            ]
+          },
+          "requests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommercialInboxRequestData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialInboxRequestData": {
+        "required": [
+          "airline",
+          "airlineVerified",
+          "authorityDeclared",
+          "existingCustomer",
+          "id",
+          "reference",
+          "representativeEmail",
+          "representativeName",
+          "representativePhone",
+          "representativeTitle",
+          "services",
+          "status",
+          "submittedAt",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "airline": {
+            "type": "string"
+          },
+          "airlineProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "legalName": {
+            "type": "string",
+            "nullable": true
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "logoUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "airlineVerified": {
+            "type": "boolean"
+          },
+          "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "airlineWebsiteUrl": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeName": {
+            "type": "string"
+          },
+          "representativeTitle": {
+            "type": "string"
+          },
+          "representativeEmail": {
+            "type": "string"
+          },
+          "representativePhone": {
+            "type": "string"
+          },
+          "representativeNationalityCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeAddress": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeCountry": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeProvince": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeMunicipality": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDistrict": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDocumentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "representativeDocumentNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "authorityDeclared": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string"
+          },
+          "submittedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "decisionReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "contractId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "representativeConfirmation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialRepresentativeConfirmationData"
+              }
+            ],
+            "nullable": true
+          },
+          "proposedAirline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CommercialProposedAirlineData"
+              }
+            ],
+            "nullable": true
+          },
+          "existingCustomer": {
+            "type": "boolean"
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CommercialRequestItemData"
+            }
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialProposedAirlineData": {
+        "required": [
+          "icaoCode",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CommercialRepresentativeConfirmationData": {
+        "required": [
+          "confirmedAt",
+          "confirmedBy",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "confirmedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "confirmedBy": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CommercialRequestData": {
         "required": [
           "airline",
@@ -31940,6 +32726,20 @@
           },
           "reference": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfirmCommercialRepresentativeInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -44487,6 +45287,34 @@
         },
         "additionalProperties": false
       },
+      "ProposedAirlineRequest": {
+        "required": [
+          "countryCode",
+          "icaoCode",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "websiteUrl": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ProvisionAirlineInput": {
         "required": [
           "email"
@@ -47240,6 +48068,10 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -48400,7 +49232,6 @@
       },
       "SubmitCommercialRequestRequest": {
         "required": [
-          "airlineProfileId",
           "authorityDeclared",
           "representativeEmail",
           "representativeName",
@@ -48417,7 +49248,8 @@
           },
           "airlineProfileId": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "nullable": true
           },
           "serviceIds": {
             "type": "array",
@@ -48471,6 +49303,14 @@
           },
           "representativeDistrict": {
             "type": "string",
+            "nullable": true
+          },
+          "proposedAirline": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProposedAirlineRequest"
+              }
+            ],
             "nullable": true
           }
         },
@@ -49147,7 +49987,6 @@
       "VerifyAirlineInput": {
         "required": [
           "countryCode",
-          "iataCode",
           "icaoCode",
           "legalName",
           "verificationSourceUrl"
@@ -49161,7 +50000,8 @@
             "type": "string"
           },
           "iataCode": {
-            "type": "string"
+            "type": "string",
+            "nullable": true
           },
           "icaoCode": {
             "type": "string"
@@ -49189,6 +50029,41 @@
           },
           "code": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "VerifyRequestAirlineInput": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "linkProfileId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "legalName": {
+            "type": "string",
+            "nullable": true
+          },
+          "countryCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "verificationSourceUrl": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

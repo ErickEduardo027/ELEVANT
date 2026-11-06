@@ -4,7 +4,8 @@ public sealed class Airline : AuditableEntity
 {
     public long OrganizationId { get; set; }
 
-    public string IataCode { get; set; } = string.Empty;
+    /// <summary>Null for an operator without an IATA designator; the ICAO code is always present.</summary>
+    public string? IataCode { get; set; }
 
     public string IcaoCode { get; set; } = string.Empty;
 

@@ -119,6 +119,30 @@ describe("canonical public commercial intake client", () => {
     expect(sent).toEqual(application);
   });
 
+  it("proposes an airline that is not in the catalog with its ICAO code and no IATA", async () => {
+    let sent: unknown;
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+      fetch: async (_url, init) => {
+        sent = JSON.parse(String(init?.body));
+        return new Response(JSON.stringify({ reference: "REQ-3", replayed: false }),
+          { status: 201, headers: { "content-type": "application/json" } });
+      },
+    });
+    const proposal = { ...request, airlineProfileId: null, proposedAirline: { name: "Caribe Cargo Express",
+      countryCode: "DO", iataCode: null, icaoCode: "CCX", websiteUrl: "https://caribecargo.example.com" } };
+    await expect(client.submitCommercialRequest(proposal)).resolves.toEqual({ reference: "REQ-3", replayed: false });
+    expect(sent).toEqual(proposal);
+    for (const invalid of [
+      { ...proposal, airlineProfileId },
+      { ...proposal, proposedAirline: { ...proposal.proposedAirline, icaoCode: "CC" } },
+      { ...proposal, proposedAirline: { ...proposal.proposedAirline, iataCode: "12" } },
+      { ...proposal, proposedAirline: { ...proposal.proposedAirline, websiteUrl: "http://caribecargo.example.com" } },
+      { ...proposal, proposedAirline: { ...proposal.proposedAirline, countryCode: "do" } },
+      { ...proposal, proposedAirline: null },
+    ])
+      await expect(client.submitCommercialRequest(invalid)).rejects.toBeInstanceOf(TypeError);
+  });
+
   it("rejects stale ids, missing authority and a misleading success response", async () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => new Response(JSON.stringify({ reference: "REQ-SYNTHETIC-001",

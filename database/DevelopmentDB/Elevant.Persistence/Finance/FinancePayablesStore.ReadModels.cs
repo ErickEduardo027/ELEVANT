@@ -68,7 +68,7 @@ internal sealed partial class FinancePayablesStore
             var suppliers = a.Context.HasPermission("finance.suppliers.read") || a.Context.HasPermission("finance.payables.create") || a.Context.HasPermission("finance.payables.read")
                 ? await context.Set<Supplier>().Where(x => a.Stations.Contains(x.ScopeStationId) && x.IsActive && (station == null || x.ScopeStationId == station))
                     .OrderBy(x => x.Code).Select(x => new FinancePayablesOption(x.PublicId, x.Code, x.Name)).ToArrayAsync(ct) : [];
-            var airlines = await context.Set<Airline>().Where(x => x.IsActive).OrderBy(x => x.IataCode).Select(x => new FinancePayablesOption(x.PublicId, x.IataCode, x.Name)).ToArrayAsync(ct);
+            var airlines = await context.Set<Airline>().Where(x => x.IsActive).OrderBy(x => x.IataCode).Select(x => new FinancePayablesOption(x.PublicId, x.IataCode ?? x.IcaoCode, x.Name)).ToArrayAsync(ct);
             var services = await context.Set<ServiceDefinition>().Where(x => x.IsActive).OrderBy(x => x.Code).Select(x => new FinancePayablesOption(x.PublicId, x.Code, x.Name)).ToArrayAsync(ct);
             var turns = await context.Set<Turnaround>().Where(x => a.Stations.Contains(x.StationId) && (station == null || x.StationId == station))
                 .OrderByDescending(x => x.OperationDate).ThenByDescending(x => x.Id).Take(200).Select(x => new FinancePayablesOption(x.PublicId, x.OperationCode, x.OperationCode)).ToArrayAsync(ct);

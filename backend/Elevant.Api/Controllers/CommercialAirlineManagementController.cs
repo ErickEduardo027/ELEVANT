@@ -104,17 +104,23 @@ public sealed class CommercialAirlineManagementController(
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
 
+    // Every failure carries a code (the screens explain it); the defaults name the usual cause.
     private IActionResult Failure(CatalogMutationFailure failure, string? code = null) => failure switch
     {
         CatalogMutationFailure.Forbidden => Forbid(),
-        CatalogMutationFailure.Invalid when code == "registry_check_required" => new ObjectResult(new ProblemDetails
-        {
-            Status = 400, Title = "Publishing needs a green registry check or a manual verification.",
-            Extensions = { ["code"] = code },
-        }) { StatusCode = 400 },
-        CatalogMutationFailure.Invalid => Problem(statusCode: 400, title: "Invalid airline profile."),
-        CatalogMutationFailure.NotFound => Problem(statusCode: 404, title: "Airline profile not found."),
-        CatalogMutationFailure.Conflict => Problem(statusCode: 409, title: "Airline profile changed; reload and retry."),
+        CatalogMutationFailure.Invalid when code == "registry_check_required" =>
+            Coded(400, "Para publicarla hace falta el registro público en verde o una verificación manual.", code),
+        CatalogMutationFailure.Invalid => Coded(400, "La ficha de la aerolínea no es válida.", code ?? "invalid_airline"),
+        CatalogMutationFailure.NotFound => Coded(404, "La ficha de la aerolínea ya no existe.", code ?? "not_found"),
+        CatalogMutationFailure.Conflict => Coded(409, "La ficha cambió o entra en conflicto con otra aerolínea.",
+            code ?? "version_conflict"),
         _ => throw new InvalidOperationException(),
     };
+
+    private ObjectResult Coded(int status, string title, string code)
+    {
+        var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
+    }
 }

@@ -162,7 +162,7 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                         station.IanaTimeZone),
                     Airline = new RampAirlineData(
                         airline.PublicId,
-                        airline.IataCode,
+                        airline.IataCode ?? string.Empty,
                         airline.IcaoCode,
                         airline.Name),
                     Aircraft = aircraft == null

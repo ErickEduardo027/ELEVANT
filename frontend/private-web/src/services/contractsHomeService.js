@@ -1,18 +1,23 @@
-import { getCommercialRequests, getManagedDraftOverview } from './commercialGovernanceApi';
+import { getCommercialRequestInbox, getManagedDraftOverview } from './commercialGovernanceApi';
 
+const RECENT_REQUESTS = 5;
+
+/**
+ * Contratos overview. The request indicators are the inbox counters of every request, not a
+ * count over a truncated list (1-N23); the recent list is the latest page of all statuses.
+ */
 export async function getContractsHomeSnapshot() {
-  const [requests, drafts] = await Promise.all([
-    getCommercialRequests(), getManagedDraftOverview(),
+  const [inbox, drafts] = await Promise.all([
+    getCommercialRequestInbox({ status: 'All', page: 1, limit: RECENT_REQUESTS }), getManagedDraftOverview(),
   ]);
   return {
     kpis: {
-      pendingRequests: requests.filter(item => ['Pending', 'InReview'].includes(item.status)).length,
-      approvedRequests: requests.filter(item => item.status === 'Approved').length,
+      pendingRequests: inbox.counts.pending + inbox.counts.inReview,
+      approvedRequests: inbox.counts.approved,
       pendingDrafts: drafts.count,
-      rejectedRequests: requests.filter(item => item.status === 'Rejected').length,
+      rejectedRequests: inbox.counts.rejected,
     },
-    recentRequests: [...requests].sort((a, b) =>
-      new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime()).slice(0, 5),
+    recentRequests: inbox.requests,
     pendingDrafts: drafts.recent,
   };
 }
