@@ -5,7 +5,7 @@ import { ElevantApiError, type AirlineContractPageResponse, type AirlinePortalBo
 import { AIRLINE_SESSION_STORAGE_KEY, AirlineSessionProvider } from "@/components/auth/AirlineSessionProvider";
 import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 import { AirlineTreasuryPanel } from "@/components/portal/AirlineTreasuryPanel";
-import { contractStatusLabel, standingNotice } from "@/lib/contract-status";
+import { contractStatusLabel, standingNotice, terminationNote } from "@/lib/contract-status";
 import { permitProblem } from "@/lib/permit-problems";
 
 // Phase 2, block B: the portal standing (2-N32, 2-N35) and the permit submission (2-N09, 2-N30, 2-N37).
@@ -69,6 +69,15 @@ describe("contract labels and standing notices (2-N32, 2-N35)", () => {
     expect(standingNotice({ organizationId, status: "Expired", readOnly: true, stations: [station], contracts: [] }))
       .toMatch(/venció/);
     expect(standingNotice({ organizationId, status: "Active", readOnly: false, stations: [], contracts: [] })).toBeNull();
+  });
+
+  it("tells a terminated contract from a scheduled termination, whose date is the first day without coverage (2-N14)", () => {
+    expect(terminationNote("Active", null)).toBe("");
+    expect(terminationNote("Terminated", "2026-11-01")).toBe(" · Terminado: 2026-11-01");
+    expect(terminationNote("Active", "2027-01-15")).toBe(" · Terminación programada: cubre operaciones hasta el 2027-01-14");
+    // A suspended or expired contract covers nothing now: only the day it ends is stated.
+    expect(terminationNote("Suspended", "2027-01-15")).toBe(" · Terminación programada: termina el 2027-01-15");
+    expect(terminationNote("Expired", "2027-01-15")).toBe(" · Terminación programada: termina el 2027-01-15");
   });
 
   it("explains each submission problem by its code, and only an uncertain result is retried as it is", () => {

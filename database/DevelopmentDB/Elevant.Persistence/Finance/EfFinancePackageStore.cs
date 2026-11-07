@@ -254,7 +254,9 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
     /// «Vigente desde» after its start and not after its end, which it inherits. Not while another
     /// approved version waits for its signatures (version_awaiting_signatures), nor on a terminated
     /// contract or on or after a scheduled termination (2-N15). Rates are copied unconfirmed (units as codes, 1-E), with the
-    /// stations, the negotiated charges and the packages. The status the user saw is the token
+    /// stations, the negotiated charges and the packages (<see cref="ContractVersionCopy"/>): a surcharge Finance only
+    /// inherited from the base tariff is not copied, so approving the amendment inherits the base tariff of its own start
+    /// and a later renewal never takes the old base value as negotiated (2-N03). The status the user saw is the token
     /// (the same one the contract lifecycle uses); the serializable transaction re-checks that no
     /// other draft is in progress.
     /// </summary>
@@ -301,24 +303,7 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             };
             context.ContractVersions.Add(next);
             await context.SaveChangesAsync(cancellationToken);
-            var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
-            foreach (var rate in await context.ContractServiceRates.AsNoTracking().Where(x => x.ContractVersionId == source.Id).ToArrayAsync(cancellationToken))
-                context.ContractServiceRates.Add(new()
-                {
-                    PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, ServiceDefinitionId = rate.ServiceDefinitionId,
-                    BillingUnit = units.Normalize(rate.BillingUnit), UnitPrice = rate.UnitPrice, MinimumQuantity = rate.MinimumQuantity,
-                    IsConfirmed = false, CreatedAt = now, UpdatedAt = now,
-                });
-            foreach (var station in await context.Set<ContractVersionStation>().AsNoTracking().Where(x => x.ContractVersionId == source.Id).Select(x => x.StationId).ToArrayAsync(cancellationToken))
-                context.Add(new ContractVersionStation { ContractVersionId = next.Id, StationId = station });
-            foreach (var rate in await context.ContractChargeRates.AsNoTracking().Where(x => x.ContractVersionId == source.Id).ToArrayAsync(cancellationToken))
-                context.ContractChargeRates.Add(new()
-                {
-                    PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, ChargeDefinitionId = rate.ChargeDefinitionId,
-                    IsExcluded = rate.IsExcluded, Value = rate.Value, MinimumAmount = rate.MinimumAmount, CreatedAt = now, UpdatedAt = now,
-                });
-            foreach (var package in await context.Set<ContractServicePackage>().AsNoTracking().Where(x => x.ContractVersionId == source.Id).Select(x => x.PackageVersionId).ToArrayAsync(cancellationToken))
-                context.Set<ContractServicePackage>().Add(new() { PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, PackageVersionId = package, CreatedAt = now, UpdatedAt = now });
+            await ContractVersionCopy.CopyAsync(context, source, next, ratesConfirmed: false, now, cancellationToken);
             CommercialAuditWriter.Add(context, actor.Id, "commercial.contract.amendment_created", "commercial.contract_versions",
                 next.PublicId, null, new AuditFieldChangeData("amendment.valid_from",
                     source.ValidFrom.ToString("O", CultureInfo.InvariantCulture),

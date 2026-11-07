@@ -58,6 +58,8 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
   const [withdrawReason, setWithdrawReason] = useState('');
   const [withdrawError, setWithdrawError] = useState('');
   const [withdrawal, setWithdrawal] = useState(null);
+  // A version the server refused to withdraw because it governs (version_signed) is not offered again.
+  const [governingId, setGoverningId] = useState(null);
   const withdrawKeys = useRef(createCommandKeyHolder());
   const withdrawing = withdrawingId !== null && withdrawingId === versionId;
   const withdrawn = withdrawal?.versionId === versionId ? withdrawal.result : null;
@@ -72,9 +74,13 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
   }, [versionId, revision]);
 
   const document = state.status === 'success' ? state.document : null;
-  // 2-N10: Contratos withdraws an approved version both parties have not signed, with a reason.
+  // 2-N10: Contratos withdraws, with a reason, an approved version that does not govern yet. One that governs has the
+  // day it counts as signed: both signatures over the same content, or the legacy first version of a contract
+  // activated without them (2-C). That legacy version keeps governing with a single signature, which only the server
+  // knows: its version_signed refusal hides the withdrawal too.
   const withdrawable = Boolean(document) && canManageLifecycle && document.versionStatus === 'Approved' &&
-    document.contractStatus !== 'Terminated' && !signedByBoth(document);
+    document.contractStatus !== 'Terminated' && !signedByBoth(document) && !document.signedOn &&
+    governingId !== versionId;
 
   /**
    * Withdraws with the hash on screen. An uncertain result keeps the dialog open so the retry goes with the
@@ -94,6 +100,7 @@ export default function ContractDetailDrawer({ versionId, canSign = false, canMa
     } catch (failure) {
       if (isConflict(failure)) {
         setWithdrawingId(null);
+        if (failure?.code === 'version_signed') setGoverningId(versionId);
         setError(problem(failure));
         setRevision(value => value + 1);
       } else setWithdrawError(problem(failure));
