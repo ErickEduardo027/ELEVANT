@@ -36,6 +36,7 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("finance.packages.delete", Department.Finance)]
     [InlineData("finance.packages.retire", Department.Finance)]
     [InlineData("operations.review.decide", Department.Operations)]
+    [InlineData("operations.planning.update", Department.Operations)]
     [InlineData("human_resources.access_requests.validate", Department.HumanResources)]
     [InlineData("finance.preinvoices.issue", Department.Finance)]
     public void KnowsWhichDepartmentOwnsACode(string code, Department department)
@@ -99,6 +100,19 @@ public sealed class DepartmentPermissionCatalogTests
         // «Retirar» of the catalog became its delete action; retiring a published package is a workflow of its own (1-N27).
         Assert.DoesNotContain("contracts.catalog.retire", codes);
         Assert.Equal(["finance.packages.retire"], codes.Where(code => code.EndsWith(".retire", StringComparison.Ordinal)));
+    }
+
+    /// <summary>3-A: rescheduling, cancelling and diverting a flight is its own planning action.</summary>
+    [Fact]
+    public void PlanningOffersTheRescheduleActionWithItsLabel()
+    {
+        var planning = Assert.Single(DepartmentPermissionCatalog.ModulesOf(Department.Operations),
+            module => module.Key == "planning");
+        var update = Assert.Single(planning.Actions, action => action.Action == "update");
+        Assert.Equal(("Reprogramar, cancelar o desviar escalas", PermissionKinds.Update), (update.Label, update.Kind));
+        Assert.Contains("operations.planning.update", DepartmentPermissionCatalog.CodesOf(Department.Operations));
+        Assert.Equal(["operations.planning.read", "operations.planning.update"],
+            DepartmentPermissionCatalog.Normalize(["operations.planning.update"]));
     }
 
     [Fact]

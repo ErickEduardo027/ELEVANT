@@ -46,10 +46,11 @@ public sealed record OccFlightImportInput(Guid ArrivalProposalId, Guid Departure
 
 /// <summary>
 /// The imported turnaround, or the failure with its stable Problem Details code and, for a refused stand, the rules
-/// it breaks (ADR-0030).
+/// it breaks (ADR-0030). <see cref="Linked"/> means the pair joined the turnaround OCC had already planned for the same
+/// airline, flight number and local day (3-N07) instead of creating another one.
 /// </summary>
 public sealed record OccFlightImportResult(Guid? TurnaroundId, string? OperationCode, OccFlightFeedFailure? Failure,
-    bool Replayed = false, string? Code = null, IReadOnlyList<string>? Reasons = null);
+    bool Replayed = false, string? Code = null, IReadOnlyList<string>? Reasons = null, bool Linked = false);
 
 /// <summary>A dismissed proposal OCC brought back (2-N36), with its new version.</summary>
 public sealed record OccFlightProposalRestoreResult(Guid? ProposalId, string? Version, OccFlightFeedFailure? Failure,

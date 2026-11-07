@@ -29,6 +29,11 @@ internal static class SafeAuditChanges
         // absence Gestión Humana cancelled or shortened (2-N22).
         "coverage.status", "assignment.status", "operation.status", "shift.status",
         "availability.status", "availability.ends_on",
+        // Planning (phase 3, block A): a flight OCC rescheduled, cancelled or diverted (3-A) and the minimal carrier of a
+        // charter (3-N21).
+        "turnaround.status", "turnaround.arrival_flight", "turnaround.arrival_origin", "turnaround.arrival_scheduled",
+        "turnaround.departure_flight", "turnaround.departure_destination", "turnaround.departure_scheduled",
+        "turnaround.operation_date", "turnaround.aircraft_type", "turnaround.stand", "airline.name",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

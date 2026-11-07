@@ -42,7 +42,15 @@ public sealed record RefreshOccFlightFeedResponse(string Status, DateTimeOffset?
 public sealed record ImportOccFlightRequest(Guid ArrivalProposalId, Guid DepartureProposalId, Guid? AircraftTypeId = null,
     Guid? StandId = null, bool? Charter = null, string? ExpectedArrivalVersion = null, string? ExpectedDepartureVersion = null);
 
-public sealed record ImportOccFlightResponse(Guid TurnaroundId, string OperationCode, bool Replayed);
+/// <summary>
+/// The turnaround of the imported pair. <paramref name="Linked"/> is true when the pair joined the turnaround OCC had
+/// already planned for the same airline, flight number and local day instead of creating another one (3-N07).
+/// </summary>
+/// <param name="TurnaroundId">The turnaround of the pair.</param>
+/// <param name="OperationCode">Its operation code.</param>
+/// <param name="Replayed">An Idempotency-Key replayed the first result.</param>
+/// <param name="Linked">The pair joined an existing turnaround.</param>
+public sealed record ImportOccFlightResponse(Guid TurnaroundId, string OperationCode, bool Replayed, bool Linked = false);
 
 /// <summary>«Restaurar» a dismissed proposal with the version OCC saw (2-N36).</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]

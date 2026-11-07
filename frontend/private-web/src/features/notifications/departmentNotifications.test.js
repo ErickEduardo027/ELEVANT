@@ -46,7 +46,15 @@ describe('ramp agent notices of phase 2 (block D)', () => {
     expect(described.target).toEqual({ path });
   });
 
-  it.each(['agent_released', 'agent_document_not_current'])('%s tells OCC in Spanish and opens the planning board', kind => {
+  it('tells Finanzas that OCC cancelled a charter with a prepayment and opens the charters (3-A)', () => {
+    const described = describeNotification({ kind: 'charter_cancelled', subject: 'PUJ-20261105-004', stationCode: 'PUJ' });
+    expect(described.title).toBe('OCC canceló un charter con prepago: revise la devolución');
+    expect(described.message).toBe('OCC canceló un charter con prepago: revise la devolución: PUJ-20261105-004 · PUJ');
+    expect(described.target).toEqual({ moduleId: 'finance-charters' });
+  });
+
+  it.each(['agent_released', 'agent_document_not_current', 'flight_cancelled_by_provider', 'flight_diverted_by_provider'])(
+    '%s tells OCC in Spanish and opens the planning board', kind => {
     expect(notificationKindLabel(kind)).not.toBe(notificationKindLabel('unknown_kind'));
     expect(notificationKindLabel(kind, 'en')).not.toBe(notificationKindLabel('unknown_kind', 'en'));
     expect(notificationTargetPath({ kind, operationId: 'op-1' })).toBe('/admin-occ/planning');

@@ -106,7 +106,7 @@ public sealed class OccFlightFeedController(IOccFlightFeedStore store, FlightFee
             request.ExpectedArrivalVersion, request.ExpectedDepartureVersion), idempotencyKey, cancellationToken);
         return result.Failure is { } failure
             ? Failure<ImportOccFlightResponse>(failure, result.Code, result.Reasons)
-            : Ok(new ImportOccFlightResponse(result.TurnaroundId!.Value, result.OperationCode!, result.Replayed));
+            : Ok(new ImportOccFlightResponse(result.TurnaroundId!.Value, result.OperationCode!, result.Replayed, result.Linked));
     }
 
     /// <summary>Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed.</summary>

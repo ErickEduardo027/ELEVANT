@@ -139,9 +139,29 @@ a 60 minutos y usa 15 por defecto.
   iniciar sesión; cambiarla invalida los JWT anteriores mediante la versión
   de seguridad comprobada en cada petición autenticada.
 - `GET /api/v1/occ/planning` publica el snapshot OCC de una fecha y estación
-  dentro del scope efectivo del actor. Si se omite la fecha, selecciona la más
-  reciente con operaciones; la estación solo se puede omitir cuando el actor
-  tiene exactamente un scope.
+  dentro del scope efectivo del actor. Si se omite la fecha, abre el día de hoy
+  en la zona IANA de la estación (`BusinessCalendar`), nunca la última fecha
+  con vuelos; la estación solo se puede omitir cuando el actor tiene
+  exactamente un scope.
+- `GET /api/v1/occ/planning/turnarounds/{turnaroundId}` devuelve una escala con
+  su versión (repetida como `ETag` fuerte) y las acciones que su estado permite
+  (`reschedule`, `cancel`, `divert`, `correctArrival`). `PUT .../schedule`
+  («Editar vuelo») y `POST .../status-changes` (`Cancelled` o `Diverted`, con
+  motivo) exigen `operations.planning.update`, `Idempotency-Key` e `If-Match`:
+  sin versión responden `428 expected_version_required` y con una vieja
+  `412 version_conflict`. Solo valen antes de que la operación inicie
+  (`operation_started`, `turnaround_closed`). Reprogramar revalida contrato,
+  posición bloqueada y, si hay agente, su turno y el tope de tres operaciones
+  simultáneas (`assigned_agent_unavailable` con `reasons`); no cambia la
+  aerolínea. Cancelar o desviar cierra la posición, libera a los agentes por la
+  ruta única de liberación (aviso `assignment_released`) y avisa a Finanzas si
+  el charter tenía prepago. Nada se borra.
+- `POST /api/v1/occ/planning/charter-airlines` da de alta, con
+  `Idempotency-Key` y `operations.planning.create`, la aerolínea mínima de un
+  charter: organización `OCC-…`, OACI obligatorio e IATA opcional. Un código en
+  uso responde `409 airline_code_in_use` con `airlineId`; la aprobación
+  comercial de un perfil verificado con los mismos códigos la completa en vez de
+  rechazarla.
 - `GET /api/v1/occ/planning/options?turnaroundId=...` deriva estación, terminal
   y hora desde el turnaround y devuelve el catálogo contractual junto con la
   elegibilidad explicable de agentes. Su `ETag` fuerte representa toda la
@@ -154,7 +174,27 @@ a 60 minutos y usa 15 por defecto.
   servicios contractuales y registra transición y auditoría de forma atómica.
 - `GET /api/v1/occ/planning/manual-options` y `POST /api/v1/occ/planning/turnarounds`
   permiten crear una escala manual con contrato vigente, ruta completa y posición
-  sin solapamiento. El UUID de intención conserva la idempotencia del alta.
+  sin solapamiento. El UUID de intención conserva la idempotencia del alta. El
+  mismo vuelo de la aerolínea en el mismo día local se planifica una sola vez
+  (`409 flight_already_planned`), y la importación del feed lo vincula a la escala
+  existente (`linked=true`). Las escalas nuevas, manuales o importadas, reciben el
+  código legible `{ESTACIÓN}-{AAAAMMDD}-{NNN}`; los códigos `MAN-` y `EXT-` ya
+  emitidos se conservan.
+- `POST /api/v1/occ/turnarounds/{turnaroundId}/arrival`, `.../stand` y
+  `.../stand/release` (mapa de posiciones) aceptan `Idempotency-Key` e `If-Match`
+  opcionales durante el expand; con clave, la versión es obligatoria. Los tres
+  corren en una transacción serializable con la fila de la posición bloqueada
+  (UPDLOCK, HOLDLOCK), así que dos vuelos nunca toman la misma posición, y
+  responden Problem Details con `code`. La llegada acepta `arrivedAt` explícito,
+  `aircraftTypeId` y, para corregir una llegada registrada, `reason`; la
+  corrección solo vale antes de la primera entrega (`arrival_locked`) y el tramo
+  pasa a `Manual`, de modo que el feed ya no lo pisa.
+- `GET /api/v1/ramp/aircraft-types` entrega a la tablet los tipos de avión
+  activos. `PUT /api/v1/ramp/operations/{operationId}/flight-data` acepta
+  `aircraftTypeId` opcional: sin él conserva el tipo actual y el hash del recibo
+  de la versión anterior. Un tipo inactivo o un cambio después de la primera
+  entrega responden `409` con `aircraft_type_unavailable` o
+  `aircraft_type_locked`.
 - `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/shift` programa un turno
   local de un agente sin asignarlo automáticamente: deriva estación, terminal y
   posición, exige cobertura de la escala y aptitud vigente, y rechaza otro turno

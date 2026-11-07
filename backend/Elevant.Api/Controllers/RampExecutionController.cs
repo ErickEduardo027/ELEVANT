@@ -43,12 +43,16 @@ public sealed class RampExecutionController(RampExecutionHandler handler) : Cont
         CancellationToken cancellationToken)
     {
         if (!TryGetAccountId(out var accountId)) return Failure(RampOperationsFailure.Unauthorized);
-        var (data, failure) = await handler.RecordMilestoneAsync(accountId, operationId, code, request.OccurredAt,
+        var (data, failure, _) = await handler.RecordMilestoneAsync(accountId, operationId, code, request.OccurredAt,
             installationId, idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
         return failure is { } error ? Failure(error) : Ok(Map(data!));
     }
 
-    /// <summary>Saves passengers, MTOW and the registration correction typed once on the ramp.</summary>
+    /// <summary>
+    /// Saves passengers, MTOW, the registration correction and the aircraft type typed once on the ramp (3-B). A null
+    /// aircraft type keeps the current one; an unknown or inactive type answers <c>aircraft_type_unavailable</c> and a
+    /// change after the first submission <c>aircraft_type_locked</c>, both 409 as before.
+    /// </summary>
     [RequestSizeLimit(BodyLimitBytes)]
     [HttpPut("{operationId:guid}/flight-data", Name = "UpdateRampFlightData")]
     [Consumes("application/json")]
@@ -66,10 +70,17 @@ public sealed class RampExecutionController(RampExecutionHandler handler) : Cont
         CancellationToken cancellationToken)
     {
         if (!TryGetAccountId(out var accountId)) return Failure(RampOperationsFailure.Unauthorized);
-        var (data, failure) = await handler.UpdateFlightDataAsync(accountId, operationId, request.PassengersIn,
-            request.PassengersOut, request.MtowKg, request.AircraftRegistration, installationId, idempotencyKey,
-            HttpContext.TraceIdentifier, cancellationToken);
-        return failure is { } error ? Failure(error) : Ok(Map(data!));
+        var (data, failure, code) = await handler.UpdateFlightDataAsync(accountId, operationId, request.PassengersIn,
+            request.PassengersOut, request.MtowKg, request.AircraftRegistration, request.AircraftTypeId, installationId,
+            idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
+        return code switch
+        {
+            RampExecutionCodes.AircraftTypeUnavailable => RampProblems.Coded(this, StatusCodes.Status409Conflict,
+                "El tipo de avión ya no está disponible.", code),
+            RampExecutionCodes.AircraftTypeLocked => RampProblems.Coded(this, StatusCodes.Status409Conflict,
+                "El tipo de avión ya no se puede cambiar: la operación ya se entregó.", code),
+            _ => failure is { } error ? Failure(error) : Ok(Map(data!)),
+        };
     }
 
     private static RampExecutionResponse Map(RampExecutionData data) => new(data.ReceiptId, data.OperationId,

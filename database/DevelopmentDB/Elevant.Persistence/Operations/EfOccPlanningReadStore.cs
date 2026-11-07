@@ -15,17 +15,6 @@ internal sealed class EfOccPlanningReadStore(
     ElevantDbContext context,
     TimeProvider timeProvider) : IOccPlanningReadStore
 {
-    public Task<DateOnly?> GetLatestOperationDateAsync(
-        Guid stationId,
-        CancellationToken cancellationToken = default) =>
-        (
-            from turnaround in context.Turnarounds.AsNoTracking()
-            join station in context.Stations.AsNoTracking()
-                on turnaround.StationId equals station.Id
-            where station.PublicId == stationId && station.IsActive
-            select (DateOnly?)turnaround.OperationDate
-        ).MaxAsync(cancellationToken);
-
     public Task<string?> GetStationTimeZoneAsync(
         Guid stationId,
         CancellationToken cancellationToken = default) =>
@@ -57,8 +46,30 @@ internal sealed class EfOccPlanningReadStore(
             return null;
         }
 
+        var responseTurnarounds = await ProjectTurnaroundsAsync(context, station.Id,
+            context.Turnarounds.AsNoTracking().Where(turnaround => turnaround.StationId == station.Id &&
+                turnaround.OperationDate == operationDate),
+            cancellationToken);
+
+        return new OccPlanningSnapshotData(
+            new OccStationData(
+                station.PublicId,
+                station.Code,
+                station.Name,
+                station.IanaTimeZone),
+            operationDate,
+            responseTurnarounds);
+    }
+
+    /// <summary>
+    /// Projects the turnarounds of one station as the planning snapshot shows them: airline, aircraft, stand, legs,
+    /// operation, agents, equipment and services. The turnaround detail of 3-A reads one turnaround with it.
+    /// </summary>
+    internal static async Task<OccTurnaroundData[]> ProjectTurnaroundsAsync(ElevantDbContext context, long stationId,
+        IQueryable<Turnaround> source, CancellationToken cancellationToken)
+    {
         var turnarounds = await (
-                from turnaround in context.Turnarounds.AsNoTracking()
+                from turnaround in source
                 join airline in context.Airlines.AsNoTracking()
                     on turnaround.AirlineId equals airline.Id
                 join aircraftCandidate in context.AircraftTypes.AsNoTracking()
@@ -67,8 +78,6 @@ internal sealed class EfOccPlanningReadStore(
                 join operationCandidate in context.GroundOperations.AsNoTracking()
                     on turnaround.Id equals operationCandidate.TurnaroundId into operations
                 from operation in operations.DefaultIfEmpty()
-                where turnaround.StationId == station.Id &&
-                      turnaround.OperationDate == operationDate
                 orderby operation.PlannedStartAt,
                     turnaround.OperationCode,
                     turnaround.PublicId
@@ -108,14 +117,7 @@ internal sealed class EfOccPlanningReadStore(
 
         if (turnarounds.Length == 0)
         {
-            return new OccPlanningSnapshotData(
-                new OccStationData(
-                    station.PublicId,
-                    station.Code,
-                    station.Name,
-                    station.IanaTimeZone),
-                operationDate,
-                []);
+            return [];
         }
 
         var turnaroundIds = turnarounds.Select(item => item.InternalId).ToArray();
@@ -130,11 +132,11 @@ internal sealed class EfOccPlanningReadStore(
                     on assignment.StandId equals standItem.Id
                 join terminalCandidate in context.Terminals
                     .AsNoTracking()
-                    .Where(item => item.StationId == station.Id)
+                    .Where(item => item.StationId == stationId)
                     on standItem.TerminalId equals terminalCandidate.Id into terminals
                 from terminal in terminals.DefaultIfEmpty()
                 where turnaroundIds.Contains(assignment.TurnaroundId) &&
-                      standItem.StationId == station.Id &&
+                      standItem.StationId == stationId &&
                       assignment.AssignedTo == null
                 select new
                 {
@@ -261,7 +263,7 @@ internal sealed class EfOccPlanningReadStore(
         var equipmentByOperation = equipment.ToLookup(item => item.GroundOperationId, item => item.Equipment);
         var servicesByOperation = services.ToLookup(item => item.GroundOperationId, item => item.Service);
 
-        var responseTurnarounds = turnarounds.Select(item =>
+        return turnarounds.Select(item =>
         {
             var operationId = item.OperationInternalId;
             var turnaroundLegs = legsByTurnaround[item.InternalId];
@@ -280,15 +282,6 @@ internal sealed class EfOccPlanningReadStore(
                 operationId.HasValue ? equipmentByOperation[operationId.Value].ToArray() : [],
                 operationId.HasValue ? servicesByOperation[operationId.Value].ToArray() : []);
         }).ToArray();
-
-        return new OccPlanningSnapshotData(
-            new OccStationData(
-                station.PublicId,
-                station.Code,
-                station.Name,
-                station.IanaTimeZone),
-            operationDate,
-            responseTurnarounds);
     }
 
     public async Task<OccPlanningOptionsReadResult> GetOptionsAsync(

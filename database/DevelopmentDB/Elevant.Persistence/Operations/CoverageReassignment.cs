@@ -1,3 +1,4 @@
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
@@ -14,9 +15,6 @@ namespace Elevant.Persistence.Operations;
 /// </summary>
 internal static class CoverageReassignment
 {
-    /// <summary>An agent never carries more than this many simultaneous operations.</summary>
-    public const int MaxSimultaneousOperations = 3;
-
     public sealed record Outcome(long? ReleasedAgentId, long? AssignedAgentId);
 
     public static async Task<Outcome> FollowStandAsync(ElevantDbContext context, long turnaroundId, long stationId, long standId,
@@ -55,16 +53,10 @@ internal static class CoverageReassignment
         var previous = current[0];
         if (covering == 0 || covering == previous.RampAgentId) return new(null, null);
 
+        // The covering agent never takes a fourth simultaneous operation (OperationOccupancyRules).
         if (operation.PlannedStartAt is { } start && operation.PlannedEndAt is { } end &&
-            await (from open in context.OperationAgentAssignments.AsNoTracking()
-                   join other in context.GroundOperations.AsNoTracking() on open.GroundOperationId equals other.Id
-                   where open.RampAgentId == covering && open.ReleasedAt == null &&
-                         other.Id != operation.Id &&
-                         (other.CurrentStatus == GroundOperationStatus.Assigned ||
-                          other.CurrentStatus == GroundOperationStatus.InProgress ||
-                          other.CurrentStatus == GroundOperationStatus.Returned) &&
-                         other.PlannedStartAt < end && start < other.PlannedEndAt
-                   select open.Id).CountAsync(cancellationToken) >= MaxSimultaneousOperations)
+            (await AgentSimultaneity.CountOverlapsAsync(context, [covering], operation.Id, start, end, cancellationToken))
+                .GetValueOrDefault(covering) >= OperationOccupancyRules.MaxSimultaneousOperations)
             return new(null, null);
 
         previous.ReleasedAt = now < previous.AssignedAt ? previous.AssignedAt : now;

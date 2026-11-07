@@ -15,10 +15,14 @@ public sealed record RampMilestoneWriteRequest(Guid ActorAccountId, IReadOnlyCol
     Guid OperationId, string Code, DateTimeOffset OccurredAt, Guid InstallationId, Guid IdempotencyKey,
     string? RequestId);
 
-/// <param name="AircraftRegistration">A correction typed once on the ramp; it propagates to the turnaround.</param>
+/// <summary>
+/// Flight data typed once on the ramp (ADR-0031). The registration correction propagates to the turnaround; the
+/// aircraft type (3-B) too, and null keeps the current one, so an older tablet's command keeps its meaning and its
+/// receipt hash.
+/// </summary>
 public sealed record RampFlightDataWriteRequest(Guid ActorAccountId, IReadOnlyCollection<Guid> AllowedStationIds,
     Guid OperationId, int? PassengersIn, int? PassengersOut, int? MtowKg, string? AircraftRegistration,
-    Guid InstallationId, Guid IdempotencyKey, string? RequestId);
+    Guid InstallationId, Guid IdempotencyKey, string? RequestId, Guid? AircraftTypeId = null);
 
 /// <summary>What the tablet gets back: the operation's milestones and flight data after the write.</summary>
 public sealed record RampExecutionData(Guid ReceiptId, Guid OperationId, IReadOnlyList<RampMilestoneData> Milestones,
@@ -26,14 +30,34 @@ public sealed record RampExecutionData(Guid ReceiptId, Guid OperationId, IReadOn
 
 public enum RampExecutionWriteFailure { Forbidden, NotFound, Conflict, IdempotencyKeyConflict }
 
-public sealed record RampExecutionWriteResult(RampExecutionData? Data, RampExecutionWriteFailure? Failure, Guid? CommitReceiptId)
+/// <param name="Data">The operation's milestones and flight data after the write.</param>
+/// <param name="Failure">Why the write was refused.</param>
+/// <param name="CommitReceiptId">The device receipt the write committed with.</param>
+/// <param name="Code">
+/// The stable Problem Details code of a rejection the tablet explains (<c>aircraft_type_unavailable</c>,
+/// <c>aircraft_type_locked</c>, 3-B); a replay of the rejected command answers the same one.
+/// </param>
+public sealed record RampExecutionWriteResult(RampExecutionData? Data, RampExecutionWriteFailure? Failure, Guid? CommitReceiptId,
+    string? Code = null)
 {
     public bool IsSuccess => Data is not null;
 
     public static RampExecutionWriteResult Success(RampExecutionData data, Guid receiptId) => new(data, null, receiptId);
 
-    public static RampExecutionWriteResult Failed(RampExecutionWriteFailure failure, Guid? receiptId = null) =>
-        new(null, failure, receiptId);
+    public static RampExecutionWriteResult Failed(RampExecutionWriteFailure failure, Guid? receiptId = null,
+        string? code = null) => new(null, failure, receiptId, code);
+}
+
+/// <summary>The codes of the Flight Report rejections a tablet can act on (3-B).</summary>
+public static class RampExecutionCodes
+{
+    /// <summary>The aircraft type is unknown or inactive in the catalog.</summary>
+    public const string AircraftTypeUnavailable = "aircraft_type_unavailable";
+
+    /// <summary>The operation was already submitted once: its aircraft type is evidence.</summary>
+    public const string AircraftTypeLocked = "aircraft_type_locked";
+
+    public static bool IsExplained(string? code) => code is AircraftTypeUnavailable or AircraftTypeLocked;
 }
 
 public interface IRampExecutionCommandStore
@@ -79,33 +103,39 @@ public static partial class RampExecutionPolicy
 /// <summary>Milestones and flight data from the tablet: shape, actor and station checks, then the store.</summary>
 public sealed class RampExecutionHandler(IActorContextResolver actors, IRampExecutionCommandStore store)
 {
-    public async Task<(RampExecutionData? Data, RampOperationsFailure? Failure)> RecordMilestoneAsync(Guid accountId,
+    public async Task<(RampExecutionData? Data, RampOperationsFailure? Failure, string? Code)> RecordMilestoneAsync(Guid accountId,
         Guid operationId, string? code, DateTimeOffset occurredAt, Guid installationId, Guid idempotencyKey, string? requestId,
         CancellationToken cancellationToken = default)
     {
-        if (accountId == Guid.Empty) return (null, RampOperationsFailure.Unauthorized);
+        if (accountId == Guid.Empty) return (null, RampOperationsFailure.Unauthorized, null);
         if (operationId == Guid.Empty || installationId == Guid.Empty || idempotencyKey == Guid.Empty ||
             !FlightReportMilestones.IsKnown(code))
-            return (null, RampOperationsFailure.InvalidRequest);
+            return (null, RampOperationsFailure.InvalidRequest, null);
         var (stations, failure) = await StationsAsync(accountId, cancellationToken);
-        if (failure is not null) return (null, failure);
+        if (failure is not null) return (null, failure, null);
         return Map(await store.RecordMilestoneAsync(new RampMilestoneWriteRequest(accountId, stations!, operationId, code!,
             occurredAt.ToUniversalTime(), installationId, idempotencyKey, requestId), cancellationToken));
     }
 
-    public async Task<(RampExecutionData? Data, RampOperationsFailure? Failure)> UpdateFlightDataAsync(Guid accountId,
-        Guid operationId, int? passengersIn, int? passengersOut, int? mtowKg, string? registration, Guid installationId,
-        Guid idempotencyKey, string? requestId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Passengers, MTOW, the registration correction and the aircraft type the agent sees on the ramp (3-B); a null
+    /// aircraft type keeps the current one.
+    /// </summary>
+    public async Task<(RampExecutionData? Data, RampOperationsFailure? Failure, string? Code)> UpdateFlightDataAsync(Guid accountId,
+        Guid operationId, int? passengersIn, int? passengersOut, int? mtowKg, string? registration, Guid? aircraftTypeId,
+        Guid installationId, Guid idempotencyKey, string? requestId, CancellationToken cancellationToken = default)
     {
-        if (accountId == Guid.Empty) return (null, RampOperationsFailure.Unauthorized);
+        if (accountId == Guid.Empty) return (null, RampOperationsFailure.Unauthorized, null);
         var normalized = string.IsNullOrWhiteSpace(registration) ? null : registration.Trim().ToUpperInvariant();
         if (operationId == Guid.Empty || installationId == Guid.Empty || idempotencyKey == Guid.Empty ||
+            aircraftTypeId == Guid.Empty ||
             !RampExecutionPolicy.HasValidFlightData(passengersIn, passengersOut, mtowKg, normalized))
-            return (null, RampOperationsFailure.InvalidRequest);
+            return (null, RampOperationsFailure.InvalidRequest, null);
         var (stations, failure) = await StationsAsync(accountId, cancellationToken);
-        if (failure is not null) return (null, failure);
+        if (failure is not null) return (null, failure, null);
         return Map(await store.UpdateFlightDataAsync(new RampFlightDataWriteRequest(accountId, stations!, operationId,
-            passengersIn, passengersOut, mtowKg, normalized, installationId, idempotencyKey, requestId), cancellationToken));
+            passengersIn, passengersOut, mtowKg, normalized, installationId, idempotencyKey, requestId, aircraftTypeId),
+            cancellationToken));
     }
 
     private async Task<(Guid[]? Stations, RampOperationsFailure? Failure)> StationsAsync(Guid accountId,
@@ -118,12 +148,12 @@ public sealed class RampExecutionHandler(IActorContextResolver actors, IRampExec
         return stations.Length == 0 ? (null, RampOperationsFailure.NotFound) : (stations, null);
     }
 
-    private static (RampExecutionData?, RampOperationsFailure?) Map(RampExecutionWriteResult result) => result.IsSuccess
-        ? (result.Data, null)
+    private static (RampExecutionData?, RampOperationsFailure?, string?) Map(RampExecutionWriteResult result) => result.IsSuccess
+        ? (result.Data, null, null)
         : (null, result.Failure switch
         {
             RampExecutionWriteFailure.Forbidden => RampOperationsFailure.Forbidden,
             RampExecutionWriteFailure.NotFound => RampOperationsFailure.NotFound,
             _ => RampOperationsFailure.Conflict,
-        });
+        }, RampExecutionCodes.IsExplained(result.Code) ? result.Code : null);
 }

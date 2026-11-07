@@ -12,6 +12,7 @@ export * from "./contractDocuments";
 export * from "./airlinePermits";
 export * from "./masterData";
 export * from "./flightFeedReview";
+export * from "./occTurnarounds";
 export * from "./humanResourcesCommands";
 export * from "./mobileDevices";
 export * from "./airlinePortalUsers";
@@ -393,6 +394,14 @@ export {
   type OccStationResponse,
   type OccTerminalResponse,
   type OccTurnaroundResponse,
+  type OccTurnaroundDetailResponse,
+  type OccCharterAirlineResponse,
+  type RescheduleOccTurnaroundRequest,
+  type ChangeOccTurnaroundStatusRequest,
+  type CreateOccCharterAirlineRequest,
+  type RampAircraftTypesResponse,
+  type RampAircraftTypeResponse,
+  type RecordOccArrivalRequest,
   type ProblemDetails,
   type RampAircraftResponse,
   type RampAgentAssignmentResponse,

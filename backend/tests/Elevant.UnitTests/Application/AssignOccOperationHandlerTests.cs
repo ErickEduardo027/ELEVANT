@@ -188,7 +188,8 @@ public sealed class AssignOccOperationHandlerTests
     [Theory]
     [InlineData(TurnaroundStatus.Scheduled, true)]
     [InlineData(TurnaroundStatus.Confirmed, true)]
-    [InlineData(TurnaroundStatus.InProgress, false)]
+    // 3-C: a recorded arrival (InProgress) only means the aircraft is on blocks; the operation is still a plan.
+    [InlineData(TurnaroundStatus.InProgress, true)]
     [InlineData(TurnaroundStatus.Completed, false)]
     [InlineData(TurnaroundStatus.Cancelled, false)]
     [InlineData(TurnaroundStatus.Diverted, false)]
@@ -205,6 +206,19 @@ public sealed class AssignOccOperationHandlerTests
             start.AddHours(2));
 
         Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(GroundOperationStatus.Assigned)]
+    [InlineData(GroundOperationStatus.InProgress)]
+    [InlineData(GroundOperationStatus.Cancelled)]
+    public void AnArrivedFlightTakesAnAgentOnlyWhileItsOperationIsPlanned(GroundOperationStatus operation)
+    {
+        var start = new DateTimeOffset(2026, 8, 19, 12, 0, 0, TimeSpan.Zero);
+
+        Assert.True(OccPlanningAssignmentPolicy.CanAssign(TurnaroundStatus.InProgress, GroundOperationStatus.Planned, start,
+            start.AddHours(2)));
+        Assert.False(OccPlanningAssignmentPolicy.CanAssign(TurnaroundStatus.InProgress, operation, start, start.AddHours(2)));
     }
 
     [Fact]

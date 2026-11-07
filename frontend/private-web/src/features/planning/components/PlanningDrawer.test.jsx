@@ -214,17 +214,48 @@ describe('PlanningDrawer', () => {
     expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
   });
 
-  it('keeps unavailable drawer actions disabled and blocks reassignment', () => {
+  it('blocks reassignment and shows no placeholder actions (3-N28)', () => {
     renderDrawer({ flight: ASSIGNED_FLIGHT });
 
     expect(screen.getByRole('button', { name: 'Asignar operación' })).toBeDisabled();
     expect(within(optionsSection()).getByRole('status')).toHaveTextContent('ya tiene un agente activo');
 
     for (const label of ['Editar planificación', 'Crear Work Order']) {
-      const button = screen.getByRole('button', { name: label });
-      expect(button).toBeDisabled();
-      expect(button).toHaveAttribute('title', 'Próximamente');
+      expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     }
+    expect(screen.queryByTitle('Próximamente')).not.toBeInTheDocument();
+  });
+
+  it('offers editing, cancelling and diverting the flight before its operation starts (3-A)', async () => {
+    const onChangeFlight = vi.fn();
+    const { unmount } = renderDrawer({ flight: ASSIGNED_FLIGHT, onChangeFlight });
+
+    expect(screen.getByRole('heading', { name: 'Cambios del vuelo' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Editar vuelo' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar vuelo' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Marcar desviado' }));
+    expect(onChangeFlight.mock.calls).toEqual([['reschedule'], ['cancel'], ['divert']]);
+    unmount();
+
+    // An operation already started, or a closed flight, is closed through the review: nothing to change here.
+    for (const flight of [
+      createPlanningFlight({ operationStatus: 'InProgress' }),
+      createPlanningFlight({ status: 'Cancelled' }),
+    ]) {
+      const view = renderDrawer({ flight, onChangeFlight });
+      expect(screen.queryByRole('button', { name: 'Editar vuelo' })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
+  it('asks before releasing the agent and tells that another one can be assigned after the arrival (3-C)', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    renderDrawer({ flight: createPlanningFlight({ operationStatus: 'Assigned' }), onAgentReleased: vi.fn() });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Liberar agente' }));
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('también con la llegada ya registrada'));
+    confirm.mockRestore();
   });
 
   it('focuses the close control and dismisses with the Escape key', async () => {

@@ -527,7 +527,7 @@ public sealed partial class SqlServerMigrationTests
             item.ReleasedAt == null).Select(item => item.RampAgentId).SingleAsync(ct);
         await using (var scope = provider.CreateAsyncScope())
             Assert.Null((await scope.ServiceProvider.GetRequiredService<IOccPositionStore>()
-                .AssignAsync(OperationsAdministrator, flight.Turnaround, b01.PublicId, "Cambio del aeropuerto", ct)).Failure);
+                .AssignAsync(OperationsAdministrator, flight.Turnaround, b01.PublicId, "Cambio del aeropuerto", OccPositionCommand.None, ct)).Failure);
         Assert.Equal(holder, await context.OperationAgentAssignments.AsNoTracking().Where(item =>
             item.GroundOperationId == flight.Id && item.ReleasedAt == null).Select(item => item.RampAgentId).SingleAsync(ct));
     }

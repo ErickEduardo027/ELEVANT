@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { XIcon } from './icons';
 import StatusBadge from '../../../components/StatusBadge';
 import { getPlanningStatusMeta } from '../planningStatus';
-import { isInitialAssignmentCandidate } from '../planningMappers';
+import { isInitialAssignmentCandidate, isTurnaroundChangeCandidate } from '../planningMappers';
 import { formatPlanningClock, formatPlanningDate } from '../planningTime';
 import OccAssignmentPanel from './OccAssignmentPanel';
 import { releaseOccOperationAgent } from '../../../services/occCoverageService';
@@ -10,6 +10,7 @@ import OccShiftPanel from './OccShiftPanel';
 import OccAttendancePanel from './OccAttendancePanel';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
+import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -53,12 +54,16 @@ function FlightLegDetail({ kind, leg, timeZone }) {
   );
 }
 
-/** OCC frees the agent of an operation not yet started to hand it to someone else (ADR-0030). */
+/**
+ * OCC frees the agent of an operation not yet started to hand it to someone else (ADR-0030); with the arrival
+ * already recorded the operation takes another agent too (3-C).
+ */
 function ReleaseAgent({ flight, onReleased }) {
+  const { t } = useTranslation(planningMessages);
   const [state, setState] = useState({ status: 'idle', error: null });
   if (flight.operationStatus !== 'Assigned' || !(flight.assignedAgents ?? []).length || !onReleased) return null;
   const release = async () => {
-    if (!window.confirm('¿Liberar al agente de esta operación? Podrás asignar a otro desde aquí mismo.')) return;
+    if (!window.confirm(t('drawer.releaseConfirm'))) return;
     setState({ status: 'submitting', error: null });
     try {
       await releaseOccOperationAgent(flight.turnaroundId);
@@ -70,9 +75,34 @@ function ReleaseAgent({ flight, onReleased }) {
     <div className="mt-2 space-y-1">
       <button type="button" onClick={() => void release()} disabled={state.status === 'submitting'}
         className="min-h-11 rounded-lg border border-status-danger/40 px-3 text-xs font-semibold text-status-danger disabled:opacity-50">
-        {state.status === 'submitting' ? 'Liberando…' : 'Liberar agente'}</button>
+        {state.status === 'submitting' ? t('drawer.releasing') : t('drawer.releaseAgent')}</button>
       {state.error && <p role="alert" className="text-xs text-status-danger">{state.error.message}</p>}
     </div>
+  );
+}
+
+/**
+ * «Editar vuelo», «Cancelar vuelo» and «Marcar desviado» (3-A, 3-N28) while the operation has not started; the dialog
+ * reads the flight's current version and the changes the server allows before sending anything.
+ */
+function FlightChanges({ flight, onChangeFlight }) {
+  const { t } = useTranslation(planningMessages);
+  const access = useOptionalDepartmentAccess();
+  if (!onChangeFlight || !isTurnaroundChangeCandidate(flight) ||
+      !(access?.can('operations.planning.update') ?? true)) return null;
+  const button = 'min-h-11 rounded-lg border px-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-600';
+  return (
+    <Section title={t('drawer.flightChanges')}>
+      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.flightChangesHint')}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" onClick={() => onChangeFlight('reschedule')}
+          className={`${button} border-accent-600/30 text-accent-600 hover:bg-accent-600/10`}>{t('drawer.editFlight')}</button>
+        <button type="button" onClick={() => onChangeFlight('cancel')}
+          className={`${button} border-status-danger/40 text-status-danger hover:bg-status-danger/5`}>{t('drawer.cancelFlight')}</button>
+        <button type="button" onClick={() => onChangeFlight('divert')}
+          className={`${button} border-status-warning/40 text-ink-900 hover:bg-status-warning/10 dark:text-text-primary-dark`}>{t('drawer.divertFlight')}</button>
+      </div>
+    </Section>
   );
 }
 
@@ -90,6 +120,7 @@ export default function PlanningDrawer({
   onRetryOptions,
   onShiftProgrammed,
   onAgentReleased,
+  onChangeFlight,
 }) {
   const { t, language, locale } = useTranslation(planningMessages);
   const dialogRef = useRef(null);
@@ -267,6 +298,8 @@ export default function PlanningDrawer({
             </ResourceList>
           </Section>
 
+          <FlightChanges flight={flight} onChangeFlight={onChangeFlight} />
+
           <Section title={t('drawer.occAssignment')}>
             <OccShiftPanel flight={flight} optionsState={optionsState}
               onProgrammed={onShiftProgrammed} />
@@ -278,12 +311,6 @@ export default function PlanningDrawer({
               onRetryOptions={onRetryOptions}
             />
           </Section>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          {['editPlanning', 'workOrder'].map(key => (
-            <button key={key} type="button" disabled title={t('drawer.comingSoon')} className="cursor-not-allowed rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-text-secondary-light/50 dark:border-white/10 dark:text-text-secondary-dark/50">{t(`drawer.${key}`)}</button>
-          ))}
         </div>
       </aside>
     </>

@@ -9,6 +9,7 @@ import PlanningSkeleton from './components/PlanningSkeleton';
 import ManualTurnaroundDialog from './components/ManualTurnaroundDialog';
 import PlanningMap from './components/PlanningMap';
 import ProviderFlightsDialog from './components/ProviderFlightsDialog';
+import TurnaroundChangeDialog from './components/TurnaroundChangeDialog';
 import EmptyPlanningState from './components/EmptyPlanningState';
 import ModulePlaceholder from '../shell/components/ModulePlaceholder';
 import { CalendarIcon } from '../shell/components/icons';
@@ -76,6 +77,7 @@ function NoStationScope() {
 }
 
 const NO_FLIGHTS = [];
+const CHANGE_TOASTS = { reschedule: 'change.rescheduled', cancel: 'change.cancelled', divert: 'change.diverted' };
 
 export default function PlanningPage({
   status,
@@ -99,6 +101,8 @@ export default function PlanningPage({
   const [readinessRetry, setReadinessRetry] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  // «Editar vuelo», «Cancelar vuelo» or «Marcar desviado» of one flight (3-A).
+  const [changeRequest, setChangeRequest] = useState(null);
   const assignment = usePlanningAssignment();
   const { toasts, showToast, dismissToast } = useToast();
   const { t } = useTranslation(planningMessages);
@@ -272,9 +276,27 @@ export default function PlanningPage({
         onAgentReleased={() => {
           assignment.reset();
           setOptionsRetryToken(token => token + 1);
+          // The operation is Planned again: the board re-reads it so the panel offers another agent (3-C).
+          onRetry();
           showToast('Agente liberado. Ya puedes asignar a otro.', 'success');
         }}
+        onChangeFlight={mode => {
+          if (!selectedFlight?.turnaroundId) return;
+          assignment.reset();
+          setChangeRequest({ turnaroundId: selectedFlight.turnaroundId, mode });
+          setSelectedFlightId(null);
+        }}
       />
+      {changeRequest && (
+        <TurnaroundChangeDialog key={`${changeRequest.turnaroundId}|${changeRequest.mode}`}
+          turnaroundId={changeRequest.turnaroundId} mode={changeRequest.mode}
+          onClose={() => setChangeRequest(null)}
+          onChanged={(mode, operationCode) => {
+            setChangeRequest(null);
+            onRetry();
+            showToast(t(CHANGE_TOASTS[mode], { code: operationCode }), 'success');
+          }} />
+      )}
       {showCreate && canCreate && (
         <ManualTurnaroundDialog key={selectedStationId} stationId={selectedStationId}
           initialDate={createDate} onClose={() => setShowCreate(false)}

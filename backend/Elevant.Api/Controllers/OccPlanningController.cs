@@ -151,6 +151,9 @@ public sealed class OccPlanningController(
                 // A wide-body on a narrow-body stand: the same rule the positions map explains (ADR-0030).
                 "stand_unavailable" => CodedResult<ManualTurnaroundResponse>(StatusCodes.Status409Conflict,
                     "La posición solo admite aviones de fuselaje estrecho.", "stand_unavailable", ["stand_narrowbody_only"]),
+                // 3-N07: the same flight of the airline on that local day is already planned (typed or imported).
+                "flight_already_planned" => CodedResult<ManualTurnaroundResponse>(StatusCodes.Status409Conflict,
+                    "Ese vuelo ya está planificado ese día.", "flight_already_planned"),
                 _ => FailureResult<ManualTurnaroundResponse>(result.Failure!.Value),
             };
 
@@ -313,7 +316,8 @@ public sealed class OccPlanningController(
         snapshot.Date,
         snapshot.Turnarounds.Select(Map).ToArray());
 
-    private static OccTurnaroundResponse Map(OccTurnaroundData turnaround) => new(
+    /// <summary>The turnaround as the snapshot and the turnaround detail (3-A) show it.</summary>
+    internal static OccTurnaroundResponse Map(OccTurnaroundData turnaround) => new(
         turnaround.Id,
         turnaround.OperationCode,
         turnaround.OperationDate,
@@ -405,7 +409,7 @@ public sealed class OccPlanningController(
                     stand.Terminal.Code,
                     stand.Terminal.Name));
 
-    private static OccStationResponse Map(OccStationData station) => new(
+    internal static OccStationResponse Map(OccStationData station) => new(
         station.Id,
         station.Code,
         station.Name,

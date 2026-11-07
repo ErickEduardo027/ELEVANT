@@ -1,6 +1,7 @@
 using System.Data;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
@@ -89,7 +90,7 @@ internal sealed class EfManualTurnaroundStore(
                   context.AccountStationScopes.AsNoTracking().Any(grant =>
                       grant.AccountId == account.Id && grant.StationId == station.Id &&
                       grant.GrantedAt <= now && grant.RevokedAt == null)
-            select new StationScope(station.Id, station.IanaTimeZone, airport.Id,
+            select new StationScope(station.Id, station.Code, station.IanaTimeZone, airport.Id,
                 airport.IataCode, account.Id))
             .SingleOrDefaultAsync(cancellationToken);
         if (scope is null) return (NotFound(), null);
@@ -104,9 +105,7 @@ internal sealed class EfManualTurnaroundStore(
         if (existing is not null)
             return (await ReplayAsync(existing, request, scope, cancellationToken), null);
 
-        var zone = TimeZoneInfo.FindSystemTimeZoneById(scope.TimeZoneId);
-        var stationDate = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTime(request.ArrivalScheduledAt, zone).DateTime);
+        var stationDate = BusinessCalendar.Today(request.ArrivalScheduledAt, scope.TimeZoneId);
         if (stationDate != request.OperationDate ||
             string.Equals(scope.AirportIata, request.ArrivalOriginIata, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(scope.AirportIata, request.DepartureDestinationIata, StringComparison.OrdinalIgnoreCase))
@@ -124,6 +123,12 @@ internal sealed class EfManualTurnaroundStore(
         if (request.Charter ? applicableContracts.Length != 0 : applicableContracts.Length != 1)
             return (Conflict(), null);
 
+        // 3-N07: the same flight of the airline on the same local day is planned once, whether OCC typed it or
+        // imported it from the feed; a second entry would be operated and invoiced twice.
+        if (await AlreadyPlannedAsync(scope.StationId, airline.Id, request.OperationDate, request.ArrivalFlightNumber,
+                request.DepartureFlightNumber, cancellationToken))
+            return (ManualTurnaroundWriteResult.Failed(ManualTurnaroundWriteFailure.Conflict, "flight_already_planned"), null);
+
         // The aircraft type is typed once, here (2-A): stand sizes and ground times read it later.
         long? aircraftTypeId = null;
         AircraftSizeCategory? aircraftSize = null;
@@ -139,6 +144,8 @@ internal sealed class EfManualTurnaroundStore(
             (aircraftTypeId, aircraftSize) = (type.Id, type.SizeCategory);
         }
 
+        // The stand is locked before its overlap is checked: two entries for the same stand wait for each other (3-N10).
+        await StandAvailability.LockAsync(context, request.StandId, cancellationToken);
         var stand = await (
             from item in context.Stands.AsNoTracking()
             join terminal in context.Terminals.AsNoTracking()
@@ -176,7 +183,8 @@ internal sealed class EfManualTurnaroundStore(
         var turnaround = new Turnaround
         {
             PublicId = request.TurnaroundId,
-            OperationCode = $"MAN-{request.TurnaroundId:N}",
+            // 3-N27: readable on the invoice, the portal and the tablet, numbered per station and local day.
+            OperationCode = await OperationCodes.NextAsync(context, scope.StationCode, request.OperationDate, cancellationToken),
             AirlineId = airline.Id,
             StationId = scope.StationId,
             OperationDate = request.OperationDate,
@@ -333,6 +341,27 @@ internal sealed class EfManualTurnaroundStore(
                 : Conflict();
     }
 
+    /// <summary>
+    /// An open turnaround of the airline at the station on that local day with the same arrival or departure number,
+    /// compared in the form OCC types them (<see cref="FlightIdentity"/>): the feed keeps the provider's spacing.
+    /// </summary>
+    private async Task<bool> AlreadyPlannedAsync(long stationId, long airlineId, DateOnly operationDate,
+        string arrivalNumber, string departureNumber, CancellationToken cancellationToken)
+    {
+        var legs = await (
+            from turnaround in context.Turnarounds.AsNoTracking()
+            join leg in context.FlightLegs.AsNoTracking() on turnaround.Id equals leg.TurnaroundId
+            where turnaround.StationId == stationId && turnaround.AirlineId == airlineId &&
+                  turnaround.OperationDate == operationDate &&
+                  turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
+                  turnaround.CurrentStatus != TurnaroundStatus.Diverted &&
+                  turnaround.CurrentStatus != TurnaroundStatus.Completed
+            select new { leg.Direction, leg.FlightNumber })
+            .ToArrayAsync(cancellationToken);
+        return legs.Any(leg => FlightIdentity.NormalizeFlightNumber(leg.FlightNumber) ==
+            (leg.Direction == FlightDirection.Arrival ? arrivalNumber : departureNumber));
+    }
+
     private static FlightLeg NewLeg(long turnaroundId, FlightDirection direction,
         string flightNumber, long originId, long destinationId,
         DateTimeOffset scheduledAt, DateTimeOffset now) => new()
@@ -359,6 +388,6 @@ internal sealed class EfManualTurnaroundStore(
         exception is SqlException sql && sql.Number is 1205 or 2601 or 2627 ||
         exception.InnerException is not null && IsConflict(exception.InnerException);
 
-    private sealed record StationScope(long StationId, string TimeZoneId,
+    private sealed record StationScope(long StationId, string StationCode, string TimeZoneId,
         long AirportId, string AirportIata, long ActorAccountId);
 }

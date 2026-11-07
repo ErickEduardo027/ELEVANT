@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Application.Operations;
 using Elevant.Domain.Enumerations;
@@ -50,15 +51,17 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         var state = new OccState
         {
             Actor = CreateActor(),
-            LatestDate = FixtureDate,
             Snapshot = CreateSnapshot(),
         };
         await using var application = CreateApplication(state);
         using var client = CreateAuthenticatedClient(application);
 
+        // 3-N17: without a date the server opens today in the station's calendar.
+        var before = BusinessCalendar.Today(DateTimeOffset.UtcNow, "America/Santo_Domingo");
         using var response = await client.GetAsync(
             "/api/v1/occ/planning",
             TestContext.Current.CancellationToken);
+        var after = BusinessCalendar.Today(DateTimeOffset.UtcNow, "America/Santo_Domingo");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         AssertPrivateResponse(response);
@@ -72,8 +75,8 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         Assert.Equal("2026-08-19", root.GetProperty("date").GetString());
         Assert.Equal("DEV-TAT-0002", root.GetProperty("turnarounds")[0].GetProperty("operationCode").GetString());
         Assert.False(root.TryGetProperty("Turnarounds", out _));
-        Assert.Equal(StationId, state.LatestDateStationId);
-        Assert.Equal((StationId, FixtureDate), state.SnapshotRequest);
+        Assert.Equal(StationId, state.SnapshotRequest!.Value.StationId);
+        Assert.Contains(state.SnapshotRequest.Value.Date, new[] { before, after });
     }
 
     [Fact]
@@ -977,8 +980,6 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
     {
         public ActorContext? Actor { get; init; }
 
-        public DateOnly? LatestDate { get; init; }
-
         public OccPlanningSnapshotData? Snapshot { get; init; }
 
         public OccPlanningOptionsSourceData? Options { get; init; }
@@ -987,8 +988,6 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
 
         public OccAssignmentWriteResult AssignmentWriteResult { get; init; } =
             OccAssignmentWriteResult.Failed(OccAssignmentWriteFailure.Conflict);
-
-        public Guid? LatestDateStationId { get; private set; }
 
         public (Guid StationId, DateOnly Date)? SnapshotRequest { get; private set; }
 
@@ -1017,15 +1016,6 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(Actor);
-        }
-
-        public Task<DateOnly?> GetLatestOperationDateAsync(
-            Guid stationId,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            LatestDateStationId = stationId;
-            return Task.FromResult(LatestDate);
         }
 
         public Task<OccPlanningSnapshotData?> GetSnapshotAsync(

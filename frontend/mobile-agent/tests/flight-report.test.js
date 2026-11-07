@@ -95,3 +95,34 @@ test('without signal the command stays pending with the same key; a server rejec
   expect(mockApi.updateRampFlightData).toHaveBeenLastCalledWith(operationId, expect.objectContaining({ passengersIn: 150 }),
     expect.any(String), key);
 });
+
+test('flight data queued by an older version travels without the aircraft type and keeps its first body (3-B)', async () => {
+  mockApi.updateRampFlightData.mockResolvedValue(response());
+  // An item the deployed APK saved before 3-B: no aircraftTypeId field at all.
+  mockStore.set(`elevant.flightReportOutbox.v1.${accountId}`, JSON.stringify([{ idempotencyKey: '90000000-0000-4000-8000-0000000000b1',
+    command: { kind: 'flightData', operationId, passengersIn: 120, passengersOut: 118, mtowKg: 70000, aircraftRegistration: null },
+    createdAt: '2026-11-04T16:00:00.000Z', state: 'pending', attempts: 0 }]));
+  expect(await readFlightReportOutbox(accountId)).toHaveLength(1);
+  await flushFlightReport();
+  expect(mockApi.updateRampFlightData).toHaveBeenCalledWith(operationId, { passengersIn: 120, passengersOut: 118, mtowKg: 70000,
+    aircraftRegistration: null }, expect.any(String), '90000000-0000-4000-8000-0000000000b1');
+  expect(await readFlightReportOutbox(accountId)).toEqual([]);
+});
+
+test('the aircraft type the agent chose travels with the flight data and replaces the unsent one', async () => {
+  mockApi.updateRampFlightData.mockRejectedValue(new Error('offline'));
+  await saveFlightData(operationId, { passengersIn: 150, passengersOut: 148, mtowKg: 78000, aircraftRegistration: null });
+  await flushFlightReport();
+  const typeId = '60000000-0000-4000-8000-000000000001';
+  await saveFlightData(operationId, { passengersIn: 150, passengersOut: 148, mtowKg: 78000, aircraftRegistration: null,
+    aircraftTypeId: typeId });
+  await flushFlightReport();
+  const [queued] = await readFlightReportOutbox(accountId);
+  expect(queued.command).toMatchObject({ kind: 'flightData', aircraftTypeId: typeId });
+  expect(await readFlightReportOutbox(accountId)).toHaveLength(1);
+  mockApi.updateRampFlightData.mockResolvedValue(response());
+  await flushFlightReport();
+  expect(mockApi.updateRampFlightData).toHaveBeenLastCalledWith(operationId, { passengersIn: 150, passengersOut: 148,
+    mtowKg: 78000, aircraftRegistration: null, aircraftTypeId: typeId }, expect.any(String), expect.any(String));
+  expect(await readFlightReportOutbox(accountId)).toEqual([]);
+});

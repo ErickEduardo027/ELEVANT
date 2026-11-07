@@ -121,6 +121,21 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
             new { arrivalProposalId = arrival, departureProposalId = departure }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
         Assert.Equal((new OccFlightImportInput(arrival, departure), (Guid?)null), (store.LastImport, store.LastImportKey));
+        using (var imported = JsonDocument.Parse(await legacy.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
+        {
+            Assert.Equal(["turnaroundId", "operationCode", "replayed", "linked"],
+                imported.RootElement.EnumerateObject().Select(item => item.Name).ToArray());
+            Assert.False(imported.RootElement.GetProperty("linked").GetBoolean());
+        }
+        // 3-N07: a pair of a flight OCC already planned joins that turnaround.
+        store.ImportResult = new OccFlightImportResult(Guid.NewGuid(), "PUJ-20261105-001", null, Linked: true);
+        using (var linked = await SendAsync(client, HttpMethod.Post, "occ/flight-feed/turnarounds", Guid.NewGuid(), new
+               {
+                   arrivalProposalId = arrival, departureProposalId = departure, expectedArrivalVersion = "AAAAAAAAB9E=",
+                   expectedDepartureVersion = "AAAAAAAAB9F=",
+               }))
+        using (var answer = JsonDocument.Parse(await linked.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
+            Assert.True(answer.RootElement.GetProperty("linked").GetBoolean());
 
         var key = Guid.NewGuid();
         store.ImportResult = new OccFlightImportResult(null, null, OccFlightFeedFailure.Conflict, false, "stand_unavailable",

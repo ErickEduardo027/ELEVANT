@@ -49,6 +49,16 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 
+  it("knows the planning codes of phase 3 (block A)", () => {
+    for (const code of ["operation_started", "turnaround_closed", "assigned_agent_unavailable", "invalid_turnaround_change",
+      "arrival_locked", "aircraft_type_locked", "flight_already_planned", "invalid_charter_airline", "invalid_position_request",
+      "aircraft_type_unavailable", "stand_unavailable", "contract_not_in_force", "airline_code_in_use"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A rescheduled flight keeps its agent only inside the shift and within three simultaneous operations.
+    for (const reason of ["shift_not_covering", "simultaneous_limit", "stand_taken", "stand_narrowbody_only"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

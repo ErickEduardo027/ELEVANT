@@ -14,6 +14,11 @@ export type FlightReportCommand =
   | Readonly<{
     kind: 'flightData'; operationId: string; passengersIn: number | null; passengersOut: number | null;
     mtowKg: number | null; aircraftRegistration: string | null;
+    /**
+     * The aircraft type the agent sees on the ramp (3-B), typed once. Absent or null keeps the current one: an item an
+     * older version of the app queued has no such field and is still read, sent and replayed with its first hash.
+     */
+    aircraftTypeId?: string | null;
   }>
   | Readonly<{
     kind: 'signature'; operationId: string; documentKind: string; role: string; signerName: string;

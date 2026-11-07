@@ -226,3 +226,36 @@ export async function assignPlanningOperation(
     throw safeAssignmentError(error);
   }
 }
+
+/**
+ * A turnaround change keeps the ElevantApiError as it came (status, code, reasons) so the screen explains it by its
+ * Problem Details code (3-A, 3-N21); a body the client refuses is explained as invalid data, never as a network failure.
+ */
+async function turnaroundRequest(request, invalidCode) {
+  try {
+    return await request();
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    if (error instanceof ElevantApiError && error.status === 401) handleUnauthorizedResponse({ status: 401 });
+    if (error instanceof TypeError) throw Object.assign(new Error(invalidCode), { status: 400, code: invalidCode });
+    throw error;
+  }
+}
+
+/** One turnaround with its ETag and the changes its state allows (3-A). */
+export const getTurnaround = (turnaroundId, { signal } = {}) =>
+  turnaroundRequest(() => createPlanningClient().getOccTurnaround(turnaroundId, { signal }), 'invalid_turnaround_change');
+
+/** «Editar vuelo» with the intent's key and the ETag on screen. */
+export const rescheduleTurnaround = (turnaroundId, command, { ifMatch, idempotencyKey }) =>
+  turnaroundRequest(() => createPlanningClient().rescheduleOccTurnaround(turnaroundId, command, { ifMatch, idempotencyKey }),
+    'invalid_turnaround_change');
+
+/** «Cancelar vuelo» (`Cancelled`) or «Marcar desviado» (`Diverted`) with its reason. */
+export const changeTurnaroundStatus = (turnaroundId, command, { ifMatch, idempotencyKey }) =>
+  turnaroundRequest(() => createPlanningClient().changeOccTurnaroundStatus(turnaroundId, command, { ifMatch, idempotencyKey }),
+    'invalid_turnaround_change');
+
+/** The minimal carrier of a charter (3-N21). */
+export const createCharterAirline = (command, idempotencyKey) =>
+  turnaroundRequest(() => createPlanningClient().createOccCharterAirline(command, idempotencyKey), 'invalid_charter_airline');

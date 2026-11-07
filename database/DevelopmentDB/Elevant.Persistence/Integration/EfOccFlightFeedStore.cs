@@ -165,7 +165,8 @@ internal sealed class EfOccFlightFeedStore(
                     var prior = await CommercialCommandReceipts.FindAsync(context, key, accountId, ImportAction, hash, token);
                     if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
                         return Failed(OccFlightFeedFailure.Conflict, "idempotency_conflict");
-                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay) return await ExistingAsync(prior.ResultId, token);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                        return await ExistingAsync(prior.ResultId, input.ArrivalProposalId, token);
                 }
                 var result = await ImportInsideTransactionAsync(actor!, accountId, input, idempotencyKey is not null, token);
                 if (result.Failure is not null || result.Replayed)
@@ -193,11 +194,13 @@ internal sealed class EfOccFlightFeedStore(
             context.ChangeTracker.Clear();
             var concurrent = await CommercialCommandReceipts.FindAsync(context, key, accountId, ImportAction, hash, cancellationToken);
             return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
-                ? await ExistingAsync(concurrent.ResultId, cancellationToken)
+                ? await ExistingAsync(concurrent.ResultId, input.ArrivalProposalId, cancellationToken)
                 : Failed(OccFlightFeedFailure.Conflict, "idempotency_conflict");
         }
         catch (Exception exception) when (exception is DbUpdateException { InnerException: SqlException { Number: 1205 or 2601 or 2627 } } ||
-                                          exception is SqlException { Number: 1205 })
+                                          exception is SqlException { Number: 1205 } ||
+                                          exception is Microsoft.EntityFrameworkCore.Storage.RetryLimitExceededException
+                                              { InnerException: SqlException { Number: 1205 } })
         {
             context.ChangeTracker.Clear();
             return Failed(OccFlightFeedFailure.Conflict, "version_conflict");
@@ -216,7 +219,8 @@ internal sealed class EfOccFlightFeedStore(
         var station = await (from item in context.Stations.AsNoTracking()
                              join airport in context.Airports.AsNoTracking() on item.AirportId equals airport.Id
                              where item.Id == arrival.StationId && item.IsActive
-                             select new { item.Id, item.PublicId, AirportId = airport.Id }).SingleOrDefaultAsync(cancellationToken);
+                             select new { item.Id, item.PublicId, item.Code, AirportId = airport.Id })
+            .SingleOrDefaultAsync(cancellationToken);
         if (station is null || !InScope(actor, station.PublicId)) return Failed(OccFlightFeedFailure.NotFound, "not_found");
 
         // Without a key (older screens) confirming the same pair again answers the same turnaround.
@@ -225,8 +229,8 @@ internal sealed class EfOccFlightFeedStore(
             arrival.TurnaroundId == departure.TurnaroundId && arrival.TurnaroundId is { } existingId)
         {
             var existing = await context.Turnarounds.AsNoTracking().Where(item => item.Id == existingId)
-                .Select(item => new { item.PublicId, item.OperationCode }).SingleAsync(cancellationToken);
-            return new(existing.PublicId, existing.OperationCode, null, true);
+                .Select(item => item.PublicId).SingleAsync(cancellationToken);
+            return await ExistingAsync(existing, arrival.PublicId, cancellationToken);
         }
         if (arrival.Status != ExternalFlightProposalStatus.Proposed || departure.Status != ExternalFlightProposalStatus.Proposed)
             return Failed(OccFlightFeedFailure.Conflict, "flight_proposal_closed");
@@ -248,6 +252,12 @@ internal sealed class EfOccFlightFeedStore(
                     organization.Status == OrganizationStatus.Active),
             }).SingleAsync(cancellationToken);
         if (!airline.IsActive) return Failed(OccFlightFeedFailure.Conflict, "airline_inactive");
+
+        // 3-N07: the flight OCC already planned (typed by hand or imported before a reschedule) takes the pair; a
+        // second turnaround would be operated and invoiced twice.
+        if (await PlannedTurnaroundAsync(station.Id, arrival, departure, cancellationToken) is { } planned)
+            return await LinkAsync(planned, arrival, departure, accountId, airline.OrganizationId, station.Id,
+                station.PublicId, input, cancellationToken);
         var contracts = await ApplicableContracts.For(context, arrival.AirlineId, station.Id, arrival.OperationDate)
             .Select(row => row.VersionId).Take(2).ToArrayAsync(cancellationToken);
         if (contracts.Length > 1) return Failed(OccFlightFeedFailure.Conflict, "contract_ambiguous");
@@ -280,8 +290,10 @@ internal sealed class EfOccFlightFeedStore(
         long? standId = null;
         if (input.StandId is { } requestedStand)
         {
+            // Locked before its overlap is checked: two imports for one stand wait for each other (3-N10).
+            await StandAvailability.LockAsync(context, requestedStand, cancellationToken);
             var placement = await StandAvailability.CheckAsync(context, station.Id, requestedStand, plannedStart, plannedEnd,
-                aircraftSize, cancellationToken);
+                aircraftSize, null, cancellationToken);
             if (!placement.Available)
                 return Failed(OccFlightFeedFailure.Conflict, "stand_unavailable", placement.Reasons);
             standId = placement.StandId;
@@ -289,9 +301,11 @@ internal sealed class EfOccFlightFeedStore(
 
         var now = Now();
         var turnaroundId = Guid.CreateVersion7();
+        // 3-N27: the readable code of the station and local day, as the manual entry issues it.
+        var operationCode = await OperationCodes.NextAsync(context, station.Code, arrival.OperationDate, cancellationToken);
         var turnaround = new Turnaround
         {
-            PublicId = turnaroundId, OperationCode = $"EXT-{turnaroundId:N}", AirlineId = arrival.AirlineId,
+            PublicId = turnaroundId, OperationCode = operationCode, AirlineId = arrival.AirlineId,
             StationId = station.Id, OperationDate = arrival.OperationDate, ContractVersionId = contractVersionId,
             AircraftTypeId = aircraftTypeId, AircraftRegistration = arrival.AircraftRegistration ?? departure.AircraftRegistration,
             CurrentStatus = TurnaroundStatus.Confirmed, Source = OperationalDataSource.ExternalProvider,
@@ -514,11 +528,101 @@ internal sealed class EfOccFlightFeedStore(
             .Select(type => new AircraftTypeCandidate(type.PublicId, type.IcaoCode, type.Manufacturer, type.Model))
             .ToArrayAsync(cancellationToken);
 
-    private async Task<OccFlightImportResult> ExistingAsync(Guid turnaroundId, CancellationToken cancellationToken)
+    /// <summary>
+    /// The turnaround a replayed import answered. It was linked (3-N07) when it is not the one this arrival created:
+    /// a manual flight, or an import of another reference.
+    /// </summary>
+    private async Task<OccFlightImportResult> ExistingAsync(Guid turnaroundId, Guid arrivalProposalId,
+        CancellationToken cancellationToken)
     {
-        var code = await context.Turnarounds.AsNoTracking().Where(item => item.PublicId == turnaroundId)
-            .Select(item => item.OperationCode).SingleOrDefaultAsync(cancellationToken);
-        return code is null ? Failed(OccFlightFeedFailure.NotFound, "not_found") : new(turnaroundId, code, null, true);
+        var existing = await context.Turnarounds.AsNoTracking().Where(item => item.PublicId == turnaroundId)
+            .Select(item => new { item.OperationCode, item.Source, item.ExternalProvider, item.ExternalReference })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (existing is null) return Failed(OccFlightFeedFailure.NotFound, "not_found");
+        var proposal = await context.Set<ExternalFlightProposal>().AsNoTracking()
+            .Where(item => item.PublicId == arrivalProposalId)
+            .Select(item => new { item.Provider, item.ExternalReference }).SingleOrDefaultAsync(cancellationToken);
+        var created = existing.Source == OperationalDataSource.ExternalProvider && proposal is not null &&
+            existing.ExternalProvider == proposal.Provider && existing.ExternalReference == proposal.ExternalReference;
+        return new(turnaroundId, existing.OperationCode, null, true, Linked: !created);
+    }
+
+    /// <summary>
+    /// The open turnaround of the airline at the station on the proposal's local day whose arrival or departure has the
+    /// same number, in the form OCC types it (<see cref="FlightIdentity"/>).
+    /// </summary>
+    private async Task<Turnaround?> PlannedTurnaroundAsync(long stationId, ExternalFlightProposal arrival,
+        ExternalFlightProposal departure, CancellationToken cancellationToken)
+    {
+        var candidates = await (from turnaround in context.Turnarounds
+                                where turnaround.StationId == stationId && turnaround.AirlineId == arrival.AirlineId &&
+                                      turnaround.OperationDate == arrival.OperationDate &&
+                                      turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
+                                      turnaround.CurrentStatus != TurnaroundStatus.Diverted &&
+                                      turnaround.CurrentStatus != TurnaroundStatus.Completed
+                                orderby turnaround.Id
+                                select turnaround).ToArrayAsync(cancellationToken);
+        if (candidates.Length == 0) return null;
+        var ids = candidates.Select(item => item.Id).ToArray();
+        var legs = await context.FlightLegs.AsNoTracking().Where(leg => ids.Contains(leg.TurnaroundId))
+            .Select(leg => new { leg.TurnaroundId, leg.Direction, leg.FlightNumber }).ToArrayAsync(cancellationToken);
+        var arrivalNumber = FlightIdentity.NormalizeFlightNumber(arrival.FlightNumber);
+        var departureNumber = FlightIdentity.NormalizeFlightNumber(departure.FlightNumber);
+        return candidates.FirstOrDefault(turnaround => legs.Any(leg => leg.TurnaroundId == turnaround.Id &&
+            FlightIdentity.NormalizeFlightNumber(leg.FlightNumber) ==
+                (leg.Direction == FlightDirection.Arrival ? arrivalNumber : departureNumber)));
+    }
+
+    /// <summary>
+    /// Joins the pair to the planned turnaround: both proposals become Confirmed on its legs and the turnaround only
+    /// takes what it lacks (the aircraft type while it is not locked, the registration). Nothing else is created.
+    /// </summary>
+    private async Task<OccFlightImportResult> LinkAsync(Turnaround planned, ExternalFlightProposal arrival,
+        ExternalFlightProposal departure, long accountId, long organizationId, long stationId, Guid stationPublicId,
+        OccFlightImportInput input, CancellationToken cancellationToken)
+    {
+        var now = Now();
+        var operation = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == planned.Id)
+            .Select(item => new { item.Id, item.PublicId, item.CurrentStatus }).FirstOrDefaultAsync(cancellationToken);
+        if (input.AircraftTypeId is { } requestedType && planned.AircraftTypeId is null)
+        {
+            var type = await context.AircraftTypes.AsNoTracking().Where(item => item.PublicId == requestedType && item.IsActive)
+                .Select(item => (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
+            if (type is null) return Failed(OccFlightFeedFailure.Conflict, "aircraft_type_unavailable");
+            var submitted = operation is not null && await context.OperationSubmissions.AsNoTracking()
+                .AnyAsync(item => item.GroundOperationId == operation.Id, cancellationToken);
+            if (!OccTurnaroundRules.IsAircraftTypeLocked(operation?.CurrentStatus, submitted)) planned.AircraftTypeId = type;
+        }
+        planned.AircraftRegistration ??= arrival.AircraftRegistration ?? departure.AircraftRegistration;
+        planned.UpdatedAt = now;
+        var legs = await context.FlightLegs.AsNoTracking().Where(leg => leg.TurnaroundId == planned.Id)
+            .Select(leg => new { leg.Id, leg.Direction }).ToArrayAsync(cancellationToken);
+        foreach (var proposal in new[] { arrival, departure })
+        {
+            proposal.Status = ExternalFlightProposalStatus.Confirmed;
+            proposal.TurnaroundId = planned.Id;
+            proposal.FlightLegId = legs.FirstOrDefault(leg => leg.Direction == proposal.Direction)?.Id;
+            proposal.DecidedByAccountId = accountId;
+            proposal.DecidedAt = now;
+            proposal.UpdatedAt = now;
+        }
+        context.AuditEntries.Add(new AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account, ActorAccountId = accountId,
+            Action = "occ.turnaround.feed_linked", EntityType = nameof(Turnaround), EntityPublicId = planned.PublicId,
+            OrganizationId = organizationId, StationId = stationId, Source = AuditSource.Api,
+            CorrelationId = input.ArrivalProposalId, Reason = "The provider's flight joined the turnaround OCC had planned.",
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                provider = arrival.Provider, arrival = arrival.ExternalReference, departure = departure.ExternalReference,
+                aircraftTypeId = input.AircraftTypeId,
+            }),
+        });
+        if (operation is not null)
+            await AirlineOperationChangeWriter.AddAsync(context, organizationId, operation.PublicId, now, cancellationToken);
+        await OccPlanningChangeWriter.AddForStationAsync(context, stationId, stationPublicId, now, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
+        return new(planned.PublicId, planned.OperationCode, null, Linked: true);
     }
 
     private static FlightLeg Leg(long turnaroundId, ExternalFlightProposal proposal, long originId, long destinationId,

@@ -95,6 +95,10 @@ public static class DependencyInjection
         services.AddScoped<IOccAssignmentReadinessStore, EfOccAssignmentReadinessStore>();
         services.AddScoped<IOccReportStore, EfOccReportStore>();
         services.AddScoped<IOccPositionStore, EfOccPositionStore>();
+        // 3-A, 3-N21: a turnaround OCC reschedules, cancels or diverts, and the minimal carrier of a charter.
+        services.AddScoped<IOccTurnaroundStore, EfOccTurnaroundStore>();
+        // 3-B: the aircraft types the tablet offers.
+        services.AddScoped<IRampReferenceStore, EfRampReferenceStore>();
         // Master data (2-A): stations by the superadministrator, terminals, stands and aircraft types by OCC.
         services.AddScoped<IStationCatalogStore, EfStationCatalogStore>();
         services.AddScoped<IOccMasterDataStore, EfOccMasterDataStore>();

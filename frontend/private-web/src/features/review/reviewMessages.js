@@ -5,7 +5,8 @@ export const reviewMessages = {
       intro: 'Tiempos registrados y recargos con los que Finanzas valorará la operación. Los automáticos los marcó ELEVANT al entregar.',
       ground: 'Tiempo en tierra',
       allowed: 'Permitido por Finanzas',
-      noAllowance: 'Sin tiempo permitido para esta categoría',
+      // 3-B: without the aircraft type (or its size) there is no allowance; the tablet or OCC types it before the submission.
+      noAllowance: 'Falta el tipo de avión: sin él no hay tiempo permitido',
       delay: 'Demora de llegada',
       minutes: '{value} min',
       unknown: '—',
@@ -119,7 +120,7 @@ export const reviewMessages = {
       intro: 'Recorded times and the charges Finance will value. Automatic ones were marked by ELEVANT at hand-off.',
       ground: 'Ground time',
       allowed: 'Allowed by Finance',
-      noAllowance: 'No allowance for this category',
+      noAllowance: 'Aircraft type missing: no allowance without it',
       delay: 'Arrival delay',
       minutes: '{value} min',
       unknown: '—',

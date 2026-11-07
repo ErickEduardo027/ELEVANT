@@ -43,6 +43,24 @@ import {
 } from "./operationalClose";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
+  isOccCharterAirline,
+  isOccTurnaroundAction,
+  isRampAircraftTypes,
+  isStrongEntityTag,
+  normalizedCharterAirline,
+  normalizedTurnaroundReason,
+  normalizedTurnaroundReschedule,
+  normalizedTurnaroundStatusChange,
+  validatedPositionHeaders,
+  validatedTurnaroundHeaders,
+  type ChangeOccTurnaroundStatusCommand,
+  type CreateOccCharterAirlineCommand,
+  type OccPositionCommandHeaders,
+  type OccTurnaroundCommandHeaders,
+  type OccTurnaroundWithMetadata,
+  type RescheduleOccTurnaroundCommand,
+} from "./occTurnarounds";
+import {
   isContractDraftReadiness,
   isContractDraftScope,
   normalizedDraftDiscard,
@@ -321,6 +339,11 @@ import {
   getReleaseOccOperationAgentUrl,
   getGetOwnRampCoverageUrl,
   getRecordOccArrivalUrl,
+  getGetOccTurnaroundUrl,
+  getRescheduleOccTurnaroundUrl,
+  getChangeOccTurnaroundStatusUrl,
+  getCreateOccCharterAirlineUrl,
+  getGetRampAircraftTypesUrl,
   getAssignOccStandUrl,
   getReleaseOccStandUrl,
   getLocateOccStandUrl,
@@ -512,6 +535,9 @@ import {
   type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
+  type OccCharterAirlineResponse,
+  type OccTurnaroundDetailResponse,
+  type RampAircraftTypesResponse,
   type OccCoverageBoardResponse,
   type RampOwnCoverageListResponse,
   type OccReadyContractsResponse,
@@ -807,6 +833,8 @@ export interface RampFlightDataCommand {
   passengersOut: number | null;
   mtowKg: number | null;
   aircraftRegistration: string | null;
+  /** 3-B: the aircraft type seen on the ramp; omitted or null keeps the current one (and the receipt hash). */
+  aircraftTypeId?: string | null;
 }
 export type SubmitRampOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReopenRampOperationCorrectionOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -1316,11 +1344,31 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
   listOccReports(options?: GetHumanResourcesReportOptions): Promise<OccReportCatalogResponse>;
   getOccPositions(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
-  recordOccArrival(turnaroundId: string, request: { aircraftRegistration: string; arrivedAt?: string | null },
-    options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  /**
+   * Records the arrival (3-N08): the registration, the actual time (now when omitted), the aircraft type (3-B) and, to
+   * correct a recorded one, the reason. `options.idempotencyKey` and `options.ifMatch` are optional (3-N10); a key needs
+   * the turnaround's ETag.
+   */
+  recordOccArrival(turnaroundId: string,
+    request: { aircraftRegistration: string; arrivedAt?: string | null; aircraftTypeId?: string | null; reason?: string | null },
+    options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders): Promise<OccPositionBoardResponse>;
   assignOccStand(turnaroundId: string, request: { standId: string; reason?: string | null },
-    options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
-  releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+    options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders): Promise<OccPositionBoardResponse>;
+  releaseOccStand(turnaroundId: string,
+    options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders): Promise<OccPositionBoardResponse>;
+  /** One turnaround with its ETag and the changes its state allows (3-A). */
+  getOccTurnaround(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccTurnaroundWithMetadata>;
+  /** «Editar vuelo» before the operation starts, with the intent's key and the ETag on screen (3-A). */
+  rescheduleOccTurnaround(turnaroundId: string, command: RescheduleOccTurnaroundCommand, headers: OccTurnaroundCommandHeaders,
+    options?: GetHumanResourcesReportOptions): Promise<OccTurnaroundWithMetadata>;
+  /** «Cancelar vuelo» or «Marcar desviado» before the operation starts (3-A). */
+  changeOccTurnaroundStatus(turnaroundId: string, command: ChangeOccTurnaroundStatusCommand,
+    headers: OccTurnaroundCommandHeaders, options?: GetHumanResourcesReportOptions): Promise<OccTurnaroundWithMetadata>;
+  /** The minimal carrier of a charter (3-N21); 201 the first time, 200 when the key replays it. */
+  createOccCharterAirline(command: CreateOccCharterAirlineCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccCharterAirlineResponse>;
+  /** The active aircraft types the tablet offers in «Datos del vuelo» (3-B). */
+  getRampAircraftTypes(options?: GetHumanResourcesReportOptions): Promise<RampAircraftTypesResponse>;
   /** Position coverage per shift (ADR-0030). A rejected coverage throws 422 with `reasons`. */
   getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
   createOccCoverage(request: OccCoverageCommand, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
@@ -2182,6 +2230,23 @@ function isOccTurnaroundResponse(value: unknown) {
     Array.isArray(value.services) &&
     value.services.every(isOccOperationServiceResponse)
   );
+}
+
+/** One turnaround as OCC edits it (3-A): the snapshot's turnaround, its station, version and allowed changes. */
+function isOccTurnaroundDetail(value: unknown, turnaroundId: string): value is OccTurnaroundDetailResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["station", "turnaround", "version", "isCharter", "allowedActions"]) &&
+    isOccStationResponse(value.station) && isOccTurnaroundResponse(value.turnaround) &&
+    isRecord(value.turnaround) && typeof value.turnaround.id === "string" &&
+    value.turnaround.id.toLowerCase() === turnaroundId.toLowerCase() &&
+    isNonEmptyString(value.version) && value.version.length <= 64 && typeof value.isCharter === "boolean" &&
+    Array.isArray(value.allowedActions) && value.allowedActions.every(isOccTurnaroundAction);
+}
+
+/** The imported pair's turnaround; `linked` (3-N07) is optional so an older server keeps answering. */
+function isImportedFlight(value: unknown): value is ImportOccFlightResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed", "linked"]) &&
+    isUuid(value.turnaroundId) && isNonEmptyString(value.operationCode) && typeof value.replayed === "boolean" &&
+    (value.linked === undefined || typeof value.linked === "boolean");
 }
 
 function isOccPlanningSnapshotResponse(
@@ -5746,14 +5811,40 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return new Blob([bytes], { type: mime });
   };
 
-  const positionCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions,
-    method: "POST" | "PUT" = "POST") => {
-    const headers = headersFrom(options?.headers, "Request headers");
+  // A positions map command (3-N10): the Idempotency-Key and the turnaround's ETag travel only when the screen sends them.
+  const positionCommand = async (path: string, body: unknown,
+    options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders, method: "POST" | "PUT" = "POST") => {
+    const { ifMatch, idempotencyKey, ...init } = options ?? {};
+    const command = validatedPositionHeaders({ ifMatch: ifMatch ?? null, idempotencyKey: idempotencyKey ?? null });
+    const headers = headersFrom(init.headers, "Request headers");
     if (body !== undefined) headers.set("content-type", "application/json");
-    const result = await execute(path, { ...options, method, headers,
+    if (command.idempotencyKey) headers.set("idempotency-key", command.idempotencyKey);
+    if (command.ifMatch) headers.set("if-match", command.ifMatch);
+    const result = await execute(path, { ...init, method, headers,
       ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
     if (!isOccPositionBoard(result.data)) throw malformedResponse(result.status);
     return result.data;
+  };
+
+  // A turnaround detail with its strong ETag; the version in the body is the ETag's value (3-A).
+  const turnaroundWithMetadata = (result: ApiResult, turnaroundId: string): OccTurnaroundWithMetadata => {
+    const etag = result.etag;
+    if (!isOccTurnaroundDetail(result.data, turnaroundId) || !isStrongEntityTag(etag) ||
+        etag !== "\"" + result.data.version + "\"")
+      throw malformedResponse(result.status);
+    return { turnaround: result.data, etag };
+  };
+
+  // «Editar vuelo», «Cancelar vuelo» and «Marcar desviado»: the intent's key and the ETag on screen (3-A).
+  const turnaroundCommand = async (method: "POST" | "PUT", path: string, turnaroundId: string, body: unknown,
+    commandHeaders: OccTurnaroundCommandHeaders, options?: GetHumanResourcesReportOptions) => {
+    const { ifMatch, idempotencyKey } = validatedTurnaroundHeaders(commandHeaders);
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", idempotencyKey);
+    headers.set("if-match", ifMatch);
+    const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
+    return turnaroundWithMetadata(result, turnaroundId);
   };
 
   const coverageCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions,
@@ -7715,26 +7806,61 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccPositionBoard(result.data, station)) throw malformedResponse(result.status);
       return result.data;
     },
-    async recordOccArrival(turnaroundId: string, request: { aircraftRegistration: string; arrivedAt?: string | null },
-      options?: GetHumanResourcesReportOptions) {
+    async recordOccArrival(turnaroundId: string,
+      request: { aircraftRegistration: string; arrivedAt?: string | null; aircraftTypeId?: string | null; reason?: string | null },
+      options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders) {
       const turnaround = validatedUuid(turnaroundId, "turnaroundId");
       const registration = typeof request?.aircraftRegistration === "string" ? request.aircraftRegistration.trim().toUpperCase() : "";
       if (!/^[A-Z0-9-]{2,10}$/.test(registration) ||
-          (request.arrivedAt != null && !isDateTimeOffset(request.arrivedAt)))
+          (request.arrivedAt != null && !isDateTimeOffset(request.arrivedAt)) ||
+          (request.aircraftTypeId != null && !isUuid(request.aircraftTypeId)))
         throw new TypeError("The arrival is invalid.");
-      return positionCommand(getRecordOccArrivalUrl(turnaround),
-        { aircraftRegistration: registration, arrivedAt: request.arrivedAt ?? null }, options);
+      // An older body keeps its two fields; the type and the correction reason travel only when given.
+      const body: Record<string, unknown> = { aircraftRegistration: registration, arrivedAt: request.arrivedAt ?? null };
+      if (request.aircraftTypeId != null) body.aircraftTypeId = request.aircraftTypeId;
+      if (request.reason != null) body.reason = normalizedTurnaroundReason(request.reason);
+      return positionCommand(getRecordOccArrivalUrl(turnaround), body, options);
     },
     async assignOccStand(turnaroundId: string, request: { standId: string; reason?: string | null },
-      options?: GetHumanResourcesReportOptions) {
+      options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders) {
       const turnaround = validatedUuid(turnaroundId, "turnaroundId");
       const reason = typeof request?.reason === "string" && request.reason.trim() ? request.reason.trim() : null;
       if (reason && reason.length > 500) throw new TypeError("The reason is too long.");
       return positionCommand(getAssignOccStandUrl(turnaround),
         { standId: validatedUuid(request?.standId, "standId"), reason }, options);
     },
-    async releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+    async releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders) {
       return positionCommand(getReleaseOccStandUrl(validatedUuid(turnaroundId, "turnaroundId")), undefined, options);
+    },
+    async getOccTurnaround(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const result = await execute(getGetOccTurnaroundUrl(turnaround), { ...options, method: "GET" }, true);
+      return turnaroundWithMetadata(result, turnaround);
+    },
+    async rescheduleOccTurnaround(turnaroundId: string, command: RescheduleOccTurnaroundCommand,
+      headers: OccTurnaroundCommandHeaders, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      return turnaroundCommand("PUT", getRescheduleOccTurnaroundUrl(turnaround), turnaround,
+        normalizedTurnaroundReschedule(command), headers, options);
+    },
+    async changeOccTurnaroundStatus(turnaroundId: string, command: ChangeOccTurnaroundStatusCommand,
+      headers: OccTurnaroundCommandHeaders, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      return turnaroundCommand("POST", getChangeOccTurnaroundStatusUrl(turnaround), turnaround,
+        normalizedTurnaroundStatusChange(command), headers, options);
+    },
+    async createOccCharterAirline(command: CreateOccCharterAirlineCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedCharterAirline(command);
+      const created = await masterDataCommand("POST", getCreateOccCharterAirlineUrl(), body, idempotencyKey, options,
+        (value): value is OccCharterAirlineResponse => isOccCharterAirline(value));
+      if (created.icaoCode !== body.icaoCode) throw malformedResponse(201);
+      return created;
+    },
+    async getRampAircraftTypes(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getGetRampAircraftTypesUrl(), { ...options, method: "GET" }, true);
+      if (!isRampAircraftTypes(result.data)) throw malformedResponse(result.status);
+      return result.data;
     },
     async locateOccStand(standId: string,
       request: { latitude: number | null; longitude: number | null; operationDate: string },
@@ -7847,10 +7973,8 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       headers.set("content-type", "application/json");
       const result = await execute(getImportOccFlightUrl(), { ...options, method: "POST", headers,
         body: JSON.stringify({ arrivalProposalId: arrival, departureProposalId: departure }) }, true);
-      const data = result.data;
-      if (!isRecord(data) || !hasOnlyKeys(data, ["turnaroundId", "operationCode", "replayed"]) || !isUuid(data.turnaroundId) ||
-          !isNonEmptyString(data.operationCode) || typeof data.replayed !== "boolean") throw malformedResponse(result.status);
-      return data as unknown as ImportOccFlightResponse;
+      if (!isImportedFlight(result.data)) throw malformedResponse(result.status);
+      return result.data;
     },
     async dismissOccFlightProposal(proposalId: string, options?: GetHumanResourcesReportOptions) {
       const result = await execute(getDismissOccFlightProposalUrl(validatedUuid(proposalId, "proposalId")),
@@ -7860,9 +7984,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     async importOccFlightProposals(command: ImportOccFlightCommand, idempotencyKey: string,
       options?: GetHumanResourcesReportOptions) {
       return catalogCommand("POST", getImportOccFlightUrl(), normalizedFlightImport(command), idempotencyKey, options,
-        (value): value is ImportOccFlightResponse => isRecord(value) &&
-          hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed"]) && isUuid(value.turnaroundId) &&
-          isNonEmptyString(value.operationCode) && typeof value.replayed === "boolean");
+        isImportedFlight);
     },
     async restoreOccFlightProposal(proposalId: string, expectedVersion: string, idempotencyKey: string,
       options?: GetHumanResourcesReportOptions) {
@@ -8104,11 +8226,15 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isRecord(request) || (request.passengersIn !== null && !isPassengerCount(request.passengersIn)) ||
           (request.passengersOut !== null && !isPassengerCount(request.passengersOut)) ||
           (request.mtowKg !== null && !isMtow(request.mtowKg)) ||
-          (registration !== null && !/^[A-Z0-9-]{2,10}$/.test(registration)))
+          (registration !== null && !/^[A-Z0-9-]{2,10}$/.test(registration)) ||
+          (request.aircraftTypeId != null && !isUuid(request.aircraftTypeId)))
         throw new TypeError("The flight data is invalid.");
+      // 3-B: without an aircraft type the body is the one older tablets send, so the server keeps its receipt hash.
       return rampExecution(getUpdateRampFlightDataUrl(operation), operation, {
         passengersIn: request.passengersIn, passengersOut: request.passengersOut, mtowKg: request.mtowKg,
-        aircraftRegistration: registration }, installationId, idempotencyKey, options);
+        aircraftRegistration: registration,
+        ...(typeof request.aircraftTypeId === "string" && { aircraftTypeId: request.aircraftTypeId }) },
+        installationId, idempotencyKey, options);
     },
     async reportRampIncident(
       operationId: string,

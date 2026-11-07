@@ -349,14 +349,14 @@ public sealed partial class SqlServerMigrationTests
         var stand = Assert.Single(board.Board.Positions, item => item.Turnarounds.Any(turnaround => turnaround.TurnaroundId == assigned.PublicId));
         Assert.Equal("planned", stand.Status);
         Assert.Equal(OccPositionFailure.Forbidden, (await positions.ReadAsync(FinanceAccount, station.PublicId, assigned.OperationDate, ct)).Failure);
-        Assert.Equal(OccPositionFailure.Forbidden, (await positions.ReleaseAsync(FinanceAccount, assigned.PublicId, ct)).Failure);
+        Assert.Equal(OccPositionFailure.Forbidden, (await positions.ReleaseAsync(FinanceAccount, assigned.PublicId, OccPositionCommand.None, ct)).Failure);
 
         // The aircraft arrives: the stand shows it occupied with its registration.
         Assert.Equal(OccPositionFailure.Invalid, (await positions.RecordArrivalAsync(occ, assigned.PublicId,
-            new RecordArrivalInput("hi 1055!", null), ct)).Failure);
+            new RecordArrivalInput("hi 1055!", null), OccPositionCommand.None, ct)).Failure);
         Assert.Equal(OccPositionFailure.Invalid, (await positions.RecordArrivalAsync(occ, assigned.PublicId,
-            new RecordArrivalInput("HI1055", DateTimeOffset.UtcNow.AddHours(2)), ct)).Failure);
-        var arrived = await positions.RecordArrivalAsync(occ, assigned.PublicId, new RecordArrivalInput("hi1055", null), ct);
+            new RecordArrivalInput("HI1055", DateTimeOffset.UtcNow.AddHours(2)), OccPositionCommand.None, ct)).Failure);
+        var arrived = await positions.RecordArrivalAsync(occ, assigned.PublicId, new RecordArrivalInput("hi1055", null), OccPositionCommand.None, ct);
         var occupied = Assert.Single(arrived.Board!.Positions, item => item.StandId == stand.StandId);
         Assert.Equal("occupied", occupied.Status);
         Assert.Equal("HI1055", occupied.Turnarounds.Single(item => item.TurnaroundId == assigned.PublicId).AircraftRegistration);
@@ -364,7 +364,7 @@ public sealed partial class SqlServerMigrationTests
 
         // Reassigning to a free stand moves the aircraft; the previous assignment is kept closed.
         var free = board.Board.Positions.First(item => item.Status == "available" && item.StandId != stand.StandId);
-        var moved = await positions.AssignAsync(occ, assigned.PublicId, free.StandId, "Cambio por mantenimiento", ct);
+        var moved = await positions.AssignAsync(occ, assigned.PublicId, free.StandId, "Cambio por mantenimiento", OccPositionCommand.None, ct);
         Assert.Null(moved.Failure);
         Assert.Equal("occupied", moved.Board!.Positions.Single(item => item.StandId == free.StandId).Status);
         Assert.Equal("available", moved.Board.Positions.Single(item => item.StandId == stand.StandId).Status);
@@ -382,10 +382,10 @@ public sealed partial class SqlServerMigrationTests
                     turnaround.Id == item.TurnaroundId))
                 .ExecuteUpdateAsync(update => update.SetProperty(item => item.PlannedStartAt, window.PlannedStartAt)
                     .SetProperty(item => item.PlannedEndAt, window.PlannedEndAt), ct);
-            Assert.Equal(OccPositionFailure.Conflict, (await positions.AssignAsync(occ, other, free.StandId, null, ct)).Failure);
+            Assert.Equal(OccPositionFailure.Conflict, (await positions.AssignAsync(occ, other, free.StandId, null, OccPositionCommand.None, ct)).Failure);
         }
 
-        var released = await positions.ReleaseAsync(occ, assigned.PublicId, ct);
+        var released = await positions.ReleaseAsync(occ, assigned.PublicId, OccPositionCommand.None, ct);
         Assert.Equal("available", released.Board!.Positions.Single(item => item.StandId == free.StandId).Status);
         Assert.False(await context.Set<StandAssignment>().AnyAsync(item => item.TurnaroundId == assigned.Id && item.AssignedTo == null, ct));
         Assert.True(await context.AuditEntries.CountAsync(entry => entry.EntityPublicId == assigned.PublicId &&

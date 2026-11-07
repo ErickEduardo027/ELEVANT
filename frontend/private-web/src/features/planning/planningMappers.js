@@ -119,7 +119,12 @@ export function mapOccPlanningSnapshot(snapshot) {
   };
 }
 
+/** A cancelled, diverted or completed flight keeps its history on the board but is no longer operated (3-A). */
+const CLOSED_TURNAROUNDS = new Set(['cancelled', 'diverted', 'completed']);
+
 export function isPendingAssignment(flight) {
+  // Its stand and agents were released on purpose: it never waits for an assignment.
+  if (CLOSED_TURNAROUNDS.has(String(flight?.status).toLowerCase())) return false;
   if (flight.resourceState) {
     return !flight.resourceState.standAssigned || !flight.resourceState.agentsAssigned;
   }
@@ -129,19 +134,34 @@ export function isPendingAssignment(flight) {
   return !hasStand || !Array.isArray(agents) || agents.length === 0;
 }
 
+/**
+ * The operation takes its first agent (or another after a release) while it is still Planned. A recorded arrival
+ * (turnaround InProgress) only means the aircraft is on blocks (3-C); the server applies the same rule.
+ */
 export function isInitialAssignmentCandidate(flight) {
   const turnaroundStatus = String(flight?.status).toLowerCase();
   const plannedStart = validTimestamp(flight?.operation?.plannedStartAt);
   const plannedEnd = validTimestamp(flight?.operation?.plannedEndAt);
 
   return (
-    (turnaroundStatus === 'scheduled' || turnaroundStatus === 'confirmed') &&
+    (turnaroundStatus === 'scheduled' || turnaroundStatus === 'confirmed' || turnaroundStatus === 'inprogress') &&
     String(flight?.operationStatus).toLowerCase() === 'planned' &&
     (flight?.assignedAgents?.length ?? 0) === 0 &&
     plannedStart !== null &&
     plannedEnd !== null &&
     plannedStart < plannedEnd
   );
+}
+
+/**
+ * Whether the board offers «Editar vuelo», «Cancelar vuelo» and «Marcar desviado» (3-A): an open flight whose operation
+ * has not started. The dialog reads the server's `allowedActions` before sending anything.
+ */
+export function isTurnaroundChangeCandidate(flight) {
+  const turnaroundStatus = String(flight?.status).toLowerCase();
+  const operationStatus = flight?.operationStatus == null ? 'planned' : String(flight.operationStatus).toLowerCase();
+  return ['scheduled', 'confirmed', 'inprogress'].includes(turnaroundStatus) &&
+    (operationStatus === 'planned' || operationStatus === 'assigned');
 }
 
 function validTimestamp(value) {

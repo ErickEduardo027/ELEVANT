@@ -1,4 +1,4 @@
-import { PlusIcon, UploadIcon, DownloadIcon } from './icons';
+import { PlusIcon, UploadIcon } from './icons';
 import { RefreshCwIcon } from '../../dashboard/components/icons';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
@@ -10,7 +10,7 @@ function ActionButton({ icon: ActionIcon, label, onClick, disabled }) {
       type="button"
       onClick={onClick}
       disabled={disabled}
-      title={disabled ? t('header.comingSoon') : label}
+      title={disabled ? t('header.unavailable') : label}
       className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors duration-200 ${
         disabled
           ? 'cursor-not-allowed border-black/10 text-text-secondary-light/60 dark:border-white/10 dark:text-text-secondary-dark/60'
@@ -41,7 +41,6 @@ export default function PlanningHeader({ onRefresh, onCreate, canCreate = false,
           <ActionButton icon={PlusIcon} label={t('header.newFlight')} onClick={onCreate} disabled={!canCreate} />
           <ActionButton icon={UploadIcon} label={t('header.importFlights')} onClick={onImport} disabled={!canImport} />
           <ActionButton icon={RefreshCwIcon} label={t('header.refresh')} onClick={onRefresh} />
-          <ActionButton icon={DownloadIcon} label={t('header.export')} disabled />
         </div>
       </div>
     </div>

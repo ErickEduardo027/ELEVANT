@@ -14,6 +14,12 @@ vi.mock('./components/ManualTurnaroundDialog', () => ({
     <button type="button" onClick={onClose}>Cerrar nuevo vuelo</button>
   </div>,
 }));
+vi.mock('./components/TurnaroundChangeDialog', () => ({
+  default: ({ turnaroundId, mode, onChanged, onClose }) => <div role="dialog" aria-label={`Cambio ${mode} ${turnaroundId}`}>
+    <button type="button" onClick={() => onChanged(mode, 'PUJ-20260819-002')}>Simular cambio</button>
+    <button type="button" onClick={onClose}>Cerrar cambio</button>
+  </div>,
+}));
 vi.mock('./components/OccShiftPanel', () => ({
   default: ({ onProgrammed }) => <button type="button" onClick={onProgrammed}>Simular turno programado</button>,
 }));
@@ -126,6 +132,21 @@ describe('PlanningPage', () => {
 
     expect(screen.getByText('Sin vuelos programados')).toBeInTheDocument();
     expect(screen.queryByTestId('flight-card')).not.toBeInTheDocument();
+  });
+
+  it('opens «Cancelar vuelo» from the drawer, refreshes the board and confirms the change (3-A)', async () => {
+    const onRetry = vi.fn();
+    renderPage({ onRetry });
+
+    await userEvent.click(screen.getByText('DEV-TAT-0003'));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar vuelo' }));
+
+    expect(screen.queryByTestId('planning-drawer')).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: `Cambio cancel ${UNASSIGNED_DELAYED_FLIGHT.turnaroundId}` })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Simular cambio' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('Vuelo PUJ-20260819-002 cancelado.')).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /^Cambio/ })).not.toBeInTheDocument();
   });
 
   it('opens manual flight entry and changes to the newly created operation date', async () => {

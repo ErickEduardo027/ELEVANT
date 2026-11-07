@@ -1,7 +1,6 @@
 import StatusBadge from '../../../components/StatusBadge';
 import { STATUS_COLORS } from '../../dashboard/statusMeta';
-import { UsersIcon } from '../../dashboard/components/icons';
-import { PencilIcon, EyeIcon, ClipboardIcon } from './icons';
+import { EyeIcon } from './icons';
 import { formatCountdown } from '../planningMappers';
 import { getPlanningStatusMeta } from '../planningStatus';
 import { formatPlanningClock } from '../planningTime';
@@ -9,12 +8,6 @@ import AssignmentSummary from './AssignmentSummary';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { planningMessages } from '../planningMessages';
 
-const QUICK_ACTIONS = [
-  { id: 'edit', icon: PencilIcon, enabled: false },
-  { id: 'assign', icon: UsersIcon, enabled: false },
-  { id: 'detail', icon: EyeIcon, enabled: true },
-  { id: 'workOrder', icon: ClipboardIcon, enabled: false },
-];
 
 function LegSummary({ kind, leg, timeZone }) {
   const { t, locale } = useTranslation(planningMessages);
@@ -78,22 +71,17 @@ export default function FlightCard({ flight, now, onSelect }) {
         <span className="ml-auto font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">
           {formatCountdown(flight.timelineTime, now, language)}
         </span>
+        {/* 3-N28: the flight changes live in its detail («Editar vuelo», «Cancelar vuelo», «Marcar desviado»). */}
         <div className="flex items-center gap-1" onClick={event => event.stopPropagation()}>
-          {QUICK_ACTIONS.map(({ id, icon: ActionIcon, enabled }) => (
-            <button
-              key={id}
-              type="button"
-              title={enabled ? t(`card.${id}`) : t('card.comingSoon')}
-              aria-label={t(`card.${id}`)}
-              disabled={!enabled}
-              onClick={() => enabled && onSelect(flight.id)}
-              className={`rounded-md p-1.5 transition ${enabled
-                ? 'text-text-secondary-light hover:bg-black/5 hover:text-accent-600 dark:text-text-secondary-dark dark:hover:bg-white/5'
-                : 'cursor-not-allowed text-text-secondary-light/35 dark:text-text-secondary-dark/35'}`}
-            >
-              <ActionIcon className="h-3.5 w-3.5" />
-            </button>
-          ))}
+          <button
+            type="button"
+            title={t('card.detail')}
+            aria-label={t('card.detail')}
+            onClick={() => onSelect(flight.id)}
+            className="rounded-md p-1.5 text-text-secondary-light transition hover:bg-black/5 hover:text-accent-600 dark:text-text-secondary-dark dark:hover:bg-white/5"
+          >
+            <EyeIcon className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
 

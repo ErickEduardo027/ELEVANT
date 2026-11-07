@@ -4457,9 +4457,8 @@ public sealed partial class SqlServerMigrationTests
         {
             var readStore = planningScope.ServiceProvider.GetRequiredService<IOccPlanningReadStore>();
             var stationPublicId = Guid.Parse("20000000-0000-7000-8000-000000000003");
-            Assert.Equal(
-                new DateOnly(2026, 8, 19),
-                await readStore.GetLatestOperationDateAsync(stationPublicId, cancellationToken));
+            // Without a date the planning opens the station's today (3-N17); the zone decides it.
+            Assert.Equal("America/Santo_Domingo", await readStore.GetStationTimeZoneAsync(stationPublicId, cancellationToken));
 
             var snapshot = await readStore.GetSnapshotAsync(
                 stationPublicId,

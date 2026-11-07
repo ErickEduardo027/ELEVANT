@@ -15,6 +15,7 @@ import {
   subscribeFlightReport,
   type FlightReportSnapshot,
 } from '../../services/flight-report';
+import { aircraftTypeLabel, getRampAircraftTypes, type RampAircraftTypeCatalog } from '../../services/aircraft-types';
 import { loadRampIncidentCenter, reserveRampIncident } from '../../services/ramp-incidents';
 import { pendingFor } from '../../synchronization/flight-report-outbox';
 import { colors } from '../../theme/colors';
@@ -187,9 +188,27 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
 
 const toInt = (text: string) => (text.trim() === '' ? null : Number.parseInt(text.replace(/\D/g, ''), 10));
 
-/** Passengers, MTOW and registration, typed once; every AVIAM form takes them from here. */
+/** The active aircraft types of ELEVANT; without them (no signal and no copy, an older server) the type is read-only. */
+function useAircraftTypeCatalog() {
+  const [catalog, setCatalog] = useState<RampAircraftTypeCatalog | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    getRampAircraftTypes({ signal: controller.signal })
+      .then(value => { if (!controller.signal.aborted) setCatalog(value); })
+      .catch(() => { if (!controller.signal.aborted) setCatalog({ types: [], available: false, fromCache: false }); });
+    return () => controller.abort();
+  }, []);
+  return catalog;
+}
+
+/**
+ * Passengers, MTOW, registration and aircraft type, typed once; every AVIAM form takes them from here. The type (3-B)
+ * is chosen from ELEVANT's catalog only while the operation runs: the ground-time allowance and the package-exceeded
+ * surcharge read it. Leaving it untouched keeps the current one.
+ */
 export function FlightDataCard({ operation, editable }: { operation: Operation; editable: boolean }) {
   const snapshot = useFlightReport();
+  const catalog = useAircraftTypeCatalog();
   const confirmed = snapshot?.confirmed[operation.operation.id];
   const pending = pendingFor(snapshot?.items ?? [], operation.operation.id).flightData;
   const source = pending?.command.kind === 'flightData' ? pending.command : {
@@ -202,13 +221,25 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
     passengersIn: source.passengersIn?.toString() ?? '', passengersOut: source.passengersOut?.toString() ?? '',
     mtowKg: source.mtowKg?.toString() ?? '', aircraftRegistration: source.aircraftRegistration ?? '',
   });
+  // Undefined: untouched here, so the type still waiting on the device (or none, which keeps the flight's) applies.
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const waitingType = pending?.command.kind === 'flightData' ? pending.command.aircraftTypeId ?? null : null;
+  const aircraftTypeId = picked !== undefined ? picked : waitingType;
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState('');
   const tone: Tone = pending ? (pending.state === 'blocked' ? 'blocked' : 'device') :
     (source.passengersIn ?? source.passengersOut ?? source.mtowKg) !== null ? 'confirmed' : 'empty';
+  const currentType = operation.turnaround.aircraft;
+  const chosen = aircraftTypeId ? catalog?.types.find(item => item.id === aircraftTypeId) : undefined;
+  const typeText = chosen ? aircraftTypeLabel(chosen)
+    : aircraftTypeId ? 'Tipo elegido en este dispositivo'
+      : currentType ? aircraftTypeLabel(currentType) : 'Sin tipo de avión registrado';
+  const canPick = editable && Boolean(catalog?.available) && (catalog?.types.length ?? 0) > 0;
 
   const save = () => {
     const values = { passengersIn: toInt(draft.passengersIn), passengersOut: toInt(draft.passengersOut), mtowKg: toInt(draft.mtowKg),
-      aircraftRegistration: draft.aircraftRegistration.trim().toUpperCase() || null };
+      aircraftRegistration: draft.aircraftRegistration.trim().toUpperCase() || null,
+      ...(aircraftTypeId ? { aircraftTypeId } : {}) };
     if ([values.passengersIn, values.passengersOut].some(value => value !== null && (value < 0 || value > 999)) ||
         (values.mtowKg !== null && (values.mtowKg < 1000 || values.mtowKg > 700000)) ||
         (values.aircraftRegistration && !/^[A-Z0-9-]{2,10}$/.test(values.aircraftRegistration))) {
@@ -244,8 +275,41 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
         {field('mtowKg', 'MTOW (kg)')}
         {field('aircraftRegistration', 'Matrícula', false)}
       </View>
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>Tipo de avión</Text>
+        {canPick ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={`Tipo de avión: ${typeText}`} onPress={() => setPicking(true)}
+            style={({ pressed }) => [styles.input, styles.typeField, pressed && styles.pressed]}>
+            <Text style={styles.typeText}>{typeText}</Text>
+            <Ionicons name="chevron-down" size={18} color={colors.navy} />
+          </Pressable>
+        ) : (
+          <Text accessibilityLabel={`Tipo de avión: ${typeText}`} style={[styles.input, styles.typeText, styles.typeReadOnly]}>{typeText}</Text>
+        )}
+        {catalog?.fromCache ? <Text style={styles.hint}>Lista de tipos guardada en el dispositivo (sin conexión).</Text> : null}
+        {catalog && !catalog.available && editable
+          ? <Text style={styles.hint}>Sin la lista de tipos de ELEVANT el tipo no se puede cambiar desde la tablet.</Text> : null}
+      </View>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <PrimaryButton disabled={!editable} icon="save-outline" title="GUARDAR DATOS DEL VUELO" onPress={save} />
+      <Modal animationType="slide" visible={picking} onRequestClose={() => setPicking(false)}>
+        <View style={styles.deviationScreen}>
+          <Text style={styles.sheetTitle}>¿Qué avión está en la posición?</Text>
+          <FlatList data={catalog?.types ?? []} keyExtractor={item => item.id} style={styles.codeList}
+            renderItem={({ item }) => {
+              const selected = (aircraftTypeId ?? currentType?.id) === item.id;
+              return (
+                <Pressable accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={aircraftTypeLabel(item)}
+                  onPress={() => { setPicked(item.id === currentType?.id ? null : item.id); setPicking(false); setError(''); }}
+                  style={[styles.code, selected && styles.codeSelected]}>
+                  <Text style={[styles.codeNumber, selected && styles.codeSelectedText]}>{item.icaoCode}</Text>
+                  <Text style={[styles.codeLabel, selected && styles.codeSelectedText]}>{item.manufacturer} {item.model}</Text>
+                </Pressable>
+              );
+            }} />
+          <PrimaryButton secondary title="CERRAR" onPress={() => setPicking(false)} />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -362,4 +426,7 @@ const styles = StyleSheet.create({
   codeLabel: { ...type.body, color: colors.ink, flex: 1 },
   codeSelectedText: { color: colors.white },
   note: { minHeight: 96, textAlignVertical: 'top', paddingTop: space.md },
+  typeField: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  typeText: { fontSize: 16, fontWeight: '700', color: colors.ink, flexShrink: 1 },
+  typeReadOnly: { textAlignVertical: 'center', paddingTop: space.sm, backgroundColor: colors.background },
 });

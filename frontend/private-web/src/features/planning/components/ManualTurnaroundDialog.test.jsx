@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ManualTurnaroundDialog from './ManualTurnaroundDialog';
-import { createManualTurnaround, getManualTurnaroundOptions } from '../../../services/planningService';
+import { createCharterAirline, createManualTurnaround, getManualTurnaroundOptions } from '../../../services/planningService';
 
 vi.mock('../../../services/planningService', () => ({
   getManualTurnaroundOptions: vi.fn(),
   createManualTurnaround: vi.fn(),
+  createCharterAirline: vi.fn(),
 }));
 
 const stationId = '20000000-0000-7000-8000-000000000003';
@@ -42,23 +43,96 @@ async function fillForm() {
   await userEvent.selectOptions(screen.getByLabelText('Destino de salida'), 'MIA');
   await userEvent.type(screen.getByLabelText('Vuelo de llegada'), 'EV 311');
   await userEvent.type(screen.getByLabelText('Vuelo de salida'), 'EV 312');
-  fireEvent.change(screen.getByLabelText('Llegada programada (UTC)'), { target: { value: '2026-09-26T13:00' } });
-  fireEvent.change(screen.getByLabelText('Salida programada (UTC)'), { target: { value: '2026-09-26T15:00' } });
+  fireEvent.change(screen.getByLabelText('Llegada programada (hora local de PUJ)'), { target: { value: '2026-09-26T13:00' } });
+  fireEvent.change(screen.getByLabelText('Salida programada (hora local de PUJ)'), { target: { value: '2026-09-26T15:00' } });
 }
 
 describe('ManualTurnaroundDialog', () => {
-  it('creates a contract-covered flight and reports its operation date', async () => {
+  it('creates a contract-covered flight from the station local time and reports its operation date (3-N19)', async () => {
     const { onCreated } = renderDialog();
     await fillForm();
+    expect(screen.getByText(/hora local de PUJ \(America\/Santo_Domingo\); se guardan en UTC/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Crear vuelo' }));
 
     await waitFor(() => expect(createManualTurnaround).toHaveBeenCalledTimes(1));
+    // 13:00 and 15:00 in Punta Cana (UTC-4) are 17:00 and 19:00 UTC.
     expect(createManualTurnaround).toHaveBeenCalledWith(expect.objectContaining({
       stationId, airlineId, standId: options.stands[0].id, operationDate: '2026-09-26',
-      arrivalScheduledAt: '2026-09-26T13:00:00.000Z',
-      departureScheduledAt: '2026-09-26T15:00:00.000Z',
+      arrivalScheduledAt: '2026-09-26T17:00:00.000Z',
+      departureScheduledAt: '2026-09-26T19:00:00.000Z',
     }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith('2026-09-26', 'MAN-TEST'));
+  });
+
+  it('explains a flight already planned that day instead of a generic conflict (3-A)', async () => {
+    vi.mocked(createManualTurnaround).mockRejectedValueOnce(Object.assign(new Error('conflict'),
+      { status: 409, code: 'manual-conflict', problemCode: 'flight_already_planned' }));
+    renderDialog();
+    await fillForm();
+    await userEvent.click(screen.getByRole('button', { name: 'Crear vuelo' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ese vuelo ya está planificado ese día.');
+  });
+
+  it('registers the minimal carrier of a charter and selects it (3-N21)', async () => {
+    const charterId = '20000000-0000-7000-8000-000000000030';
+    const charterOptions = { ...options, charterAirlines: [] };
+    vi.mocked(getManualTurnaroundOptions)
+      .mockResolvedValueOnce(charterOptions)
+      .mockResolvedValue({ ...charterOptions, charterAirlines: [{ id: charterId, iataCode: '9Z', name: 'Sky High Charter' }] });
+    vi.mocked(createCharterAirline).mockResolvedValue({ id: charterId, icaoCode: 'SHC', iataCode: '9Z', name: 'Sky High Charter' });
+    renderDialog();
+    await screen.findByRole('option', { name: /Elevant Demo/ });
+
+    await userEvent.click(screen.getByLabelText('Vuelo charter (aerolínea sin contrato)'));
+    expect(screen.getByText(/dé de alta la aerolínea aquí mismo/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: '¿No está la aerolínea? Darla de alta' }));
+    const form = screen.getByRole('group', { name: 'Alta mínima de aerolínea charter' });
+    await userEvent.type(within(form).getByLabelText('Nombre de la aerolínea'), 'Sky High Charter');
+    await userEvent.type(within(form).getByLabelText('Código OACI (3 letras)'), 'shc');
+    await userEvent.type(within(form).getByLabelText('Código IATA (opcional)'), '9z');
+    await userEvent.click(within(form).getByRole('button', { name: 'Dar de alta' }));
+
+    await waitFor(() => expect(createCharterAirline).toHaveBeenCalledWith(
+      { name: 'Sky High Charter', icaoCode: 'SHC', iataCode: '9Z' }, expect.stringMatching(/^[0-9a-f-]{36}$/)));
+    expect(await screen.findByText('Aerolínea Sky High Charter dada de alta y seleccionada.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Aerolínea charter')).toHaveValue(charterId));
+    expect(createManualTurnaround).not.toHaveBeenCalled();
+  });
+
+  it('selects a charter carrier already registered with that code instead of duplicating it (3-N21)', async () => {
+    const charterId = '20000000-0000-7000-8000-000000000031';
+    vi.mocked(getManualTurnaroundOptions).mockResolvedValue({ ...options,
+      charterAirlines: [{ id: charterId, iataCode: '9Z', name: 'Sky High Charter' }] });
+    vi.mocked(createCharterAirline).mockRejectedValue(Object.assign(new Error('in use'), { status: 409, code: 'airline_code_in_use' }));
+    renderDialog();
+    await screen.findByRole('option', { name: /Elevant Demo/ });
+
+    await userEvent.click(screen.getByLabelText('Vuelo charter (aerolínea sin contrato)'));
+    await userEvent.click(screen.getByRole('button', { name: '¿No está la aerolínea? Darla de alta' }));
+    const form = screen.getByRole('group', { name: 'Alta mínima de aerolínea charter' });
+    await userEvent.type(within(form).getByLabelText('Nombre de la aerolínea'), 'Otra Charter');
+    await userEvent.type(within(form).getByLabelText('Código OACI (3 letras)'), 'SHC');
+    await userEvent.type(within(form).getByLabelText('Código IATA (opcional)'), '9Z');
+    await userEvent.click(within(form).getByRole('button', { name: 'Dar de alta' }));
+
+    expect(await screen.findByText('Esa aerolínea ya estaba registrada: se seleccionó.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Aerolínea charter')).toHaveValue(charterId);
+  });
+
+  it('explains an invalid charter carrier by its code', async () => {
+    vi.mocked(getManualTurnaroundOptions).mockResolvedValue({ ...options, charterAirlines: [] });
+    vi.mocked(createCharterAirline).mockRejectedValue(Object.assign(new Error('invalid'), { status: 400, code: 'invalid_charter_airline' }));
+    renderDialog();
+    await screen.findByRole('option', { name: /Elevant Demo/ });
+
+    await userEvent.click(screen.getByLabelText('Vuelo charter (aerolínea sin contrato)'));
+    await userEvent.click(screen.getByRole('button', { name: '¿No está la aerolínea? Darla de alta' }));
+    const form = screen.getByRole('group', { name: 'Alta mínima de aerolínea charter' });
+    await userEvent.type(within(form).getByLabelText('Código OACI (3 letras)'), 'S1{Enter}');
+
+    expect(await within(form).findByRole('alert')).toHaveTextContent('el código OACI de 3 letras');
+    expect(createManualTurnaround).not.toHaveBeenCalled();
   });
 
   it('retries an uncertain write with the same UUID and changes it after an edit', async () => {

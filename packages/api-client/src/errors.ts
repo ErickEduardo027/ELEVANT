@@ -102,9 +102,15 @@ const FLIGHT_FEED_CODES = ["invalid_flight_feed_query", "invalid_flight_import",
   "flight_proposal_passed"] as const;
 /**
  * Planning a flight with its aircraft type and stand (phase 2, block C): an inactive or unknown aircraft type, and a
- * stand that is inactive, of another station or taken in the window (the rules it breaks come in `reasons`).
+ * stand that is inactive, of another station or taken in the window (the rules it breaks come in `reasons`). Phase 3,
+ * block A: a flight changes only before its operation starts or while it is open (3-A), its assigned agent must still
+ * cover the new window (`reasons`), a recorded arrival and the aircraft type are frozen from the first submission
+ * (3-N08, 3-B), the same flight is planned once (3-N07), and the positions map and the charter carrier name their
+ * invalid requests (3-N10, 3-N21).
  */
-const PLANNING_CODES = ["aircraft_type_unavailable", "stand_unavailable"] as const;
+const PLANNING_CODES = ["aircraft_type_unavailable", "stand_unavailable", "operation_started", "turnaround_closed",
+  "assigned_agent_unavailable", "invalid_turnaround_change", "arrival_locked", "aircraft_type_locked",
+  "flight_already_planned", "invalid_charter_airline", "invalid_position_request"] as const;
 /**
  * Gestión Humana (phase 2, block D): the one release path of a ramp agent, which an operation in progress or returned
  * refuses (2-N06, 2-N08); the availability requests and the cancellation or shortening of an approved absence
@@ -153,7 +159,9 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   // A stand in use is not deactivated from the coverage configuration (phase 2, block C, 2-A).
   "stand_in_use",
   // A mentor on an approved absence or without a current airport permit accompanies nobody (phase 2, block D, 2-N23).
-  "mentor_absent", "mentor_permit_required"] as const;
+  "mentor_absent", "mentor_permit_required",
+  // A rescheduled flight's agent would carry a fourth simultaneous operation (phase 3, block A, 3-A).
+  "simultaneous_limit"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

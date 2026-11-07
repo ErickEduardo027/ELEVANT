@@ -393,3 +393,46 @@ describe('assignment readiness (2-N25)', () => {
     expect(failure.message).not.toMatch(/SQL/);
   });
 });
+describe('turnaround changes (3-A, 3-N21)', () => {
+  const headers = { ifMatch: '"AAAAAAAAB+E="', idempotencyKey: '90000000-0000-4000-8000-000000000001' };
+  const client = {
+    getOccTurnaround: vi.fn(), rescheduleOccTurnaround: vi.fn(), changeOccTurnaroundStatus: vi.fn(),
+    createOccCharterAirline: vi.fn(),
+  };
+  beforeEach(() => { mocks.createPrivateWebApiClient.mockReturnValue(client); });
+
+  it('reads, reschedules, cancels and registers the charter carrier with the intent headers', async () => {
+    const detail = { turnaround: { version: 'AAAAAAAAB+E=' }, etag: headers.ifMatch };
+    client.getOccTurnaround.mockResolvedValueOnce(detail);
+    client.rescheduleOccTurnaround.mockResolvedValueOnce(detail);
+    client.changeOccTurnaroundStatus.mockResolvedValueOnce(detail);
+    client.createOccCharterAirline.mockResolvedValueOnce({ id: 'airline-1' });
+    const signal = new AbortController().signal;
+    await expect(planningService.getTurnaround(turnaroundId, { signal })).resolves.toEqual(detail);
+    expect(client.getOccTurnaround).toHaveBeenCalledWith(turnaroundId, { signal });
+    await planningService.rescheduleTurnaround(turnaroundId, { reason: 'Cambio de horario' }, headers);
+    expect(client.rescheduleOccTurnaround).toHaveBeenCalledWith(turnaroundId, { reason: 'Cambio de horario' }, headers);
+    await planningService.changeTurnaroundStatus(turnaroundId, { outcome: 'Cancelled', reason: 'Vuelo creado por error' },
+      headers);
+    expect(client.changeOccTurnaroundStatus).toHaveBeenCalledWith(turnaroundId,
+      { outcome: 'Cancelled', reason: 'Vuelo creado por error' }, headers);
+    await planningService.createCharterAirline({ name: 'Sky High', icaoCode: 'SHC' }, headers.idempotencyKey);
+    expect(client.createOccCharterAirline).toHaveBeenCalledWith({ name: 'Sky High', icaoCode: 'SHC' }, headers.idempotencyKey);
+  });
+
+  it('keeps the status, code and rules of a refusal and explains an invalid body as invalid data', async () => {
+    client.rescheduleOccTurnaround.mockRejectedValueOnce(new ElevantApiError({ kind: 'http', status: 409,
+      title: 'The agent cannot.', code: 'assigned_agent_unavailable', reasons: ['shift_not_covering'] }));
+    await expect(planningService.rescheduleTurnaround(turnaroundId, {}, headers)).rejects.toMatchObject({
+      status: 409, code: 'assigned_agent_unavailable', reasons: ['shift_not_covering'] });
+    client.changeOccTurnaroundStatus.mockRejectedValueOnce(new TypeError('The reason needs 5 to 500 characters.'));
+    await expect(planningService.changeTurnaroundStatus(turnaroundId, {}, headers)).rejects.toMatchObject({
+      status: 400, code: 'invalid_turnaround_change' });
+    client.createOccCharterAirline.mockRejectedValueOnce(new TypeError('bad'));
+    await expect(planningService.createCharterAirline({}, headers.idempotencyKey)).rejects.toMatchObject({
+      status: 400, code: 'invalid_charter_airline' });
+    client.getOccTurnaround.mockRejectedValueOnce(new ElevantApiError({ kind: 'http', status: 401 }));
+    await expect(planningService.getTurnaround(turnaroundId)).rejects.toMatchObject({ status: 401 });
+    expect(mocks.handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
+  });
+});

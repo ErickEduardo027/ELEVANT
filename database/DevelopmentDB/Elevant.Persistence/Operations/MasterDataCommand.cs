@@ -8,6 +8,7 @@ using Elevant.Persistence.Audit;
 using Elevant.Persistence.Commercial;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Operations;
 
@@ -19,12 +20,19 @@ namespace Elevant.Persistence.Operations;
 /// </summary>
 internal static class MasterDataCommand
 {
-    /// <summary>What a command step produced: the record it wrote, or the failure that rolls it back.</summary>
-    internal readonly record struct Step(Guid ResultId, MasterDataFailure? Failure, string? Code)
+    /// <summary>
+    /// What a command step produced: the record it wrote, or the failure that rolls it back with the rules it
+    /// breaks and, for a taken unique value, the record that already holds it.
+    /// </summary>
+    internal readonly record struct Step(Guid ResultId, MasterDataFailure? Failure, string? Code,
+        IReadOnlyList<string>? Reasons = null, Guid? ExistingId = null)
     {
         public static Step Done(Guid resultId) => new(resultId, null, null);
 
         public static Step Fail(MasterDataFailure failure, string code) => new(Guid.Empty, failure, code);
+
+        public static Step Fail(MasterDataFailure failure, string code, IReadOnlyList<string>? reasons,
+            Guid? existingId = null) => new(Guid.Empty, failure, code, reasons, existingId);
     }
 
     /// <summary>
@@ -60,11 +68,17 @@ internal static class MasterDataCommand
             });
             context.ChangeTracker.Clear();
             return step.Failure is { } failure
-                ? MasterDataResult<T>.Failed(failure, step.Code!)
+                ? MasterDataResult<T>.Failed(failure, step.Code!, step.Reasons, step.ExistingId)
                 : await AnswerAsync(answer, step.ResultId, replayed);
         }
         catch (DbUpdateConcurrencyException)
         {
+            context.ChangeTracker.Clear();
+            return MasterDataResult<T>.Failed(MasterDataFailure.Conflict, "version_conflict");
+        }
+        catch (RetryLimitExceededException exception) when (exception.GetBaseException() is SqlException { Number: 1205 or 3960 })
+        {
+            // A deadlock or snapshot conflict that kept repeating: the caller re-reads and decides again.
             context.ChangeTracker.Clear();
             return MasterDataResult<T>.Failed(MasterDataFailure.Conflict, "version_conflict");
         }

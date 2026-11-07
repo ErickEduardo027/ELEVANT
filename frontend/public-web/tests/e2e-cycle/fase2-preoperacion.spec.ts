@@ -457,6 +457,27 @@ test("hueco 2-A · Superadmin crea una estación y OCC sus terminales, posicione
     aircraftTypeIcao } satisfies RunMasterData });
 });
 
+/** «ZZ 1234» and «ZZ1234» are the same flight, as the server compares them (hueco 3-N07). */
+const flightKey = (value: string | null | undefined) => (value ?? "").replace(/\s+/g, "").toUpperCase();
+
+/** The arrival and departure numbers of the station's open flights of the day. */
+async function plannedFlightNumbers(token: string, stationId: string, day: string) {
+  type Planned = { status: string; arrival: { flightNumber: string } | null; departure: { flightNumber: string } | null };
+  const snapshot = await expectCall<{ turnarounds: Planned[] }>(200, token, "GET",
+    `/occ/planning?stationId=${stationId}&date=${day}`);
+  const open = snapshot.data.turnarounds.filter(item => !["Cancelled", "Diverted", "Completed"].includes(item.status));
+  return { arrivals: new Set(open.map(item => flightKey(item.arrival?.flightNumber))),
+    departures: new Set(open.map(item => flightKey(item.departure?.flightNumber))) };
+}
+
+/** Whether an arrival or the departure it suggests is already planned: the import would link instead of creating. */
+function isPlannedPair(arrival: { flightNumber: string; suggestedDepartureId: string | null },
+  proposals: Array<{ proposalId: string; flightNumber: string }>, planned: { arrivals: Set<string>; departures: Set<string> }) {
+  const departure = proposals.find(item => item.proposalId === arrival.suggestedDepartureId);
+  return planned.arrivals.has(flightKey(arrival.flightNumber)) ||
+    (departure !== undefined && planned.departures.has(flightKey(departure.flightNumber)));
+}
+
 test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posición y charter", async ({ page }) => {
   const { run, version } = contractOf();
   const puj = version.stations.find(item => item.code === "PUJ")!;
@@ -488,9 +509,13 @@ test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posic
     await expect(dialog.getByRole("status").filter({ hasText: /Lista actualizada|sin gastar unidades|Ya se actualizó/ }))
       .toBeVisible();
   }
-  // Arrivals still ahead, with the model the provider reported and the departure the same aircraft turns into.
-  const ahead = (await feed("Contracted")).proposals.filter(item => item.direction === "Arrival" && item.status === "Proposed" &&
-    item.suggestedDepartureId && item.aircraftModel && item.counterpartIata && Date.parse(item.scheduledAt) > Date.now() + 15 * 60_000);
+  // Arrivals still ahead, with the model the provider reported and the departure the same aircraft turns into. A flight
+  // already planned today (an earlier run imported the same number) would join that turnaround instead (hueco 3-N07).
+  const planned = await plannedFlightNumbers(occ, puj.id, day);
+  const contracted = (await feed("Contracted")).proposals;
+  const ahead = contracted.filter(item => item.direction === "Arrival" && item.status === "Proposed" &&
+    item.suggestedDepartureId && item.aircraftModel && item.counterpartIata && Date.parse(item.scheduledAt) > Date.now() + 15 * 60_000 &&
+    !isPlannedPair(item, contracted, planned));
   const chosen = ahead.find(item => item.airlineName === "Demo Airlines") ?? ahead[0];
   expect(chosen, "the simulated feed proposed a contracted arrival still ahead today").toBeTruthy();
   const arrivals = dialog.getByRole("list", { name: "Llegadas propuestas" });
@@ -503,7 +528,8 @@ test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posic
   await row.getByRole("combobox", { name: /^Posición/ }).selectOption(master!.standId);
   await snap(page, "fase2-hueco-2b-importar");
   await row.getByRole("button", { name: "Importar escala" }).click();
-  await expect(dialog.getByRole("status").filter({ hasText: /^Escala importada \(EXT-/ })).toBeVisible();
+  // The readable code of the station and local day (hueco 3-N27).
+  await expect(dialog.getByRole("status").filter({ hasText: /^Escala importada \([A-Z]{3}-\d{8}-\d{3,}\)/ })).toBeVisible();
 
   // The flight came in with its stand and its aircraft type: neither can be deactivated while it is pending.
   const positions = await expectCall<{ positions: Array<{ code: string;
@@ -539,8 +565,9 @@ test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posic
   // A carrier without contract only comes in as a charter, with its prepayment pending in Finanzas (ADR-0033).
   await dialog.getByRole("button", { name: "Charter sin contrato" }).click();
   await expect(dialog.getByText("Cargando vuelos propuestos…")).toBeHidden();
-  const charter = (await feed("Charter")).proposals.find(item => item.direction === "Arrival" && item.status === "Proposed" &&
-    item.suggestedDepartureId && item.counterpartIata);
+  const charters = (await feed("Charter")).proposals;
+  const charter = charters.find(item => item.direction === "Arrival" && item.status === "Proposed" &&
+    item.suggestedDepartureId && item.counterpartIata && !isPlannedPair(item, charters, planned));
   if (charter) {
     await dialog.getByRole("list", { name: "Llegadas propuestas" }).getByRole("listitem").filter({ hasText: charter.flightNumber })
       .filter({ hasText: `desde ${charter.counterpartIata}` }).getByRole("button", { name: "Importar como charter" }).click();

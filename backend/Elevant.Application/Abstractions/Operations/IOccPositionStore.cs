@@ -22,13 +22,32 @@ public sealed record OccPositionData(Guid StandId, string Code, string? Terminal
 public sealed record OccPositionBoardData(Guid StationId, string StationCode, DateOnly OperationDate, DateTimeOffset AsOf,
     IReadOnlyList<OccPositionData> Positions, IReadOnlyList<OccPositionTurnaroundData> Unassigned, bool CanAssign);
 
-public sealed record RecordArrivalInput(string? AircraftRegistration, DateTimeOffset? ArrivedAt);
+/// <summary>
+/// The arrival OCC records on the map (3-N08): the registration, the actual on-block time (now when null) and,
+/// optionally, the aircraft type (3-B). Recording it again is a correction: it needs <paramref name="Reason"/> and is
+/// only allowed before the first submission (<c>arrival_locked</c>).
+/// </summary>
+public sealed record RecordArrivalInput(string? AircraftRegistration, DateTimeOffset? ArrivedAt, Guid? AircraftTypeId = null,
+    string? Reason = null);
+
+/// <summary>
+/// The Idempotency-Key and the turnaround version (the strong ETag of the turnaround detail) a positions command may
+/// carry (3-N10). Both are optional while older screens exist (expand); with a key the version is required.
+/// </summary>
+public sealed record OccPositionCommand(Guid? IdempotencyKey, string? ExpectedVersion)
+{
+    /// <summary>A command of an older screen: no key, no version; the server still serializes the stand.</summary>
+    public static OccPositionCommand None { get; } = new(null, null);
+}
 
 public enum OccPositionFailure { Forbidden, NotFound, Invalid, Conflict }
 
-/// <param name="Reasons">Combined-stand rules a rejected assignment breaks (ADR-0030).</param>
+/// <summary>
+/// The board after a command, or the failure with its stable code (3-N10) and, for a refused stand, the rules it
+/// breaks (ADR-0030). <see cref="Version"/> is the turnaround's new version after a command.
+/// </summary>
 public sealed record OccPositionResult(OccPositionBoardData? Board, OccPositionFailure? Failure,
-    IReadOnlyList<string>? Reasons = null);
+    IReadOnlyList<string>? Reasons = null, string? Code = null, string? Version = null);
 
 public interface IOccPositionStore
 {
@@ -36,9 +55,12 @@ public interface IOccPositionStore
     Task<OccPositionResult> ReadAsync(Guid actorId, Guid stationId, DateOnly operationDate,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Records the actual arrival (on block) and registration; needs «Asignar posiciones».</summary>
+    /// <summary>
+    /// Records the actual arrival (on block), the registration and optionally the aircraft type, or corrects a
+    /// recorded arrival with its reason before the first submission; needs «Asignar posiciones».
+    /// </summary>
     Task<OccPositionResult> RecordArrivalAsync(Guid actorId, Guid turnaroundId, RecordArrivalInput input,
-        CancellationToken cancellationToken = default);
+        OccPositionCommand command, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Places a stand on the map (WGS84), or clears it with both values null; needs «Asignar posiciones»
@@ -47,10 +69,14 @@ public interface IOccPositionStore
     Task<OccPositionResult> LocateStandAsync(Guid actorId, Guid standId, decimal? latitude, decimal? longitude,
         DateOnly operationDate, CancellationToken cancellationToken = default);
 
-    /// <summary>Assigns or reassigns the turnaround's stand; an overlapping assignment is a conflict.</summary>
+    /// <summary>
+    /// Assigns or reassigns the turnaround's stand; an overlapping assignment is a conflict. The stand row is locked
+    /// and the overlap checked inside a serializable transaction, so two flights never take the same stand.
+    /// </summary>
     Task<OccPositionResult> AssignAsync(Guid actorId, Guid turnaroundId, Guid standId, string? reason,
-        CancellationToken cancellationToken = default);
+        OccPositionCommand command, CancellationToken cancellationToken = default);
 
     /// <summary>Frees the stand when the aircraft leaves; history keeps the closed assignment.</summary>
-    Task<OccPositionResult> ReleaseAsync(Guid actorId, Guid turnaroundId, CancellationToken cancellationToken = default);
+    Task<OccPositionResult> ReleaseAsync(Guid actorId, Guid turnaroundId, OccPositionCommand command,
+        CancellationToken cancellationToken = default);
 }

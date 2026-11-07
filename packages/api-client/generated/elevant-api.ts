@@ -912,6 +912,13 @@ export interface CardPaymentResponse {
   replayed: boolean;
 }
 
+export interface ChangeOccTurnaroundStatusRequest {
+  /** @nullable */
+  outcome?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface ChangePasswordRequest {
   /**
      * @minLength 1
@@ -1659,6 +1666,15 @@ export interface CreateManualTurnaroundRequest {
   charter: boolean;
   /** @nullable */
   aircraftTypeId?: string | null;
+}
+
+export interface CreateOccCharterAirlineRequest {
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
 }
 
 export interface CreateOccCoverageRequest {
@@ -3750,6 +3766,7 @@ export interface ImportOccFlightResponse {
   turnaroundId: string;
   operationCode: string;
   replayed: boolean;
+  linked: boolean;
 }
 
 export interface InviteAirlinePortalUserInput {
@@ -4244,6 +4261,14 @@ export interface OccAssignmentResponse {
   operation: OccGroundOperationResponse;
   assignment: OccAssignedAgentResponse;
   services: OccOperationServiceResponse[];
+}
+
+export interface OccCharterAirlineResponse {
+  id: string;
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  name: string;
 }
 
 export interface OccContractOptionResponse {
@@ -4787,6 +4812,14 @@ export interface OccReviewSubmissionHistoryResponse {
   hasMore: boolean;
 }
 
+export interface OccTurnaroundDetailResponse {
+  station: OccStationResponse;
+  turnaround: OccTurnaroundResponse;
+  version: string;
+  isCharter: boolean;
+  allowedActions: string[];
+}
+
 export interface OperationMessageResponse {
   id: string;
   operationId: string;
@@ -5205,6 +5238,19 @@ export interface RampAircraftResponse {
   model: string;
   /** @nullable */
   registration?: string | null;
+}
+
+export interface RampAircraftTypeResponse {
+  id: string;
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  manufacturer: string;
+  model: string;
+}
+
+export interface RampAircraftTypesResponse {
+  aircraftTypes: RampAircraftTypeResponse[];
 }
 
 export interface RampAirlineResponse {
@@ -5628,6 +5674,10 @@ export interface RecordOccArrivalRequest {
   aircraftRegistration: string;
   /** @nullable */
   arrivedAt?: string | null;
+  /** @nullable */
+  aircraftTypeId?: string | null;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface RecordRampMilestoneRequest {
@@ -5790,6 +5840,27 @@ export interface RequestUserAccessInput {
   supervisorRampAgentId?: string | null;
   /** @nullable */
   employeeId?: string | null;
+}
+
+export interface RescheduleOccTurnaroundRequest {
+  /** @nullable */
+  arrivalFlightNumber?: string | null;
+  /** @nullable */
+  arrivalOriginIata?: string | null;
+  /** @nullable */
+  arrivalScheduledAt?: string | null;
+  /** @nullable */
+  departureFlightNumber?: string | null;
+  /** @nullable */
+  departureDestinationIata?: string | null;
+  /** @nullable */
+  departureScheduledAt?: string | null;
+  /** @nullable */
+  standId?: string | null;
+  /** @nullable */
+  aircraftTypeId?: string | null;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface ResendInvitationInput {
@@ -6441,6 +6512,8 @@ export interface UpdateRampFlightDataRequest {
   mtowKg?: number | null;
   /** @nullable */
   aircraftRegistration?: string | null;
+  /** @nullable */
+  aircraftTypeId?: string | null;
 }
 
 export interface UpdateStandInput {
@@ -18359,6 +18432,10 @@ export const getRecordOccArrivalUrl = (turnaroundId: string,) => {
   return `/api/v1/occ/turnarounds/${turnaroundId}/arrival`
 }
 
+/**
+ * @summary Records the arrival (registration, actual on-block time and optionally the aircraft type) or corrects a recorded
+one with its reason before the first submission (3-N08).
+ */
 export const recordOccArrival = async (turnaroundId: string,
     recordOccArrivalRequest: RecordOccArrivalRequest, options?: RequestInit): Promise<OccPositionBoardResponse> => {
 
@@ -18902,6 +18979,153 @@ export const getOccAircraftTraffic = async (params: GetOccAircraftTrafficParams,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccAircraftTrafficResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccTurnaroundUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}`
+}
+
+/**
+ * @summary The turnaround, its version (also the ETag) and the changes its state allows.
+ */
+export const getOccTurnaround = async (turnaroundId: string, options?: RequestInit): Promise<OccTurnaroundDetailResponse> => {
+
+  const res = await fetch(getGetOccTurnaroundUrl(turnaroundId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccTurnaroundDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRescheduleOccTurnaroundUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/schedule`
+}
+
+/**
+ * @summary «Editar vuelo»: corrects numbers, airports, times, stand and aircraft type before the operation starts. The stand
+is checked again for the new window, and an assigned agent must still be on shift and within three simultaneous
+operations (`assigned_agent_unavailable` with its reasons).
+ */
+export const rescheduleOccTurnaround = async (turnaroundId: string,
+    rescheduleOccTurnaroundRequest: RescheduleOccTurnaroundRequest, options?: RequestInit): Promise<OccTurnaroundDetailResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRescheduleOccTurnaroundUrl(turnaroundId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(rescheduleOccTurnaroundRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccTurnaroundDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getChangeOccTurnaroundStatusUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/status-changes`
+}
+
+/**
+ * @summary «Cancelar vuelo» or «Marcar desviado» before the start: the stand and the agents are released.
+ */
+export const changeOccTurnaroundStatus = async (turnaroundId: string,
+    changeOccTurnaroundStatusRequest: ChangeOccTurnaroundStatusRequest, options?: RequestInit): Promise<OccTurnaroundDetailResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getChangeOccTurnaroundStatusUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changeOccTurnaroundStatusRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccTurnaroundDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateOccCharterAirlineUrl = () => {
+
+
+
+
+  return `/api/v1/occ/planning/charter-airlines`
+}
+
+/**
+ * @summary Registers a carrier without contract for a charter (3-N21): 201 the first time, 200 when the key replays it. A
+designator already in use answers `airline_code_in_use` with the `airlineId` that holds it.
+ */
+export const createOccCharterAirline = async (createOccCharterAirlineRequest: CreateOccCharterAirlineRequest, options?: RequestInit): Promise<OccCharterAirlineResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateOccCharterAirlineUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOccCharterAirlineRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCharterAirlineResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -19969,7 +20193,9 @@ export const getUpdateRampFlightDataUrl = (operationId: string,) => {
 }
 
 /**
- * @summary Saves passengers, MTOW and the registration correction typed once on the ramp.
+ * @summary Saves passengers, MTOW, the registration correction and the aircraft type typed once on the ramp (3-B). A null
+aircraft type keeps the current one; an unknown or inactive type answers `aircraft_type_unavailable` and a
+change after the first submission `aircraft_type_locked`, both 409 as before.
  */
 export const updateRampFlightData = async (operationId: string,
     updateRampFlightDataRequest: UpdateRampFlightDataRequest, options?: RequestInit): Promise<RampExecutionResponse> => {
@@ -20459,6 +20685,34 @@ const res = await fetch(getRequestRampMobileAccessUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetRampAircraftTypesUrl = () => {
+
+
+
+
+  return `/api/v1/ramp/aircraft-types`
+}
+
+export const getRampAircraftTypes = async ( options?: RequestInit): Promise<RampAircraftTypesResponse> => {
+
+  const res = await fetch(getGetRampAircraftTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampAircraftTypesResponse = body ? JSON.parse(body) : {}
   return data
 }
 

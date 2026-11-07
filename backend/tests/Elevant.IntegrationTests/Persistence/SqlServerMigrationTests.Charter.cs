@@ -1,6 +1,9 @@
+using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Commercial;
 using Elevant.Application.Integration;
+using Elevant.Domain.Entities.Commercial;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Operations;
@@ -202,5 +205,134 @@ public sealed partial class SqlServerMigrationTests
         await using var context = CreateContext(connectionString);
         return await context.Users.Where(user => user.Email == "finanzas@dev.elevant.test").Select(user => user.PublicId)
             .SingleAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 3-N21: OCC registers the minimal carrier of a charter (OCC- organization, unverified profile) and plans its flight;
+    /// a taken designator names its airline and the replay creates nothing. A commercial request of the same codes is
+    /// approved on that same airline instead of answering <c>airline_code_in_use</c>; a carrier OCC registered that
+    /// already has a contract is never taken over.
+    /// </summary>
+    [Fact]
+    public async Task OccRegistersACharterCarrierThatACommercialApprovalCompletes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        async Task<T> Run<T>(Func<IServiceProvider, Task<T>> action)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await action(scope.ServiceProvider);
+        }
+        var occ = SeededOccAccount;
+        var station = SeededPujStation;
+        Task<MasterDataResult<OccCharterAirlineData>> Register(CharterAirlineInput input, Guid? key, Guid? actor = null) =>
+            Run(services => services.GetRequiredService<IOccTurnaroundStore>().CreateCharterAirlineAsync(actor ?? occ, input, key, ct));
+
+        Assert.Equal("idempotency_key_required", (await Register(new("Sky High Charter", "SHC", "9Z"), null)).Code);
+        Assert.Equal("invalid_charter_airline", (await Register(new("Sky High Charter", "S1C", null), Guid.NewGuid())).Code);
+        Assert.Equal(MasterDataFailure.Forbidden, (await Register(new("Sky High Charter", "SHC", "9Z"), Guid.NewGuid(),
+            FinanceAccount)).Failure);
+        var key = Guid.NewGuid();
+        var created = await Register(new("  Sky High   Charter ", "shc", "9z"), key);
+        Assert.Null(created.Failure);
+        Assert.Equal(("SHC", "9Z", "Sky High Charter", false), (created.Value!.IcaoCode, created.Value.IataCode,
+            created.Value.Name, created.Replayed));
+        var replayed = await Register(new("  Sky High   Charter ", "shc", "9z"), key);
+        Assert.Equal((created.Value.Id, true), (replayed.Value!.Id, replayed.Replayed));
+        var taken = await Register(new("Otra aerolínea", "SHC", null), Guid.NewGuid());
+        Assert.Equal(("airline_code_in_use", (Guid?)created.Value.Id), (taken.Code, taken.ExistingId));
+        await using (var check = CreateContext(database.ConnectionString))
+        {
+            var airline = await check.Airlines.AsNoTracking().SingleAsync(item => item.PublicId == created.Value.Id, ct);
+            var organization = await check.Organizations.AsNoTracking().SingleAsync(item => item.Id == airline.OrganizationId, ct);
+            Assert.StartsWith("OCC-", organization.Code, StringComparison.Ordinal);
+            Assert.Equal((OrganizationType.AirlineCustomer, OrganizationStatus.Active), (organization.Type, organization.Status));
+            var profile = await check.CommercialAirlineProfiles.AsNoTracking()
+                .SingleAsync(item => item.CanonicalAirlineId == airline.Id, ct);
+            Assert.Equal(((DateTimeOffset?)null, false), (profile.VerifiedAt, profile.IsPublished));
+            Assert.Equal(1, await check.Airlines.CountAsync(item => item.IcaoCode == "SHC", ct));
+            Assert.True(await check.AuditEntries.AnyAsync(entry => entry.EntityPublicId == airline.PublicId &&
+                entry.Action == "occ.airline.created", ct));
+        }
+
+        // It is a charter carrier of «Nuevo vuelo» and its charter is planned with it.
+        var (_, stands) = await PlanningFixtureAsync(database.ConnectionString, ct);
+        var standId = stands["B03"];
+        DateOnly date;
+        await using (var setup = CreateContext(database.ConnectionString))
+            date = await setup.Turnarounds.Where(item => item.OperationCode == "DEV-TAT-0002").Select(item => item.OperationDate)
+                .SingleAsync(ct);
+        var options = await Run(services => services.GetRequiredService<IManualTurnaroundOptionsStore>().GetAsync(occ, station, date, ct));
+        Assert.Contains(options!.CharterAirlines!, item => item.Id == created.Value.Id);
+        Assert.True((await Run(services => services.GetRequiredService<IManualTurnaroundStore>().CreateAsync(
+            new ManualTurnaroundWriteRequest(occ, [station], Guid.CreateVersion7(), station, created.Value.Id, standId, date, "9Z100",
+                "MIA", LocalAt(date, 21), "9Z101", "MIA", LocalAt(date, 22), Guid.NewGuid(), "occ-charter-airline", true), ct)))
+            .IsSuccess);
+
+        // Contratos approves a request of the same carrier: the airline OCC registered is completed, not duplicated.
+        var catalog = await Run(services => services.GetRequiredService<ICommercialCatalogStore>().GetPublicAsync(ct));
+        var service = catalog.Services[0].Id;
+        var workflowStation = (await Run(services => services.GetRequiredService<ICommercialWorkflowStore>()
+            .ListStationsAsync(ContractsAdministrator, ct)))!.Single();
+        async Task<Guid> RequestAsync(string name, string icao, string? iata, string email)
+        {
+            var id = Guid.NewGuid();
+            Assert.True((await Run(services => new SubmitCommercialRequestHandler(services.GetRequiredService<ICommercialIntakeStore>())
+                .HandleAsync(CommercialApplication(id, Guid.Empty, service, email) with
+                {
+                    ProposedAirline = new CommercialAirlineProposal(name, "DO", iata, icao, "https://www.skyhigh.example.com/"),
+                }, ct))).IsSuccess);
+            return id;
+        }
+        async Task<CommercialInboxRequestData> ItemAsync(Guid id) => (await Run(services => services
+                .GetRequiredService<ICommercialWorkflowStore>().ListInboxAsync(ContractsAdministrator,
+                    new CommercialInboxQuery(CommercialInboxQuery.All, null, 1, 50), ct)))!
+            .Requests.Single(item => item.Id == id);
+        async Task<CommercialWorkflowResult> ReviewAsync(Guid id, string legalName, string icao, string? iata)
+        {
+            Assert.True((await Run(async services => await services.GetRequiredService<ICommercialWorkflowStore>()
+                .ConfirmRepresentativeAsync(ContractsAdministrator, id, Guid.NewGuid(), new ConfirmCommercialRepresentativeInput(
+                    (await ItemAsync(id)).Version, "Confirmado con la central de operaciones de la aerolínea."), ct))).IsSuccess);
+            var verified = await Run(async services => await services.GetRequiredService<ICommercialWorkflowStore>()
+                .VerifyRequestAirlineAsync(ContractsAdministrator, id, Guid.NewGuid(), new VerifyRequestAirlineInput(
+                    (await ItemAsync(id)).Version, null, legalName, "DO", iata, icao, $"https://aoc.example.gob.do/{icao}"), ct));
+            Assert.True(verified.IsSuccess, verified.Code);
+            return await Run(async services => await services.GetRequiredService<ICommercialWorkflowStore>().DecideAsync(
+                ContractsAdministrator, id, new ReviewCommercialInput(true, null, [workflowStation.Id], (await ItemAsync(id)).Version),
+                Guid.NewGuid(), ct));
+        }
+        var request = await RequestAsync("Sky High Charter", "SHC", "9Z", "ops@skyhigh.example.com");
+        var approved = await ReviewAsync(request, "Sky High Charter S.A.", "SHC", "9Z");
+        Assert.True(approved.IsSuccess, approved.Code);
+        await using (var check = CreateContext(database.ConnectionString))
+        {
+            var airline = await check.Airlines.AsNoTracking().SingleAsync(item => item.IcaoCode == "SHC", ct);
+            Assert.Equal(created.Value.Id, airline.PublicId);
+            Assert.Equal("Sky High Charter S.A.", (await check.Organizations.AsNoTracking()
+                .SingleAsync(item => item.Id == airline.OrganizationId, ct)).LegalName);
+            Assert.Equal(ContractStatus.Draft, (await check.Contracts.AsNoTracking().SingleAsync(item => item.AirlineId == airline.Id,
+                ct)).Status);
+            Assert.True(await check.AuditEntries.AnyAsync(entry => entry.EntityPublicId == airline.PublicId &&
+                entry.Action == "commercial.airline.linked", ct));
+        }
+
+        // A carrier OCC registered that already flies under a contract belongs to that contract: the code stays in use.
+        var withContract = await Register(new("Contracted Charter", "CQX", null), Guid.NewGuid());
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var airline = await setup.Airlines.SingleAsync(item => item.PublicId == withContract.Value!.Id, ct);
+            setup.Contracts.Add(new Contract
+            {
+                PublicId = Guid.CreateVersion7(), AirlineId = airline.Id, ContractCode = "OCC-CQX-TEST", Status = ContractStatus.Terminated,
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            await setup.SaveChangesAsync(ct);
+        }
+        var refused = await ReviewAsync(await RequestAsync("Contracted Charter", "CQX", null, "ops@cqx.example.com"),
+            "Contracted Charter S.A.", "CQX", null);
+        Assert.Equal("airline_code_in_use", refused.Code);
     }
 }

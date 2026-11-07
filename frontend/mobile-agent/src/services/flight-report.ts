@@ -157,7 +157,10 @@ async function flushOnce() {
             item.idempotencyKey)
           : await client.updateRampFlightData(command.operationId, {
             passengersIn: command.passengersIn, passengersOut: command.passengersOut, mtowKg: command.mtowKg,
-            aircraftRegistration: command.aircraftRegistration }, installationId, item.idempotencyKey);
+            aircraftRegistration: command.aircraftRegistration,
+            // 3-B: only a chosen type travels, so a command without it keeps the body (and the hash) of older versions.
+            ...(command.aircraftTypeId ? { aircraftTypeId: command.aircraftTypeId } : {}) },
+            installationId, item.idempotencyKey);
         const items = await updateFlightReportItem(accountId, item.idempotencyKey, 'remove');
         publish({ items, confirmed: { ...snapshot.confirmed, [command.operationId]: result } });
         continue;

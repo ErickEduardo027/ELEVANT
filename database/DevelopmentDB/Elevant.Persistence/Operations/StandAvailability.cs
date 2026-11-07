@@ -8,9 +8,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Operations;
 
 /// <summary>
-/// Whether a new flight can take a stand for its window (2-B): an active stand of the station in an active
+/// Whether a flight can take a stand for its window (2-B): an active stand of the station in an active
 /// terminal, not held by another unfinished flight in that window, and allowed by the combined-stand rules
-/// (ADR-0030). The same rules the positions map applies when OCC assigns a stand.
+/// (ADR-0030). The same rules the positions map applies when OCC assigns a stand. Every command that places a
+/// flight on a stand locks the stand first (<see cref="LockAsync"/>), so two flights never take it at once (3-N10).
 /// </summary>
 internal static class StandAvailability
 {
@@ -21,8 +22,27 @@ internal static class StandAvailability
         public bool Available => StandId is not null && Reasons.Count == 0;
     }
 
+    /// <summary>
+    /// Locks the stand row (UPDLOCK, HOLDLOCK) until the caller's transaction ends: a concurrent command for the same
+    /// stand waits and then sees the assignment this one wrote. Returns the stand's key, or null when it does not exist.
+    /// </summary>
+    public static async Task<long?> LockAsync(ElevantDbContext context, Guid standId, CancellationToken cancellationToken) =>
+        (await context.Stands.FromSqlInterpolated($"""
+                SELECT * FROM [ref].[stands] WITH (UPDLOCK, HOLDLOCK)
+                WHERE [public_id] = {standId}
+                """)
+            .AsNoTracking()
+            .Select(stand => (long?)stand.Id)
+            .ToArrayAsync(cancellationToken))
+        .SingleOrDefault();
+
+    /// <summary>
+    /// Where the flight can park in the window; <paramref name="excludeTurnaroundId"/> is the flight being moved or
+    /// rescheduled, whose own assignment never blocks it.
+    /// </summary>
     public static async Task<Placement> CheckAsync(ElevantDbContext context, long stationId, Guid standId,
-        DateTimeOffset startsAt, DateTimeOffset endsAt, AircraftSizeCategory? aircraftSize, CancellationToken cancellationToken)
+        DateTimeOffset startsAt, DateTimeOffset endsAt, AircraftSizeCategory? aircraftSize, long? excludeTurnaroundId,
+        CancellationToken cancellationToken)
     {
         var stand = await (from item in context.Stands.AsNoTracking()
                            join terminal in context.Terminals.AsNoTracking() on item.TerminalId equals (long?)terminal.Id
@@ -37,6 +57,7 @@ internal static class StandAvailability
                               from type in context.AircraftTypes.AsNoTracking()
                                   .Where(type => type.Id == turnaround.AircraftTypeId).DefaultIfEmpty()
                               where parked.StationId == stationId && assignment.AssignedTo == null &&
+                                    (excludeTurnaroundId == null || assignment.TurnaroundId != excludeTurnaroundId) &&
                                     operation.CurrentStatus != GroundOperationStatus.Cancelled &&
                                     (operation.PlannedStartAt == null || operation.PlannedEndAt == null ||
                                      (operation.PlannedStartAt < endsAt && startsAt < operation.PlannedEndAt))

@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Microsoft.EntityFrameworkCore;
@@ -123,7 +124,7 @@ public sealed partial class SqlServerMigrationTests
         await context.SaveChangesAsync(ct);
 
         var moved = await Run(services => services.GetRequiredService<IOccPositionStore>()
-            .AssignAsync(occ, operation.Turnaround, b01.PublicId, "Cambio del aeropuerto", ct));
+            .AssignAsync(occ, operation.Turnaround, b01.PublicId, "Cambio del aeropuerto", OccPositionCommand.None, ct));
         Assert.Null(moved.Failure);
         // The map shows who covers each stand on the coverage's local day.
         var coverageDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(mateoCoverage.StartsAt,
@@ -161,12 +162,12 @@ public sealed partial class SqlServerMigrationTests
             if (held != stands["A01"].Id && held != stands["A02"].Id)
             {
                 Assert.Null((await Run(services => services.GetRequiredService<IOccPositionStore>()
-                    .AssignAsync(occ, other.PublicId, stands["A01"].PublicId, null, ct))).Failure);
+                    .AssignAsync(occ, other.PublicId, stands["A01"].PublicId, null, OccPositionCommand.None, ct))).Failure);
                 held = stands["A01"].Id;
             }
             var target = held == stands["A01"].Id ? stands["A02"] : stands["A01"];
             var cancelled = await Run(services => services.GetRequiredService<IOccPositionStore>()
-                .AssignAsync(occ, operation.Turnaround, target.PublicId, null, ct));
+                .AssignAsync(occ, operation.Turnaround, target.PublicId, null, OccPositionCommand.None, ct));
             Assert.Equal(OccPositionFailure.Conflict, cancelled.Failure);
             Assert.Equal(["stand_cancelled"], cancelled.Reasons);
             var otherDate = await context.Turnarounds.Where(item => item.Id == other.Id).Select(item => item.OperationDate).SingleAsync(ct);
@@ -185,6 +186,64 @@ public sealed partial class SqlServerMigrationTests
             Assert.Equal(GroundOperationStatus.Planned, (await check.GroundOperations.AsNoTracking()
                 .SingleAsync(item => item.Id == operation.Id, ct)).CurrentStatus);
             Assert.False(await check.OperationAgentAssignments.AnyAsync(item => item.GroundOperationId == operation.Id &&
+                item.ReleasedAt == null, ct));
+        }
+    }
+
+    /// <summary>
+    /// 3-C: a recorded arrival only means the aircraft is on blocks. OCC assigns the first agent after it, and another
+    /// one after releasing the first; the operation is still Planned, so the options load and the assignment commits.
+    /// </summary>
+    [Fact]
+    public async Task AnAgentIsAssignedAfterTheArrivalAndAgainAfterARelease()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await SeedDevelopmentAsync(database, ct);
+        var occ = SeededOccAccount;
+        var station = SeededPujStation;
+        var turnaroundId = Guid.Parse("70000000-0000-7000-8000-000000000012");
+        var agent = Guid.Parse("50000000-0000-7000-8000-000000000001");
+        await using var provider = CreateAuthenticationProvider(database.ConnectionString, new PasswordHashCounter());
+        async Task<T> Run<T>(Func<IServiceProvider, Task<T>> action)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await action(scope.ServiceProvider);
+        }
+        async Task<OccAssignmentWriteResult> AssignAsync(string requestId)
+        {
+            var options = await Run(services => services.GetRequiredService<IOccPlanningReadStore>()
+                .GetOptionsAsync([station], turnaroundId, ct));
+            Assert.True(options.IsSuccess, options.Failure?.ToString());
+            Assert.True(OccPlanningConcurrencyToken.TryDecode(options.Options!.Turnaround.ConcurrencyToken, out var version));
+            return await Run(services => services.GetRequiredService<IOccPlanningCommandStore>().AssignOperationAsync(
+                new OccAssignmentWriteRequest(occ, [station], turnaroundId, agent, version, Guid.NewGuid(), requestId), ct));
+        }
+
+        // Case B: the aircraft arrives before OCC assigns anybody.
+        Assert.Null((await Run(services => services.GetRequiredService<IOccPositionStore>().RecordArrivalAsync(occ, turnaroundId,
+            new RecordArrivalInput("HI1077", null), OccPositionCommand.None, ct))).Failure);
+        await using (var check = CreateContext(database.ConnectionString))
+            Assert.Equal(TurnaroundStatus.InProgress, (await check.Turnarounds.AsNoTracking()
+                .SingleAsync(item => item.PublicId == turnaroundId, ct)).CurrentStatus);
+        var first = await AssignAsync("assign-after-arrival");
+        Assert.True(first.IsSuccess, first.Failure?.ToString());
+
+        // Case A: the agent does not show up; OCC releases them and assigns again on the arrived flight.
+        Assert.Null(await Run(services => services.GetRequiredService<IPositionCoverageStore>()
+            .ReleaseOperationAgentAsync(occ, turnaroundId, ct)));
+        var second = await AssignAsync("assign-after-release");
+        Assert.True(second.IsSuccess, second.Failure?.ToString());
+        await using (var check = CreateContext(database.ConnectionString))
+        {
+            var operation = await (from item in check.GroundOperations.AsNoTracking()
+                                   join turnaround in check.Turnarounds.AsNoTracking() on item.TurnaroundId equals turnaround.Id
+                                   where turnaround.PublicId == turnaroundId
+                                   select item).SingleAsync(ct);
+            Assert.Equal(GroundOperationStatus.Assigned, operation.CurrentStatus);
+            Assert.Equal(1, await check.OperationAgentAssignments.CountAsync(item => item.GroundOperationId == operation.Id &&
                 item.ReleasedAt == null, ct));
         }
     }

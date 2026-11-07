@@ -48,8 +48,10 @@ public static class DepartmentPermissionCatalog
                 Module("operations", "flight_monitoring", "Monitoreo de vuelos", "Monitoreo", null, Read()),
                 Module("operations", "positions_map", "Mapa de posiciones", "Monitoreo", null, Read(),
                     Other("assign", "Registrar llegadas y asignar o liberar posiciones")),
+                // 3-A: a flight is rescheduled, cancelled or diverted before its operation starts; nothing is deleted.
                 Module("operations", "planning", "Planificación operativa", "Operación", null,
-                    Read(), Create("Crear escalas"), Other("assign", "Asignar agentes, posiciones y turnos")),
+                    Read(), Create("Crear escalas"), Update("Reprogramar, cancelar o desviar escalas"),
+                    Other("assign", "Asignar agentes, posiciones y turnos")),
                 Module("operations", "coverage", "Cobertura de posiciones", "Operación", null, Read(),
                     Other("assign", "Asignar posiciones por turno"), Update("Configurar posiciones y combinaciones")),
                 // Terminals and stands of the station and the aircraft types (2-A); nothing is deleted, only deactivated.
