@@ -15,6 +15,8 @@ export const CONTRACT_PROBLEMS: Readonly<Record<string, string>> = Object.freeze
   signature_invalid: "Escriba su nombre completo y cargo y confirme que acepta el contrato.",
   signature_image_invalid: "Dibuje su firma de nuevo: la imagen no es válida.",
   idempotency_conflict: "Esa firma ya se envió con otros datos. Actualice la página e intente de nuevo.",
+  // 2-N20: on the airline side only its representatives and signers sign.
+  signer_required: "Solo los representantes y los firmantes de su aerolínea firman el contrato. Pida a su representante que lo firme o que lo marque como firmante en «Perfil».",
 });
 
 const STATUS_PROBLEMS: Readonly<Record<number, string>> = Object.freeze({

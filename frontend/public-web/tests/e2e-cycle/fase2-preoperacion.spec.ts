@@ -660,3 +660,87 @@ test("hueco 2-F · el día de los contratos sigue el calendario de República Do
   await form.getByLabel("Número").fill("");
   await snap(page, "fase2-hueco-2f-dia-habil");
 });
+
+test("hueco 2-N20 · la representante gestiona los usuarios del portal y AVIAM marca firmantes", async ({ page }) => {
+  const { run } = contractOf();
+  const representative = run.representative as { email: string };
+  const airline = run.airline as { name: string };
+  type PortalUser = { id: string; email: string; version: string; representative: boolean; signer: boolean;
+    invitationPending: boolean };
+  type PortalUsers = { me: { representative: boolean; signer: boolean; canSign: boolean; canManageUsers: boolean };
+    users: PortalUser[] };
+  const token = await login({ email: representative.email });
+  const read = async () => (await expectCall<PortalUsers>(200, token, "GET", "/airline/portal/users")).data;
+  const byEmail = (users: PortalUser[], email: string) =>
+    users.find(user => user.email.toLowerCase() === email.toLowerCase());
+  // The account provisioned for the airline represents it: it manages the users and signs.
+  const before = await read();
+  expect(before.me).toMatchObject({ representative: true, canSign: true, canManageUsers: true });
+
+  // It invites a colleague by email; a retry with the same key answers the same user, never a second account.
+  const email = `e2e.consulta.${run.runId.toLowerCase()}@e2e-portal.example.com`;
+  if (!byEmail(before.users, email)) {
+    const since = Date.now();
+    const body = { firstName: "Lucía", lastName: "Consulta", email, signer: false };
+    const headers = { "idempotency-key": crypto.randomUUID() };
+    const invited = await expectCall<PortalUser>(201, token, "POST", "/airline/portal/users", body, headers);
+    expect(invited.data).toMatchObject({ invitationPending: true, signer: false, representative: false });
+    const replay = await expectCall<PortalUser>(200, token, "POST", "/airline/portal/users", body, headers);
+    expect(replay.data.id).toBe(invited.data.id);
+    await waitForEmail(email, /Activa tu cuenta/i, since);
+  }
+  // A representative never changes itself: AVIAM does.
+  const own = byEmail((await read()).users, representative.email)!;
+  const refused = await call<{ code?: string }>(token, "POST", `/airline/portal/users/${own.id}/status`,
+    { isActive: false, expectedVersion: own.version });
+  expect([refused.status, refused.data.code]).toEqual([409, "portal_user_protected"]);
+
+  // AVIAM marks the colleague as a signer from Clientes; the representative's notice goes through the outbox.
+  const superadmin = await login("superadmin");
+  const clients = await expectCall<Array<{ organizationId: string; name: string }>>(200, superadmin, "GET",
+    "/governance/clients");
+  const organization = clients.data.find(item => item.name === airline.name) ??
+    clients.data.find(item => item.name.includes(run.runId) && item.name.includes("Airways"))!;
+  expect(organization, airline.name).toBeTruthy();
+  const listed = await expectCall<Array<PortalUser>>(200, superadmin, "GET",
+    `/governance/clients/${organization.organizationId}/users`);
+  const colleague = byEmail(listed.data, email)!;
+  expect(byEmail(listed.data, representative.email)?.representative).toBe(true);
+  if (!colleague.signer) {
+    const since = Date.now();
+    await expectCall(200, superadmin, "POST", `/governance/clients/${organization.organizationId}/users/${colleague.id}/portal-role`,
+      { representative: false, signer: true, expectedVersion: colleague.version });
+    await waitForEmail(representative.email, /usuarios del portal/i, since);
+  }
+  expect(byEmail((await read()).users, email)?.signer).toBe(true);
+
+  // «Perfil» shows who has access, who signs and the invitation form of a representative.
+  await loginPortal(page, representative.email);
+  await page.getByRole("link", { name: "Perfil", exact: true }).first().click();
+  await expect(page).toHaveURL(`${PUBLIC_WEB}/portal/perfil`);
+  const users = page.getByRole("list", { name: "Usuarios del portal" });
+  await expect(users).toContainText(email);
+  await expect(users).toContainText("Firmante");
+  await expect(page.getByRole("form", { name: "Invitar a un usuario" })).toBeVisible();
+  await snap(page, "fase2-hueco-2n20-usuarios-portal");
+});
+
+test("huecos 2-N38 y 2-N02 · la gobernanza heredada se retiró y OCC ve las tablets de la estación", async ({ page }) => {
+  const { version } = contractOf();
+  // 2-N38: the role editor and the direct creation of accounts answer 410 with their code, whatever the body.
+  const superadmin = await login("superadmin");
+  for (const [method, route] of [["POST", "/governance/users"], ["POST", "/governance/roles"]] as const) {
+    const retired = await call<{ code?: string }>(superadmin, method, route, { name: "Rol", firstName: "Ana" });
+    expect([retired.status, retired.data.code], `${method} ${route}`).toEqual([410, "legacy_governance_retired"]);
+  }
+  // 2-N02: OCC reads who holds each shared tablet of its station and may free or revoke them.
+  const station = version.stations.find(item => item.code === "PUJ")!;
+  const devices = await expectCall<{ stationCode: string; canUnbind: boolean; canRevoke: boolean; devices: unknown[] }>(
+    200, await login("occ"), "GET", `/occ/devices?stationId=${station.id}`);
+  expect(devices.data).toMatchObject({ stationCode: "PUJ", canUnbind: true, canRevoke: true });
+  await loginPrivate(page, "occ");
+  await goPrivate(page, "/admin-occ/devices");
+  await expect(page.getByRole("heading", { name: "Tablets", exact: true })).toBeVisible();
+  await expect(page.getByText("Cargando las tablets…")).toBeHidden();
+  await snap(page, "fase2-hueco-2n02-tablets");
+});

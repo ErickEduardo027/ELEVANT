@@ -11,6 +11,7 @@ using Elevant.Infrastructure.Identity;
 using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Operations;
 using Elevant.Persistence.Realtime;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Persistence.Identity;
@@ -422,9 +423,10 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             var current = await context.EmployeeStations
                 .Where(item => item.EmployeeId == employee.Id && item.ValidTo == null).ToArrayAsync(cancellationToken);
             await SetEmployeeStationsAsync(employee.Id, stations, current, now, cancellationToken);
-            // Access belongs to the old department: it ends until the new department requests it.
+            // Access belongs to the old department: it ends until the new department requests it, and its roles go
+            // with it, so the department it leaves can neither list nor reactivate the account (2-N07).
             var revoked = await SuspendAccessAsync(actor.Id, facts.Person.Id, employee.Id, "Traslado de departamento",
-                now, cancellationToken);
+                now, cancellationToken, retireRoles: true);
             if (position.IsRampPosition)
                 await EnsureRampAgentAsync(facts.Person.Id, employee, position, stations, now, cancellationToken);
             foreach (var affected in new[] { previous, department })
@@ -570,25 +572,34 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
     }
 
     /// <summary>
-    /// Disables the person's account, ends its sessions and station scopes and cancels pending access
-    /// requests of the employee. Returns whether an active account was disabled.
+    /// Disables the person's account, ends its sessions and station scopes and cancels the pending access requests
+    /// of the employee and the ones the account asked for as an administrator (2-N33). A transfer also retires the
+    /// roles of the department the account leaves (<paramref name="retireRoles"/>, 2-N07): its assignment stays,
+    /// inert, until the new department's request is validated. Returns whether an active account was disabled.
     /// </summary>
     private async Task<bool> SuspendAccessAsync(long actorAccountId, long personId, long employeeId, string reason,
-        DateTimeOffset now, CancellationToken cancellationToken)
+        DateTimeOffset now, CancellationToken cancellationToken, bool retireRoles = false)
     {
-        var pending = await context.UserAccessRequests.Where(request =>
-            request.EmployeeId == employeeId && request.Status == UserAccessRequestStatus.Pending).ToArrayAsync(cancellationToken);
+        var account = await context.Users.SingleOrDefaultAsync(user => user.PersonId == personId, cancellationToken);
+        var requester = account?.Id;
+        var pending = await context.UserAccessRequests.Where(request => request.Status == UserAccessRequestStatus.Pending &&
+                (request.EmployeeId == employeeId || requester != null && request.RequestedByAccountId == requester))
+            .ToArrayAsync(cancellationToken);
         foreach (var request in pending)
         {
             request.Status = UserAccessRequestStatus.Cancelled;
             request.DecidedAt = now;
             request.DecidedByAccountId = actorAccountId;
-            request.DecisionReason = reason;
+            request.DecisionReason = request.EmployeeId == employeeId
+                ? reason : "Quien la solicitó ya no administra el departamento";
             request.UpdatedAt = now;
+            GovernanceSupport.AddAudit(context, actorAccountId, "governance.access_request.cancelled",
+                "iam.user_access_requests", request.PublicId, request.DecisionReason, [], now, request.Department,
+                new AuditFieldChangeData("request.status", nameof(UserAccessRequestStatus.Pending), request.Status.ToString()));
             await NotifyRequestAsync(request, now, cancellationToken);
         }
-        var account = await context.Users.SingleOrDefaultAsync(user => user.PersonId == personId, cancellationToken);
         if (account is null) return false;
+        if (retireRoles) await RetireDepartmentRolesAsync(actorAccountId, account, reason, now, cancellationToken);
         var wasActive = account.Status == AccountLifecycleStatus.Active;
         account.Status = AccountLifecycleStatus.Disabled;
         await userManager.UpdateSecurityStampAsync(account);
@@ -601,6 +612,26 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
                 new AuditFieldChangeData("user.status", nameof(AccountLifecycleStatus.Active), nameof(AccountLifecycleStatus.Disabled)));
         AccountChangeOutboxWriter.Add(context, account.Id, null, "department_users", account.PublicId, now);
         return wasActive;
+    }
+
+    /// <summary>
+    /// 2-N07: the account leaves the roles that gave it access in its old department (department, ramp and legacy
+    /// roles). Without them its assignment grants nothing, so the old department no longer lists it; the validated
+    /// request of the new department gives it the new role. Audited, never deleted from history.
+    /// </summary>
+    private async Task RetireDepartmentRolesAsync(long actorAccountId, ApplicationUser account, string reason,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var links = await (from link in context.Set<IdentityUserRole<long>>()
+                           join role in context.Roles on link.RoleId equals role.Id
+                           where link.UserId == account.Id && role.NormalizedName != "SUPERADMIN"
+                           select new { Link = link, Code = role.NormalizedName! }).ToArrayAsync(cancellationToken);
+        if (links.Length == 0) return;
+        context.Set<IdentityUserRole<long>>().RemoveRange(links.Select(item => item.Link));
+        GovernanceSupport.AddAudit(context, actorAccountId, "governance.department_user.access_retired", "iam.accounts",
+            account.PublicId, reason, [], now,
+            new AuditFieldChangeData("user.roles", string.Join(',', links.Select(item => item.Code).Order(StringComparer.Ordinal)),
+                null));
     }
 
     private void OpenAssignment(Employee employee, long actorAccountId, DateTimeOffset now, string? reason) =>

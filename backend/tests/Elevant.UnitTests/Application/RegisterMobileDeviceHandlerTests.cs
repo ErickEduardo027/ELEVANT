@@ -218,5 +218,10 @@ public sealed class RegisterMobileDeviceHandlerTests
             Request = request;
             return Task.FromResult(result);
         }
+
+        public Task<MobileDeviceReleaseWriteResult> ReleaseAsync(
+            MobileDeviceReleaseWriteRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("The registration handler never releases a tablet.");
     }
 }

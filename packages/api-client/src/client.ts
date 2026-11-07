@@ -95,6 +95,26 @@ import {
   type RevokeAirlinePermitCommand,
 } from "./airlinePermits";
 import {
+  isOccMobileDevice,
+  isOccMobileDevices,
+  normalizedReleaseMobileDevice,
+  normalizedRevokeOccMobileDevice,
+  normalizedUnbindOccMobileDevice,
+  type ReleaseMobileDeviceCommand,
+  type RevokeOccMobileDeviceCommand,
+  type UnbindOccMobileDeviceCommand,
+} from "./mobileDevices";
+import {
+  isAirlinePortalUser,
+  isAirlinePortalUsers,
+  normalizedAirlinePortalUserSigner,
+  normalizedAirlinePortalUserStatus,
+  normalizedInviteAirlinePortalUser,
+  type InviteAirlinePortalUserCommand,
+  type SetAirlinePortalUserSignerCommand,
+  type SetAirlinePortalUserStatusCommand,
+} from "./airlinePortalUsers";
+import {
   isMasterAircraftType,
   isMasterStand,
   isMasterTerminal,
@@ -327,6 +347,18 @@ import {
   getReviewAirlinePermitUrl,
   getRevokeAirlinePermitUrl,
   getGetAirlinePortalStandingUrl,
+  getReleaseMobileDeviceUrl,
+  getListOccMobileDevicesUrl,
+  getUnbindOccMobileDeviceUrl,
+  getRevokeOccMobileDeviceUrl,
+  getGetAirlinePortalUsersUrl,
+  getInviteAirlinePortalUserUrl,
+  getSetAirlinePortalUserStatusUrl,
+  getSetAirlinePortalUserSignerUrl,
+  type AirlinePortalUserData,
+  type AirlinePortalUsersData,
+  type OccMobileDeviceData,
+  type OccMobileDevicesData,
   getGetContractTimelineUrl,
   getUploadCommercialMediaUrl,
   getDownloadContractDocumentUrl,
@@ -1385,6 +1417,31 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<AirlinePermitDecisionData>;
   /** Where the session's airline stands: historical stations, read-only and what each contract waits for (2-N32). */
   getAirlinePortalStanding(options?: GetHumanResourcesReportOptions): Promise<AirlinePortalStandingResponse>;
+  /**
+   * The tablet frees its binding when the agent signs out (2-N02). The Idempotency-Key is scoped to the installation;
+   * `device_not_bound` means another agent, OCC or the end of the agent's duty already freed it.
+   */
+  releaseMobileDevice(command: ReleaseMobileDeviceCommand, idempotencyKey: string,
+    options?: RegisterMobileDeviceOptions): Promise<void>;
+  /** OCC: the tablets last used by agents of the station, who holds each one and what the actor may do (2-N02). */
+  getOccMobileDevices(stationId: string, options?: GetHumanResourcesReportOptions): Promise<OccMobileDevicesData>;
+  /** OCC frees a tablet with the binding token on screen (`version`); answers the tablet as it is now. */
+  unbindOccMobileDevice(deviceId: string, command: UnbindOccMobileDeviceCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccMobileDeviceData>;
+  /** OCC revokes a lost tablet with a reason: it never registers again and its holder's sessions end. */
+  revokeOccMobileDevice(deviceId: string, command: RevokeOccMobileDeviceCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccMobileDeviceData>;
+  /** The portal users of the session's airline and what the session may do with them (2-N20). */
+  getAirlinePortalUsers(options?: GetHumanResourcesReportOptions): Promise<AirlinePortalUsersData>;
+  /** A representative invites a user by email; the activation email is queued. Answers the new user. */
+  inviteAirlinePortalUser(command: InviteAirlinePortalUserCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<AirlinePortalUserData>;
+  /** A representative deactivates or reactivates another user with the version on screen. */
+  setAirlinePortalUserStatus(userId: string, command: SetAirlinePortalUserStatusCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<AirlinePortalUserData>;
+  /** A representative lets another user sign contracts and submit the JAC permit, or takes it back. */
+  setAirlinePortalUserSigner(userId: string, command: SetAirlinePortalUserSignerCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<AirlinePortalUserData>;
   /** Uploads the scanned permit (PDF, JPG or PNG, up to 8 MB) and returns its private media URL. */
   uploadAirlinePermitDocument(file: Blob, options?: GetHumanResourcesReportOptions): Promise<string>;
   /** History of the contract of a version, oldest first (request, Finance, signatures, permits, status). */
@@ -7392,6 +7449,63 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getGetAirlinePortalStandingUrl(), { ...options, method: "GET" }, true);
       if (!isAirlinePortalStanding(result.data)) throw malformedResponse(result.status);
       return result.data;
+    },
+    async releaseMobileDevice(command: ReleaseMobileDeviceCommand, idempotencyKey: string,
+      options?: RegisterMobileDeviceOptions) {
+      const body = normalizedReleaseMobileDevice(command);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getReleaseMobileDeviceUrl(), {
+        ...options, method: "POST", headers, body: JSON.stringify(body),
+      }, true);
+      if (result.status !== 204) throw malformedResponse(result.status);
+    },
+    async getOccMobileDevices(stationId: string, options?: GetHumanResourcesReportOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      const result = await execute(getListOccMobileDevicesUrl({ stationId: station }), { ...options, method: "GET" }, true);
+      if (!isOccMobileDevices(result.data, station)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async unbindOccMobileDevice(deviceId: string, command: UnbindOccMobileDeviceCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const device = validatedUuid(deviceId, "deviceId");
+      return catalogCommand("POST", getUnbindOccMobileDeviceUrl(device), normalizedUnbindOccMobileDevice(command),
+        idempotencyKey, options, (value): value is OccMobileDeviceData => isOccMobileDevice(value, device));
+    },
+    async revokeOccMobileDevice(deviceId: string, command: RevokeOccMobileDeviceCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const device = validatedUuid(deviceId, "deviceId");
+      const revoked = await catalogCommand("POST", getRevokeOccMobileDeviceUrl(device),
+        normalizedRevokeOccMobileDevice(command), idempotencyKey, options,
+        (value): value is OccMobileDeviceData => isOccMobileDevice(value, device));
+      if (revoked.status !== "Revoked") throw malformedResponse(200);
+      return revoked;
+    },
+    async getAirlinePortalUsers(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getGetAirlinePortalUsersUrl(), { ...options, method: "GET" }, true);
+      if (!isAirlinePortalUsers(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async inviteAirlinePortalUser(command: InviteAirlinePortalUserCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedInviteAirlinePortalUser(command);
+      const invited = await masterDataCommand("POST", getInviteAirlinePortalUserUrl(), body, idempotencyKey, options,
+        (value): value is AirlinePortalUserData => isAirlinePortalUser(value));
+      if (invited.email.toLowerCase() !== body.email.toLowerCase()) throw malformedResponse(201);
+      return invited;
+    },
+    async setAirlinePortalUserStatus(userId: string, command: SetAirlinePortalUserStatusCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const user = validatedUuid(userId, "userId");
+      return catalogCommand("POST", getSetAirlinePortalUserStatusUrl(user), normalizedAirlinePortalUserStatus(command),
+        idempotencyKey, options, (value): value is AirlinePortalUserData => isAirlinePortalUser(value, user));
+    },
+    async setAirlinePortalUserSigner(userId: string, command: SetAirlinePortalUserSignerCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const user = validatedUuid(userId, "userId");
+      return catalogCommand("POST", getSetAirlinePortalUserSignerUrl(user), normalizedAirlinePortalUserSigner(command),
+        idempotencyKey, options, (value): value is AirlinePortalUserData => isAirlinePortalUser(value, user));
     },
     async uploadAirlinePermitDocument(file: Blob, options?: GetHumanResourcesReportOptions) {
       if (!(file instanceof Blob) || file.size === 0 || file.size > 8 * 1024 * 1024 ||

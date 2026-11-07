@@ -6490,14 +6490,31 @@ public sealed partial class SqlServerMigrationTests
                     cancellationToken);
         }
 
-        var foreignBinding = await RegisterAsync();
-        Assert.Equal(
-            MobileDeviceRegistrationWriteFailure.Forbidden,
-            foreignBinding.Failure);
+        // The tablet bound to another account still refuses this agent's ramp commands (fail closed)...
         var foreignBindingStart = await StartAsync(
             Guid.Parse("82000000-0000-7000-8000-000000000017"),
             operationId);
         Assert.Equal(RampOperationStartWriteFailure.Forbidden, foreignBindingStart.Failure);
+        // ...until the agent signs in on it: a shared tablet passes to the agent who signs in, because the account
+        // that held it works no operation in progress (2-N02). The previous binding closes, audited, never deleted.
+        var takeover = await RegisterAsync();
+        Assert.True(takeover.IsSuccess);
+        await using (var takeoverContext = CreateContext(database.ConnectionString))
+        {
+            var bindings = await (
+                    from binding in takeoverContext.Set<MobileDeviceAccountBinding>().AsNoTracking()
+                    join device in takeoverContext.MobileDevices.AsNoTracking()
+                        on binding.MobileDeviceId equals device.Id
+                    join account in takeoverContext.Users.AsNoTracking() on binding.AccountId equals account.Id
+                    where device.InstallationId == installationId
+                    select new { account.PublicId, binding.UnboundAt })
+                .ToArrayAsync(cancellationToken);
+            Assert.Equal(accountId, Assert.Single(bindings, binding => binding.UnboundAt == null).PublicId);
+            Assert.Contains(bindings, binding => binding.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000001") &&
+                binding.UnboundAt != null);
+            Assert.True(await takeoverContext.AuditEntries.AnyAsync(entry =>
+                entry.Action == "mobile_device.binding_taken_over", cancellationToken));
+        }
     }
 
     [Theory]
@@ -8476,9 +8493,16 @@ public sealed partial class SqlServerMigrationTests
             .CountAsync(cancellationToken));
         Assert.Equal(2, await verify.OperationalNotifications.AsNoTracking()
             .CountAsync(cancellationToken));
-        var changeHints = await verify.OutboxMessages.AsNoTracking()
+        var allHints = await verify.OutboxMessages.AsNoTracking()
             .Where(message => message.EventType == "account.changed.v1")
             .ToArrayAsync(cancellationToken);
+        // 2-N02: binding the agent's tablet also tells OCC's tablet screen to re-read it, once.
+        var tabletHint = Assert.Single(allHints,
+            message => AccountChangeOutboxWriter.Decode(message).Resource == "mobile_devices");
+        var tabletRecipient = AccountChangeOutboxWriter.Decode(tabletHint).RecipientAccountId;
+        Assert.Equal(occId, await verify.Users.AsNoTracking().Where(user => user.Id == tabletRecipient)
+            .Select(user => user.PublicId).SingleAsync(cancellationToken));
+        var changeHints = allHints.Where(message => message != tabletHint).ToArray();
         // ADR-0029: each message also reaches the other participant, not only the sender.
         Assert.Equal(6, changeHints.Length);
         Assert.Equal(6, changeHints.Select(message => message.PublicId).Distinct().Count());

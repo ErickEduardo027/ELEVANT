@@ -3,13 +3,13 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import ClientsPanel from './ClientsPanel';
 import {
-  listClientAirlines, listClientUsers, resetClientUserPassword,
+  listClientAirlines, listClientUsers, resetClientUserPassword, setClientUserPortalRole, setClientUserStatus,
 } from '../../services/departmentGovernanceService';
 import { resendAirlineInvitation } from '../../services/commercialGovernanceApi';
 
 vi.mock('../../services/departmentGovernanceService', () => ({
   createClientUser: vi.fn(), listClientAirlines: vi.fn(), listClientUsers: vi.fn(), resetClientUserPassword: vi.fn(),
-  setClientUserStatus: vi.fn(),
+  setClientUserStatus: vi.fn(), setClientUserPortalRole: vi.fn(),
 }));
 vi.mock('../../services/commercialGovernanceApi', () => ({ resendAirlineInvitation: vi.fn() }));
 
@@ -64,6 +64,44 @@ describe('Superadministrador Clientes', () => {
     expect(alert).toHaveTextContent('El registro cambió mientras lo editaba.');
     expect(alert).not.toHaveTextContent('Raw server title');
     expect(listClientUsers).toHaveBeenCalledTimes(2);
+  });
+
+  it('designates a representative and a signer with the account version and a key (2-N20)', async () => {
+    setClientUserPortalRole.mockResolvedValue({ id: 'user-1' });
+    await openAirline();
+    expect(screen.queryByText('Representante')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Designar representante' }));
+    expect(setClientUserPortalRole).toHaveBeenCalledWith('org-1', 'user-1',
+      { representative: true, signer: false, expectedVersion: 'AAAAAAAAB9E=' }, expect.stringMatching(/^[0-9a-f-]{36}$/));
+    const notice = await screen.findByRole('status');
+    expect(notice).toHaveTextContent('Ana Rivera ahora es representante.');
+    // The notice to the representatives is only queued: the copy never says it was sent.
+    expect(notice).toHaveTextContent('su aviso quedó en cola');
+    expect(listClientUsers).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the roles and keeps the last representative with its explanation', async () => {
+    listClientUsers.mockResolvedValue([{ ...invited, invitationPending: false, representative: true, signer: true }]);
+    setClientUserPortalRole.mockRejectedValue(problem(409, 'last_representative'));
+    await openAirline();
+    expect(screen.getByText('Representante')).toBeInTheDocument();
+    expect(screen.getByText('Firmante')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Quitar representante' }));
+    expect(setClientUserPortalRole).toHaveBeenCalledWith('org-1', 'user-1',
+      { representative: false, signer: true, expectedVersion: 'AAAAAAAAB9E=' }, expect.any(String));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Es el último representante activo de la aerolínea');
+    expect(alert).not.toHaveTextContent('Raw server title');
+  });
+
+  it('deactivates a user with its version and key (2-N39)', async () => {
+    setClientUserStatus.mockResolvedValue({ id: 'user-1' });
+    await openAirline();
+    await userEvent.click(screen.getByRole('button', { name: 'Desactivar' }));
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Desactivar' }));
+    expect(setClientUserStatus).toHaveBeenCalledWith('org-1', 'user-1', false, 'AAAAAAAAB9E=',
+      expect.stringMatching(/^[0-9a-f-]{36}$/));
+    expect(await screen.findByRole('status')).toHaveTextContent('Usuario desactivado.');
   });
 
   it('shows the unauthorized state and a retry instead of an empty list', async () => {

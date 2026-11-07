@@ -4,6 +4,7 @@ using Elevant.Api.Configuration;
 using Elevant.Application.Abstractions.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Elevant.Api.Controllers;
@@ -105,13 +106,21 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
         ReadAsync(actorId => store.ListUsersAsync(actorId, department, page, limit, kind, status, accessProfileId,
             stationId, search, cancellationToken));
 
+    /// <summary>
+    /// Names a department administrator from an employee. The Idempotency-Key is optional while older clients exist
+    /// (2-N39): a retry with the same key, body and temporary password replays the account.
+    /// </summary>
     [HttpPost("departments/{department}/administrators", Name = "CreateDepartmentAdministrator")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(32768)]
     public Task<IActionResult> CreateAdministrator(string department, [FromBody] CreateDepartmentAccountInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.CreateAdministratorAsync(actorId, department, input, cancellationToken),
-            StatusCodes.Status201Created);
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.CreateAdministratorAsync(actorId, department, input, idempotencyKey,
+            cancellationToken), StatusCodes.Status201Created);
 
     /// <summary>
     /// Super administrator only: registers the employee and creates its account (administrator or
@@ -119,11 +128,15 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
     /// </summary>
     [HttpPost("departments/{department}/internal-users", Name = "CreateInternalUser")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(32768)]
     public Task<IActionResult> CreateInternalUser(string department, [FromBody] CreateInternalUserInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.CreateInternalUserAsync(actorId, department, input, cancellationToken),
-            StatusCodes.Status201Created);
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.CreateInternalUserAsync(actorId, department, input, idempotencyKey,
+            cancellationToken), StatusCodes.Status201Created);
 
     /// <summary>Deprecated (ADR-0017): members are requested for an employee and validated by Human Resources.</summary>
     [Obsolete("Request access for an employee instead.")]
@@ -135,19 +148,37 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
         MutateAsync(actorId => store.CreateMemberAsync(actorId, department, input, cancellationToken),
             StatusCodes.Status201Created);
 
+    /// <summary>
+    /// Edits a user's access with the version on screen: an employee's stations come from the employee record
+    /// (<c>stations_outside_employee</c>), a legacy CUSTOM_* member becomes a Contracts member and a transferred
+    /// account is refused (<c>employee_transferred</c>). Optional Idempotency-Key (2-N39).
+    /// </summary>
     [HttpPut("departments/{department}/users/{id:guid}", Name = "UpdateDepartmentUser")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(32768)]
     public Task<IActionResult> UpdateUser(string department, Guid id, [FromBody] UpdateDepartmentUserInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.UpdateUserAsync(actorId, department, id, input, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.UpdateUserAsync(actorId, department, id, input, idempotencyKey, cancellationToken));
 
+    /// <summary>
+    /// Deactivates or reactivates a user with the version on screen; only the employee's current department brings a
+    /// transferred account back, through a validated request (<c>employee_transferred</c>). Optional Idempotency-Key.
+    /// </summary>
     [HttpPost("departments/{department}/users/{id:guid}/status", Name = "SetDepartmentUserStatus")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(4096)]
     public Task<IActionResult> SetUserStatus(string department, Guid id, [FromBody] SetDepartmentUserStatusInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.SetUserStatusAsync(actorId, department, id, input, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.SetUserStatusAsync(actorId, department, id, input, idempotencyKey,
+            cancellationToken));
 
     [HttpPost("departments/{department}/users/{id:guid}/password-reset", Name = "ResetDepartmentUserPassword")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
@@ -164,26 +195,38 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
 
     [HttpPost("departments/{department}/access-profiles", Name = "CreateAccessProfile")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(32768)]
     public Task<IActionResult> CreateProfile(string department, [FromBody] SaveAccessProfileInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.SaveProfileAsync(actorId, department, null, input, cancellationToken),
-            StatusCodes.Status201Created);
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.SaveProfileAsync(actorId, department, null, input, idempotencyKey,
+            cancellationToken), StatusCodes.Status201Created);
 
     [HttpPut("departments/{department}/access-profiles/{id:guid}", Name = "UpdateAccessProfile")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(32768)]
     public Task<IActionResult> UpdateProfile(string department, Guid id, [FromBody] SaveAccessProfileInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.SaveProfileAsync(actorId, department, id, input, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.SaveProfileAsync(actorId, department, id, input, idempotencyKey, cancellationToken));
 
     [HttpPost("departments/{department}/access-profiles/{id:guid}/deactivate", Name = "DeactivateAccessProfile")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(4096)]
     public Task<IActionResult> DeactivateProfile(string department, Guid id, [FromBody] ExpectedVersionInput input,
-        CancellationToken cancellationToken) =>
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
         MutateAsync(actorId => store.DeactivateProfileAsync(actorId, department, id, input.ExpectedVersion,
-            cancellationToken));
+            idempotencyKey, cancellationToken));
 
     [HttpPost("departments/{department}/access-requests", Name = "RequestDepartmentUserAccess")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
@@ -230,20 +273,52 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
     public Task<IActionResult> ClientUsers(Guid organizationId, CancellationToken cancellationToken) =>
         ReadAsync(actorId => store.ListClientUsersAsync(actorId, organizationId, cancellationToken));
 
+    /// <summary>
+    /// Adds a portal user to an airline (invitation by email, or a temporary password); its representatives hear of
+    /// it. The Idempotency-Key is optional while older clients exist (2-N39).
+    /// </summary>
     [HttpPost("clients/{organizationId:guid}/users", Name = "CreateGovernanceClientUser")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(16384)]
     public Task<IActionResult> CreateClientUser(Guid organizationId, [FromBody] CreateClientUserInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.CreateClientUserAsync(actorId, organizationId, input, cancellationToken),
-            StatusCodes.Status201Created);
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.CreateClientUserAsync(actorId, organizationId, input, idempotencyKey,
+            cancellationToken), StatusCodes.Status201Created);
 
     [HttpPost("clients/{organizationId:guid}/users/{id:guid}/status", Name = "SetGovernanceClientUserStatus")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(4096)]
     public Task<IActionResult> SetClientUserStatus(Guid organizationId, Guid id,
-        [FromBody] SetDepartmentUserStatusInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.SetClientUserStatusAsync(actorId, organizationId, id, input, cancellationToken));
+        [FromBody] SetDepartmentUserStatusInput input, [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
+        CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.SetClientUserStatusAsync(actorId, organizationId, id, input, idempotencyKey,
+            cancellationToken));
+
+    /// <summary>
+    /// Designates a representative (manages the airline's portal users and signs) or a signer (signs contracts and
+    /// submits the JAC permit) with the account version on screen and an Idempotency-Key (2-N20). The last active
+    /// representative keeps the role (<c>last_representative</c>).
+    /// </summary>
+    [HttpPost("clients/{organizationId:guid}/users/{id:guid}/portal-role", Name = "SetGovernanceClientUserPortalRole")]
+    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [RequestSizeLimit(4096)]
+    public Task<IActionResult> SetClientUserPortalRole(Guid organizationId, Guid id,
+        [FromBody, BindRequired] SetClientUserPortalRoleInput input,
+        [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.SetClientUserPortalRoleAsync(actorId, organizationId, id, input, idempotencyKey,
+            cancellationToken));
 
     /// <summary>
     /// Sets a temporary password the user must change at the next sign-in. On an invitation that is
@@ -268,10 +343,22 @@ public sealed class DepartmentGovernanceController(IDepartmentGovernanceStore st
     public Task<IActionResult> LegacyRoles(CancellationToken cancellationToken) =>
         ReadAsync(actorId => store.ListLegacyRolesAsync(actorId, cancellationToken));
 
+    /// <summary>
+    /// Converts a legacy CUSTOM_* role into a Contracts template; members already edited keep their permissions
+    /// (2-N19). The body (<c>expectedVersion</c>) and the Idempotency-Key are optional while older clients exist; a
+    /// key needs the version (2-N39).
+    /// </summary>
     [HttpPost("legacy-roles/{id:guid}/convert", Name = "ConvertLegacyRole")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
-    public Task<IActionResult> ConvertLegacyRole(Guid id, CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.ConvertLegacyRoleAsync(actorId, id, cancellationToken));
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [RequestSizeLimit(4096)]
+    public Task<IActionResult> ConvertLegacyRole(Guid id,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] ConvertLegacyRoleInput? input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.ConvertLegacyRoleAsync(actorId, id, input, idempotencyKey, cancellationToken));
 
     private async Task<IActionResult> ReadAsync<T>(Func<Guid, Task<T?>> query) where T : class
     {

@@ -75,6 +75,8 @@ public enum EmailPurpose
     ContractExpiring,
     /// <summary>The contract was suspended by Contratos or for lack of a usable operating permit (2-N12).</summary>
     ContractSuspended,
+    /// <summary>A portal user of the airline was invited, deactivated, reactivated or got a role changed (2-N20).</summary>
+    PortalUserChanged,
 }
 
 /// <summary>Delivery state of an email in the outbox.</summary>

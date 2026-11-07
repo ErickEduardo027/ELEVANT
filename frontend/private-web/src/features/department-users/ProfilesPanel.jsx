@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import Drawer from '../../components/Drawer';
 import EmptyState from '../../components/EmptyState';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { ShieldCheckIcon } from '../shell/components/icons';
+import { createCommandKeyHolder } from '../../services/commandKeys';
 import { deactivateAccessProfile, saveAccessProfile } from '../../services/departmentGovernanceService';
+import { governanceMessage } from '../../services/humanResourcesEmployeesService';
 import { departmentUsersMessages } from './departmentUsersMessages';
 import PermissionMatrix, { permissionLabels } from './PermissionMatrix';
 
@@ -15,10 +17,12 @@ function ProfileDrawer({ open, department, profile, catalog, onClose, onSaved })
   const [form, setForm] = useState({ name: '', description: '', permissionCodes: [] });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const keys = useRef(createCommandKeyHolder());
   useEffect(() => {
     if (!open) return;
     setForm({ name: profile?.name ?? '', description: profile?.description ?? '', permissionCodes: profile?.permissions ?? [] });
     setError('');
+    keys.current.reset();
   }, [open, profile]);
 
   async function submit(event) {
@@ -27,13 +31,15 @@ function ProfileDrawer({ open, department, profile, catalog, onClose, onSaved })
     setBusy(true);
     setError('');
     try {
-      await saveAccessProfile(department, profile?.id, {
+      const body = {
         name: form.name.trim(), description: form.description.trim() || null,
         permissionCodes: form.permissionCodes, expectedVersion: profile?.version ?? null,
-      });
+      };
+      await keys.current.run('access-profile.save', { id: profile?.id ?? null, ...body },
+        key => saveAccessProfile(department, profile?.id, body, key));
       onSaved(profile ? t('profiles.updated') : t('profiles.created'));
     } catch (failure) {
-      setError(failure.status === 409 ? t('profiles.saveConflict') : failure.message);
+      setError(governanceMessage(failure, t('profiles.saveConflict')));
     } finally {
       setBusy(false);
     }
@@ -64,15 +70,17 @@ export default function ProfilesPanel({ department, profiles, catalog, onChanged
   const [open, setOpen] = useState(false);
   const [retiring, setRetiring] = useState(null);
   const [error, setError] = useState('');
+  const retireKeys = useRef(createCommandKeyHolder());
 
   async function retire() {
     const profile = retiring;
     setRetiring(null);
     try {
-      await deactivateAccessProfile(department, profile.id, profile.version);
+      await retireKeys.current.run('access-profile.deactivate', { id: profile.id, version: profile.version },
+        key => deactivateAccessProfile(department, profile.id, profile.version, key));
       onChanged(t('profiles.deactivated'));
     } catch (failure) {
-      setError(failure.status === 409 ? t('profiles.deactivateConflict') : failure.message);
+      setError(governanceMessage(failure, t('profiles.deactivateConflict')));
     }
   }
 

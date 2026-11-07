@@ -13,6 +13,8 @@ export const PERMIT_PROBLEMS: Readonly<Record<string, string>> = Object.freeze({
   document_expired: "El documento adjunto se subió hace demasiado tiempo: vuelva a adjuntarlo y envíe el permiso.",
   idempotency_conflict: "Ese envío ya se usó con otros datos. Actualice la página e intente de nuevo.",
   idempotency_key_required: "No se pudo identificar el envío. Intente de nuevo.",
+  // 2-N20: the permits that let the contract operate are sent by the airline's representatives and signers.
+  signer_required: "Solo los representantes y los firmantes de su aerolínea envían permisos. Pida a su representante que lo marque como firmante en «Perfil».",
 });
 
 /** The outcome of a failed submission: the message, and whether the same intent may be retried as it is. */

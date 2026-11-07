@@ -57,6 +57,9 @@ public static class DepartmentPermissionCatalog
                     Create("Crear terminales, posiciones y tipos de avión"), Update("Editar y desactivar")),
                 Module("operations", "attendance", "Asistencia OCC", "Operación", "planning",
                     Read(), Create("Registrar observaciones")),
+                // Shared ramp tablets (2-N02): who holds each one; OCC frees a tablet or revokes a lost one.
+                Module("operations", "devices", "Tablets", "Operación", null, Read(),
+                    Other("unbind", "Desvincular tablets"), Other("revoke", "Revocar tablets perdidas")),
                 Module("operations", "review", "Revisión", "Operación", null, Read(), Other("decide", "Aprobar o devolver entregas")),
                 Module("operations", "service_closures", "Clausura de servicios", "Operación", "review",
                     Read(), Create("Solicitar clausura")),

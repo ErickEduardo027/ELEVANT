@@ -110,6 +110,53 @@ public sealed class DepartmentAccessResolverTests
             new(DepartmentAssignmentKind.Member, Department.Operations, false, false), ["RAMP_AGENT"], [], [], []));
     }
 
+    [Fact]
+    public void ContractsMemberEditedBeforeItsLegacyRoleWasConvertedKeepsTheChosenPermissions()
+    {
+        // 2-N19: an edit created the Member/Contracts assignment without the CONTRATOS role; the legacy role still
+        // counts and the permissions the administrator chose apply, not the role's.
+        var contracts = new DepartmentAssignmentFacts(DepartmentAssignmentKind.Member, Department.Contracts, false, false);
+        var access = DepartmentAccessResolver.Resolve(contracts, ["CUSTOM_VENTAS"], [], ["contracts.catalog.read"],
+            ["commercial.requests.full"]);
+
+        Assert.NotNull(access);
+        Assert.Equal(["contracts.catalog.read"], access.Permissions.Order());
+        Assert.False(access.Has("contracts.requests.approve"));
+        // The legacy role never opens another department nor an administration.
+        Assert.Null(DepartmentAccessResolver.Resolve(
+            new(DepartmentAssignmentKind.Member, Department.Finance, false, false), ["CUSTOM_VENTAS"], [], [], []));
+        Assert.Null(DepartmentAccessResolver.Resolve(
+            new(DepartmentAssignmentKind.Administrator, Department.Contracts, false, false), ["CUSTOM_VENTAS"], [], [], []));
+        Assert.True(DepartmentAccessResolver.IsLegacyCustomRole("CUSTOM_VENTAS"));
+        Assert.False(DepartmentAccessResolver.IsLegacyCustomRole("CONTRATOS"));
+    }
+
+    [Fact]
+    public void AnAccountWithoutItsDepartmentRoleHasNoAccessLeftAfterATransfer()
+    {
+        // 2-N07: the transfer retires the roles and keeps the assignment, which then grants nothing.
+        var finance = new DepartmentAssignmentFacts(DepartmentAssignmentKind.Member, Department.Finance, false, false);
+        Assert.Null(DepartmentAccessResolver.Resolve(finance, [], [], ["finance.home.read"], []));
+    }
+
+    [Fact]
+    public void TabletPermissionsBelongToOperationsAndPortalCapabilitiesToNoDepartment()
+    {
+        Assert.Equal(Department.Operations, DepartmentPermissionCatalog.DepartmentOf("operations.devices.read"));
+        Assert.True(DepartmentPermissionCatalog.Belongs("operations.devices.unbind", Department.Operations));
+        Assert.True(DepartmentPermissionCatalog.Belongs("operations.devices.revoke", Department.Operations));
+        Assert.Contains("operations.devices.read", DepartmentPermissionCatalog.Normalize(["operations.devices.revoke"]));
+        // 2-N20: the airline portal's representative and signer grants live outside the department catalog.
+        foreach (var department in DepartmentPermissionCatalog.Departments)
+        {
+            Assert.False(DepartmentPermissionCatalog.Belongs("airline_portal.signer", department));
+            Assert.False(DepartmentPermissionCatalog.Belongs("airline_portal.representative", department));
+        }
+        var member = new DepartmentAssignmentFacts(DepartmentAssignmentKind.Member, Department.Contracts, false, false);
+        Assert.Equal(["contracts.home.read"], DepartmentAccessResolver.Resolve(member, ["CONTRATOS"], [],
+            ["contracts.home.read", "airline_portal.signer"], [])!.Permissions.Order());
+    }
+
     private static DepartmentAccess? Resolve(DepartmentAssignmentFacts facts,
         string[]? profileGrants = null, string[]? accountGrants = null) =>
         DepartmentAccessResolver.Resolve(facts, RolesFor(facts), profileGrants ?? [], accountGrants ?? [], []);

@@ -126,7 +126,7 @@ public sealed partial class SqlServerMigrationTests
 
         // 1-N13: Clientes already created the representative; provisioning offers to link it instead.
         var clientUser = await governance.CreateClientUserAsync(SuperAdministratorAccount, organization.PublicId,
-            new CreateClientUserInput("Luis", "Linares", "luis@qal.example.com", "Synthetic-Portal-Linked!2026"), ct);
+            new CreateClientUserInput("Luis", "Linares", "luis@qal.example.com", "Synthetic-Portal-Linked!2026"), null, ct);
         Assert.True(clientUser.IsSuccess, clientUser.Code);
         var passwordHash = await context.Users.AsNoTracking().Where(user => user.PublicId == clientUser.Id)
             .Select(user => user.PasswordHash).SingleAsync(ct);

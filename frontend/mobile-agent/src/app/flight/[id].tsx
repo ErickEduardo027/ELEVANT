@@ -439,7 +439,9 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           reservedPending &&
           error.code !== 'not_found' &&
           error.code !== 'conflict' &&
-          error.code !== 'device_conflict'
+          error.code !== 'device_conflict' &&
+          error.code !== 'device_in_use' &&
+          error.code !== 'device_revoked'
         ) {
           setServiceNotices((current) => ({
             ...current,
@@ -1234,6 +1236,20 @@ function serviceTransitionErrorNotice(
       message: 'El servicio o la asignación ya no están disponibles para esta cuenta.',
     };
   }
+  if (error.code === 'device_revoked') {
+    return {
+      tone: 'error',
+      title: 'Tablet revocada',
+      message: 'OCC revocó esta tablet. Entrégala a OCC y continúa en otra tablet.',
+    };
+  }
+  if (error.code === 'device_in_use') {
+    return {
+      tone: 'error',
+      title: 'Tablet en uso',
+      message: 'Otro agente tiene esta tablet en una operación en curso. Solicita a OCC que la libere.',
+    };
+  }
   if (error.code === 'device_conflict') {
     return {
       tone: 'error',
@@ -1322,6 +1338,15 @@ function startErrorNotice(error: MobileServiceError): StartNotice {
       tone: 'error',
       title: 'Dispositivo no disponible',
       message: 'No pudimos proteger la identidad del dispositivo. Desbloquéalo y vuelve a intentar.',
+    };
+  }
+  if (error.code === 'device_revoked' || error.code === 'device_in_use') {
+    return {
+      tone: 'error',
+      title: error.code === 'device_revoked' ? 'Tablet revocada' : 'Tablet en uso',
+      message: error.code === 'device_revoked'
+        ? 'OCC revocó esta tablet. Entrégala a OCC y continúa en otra tablet.'
+        : 'Otro agente tiene esta tablet en una operación en curso. Solicita a OCC que la libere.',
     };
   }
   if (error.code === 'device_conflict') {

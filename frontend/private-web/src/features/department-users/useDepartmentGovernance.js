@@ -8,6 +8,7 @@ import {
   listAccessRequests,
   listDepartmentUsers,
 } from '../../services/departmentGovernanceService';
+import { governanceMessage } from '../../services/humanResourcesEmployeesService';
 
 const RESOURCES = ['department_users', 'access_requests'];
 
@@ -35,7 +36,7 @@ export function useDepartmentGovernance(department, filters) {
       setState({ status: 'ready', error: '', summary, users, profiles, requests });
     } catch (error) {
       if (current !== version.current) return;
-      setState(previous => ({ ...previous, status: previous.summary ? 'ready' : 'error', error: error.message }));
+      setState(previous => ({ ...previous, status: previous.summary ? 'ready' : 'error', error: governanceMessage(error) }));
     }
   }, [department, filterKey]);
 

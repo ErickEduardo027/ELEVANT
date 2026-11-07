@@ -9,7 +9,8 @@ import AccessValidationsPage from './AccessValidationsPage';
 import { togglePermission } from './PermissionMatrix';
 import {
   createDepartmentAdministrator, getDepartmentOptions, getDepartmentSummary, getPermissionCatalog, listAccessProfiles,
-  listAccessRequests, listDepartmentUsers, rejectAccessRequest, requestDepartmentUserAccess, validateAccessRequest,
+  listAccessRequests, listDepartmentUsers, rejectAccessRequest, requestDepartmentUserAccess, updateDepartmentUser,
+  validateAccessRequest,
 } from '../../services/departmentGovernanceService';
 import { listAccessCandidates, listDepartmentActivity } from '../../services/humanResourcesEmployeesService';
 import { generateTemporaryPassword } from './temporaryPassword';
@@ -19,6 +20,7 @@ vi.mock('../../services/departmentGovernanceService', async importOriginal => ({
   getDepartmentSummary: vi.fn(), listDepartmentUsers: vi.fn(), listAccessProfiles: vi.fn(), listAccessRequests: vi.fn(),
   getDepartmentOptions: vi.fn(), getPermissionCatalog: vi.fn(), requestDepartmentUserAccess: vi.fn(),
   validateAccessRequest: vi.fn(), rejectAccessRequest: vi.fn(), createDepartmentAdministrator: vi.fn(),
+  updateDepartmentUser: vi.fn(),
 }));
 vi.mock('../../services/humanResourcesEmployeesService', async importOriginal => ({
   ...(await importOriginal()),
@@ -103,11 +105,39 @@ describe('DepartmentUsersPage', () => {
     await userEvent.click(await within(form).findByRole('button', { name: /Luis Pérez/ }));
     await userEvent.click(within(form).getByRole('button', { name: 'Generar contraseña' }));
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    // 2-N39: the naming carries the intent's Idempotency-Key, so a retry after a lost answer replays it.
     expect(createDepartmentAdministrator).toHaveBeenCalledWith('contracts', expect.objectContaining({
       employeeId: 'emp-1', stationIds: ['st-1'],
       temporaryPassword: expect.stringMatching(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{16}$/),
-    }));
+    }), expect.stringMatching(/^[0-9a-f-]{36}$/));
     expect(screen.queryByRole('button', { name: 'Crear sub-usuario' })).not.toBeInTheDocument();
+  });
+
+  it('edits a member within the stations of its employee record and explains a transferred account', async () => {
+    const member = { id: 'acc-3', firstName: 'Rosa', lastName: 'Solicitudes', email: 'rosa@example.test', kind: 'Member',
+      status: 'Active', accessProfileId: null, accessProfileName: null, permissions: ['contracts.requests.read'],
+      stations: [{ id: 'st-1', code: 'PUJ' }], mustChangePassword: false, lastLoginAt: null, avatarMediaUrl: null,
+      version: 'v-acc-3', employeeStations: [{ id: 'st-1', code: 'PUJ' }] };
+    listDepartmentUsers.mockResolvedValue({ page: 1, limit: 25, total: 1, hasMore: false, users: [member] });
+    getDepartmentOptions.mockResolvedValue({ stations: [{ id: 'st-1', code: 'PUJ' }, { id: 'st-2', code: 'SDQ' }],
+      terminals: [], supervisors: [] });
+    renderWith(admin, <DepartmentUsersPage department="contracts" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    const form = screen.getByRole('dialog', { name: 'Editar acceso' });
+    // 2-N21: SDQ is the actor's but not the employee's; the edit only offers the employee's stations.
+    expect(await within(form).findByRole('checkbox', { name: 'PUJ' })).toBeInTheDocument();
+    expect(within(form).queryByRole('checkbox', { name: 'SDQ' })).not.toBeInTheDocument();
+    expect(within(form).getByText('Estaciones del expediente del empleado que usted también tiene asignadas.'))
+      .toBeInTheDocument();
+    // 2-N07: the employee moved to another department; the code is explained, never the server title.
+    updateDepartmentUser.mockRejectedValueOnce(Object.assign(new Error('Raw server title'),
+      { status: 409, code: 'employee_transferred' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(updateDepartmentUser).toHaveBeenCalledWith('contracts', 'acc-3', expect.objectContaining({
+      stationIds: ['st-1'], expectedVersion: 'v-acc-3' }), expect.stringMatching(/^[0-9a-f-]{36}$/));
+    const alert = await within(form).findByRole('alert');
+    expect(alert).toHaveTextContent('se trasladó a otro departamento');
+    expect(alert).not.toHaveTextContent('Raw server title');
   });
 });
 
@@ -175,6 +205,18 @@ describe('AccessValidationsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Rechazar solicitud' }));
     expect(rejectAccessRequest).toHaveBeenCalledWith('req-1', 'Correo personal', 'v1');
     expect(await screen.findByText(/ya fue resuelta/)).toBeInTheDocument();
+  });
+
+  it('explains a request whose administrator left the department and re-reads the queue (2-N33)', async () => {
+    validateAccessRequest.mockRejectedValue(Object.assign(new Error('Raw server title'),
+      { status: 409, code: 'requester_no_longer_administrator' }));
+    renderWith(validator, <AccessValidationsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Validar' }));
+    await userEvent.type(screen.getByLabelText('Contraseña temporal'), 'Synthetic-Member!5678');
+    await userEvent.click(screen.getByRole('button', { name: 'Validar y crear cuenta' }));
+    const alert = await screen.findByText(/Quien pidió este acceso ya no administra el departamento/);
+    expect(alert).not.toHaveTextContent('Raw server title');
+    expect(listAccessRequests.mock.calls.length).toBeGreaterThan(1);
   });
 
   it('hides decisions from accounts that cannot validate', async () => {

@@ -14,7 +14,9 @@ import { ElevantApiError, type AirlineContractPageResponse, type ContractDocumen
   type AirlinePortalBootstrapResponse, type AirlinePortalOperationResponse,
   type SessionActorResponse, type SessionResponse, type AirlinePermitData, type SubmitAirlinePermitInput,
   type ContractTimelineData, type ContractPricingTermsResponse,
-  type AirlinePortalStandingResponse } from "@elevant/api-client";
+  type AirlinePortalStandingResponse, type AirlinePortalUserData, type AirlinePortalUsersData,
+  type InviteAirlinePortalUserCommand, type SetAirlinePortalUserSignerCommand,
+  type SetAirlinePortalUserStatusCommand } from "@elevant/api-client";
 import { createAirlineTreasuryService, type AirlineTreasuryService, type AirlineTreasuryStatement, type AirlineTreasuryInvoiceDetail, type AirlineTreasuryReceipt, type AirlineTreasuryNotes } from "@/lib/airline-treasury-service";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
 import type { CardPaymentListResponse, CardPaymentResponse, PayInvoiceByCardBody } from "@elevant/api-client";
@@ -84,6 +86,19 @@ interface AirlineSessionContextValue {
   uploadPermitDocument(document: File): Promise<string>;
   /** Submits a permit with the intent's Idempotency-Key: a retry of the same body never duplicates it (2-N09). */
   submitPermit(input: SubmitAirlinePermitInput, idempotencyKey: string): Promise<AirlinePermitData>;
+  /**
+   * The airline's portal users and what the session may do (2-N20): representatives manage the users and sign;
+   * signers sign contracts and submit the permits; everybody else reads.
+   */
+  getPortalUsers(): Promise<AirlinePortalUsersData>;
+  /** A representative invites a user by email with the intent's Idempotency-Key; the activation email is queued. */
+  invitePortalUser(command: InviteAirlinePortalUserCommand, idempotencyKey: string): Promise<AirlinePortalUserData>;
+  /** A representative deactivates or reactivates another user with the version on screen. */
+  setPortalUserStatus(userId: string, command: SetAirlinePortalUserStatusCommand,
+    idempotencyKey: string): Promise<AirlinePortalUserData>;
+  /** A representative lets another user sign and submit permits, or takes it back, with the version on screen. */
+  setPortalUserSigner(userId: string, command: SetAirlinePortalUserSignerCommand,
+    idempotencyKey: string): Promise<AirlinePortalUserData>;
   /**
    * Historical stations, read-only and what each contract waits for (2-N32, 2-N35). It is read only once a screen
    * asks for it (`useAirlineStanding`) and again when the airline's contracts change.
@@ -499,6 +514,17 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     withContractClient(client => client.uploadAirlinePermitDocument(document)), [withContractClient]);
   const submitPermit = useCallback((input: SubmitAirlinePermitInput, idempotencyKey: string) =>
     withContractClient(client => client.submitAirlinePermit(input, idempotencyKey)), [withContractClient]);
+  // 2-N20: the airline manages its own portal users; the server decides who may and answers the user it changed.
+  const getPortalUsers = useCallback(() =>
+    withContractClient(client => client.getAirlinePortalUsers({ cache: "no-store" })), [withContractClient]);
+  const invitePortalUser = useCallback((command: InviteAirlinePortalUserCommand, idempotencyKey: string) =>
+    withContractClient(client => client.inviteAirlinePortalUser(command, idempotencyKey)), [withContractClient]);
+  const setPortalUserStatus = useCallback((userId: string, command: SetAirlinePortalUserStatusCommand,
+    idempotencyKey: string) => withContractClient(client => client.setAirlinePortalUserStatus(userId, command,
+    idempotencyKey)), [withContractClient]);
+  const setPortalUserSigner = useCallback((userId: string, command: SetAirlinePortalUserSignerCommand,
+    idempotencyKey: string) => withContractClient(client => client.setAirlinePortalUserSigner(userId, command,
+    idempotencyKey)), [withContractClient]);
 
   // 2-N32: the standing is read once a screen asks for it and again when the airline's contracts change.
   const [standingRead, setStandingRead] = useState<{ accountId: string; state: AirlineStandingState } | null>(null);
@@ -856,7 +882,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [withContractClient]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, uploadPermitDocument, submitPermit, standing, requestStanding, retryStanding, getContractTimeline, getContractPricingTerms, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, uploadPermitDocument, submitPermit, getPortalUsers, invitePortalUser, setPortalUserStatus, setPortalUserSigner, standing, requestStanding, retryStanding, getContractTimeline, getContractPricingTerms, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

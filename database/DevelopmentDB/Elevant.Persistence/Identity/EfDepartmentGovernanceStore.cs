@@ -245,6 +245,8 @@ internal sealed partial class EfDepartmentGovernanceStore(
         if (actor is null || !actor.Administers(parsed)) return null;
         var users = await DepartmentUsersAsync(parsed, cancellationToken);
         var stations = await StationsOfAsync(users.Select(user => user.Id).ToArray(), cancellationToken);
+        var employeeStations = await EmployeeStationsOfAccountsAsync(users.Select(user => user.Id).ToArray(),
+            cancellationToken);
         var profileIds = users.Where(user => user.ProfileId != null).Select(user => user.ProfileId!.Value).Distinct().ToArray();
         var profiles = await context.AccessProfiles.AsNoTracking().Where(profile => profileIds.Contains(profile.Id))
             .ToDictionaryAsync(profile => profile.Id, cancellationToken);
@@ -268,9 +270,31 @@ internal sealed partial class EfDepartmentGovernanceStore(
             return new DepartmentUserData(user.PublicId, user.FirstName, user.LastName, user.Email, KindOf(user),
                 user.Status.ToString(), profile?.PublicId, profile?.Name,
                 user.Access.Permissions.Order(StringComparer.Ordinal).ToArray(), stations[user.Id],
-                user.MustChangePassword, user.LastLoginAt, user.Avatar, GovernanceSupport.Version(user.RowVersion));
+                user.MustChangePassword, user.LastLoginAt, user.Avatar, GovernanceSupport.Version(user.RowVersion),
+                employeeStations.GetValueOrDefault(user.Id));
         }).ToArray();
         return new DepartmentUserPage(page, limit, filtered.Length, page * limit < filtered.Length, pageRows);
+    }
+
+    /// <summary>
+    /// Active stations of the employee record behind each account (2-N21): the edit form offers only these. Accounts
+    /// without employee record are left out.
+    /// </summary>
+    private async Task<IReadOnlyDictionary<long, GovernanceStationData[]>> EmployeeStationsOfAccountsAsync(long[] accountIds,
+        CancellationToken cancellationToken)
+    {
+        var employees = await (from user in context.Users.AsNoTracking()
+                               join employee in context.Employees.AsNoTracking() on user.PersonId equals employee.PersonId
+                               where accountIds.Contains(user.Id)
+                               select new { AccountId = user.Id, EmployeeId = employee.Id }).ToArrayAsync(cancellationToken);
+        var employeeIds = employees.Select(item => item.EmployeeId).ToArray();
+        var rows = await (from link in context.EmployeeStations.AsNoTracking()
+                          join station in context.Stations.AsNoTracking() on link.StationId equals station.Id
+                          where employeeIds.Contains(link.EmployeeId) && link.ValidTo == null && station.IsActive
+                          orderby station.Code
+                          select new { link.EmployeeId, station.PublicId, station.Code }).ToArrayAsync(cancellationToken);
+        var byEmployee = rows.ToLookup(row => row.EmployeeId, row => new GovernanceStationData(row.PublicId, row.Code));
+        return employees.ToDictionary(item => item.AccountId, item => byEmployee[item.EmployeeId].ToArray());
     }
 
     private async Task<IReadOnlyDictionary<long, GovernanceStationData[]>> StationsOfAsync(long[] accountIds,

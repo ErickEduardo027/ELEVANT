@@ -57,7 +57,7 @@ internal sealed partial class EfDepartmentGovernanceStore
     {
         if (input.RequestId == Guid.Empty || input.StationIds is not { Count: > 0 and <= 20 } ||
             input.TerminalIds is { Count: > 40 })
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "invalid_access_request");
         var prior = await context.UserAccessRequests.AsNoTracking()
             .SingleOrDefaultAsync(item => item.PublicId == input.RequestId, cancellationToken);
         if (prior is not null)
@@ -66,7 +66,7 @@ internal sealed partial class EfDepartmentGovernanceStore
                    await context.Employees.AnyAsync(item => item.Id == priorEmployee && item.PublicId == input.EmployeeId,
                        cancellationToken)
                 ? GovernanceResult.Success(prior.PublicId)
-                : GovernanceResult.Failed(GovernanceFailure.Conflict);
+                : GovernanceResult.Failed(GovernanceFailure.Conflict, "idempotency_conflict");
 
         var candidate = await CandidateAsync(null, input.EmployeeId, tracked: false, cancellationToken);
         if (candidate is null || candidate.Employee.Department != department)
@@ -113,13 +113,13 @@ internal sealed partial class EfDepartmentGovernanceStore
         else
         {
             if (input.TerminalIds is { Count: > 0 } || input.SupervisorRampAgentId is not null)
-                return GovernanceResult.Failed(GovernanceFailure.Invalid);
+                return GovernanceResult.Failed(GovernanceFailure.Invalid, "invalid_access_request");
             var resolved = await ResolveGrantsAsync(department, input.AccessProfileId, input.PermissionCodes, cancellationToken);
             if (resolved is null) return GovernanceResult.Failed(GovernanceFailure.Invalid, "permissions_invalid");
             grants = resolved;
         }
         if (!await GovernanceSupport.ValidAvatarAsync(context, input.AvatarMediaUrl, null, cancellationToken))
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "avatar_invalid");
 
         return await InSerializableTransactionAsync(async () =>
         {
@@ -162,6 +162,10 @@ internal sealed partial class EfDepartmentGovernanceStore
                 new AuditFieldChangeData("request.kind", null, kind.ToString()),
                 new AuditFieldChangeData("request.employee", null, candidate.Employee.EmployeeNumber));
             await NotifyRequestAsync(request, now, cancellationToken);
+            // 2-N18: Gestión Humana sees the request in its bell, as with the requests typed by name.
+            await DepartmentNotificationWriter.NotifyAsync(context, Department.HumanResources, ValidateRequestsPermission,
+                "access_request", request.PublicId, $"{request.FirstName} {request.LastName}", now, cancellationToken,
+                exceptAccountId: actor.Id);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(request.PublicId);
         }, cancellationToken);
@@ -268,7 +272,8 @@ internal sealed partial class EfDepartmentGovernanceStore
         {
             var codes = await context.UserAccessRequestGrants.Where(item => item.UserAccessRequestId == request.Id)
                 .Select(item => item.PermissionCode).ToArrayAsync(cancellationToken);
-            if (codes.Length == 0) return (null, [], GovernanceResult.Failed(GovernanceFailure.Conflict));
+            if (codes.Length == 0)
+                return (null, [], GovernanceResult.Failed(GovernanceFailure.Conflict, "permissions_invalid"));
             grants = new GrantSelection(null, codes);
         }
         var (account, failure) = await ProvisionEmployeeAccountAsync(candidate, temporaryPassword, request.Department,
@@ -276,6 +281,9 @@ internal sealed partial class EfDepartmentGovernanceStore
         if (account is null)
             return (null, [], GovernanceResult.Failed(failure == "password_policy"
                 ? GovernanceFailure.Invalid : GovernanceFailure.Conflict, failure));
+        // 2-N17: the photo of the request becomes the person's; one the cleanup already removed is left out.
+        if (await ExistingAvatarAsync(request.AvatarMediaUrl, cancellationToken) is { } avatar)
+            candidate.Person.AvatarMediaUrl = avatar;
         if (request.Kind == UserAccessRequestKind.RampAgent)
         {
             var agent = await context.RampAgents.SingleAsync(item => item.PersonId == candidate.Person.Id, cancellationToken);
@@ -297,10 +305,10 @@ internal sealed partial class EfDepartmentGovernanceStore
 
     /// <summary>The super administrator names a department administrator from an existing employee.</summary>
     private async Task<GovernanceResult> CreateAdministratorFromEmployeeAsync(Actor actor, Department department,
-        CreateDepartmentAccountInput input, CancellationToken cancellationToken)
+        CreateDepartmentAccountInput input, CommandReceipt? receipt, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(input.TemporaryPassword) || input.StationIds is not { Count: > 0 and <= 20 })
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "invalid_department_user");
         var stations = await ResolveStationsAsync(actor, input.StationIds, cancellationToken);
         if (stations is null) return GovernanceResult.Failed(GovernanceFailure.Invalid, "stations_invalid");
 
@@ -332,6 +340,6 @@ internal sealed partial class EfDepartmentGovernanceStore
             await NotifyDepartmentAsync(department, "department_users", account.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(account.PublicId);
-        }, cancellationToken);
+        }, cancellationToken, receipt);
     }
 }

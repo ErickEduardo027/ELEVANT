@@ -465,6 +465,14 @@ export interface AirlinePortalBootstrapResponse {
   currentOperations: AirlinePortalOperationResponse[];
 }
 
+export interface AirlinePortalCapabilitiesData {
+  accountId: string;
+  representative: boolean;
+  signer: boolean;
+  canSign: boolean;
+  canManageUsers: boolean;
+}
+
 export interface AirlinePortalStandingContractResponse {
   id: string;
   code: string;
@@ -488,6 +496,25 @@ export interface AirlinePortalStandingResponse {
   readOnly: boolean;
   stations: AirlinePortalStandingStationResponse[];
   contracts: AirlinePortalStandingContractResponse[];
+}
+
+export interface AirlinePortalUserData {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  status: string;
+  invitationPending: boolean;
+  representative: boolean;
+  signer: boolean;
+  /** @nullable */
+  lastLoginAt?: string | null;
+  version: string;
+}
+
+export interface AirlinePortalUsersData {
+  me: AirlinePortalCapabilitiesData;
+  users: AirlinePortalUserData[];
 }
 
 export interface AirlinePreinvoiceLineResponse {
@@ -996,6 +1023,8 @@ export interface ClientUserData {
   lastLoginAt?: string | null;
   version: string;
   invitationPending: boolean;
+  representative: boolean;
+  signer: boolean;
 }
 
 export interface CommercialAccountResponse {
@@ -1530,6 +1559,11 @@ export interface ContractWithdrawalResponse {
   draftVersionId?: string | null;
 }
 
+export interface ConvertLegacyRoleInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface CorrectExchangeRateInput {
   rate: number;
   source: string;
@@ -1576,26 +1610,6 @@ export interface CreateDepartmentAccountInput {
   permissionCodes?: string[] | null;
   /** @nullable */
   employeeId?: string | null;
-}
-
-export interface CreateGovernanceUserInput {
-  firstName: string;
-  lastName: string;
-  email: string;
-  roleId: string;
-  temporaryPassword: string;
-  /** @nullable */
-  rampAgentId?: string | null;
-  /** @nullable */
-  avatarMediaUrl?: string | null;
-  /** @nullable */
-  accessRequestId?: string | null;
-  /** @nullable */
-  accessRequestVersion?: string | null;
-  /** @nullable */
-  expectedRampProfileVersion?: string | null;
-  /** @nullable */
-  expectedStationCodes?: string[] | null;
 }
 
 export interface SaveEmployeeInput {
@@ -1946,6 +1960,8 @@ export interface DepartmentUserData {
   /** @nullable */
   avatarMediaUrl?: string | null;
   version: string;
+  /** @nullable */
+  employeeStations?: GovernanceStationData[] | null;
 }
 
 export interface DepartmentUserPage {
@@ -3735,6 +3751,16 @@ export interface ImportOccFlightResponse {
   replayed: boolean;
 }
 
+export interface InviteAirlinePortalUserInput {
+  /** @nullable */
+  firstName?: string | null;
+  /** @nullable */
+  lastName?: string | null;
+  /** @nullable */
+  email?: string | null;
+  signer: boolean;
+}
+
 export interface InvoiceEmailDeliveryResponse {
   recipient: string;
   status: string;
@@ -3795,6 +3821,8 @@ export interface LegacyRoleData {
   name: string;
   permissions: string[];
   activeUsers: number;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface LinkProvisioningAccountInput {
@@ -4392,6 +4420,44 @@ export interface OccMasterData {
   aircraftTypes: MasterAircraftTypeData[];
   canCreate: boolean;
   canUpdate: boolean;
+}
+
+export interface OccMobileDeviceAgentData {
+  accountId: string;
+  /** @nullable */
+  rampAgentId?: string | null;
+  name: string;
+  /** @nullable */
+  employeeNumber?: string | null;
+}
+
+export interface OccMobileDeviceData {
+  id: string;
+  platform: string;
+  /** @nullable */
+  deviceName?: string | null;
+  appVersion: string;
+  /** @nullable */
+  operatingSystemVersion?: string | null;
+  lastSeenAt: string;
+  status: string;
+  agent?: OccMobileDeviceAgentData | null;
+  /** @nullable */
+  boundAt?: string | null;
+  /** @nullable */
+  unboundAt?: string | null;
+  /** @nullable */
+  revokedAt?: string | null;
+  agentHasOperationInProgress: boolean;
+  version: string;
+}
+
+export interface OccMobileDevicesData {
+  stationId: string;
+  stationCode: string;
+  canUnbind: boolean;
+  canRevoke: boolean;
+  devices: OccMobileDeviceData[];
 }
 
 export interface OccPlanningTurnaroundContextResponse {
@@ -5645,6 +5711,10 @@ export interface RejectRampMobileAccessInput {
   expectedVersion: string;
 }
 
+export interface ReleaseMobileDeviceRequest {
+  installationId: string;
+}
+
 export interface RemoveOccReviewChargeRequest {
   submissionId: string;
   /**
@@ -5801,6 +5871,13 @@ export interface RevokeAirlinePermitInput {
   expectedVersion: string;
 }
 
+export interface RevokeMobileDeviceInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface SaveAccessProfileInput {
   name: string;
   /** @nullable */
@@ -5878,14 +5955,6 @@ export interface SaveFinancePackageRequest {
   components: FinancePackageComponentRequest[];
   /** @nullable */
   expectedVersion?: string | null;
-}
-
-export interface SaveGovernanceRoleInput {
-  name: string;
-  /** @nullable */
-  description?: string | null;
-  permissionCodes: string[];
-  isActive: boolean;
 }
 
 export interface SaveJobPositionInput {
@@ -5999,6 +6068,25 @@ export interface SessionResponse {
   refreshToken?: string | null;
   /** @nullable */
   refreshExpiresAt?: string | null;
+}
+
+export interface SetAirlinePortalUserSignerInput {
+  signer: boolean;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface SetAirlinePortalUserStatusInput {
+  isActive: boolean;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface SetClientUserPortalRoleInput {
+  representative: boolean;
+  signer: boolean;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface SetContractDraftScopeInput {
@@ -6244,6 +6332,13 @@ export interface TransitionRampOperationServiceRequest {
   note?: string | null;
 }
 
+export interface UnbindMobileDeviceInput {
+  /** @nullable */
+  expectedVersion?: string | null;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface UnregisteredPersonData {
   /** @nullable */
   accountId?: string | null;
@@ -6318,18 +6413,6 @@ export interface UpdateDepartmentUserInput {
   accessProfileId?: string | null;
   /** @nullable */
   permissionCodes?: string[] | null;
-}
-
-export interface UpdateGovernanceUserInput {
-  firstName: string;
-  lastName: string;
-  email: string;
-  roleId: string;
-  isActive: boolean;
-  /** @nullable */
-  rampAgentId?: string | null;
-  /** @nullable */
-  avatarMediaUrl?: string | null;
 }
 
 export interface UpdateOccStandAttributesRequest {
@@ -6869,6 +6952,10 @@ view?: string;
 };
 
 export type GetOccMasterDataParams = {
+stationId: string;
+};
+
+export type ListOccMobileDevicesParams = {
 stationId: string;
 };
 
@@ -7607,6 +7694,147 @@ export const getAirlinePortalBootstrap = async ( options?: RequestInit): Promise
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AirlinePortalBootstrapResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlinePortalUsersUrl = () => {
+
+
+
+
+  return `/api/v1/airline/portal/users`
+}
+
+export const getAirlinePortalUsers = async ( options?: RequestInit): Promise<AirlinePortalUsersData> => {
+
+  const res = await fetch(getGetAirlinePortalUsersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePortalUsersData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getInviteAirlinePortalUserUrl = () => {
+
+
+
+
+  return `/api/v1/airline/portal/users`
+}
+
+/**
+ * @summary A representative invites a user by email; the activation email is queued, never sent from here.
+ */
+export const inviteAirlinePortalUser = async (inviteAirlinePortalUserInput: InviteAirlinePortalUserInput, options?: RequestInit): Promise<AirlinePortalUserData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getInviteAirlinePortalUserUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(inviteAirlinePortalUserInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePortalUserData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetAirlinePortalUserStatusUrl = (userId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/users/${userId}/status`
+}
+
+/**
+ * @summary A representative deactivates or reactivates another user, never itself nor another representative.
+ */
+export const setAirlinePortalUserStatus = async (userId: string,
+    setAirlinePortalUserStatusInput: SetAirlinePortalUserStatusInput, options?: RequestInit): Promise<AirlinePortalUserData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetAirlinePortalUserStatusUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setAirlinePortalUserStatusInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePortalUserData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetAirlinePortalUserSignerUrl = (userId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/users/${userId}/signer`
+}
+
+/**
+ * @summary A representative lets another user sign contracts and submit the JAC permit, or takes it back.
+ */
+export const setAirlinePortalUserSigner = async (userId: string,
+    setAirlinePortalUserSignerInput: SetAirlinePortalUserSignerInput, options?: RequestInit): Promise<AirlinePortalUserData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetAirlinePortalUserSignerUrl(userId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setAirlinePortalUserSignerInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: AirlinePortalUserData = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -10492,6 +10720,10 @@ export const getCreateDepartmentAdministratorUrl = (department: string,) => {
   return `/api/v1/governance/departments/${department}/administrators`
 }
 
+/**
+ * @summary Names a department administrator from an employee. The Idempotency-Key is optional while older clients exist
+(2-N39): a retry with the same key, body and temporary password replays the account.
+ */
 export const createDepartmentAdministrator = async (department: string,
     createDepartmentAccountInput?: CreateDepartmentAccountInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -10567,6 +10799,11 @@ export const getUpdateDepartmentUserUrl = (department: string,
   return `/api/v1/governance/departments/${department}/users/${id}`
 }
 
+/**
+ * @summary Edits a user's access with the version on screen: an employee's stations come from the employee record
+(`stations_outside_employee`), a legacy CUSTOM_* member becomes a Contracts member and a transferred
+account is refused (`employee_transferred`). Optional Idempotency-Key (2-N39).
+ */
 export const updateDepartmentUser = async (department: string,
     id: string,
     updateDepartmentUserInput?: UpdateDepartmentUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
@@ -10604,6 +10841,10 @@ export const getSetDepartmentUserStatusUrl = (department: string,
   return `/api/v1/governance/departments/${department}/users/${id}/status`
 }
 
+/**
+ * @summary Deactivates or reactivates a user with the version on screen; only the employee's current department brings a
+transferred account back, through a validated request (`employee_transferred`). Optional Idempotency-Key.
+ */
 export const setDepartmentUserStatus = async (department: string,
     id: string,
     setDepartmentUserStatusInput?: SetDepartmentUserStatusInput, options?: RequestInit): Promise<CommercialIdResponse> => {
@@ -11045,6 +11286,10 @@ export const getCreateGovernanceClientUserUrl = (organizationId: string,) => {
   return `/api/v1/governance/clients/${organizationId}/users`
 }
 
+/**
+ * @summary Adds a portal user to an airline (invitation by email, or a temporary password); its representatives hear of
+it. The Idempotency-Key is optional while older clients exist (2-N39).
+ */
 export const createGovernanceClientUser = async (organizationId: string,
     createClientUserInput?: CreateClientUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -11097,6 +11342,48 @@ const res = await fetch(getSetGovernanceClientUserStatusUrl(organizationId,id),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(setDepartmentUserStatusInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetGovernanceClientUserPortalRoleUrl = (organizationId: string,
+    id: string,) => {
+
+
+
+
+  return `/api/v1/governance/clients/${organizationId}/users/${id}/portal-role`
+}
+
+/**
+ * @summary Designates a representative (manages the airline's portal users and signs) or a signer (signs contracts and
+submits the JAC permit) with the account version on screen and an Idempotency-Key (2-N20). The last active
+representative keeps the role (`last_representative`).
+ */
+export const setGovernanceClientUserPortalRole = async (organizationId: string,
+    id: string,
+    setClientUserPortalRoleInput: SetClientUserPortalRoleInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetGovernanceClientUserPortalRoleUrl(organizationId,id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setClientUserPortalRoleInput)
   }
 )
 
@@ -11188,14 +11475,26 @@ export const getConvertLegacyRoleUrl = (id: string,) => {
   return `/api/v1/governance/legacy-roles/${id}/convert`
 }
 
-export const convertLegacyRole = async (id: string, options?: RequestInit): Promise<CommercialIdResponse> => {
+/**
+ * @summary Converts a legacy CUSTOM_* role into a Contracts template; members already edited keep their permissions
+(2-N19). The body (`expectedVersion`) and the Idempotency-Key are optional while older clients exist; a
+key needs the version (2-N39).
+ */
+export const convertLegacyRole = async (id: string,
+    convertLegacyRoleInput?: ConvertLegacyRoleInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
-  const res = await fetch(getConvertLegacyRoleUrl(id),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getConvertLegacyRoleUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(convertLegacyRoleInput)
   }
 )
 
@@ -15076,27 +15375,24 @@ export const getCreateGovernanceRoleUrl = () => {
   return `/api/v1/governance/roles`
 }
 
-export const createGovernanceRole = async (saveGovernanceRoleInput?: SaveGovernanceRoleInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+/**
+ * @summary Retired (2-N38): templates replace custom roles; answers 410 `legacy_governance_retired`.
+ */
+export const createGovernanceRole = async ( options?: RequestInit): Promise<unknown> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-const res = await fetch(getCreateGovernanceRoleUrl(),
+  const res = await fetch(getCreateGovernanceRoleUrl(),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(saveGovernanceRoleInput)
+    method: 'POST'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  const data: unknown = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -15110,28 +15406,24 @@ export const getUpdateGovernanceRoleUrl = (id: string,) => {
   return `/api/v1/governance/roles/${id}`
 }
 
-export const updateGovernanceRole = async (id: string,
-    saveGovernanceRoleInput?: SaveGovernanceRoleInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+/**
+ * @summary Retired (2-N38): templates replace custom roles; answers 410 `legacy_governance_retired`.
+ */
+export const updateGovernanceRole = async (id: string, options?: RequestInit): Promise<unknown> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-const res = await fetch(getUpdateGovernanceRoleUrl(id),
+  const res = await fetch(getUpdateGovernanceRoleUrl(id),
   {
     ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(saveGovernanceRoleInput)
+    method: 'PUT'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  const data: unknown = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -15173,27 +15465,25 @@ export const getCreateGovernanceUserUrl = () => {
   return `/api/v1/governance/users`
 }
 
-export const createGovernanceUser = async (createGovernanceUserInput?: CreateGovernanceUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+/**
+ * @summary Retired (2-N38): accounts belong to employees; departments request them and Gestión Humana validates them.
+Answers 410 `legacy_governance_retired`.
+ */
+export const createGovernanceUser = async ( options?: RequestInit): Promise<unknown> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-const res = await fetch(getCreateGovernanceUserUrl(),
+  const res = await fetch(getCreateGovernanceUserUrl(),
   {
     ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(createGovernanceUserInput)
+    method: 'POST'
+
+
   }
 )
 
-  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: CommercialIdResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  const data: unknown = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -15270,28 +15560,25 @@ export const getUpdateGovernanceUserUrl = (id: string,) => {
   return `/api/v1/governance/users/${id}`
 }
 
-export const updateGovernanceUser = async (id: string,
-    updateGovernanceUserInput?: UpdateGovernanceUserInput, options?: RequestInit): Promise<CommercialIdResponse> => {
+/**
+ * @summary Retired (2-N38): access is edited from the department's users and the employee record. Answers 410
+`legacy_governance_retired`.
+ */
+export const updateGovernanceUser = async (id: string, options?: RequestInit): Promise<unknown> => {
 
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Array.isArray(h)) return Object.fromEntries(h);
-    return h;
-  };
-const res = await fetch(getUpdateGovernanceUserUrl(id),
+  const res = await fetch(getUpdateGovernanceUserUrl(id),
   {
     ...options,
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(updateGovernanceUserInput)
+    method: 'PUT'
+
+
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: CommercialIdResponse = body ? JSON.parse(body) : {}
+  const data: unknown = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -16833,6 +17120,45 @@ const res = await fetch(getRegisterMobileDeviceUrl(),
 
 
 
+export const getReleaseMobileDeviceUrl = () => {
+
+
+
+
+  return `/api/v1/mobile/device/release`
+}
+
+/**
+ * @summary The agent signs out and frees the tablet it holds (2-N02). The Idempotency-Key is scoped to the installation:
+a retry with the same key and body answers the first result. Only the account holding the tablet releases
+it (`device_not_bound` otherwise).
+ */
+export const releaseMobileDevice = async (releaseMobileDeviceRequest: ReleaseMobileDeviceRequest, options?: RequestInit): Promise<void> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReleaseMobileDeviceUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(releaseMobileDeviceRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
 export const getGetOccAssignmentReadinessUrl = (params: GetOccAssignmentReadinessParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -17602,6 +17928,118 @@ const res = await fetch(getUpdateOccAircraftTypeUrl(aircraftTypeId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: MasterAircraftTypeData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListOccMobileDevicesUrl = (params: ListOccMobileDevicesParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/devices?${stringifiedParams}` : `/api/v1/occ/devices`
+}
+
+export const listOccMobileDevices = async (params: ListOccMobileDevicesParams, options?: RequestInit): Promise<OccMobileDevicesData> => {
+
+  const res = await fetch(getListOccMobileDevicesUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccMobileDevicesData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUnbindOccMobileDeviceUrl = (deviceId: string,) => {
+
+
+
+
+  return `/api/v1/occ/devices/${deviceId}/unbinding`
+}
+
+/**
+ * @summary Frees the tablet: the next agent who signs in on it holds it, whatever the previous agent was doing.
+ */
+export const unbindOccMobileDevice = async (deviceId: string,
+    unbindMobileDeviceInput: UnbindMobileDeviceInput, options?: RequestInit): Promise<OccMobileDeviceData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUnbindOccMobileDeviceUrl(deviceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(unbindMobileDeviceInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccMobileDeviceData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRevokeOccMobileDeviceUrl = (deviceId: string,) => {
+
+
+
+
+  return `/api/v1/occ/devices/${deviceId}/revocation`
+}
+
+/**
+ * @summary Revokes a lost tablet with a reason: the installation never registers again and the sessions of the account
+that held it end.
+ */
+export const revokeOccMobileDevice = async (deviceId: string,
+    revokeMobileDeviceInput: RevokeMobileDeviceInput, options?: RequestInit): Promise<OccMobileDeviceData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRevokeOccMobileDeviceUrl(deviceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(revokeMobileDeviceInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccMobileDeviceData = body ? JSON.parse(body) : {}
   return data
 }
 

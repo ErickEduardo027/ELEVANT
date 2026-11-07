@@ -225,6 +225,23 @@ public static class AccountEmailTemplates
         action: null,
         security: null);
 
+    /// <summary>
+    /// A portal user of the airline was invited, deactivated, reactivated or got a role changed (2-N20): the airline's
+    /// representatives learn what changed and who did it. <paramref name="change"/> is a full Spanish sentence.
+    /// </summary>
+    public static EmailMessage PortalUserChanged(string to, string airline, string change, string actor) => Build(to,
+        subject: $"Cambio en los usuarios del portal de {airline} · ELEVANT",
+        preheader: change,
+        kicker: "Portal de aerolíneas",
+        title: "Cambió un usuario del portal",
+        greeting: null,
+        paragraphs: [$"{actor} registró este cambio en los usuarios del portal de aerolíneas de {airline}:", change,
+            "Puedes revisar los usuarios del portal, quién firma y quién tiene acceso en «Perfil» del portal de aerolíneas."],
+        validity: "Aviso a los representantes de la aerolínea",
+        code: null,
+        action: null,
+        security: "Si no reconoces este cambio, contacta a AVIAM: solo los representantes de la aerolínea y AVIAM gestionan sus usuarios.");
+
     /// <summary>The simulated e-CF invoice Finance issued, with its PDF attached (ADR-0035).</summary>
     public static EmailMessage InvoiceIssued(string to, string airline, string fiscalNumber, string currency, decimal total,
         decimal balance, DateOnly? dueDate) => Build(to,

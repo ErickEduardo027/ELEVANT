@@ -46,6 +46,11 @@ export const COMMERCIAL_GOVERNANCE_MESSAGES = Object.freeze({
   airline_profile_conflict: 'Otra ficha ya usa ese nombre de origen o ese código verificado.',
   airline_identity_locked: 'La aerolínea ya opera con AVIAM: su razón social, sus códigos y su verificación no pueden cambiar.',
   version_conflict: 'El registro cambió mientras lo editaba. Actualice e intente de nuevo.',
+  // Phase 2, block E: representatives and signers of the portal (2-N20) and governance codes (2-N39).
+  last_representative: 'Es el último representante activo de la aerolínea: designe a otro usuario antes de quitarle el rol.',
+  protected_user: 'Esa cuenta está protegida: no puede modificarla desde aquí.',
+  invalid_governance_data: 'Revise los datos e intente de nuevo.',
+  governance_conflict: 'Los datos cambiaron mientras los editaba. Actualice e intente de nuevo.',
 });
 
 /**

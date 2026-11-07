@@ -209,6 +209,12 @@ function loginErrorMessage(error: unknown) {
     return 'La sesión no pudo confirmarse. Inicia sesión nuevamente.';
   }
   if (error.code === 'forbidden') return 'Esta cuenta no tiene acceso a la aplicación de rampa.';
+  if (error.code === 'device_in_use') {
+    return 'Otro agente está usando esta tablet en una operación en curso. Pídele que cierre sesión al terminar o solicita a OCC que libere la tablet.';
+  }
+  if (error.code === 'device_revoked') {
+    return 'OCC revocó esta tablet y ya no puede usarse con ELEVANT. Entrégala a OCC y usa otra tablet.';
+  }
   if (error.code === 'device_conflict') {
     return 'El registro seguro del dispositivo entró en conflicto. Abre la aplicación nuevamente y vuelve a intentar. Si persiste, contacta a AVIAM.';
   }

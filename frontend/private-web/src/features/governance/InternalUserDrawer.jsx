@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import Drawer from '../../components/Drawer';
 import { identificationProblem } from '../employees/EmployeeForms';
 import GeneratePasswordField from '../department-users/GeneratePasswordField';
@@ -7,6 +7,7 @@ import {
   createInternalUser, DEPARTMENT_LABELS, getDepartmentOptions, getPermissionCatalog,
 } from '../../services/departmentGovernanceService';
 import { governanceMessage, IDENTIFICATION_LABELS, listPositions } from '../../services/humanResourcesEmployeesService';
+import { createCommandKeyHolder } from '../../services/commandKeys';
 
 const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const today = () => new Date().toISOString().slice(0, 10);
@@ -26,6 +27,7 @@ export default function InternalUserDrawer({ open, initialDepartment, onClose, o
   const [form, setForm] = useState(EMPTY);
   const [reference, setReference] = useState({ status: 'loading', positions: [], stations: [], catalog: null });
   const [busy, setBusy] = useState(false);
+  const keys = useRef(createCommandKeyHolder());
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export default function InternalUserDrawer({ open, initialDepartment, onClose, o
           catalog: catalogs?.find(item => item.department === department) ?? null,
         });
       })
-      .catch(failure => { if (active) setReference({ status: 'error', positions: [], stations: [], catalog: null, message: failure.message }); });
+      .catch(failure => { if (active) setReference({ status: 'error', positions: [], stations: [], catalog: null, message: governanceMessage(failure) }); });
     return () => { active = false; };
   }, [open, department]);
 
@@ -67,7 +69,7 @@ export default function InternalUserDrawer({ open, initialDepartment, onClose, o
     if (missing) { setError(missing); return; }
     setBusy(true);
     try {
-      const created = await createInternalUser(department, {
+      const body = {
         employee: {
           firstName: form.firstName.trim(), lastName: form.lastName.trim(), identificationType: form.identificationType,
           identificationNumber: form.identificationNumber, employeeNumber: form.employeeNumber.trim(), department,
@@ -78,7 +80,10 @@ export default function InternalUserDrawer({ open, initialDepartment, onClose, o
         temporaryPassword: form.temporaryPassword,
         stationIds: form.stationIds,
         permissionCodes: form.kind === 'member' ? form.permissionCodes : [],
-      });
+      };
+      // The temporary password is part of the intent: a retry sends the same one with the same key.
+      const created = await keys.current.run('internal-user.create', { department, ...body },
+        key => createInternalUser(department, body, key));
       setForm(EMPTY);
       onCreated?.(created, `${form.firstName.trim()} ${form.lastName.trim()} ya puede entrar con su correo y la contraseña temporal; deberá cambiarla en el primer acceso.`);
     } catch (failure) {

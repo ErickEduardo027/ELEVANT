@@ -115,17 +115,30 @@ const HUMAN_RESOURCES_CODES = ["agent_has_operation_in_progress", "invalid_avail
   "availability_overlap", "availability_request_closed", "absence_not_approved", "absence_started", "absence_ended",
   "absence_end_invalid", "invalid_absence_amendment", "invalid_shift", "shift_scope_missing", "shift_day_taken",
   "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query"] as const;
+/**
+ * Access (phase 2, block E): shared tablets that pass between agents, are released at sign-out and that OCC frees or
+ * revokes (2-N02); the airline's representatives and signers, the only ones that sign contracts and submit the JAC
+ * permit (2-N20); a transferred employee that only its new department brings back (2-N07) and the requests of an
+ * administrator that left (2-N33); the retired legacy governance writes (2-N38) and the default codes every governance
+ * command answers (2-N39).
+ */
+const ACCESS_CODES = ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
+  "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",
+  "last_representative", "invalid_portal_user", "employee_transferred", "requester_no_longer_administrator",
+  "legacy_governance_retired", "access_request_closed", "invalid_governance_data", "governance_conflict",
+  "protected_user"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
   (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number] |
   (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
-  (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number];
+  (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
+  (typeof ACCESS_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
-  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES];
+  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

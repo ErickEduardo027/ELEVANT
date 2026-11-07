@@ -260,11 +260,12 @@ internal sealed class EfEmailOutboxStore(ElevantDbContext context, Application.A
                 .ToDictionaryAsync(item => item.PublicId,
                     item => new EmailReferenceData("payment", item.InvoiceId, item.Code, item.Name), cancellationToken));
 
-        // The airline notices of phase 2 (block B) carry no document: they read as the portal account and its airline.
+        // The airline notices of phase 2 (blocks B and E) carry no document: they read as the portal account and its
+        // airline.
         var accountRows = rows.Where(row => row.Purpose is EmailPurpose.Activation or EmailPurpose.LoginCode or
             EmailPurpose.PasswordReset or EmailPurpose.ContractReadyToSign or EmailPurpose.PermitRejected or
             EmailPurpose.PermitRevoked or EmailPurpose.PermitExpiring or EmailPurpose.ContractExpiring or
-            EmailPurpose.ContractSuspended).ToArray();
+            EmailPurpose.ContractSuspended or EmailPurpose.PortalUserChanged).ToArray();
         if (accountRows.Length > 0)
         {
             var emails = accountRows.Select(row => row.Recipient.Trim().ToUpperInvariant()).Distinct().ToArray();

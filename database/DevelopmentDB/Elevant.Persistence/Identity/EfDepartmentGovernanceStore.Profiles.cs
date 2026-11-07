@@ -29,19 +29,34 @@ internal sealed partial class EfDepartmentGovernanceStore
             members.GetValueOrDefault(profile.Id), GovernanceSupport.Version(profile.RowVersion))).ToArray();
     }
 
+    /// <summary>
+    /// Creates (no <paramref name="profileId"/>) or updates a template. The optional Idempotency-Key (2-N39) replays
+    /// the first result; an update also needs the version on screen.
+    /// </summary>
     public async Task<GovernanceResult> SaveProfileAsync(Guid actorId, string department, Guid? profileId,
-        SaveAccessProfileInput input, CancellationToken cancellationToken = default)
+        SaveAccessProfileInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
-        if (!TryParse(department, out var parsed)) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+        if (!TryParse(department, out var parsed)) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.Administers(parsed)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
+        if (idempotencyKey == Guid.Empty)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
+        if (profileId is not null && string.IsNullOrWhiteSpace(input?.ExpectedVersion))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
         if (input is null || string.IsNullOrWhiteSpace(input.Name) || input.Name.Trim().Length is < 3 or > 80 ||
-            input.Description?.Length > 400 || input.PermissionCodes is not { Count: > 0 and <= 120 } ||
-            input.PermissionCodes.Any(code => !DepartmentPermissionCatalog.Belongs(code, parsed)) ||
-            profileId is not null && string.IsNullOrWhiteSpace(input.ExpectedVersion))
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            input.Description?.Length > 400 || input.PermissionCodes is not { Count: > 0 and <= 120 })
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "invalid_access_profile");
+        if (input.PermissionCodes.Any(code => !DepartmentPermissionCatalog.Belongs(code, parsed)))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "permissions_invalid");
         var codes = DepartmentPermissionCatalog.Normalize(input.PermissionCodes);
         var name = input.Name.Trim();
+        var receipt = ReceiptOf(actor, idempotencyKey,
+            profileId is null ? "governance.access_profile.create" : "governance.access_profile.update", new
+            {
+                department = KeyOf(parsed), profileId, name, description = input.Description?.Trim(), codes,
+                input.ExpectedVersion,
+            });
+        if (await ReplayAsync(receipt, cancellationToken) is { } replay) return replay;
 
         return await InSerializableTransactionAsync(async () =>
         {
@@ -51,13 +66,13 @@ internal sealed partial class EfDepartmentGovernanceStore
             {
                 profile = await context.AccessProfiles.SingleOrDefaultAsync(item =>
                     item.PublicId == id && item.Department == parsed, cancellationToken);
-                if (profile is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+                if (profile is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
                 if (GovernanceSupport.Version(profile.RowVersion) != input.ExpectedVersion)
-                    return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                    return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             }
             if (await context.AccessProfiles.AnyAsync(item => item.Department == parsed && item.IsActive &&
                     item.Name == name && (profile == null || item.Id != profile.Id), cancellationToken))
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "profile_name_in_use");
             var before = profile is null ? null : string.Join(',', await context.AccessProfileGrants
                 .Where(grant => grant.AccessProfileId == profile.Id).Select(grant => grant.PermissionCode)
                 .OrderBy(code => code).ToArrayAsync(cancellationToken));
@@ -87,7 +102,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             await NotifyDepartmentAsync(parsed, "department_users", profile.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(profile.PublicId);
-        }, cancellationToken);
+        }, cancellationToken, receipt);
     }
 
     /// <summary>
@@ -95,23 +110,29 @@ internal sealed partial class EfDepartmentGovernanceStore
     /// lose the template's permissions until an administrator assigns new ones.
     /// </summary>
     public async Task<GovernanceResult> DeactivateProfileAsync(Guid actorId, string department, Guid profileId,
-        string expectedVersion, CancellationToken cancellationToken = default)
+        string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
-        if (!TryParse(department, out var parsed)) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+        if (!TryParse(department, out var parsed)) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.Administers(parsed)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
-        if (string.IsNullOrWhiteSpace(expectedVersion)) return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        if (idempotencyKey == Guid.Empty)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
+        if (string.IsNullOrWhiteSpace(expectedVersion))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        var receipt = ReceiptOf(actor, idempotencyKey, "governance.access_profile.deactivate",
+            new { department = KeyOf(parsed), profileId, expectedVersion });
+        if (await ReplayAsync(receipt, cancellationToken) is { } replay) return replay;
         return await InSerializableTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
             var profile = await context.AccessProfiles.SingleOrDefaultAsync(item =>
                 item.PublicId == profileId && item.Department == parsed, cancellationToken);
-            if (profile is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+            if (profile is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
             if (GovernanceSupport.Version(profile.RowVersion) != expectedVersion || !profile.IsActive)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             if (await context.UserAccessRequests.AnyAsync(request => request.AccessProfileId == profile.Id &&
                     request.Status == Domain.Enumerations.UserAccessRequestStatus.Pending, cancellationToken))
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "profile_has_pending_requests");
             profile.IsActive = false;
             profile.UpdatedAt = now;
             await RevokeProfileMembersAsync(profile.Id, cancellationToken);
@@ -120,7 +141,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             await NotifyDepartmentAsync(parsed, "department_users", profile.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(profile.PublicId);
-        }, cancellationToken);
+        }, cancellationToken, receipt);
     }
 
     /// <summary>Members re-authenticate so their sessions carry the template's new permissions.</summary>

@@ -96,7 +96,11 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         var row = await VersionAsync(versionId, cancellationToken);
         if (row is null) return Failed(ContractDocumentFailure.NotFound, "not_found");
         var reader = await ReaderAsync(actor, actorId, row.Value.AirlineId, cancellationToken);
-        if (reader is null || !reader.CanSign) return Failed(ContractDocumentFailure.Forbidden, "forbidden");
+        if (reader is null) return Failed(ContractDocumentFailure.Forbidden, "forbidden");
+        // 2-N20: on the airline side only its representatives and signers sign.
+        if (!reader.CanSign)
+            return Failed(ContractDocumentFailure.Forbidden, reader.Party == ContractSignatureParty.Airline
+                ? AirlinePortalRoles.SignerRequiredCode : "forbidden");
         var signature = new SignatureIntent(input.RequestId, name, title, input.DocumentSha256.ToLowerInvariant(), image,
             imageSha256);
 
@@ -578,11 +582,14 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         var organizations = actor.Memberships.Where(membership => membership.Kind == MembershipKind.AirlineClient &&
                 membership.OrganizationType == OrganizationType.AirlineCustomer)
             .Select(membership => membership.OrganizationId).ToArray();
-        var owns = await (from organization in context.Organizations.AsNoTracking()
-                          join airline in context.Airlines.AsNoTracking() on organization.Id equals airline.OrganizationId
-                          where organizations.Contains(organization.PublicId) && organization.Status == OrganizationStatus.Active &&
-                                airline.IsActive && airline.Id == airlineId
-                          select airline.Id).AnyAsync(cancellationToken);
-        return owns ? new Reader(accountId, ContractSignatureParty.Airline, true) : null;
+        var owner = await (from organization in context.Organizations.AsNoTracking()
+                           join airline in context.Airlines.AsNoTracking() on organization.Id equals airline.OrganizationId
+                           where organizations.Contains(organization.PublicId) && organization.Status == OrganizationStatus.Active &&
+                                 airline.IsActive && airline.Id == airlineId
+                           select (long?)organization.Id).FirstOrDefaultAsync(cancellationToken);
+        if (owner is null) return null;
+        // 2-N20: every portal user of the airline reads its contracts; its representatives and signers sign them.
+        var holders = await AirlinePortalRoles.OfAsync(context, owner.Value, cancellationToken);
+        return new Reader(accountId, ContractSignatureParty.Airline, holders.CanSign(accountId));
     }
 }
