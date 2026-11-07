@@ -465,7 +465,7 @@ test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posic
   const occ = await login("occ");
   const day = localDay();
   type Proposal = { proposalId: string; direction: string; flightNumber: string; airlineName: string; status: string;
-    scheduledAt: string; suggestedDepartureId: string | null; aircraftModel: string | null };
+    scheduledAt: string; suggestedDepartureId: string | null; aircraftModel: string | null; counterpartIata: string | null };
   type Feed = { budget: { configured: boolean; provider: string }; proposals: Proposal[] };
   const feed = async (view: "Contracted" | "Charter" | "Dismissed") => (await expectCall<Feed>(200, occ, "GET",
     `/occ/flight-feed?stationId=${puj.id}&date=${day}&view=${view}`)).data;
@@ -476,6 +476,9 @@ test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posic
 
   await loginPrivate(page, "occ");
   await goPrivate(page, "/admin-occ/planning");
+  // Planificación opens on the day the server resolves (3-N17 makes it the station's today): pick today explicitly.
+  await page.getByLabel("Fecha operativa", { exact: true }).first().fill(day);
+  await page.waitForLoadState("networkidle");
   await page.getByRole("button", { name: "Importar vuelos" }).click();
   const dialog = page.getByRole("dialog", { name: "Importar vuelos del proveedor" });
   await expect(dialog.getByText("Cargando vuelos propuestos…")).toBeHidden();
@@ -487,11 +490,13 @@ test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posic
   }
   // Arrivals still ahead, with the model the provider reported and the departure the same aircraft turns into.
   const ahead = (await feed("Contracted")).proposals.filter(item => item.direction === "Arrival" && item.status === "Proposed" &&
-    item.suggestedDepartureId && item.aircraftModel && Date.parse(item.scheduledAt) > Date.now() + 15 * 60_000);
+    item.suggestedDepartureId && item.aircraftModel && item.counterpartIata && Date.parse(item.scheduledAt) > Date.now() + 15 * 60_000);
   const chosen = ahead.find(item => item.airlineName === "Demo Airlines") ?? ahead[0];
   expect(chosen, "the simulated feed proposed a contracted arrival still ahead today").toBeTruthy();
   const arrivals = dialog.getByRole("list", { name: "Llegadas propuestas" });
-  const row = arrivals.getByRole("listitem").filter({ hasText: chosen!.flightNumber });
+  // The simulated feed can repeat a flight number on the same day from another origin: the row is the number and its origin.
+  const row = arrivals.getByRole("listitem").filter({ hasText: chosen!.flightNumber })
+    .filter({ hasText: `desde ${chosen!.counterpartIata}` });
   await expect(row).toContainText(chosen!.aircraftModel!);
   // A select inside its label is named by the label and the chosen option, hence the anchored names.
   await row.getByRole("combobox", { name: /^Tipo de avión/ }).selectOption(master!.aircraftTypeId);
@@ -520,11 +525,12 @@ test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posic
   // A dismissed arrival comes back from «Descartadas» while its flight has not passed (2-N36).
   const other = ahead.find(item => item.proposalId !== chosen!.proposalId);
   if (other) {
-    await arrivals.getByRole("listitem").filter({ hasText: other.flightNumber }).getByRole("button", { name: "Descartar" }).click();
+    await arrivals.getByRole("listitem").filter({ hasText: other.flightNumber }).filter({ hasText: `desde ${other.counterpartIata}` })
+      .getByRole("button", { name: "Descartar" }).click();
     await expect(dialog.getByRole("status").filter({ hasText: `${other.flightNumber} descartado` })).toBeVisible();
     await dialog.getByRole("button", { name: "Descartadas" }).click();
     const dismissed = dialog.getByRole("list", { name: "Llegadas descartadas" }).getByRole("listitem")
-      .filter({ hasText: other.flightNumber });
+      .filter({ hasText: other.flightNumber }).filter({ hasText: `desde ${other.counterpartIata}` });
     await dismissed.getByRole("button", { name: "Restaurar" }).click();
     await expect(dialog.getByRole("status").filter({ hasText: `${other.flightNumber} volvió a la revisión.` })).toBeVisible();
     expect((await feed("Contracted")).proposals.some(item => item.proposalId === other.proposalId)).toBe(true);
@@ -534,10 +540,10 @@ test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posic
   await dialog.getByRole("button", { name: "Charter sin contrato" }).click();
   await expect(dialog.getByText("Cargando vuelos propuestos…")).toBeHidden();
   const charter = (await feed("Charter")).proposals.find(item => item.direction === "Arrival" && item.status === "Proposed" &&
-    item.suggestedDepartureId);
+    item.suggestedDepartureId && item.counterpartIata);
   if (charter) {
     await dialog.getByRole("list", { name: "Llegadas propuestas" }).getByRole("listitem").filter({ hasText: charter.flightNumber })
-      .getByRole("button", { name: "Importar como charter" }).click();
+      .filter({ hasText: `desde ${charter.counterpartIata}` }).getByRole("button", { name: "Importar como charter" }).click();
     await expect(dialog.getByRole("status").filter({ hasText: /^Charter importado/ })).toBeVisible();
     const charters = await expectCall<{ charters: Array<{ airlineName: string; prepaymentStatus: string }> }>(200,
       await login("finance"), "GET", "/finance/charters");
@@ -636,7 +642,21 @@ test("hueco 2-D · los PDF de Finanzas, Gestión Humana y OCC muestran las tilde
     for (const word of report.words) expect(text, `${report.name}: «${word}»`).toContain(word);
   }
 });
-test.fixme("hueco 2-E · OCC y Gestión Humana muestran el usuario de la sesión, no el de ejemplo", async () => {});
+test("hueco 2-E · OCC y Gestión Humana muestran el usuario de la sesión, no el de ejemplo", async ({ page }) => {
+  // The shells receive the signed-in account; the example users of the prototype data never show.
+  const shells = [
+    { role: "occ", route: "/admin-occ/contracts", example: "Laisha Ramírez" },
+    { role: "hr", route: "/gestion-humana/users", example: "Camila Reyes" },
+  ] as const;
+  for (const shell of shells) {
+    await loginPrivate(page, shell.role);
+    await goPrivate(page, shell.route);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByRole("navigation").first()).toBeVisible();
+    await expect(page.getByText(shell.example)).toHaveCount(0);
+    await snap(page, `fase2-2E-usuario-${shell.role}`);
+  }
+});
 test("hueco 2-F · el día de los contratos sigue el calendario de República Dominicana, no UTC", async ({ page }) => {
   const { run, version } = contractOf();
   const representative = run.representative as { email: string };
