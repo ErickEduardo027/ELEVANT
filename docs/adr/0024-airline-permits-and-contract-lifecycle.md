@@ -88,11 +88,13 @@ motivo y el estado que el usuario vio. Si el estado cambió entre tanto, respond
 > el preaviso firmado: exige una fecha efectiva de al menos hoy más los días de preaviso, o una
 > causa inmediata (incumplimiento o mutuo acuerdo). `TerminatedOn` es el primer día sin
 > cobertura; con una fecha futura el contrato sigue en su estado hasta ese día, y la terminación
-> se puede cancelar antes (`CancelTermination`). Terminar cierra los borradores y las versiones
-> aprobadas sin las dos firmas. Renovar parte de la versión en vigor, también desde `Expired`,
-> copia sus recargos negociados, exenciones y paquetes, y se rechaza mientras otra versión aprobada
-> espera las firmas. Contratos retira con motivo una versión aprobada que no firmaron ambas partes
-> (`Rejected`). Ver
+> se puede cancelar antes (`CancelTermination`). Terminar cierra los borradores y retira las
+> versiones aprobadas que todavía no rigen. Renovar parte de la versión en vigor, también desde
+> `Expired`, copia sus recargos negociados, exenciones y paquetes, y se rechaza mientras otra
+> versión aprobada espera las firmas. «Retirar versión» pasa a `Rejected`, con motivo, una versión
+> aprobada que todavía no rige (sin las dos firmas y que no sea la versión heredada con la que el
+> contrato se activó); responde `version_signed` si ya rige. Las firmas no se borran: se anulan en
+> la auditoría. Ver
 > [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
 ### Barrido periódico (`ContractLifecycleWorker`, cada hora e idempotente)

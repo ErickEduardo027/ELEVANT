@@ -186,9 +186,10 @@ Las pistas siguen sin llevar datos: los clientes releen por REST.
   ([liberación](../../database/DevelopmentDB/Elevant.Persistence/Operations/RampAgentRelease.cs));
 - `agent_document_not_current` para OCC, una vez por asignación, cuando un
   documento del agente vence o se corrige; nunca llega a la tablet;
-- de departamento para Contratos, sobre la vigencia, la renovación automática
-  iniciada o bloqueada, la terminación programada, cancelada o cumplida y la
-  versión retirada; y para Gestión Humana, sobre los carnets, licencias y
-  habilitaciones por vencer.
+- de departamento para Contratos, sobre la renovación automática bloqueada, la
+  terminación programada, cancelada o cumplida y la versión retirada; y para
+  Gestión Humana, sobre los carnets, licencias y habilitaciones por vencer. Los
+  avisos de Contratos sobre la vigencia y la renovación automática iniciada ya
+  existían; la fase 2 les dio título y destino.
 
 Esto tampoco demuestra latencia en el VPS ni entrega con la aplicación cerrada.

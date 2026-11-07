@@ -232,10 +232,12 @@ Posterior al commit verificado de esta nota (código de `8a79fe70`):
   ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)).
 - Desde la fase 2 (código de `50e7778f`;
   [ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)),
-  Contratos recibe también que se fijó la vigencia de un contrato, que empezó o
-  no pudo iniciarse una renovación automática, que se programó, se canceló o se
-  cumplió una terminación, y que se retiró una versión. El aviso de vencimiento
-  ya no es siempre a 30 días: usa los días de aviso que firmó la versión.
+  Contratos recibe también que no pudo iniciarse una renovación automática,
+  que se programó, se canceló o se cumplió una terminación, y que se retiró una
+  versión. Los avisos que ya recibía al fijarse la vigencia de un contrato y al
+  empezar una renovación automática ganaron título y destino. El aviso de
+  vencimiento ya no es siempre a 30 días: usa los días de aviso que firmó la
+  versión.
 - Gestión Humana recibe un aviso antes del vencimiento de un carnet, una
   licencia de rampa o una habilitación de un agente.
 - OCC recibe, en su feed operativo, que Gestión Humana liberó a un agente de una

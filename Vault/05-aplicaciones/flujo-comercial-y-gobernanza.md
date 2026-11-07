@@ -210,10 +210,12 @@ Desde la fase 2 del ciclo
     exenciones y paquetes, también desde un contrato vencido.
   - Terminar respeta el preaviso firmado o pide una causa inmediata
     (incumplimiento o mutuo acuerdo). Una terminación con fecha futura se
-    puede cancelar antes de su día. Terminar cierra los borradores y las
-    versiones aprobadas sin firmar.
-  - «Retirar versión» deja `Rejected`, con motivo, una versión aprobada que no
-    firmaron ambas partes.
+    puede cancelar antes de su día. Terminar cierra los borradores y retira
+    las versiones aprobadas que todavía no rigen.
+  - «Retirar versión» pasa a `Rejected`, con motivo, una versión aprobada que
+    todavía no rige (sin las dos firmas y que no sea la versión heredada con
+    la que el contrato se activó); responde `version_signed` si ya rige. Las
+    firmas no se borran: se anulan en la auditoría.
   - Una enmienda parte de la versión que rige y pide solo «Vigente desde». Ni
     la renovación ni la enmienda se crean mientras otra versión aprobada espera
     las firmas.

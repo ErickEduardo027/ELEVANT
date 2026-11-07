@@ -189,9 +189,9 @@ cambió qué versión rige y cómo termina un contrato:
   respete el preaviso firmado, o de inmediato por incumplimiento o mutuo
   acuerdo. `TerminatedOn` es el primer día sin cobertura; con una fecha futura
   el contrato conserva su estado hasta ese día, la terminación se puede
-  cancelar y el barrido la ejecuta. Terminar cierra los borradores y las versiones
-  aprobadas sin las dos firmas, y nada empieza en la fecha de terminación o
-  después
+  cancelar y el barrido la ejecuta. Terminar cierra los borradores, retira las
+  versiones aprobadas que todavía no rigen, y nada empieza en la fecha de
+  terminación o después
   ([ciclo de vida](../../database/DevelopmentDB/Elevant.Persistence/Commercial/EfContractLifecycleStore.cs)).
 - **Permiso de operación.** Contratos revoca con motivo un permiso verificado.
   El permiso queda `Revoked` y los contratos activos que se quedan sin un
