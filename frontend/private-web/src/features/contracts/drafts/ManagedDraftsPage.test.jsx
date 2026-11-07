@@ -106,7 +106,7 @@ it('submits to Finance without promising an activation the approval does not do 
 });
 
 it.each([
-  ['Active', /con la segunda firma esta versión reemplaza a la vigente desde el 1 de octubre de 2026. El contrato ya está activo, así que no se activa de nuevo; hasta esas firmas se factura con la versión vigente/],
+  ['Active', /con la segunda firma esta versión reemplaza a la vigente desde el 1 de octubre de 2026\. El contrato ya está activo, así que no se activa de nuevo; hasta esas firmas se factura con la versión vigente/],
   ['Suspended', /con la segunda firma esta versión reemplaza a la vigente desde el 1 de octubre de 2026; el contrato sigue suspendido y los precios nuevos se aplican cuando se reactive/],
 ])('explains that the amendment of a %s contract replaces the version in force at its second signature (1-F, 2-C)', async (status, text) => {
   // An amendment (1-C) or a renewal of a contract in force: draft.status is the status of the contract.
