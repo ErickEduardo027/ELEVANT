@@ -34,17 +34,17 @@ public sealed partial class SqlServerMigrationTests
 
         // Only the super administrator, without any Human Resources request.
         Assert.Equal(GovernanceFailure.Forbidden, (await governance.CreateInternalUserAsync(HumanResourcesAccount,
-            "contracts", input, cancellationToken)).Failure);
+            "contracts", input, null, cancellationToken)).Failure);
         Assert.Equal("department_mismatch", (await governance.CreateInternalUserAsync(SuperAdministratorAccount,
-            "finance", input, cancellationToken)).Code);
+            "finance", input, null, cancellationToken)).Code);
         Assert.Equal("permissions_required", (await governance.CreateInternalUserAsync(SuperAdministratorAccount,
-            "contracts", input with { PermissionCodes = [] }, cancellationToken)).Code);
+            "contracts", input with { PermissionCodes = [] }, null, cancellationToken)).Code);
         var created = await governance.CreateInternalUserAsync(SuperAdministratorAccount, "contracts", input,
-            cancellationToken);
+            null, cancellationToken);
         Assert.True(created.IsSuccess, created.Code);
         Assert.Equal("identification_in_use", (await governance.CreateInternalUserAsync(SuperAdministratorAccount,
             "contracts", input with { Employee = employee with { EmployeeNumber = "QA-CON-021" } },
-            cancellationToken)).Code);
+            null, cancellationToken)).Code);
 
         // The employee record exists and is linked to the account; nothing waits for validation.
         var person = await context.Users.AsNoTracking().Where(user => user.PublicId == created.Id)

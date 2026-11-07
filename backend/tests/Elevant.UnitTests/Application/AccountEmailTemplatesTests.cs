@@ -16,6 +16,8 @@ public sealed class AccountEmailTemplatesTests
         // Phase 2, block B: the airline's contract and permit notices.
         "contract-activated", "contract-ready-to-sign", "permit-rejected", "permit-revoked", "permit-expiring",
         "contract-expiring", "contract-suspended",
+        // Phase 2, block E: the representatives hear of every change of the portal users.
+        "portal-user-changed",
     };
 
     private static EmailMessage Render(string kind) => kind switch
@@ -41,6 +43,8 @@ public sealed class AccountEmailTemplatesTests
             "JAC-2026-001", new DateOnly(2026, 12, 6), operatingPermit: true),
         "contract-expiring" => AccountEmailTemplates.ContractExpiring("ana@example.test", "Demo Airlines", "CTR-2026-0007",
             new DateOnly(2027, 1, 5), 12),
+        "portal-user-changed" => AccountEmailTemplates.PortalUserChanged("ana@example.test", "Demo Airlines",
+            "Se invitó a Luis Linares (luis@demo-air.test) como usuario del portal.", "Ana Rivera"),
         "contract-suspended" => AccountEmailTemplates.ContractSuspended("ana@example.test", "Demo Airlines", "CTR-2026-0007",
             Elevant.Application.Commercial.ContractSuspensionCause.PermitExpired),
         _ => AccountEmailTemplates.Test("ana@example.test", new DateTimeOffset(2026, 11, 2, 20, 17, 0, TimeSpan.Zero)),

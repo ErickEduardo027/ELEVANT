@@ -2,6 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ElevantApiError, type ContractDocumentResponse } from "@elevant/api-client";
 import { AirlineContractSignature } from "@/components/portal/AirlineContractSignature";
+import { contractProblem } from "@/lib/contract-problems";
 
 const sha = "c".repeat(64);
 const document: ContractDocumentResponse = { contractId: "c-1", versionId: "v-1", contractCode: "CT-001",
@@ -94,4 +95,14 @@ it("explains a failed download without leaving the buttons disabled", async () =
   fireEvent.click(await screen.findByRole("button", { name: "Descargar PDF" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("ya no está disponible");
   expect(screen.getByRole("button", { name: "Descargar PDF" })).toBeEnabled();
+});
+
+it("tells a user who cannot sign who signs for the airline (2-N20)", async () => {
+  session.getContractDocument.mockResolvedValueOnce({ ...document, signableBy: null });
+  render(<AirlineContractSignature versionId="v-1" fileName="contrato-CT-001-v1.pdf" />);
+  expect(await screen.findByText(/Solo sus representantes y firmantes firman/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Acepto y firmo" })).not.toBeInTheDocument();
+  // A refused signature is explained by its code, never by the server title.
+  expect(contractProblem(new ElevantApiError({ kind: "http", status: 403, title: "Raw title", code: "signer_required" })))
+    .toMatch(/Solo los representantes y los firmantes de su aerolínea firman el contrato/);
 });

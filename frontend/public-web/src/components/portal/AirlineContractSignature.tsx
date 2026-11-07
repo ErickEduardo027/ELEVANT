@@ -95,6 +95,11 @@ export function AirlineContractSignature({ versionId, fileName }: { versionId: s
       {/* 2-N05: signedOn is the day of this version's second signature, over the same content. */}
       {document.signedOn && document.signatures.length === 2 &&
         <p className={styles.note}>Firmado por ambas partes el {document.signedOn}.</p>}
+      {/* 2-N20: the airline still signs this version, but only its representatives and signers do. */}
+      {document.versionStatus === "Approved" && document.validity && document.contractStatus !== "Terminated" &&
+        !document.signatures.some(item => item.party === "Airline") && document.signableBy !== "Airline" &&
+        <p className={styles.note}>La firma de su aerolínea está pendiente. Solo sus representantes y firmantes firman
+          contratos: pida a su representante que lo firme o que lo marque como firmante en «Perfil».</p>}
       {document.signableBy === "Airline" && <form onSubmit={sign} noValidate className={styles.draftCommentForm}>
         <label htmlFor={`signer-${versionId}`}>Nombre completo de quien firma</label>
         <input id={`signer-${versionId}`} value={name} maxLength={160} onChange={event => setName(event.target.value)} />

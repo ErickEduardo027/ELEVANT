@@ -20,6 +20,8 @@ export const EMAIL_PURPOSES = Object.freeze({
   PermitExpiring: 'Permiso por vencer',
   ContractExpiring: 'Contrato por vencer',
   ContractSuspended: 'Contrato suspendido',
+  // Phase 2, block E: the representatives learn who joined, left or changed role in their portal (2-N20).
+  PortalUserChanged: 'Cambio de usuarios del portal',
 });
 
 export const EMAIL_STATUSES = Object.freeze({
@@ -63,6 +65,7 @@ export const EMAIL_RECOVERY = Object.freeze({
   PermitExpiring: 'El vencimiento se ve en el portal de la aerolínea; recuérdeselo por otro canal.',
   ContractExpiring: 'El vencimiento se ve en el portal de la aerolínea; recuérdeselo por otro canal.',
   ContractSuspended: 'El estado del contrato se ve en el portal de la aerolínea; avísele por otro canal.',
+  PortalUserChanged: 'Los representantes ven sus usuarios y roles en el portal; avíseles del cambio por otro canal si hace falta.',
 });
 
 /**

@@ -10,6 +10,7 @@ import {
   updateDepartmentUser,
 } from '../../services/departmentGovernanceService';
 import { governanceMessage, listAccessCandidates } from '../../services/humanResourcesEmployeesService';
+import { createCommandKeyHolder } from '../../services/commandKeys';
 import { departmentUsersMessages } from './departmentUsersMessages';
 import GeneratePasswordField from './GeneratePasswordField';
 import PermissionMatrix from './PermissionMatrix';
@@ -98,6 +99,7 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const requestId = useRef(newRequestId());
+  const keys = useRef(createCommandKeyHolder());
 
   useEffect(() => {
     if (!open) return;
@@ -106,6 +108,7 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
     setAvatar(null);
     setError('');
     requestId.current = newRequestId();
+    keys.current.reset();
   }, [open, user]);
 
   const isEdit = mode === 'edit';
@@ -128,10 +131,12 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
     });
   }
 
-  // Stations an access may use: those of the employee that the actor also holds.
-  const grantableStations = isEdit
+  // Stations an access may use: those of the employee that the actor also holds. An account without employee
+  // record (older accounts) keeps the actor's stations as the limit (2-N21).
+  const employeeStations = isEdit ? user?.employeeStations : employee?.stations;
+  const grantableStations = isEdit && !employeeStations
     ? options?.stations ?? []
-    : (options?.stations ?? []).filter(station => employee?.stations.some(item => item.id === station.id));
+    : (options?.stations ?? []).filter(station => employeeStations?.some(item => item.id === station.id));
 
   async function submit(event) {
     event.preventDefault();
@@ -150,17 +155,19 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
           : { accessProfileId: null, permissionCodes: form.permissionCodes }
         : { accessProfileId: null, permissionCodes: null };
       if (isEdit) {
-        await updateDepartmentUser(department, user.id, { firstName: user.firstName, lastName: user.lastName, email: user.email,
-          stationIds: form.stationIds, avatarMediaUrl, ...grants, expectedVersion: user.version });
+        const body = { firstName: user.firstName, lastName: user.lastName, email: user.email,
+          stationIds: form.stationIds, avatarMediaUrl, ...grants, expectedVersion: user.version };
+        await keys.current.run('department-user.update', { id: user.id, ...body },
+          key => updateDepartmentUser(department, user.id, body, key));
       } else if (mode === 'request') {
         await requestDepartmentUserAccess(department, {
           requestId: requestId.current, employeeId: employee.employeeId, stationIds: form.stationIds, avatarMediaUrl, ...grants,
           ...(isRamp ? { terminalIds: form.terminalIds, supervisorRampAgentId: form.supervisorRampAgentId || null } : {}),
         });
       } else {
-        await createDepartmentAdministrator(department, {
-          employeeId: employee.employeeId, stationIds: form.stationIds, temporaryPassword: form.temporaryPassword,
-        });
+        const body = { employeeId: employee.employeeId, stationIds: form.stationIds, temporaryPassword: form.temporaryPassword };
+        await keys.current.run('department-user.administrator', body,
+          key => createDepartmentAdministrator(department, body, key));
       }
       onSaved(mode);
     } catch (failure) {
@@ -199,7 +206,8 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
             <fieldset>
               <legend className={labelClass}>{t('common.stations')}</legend>
               <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {isEdit ? t('account.stationsHintEdit') : t('account.stationsHintRequest')}
+                {isEdit ? (employeeStations ? t('account.stationsHintEditEmployee') : t('account.stationsHintEdit'))
+                  : t('account.stationsHintRequest')}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {grantableStations.map(station => (

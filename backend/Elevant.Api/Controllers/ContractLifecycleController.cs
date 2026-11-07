@@ -149,7 +149,9 @@ public sealed class ContractLifecycleController(IAirlinePermitStore permits, ICo
     /// <summary>Every permit failure carries a stable code and a Spanish title (phase 2, block B).</summary>
     private IActionResult PermitFailure(AirlinePermitFailure failure, string? code) => failure switch
     {
-        AirlinePermitFailure.Forbidden => Forbid(),
+        AirlinePermitFailure.Forbidden => code == "signer_required"
+            ? Coded(403, "Solo un representante o un firmante de la aerolínea envía el permiso.", code)
+            : Coded(403, "No tiene permiso para esta acción.", code ?? "forbidden"),
         AirlinePermitFailure.NotFound => Coded(404, "El permiso ya no existe.", code ?? "not_found"),
         AirlinePermitFailure.Conflict => Coded(409, "El permiso cambió; vuelva a cargarlo.", code ?? "version_conflict"),
         _ => Coded(400, "Los datos del permiso no son válidos.", code ?? "invalid_permit"),

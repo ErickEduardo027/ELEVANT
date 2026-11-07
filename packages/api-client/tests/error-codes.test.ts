@@ -48,4 +48,13 @@ describe("Problem Details codes", () => {
       "permit_dates_invalid", "permit_expired", "document_invalid", "document_expired"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
+
+  it("keeps the access codes of phase 2 (block E)", () => {
+    for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
+      "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",
+      "last_representative", "invalid_portal_user", "employee_transferred", "requester_no_longer_administrator",
+      "legacy_governance_retired", "access_request_closed", "invalid_governance_data", "governance_conflict",
+      "protected_user"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
 });

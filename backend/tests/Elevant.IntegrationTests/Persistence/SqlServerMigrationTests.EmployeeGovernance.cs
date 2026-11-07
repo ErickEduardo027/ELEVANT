@@ -104,7 +104,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("employee_record_managed_by_hr", (await governance.UpdateUserAsync(FinanceAccount, "finance",
             validated.Id!.Value, new UpdateDepartmentUserInput("Otro", "Nombre", "lucia.prueba@dev.elevant.test",
                 [PujStation], Convert.ToBase64String(account.RowVersion),
-                AccessProfileId: candidate.SuggestedAccessProfileId), cancellationToken)).Code);
+                AccessProfileId: candidate.SuggestedAccessProfileId), null, cancellationToken)).Code);
 
         // Sign-ins are audited and attributed to the department the person works in.
         var verifier = scope.ServiceProvider.GetRequiredService<ICredentialVerifier>();
@@ -180,7 +180,7 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken));
         Assert.Equal("employee_terminated", (await governance.SetUserStatusAsync(SuperAdministratorAccount, "contracts",
             account.PublicId, new SetDepartmentUserStatusInput(true, Convert.ToBase64String(terminatedAccount.RowVersion)),
-            cancellationToken)).Code);
+            null, cancellationToken)).Code);
         Assert.DoesNotContain((await hr.ListAccessCandidatesAsync(ContractsAccount, "contracts", null, cancellationToken))!,
             item => item.EmployeeId == created.Id);
         Assert.Equal(GovernanceFailure.Protected, (await hr.TerminateEmployeeAsync(HumanResourcesAccount,
@@ -247,10 +247,10 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken)).Code);
         Assert.Equal(GovernanceFailure.Forbidden, (await governance.CreateAdministratorAsync(HumanResourcesAccount,
             "contracts", new CreateDepartmentAccountInput(null, null, null, EmployeePassword, [PujStation],
-                EmployeeId: lead.Id), cancellationToken)).Failure);
+                EmployeeId: lead.Id), null, cancellationToken)).Failure);
         var administrator = await governance.CreateAdministratorAsync(SuperAdministratorAccount, "contracts",
             new CreateDepartmentAccountInput(null, null, null, EmployeePassword, [PujStation], EmployeeId: lead.Id),
-            cancellationToken);
+            null, cancellationToken);
         Assert.True(administrator.IsSuccess, administrator.Code);
         Assert.Equal(DepartmentAssignmentKind.Administrator, await (from user in context.Users.AsNoTracking()
                                                                    join assignment in context.DepartmentAssignments.AsNoTracking()

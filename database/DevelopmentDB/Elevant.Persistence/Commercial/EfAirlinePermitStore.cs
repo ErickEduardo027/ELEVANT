@@ -57,6 +57,11 @@ internal sealed class EfAirlinePermitStore(ElevantDbContext context, CommercialP
     {
         if (await AirlinePortalTenant.AirlineIdAsync(context, actorId, cancellationToken) is not { } airline)
             return AirlinePermitResult.Failed(AirlinePermitFailure.Forbidden, "forbidden");
+        // 2-N20: the permit that lets the contract operate is sent by a representative or a signer of the airline.
+        var holders = await AirlinePortalRoles.OfAsync(context,
+            await AirlinePortalRoles.OrganizationOfAirlineAsync(context, airline, cancellationToken), cancellationToken);
+        if (!holders.CanSign(await AccountIdAsync(actorId, cancellationToken)))
+            return AirlinePermitResult.Failed(AirlinePermitFailure.Forbidden, AirlinePortalRoles.SignerRequiredCode);
         // Expand phase: the key is optional; a submission creates the permit, so it has no expected version.
         if (idempotencyKey == Guid.Empty)
             return AirlinePermitResult.Failed(AirlinePermitFailure.Invalid, "idempotency_key_required");

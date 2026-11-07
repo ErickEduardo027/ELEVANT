@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import EmptyState from '../../components/EmptyState';
 import FilterBar from '../../components/FilterBar';
@@ -26,6 +26,8 @@ import GeneratePasswordField from './GeneratePasswordField';
 import { DepartmentActivityPanel, DepartmentPositionsPanel, DepartmentRequisitionsPanel } from './DepartmentStaffPanels';
 import RampProfilesPanel from '../human-resources/users/RampProfilesPanel';
 import { useDepartmentGovernance } from './useDepartmentGovernance';
+import { createCommandKeyHolder } from '../../services/commandKeys';
+import { governanceMessage } from '../../services/humanResourcesEmployeesService';
 
 const selectClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
@@ -123,6 +125,7 @@ export default function DepartmentUsersPage({ department }) {
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const label = DEPARTMENT_LABELS[department] ?? department;
+  const statusKeys = useRef(createCommandKeyHolder());
 
   const pendingRequests = useMemo(() => (data.requests?.requests ?? []).filter(item => item.status === 'Pending'), [data.requests]);
 
@@ -135,7 +138,7 @@ export default function DepartmentUsersPage({ department }) {
   async function act(action, message) {
     setError('');
     try { await action(); done(message); return true; } catch (failure) {
-      setError(failure.status === 409 ? t('common.conflict') : failure.message);
+      setError(governanceMessage(failure, t('common.conflict')));
       void data.refresh();
       return false;
     }
@@ -261,7 +264,9 @@ export default function DepartmentUsersPage({ department }) {
         onConfirm={async () => {
           const user = toggling;
           setToggling(null);
-          await act(() => setDepartmentUserStatus(department, user.id, user.status !== 'Active', user.version),
+          await act(() => statusKeys.current.run('department-user.status',
+            { id: user.id, active: user.status !== 'Active', version: user.version },
+            key => setDepartmentUserStatus(department, user.id, user.status !== 'Active', user.version, key)),
             user.status === 'Active' ? t('notices.userDeactivated') : t('notices.userReactivated'));
         }} />
     </div>

@@ -38,6 +38,19 @@ public sealed record RegisterMobileDeviceRequest
     public string? OperatingSystemVersion { get; init; }
 }
 
+/// <summary>The tablet frees its binding when the agent signs out (2-N02); the next agent binds it at sign-in.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ReleaseMobileDeviceRequest
+{
+    public ReleaseMobileDeviceRequest(Guid installationId)
+    {
+        InstallationId = installationId;
+    }
+
+    [Required]
+    public Guid InstallationId { get; init; }
+}
+
 public sealed record RegisterMobileDeviceResponse
 {
     public RegisterMobileDeviceResponse(

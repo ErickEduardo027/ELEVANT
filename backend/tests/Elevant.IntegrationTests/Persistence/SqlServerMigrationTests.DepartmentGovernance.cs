@@ -65,8 +65,8 @@ public sealed partial class SqlServerMigrationTests
         var adminInput = new CreateDepartmentAccountInput("Carla", "Contratos", "carla-admin@example.test",
             "Synthetic-Admin!5678", [puj.PublicId]);
         Assert.Equal(GovernanceFailure.Forbidden, (await store.CreateAdministratorAsync(GovernanceContracts,
-            "contracts", adminInput, cancellationToken)).Failure);
-        var carla = await store.CreateAdministratorAsync(GovernanceSuperAdmin, "contracts", adminInput, cancellationToken);
+            "contracts", adminInput, null, cancellationToken)).Failure);
+        var carla = await store.CreateAdministratorAsync(GovernanceSuperAdmin, "contracts", adminInput, null, cancellationToken);
         Assert.True(carla.IsSuccess);
         var carlaId = carla.Id!.Value;
         Assert.True((await actors.ResolveAsync(carlaId, cancellationToken))!.EffectiveAccess!.Administers(
@@ -76,10 +76,10 @@ public sealed partial class SqlServerMigrationTests
 
         // Templates only hold permissions of their own department.
         Assert.Equal(GovernanceFailure.Invalid, (await store.SaveProfileAsync(carlaId, "contracts", null,
-            new SaveAccessProfileInput("Mixta", null, ["finance.preinvoices.read"]), cancellationToken)).Failure);
+            new SaveAccessProfileInput("Mixta", null, ["finance.preinvoices.read"]), null, cancellationToken)).Failure);
         var template = await store.SaveProfileAsync(carlaId, "contracts", null,
             new SaveAccessProfileInput("Supervisor de solicitudes", "Revisa solicitudes",
-                ["contracts.requests.verify"]), cancellationToken);
+                ["contracts.requests.verify"]), null, cancellationToken);
         Assert.True(template.IsSuccess);
         var savedTemplate = Assert.Single((await store.ListProfilesAsync(carlaId, "contracts", cancellationToken))!);
         Assert.Equal(["contracts.requests.read", "contracts.requests.verify"], savedTemplate.Permissions);
@@ -125,10 +125,10 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("Member", rosa.Kind);
         var seededAdmin = Assert.Single(users.Users, item => item.Id == GovernanceContracts);
         Assert.Equal(GovernanceFailure.Forbidden, (await store.SetUserStatusAsync(carlaId, "contracts", seededAdmin.Id,
-            new SetDepartmentUserStatusInput(false, seededAdmin.Version), cancellationToken)).Failure);
+            new SetDepartmentUserStatusInput(false, seededAdmin.Version), null, cancellationToken)).Failure);
         Assert.True((await store.UpdateUserAsync(carlaId, "contracts", rosa.Id, new UpdateDepartmentUserInput(
             "Rosa", "Solicitudes", "rosa@example.test", [puj.PublicId], rosa.Version,
-            PermissionCodes: ["contracts.requests.approve"]), cancellationToken)).IsSuccess);
+            PermissionCodes: ["contracts.requests.approve"]), null, cancellationToken)).IsSuccess);
         var updated = (await actors.ResolveAsync(rosa.Id, cancellationToken))!;
         Assert.True(updated.HasPermission("contracts.requests.approve"));
         Assert.True(updated.HasPermission("contracts.requests.read"));
@@ -136,7 +136,7 @@ public sealed partial class SqlServerMigrationTests
         var reread = Assert.Single((await store.ListUsersAsync(carlaId, "contracts", 1, 25, null, null, null, null,
             "rosa", cancellationToken))!.Users);
         Assert.True((await store.SetUserStatusAsync(carlaId, "contracts", rosa.Id,
-            new SetDepartmentUserStatusInput(false, reread.Version), cancellationToken)).IsSuccess);
+            new SetDepartmentUserStatusInput(false, reread.Version), null, cancellationToken)).IsSuccess);
         Assert.Equal(1, (await store.GetDepartmentSummaryAsync(carlaId, "contracts", cancellationToken))!.Inactive);
 
         // Rejections need a reason.

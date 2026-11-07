@@ -143,6 +143,7 @@ public static class DependencyInjection
                     provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
             ]));
         services.AddScoped<IAirlinePermitStore, EfAirlinePermitStore>();
+        services.AddScoped<IAirlinePortalUserStore, EfAirlinePortalUserStore>();
         services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
@@ -198,6 +199,7 @@ public static class DependencyInjection
         services.AddScoped<IOccShiftProgrammingStore, EfOccShiftProgrammingStore>();
         services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();
         services.AddScoped<IMobileDeviceCommandStore, EfMobileDeviceCommandStore>();
+        services.AddScoped<IMobileDeviceAdministrationStore, EfMobileDeviceAdministrationStore>();
         services.AddScoped<IRampOperationsCommandStore, EfRampOperationsCommandStore>();
         services.AddScoped<IRampOperationChecklistReadStore, EfRampOperationChecklistReadStore>();
         services.AddScoped<IRampOperationChecklistCommandStore, EfRampOperationChecklistCommandStore>();

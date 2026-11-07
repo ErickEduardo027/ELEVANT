@@ -249,6 +249,7 @@ function LegacyRoles({ run }) {
   const [roles, setRoles] = useState(null);
   const [error, setError] = useState('');
   const [converting, setConverting] = useState(null);
+  const convertKeys = useRef(createCommandKeyHolder());
   const load = useCallback(async () => {
     try { setRoles(await listLegacyRoles()); setError(''); }
     catch (failure) { setError(commercialGovernanceMessage(failure, { fallback: 'No se pudieron cargar los roles heredados.' })); }
@@ -266,7 +267,13 @@ function LegacyRoles({ run }) {
     <ConfirmDialog open={Boolean(converting)} title="Convertir rol heredado"
       description={`«${converting?.name ?? ''}» pasará a ser una plantilla de Contratos y sus ${converting?.activeUsers ?? 0} usuario(s) la usarán. El rol heredado quedará inactivo.`}
       confirmLabel="Convertir" onClose={() => setConverting(null)}
-      onConfirm={async () => { const role = converting; setConverting(null); await run(() => convertLegacyRole(role.id), 'Rol convertido en plantilla de Contratos.'); await load(); }} />
+      onConfirm={async () => {
+        const role = converting;
+        setConverting(null);
+        await run(() => convertKeys.current.run('legacy-role.convert', { id: role.id, version: role.version ?? null },
+          key => convertLegacyRole(role.id, role.version ?? null, key)), 'Rol convertido en plantilla de Contratos. Los usuarios que ya tenían permisos elegidos los conservan.');
+        await load();
+      }} />
   </section>;
 }
 

@@ -45,6 +45,11 @@ public sealed record DepartmentsOverviewData(
     int PendingRequests,
     IReadOnlyList<DepartmentSummaryData> Departments);
 
+/// <summary>
+/// A user of a department. <paramref name="EmployeeStations"/> are the active stations of the employee record behind
+/// the account, the only ones its access may use (2-N21); null for an account without employee record, which keeps
+/// the actor's stations as the limit.
+/// </summary>
 public sealed record DepartmentUserData(
     Guid Id,
     string FirstName,
@@ -59,7 +64,8 @@ public sealed record DepartmentUserData(
     bool MustChangePassword,
     DateTimeOffset? LastLoginAt,
     string? AvatarMediaUrl,
-    string Version);
+    string Version,
+    IReadOnlyList<GovernanceStationData>? EmployeeStations = null);
 
 public sealed record DepartmentUserPage(int Page, int Limit, int Total, bool HasMore,
     IReadOnlyList<DepartmentUserData> Users);
@@ -105,11 +111,30 @@ public sealed record AccessRequestData(
 public sealed record AccessRequestPage(int Page, int Limit, bool HasMore, IReadOnlyList<AccessRequestData> Requests);
 
 public sealed record ClientAirlineData(Guid OrganizationId, string Name, string IataCode, int Users, int ActiveUsers);
-/// <param name="InvitationPending">The account was invited by email and has not set its password yet (ADR-0022).</param>
+/// <summary>
+/// A portal user of an airline for Clientes. <paramref name="InvitationPending"/>: the account was invited by email and
+/// has not set its password yet (ADR-0022). <paramref name="Representative"/> represents the airline in the portal:
+/// manages its users and signs; <paramref name="Signer"/> signs contracts and submits the JAC permit (2-N20).
+/// </summary>
 public sealed record ClientUserData(Guid Id, string FirstName, string LastName, string Email, string Status,
-    bool MustChangePassword, DateTimeOffset? LastLoginAt, string Version, bool InvitationPending = false);
+    bool MustChangePassword, DateTimeOffset? LastLoginAt, string Version, bool InvitationPending = false,
+    bool Representative = false, bool Signer = false);
 
-public sealed record LegacyRoleData(Guid Id, string Code, string Name, IReadOnlyList<string> Permissions, int ActiveUsers);
+/// <summary>
+/// A legacy CUSTOM_* role; <paramref name="Version"/> is its concurrency stamp, which the conversion sends back with
+/// its Idempotency-Key.
+/// </summary>
+public sealed record LegacyRoleData(Guid Id, string Code, string Name, IReadOnlyList<string> Permissions, int ActiveUsers,
+    string? Version = null);
+
+/// <summary>Converts a legacy role with the version on screen (required with an Idempotency-Key, 2-N39).</summary>
+public sealed record ConvertLegacyRoleInput(string? ExpectedVersion);
+
+/// <summary>
+/// The super administrator designates the airline's representatives and signers (2-N20) with the account version
+/// on screen; an airline always keeps one active representative once it has one.
+/// </summary>
+public sealed record SetClientUserPortalRoleInput(bool Representative, bool Signer, string? ExpectedVersion);
 
 public sealed record SaveAccessProfileInput(string Name, string? Description,
     IReadOnlyList<string> PermissionCodes, string? ExpectedVersion = null);
@@ -215,24 +240,34 @@ public interface IDepartmentGovernanceStore
     Task<DepartmentUserPage?> ListUsersAsync(Guid actorId, string department, int page, int limit,
         string? kind, string? status, Guid? accessProfileId, Guid? stationId, string? search,
         CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Creates a department administrator. The optional Idempotency-Key (2-N39) replays the first result for the same
+    /// body and temporary password; with another body it is a conflict.
+    /// </summary>
     Task<GovernanceResult> CreateAdministratorAsync(Guid actorId, string department,
-        CreateDepartmentAccountInput input, CancellationToken cancellationToken = default);
+        CreateDepartmentAccountInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<GovernanceResult> CreateMemberAsync(Guid actorId, string department,
         CreateDepartmentAccountInput input, CancellationToken cancellationToken = default);
     Task<GovernanceResult> CreateInternalUserAsync(Guid actorId, string department, CreateInternalUserInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Edits access: stations of an employee's account come from the employee record (2-N21), a member with a legacy
+    /// CUSTOM_* role becomes a Contracts member without losing access (2-N19) and a transferred account is refused
+    /// (2-N07).
+    /// </summary>
     Task<GovernanceResult> UpdateUserAsync(Guid actorId, string department, Guid userId,
-        UpdateDepartmentUserInput input, CancellationToken cancellationToken = default);
+        UpdateDepartmentUserInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
+    /// <summary>Deactivates or reactivates; a transferred account is reactivated only by its new department (2-N07).</summary>
     Task<GovernanceResult> SetUserStatusAsync(Guid actorId, string department, Guid userId,
-        SetDepartmentUserStatusInput input, CancellationToken cancellationToken = default);
+        SetDepartmentUserStatusInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<GovernanceResult> ResetUserPasswordAsync(Guid actorId, string department, Guid userId,
         string temporaryPassword, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AccessProfileData>?> ListProfilesAsync(Guid actorId, string department,
         CancellationToken cancellationToken = default);
     Task<GovernanceResult> SaveProfileAsync(Guid actorId, string department, Guid? profileId,
-        SaveAccessProfileInput input, CancellationToken cancellationToken = default);
+        SaveAccessProfileInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<GovernanceResult> DeactivateProfileAsync(Guid actorId, string department, Guid profileId,
-        string expectedVersion, CancellationToken cancellationToken = default);
+        string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<GovernanceResult> RequestAccessAsync(Guid actorId, string department, RequestUserAccessInput input,
         CancellationToken cancellationToken = default);
     Task<AccessRequestPage?> ListRequestsAsync(Guid actorId, string? department, string? status, int page, int limit,
@@ -247,9 +282,12 @@ public interface IDepartmentGovernanceStore
     Task<IReadOnlyList<ClientUserData>?> ListClientUsersAsync(Guid actorId, Guid organizationId,
         CancellationToken cancellationToken = default);
     Task<GovernanceResult> CreateClientUserAsync(Guid actorId, Guid organizationId, CreateClientUserInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<GovernanceResult> SetClientUserStatusAsync(Guid actorId, Guid organizationId, Guid userId,
-        SetDepartmentUserStatusInput input, CancellationToken cancellationToken = default);
+        SetDepartmentUserStatusInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
+    /// <summary>Designates a representative or a signer of the airline's portal (2-N20); the representatives hear it.</summary>
+    Task<GovernanceResult> SetClientUserPortalRoleAsync(Guid actorId, Guid organizationId, Guid userId,
+        SetClientUserPortalRoleInput input, Guid idempotencyKey, CancellationToken cancellationToken = default);
     /// <summary>
     /// Sets a temporary password the user must change at the next sign-in. On an invitation that is
     /// still pending it accepts the invitation, retires its links and discards its queued email (1-N12).
@@ -257,5 +295,10 @@ public interface IDepartmentGovernanceStore
     Task<GovernanceResult> ResetClientUserPasswordAsync(Guid actorId, Guid organizationId, Guid userId,
         ResetClientUserPasswordInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<LegacyRoleData>?> ListLegacyRolesAsync(Guid actorId, CancellationToken cancellationToken = default);
-    Task<GovernanceResult> ConvertLegacyRoleAsync(Guid actorId, Guid roleId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Turns a legacy role into a Contracts template; members already edited keep the permissions chosen for them
+    /// (2-N19). The optional Idempotency-Key requires the role version (2-N39).
+    /// </summary>
+    Task<GovernanceResult> ConvertLegacyRoleAsync(Guid actorId, Guid roleId, ConvertLegacyRoleInput? input,
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
 }

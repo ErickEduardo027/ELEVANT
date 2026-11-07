@@ -1,4 +1,5 @@
 import { commercialApi } from './commercialGovernanceApi';
+import { COMMON_PROBLEM_MESSAGES, problemMessage } from './problemMessages';
 
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
 const query = params => {
@@ -128,15 +129,44 @@ const MESSAGES = {
   version_conflict: 'El expediente cambió mientras lo revisaba. Vuelva a abrirlo e intente de nuevo.',
   idempotency_conflict: 'Ese envío ya se usó con otros datos. Vuelva a abrir el expediente e intente de nuevo.',
   not_found: 'El empleado ya no existe o no está en su alcance.',
+  // Phase 2, block E: governance commands always answer a code (2-N39).
+  employee_transferred: 'El empleado se trasladó a otro departamento: solo ese departamento solicita su acceso y Gestión Humana lo valida.',
+  requester_no_longer_administrator: 'Quien pidió este acceso ya no administra el departamento. Rechace la solicitud o pida al departamento una nueva.',
+  access_request_closed: 'La solicitud ya fue resuelta o cancelada. Se actualizó la bandeja.',
+  invalid_department_user: 'Revise el nombre, el correo y elija entre 1 y 20 estaciones.',
+  invalid_access_request: 'Revise el empleado, las estaciones y las terminales de la solicitud.',
+  invalid_access_profile: 'La plantilla necesita un nombre de 3 a 80 caracteres y al menos un permiso del departamento.',
+  invalid_internal_user: 'Revise el tipo de cuenta, la contraseña temporal y las estaciones.',
+  avatar_invalid: 'La foto ya no está disponible; vuelva a cargarla.',
+  profile_name_in_use: 'Ya existe una plantilla activa con ese nombre.',
+  profile_has_pending_requests: 'La plantilla tiene solicitudes pendientes; resuélvalas antes de desactivarla.',
+  legacy_role_converted: 'El rol ya se convirtió en plantilla.',
+  legacy_role_empty: 'El rol no tiene permisos que convertir.',
+  role_missing: 'Falta el rol base del departamento. Contacte a soporte.',
+  legacy_governance_retired: 'Esta función se retiró: el acceso se solicita para un empleado y Gestión Humana lo valida.',
+  governance_conflict: 'Los datos cambiaron mientras los editaba. Actualice e intente de nuevo.',
+  invalid_governance_data: 'Revise los datos e intente de nuevo.',
+  protected_user: 'Esa cuenta está protegida: no puede modificarla desde aquí.',
+  forbidden: 'No tiene permiso para esta acción.',
 };
 
 /** The rule messages of the employee commands, for screens that resolve them with `problemMessage`. */
 export const EMPLOYEE_MESSAGES = Object.freeze({ ...MESSAGES });
 
-/** Message for a governance failure: the server's rule code wins over the generic title. */
-export function governanceMessage(error, fallback) {
-  if (error?.code && MESSAGES[error.code]) return MESSAGES[error.code];
-  if (error?.status === 409) return fallback ?? 'Los datos cambiaron mientras los editaba. Se actualizó la vista.';
-  if (error?.status === 403) return 'No tiene permiso para esta acción.';
-  return error?.message ?? 'No se pudo completar la acción.';
+const known = code => typeof code === 'string' &&
+  (Object.prototype.hasOwnProperty.call(MESSAGES, code) || Object.prototype.hasOwnProperty.call(COMMON_PROBLEM_MESSAGES, code));
+
+const DEFAULT_CONFLICT = 'Los datos cambiaron mientras los editaba. Se actualizó la vista.';
+/** Codes that only say «it changed»: a screen that names its own conflict explains them in its words. */
+const GENERIC_CONFLICTS = new Set(['version_conflict', 'governance_conflict']);
+
+/**
+ * Message for a governance failure from its code (2-N39): the server title and any exception text are never shown.
+ * `conflictFallback` explains a 409 whose code the screen does not know or that only says the record changed.
+ */
+export function governanceMessage(error, conflictFallback) {
+  if (error?.status === 409 &&
+      (!known(error?.code) || (conflictFallback && GENERIC_CONFLICTS.has(error.code))))
+    return conflictFallback ?? DEFAULT_CONFLICT;
+  return problemMessage(error, MESSAGES);
 }

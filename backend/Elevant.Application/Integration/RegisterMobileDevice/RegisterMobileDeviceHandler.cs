@@ -75,7 +75,7 @@ public sealed class RegisterMobileDeviceHandler(
                     RegisterMobileDeviceFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "Unsupported mobile device registration failure."),
-            });
+            }, result.Code);
     }
 
     private static string? NormalizeRequired(string? value)

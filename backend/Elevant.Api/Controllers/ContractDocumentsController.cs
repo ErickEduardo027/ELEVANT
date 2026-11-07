@@ -200,7 +200,9 @@ public sealed class ContractDocumentsController(IContractDocumentStore store, IC
 
     private ActionResult<T> Failure<T>(ContractDocumentFailure failure, string? code = null) => failure switch
     {
-        ContractDocumentFailure.Forbidden => Problem<T>(403, "No tiene acceso a este contrato.", "forbidden"),
+        ContractDocumentFailure.Forbidden => code == "signer_required"
+            ? Problem<T>(403, "Solo un representante o un firmante de la aerolínea firma el contrato.", code)
+            : Problem<T>(403, "No tiene acceso a este contrato.", "forbidden"),
         ContractDocumentFailure.NotFound => Problem<T>(404, "La versión del contrato no tiene documento.", "not_found"),
         ContractDocumentFailure.Invalid => Problem<T>(400, "Revise los datos del contrato.", code ?? "invalid_contract_document"),
         ContractDocumentFailure.AirlineSignaturePending =>

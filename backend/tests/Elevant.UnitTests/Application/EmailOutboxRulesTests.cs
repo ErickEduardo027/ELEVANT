@@ -24,7 +24,9 @@ public sealed class EmailOutboxRulesTests
                      EmailPurpose.PaymentReceived, EmailPurpose.CommercialDecision, EmailPurpose.Test,
                      // Phase 2, block B: notices without a one-time secret never expire in the queue.
                      EmailPurpose.ContractReadyToSign, EmailPurpose.PermitRejected, EmailPurpose.PermitRevoked,
-                     EmailPurpose.PermitExpiring, EmailPurpose.ContractExpiring, EmailPurpose.ContractSuspended })
+                     EmailPurpose.PermitExpiring, EmailPurpose.ContractExpiring, EmailPurpose.ContractSuspended,
+                     // Phase 2, block E: the notice of a change of portal users.
+                     EmailPurpose.PortalUserChanged })
             Assert.Null(EmailOutboxLifetimes.For(purpose));
         Assert.Equal(new[] { EmailPurpose.Activation, EmailPurpose.LoginCode, EmailPurpose.PasswordReset },
             EmailOutboxLifetimes.Expiring.Select(item => item.Purpose));

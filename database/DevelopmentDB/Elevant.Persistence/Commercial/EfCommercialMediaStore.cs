@@ -131,9 +131,10 @@ internal sealed class EfCommercialMediaStore(
                 .AnyAsync(item => item.IsPublished && item.LogoObjectKey == url, cancellationToken) ||
                 actorId.HasValue && await permissions.IsSuperAdministratorAsync(actorId.Value, cancellationToken) &&
                 await context.CommercialAirlineProfiles.AsNoTracking().AnyAsync(item => item.LogoObjectKey == url, cancellationToken),
-            "avatar" => actorId.HasValue &&
+            "avatar" => actorId.HasValue && (
                 await CanManageAvatarsAsync(actorId.Value, cancellationToken) &&
-                await context.Persons.AsNoTracking().AnyAsync(item => item.AvatarMediaUrl == url, cancellationToken),
+                await context.Persons.AsNoTracking().AnyAsync(item => item.AvatarMediaUrl == url, cancellationToken) ||
+                await CanReadRequestAvatarAsync(actorId.Value, url, cancellationToken)),
             // A permit document is private: Contratos and the airline that submitted it.
             "airline-permit" => actorId.HasValue && (
                 await permissions.HasAnyAsync(actorId.Value, ["contracts.permits.read"], cancellationToken) &&
@@ -184,7 +185,11 @@ internal sealed class EfCommercialMediaStore(
                     await context.Persons.AsNoTracking().AnyAsync(
                         item => item.AvatarMediaUrl == url, cancellationToken) ||
                     await context.AirlinePermits.AsNoTracking().AnyAsync(
-                        item => item.DocumentUrl == url, cancellationToken);
+                        item => item.DocumentUrl == url, cancellationToken) ||
+                    // 2-N17: the photo of an access request waits with it; the approval copies it to the person.
+                    await context.UserAccessRequests.AsNoTracking().AnyAsync(
+                        item => item.AvatarMediaUrl == url && item.Status == UserAccessRequestStatus.Pending,
+                        cancellationToken);
                 if (linked) continue;
                 await client.DeleteObjectAsync(Bucket(), asset.ObjectKey, cancellationToken);
                 context.MediaAssets.Remove(asset);
@@ -216,6 +221,25 @@ internal sealed class EfCommercialMediaStore(
 
     private string Bucket() => configuration["MediaStorage:Bucket"] is { Length: > 0 } bucket
         ? bucket : throw new InvalidOperationException("Private media bucket is not configured.");
+
+    /// <summary>
+    /// 2-N17: the photo of a pending access request is read by whoever decides it (Gestión Humana's validators and
+    /// the super administrator) and by the administrator who asked for it.
+    /// </summary>
+    private async Task<bool> CanReadRequestAvatarAsync(Guid actorId, string url, CancellationToken cancellationToken)
+    {
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (actor is null || !actor.Memberships.Any(membership => membership.Kind == MembershipKind.InternalStaff &&
+                membership.OrganizationType == OrganizationType.AviamOperator))
+            return false;
+        var decides = actor.EffectiveAccess?.IsSuperAdministrator == true ||
+            actor.HasPermission("human_resources.access_requests.validate");
+        var accountId = await context.Users.AsNoTracking().Where(user => user.PublicId == actorId)
+            .Select(user => user.Id).SingleOrDefaultAsync(cancellationToken);
+        return await context.UserAccessRequests.AsNoTracking().AnyAsync(item => item.AvatarMediaUrl == url &&
+            item.Status == UserAccessRequestStatus.Pending && (decides || item.RequestedByAccountId == accountId),
+            cancellationToken);
+    }
 
     private async Task<bool> CanManageAvatarsAsync(Guid actorId, CancellationToken cancellationToken)
     {

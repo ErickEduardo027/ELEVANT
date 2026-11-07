@@ -96,9 +96,11 @@ public sealed class CommercialAirlineManagementEndpointsTests(ElevantApiFactory 
             .GetProperty("post");
         foreach (var status in new[] { "200", "400", "403", "404", "409" })
             Assert.True(rejectPost.GetProperty("responses").TryGetProperty(status, out _));
-        var approvalPost = routes.GetProperty("/api/v1/governance/users").GetProperty("post");
-        foreach (var status in new[] { "201", "400", "403", "404", "409" })
-            Assert.True(approvalPost.GetProperty("responses").TryGetProperty(status, out _));
+        // 2-N38: the legacy account creation that also fulfilled these requests is retired; ramp access is
+        // requested for an employee and validated by Gestión Humana, and a pending legacy request is rejected.
+        var retiredPost = routes.GetProperty("/api/v1/governance/users").GetProperty("post");
+        Assert.True(retiredPost.GetProperty("responses").TryGetProperty("410", out _));
+        Assert.False(retiredPost.GetProperty("responses").TryGetProperty("201", out _));
     }
 
     [Theory]

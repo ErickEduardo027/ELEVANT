@@ -28,7 +28,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             !Enum.TryParse<UserAccessRequestKind>(input.Kind, false, out var kind) ||
             !GovernanceSupport.ValidName(input.FirstName) || !GovernanceSupport.ValidName(input.LastName) ||
             !GovernanceSupport.ValidEmail(input.Email) || input.StationIds is not { Count: > 0 and <= 20 })
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "invalid_access_request");
 
         var prior = await context.UserAccessRequests.AsNoTracking()
             .SingleOrDefaultAsync(item => item.PublicId == input.RequestId, cancellationToken);
@@ -36,7 +36,7 @@ internal sealed partial class EfDepartmentGovernanceStore
             return prior.RequestedByAccountId == actor.Id && prior.Department == parsed &&
                 string.Equals(prior.Email, input.Email!.Trim(), StringComparison.OrdinalIgnoreCase)
                     ? GovernanceResult.Success(prior.PublicId)
-                    : GovernanceResult.Failed(GovernanceFailure.Conflict);
+                    : GovernanceResult.Failed(GovernanceFailure.Conflict, "idempotency_conflict");
 
         var stations = await ResolveStationsAsync(actor, input.StationIds, cancellationToken);
         if (stations is null) return GovernanceResult.Failed(GovernanceFailure.Invalid);
@@ -249,12 +249,13 @@ internal sealed partial class EfDepartmentGovernanceStore
         {
             var request = await context.UserAccessRequests.SingleOrDefaultAsync(item => item.PublicId == requestId,
                 cancellationToken);
-            if (request is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+            if (request is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
             if (!actor.IsSuper && (request.RequestedByAccountId != actor.Id || !actor.Administers(request.Department)))
                 return GovernanceResult.Failed(GovernanceFailure.Forbidden);
-            if (request.Status != UserAccessRequestStatus.Pending ||
-                GovernanceSupport.Version(request.RowVersion) != expectedVersion)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            if (request.Status != UserAccessRequestStatus.Pending)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "access_request_closed");
+            if (GovernanceSupport.Version(request.RowVersion) != expectedVersion)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             var now = timeProvider.GetUtcNow();
             request.Status = UserAccessRequestStatus.Cancelled;
             request.DecidedAt = now;
@@ -275,19 +276,21 @@ internal sealed partial class EfDepartmentGovernanceStore
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !(actor.IsSuper || actor.CanValidate))
             return GovernanceResult.Failed(GovernanceFailure.Forbidden);
-        if (input is null || string.IsNullOrWhiteSpace(input.ExpectedVersion) ||
-            string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Trim().Length is < 3 or > 500)
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        if (input is null || string.IsNullOrWhiteSpace(input.ExpectedVersion))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        if (string.IsNullOrWhiteSpace(input.Reason) || input.Reason.Trim().Length is < 3 or > 500)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "reason_required");
         return await InSerializableTransactionAsync(async () =>
         {
             var request = await context.UserAccessRequests.SingleOrDefaultAsync(item => item.PublicId == requestId,
                 cancellationToken);
-            if (request is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+            if (request is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
             if (!actor.IsSuper && request.RequestedByAccountId == actor.Id)
                 return GovernanceResult.Failed(GovernanceFailure.Forbidden);
-            if (request.Status != UserAccessRequestStatus.Pending ||
-                GovernanceSupport.Version(request.RowVersion) != input.ExpectedVersion)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            if (request.Status != UserAccessRequestStatus.Pending)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "access_request_closed");
+            if (GovernanceSupport.Version(request.RowVersion) != input.ExpectedVersion)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             var now = timeProvider.GetUtcNow();
             request.Status = UserAccessRequestStatus.Rejected;
             request.DecisionReason = input.Reason.Trim();
@@ -315,13 +318,14 @@ internal sealed partial class EfDepartmentGovernanceStore
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !(actor.IsSuper || actor.CanValidate))
             return GovernanceResult.Failed(GovernanceFailure.Forbidden);
-        if (input is null || string.IsNullOrWhiteSpace(input.ExpectedVersion) ||
-            string.IsNullOrWhiteSpace(input.TemporaryPassword))
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        if (input is null || string.IsNullOrWhiteSpace(input.ExpectedVersion))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        if (string.IsNullOrWhiteSpace(input.TemporaryPassword))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "password_policy");
 
         var replay = await context.UserAccessRequests.AsNoTracking()
             .SingleOrDefaultAsync(item => item.PublicId == requestId, cancellationToken);
-        if (replay is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+        if (replay is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
         if (replay.Status == UserAccessRequestStatus.Validated && replay.DecidedByAccountId == actor.Id)
             return GovernanceResult.Success(await context.Users.Where(user => user.Id == replay.CreatedAccountId)
                 .Select(user => user.PublicId).SingleAsync(cancellationToken));
@@ -332,11 +336,18 @@ internal sealed partial class EfDepartmentGovernanceStore
         {
             var request = await context.UserAccessRequests.SingleAsync(item => item.PublicId == requestId,
                 cancellationToken);
-            if (request.Status != UserAccessRequestStatus.Pending ||
-                GovernanceSupport.Version(request.RowVersion) != input.ExpectedVersion)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            if (request.Status != UserAccessRequestStatus.Pending)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "access_request_closed");
+            if (GovernanceSupport.Version(request.RowVersion) != input.ExpectedVersion)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
+            // 2-N33: a request stands while whoever asked for it still administers the department; the requests
+            // of an administrator that was transferred, terminated or demoted are not validated.
+            if (!await RequesterStillAdministersAsync(request, cancellationToken))
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "requester_no_longer_administrator");
             var now = timeProvider.GetUtcNow();
             var today = BusinessCalendar.Today(now);
+            // 2-N17: a photo the media cleanup removed before this change is left out; the account is still issued.
+            var avatar = await ExistingAvatarAsync(request.AvatarMediaUrl, cancellationToken);
             long[] stations;
             ApplicationUser? account;
             if (request.EmployeeId is not null)
@@ -350,23 +361,23 @@ internal sealed partial class EfDepartmentGovernanceStore
             else
             {
             if (await EmailInUseAsync(request.Email, null, cancellationToken))
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "email_in_use");
             stations = await context.UserAccessRequestStations.Where(item => item.UserAccessRequestId == request.Id)
                 .Join(context.Stations.Where(station => station.IsActive), item => item.StationId, station => station.Id,
                     (item, station) => station.Id)
                 .ToArrayAsync(cancellationToken);
-            if (stations.Length == 0) return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            if (stations.Length == 0) return GovernanceResult.Failed(GovernanceFailure.Conflict, "stations_invalid");
 
             if (request.Kind == UserAccessRequestKind.RampAgent)
             {
                 if (await context.RampAgents.AnyAsync(agent => agent.EmployeeNumber == request.EmployeeNumber,
                         cancellationToken))
-                    return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                    return GovernanceResult.Failed(GovernanceFailure.Conflict, "employee_number_in_use");
                 var person = new Person
                 {
                     PublicId = Guid.CreateVersion7(), CreatedAt = now, UpdatedAt = now,
                     FirstName = request.FirstName, LastName = request.LastName, PrimaryEmail = request.Email,
-                    AvatarMediaUrl = request.AvatarMediaUrl,
+                    AvatarMediaUrl = avatar,
                     IdentificationType = "RAMP_EMPLOYEE",
                     IdentificationNumber = Guid.CreateVersion7().ToString("N"),
                 };
@@ -402,7 +413,7 @@ internal sealed partial class EfDepartmentGovernanceStore
                 {
                     if (!await context.AccessProfiles.AnyAsync(profile => profile.Id == profileId && profile.IsActive,
                             cancellationToken))
-                        return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                        return GovernanceResult.Failed(GovernanceFailure.Conflict, "profile_inactive");
                     grants = new GrantSelection(profileId, []);
                 }
                 else
@@ -410,11 +421,11 @@ internal sealed partial class EfDepartmentGovernanceStore
                     var codes = await context.UserAccessRequestGrants.Where(item => item.UserAccessRequestId == request.Id)
                         .Select(item => item.PermissionCode).ToArrayAsync(cancellationToken);
                     if (codes.Length == 0 || codes.Any(code => !DepartmentPermissionCatalog.Belongs(code, request.Department)))
-                        return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                        return GovernanceResult.Failed(GovernanceFailure.Conflict, "permissions_invalid");
                     grants = new GrantSelection(null, codes);
                 }
                 account = await CreateBackOfficeAccountAsync(request.Department, DepartmentAssignmentKind.Member,
-                    request.FirstName, request.LastName, request.Email, request.AvatarMediaUrl, input.TemporaryPassword!,
+                    request.FirstName, request.LastName, request.Email, avatar, input.TemporaryPassword!,
                     stations, grants, now, cancellationToken);
             }
             }
@@ -446,6 +457,29 @@ internal sealed partial class EfDepartmentGovernanceStore
                     .Select(user => user.PublicId).SingleAsync(cancellationToken));
         }
         return outcome;
+    }
+
+    /// <summary>The requester is still an active administrator of the request's department (2-N33).</summary>
+    private async Task<bool> RequesterStillAdministersAsync(UserAccessRequest request, CancellationToken cancellationToken)
+    {
+        if (!await context.Users.AnyAsync(user => user.Id == request.RequestedByAccountId &&
+                user.Status == AccountLifecycleStatus.Active, cancellationToken))
+            return false;
+        var access = await DepartmentAccessQueries.ReadAsync(context, request.RequestedByAccountId, cancellationToken);
+        return access?.Administers(request.Department) == true;
+    }
+
+    /// <summary>
+    /// The avatar URL while its media still exists: the cleanup keeps the photo of a pending request (2-N17), but a
+    /// request older than that rule may have lost it. Null otherwise.
+    /// </summary>
+    private async Task<string?> ExistingAvatarAsync(string? url, CancellationToken cancellationToken)
+    {
+        const string prefix = "/api/v1/media/";
+        if (url is null || !url.StartsWith(prefix, StringComparison.Ordinal) || !Guid.TryParse(url[prefix.Length..], out var id))
+            return null;
+        return await context.MediaAssets.AnyAsync(asset => asset.PublicId == id && asset.Purpose == "avatar",
+            cancellationToken) ? url : null;
     }
 
     /// <summary>Requester, department administrators, validators and the super administrator re-read the request.</summary>

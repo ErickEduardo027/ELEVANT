@@ -7,6 +7,7 @@ using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Audit;
+using Elevant.Persistence.Integration;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -59,6 +60,11 @@ internal static class RampAgentRelease
         var agent = await context.RampAgents.SingleAsync(item => item.Id == rampAgentId, cancellationToken);
         agent.IsActive = false;
         agent.UpdatedAt = now;
+        // 2-N02: the tablets the agent holds are free for the next agent; an inactive agent never binds again.
+        foreach (var account in await context.Users.Where(user => user.PersonId == agent.PersonId).Select(user => user.Id)
+                     .ToArrayAsync(cancellationToken))
+            await MobileDeviceBindings.CloseForAccountAsync(context, account, actorAccountId, Label(cause), now,
+                cancellationToken);
         if (!closeScopes) return outcome;
         var stationScopes = await context.Set<RampAgentStationScope>()
             .Where(scope => scope.RampAgentId == rampAgentId && scope.ValidTo == null).ToArrayAsync(cancellationToken);

@@ -117,8 +117,15 @@ const getInvoiceCardPayments = vi.fn(async (invoiceId: string) => ({ invoiceId, 
 const getCardPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" }));
 const getTreasuryReceipt = vi.fn(async () => { throw new ElevantApiError({ kind: "http", status: 404 }); });
 
+// 2-N20: the profile lists the airline's portal users and what the session may do.
+const getPortalUsers = vi.fn(async () => ({
+  me: { accountId: actor.accountId, representative: false, signer: true, canSign: true, canManageUsers: false },
+  users: [{ id: actor.accountId, firstName: "Casey", lastName: "Airline", email: actor.email, status: "Active",
+    invitationPending: false, representative: false, signer: true, lastLoginAt: null, version: "AAAAAAAAB9E=" }],
+}));
+
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
@@ -266,10 +273,14 @@ it("does not invent details for an operation outside the authorized tenant", asy
   expect(screen.queryByText("DEV-TAT-0002")).not.toBeInTheDocument();
 });
 
-it("shows verified account and station scope in profile", () => {
+it("shows verified account and station scope in profile", async () => {
   render(<AirlinePortalPage view="profile" />);
-  expect(screen.getByText(actor.email)).toBeInTheDocument();
+  expect(screen.getAllByText(actor.email).length).toBeGreaterThan(0);
   expect(screen.getByText("PUJ · Punta Cana")).toBeInTheDocument();
+  // 2-N20: a signer reads the users of its airline and signs, but does not manage them.
+  expect(await screen.findByText(/Usted firma los contratos y envía los permisos de operación de Demo Airlines/))
+    .toBeInTheDocument();
+  expect(screen.queryByRole("form", { name: "Invitar a un usuario" })).not.toBeInTheDocument();
 });
 
 it("shows only API operations on overview and flights, including an honest empty state", async () => {

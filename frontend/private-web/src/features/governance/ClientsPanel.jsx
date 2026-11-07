@@ -12,6 +12,7 @@ import {
   listClientAirlines,
   listClientUsers,
   resetClientUserPassword,
+  setClientUserPortalRole,
   setClientUserStatus,
 } from '../../services/departmentGovernanceService';
 import { resendAirlineInvitation } from '../../services/commercialGovernanceApi';
@@ -28,6 +29,16 @@ const RESET_MESSAGES = Object.freeze({
   ...COMMERCIAL_GOVERNANCE_MESSAGES,
   version_conflict: 'La cuenta cambió mientras la editaba (por ejemplo, activó su invitación). Ya se cargaron sus datos actuales: revíselos y vuelva a intentarlo.',
 });
+const ROLE_BADGE = 'mr-1 mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold';
+
+/** What each user may do in the portal (2-N20): representatives manage users and sign; signers sign. */
+function PortalRoles({ user }) {
+  if (!user.representative && !user.signer) return null;
+  return <span className="block">
+    {user.representative && <span className={`${ROLE_BADGE} bg-accent-600/10 text-accent-600`}>Representante</span>}
+    {user.signer && <span className={`${ROLE_BADGE} bg-signal-500/10 text-signal-500`}>Firmante</span>}
+  </span>;
+}
 
 /** The failure of a list read: an unauthorized state, never an error to retry. */
 function LoadFailure({ failure, fallback, onRetry }) {
@@ -56,6 +67,9 @@ function AirlineUsers({ airline, onBack }) {
   const [reload, setReload] = useState(0);
   const resendKeys = useRef(createCommandKeyHolder());
   const resetKeys = useRef(createCommandKeyHolder());
+  const createKeys = useRef(createCommandKeyHolder());
+  const statusKeys = useRef(createCommandKeyHolder());
+  const roleKeys = useRef(createCommandKeyHolder());
 
   useEffect(() => {
     let active = true;
@@ -87,6 +101,15 @@ function AirlineUsers({ airline, onBack }) {
     key => resendAirlineInvitation(user.id, user.version, key)),
   `Nuevo enlace de activación en cola para ${user.email}; vence en 72 horas y los anteriores dejaron de funcionar. Revise «Correo del sistema» en Configuración para confirmar el envío.`);
 
+  /** Designates or withdraws a portal role with the account version on screen (2-N20). */
+  const setPortalRole = (user, change, message) => {
+    const values = { representative: Boolean(user.representative), signer: Boolean(user.signer), ...change,
+      expectedVersion: user.version };
+    return act(() => roleKeys.current.run('portal-role', { id: user.id, ...values },
+      key => setClientUserPortalRole(airline.organizationId, user.id, values, key)),
+    `${message} Si la aerolínea tiene representantes activos, su aviso quedó en cola.`);
+  };
+
   function openReset(user) {
     setResettingId(user.id); setPassword(''); setResetError(''); resetKeys.current.reset();
   }
@@ -109,7 +132,7 @@ function AirlineUsers({ airline, onBack }) {
 
   function openCreate() {
     setForm({ firstName: '', lastName: '', email: '', temporaryPassword: '' }); setManual(false); setCreateError('');
-    setCreating(true);
+    createKeys.current.reset(); setCreating(true);
   }
 
   async function create(event) {
@@ -117,7 +140,8 @@ function AirlineUsers({ airline, onBack }) {
     if (createBusy) return;
     setCreateBusy(true); setCreateError('');
     const payload = manual ? form : { firstName: form.firstName, lastName: form.lastName, email: form.email };
-    const done = await act(() => createClientUser(airline.organizationId, payload), manual
+    const done = await act(() => createKeys.current.run('client-user.create', payload,
+      key => createClientUser(airline.organizationId, payload, key)), manual
       ? 'Usuario creado. Entregue la contraseña temporal por un canal autorizado; el primer ingreso exige cambiarla.'
       : `Usuario creado. La invitación quedó en cola para ${form.email}; el enlace vence en 72 horas. Revise «Correo del sistema» en Configuración para confirmar el envío.`,
     failure => setCreateError(commercialGovernanceMessage(failure)));
@@ -135,6 +159,7 @@ function AirlineUsers({ airline, onBack }) {
           className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Añadir usuario</button>
       </div>
       <h2 className="text-xl font-bold">{airline.name} <span className="text-sm font-normal text-text-secondary-light">{airline.iataCode}</span></h2>
+      <p className="text-sm text-text-secondary-light">Los representantes gestionan los usuarios de su aerolínea en el portal y firman. Los firmantes firman los contratos y envían el permiso de operación (JAC). El resto de usuarios consulta.</p>
       {notice && <div role="status" className="rounded-lg border border-status-success/30 bg-status-success/10 p-3 text-sm">{notice}</div>}
       {error && <div role="alert" className={alertClass}>{error}</div>}
       {loadFailure ? <LoadFailure failure={loadFailure} fallback="No se pudieron cargar los usuarios del portal." onRetry={refresh} />
@@ -146,12 +171,18 @@ function AirlineUsers({ airline, onBack }) {
               <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]"><tr><th className="p-3">Usuario</th><th className="p-3">Estado</th><th className="p-3">Último acceso</th><th className="p-3">Acciones</th></tr></thead>
               <tbody>{users.map(user => (
                 <tr key={user.id} className="border-t border-black/5 dark:border-white/5">
-                  <td className="p-3"><strong>{user.firstName} {user.lastName}</strong><span className="block text-xs text-text-secondary-light">{user.email}</span></td>
+                  <td className="p-3"><strong>{user.firstName} {user.lastName}</strong><span className="block text-xs text-text-secondary-light">{user.email}</span><PortalRoles user={user} /></td>
                   <td className="p-3"><StatusBadge tone={user.status === 'Active' ? 'success' : 'neutral'} label={user.status === 'Active' ? 'Activo' : 'Inactivo'} />{user.mustChangePassword && <span className="block text-xs text-signal-500">Cambio de clave pendiente</span>}{user.invitationPending && <span className="block text-xs text-signal-500">Invitación pendiente de activar</span>}</td>
                   <td className="p-3 text-xs">{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString('es-DO') : 'Nunca'}</td>
                   <td className="p-3"><div className="flex flex-wrap gap-x-3 text-xs font-semibold">
                     {user.invitationPending && user.status === 'Active' && <button type="button" onClick={() => { void resend(user); }} className="min-h-[32px] text-accent-600">Reenviar invitación</button>}
                     <button type="button" onClick={() => openReset(user)} className="min-h-[32px] text-accent-600">{user.invitationPending ? 'Asignar contraseña temporal' : 'Restablecer clave'}</button>
+                    {user.status === 'Active' && <button type="button" onClick={() => { void setPortalRole(user, { representative: !user.representative },
+                      user.representative ? `${user.firstName} ${user.lastName} dejó de ser representante.` : `${user.firstName} ${user.lastName} ahora es representante.`); }}
+                    className="min-h-[32px] text-accent-600">{user.representative ? 'Quitar representante' : 'Designar representante'}</button>}
+                    {user.status === 'Active' && <button type="button" onClick={() => { void setPortalRole(user, { signer: !user.signer },
+                      user.signer ? `${user.firstName} ${user.lastName} ya no está marcado como firmante.` : `${user.firstName} ${user.lastName} ahora puede firmar y enviar el permiso de operación.`); }}
+                    className="min-h-[32px] text-accent-600">{user.signer ? 'Quitar firmante' : 'Marcar firmante'}</button>}
                     <button type="button" onClick={() => setToggling(user)} className={`min-h-[32px] ${user.status === 'Active' ? 'text-status-danger' : 'text-status-success'}`}>{user.status === 'Active' ? 'Desactivar' : 'Reactivar'}</button>
                   </div></td>
                 </tr>
@@ -186,7 +217,15 @@ function AirlineUsers({ airline, onBack }) {
       <ConfirmDialog open={Boolean(toggling)} title={toggling?.status === 'Active' ? 'Desactivar usuario' : 'Reactivar usuario'}
         description={toggling?.status === 'Active' ? 'El usuario perderá el acceso al portal de inmediato.' : 'El usuario recuperará el acceso al portal.'}
         confirmLabel={toggling?.status === 'Active' ? 'Desactivar' : 'Reactivar'} onClose={() => setToggling(null)}
-        onConfirm={async () => { const user = toggling; setToggling(null); await act(() => setClientUserStatus(airline.organizationId, user.id, user.status !== 'Active', user.version), user.status === 'Active' ? 'Usuario desactivado.' : 'Usuario reactivado.'); }} />
+        onConfirm={async () => {
+          const user = toggling;
+          const active = user.status !== 'Active';
+          setToggling(null);
+          await act(() => statusKeys.current.run('client-user.status', { id: user.id, active, version: user.version },
+            key => setClientUserStatus(airline.organizationId, user.id, active, user.version, key)),
+          active ? 'Usuario reactivado. Si la aerolínea tiene representantes activos, su aviso quedó en cola.'
+            : 'Usuario desactivado. Si la aerolínea tiene representantes activos, su aviso quedó en cola.');
+        }} />
     </div>
   );
 }

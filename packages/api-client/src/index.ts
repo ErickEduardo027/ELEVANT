@@ -13,6 +13,8 @@ export * from "./airlinePermits";
 export * from "./masterData";
 export * from "./flightFeedReview";
 export * from "./humanResourcesCommands";
+export * from "./mobileDevices";
+export * from "./airlinePortalUsers";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -334,6 +336,12 @@ export {
   type AirlinePortalStandingResponse,
   type AirlinePortalStandingStationResponse,
   type AirlinePortalStandingContractResponse,
+  type AirlinePortalUsersData,
+  type AirlinePortalUserData,
+  type AirlinePortalCapabilitiesData,
+  type OccMobileDevicesData,
+  type OccMobileDeviceData,
+  type OccMobileDeviceAgentData,
   type SubmitAirlinePermitInput,
   type ContractTimelineData,
   type ContractTimelineEntry,

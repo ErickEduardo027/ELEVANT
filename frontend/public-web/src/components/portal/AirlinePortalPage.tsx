@@ -16,6 +16,7 @@ import { operationStatusLabel } from "@/lib/operation-status";
 import { AirlineFinancePage } from "./AirlineFinancePage";
 import { AirlineDocumentsPage } from "./AirlineDocumentsPage";
 import { AirlineReportsPage } from "./AirlineReportsPage";
+import { AirlinePortalUsersSection } from "./AirlinePortalUsersSection";
 import styles from "./AirlinePortalPage.module.css";
 
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
@@ -409,6 +410,8 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
           <li key={station.id}>{station.code} · {station.name} · sin contrato en vigor</li>)}</ul>
       </>}
     </section>
+    {/* 2-N20: who has access to the portal and who signs; representatives manage the users. */}
+    <AirlinePortalUsersSection key={actor.accountId} airlineName={bootstrap.name} />
   </div>;
 
   if (view === "requests") return <AirlineRequestsPage

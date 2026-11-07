@@ -44,37 +44,31 @@ public sealed class GovernanceController(IGovernanceStore store,
         return audit is null ? Forbid() : Ok(audit);
     }
 
+    /// <summary>Retired (2-N38): templates replace custom roles; answers 410 <c>legacy_governance_retired</c>.</summary>
     [HttpPost("roles", Name = "CreateGovernanceRole")]
-    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status410Gone, "application/problem+json")]
     [RequestSizeLimit(32768)]
-    public async Task<IActionResult> CreateRole([FromBody] SaveGovernanceRoleInput input,
-        CancellationToken cancellationToken) =>
-        await MutateAsync((actorId) => store.CreateRoleAsync(actorId, input, cancellationToken),
-            StatusCodes.Status201Created);
+    public IActionResult CreateRole() => Retired();
 
+    /// <summary>Retired (2-N38): templates replace custom roles; answers 410 <c>legacy_governance_retired</c>.</summary>
     [HttpPut("roles/{id:guid}", Name = "UpdateGovernanceRole")]
-    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status410Gone, "application/problem+json")]
     [RequestSizeLimit(32768)]
-    public async Task<IActionResult> UpdateRole(Guid id, [FromBody] SaveGovernanceRoleInput input,
-        CancellationToken cancellationToken) =>
-        await MutateAsync((actorId) => store.UpdateRoleAsync(actorId, id, input, cancellationToken));
+    public IActionResult UpdateRole() => Retired();
 
     [HttpDelete("roles/{id:guid}", Name = "DeleteGovernanceRole")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
     public async Task<IActionResult> DeleteRole(Guid id, CancellationToken cancellationToken) =>
         await MutateAsync((actorId) => store.DeleteRoleAsync(actorId, id, cancellationToken));
 
+    /// <summary>
+    /// Retired (2-N38): accounts belong to employees; departments request them and Gestión Humana validates them.
+    /// Answers 410 <c>legacy_governance_retired</c>.
+    /// </summary>
     [HttpPost("users", Name = "CreateGovernanceUser")]
-    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status410Gone, "application/problem+json")]
     [RequestSizeLimit(32768)]
-    public async Task<IActionResult> CreateUser([FromBody] CreateGovernanceUserInput input,
-        CancellationToken cancellationToken) =>
-        await MutateAsync((actorId) => store.CreateUserAsync(actorId, input, cancellationToken),
-            StatusCodes.Status201Created);
+    public IActionResult CreateUser() => Retired();
 
     [HttpGet("ramp-mobile-access-requests", Name = "ListGovernanceRampMobileAccessRequests")]
     [ProducesResponseType<RampMobileAccessRequestData[]>(StatusCodes.Status200OK, "application/json")]
@@ -109,12 +103,17 @@ public sealed class GovernanceController(IGovernanceStore store,
         };
     }
 
+    /// <summary>
+    /// Retired (2-N38): access is edited from the department's users and the employee record. Answers 410
+    /// <c>legacy_governance_retired</c>.
+    /// </summary>
     [HttpPut("users/{id:guid}", Name = "UpdateGovernanceUser")]
-    [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status410Gone, "application/problem+json")]
     [RequestSizeLimit(32768)]
-    public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateGovernanceUserInput input,
-        CancellationToken cancellationToken) =>
-        await MutateAsync((actorId) => store.UpdateUserAsync(actorId, id, input, cancellationToken));
+    public IActionResult UpdateUser() => Retired();
+
+    /// <summary>The retired routes answer the same whatever the body: they no longer read it nor reach the store.</summary>
+    private IActionResult Retired() => TryActor(out _) ? GovernanceResults.LegacyRetired(this) : Unauthorized();
 
     [HttpDelete("users/{id:guid}", Name = "DeleteGovernanceUser")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
@@ -130,22 +129,13 @@ public sealed class GovernanceController(IGovernanceStore store,
         await MutateAsync((actorId) => store.ResetPasswordAsync(actorId, id,
             input.TemporaryPassword, cancellationToken));
 
+    /// <summary>The legacy commands still in use answer like every governance command: a code and a Spanish title (2-N39).</summary>
     private async Task<IActionResult> MutateAsync(
         Func<Guid, Task<GovernanceResult>> command,
         int successStatus = StatusCodes.Status200OK)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await command(actorId);
-        return result.Failure switch
-        {
-            null => StatusCode(successStatus, new CommercialIdResponse(result.Id!.Value)),
-            GovernanceFailure.Forbidden => Forbid(),
-            GovernanceFailure.NotFound => Problem(statusCode: 404, title: "Governance record not found."),
-            GovernanceFailure.Invalid => Problem(statusCode: 400, title: "Invalid governance data."),
-            GovernanceFailure.Conflict => Problem(statusCode: 409, title: "Governance record conflicts with current state."),
-            GovernanceFailure.Protected => Problem(statusCode: 409, title: "This protected user or role cannot be changed."),
-            _ => throw new InvalidOperationException(),
-        };
+        return this.ToAction(await command(actorId), successStatus);
     }
 
     private bool TryActor(out Guid accountId) =>

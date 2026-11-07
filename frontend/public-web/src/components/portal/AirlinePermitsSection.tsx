@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import type { AirlinePermitData, ContractTimelineData } from "@elevant/api-client";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { usePortalCapabilities } from "@/components/auth/usePortalCapabilities";
 import { businessToday } from "@/lib/business-day";
 import { permitProblem } from "@/lib/permit-problems";
 import styles from "./AirlinePortalPage.module.css";
@@ -29,6 +30,9 @@ interface PermitIntent { signature: string; key: string; documentUrl: string | n
  */
 export function AirlinePermitsSection() {
   const { getPermits, submitPermit, uploadPermitDocument } = useAirlineSession();
+  // 2-N20: only the airline's representatives and signers submit permits; while unknown the form stays.
+  const capabilities = usePortalCapabilities();
+  const canSubmit = capabilities.status !== "ready" || capabilities.me.canSign;
   const [permits, setPermits] = useState<AirlinePermitData[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [form, setForm] = useState(EMPTY);
@@ -94,7 +98,9 @@ export function AirlinePermitsSection() {
           ? `. Motivo: ${permit.revocationReason}` : "."} Envíe un documento válido para que cuente de nuevo.</small>}
       </li>)}
     </ul>}
-    <form onSubmit={submit} noValidate className={styles.draftCommentForm} aria-label="Enviar un permiso">
+    {!canSubmit && <p className={styles.note}>Solo los representantes y los firmantes de su aerolínea envían
+      permisos. Pida a su representante que lo marque como firmante en «Perfil».</p>}
+    {canSubmit && <form onSubmit={submit} noValidate className={styles.draftCommentForm} aria-label="Enviar un permiso">
       <label htmlFor="permit-kind">Tipo de documento</label>
       <select id="permit-kind" value={form.kind} onChange={event => setForm(current => ({ ...current, kind: event.target.value }))}>
         {Object.entries(KINDS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
@@ -111,7 +117,7 @@ export function AirlinePermitsSection() {
       <input id="permit-file" type="file" accept="application/pdf,image/jpeg,image/png" onChange={event => setFile(event.target.files?.[0] ?? null)} />
       <button type="submit" disabled={busy}>{busy ? "Enviando…" : "Enviar permiso"}</button>
       {message && <p role={message.kind === "error" ? "alert" : "status"}>{message.text}</p>}
-    </form>
+    </form>}
   </section>;
 }
 
