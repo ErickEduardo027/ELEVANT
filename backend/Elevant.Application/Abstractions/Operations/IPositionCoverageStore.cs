@@ -40,10 +40,13 @@ public sealed record TerminalRulesInput(int? MaxStandsPerAgent, bool RequiresBri
 public sealed record StandConstraintInput(Guid StandId, Guid AffectedStandId, string Kind);
 
 /// <param name="Reasons">Broken rules (codes) when <see cref="Failure"/> is Rejected.</param>
-public sealed record CoverageResult(CoverageBoardData? Board, PositionCoverageFailure? Failure, IReadOnlyList<string> Reasons)
+/// <param name="Code">Stable Problem Details code of the failure, when it has one (<c>stand_in_use</c>, 2-A).</param>
+public sealed record CoverageResult(CoverageBoardData? Board, PositionCoverageFailure? Failure, IReadOnlyList<string> Reasons,
+    string? Code = null)
 {
-    public static CoverageResult Fail(PositionCoverageFailure failure, IReadOnlyList<string>? reasons = null) =>
-        new(null, failure, reasons ?? []);
+    public static CoverageResult Fail(PositionCoverageFailure failure, IReadOnlyList<string>? reasons = null,
+        string? code = null) =>
+        new(null, failure, reasons ?? [], code);
 }
 
 /// <summary>A stand coverage of the signed-in ramp agent («Mis posiciones de hoy»).</summary>

@@ -78,6 +78,7 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(422, "application/problem+json")]
     public async Task<ActionResult<OccCoverageBoardResponse>> UpdateStand([FromRoute] Guid standId,
         [FromBody, BindRequired] UpdateOccStandAttributesRequest request, CancellationToken cancellationToken)
     {
@@ -174,17 +175,19 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         PositionCoverageFailure.NotFound => Problem<OccCoverageBoardResponse>(404, "The station, agent, terminal or stand was not found."),
         PositionCoverageFailure.Invalid => Problem<OccCoverageBoardResponse>(400, "The coverage request is invalid."),
         PositionCoverageFailure.Conflict => Problem<OccCoverageBoardResponse>(409, "The data changed; read the board again."),
-        PositionCoverageFailure.Rejected => Rejected(result.Reasons),
+        PositionCoverageFailure.Rejected => Rejected(result.Reasons, result.Code),
         _ => Ok(Board(result.Board!)),
     };
 
-    private ActionResult<OccCoverageBoardResponse> Rejected(IReadOnlyList<string> reasons)
+    private ActionResult<OccCoverageBoardResponse> Rejected(IReadOnlyList<string> reasons, string? code)
     {
         var problem = new ProblemDetails
         {
             Status = 422, Title = "The coverage breaks assignment rules.", Instance = HttpContext.Request.Path,
         };
         problem.Extensions["reasons"] = reasons;
+        // A stand in use is not deactivated (2-A): the same code as the master-data screen.
+        if (code is not null) problem.Extensions["code"] = code;
         return new ObjectResult(problem) { StatusCode = 422 };
     }
 

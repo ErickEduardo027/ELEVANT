@@ -17,6 +17,14 @@ internal static class SafeAuditChanges
         "version.status", "version.valid_to", "contract.terminated_on",
         // Permit dossier (phase 2, block B): a verification Contratos revoked (2-N09).
         "permit.review",
+        // Master data and flight feed (phase 2, block C): stations, terminals, stands and aircraft types (2-A) and a
+        // dismissed proposal OCC restored (2-N36).
+        "station.name", "station.time_zone", "station.active",
+        "terminal.code", "terminal.name", "terminal.active",
+        "stand.code", "stand.terminal", "stand.bridge", "stand.remote", "stand.max_size", "stand.active",
+        "aircraft_type.icao", "aircraft_type.iata", "aircraft_type.manufacturer", "aircraft_type.model",
+        "aircraft_type.size", "aircraft_type.active",
+        "flight_proposal.status",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

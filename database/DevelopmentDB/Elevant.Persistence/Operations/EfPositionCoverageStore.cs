@@ -2,6 +2,7 @@ using System.Data;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
@@ -167,6 +168,10 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
         var (scope, failure) = await ScopeForStationAsync(actorId, stand.StationId, ConfigurePermission, cancellationToken);
         if (scope is null) return CoverageResult.Fail(failure!.Value);
         var now = Now();
+        // A stand in use is never deactivated, from this screen either (2-A): the rule goes back as the reason.
+        if (stand.IsActive && !input.IsActive && await MasterDataUsage.StandInUseAsync(context, stand.Id,
+                MasterDataUsage.Since(BusinessCalendar.Today(now, scope.TimeZone)), now, cancellationToken))
+            return CoverageResult.Fail(PositionCoverageFailure.Rejected, ["stand_in_use"], "stand_in_use");
         stand.HasBoardingBridge = input.HasBoardingBridge;
         stand.IsRemote = input.IsRemote;
         stand.MaxAircraftSize = size;

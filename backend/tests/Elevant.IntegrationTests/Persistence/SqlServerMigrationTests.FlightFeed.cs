@@ -88,8 +88,10 @@ public sealed partial class SqlServerMigrationTests
         Assert.Null(await observed.FindAsync("Q7", null, ct));
 
         // OCC reads the proposals with the suggested pair; a ramp agent cannot.
-        Assert.Null(await occ.ListAsync(SeededRampAgentAccount, SeededPujStation, DateOnly.FromDateTime(localNoon), ct));
-        var feed = (await occ.ListAsync(SeededOccAccount, SeededPujStation, DateOnly.FromDateTime(localNoon), ct))!;
+        Assert.Null(await occ.ListAsync(SeededRampAgentAccount, SeededPujStation, DateOnly.FromDateTime(localNoon),
+            cancellationToken: ct));
+        var feed = (await occ.ListAsync(SeededOccAccount, SeededPujStation, DateOnly.FromDateTime(localNoon),
+            cancellationToken: ct))!;
         Assert.Equal((false, 2, 1200), (feed.Budget.Configured, feed.Budget.UnitsToday, feed.Budget.DailyUnits));
         var arrival = Assert.Single(feed.Proposals, item => item.Direction == "Arrival");
         var departure = Assert.Single(feed.Proposals, item => item.Direction == "Departure");
@@ -99,12 +101,17 @@ public sealed partial class SqlServerMigrationTests
 
         // Import the pair: a turnaround with the contract that covers it; repeating returns the same one.
         Assert.Equal(OccFlightFeedFailure.Forbidden,
-            (await occ.ImportAsync(SeededRampAgentAccount, arrival.ProposalId, departure.ProposalId, ct)).Failure);
-        Assert.Equal(OccFlightFeedFailure.Conflict,
-            (await occ.ImportAsync(SeededOccAccount, departure.ProposalId, arrival.ProposalId, ct)).Failure);
-        var imported = await occ.ImportAsync(SeededOccAccount, arrival.ProposalId, departure.ProposalId, ct);
+            (await occ.ImportAsync(SeededRampAgentAccount, new OccFlightImportInput(arrival.ProposalId, departure.ProposalId), null,
+                ct)).Failure);
+        var swapped = await occ.ImportAsync(SeededOccAccount, new OccFlightImportInput(departure.ProposalId, arrival.ProposalId),
+            null, ct);
+        Assert.Equal((OccFlightFeedFailure.Conflict, "flight_proposals_not_pairable"), (swapped.Failure, swapped.Code));
+        var imported = await occ.ImportAsync(SeededOccAccount, new OccFlightImportInput(arrival.ProposalId, departure.ProposalId),
+            null, ct);
         Assert.Null(imported.Failure);
-        var replay = await occ.ImportAsync(SeededOccAccount, arrival.ProposalId, departure.ProposalId, ct);
+        // Without a key (older screens) the same pair answers the same turnaround.
+        var replay = await occ.ImportAsync(SeededOccAccount, new OccFlightImportInput(arrival.ProposalId, departure.ProposalId),
+            null, ct);
         Assert.Equal((imported.TurnaroundId, true), (replay.TurnaroundId, replay.Replayed));
         var turnaround = await context.Turnarounds.AsNoTracking().SingleAsync(item => item.PublicId == imported.TurnaroundId, ct);
         var version = await context.ContractVersions.AsNoTracking().Where(item => item.PublicId == SeededContractVersion)
@@ -131,7 +138,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Null(await occ.DismissAsync(SeededOccAccount, extra.PublicId, ct));
         Assert.Null(await occ.DismissAsync(SeededOccAccount, extra.PublicId, ct));
         Assert.Equal(OccFlightFeedFailure.Conflict, await occ.DismissAsync(SeededOccAccount, arrival.ProposalId, ct));
-        var afterDismiss = (await occ.ListAsync(SeededOccAccount, SeededPujStation, DateOnly.FromDateTime(localNoon), ct))!;
+        var afterDismiss = (await occ.ListAsync(SeededOccAccount, SeededPujStation, DateOnly.FromDateTime(localNoon),
+            cancellationToken: ct))!;
         Assert.DoesNotContain(afterDismiss.Proposals, item => item.ProposalId == extra.PublicId);
         Assert.Equal(4, afterDismiss.Budget.UnitsToday);
         Assert.NotNull(afterDismiss.NextManualRefreshAt);

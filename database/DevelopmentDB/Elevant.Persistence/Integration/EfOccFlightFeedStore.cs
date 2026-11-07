@@ -3,13 +3,17 @@ using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Integrations;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Application.Integration;
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
+using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Operations;
 using Elevant.Persistence.Realtime;
 using Microsoft.Data.SqlClient;
@@ -17,30 +21,55 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Persistence.Integration;
 
-/// <summary>OCC review of the provider's proposed flights (ADR-0028).</summary>
+/// <summary>
+/// OCC review of the provider's proposed flights (ADR-0028). The feed keeps the legs of every active registered
+/// airline (2-B); the review shows those with a contract in force that day, the charter candidates apart
+/// (ADR-0033), and the dismissed ones OCC can still restore (2-N36). Airlines whose contract at the station is
+/// suspended or expired are hidden and their import answers <c>contract_not_in_force</c> (2-N16).
+/// </summary>
 internal sealed class EfOccFlightFeedStore(
     ElevantDbContext context, IActorContextResolver actors, IAirportFlightFeed feed, FlightFeedBudget budget,
     TimeProvider timeProvider) : IOccFlightFeedStore
 {
+    private const string ReadPermission = "operations.planning.read";
+    private const string CreatePermission = "operations.planning.create";
+    private const string ImportAction = "occ.flight_proposal.import";
+    private const string RestoreAction = "occ.flight_proposal.restore";
     private static readonly TimeSpan MinTurn = TimeSpan.FromMinutes(20);
     private static readonly TimeSpan MaxTurn = TimeSpan.FromHours(8);
 
     public async Task<OccFlightFeedData?> ListAsync(Guid actorId, Guid stationId, DateOnly date,
-        CancellationToken cancellationToken = default)
+        OccFlightFeedView view = OccFlightFeedView.Contracted, CancellationToken cancellationToken = default)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (!Allowed(actor, "operations.planning.read", stationId)) return null;
+        if (!Allowed(actor, ReadPermission, stationId)) return null;
         var station = await context.Stations.AsNoTracking().Where(item => item.PublicId == stationId && item.IsActive)
             .Select(item => new { item.Id, item.Code }).SingleOrDefaultAsync(cancellationToken);
         if (station is null) return null;
 
-        var rows = await (from proposal in context.Set<ExternalFlightProposal>().AsNoTracking()
+        var (contracted, notInForce) = await ClassifyAsync(station.Id, date, cancellationToken);
+        var hidden = notInForce.ToArray();
+        var withContract = contracted.ToArray();
+        var proposals = context.Set<ExternalFlightProposal>().AsNoTracking()
+            .Where(proposal => proposal.StationId == station.Id && proposal.OperationDate == date &&
+                               !hidden.Contains(proposal.AirlineId));
+        proposals = view switch
+        {
+            OccFlightFeedView.Dismissed => proposals.Where(proposal => proposal.Status == ExternalFlightProposalStatus.Dismissed),
+            OccFlightFeedView.Charter => proposals.Where(proposal => proposal.Status != ExternalFlightProposalStatus.Dismissed &&
+                !withContract.Contains(proposal.AirlineId) &&
+                // A charter needs an active carrier with an active organization (ADR-0033).
+                context.Airlines.Any(airline => airline.Id == proposal.AirlineId && airline.IsActive &&
+                    context.Organizations.Any(organization => organization.Id == airline.OrganizationId &&
+                        organization.Status == OrganizationStatus.Active))),
+            _ => proposals.Where(proposal => proposal.Status != ExternalFlightProposalStatus.Dismissed &&
+                withContract.Contains(proposal.AirlineId)),
+        };
+        var rows = await (from proposal in proposals
                           join airline in context.Airlines.AsNoTracking() on proposal.AirlineId equals airline.Id
                           join turnaround in context.Turnarounds.AsNoTracking() on proposal.TurnaroundId equals (long?)turnaround.Id
                               into turnarounds
                           from turnaround in turnarounds.DefaultIfEmpty()
-                          where proposal.StationId == station.Id && proposal.OperationDate == date &&
-                                proposal.Status != ExternalFlightProposalStatus.Dismissed
                           orderby proposal.ScheduledAt, proposal.FlightNumber
                           select new
                           {
@@ -48,6 +77,7 @@ internal sealed class EfOccFlightFeedStore(
                               airline.IataCode, TurnaroundPublicId = turnaround == null ? (Guid?)null : turnaround.PublicId,
                           }).ToArrayAsync(cancellationToken);
         var suggestions = SuggestDepartures(rows.Select(row => row.Proposal).ToArray());
+        var types = await AircraftTypeCandidatesAsync(cancellationToken);
 
         var now = timeProvider.GetUtcNow();
         var (dayStart, monthStart) = EfFlightFeedSyncStore.UsagePeriods(now);
@@ -68,14 +98,15 @@ internal sealed class EfOccFlightFeedStore(
         return new OccFlightFeedData(stationId, station.Code, date,
             new OccFlightFeedBudgetData(feed.IsConfigured, feed.Provider, unitsToday, budget.DailyUnits, unitsMonth,
                 budget.MonthlyUnits, paused, paused is null ? null : lease!.LastError),
-            lastRead, nextManual > now ? nextManual : null, actor!.HasPermission("operations.planning.create"),
+            lastRead, nextManual > now ? nextManual : null, actor!.HasPermission(CreatePermission),
             rows.Select(row => new OccFlightProposalData(row.Proposal.PublicId, row.Proposal.Direction.ToString(),
                 row.Proposal.FlightNumber, row.AirlinePublicId, row.AirlineName, row.IataCode, row.Proposal.CounterpartIata,
                 row.Proposal.CounterpartName, row.Proposal.CounterpartAirportId is not null, row.Proposal.ScheduledAt,
                 row.Proposal.RevisedAt, row.Proposal.RunwayAt, row.Proposal.ProviderStatus, row.Proposal.AircraftRegistration,
                 row.Proposal.AircraftModel, row.Proposal.Terminal, row.Proposal.Gate, row.Proposal.Status.ToString(),
                 row.TurnaroundPublicId,
-                suggestions.TryGetValue(row.Proposal.Id, out var suggested) ? suggested : null, row.Proposal.LastSeenAt)).ToArray());
+                suggestions.TryGetValue(row.Proposal.Id, out var suggested) ? suggested : null, row.Proposal.LastSeenAt,
+                Version(row.Proposal.RowVersion), AircraftModelMatcher.Suggest(row.Proposal.AircraftModel, types))).ToArray());
     }
 
     /// <summary>
@@ -104,90 +135,192 @@ internal sealed class EfOccFlightFeedStore(
         return result;
     }
 
-    public async Task<OccFlightImportResult> ImportAsync(Guid actorId, Guid arrivalProposalId, Guid departureProposalId,
+    public async Task<OccFlightImportResult> ImportAsync(Guid actorId, OccFlightImportInput input, Guid? idempotencyKey,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(input);
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (!Allowed(actor, CreatePermission)) return Failed(OccFlightFeedFailure.Forbidden, "forbidden");
+        if (idempotencyKey == Guid.Empty) return Failed(OccFlightFeedFailure.Invalid, "idempotency_key_required");
+        if (idempotencyKey is not null &&
+            (string.IsNullOrWhiteSpace(input.ExpectedArrivalVersion) || string.IsNullOrWhiteSpace(input.ExpectedDepartureVersion)))
+            return Failed(OccFlightFeedFailure.Invalid, "expected_version_required");
+        if (input.ArrivalProposalId == Guid.Empty || input.DepartureProposalId == Guid.Empty ||
+            input.ArrivalProposalId == input.DepartureProposalId || input.AircraftTypeId == Guid.Empty || input.StandId == Guid.Empty)
+            return Failed(OccFlightFeedFailure.Invalid, "invalid_flight_import");
+        var accountId = await AccountIdAsync(actorId, cancellationToken);
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            input.ArrivalProposalId, input.DepartureProposalId, input.AircraftTypeId, input.StandId, input.Charter,
+            input.ExpectedArrivalVersion, input.ExpectedDepartureVersion,
+        });
         try
         {
             return await context.Database.CreateExecutionStrategy().ExecuteAsync(async token =>
             {
                 context.ChangeTracker.Clear();
                 await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
-                var result = await ImportInsideTransactionAsync(actorId, arrivalProposalId, departureProposalId, token);
-                if (result.Failure is null && !result.Replayed) await transaction.CommitAsync(token);
+                if (idempotencyKey is { } key)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, key, accountId, ImportAction, hash, token);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return Failed(OccFlightFeedFailure.Conflict, "idempotency_conflict");
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay) return await ExistingAsync(prior.ResultId, token);
+                }
+                var result = await ImportInsideTransactionAsync(actor!, accountId, input, idempotencyKey is not null, token);
+                if (result.Failure is not null || result.Replayed)
+                {
+                    await transaction.RollbackAsync(token);
+                    context.ChangeTracker.Clear();
+                    return result;
+                }
+                if (idempotencyKey is { } receipt)
+                {
+                    CommercialCommandReceipts.Add(context, receipt, accountId, ImportAction, hash, result.TurnaroundId!.Value, Now());
+                    await context.SaveChangesAsync(token);
+                }
+                await transaction.CommitAsync(token);
                 return result;
             }, cancellationToken);
         }
-        catch (Exception exception) when (exception is DbUpdateConcurrencyException ||
-                                          exception is DbUpdateException { InnerException: SqlException { Number: 1205 or 2601 or 2627 } } ||
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return Failed(OccFlightFeedFailure.Conflict, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is { } key && CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, accountId, ImportAction, hash, cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? await ExistingAsync(concurrent.ResultId, cancellationToken)
+                : Failed(OccFlightFeedFailure.Conflict, "idempotency_conflict");
+        }
+        catch (Exception exception) when (exception is DbUpdateException { InnerException: SqlException { Number: 1205 or 2601 or 2627 } } ||
                                           exception is SqlException { Number: 1205 })
         {
             context.ChangeTracker.Clear();
-            return new(null, null, OccFlightFeedFailure.Conflict);
+            return Failed(OccFlightFeedFailure.Conflict, "version_conflict");
         }
     }
 
-    private async Task<OccFlightImportResult> ImportInsideTransactionAsync(Guid actorId, Guid arrivalId, Guid departureId,
-        CancellationToken cancellationToken)
+    private async Task<OccFlightImportResult> ImportInsideTransactionAsync(ActorContext actor, long accountId,
+        OccFlightImportInput input, bool keyed, CancellationToken cancellationToken)
     {
-        var actor = await actors.ResolveAsync(actorId, cancellationToken);
         var proposals = await context.Set<ExternalFlightProposal>()
-            .Where(item => item.PublicId == arrivalId || item.PublicId == departureId).ToArrayAsync(cancellationToken);
-        var arrival = proposals.SingleOrDefault(item => item.PublicId == arrivalId);
-        var departure = proposals.SingleOrDefault(item => item.PublicId == departureId);
-        if (arrival is null || departure is null) return Failed(OccFlightFeedFailure.NotFound);
+            .Where(item => item.PublicId == input.ArrivalProposalId || item.PublicId == input.DepartureProposalId)
+            .ToArrayAsync(cancellationToken);
+        var arrival = proposals.SingleOrDefault(item => item.PublicId == input.ArrivalProposalId);
+        var departure = proposals.SingleOrDefault(item => item.PublicId == input.DepartureProposalId);
+        if (arrival is null || departure is null) return Failed(OccFlightFeedFailure.NotFound, "not_found");
         var station = await (from item in context.Stations.AsNoTracking()
                              join airport in context.Airports.AsNoTracking() on item.AirportId equals airport.Id
                              where item.Id == arrival.StationId && item.IsActive
                              select new { item.Id, item.PublicId, AirportId = airport.Id }).SingleOrDefaultAsync(cancellationToken);
-        if (station is null) return Failed(OccFlightFeedFailure.NotFound);
-        if (!Allowed(actor, "operations.planning.create", station.PublicId)) return Failed(OccFlightFeedFailure.Forbidden);
+        if (station is null || !InScope(actor, station.PublicId)) return Failed(OccFlightFeedFailure.NotFound, "not_found");
 
-        if (arrival.Status == ExternalFlightProposalStatus.Confirmed && departure.Status == ExternalFlightProposalStatus.Confirmed &&
+        // Without a key (older screens) confirming the same pair again answers the same turnaround.
+        if (!keyed && arrival.Status == ExternalFlightProposalStatus.Confirmed &&
+            departure.Status == ExternalFlightProposalStatus.Confirmed &&
             arrival.TurnaroundId == departure.TurnaroundId && arrival.TurnaroundId is { } existingId)
         {
             var existing = await context.Turnarounds.AsNoTracking().Where(item => item.Id == existingId)
                 .Select(item => new { item.PublicId, item.OperationCode }).SingleAsync(cancellationToken);
             return new(existing.PublicId, existing.OperationCode, null, true);
         }
+        if (arrival.Status != ExternalFlightProposalStatus.Proposed || departure.Status != ExternalFlightProposalStatus.Proposed)
+            return Failed(OccFlightFeedFailure.Conflict, "flight_proposal_closed");
+        if (input.ExpectedArrivalVersion is { } expectedArrival && Version(arrival.RowVersion) != expectedArrival ||
+            input.ExpectedDepartureVersion is { } expectedDeparture && Version(departure.RowVersion) != expectedDeparture)
+            return Failed(OccFlightFeedFailure.Conflict, "version_conflict");
         if (arrival.Direction != FlightDirection.Arrival || departure.Direction != FlightDirection.Departure ||
-            arrival.Status != ExternalFlightProposalStatus.Proposed || departure.Status != ExternalFlightProposalStatus.Proposed ||
             arrival.StationId != departure.StationId || arrival.AirlineId != departure.AirlineId ||
             departure.ScheduledAt <= arrival.ScheduledAt || departure.ScheduledAt - arrival.ScheduledAt > TimeSpan.FromHours(24))
-            return Failed(OccFlightFeedFailure.Conflict);
+            return Failed(OccFlightFeedFailure.Conflict, "flight_proposals_not_pairable");
         if (arrival.CounterpartAirportId is not { } originId || departure.CounterpartAirportId is not { } destinationId)
-            return Failed(OccFlightFeedFailure.CounterpartUnknown);
+            return Failed(OccFlightFeedFailure.CounterpartUnknown, "flight_counterpart_unknown");
 
+        var airline = await context.Airlines.AsNoTracking().Where(item => item.Id == arrival.AirlineId)
+            .Select(item => new
+            {
+                item.OrganizationId, item.IsActive,
+                OrganizationActive = context.Organizations.Any(organization => organization.Id == item.OrganizationId &&
+                    organization.Status == OrganizationStatus.Active),
+            }).SingleAsync(cancellationToken);
+        if (!airline.IsActive) return Failed(OccFlightFeedFailure.Conflict, "airline_inactive");
         var contracts = await ApplicableContracts.For(context, arrival.AirlineId, station.Id, arrival.OperationDate)
             .Select(row => row.VersionId).Take(2).ToArrayAsync(cancellationToken);
-        if (contracts.Length != 1) return Failed(OccFlightFeedFailure.Conflict);
-        var airline = await context.Airlines.AsNoTracking().Where(item => item.Id == arrival.AirlineId && item.IsActive)
-            .Select(item => new { item.OrganizationId }).SingleOrDefaultAsync(cancellationToken);
-        if (airline is null) return Failed(OccFlightFeedFailure.Conflict);
-        var accountId = await context.Users.AsNoTracking().Where(user => user.PublicId == actorId).Select(user => user.Id)
-            .SingleAsync(cancellationToken);
+        if (contracts.Length > 1) return Failed(OccFlightFeedFailure.Conflict, "contract_ambiguous");
+        long? contractVersionId = null;
+        if (contracts.Length == 1)
+        {
+            // A carrier with a contract flies under it, never as a charter (ADR-0033).
+            if (input.Charter) return Failed(OccFlightFeedFailure.Conflict, "charter_has_contract");
+            contractVersionId = contracts[0];
+        }
+        else
+        {
+            if (await NotInForceAirlines(station.Id).AnyAsync(id => id == arrival.AirlineId, cancellationToken))
+                return Failed(OccFlightFeedFailure.Conflict, "contract_not_in_force");
+            if (!input.Charter) return Failed(OccFlightFeedFailure.Conflict, "charter_required");
+            if (!airline.OrganizationActive) return Failed(OccFlightFeedFailure.Conflict, "airline_inactive");
+        }
 
-        var now = timeProvider.GetUtcNow();
+        long? aircraftTypeId = null;
+        AircraftSizeCategory? aircraftSize = null;
+        if (input.AircraftTypeId is { } requestedType)
+        {
+            var type = await context.AircraftTypes.AsNoTracking().Where(item => item.PublicId == requestedType && item.IsActive)
+                .Select(item => new { item.Id, item.SizeCategory }).SingleOrDefaultAsync(cancellationToken);
+            if (type is null) return Failed(OccFlightFeedFailure.Conflict, "aircraft_type_unavailable");
+            (aircraftTypeId, aircraftSize) = (type.Id, type.SizeCategory);
+        }
+        var plannedStart = arrival.RevisedAt ?? arrival.ScheduledAt;
+        var plannedEnd = departure.RevisedAt ?? departure.ScheduledAt;
+        long? standId = null;
+        if (input.StandId is { } requestedStand)
+        {
+            var placement = await StandAvailability.CheckAsync(context, station.Id, requestedStand, plannedStart, plannedEnd,
+                aircraftSize, cancellationToken);
+            if (!placement.Available)
+                return Failed(OccFlightFeedFailure.Conflict, "stand_unavailable", placement.Reasons);
+            standId = placement.StandId;
+        }
+
+        var now = Now();
         var turnaroundId = Guid.CreateVersion7();
         var turnaround = new Turnaround
         {
             PublicId = turnaroundId, OperationCode = $"EXT-{turnaroundId:N}", AirlineId = arrival.AirlineId,
-            StationId = station.Id, OperationDate = arrival.OperationDate, ContractVersionId = contracts[0],
-            AircraftRegistration = arrival.AircraftRegistration ?? departure.AircraftRegistration,
+            StationId = station.Id, OperationDate = arrival.OperationDate, ContractVersionId = contractVersionId,
+            AircraftTypeId = aircraftTypeId, AircraftRegistration = arrival.AircraftRegistration ?? departure.AircraftRegistration,
             CurrentStatus = TurnaroundStatus.Confirmed, Source = OperationalDataSource.ExternalProvider,
             ExternalProvider = arrival.Provider, ExternalReference = arrival.ExternalReference,
             SourceObservedAt = arrival.LastSeenAt, CreatedAt = now, UpdatedAt = now,
         };
         context.Turnarounds.Add(turnaround);
         await context.SaveChangesAsync(cancellationToken);
+        if (input.Charter)
+            context.Set<CharterAgreement>().Add(new CharterAgreement
+            {
+                PublicId = Guid.CreateVersion7(), TurnaroundId = turnaround.Id, AirlineId = arrival.AirlineId,
+                CurrencyCode = CharterRules.CurrencyCode, PrepaymentStatus = CharterPrepaymentStatus.Pending,
+                CreatedByAccountId = accountId, CreatedAt = now, UpdatedAt = now,
+            });
+        if (standId is { } stand)
+            context.Set<StandAssignment>().Add(new StandAssignment
+            {
+                PublicId = Guid.CreateVersion7(), TurnaroundId = turnaround.Id, StandId = stand, AssignedFrom = plannedStart,
+                AssignedByAccountId = accountId, Reason = "Imported from the provider flight feed by OCC.", CreatedAt = now,
+                UpdatedAt = now,
+            });
         var arrivalLeg = Leg(turnaround.Id, arrival, originId, station.AirportId, now);
         var departureLeg = Leg(turnaround.Id, departure, station.AirportId, destinationId, now);
         context.FlightLegs.AddRange(arrivalLeg, departureLeg);
         var operation = new GroundOperation
         {
             PublicId = Guid.CreateVersion7(), TurnaroundId = turnaround.Id, CurrentStatus = GroundOperationStatus.Planned,
-            PlannedStartAt = arrival.RevisedAt ?? arrival.ScheduledAt, PlannedEndAt = departure.RevisedAt ?? departure.ScheduledAt,
-            CreatedAt = now, UpdatedAt = now,
+            PlannedStartAt = plannedStart, PlannedEndAt = plannedEnd, CreatedAt = now, UpdatedAt = now,
         };
         context.GroundOperations.Add(operation);
         context.Set<TurnaroundStatusEvent>().Add(new TurnaroundStatusEvent
@@ -199,11 +332,12 @@ internal sealed class EfOccFlightFeedStore(
         {
             PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account, ActorAccountId = accountId,
             Action = "occ.turnaround.imported", EntityType = nameof(Turnaround), EntityPublicId = turnaroundId,
-            OrganizationId = airline.OrganizationId, StationId = station.Id, Source = AuditSource.Api, CorrelationId = arrivalId,
-            Reason = "Imported from the provider flight feed by OCC.",
+            OrganizationId = airline.OrganizationId, StationId = station.Id, Source = AuditSource.Api,
+            CorrelationId = input.ArrivalProposalId, Reason = "Imported from the provider flight feed by OCC.",
             MetadataJson = JsonSerializer.Serialize(new
             {
                 provider = arrival.Provider, arrival = arrival.ExternalReference, departure = departure.ExternalReference,
+                charter = input.Charter, standId = input.StandId, aircraftTypeId = input.AircraftTypeId,
             }),
         });
         await context.SaveChangesAsync(cancellationToken);
@@ -237,15 +371,20 @@ internal sealed class EfOccFlightFeedStore(
         var station = await context.Stations.AsNoTracking().Where(item => item.Id == proposal.StationId)
             .Select(item => item.PublicId).SingleAsync(cancellationToken);
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (!Allowed(actor, "operations.planning.create", station)) return OccFlightFeedFailure.Forbidden;
+        if (!Allowed(actor, CreatePermission, station)) return OccFlightFeedFailure.Forbidden;
         if (proposal.Status == ExternalFlightProposalStatus.Dismissed) return null;
         if (proposal.Status == ExternalFlightProposalStatus.Confirmed) return OccFlightFeedFailure.Conflict;
-        var now = timeProvider.GetUtcNow();
+        var now = Now();
+        var accountId = await AccountIdAsync(actorId, cancellationToken);
         proposal.Status = ExternalFlightProposalStatus.Dismissed;
         proposal.DecidedAt = now;
-        proposal.DecidedByAccountId = await context.Users.AsNoTracking().Where(user => user.PublicId == actorId)
-            .Select(user => user.Id).SingleAsync(cancellationToken);
+        proposal.DecidedByAccountId = accountId;
         proposal.UpdatedAt = now;
+        // The dismissal is audited: restoring the proposal clears its decision (2-N36).
+        MasterDataCommand.Audit(context, accountId, "occ.flight_proposal.dismissed", nameof(ExternalFlightProposal),
+            proposal.PublicId, proposal.StationId, now, new AuditFieldChangeData("flight_proposal.status",
+                nameof(ExternalFlightProposalStatus.Proposed),
+                nameof(ExternalFlightProposalStatus.Dismissed)));
         await OccPlanningChangeWriter.AddForStationAsync(context, proposal.StationId, station, now, cancellationToken);
         try
         {
@@ -258,6 +397,130 @@ internal sealed class EfOccFlightFeedStore(
         return null;
     }
 
+    public async Task<OccFlightProposalRestoreResult> RestoreAsync(Guid actorId, Guid proposalId, string? expectedVersion,
+        Guid idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (!Allowed(actor, CreatePermission)) return RestoreFailed(OccFlightFeedFailure.Forbidden, "forbidden");
+        if (idempotencyKey == Guid.Empty) return RestoreFailed(OccFlightFeedFailure.Invalid, "idempotency_key_required");
+        if (string.IsNullOrWhiteSpace(expectedVersion)) return RestoreFailed(OccFlightFeedFailure.Invalid, "expected_version_required");
+        var accountId = await AccountIdAsync(actorId, cancellationToken);
+        var hash = CommercialCommandReceipts.Hash(new { proposalId, expected = expectedVersion });
+        try
+        {
+            return await context.Database.CreateExecutionStrategy().ExecuteAsync(async token =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+                var prior = await CommercialCommandReceipts.FindAsync(context, idempotencyKey, accountId, RestoreAction, hash, token);
+                if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                    return RestoreFailed(OccFlightFeedFailure.Conflict, "idempotency_conflict");
+                if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay) return await RestoredAsync(prior.ResultId, true, token);
+                var result = await RestoreInsideTransactionAsync(actor!, accountId, proposalId, expectedVersion, token);
+                if (result.Failure is not null)
+                {
+                    await transaction.RollbackAsync(token);
+                    context.ChangeTracker.Clear();
+                    return result;
+                }
+                CommercialCommandReceipts.Add(context, idempotencyKey, accountId, RestoreAction, hash, proposalId, Now());
+                await context.SaveChangesAsync(token);
+                await transaction.CommitAsync(token);
+                context.ChangeTracker.Clear();
+                return await RestoredAsync(proposalId, false, token);
+            }, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return RestoreFailed(OccFlightFeedFailure.Conflict, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, idempotencyKey, accountId, RestoreAction, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? await RestoredAsync(concurrent.ResultId, true, cancellationToken)
+                : RestoreFailed(OccFlightFeedFailure.Conflict, "idempotency_conflict");
+        }
+    }
+
+    private async Task<OccFlightProposalRestoreResult> RestoreInsideTransactionAsync(ActorContext actor, long accountId,
+        Guid proposalId, string expectedVersion, CancellationToken cancellationToken)
+    {
+        var proposal = await context.Set<ExternalFlightProposal>().SingleOrDefaultAsync(item => item.PublicId == proposalId,
+            cancellationToken);
+        if (proposal is null) return RestoreFailed(OccFlightFeedFailure.NotFound, "not_found");
+        var station = await context.Stations.AsNoTracking().Where(item => item.Id == proposal.StationId && item.IsActive)
+            .Select(item => new { item.PublicId }).SingleOrDefaultAsync(cancellationToken);
+        if (station is null || !InScope(actor, station.PublicId)) return RestoreFailed(OccFlightFeedFailure.NotFound, "not_found");
+        if (proposal.Status != ExternalFlightProposalStatus.Dismissed)
+            return RestoreFailed(OccFlightFeedFailure.Conflict, "flight_proposal_not_dismissed");
+        if (Version(proposal.RowVersion) != expectedVersion) return RestoreFailed(OccFlightFeedFailure.Conflict, "version_conflict");
+        var now = Now();
+        // Only while the flight has not passed: its runway, revised or scheduled time is still ahead.
+        if ((proposal.RunwayAt ?? proposal.RevisedAt ?? proposal.ScheduledAt) <= now)
+            return RestoreFailed(OccFlightFeedFailure.Conflict, "flight_proposal_passed");
+        if (await NotInForceAirlines(proposal.StationId).AnyAsync(id => id == proposal.AirlineId, cancellationToken))
+            return RestoreFailed(OccFlightFeedFailure.Conflict, "contract_not_in_force");
+        MasterDataCommand.Audit(context, accountId, "occ.flight_proposal.restored", nameof(ExternalFlightProposal), proposal.PublicId,
+            proposal.StationId, now, new AuditFieldChangeData("flight_proposal.status", nameof(ExternalFlightProposalStatus.Dismissed),
+                nameof(ExternalFlightProposalStatus.Proposed)));
+        proposal.Status = ExternalFlightProposalStatus.Proposed;
+        proposal.DecidedAt = null;
+        proposal.DecidedByAccountId = null;
+        proposal.UpdatedAt = now;
+        await OccPlanningChangeWriter.AddForStationAsync(context, proposal.StationId, station.PublicId, now, cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
+        return new OccFlightProposalRestoreResult(proposal.PublicId, null, null);
+    }
+
+    private async Task<OccFlightProposalRestoreResult> RestoredAsync(Guid proposalId, bool replayed,
+        CancellationToken cancellationToken)
+    {
+        var rowVersion = await context.Set<ExternalFlightProposal>().AsNoTracking().Where(item => item.PublicId == proposalId)
+            .Select(item => item.RowVersion).SingleOrDefaultAsync(cancellationToken);
+        return rowVersion is null
+            ? RestoreFailed(OccFlightFeedFailure.NotFound, "not_found")
+            : new OccFlightProposalRestoreResult(proposalId, Version(rowVersion), null, null, replayed);
+    }
+
+    /// <summary>
+    /// The airlines with a contract in force at the station that day and those whose contract there is
+    /// suspended or expired without another in force (2-N16). Everyone else is a charter candidate.
+    /// </summary>
+    private async Task<(HashSet<long> Contracted, HashSet<long> NotInForce)> ClassifyAsync(long stationId, DateOnly date,
+        CancellationToken cancellationToken)
+    {
+        var contracted = (await ApplicableContracts.For(context, null, stationId, date).Select(row => row.AirlineId).Distinct()
+            .ToArrayAsync(cancellationToken)).ToHashSet();
+        var notInForce = (await NotInForceAirlines(stationId).ToArrayAsync(cancellationToken))
+            .Where(id => !contracted.Contains(id)).ToHashSet();
+        return (contracted, notInForce);
+    }
+
+    /// <summary>Airlines with a suspended or expired contract whose versions cover the station.</summary>
+    private IQueryable<long> NotInForceAirlines(long stationId) =>
+        (from contract in context.Contracts.AsNoTracking()
+         where (contract.Status == ContractStatus.Suspended || contract.Status == ContractStatus.Expired) &&
+               context.ContractVersions.Any(version => version.ContractId == contract.Id &&
+                   context.Set<ContractVersionStation>().Any(link => link.ContractVersionId == version.Id &&
+                       link.StationId == stationId))
+         select contract.AirlineId).Distinct();
+
+    private async Task<AircraftTypeCandidate[]> AircraftTypeCandidatesAsync(CancellationToken cancellationToken) =>
+        await context.AircraftTypes.AsNoTracking().Where(type => type.IsActive)
+            .Select(type => new AircraftTypeCandidate(type.PublicId, type.IcaoCode, type.Manufacturer, type.Model))
+            .ToArrayAsync(cancellationToken);
+
+    private async Task<OccFlightImportResult> ExistingAsync(Guid turnaroundId, CancellationToken cancellationToken)
+    {
+        var code = await context.Turnarounds.AsNoTracking().Where(item => item.PublicId == turnaroundId)
+            .Select(item => item.OperationCode).SingleOrDefaultAsync(cancellationToken);
+        return code is null ? Failed(OccFlightFeedFailure.NotFound, "not_found") : new(turnaroundId, code, null, true);
+    }
+
     private static FlightLeg Leg(long turnaroundId, ExternalFlightProposal proposal, long originId, long destinationId,
         DateTimeOffset now) => new()
     {
@@ -268,11 +531,32 @@ internal sealed class EfOccFlightFeedStore(
         SourceObservedAt = proposal.LastSeenAt, CreatedAt = now, UpdatedAt = now,
     };
 
-    private static bool Allowed(ActorContext? actor, string permission, Guid stationId) =>
+    private static bool Allowed(ActorContext? actor, string permission) =>
         actor is not null && actor.HasPermission(permission) &&
         actor.Memberships.Any(membership => membership.Kind == MembershipKind.InternalStaff &&
-            membership.OrganizationType == OrganizationType.AviamOperator) &&
+            membership.OrganizationType == OrganizationType.AviamOperator);
+
+    private static bool Allowed(ActorContext? actor, string permission, Guid stationId) =>
+        Allowed(actor, permission) && InScope(actor!, stationId);
+
+    private static bool InScope(ActorContext actor, Guid stationId) =>
         actor.StationScopes.Any(scope => scope.StationId == stationId);
 
-    private static OccFlightImportResult Failed(OccFlightFeedFailure failure) => new(null, null, failure);
+    private Task<long> AccountIdAsync(Guid actorId, CancellationToken cancellationToken) =>
+        context.Users.AsNoTracking().Where(user => user.PublicId == actorId).Select(user => user.Id)
+            .SingleAsync(cancellationToken);
+
+    private static string Version(byte[] rowVersion) => Convert.ToBase64String(rowVersion);
+
+    private DateTimeOffset Now()
+    {
+        var value = timeProvider.GetUtcNow();
+        return new DateTimeOffset(value.UtcTicks - value.UtcTicks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
+    }
+
+    private static OccFlightImportResult Failed(OccFlightFeedFailure failure, string code,
+        IReadOnlyList<string>? reasons = null) => new(null, null, failure, false, code, reasons);
+
+    private static OccFlightProposalRestoreResult RestoreFailed(OccFlightFeedFailure failure, string code) =>
+        new(null, null, failure, code);
 }

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import CoverageRoute from './CoverageRoute';
-import { createOccCoverage, loadOccCoverage, releaseOccCoverage } from '../../services/occCoverageService';
+import { createOccCoverage, loadOccCoverage, releaseOccCoverage, updateOccStandAttributes } from '../../services/occCoverageService';
 
 const stationId = '20000000-0000-0000-0000-000000000003';
 vi.mock('../auth/AuthContext', () => ({ useAuth: () => ({ session: { stationScopes: [{ stationId, stationCode: 'PUJ' }] } }) }));
@@ -10,7 +10,7 @@ vi.mock('../../services/accountChangeObserver', () => ({
 }));
 vi.mock('../../services/occCoverageService', async importOriginal => ({
   ...(await importOriginal()),
-  loadOccCoverage: vi.fn(), createOccCoverage: vi.fn(), releaseOccCoverage: vi.fn(),
+  loadOccCoverage: vi.fn(), createOccCoverage: vi.fn(), releaseOccCoverage: vi.fn(), updateOccStandAttributes: vi.fn(),
 }));
 
 const terminalA = { terminalId: 't-a', code: 'A', name: 'Terminal A', maxStandsPerAgent: 3, requiresBridgeQualification: false };
@@ -62,4 +62,25 @@ it('switches terminals and shows the bridge stands of terminal B', async () => {
   expect(within(stands).getByText('B01')).toBeInTheDocument();
   expect(within(stands).getByText('Puente')).toBeInTheDocument();
   expect(screen.getByText(/exige habilitación de puente/)).toBeInTheDocument();
+});
+
+it('explains in Configuración why a stand in use stays active, and where new stands are created (2-A)', async () => {
+  const { translateCoverageError } = await vi.importActual('../../services/occCoverageService');
+  loadOccCoverage.mockResolvedValue(board);
+  updateOccStandAttributes.mockRejectedValueOnce(translateCoverageError({ status: 422, code: 'stand_in_use',
+    reasons: ['stand_in_use'] }));
+  render(<CoverageRoute />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configuración' }));
+  const stands = screen.getByRole('region', { name: 'Atributos de las posiciones' });
+  const row = within(stands).getByText('A01').closest('li');
+  fireEvent.click(within(row).getByLabelText('Activa'));
+  fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
+  expect(await within(row).findByRole('alert')).toHaveTextContent('La posición tiene vuelos sin terminar o coberturas abiertas');
+  expect(updateOccStandAttributes).toHaveBeenCalledWith('s-A01', expect.objectContaining({ isActive: false }));
+});
+
+it('says where terminals are created when the station has none active', async () => {
+  loadOccCoverage.mockResolvedValue({ ...board, terminals: [], stands: [] });
+  render(<CoverageRoute />);
+  expect(await screen.findByText(/La estación no tiene terminales activas. OCC las crea en «Datos maestros»./)).toBeInTheDocument();
 });

@@ -95,6 +95,12 @@ describe('planningService', () => {
       { stationId, date: '2026-08-19' }, { signal: undefined });
     expect(mocks.createManualTurnaround).toHaveBeenCalledWith(request, { signal: undefined });
   });
+  it('keeps the Problem Details code of a refused manual flight so the dialog explains it (2-A)', async () => {
+    mocks.createManualTurnaround.mockRejectedValueOnce(new ElevantApiError({ kind: 'http', status: 409,
+      title: 'The aircraft type is not available.', code: 'aircraft_type_unavailable' }));
+    await expect(planningService.createManualTurnaround({ turnaroundId })).rejects.toMatchObject({
+      status: 409, code: 'manual-conflict', problemCode: 'aircraft_type_unavailable' });
+  });
   it('programs an OCC shift through the shared client', async () => {
     const request = { agentId: 'agent-1', startsAtLocal: '08:00:00', endsAtLocal: '12:00:00' };
     await planningService.programPlanningShift(turnaroundId, request);

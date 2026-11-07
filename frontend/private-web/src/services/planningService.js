@@ -31,6 +31,7 @@ class PlanningServiceError extends Error {
       code = 'request-failed',
       recoverable = true,
       refreshRequired = false,
+      problemCode = null,
     } = {}
   ) {
     super(message);
@@ -39,6 +40,8 @@ class PlanningServiceError extends Error {
     this.code = code;
     this.recoverable = recoverable;
     this.refreshRequired = refreshRequired;
+    // The Problem Details code of the API, so a screen can explain the cause (`aircraft_type_unavailable`, 2-A).
+    this.problemCode = problemCode;
   }
 }
 
@@ -83,11 +86,13 @@ function safeRequestError(
       status: 409,
       code: conflictCode,
       recoverable: true,
+      problemCode: error.code ?? null,
     });
   }
 
   return new PlanningServiceError(fallbackMessage, {
     status: error instanceof ElevantApiError ? error.status : null,
+    problemCode: error instanceof ElevantApiError ? error.code ?? null : null,
   });
 }
 

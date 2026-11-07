@@ -142,9 +142,17 @@ public sealed class OccPlanningController(
             request.OperationDate, request.ArrivalFlightNumber, request.ArrivalOriginIata,
             request.ArrivalScheduledAt, request.DepartureFlightNumber,
             request.DepartureDestinationIata, request.DepartureScheduledAt,
-            Guid.NewGuid(), HttpContext.TraceIdentifier, request.Charter), cancellationToken);
+            Guid.NewGuid(), HttpContext.TraceIdentifier, request.Charter, request.AircraftTypeId), cancellationToken);
         if (!result.IsSuccess)
-            return FailureResult<ManualTurnaroundResponse>(result.Failure!.Value);
+            return result.Code switch
+            {
+                "aircraft_type_unavailable" => CodedResult<ManualTurnaroundResponse>(StatusCodes.Status409Conflict,
+                    "El tipo de avión ya no está disponible.", "aircraft_type_unavailable"),
+                // A wide-body on a narrow-body stand: the same rule the positions map explains (ADR-0030).
+                "stand_unavailable" => CodedResult<ManualTurnaroundResponse>(StatusCodes.Status409Conflict,
+                    "La posición solo admite aviones de fuselaje estrecho.", "stand_unavailable", ["stand_narrowbody_only"]),
+                _ => FailureResult<ManualTurnaroundResponse>(result.Failure!.Value),
+            };
 
         var response = new ManualTurnaroundResponse(result.TurnaroundId!.Value,
             result.OperationCode!, result.Replayed);
@@ -278,6 +286,15 @@ public sealed class OccPlanningController(
         return ProblemResult<T>(
             StatusCodes.Status401Unauthorized,
             "Authentication failed.");
+    }
+
+    /// <summary>A failure with a stable code the screens explain (phase 2, block C).</summary>
+    private ActionResult<T> CodedResult<T>(int statusCode, string title, string code, IReadOnlyList<string>? reasons = null)
+    {
+        var problem = new ProblemDetails { Status = statusCode, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        if (reasons is { Count: > 0 }) problem.Extensions["reasons"] = reasons;
+        return new ObjectResult(problem) { StatusCode = statusCode };
     }
 
     private ActionResult<T> ProblemResult<T>(int statusCode, string title) =>
@@ -440,7 +457,9 @@ public sealed class OccPlanningController(
             stand.Terminal is null ? null : new OccTerminalResponse(
                 stand.Terminal.Id, stand.Terminal.Code, stand.Terminal.Name))).ToArray(),
         (options.CharterAirlines ?? []).Select(airline => new ManualTurnaroundAirlineResponse(
-            airline.Id, airline.IataCode, airline.Name)).ToArray());
+            airline.Id, airline.IataCode, airline.Name)).ToArray(),
+        (options.AircraftTypes ?? []).Select(type => new ManualTurnaroundAircraftTypeResponse(type.Id, type.IcaoCode,
+            type.IataCode, type.Manufacturer, type.Model, type.SizeCategory)).ToArray());
 
     private static OccAssignmentResponse Map(OccAssignmentData assignment) => new(
         assignment.TurnaroundId,

@@ -26,6 +26,8 @@ export const COVERAGE_REASON_MESSAGES = {
   stand_cancelled: 'Esa posición está anulada por una posición combinada ocupada (por ejemplo 9A anula la 10).',
   stand_narrowbody_only: 'Esa posición solo admite aviones de fuselaje estrecho en este momento.',
   neighbour_widebody: 'Ocuparla limitaría a estrecho una posición vecina que ya tiene un avión ancho.',
+  // A stand in use is never deactivated, from Configuración either (2-A).
+  stand_in_use: 'La posición tiene vuelos sin terminar o coberturas abiertas: no se puede desactivar.',
 };
 
 export function describeReasons(reasons) {
@@ -39,7 +41,8 @@ export function translateCoverageError(error) {
   const status = Number.isInteger(error?.status) ? error.status : null;
   // Keep the rule codes: screens explain each one with describeReasons.
   const reasons = (error?.reasons ?? []).filter(reason => reason in COVERAGE_REASON_MESSAGES);
-  const message = reasons.length ? 'La cobertura no cumple las reglas de asignación.'
+  const message = error?.code === 'stand_in_use' ? COVERAGE_REASON_MESSAGES.stand_in_use
+    : reasons.length ? 'La cobertura no cumple las reglas de asignación.'
     : status === 403 ? 'Tu acceso no permite gestionar la cobertura de posiciones.'
       : status === 404 ? 'El agente, la terminal o la posición ya no está disponible.'
         : status === 409 ? 'Los datos cambiaron mientras trabajabas. Se actualizó la vista; inténtalo de nuevo.'

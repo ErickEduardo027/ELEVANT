@@ -49,8 +49,9 @@ public interface IFlightFeedSyncStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Records the call in the usage ledger and, when it succeeded, keeps the legs of contracted
-    /// airlines as proposals, updates confirmed legs, and keeps every airline and airport seen.
+    /// Records the call in the usage ledger and, when it succeeded, keeps the legs of active registered
+    /// airlines as proposals (2-B), updates confirmed legs, and keeps every airline (AeroDataBox only) and
+    /// airport seen.
     /// </summary>
     Task<FlightFeedIngestResult> RecordAsync(FlightFeedCall call, AirportFeedResponse response,
         CancellationToken cancellationToken = default);

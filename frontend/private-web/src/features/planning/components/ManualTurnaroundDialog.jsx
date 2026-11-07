@@ -13,7 +13,7 @@ function newUuid() {
 }
 
 const EMPTY_FORM = {
-  airlineId: '', standId: '', arrivalFlightNumber: '', arrivalOriginIata: '', arrivalScheduledAt: '',
+  airlineId: '', standId: '', aircraftTypeId: '', arrivalFlightNumber: '', arrivalOriginIata: '', arrivalScheduledAt: '',
   departureFlightNumber: '', departureDestinationIata: '', departureScheduledAt: '',
 };
 
@@ -102,6 +102,8 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
         departureDestinationIata: form.departureDestinationIata,
         departureScheduledAt: departure.toISOString(),
         charter,
+        // Typed once here, the aircraft type sizes the stand and the ground time later (2-A).
+        aircraftTypeId: form.aircraftTypeId || null,
       }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       setSubmitStatus('success');
@@ -113,6 +115,10 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
         ? 'manual.sessionEnded'
         : error?.status === 403
           ? 'manual.forbidden'
+          : error?.problemCode === 'aircraft_type_unavailable'
+            ? 'manual.aircraftTypeUnavailable'
+          : error?.problemCode === 'stand_unavailable'
+            ? 'manual.standTooSmall'
           : error?.status === 409
             ? 'manual.conflict'
             : 'manual.error');
@@ -179,6 +185,12 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
               <select required value={form.standId} onChange={event => updateField('standId', event.target.value)} className={`${fieldClass} mt-1`}>
                 <option value="">{t('manual.selectStand')}</option>
                 {(options?.stands ?? []).map(stand => <option key={stand.id} value={stand.id}>{t('manual.standOption', { code: stand.code, terminal: stand.terminal?.code ?? '—' })}</option>)}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.aircraftType')}
+              <select value={form.aircraftTypeId} onChange={event => updateField('aircraftTypeId', event.target.value)} className={`${fieldClass} mt-1`}>
+                <option value="">{t('manual.noAircraftType')}</option>
+                {(options?.aircraftTypes ?? []).map(type => <option key={type.id} value={type.id}>{t('manual.aircraftTypeOption', { manufacturer: type.manufacturer, model: type.model, code: type.icaoCode })}</option>)}
               </select>
             </label>
           </div>

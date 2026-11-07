@@ -684,6 +684,36 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         Assert.False(json.RootElement.GetProperty("replayed").GetBoolean());
     }
 
+    [Theory]
+    [InlineData("aircraft_type_unavailable", null)]
+    [InlineData("stand_unavailable", "stand_narrowbody_only")]
+    public async Task ManualTurnaroundWithItsAircraftTypeExplainsARefusalByCode(string code, string? reason)
+    {
+        var typeId = Guid.NewGuid();
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            ManualWriteResult = ManualTurnaroundWriteResult.Failed(ManualTurnaroundWriteFailure.Conflict, code),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.PostAsJsonAsync("/api/v1/occ/planning/turnarounds", new
+        {
+            turnaroundId = TurnaroundId, stationId = StationId, airlineId = Guid.NewGuid(), standId = Guid.NewGuid(),
+            operationDate = "2026-08-19", arrivalFlightNumber = "EV 311", arrivalOriginIata = "MIA",
+            arrivalScheduledAt = "2026-08-19T13:00:00Z", departureFlightNumber = "EV 312", departureDestinationIata = "MIA",
+            departureScheduledAt = "2026-08-19T15:00:00Z", aircraftTypeId = typeId,
+        }, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(typeId, state.ManualRequest!.AircraftTypeId);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(code, problem.RootElement.GetProperty("code").GetString());
+        Assert.DoesNotContain("The ", problem.RootElement.GetProperty("title").GetString(), StringComparison.Ordinal);
+        Assert.Equal(reason, problem.RootElement.TryGetProperty("reasons", out var reasons) ? reasons[0].GetString() : null);
+    }
+
     [Fact]
     public async Task ManualTurnaroundRejectsUnknownJsonAndOutOfScopeStation()
     {

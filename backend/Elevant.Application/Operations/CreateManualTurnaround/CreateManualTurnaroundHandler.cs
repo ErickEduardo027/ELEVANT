@@ -23,7 +23,7 @@ public sealed class CreateManualTurnaroundHandler(
         var originIata = command.ArrivalOriginIata?.Trim().ToUpperInvariant() ?? string.Empty;
         var destinationIata = command.DepartureDestinationIata?.Trim().ToUpperInvariant() ?? string.Empty;
         if (command.TurnaroundId == Guid.Empty || command.StationId == Guid.Empty ||
-            command.AirlineId == Guid.Empty || command.StandId == Guid.Empty ||
+            command.AirlineId == Guid.Empty || command.StandId == Guid.Empty || command.AircraftTypeId == Guid.Empty ||
             command.CorrelationId == Guid.Empty ||
             command.OperationDate == default ||
             !IsFlightNumber(arrivalNumber) || !IsFlightNumber(departureNumber) ||
@@ -63,7 +63,8 @@ public sealed class CreateManualTurnaroundHandler(
             command.DepartureScheduledAt,
             command.CorrelationId,
             command.RequestId,
-            command.Charter), cancellationToken);
+            command.Charter,
+            command.AircraftTypeId), cancellationToken);
 
         return result.IsSuccess
             ? CreateManualTurnaroundResult.Success(result.TurnaroundId!.Value, result.OperationCode!, result.Replayed)
@@ -72,7 +73,7 @@ public sealed class CreateManualTurnaroundHandler(
                 ManualTurnaroundWriteFailure.NotFound => OccPlanningFailure.NotFound,
                 ManualTurnaroundWriteFailure.Conflict => OccPlanningFailure.Conflict,
                 _ => throw new InvalidOperationException("Unsupported manual turnaround write failure."),
-            });
+            }, result.Code);
     }
 
     private static string NormalizeFlightNumber(string? value) =>

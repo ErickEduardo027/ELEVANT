@@ -3,12 +3,15 @@ import { POSITION_STATUS_META, STATUS_COLORS, getStatusLabel } from '../../dashb
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { positionsMapMessages } from '../positionsMapMessages';
 
-const ROWS = ['planned', 'unverified', 'available', 'occupied', 'disabled', 'releasing'];
+const PLANNING_ROWS = ['planned', 'unverified'];
+// Live occupancy also has stands planned for a flight that has not arrived and reference positions without a
+// registered stand: every status gets its row, so the rows add up to the total (2-N34).
+const LIVE_ROWS = ['available', 'occupied', 'releasing', 'planned', 'disabled', 'unverified'];
 
 export default function PositionSummary({ positions, source }) {
   const { t, language } = useTranslation(positionsMapMessages);
   const summary = computePositionsSummary(positions);
-  const rows = source === 'planning' ? ROWS.slice(0, 2) : ROWS.slice(2);
+  const rows = source === 'planning' ? PLANNING_ROWS : LIVE_ROWS;
 
   return (
     <div className="absolute bottom-4 right-4 z-10 w-48 rounded-xl border border-black/10 bg-white/90 p-3 text-xs shadow-lg backdrop-blur-md dark:border-white/10 dark:bg-surface-dark-card">

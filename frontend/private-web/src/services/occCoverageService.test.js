@@ -13,6 +13,12 @@ describe('coverage errors (ADR-0030)', () => {
     expect(describeReasons(error.reasons)).toEqual(['Supera el máximo de posiciones por agente de esta terminal.']);
   });
 
+  it('says why a stand in use cannot be deactivated from Configuración (2-A)', () => {
+    const error = translateCoverageError({ status: 422, code: 'stand_in_use', reasons: ['stand_in_use'] });
+    expect(error.message).toBe('La posición tiene vuelos sin terminar o coberturas abiertas: no se puede desactivar.');
+    expect(error.reasons).toEqual(['stand_in_use']);
+  });
+
   it('falls back to the status when there are no known reasons', () => {
     expect(translateCoverageError({ status: 409 }).message).toMatch(/cambiaron/);
     expect(translateCoverageError({ status: 403, reasons: [] }).reasons).toEqual([]);

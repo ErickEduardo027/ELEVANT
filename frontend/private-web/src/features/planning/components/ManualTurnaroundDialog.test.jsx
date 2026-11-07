@@ -78,6 +78,41 @@ describe('ManualTurnaroundDialog', () => {
     expect(vi.mocked(createManualTurnaround).mock.calls[2][0].turnaroundId).not.toBe(first);
   });
 
+  it('gives the flight its aircraft type once and explains a type that is no longer available (2-A)', async () => {
+    const typeId = '20000000-0000-7000-8000-000000000020';
+    vi.mocked(getManualTurnaroundOptions).mockResolvedValue({ ...options, aircraftTypes: [{ id: typeId, icaoCode: 'B738',
+      iataCode: '73H', manufacturer: 'Boeing', model: '737-800', sizeCategory: 'Narrowbody' }] });
+    vi.mocked(createManualTurnaround).mockRejectedValueOnce(Object.assign(new Error('El vuelo o su contrato cambiaron.'),
+      { status: 409, code: 'manual-conflict', problemCode: 'aircraft_type_unavailable' }));
+    renderDialog();
+    await fillForm();
+    expect(screen.getByLabelText('Tipo de avión')).toHaveValue('');
+    await userEvent.selectOptions(screen.getByLabelText('Tipo de avión'), typeId);
+    expect(screen.getByRole('option', { name: 'Boeing 737-800 · B738' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Crear vuelo' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('El tipo de avión ya no está disponible.');
+    expect(createManualTurnaround).toHaveBeenCalledWith(expect.objectContaining({ aircraftTypeId: typeId }), expect.anything());
+
+    // Without a type the request says so explicitly; the shared client then leaves the field out.
+    await userEvent.selectOptions(screen.getByLabelText('Tipo de avión'), '');
+    await userEvent.click(screen.getByRole('button', { name: 'Crear vuelo' }));
+    await waitFor(() => expect(createManualTurnaround).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(createManualTurnaround).mock.calls[1][0]).toMatchObject({ aircraftTypeId: null });
+  });
+
+  it('explains that a narrow-body stand does not take the wide-body type chosen (ADR-0030)', async () => {
+    const typeId = '20000000-0000-7000-8000-000000000021';
+    vi.mocked(getManualTurnaroundOptions).mockResolvedValue({ ...options, aircraftTypes: [{ id: typeId, icaoCode: 'A333',
+      iataCode: '333', manufacturer: 'Airbus', model: 'A330-300', sizeCategory: 'Widebody' }] });
+    vi.mocked(createManualTurnaround).mockRejectedValueOnce(Object.assign(new Error('El vuelo o su contrato cambiaron.'),
+      { status: 409, code: 'manual-conflict', problemCode: 'stand_unavailable' }));
+    renderDialog();
+    await fillForm();
+    await userEvent.selectOptions(screen.getByLabelText('Tipo de avión'), typeId);
+    await userEvent.click(screen.getByRole('button', { name: 'Crear vuelo' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('La posición solo admite aviones de fuselaje estrecho.');
+  });
+
   it('shows a real empty state when no airline has a valid station contract', async () => {
     vi.mocked(getManualTurnaroundOptions).mockResolvedValue({ ...options, airlines: [] });
     renderDialog();

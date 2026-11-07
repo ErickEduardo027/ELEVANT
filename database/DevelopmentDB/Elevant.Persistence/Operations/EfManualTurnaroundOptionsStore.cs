@@ -88,7 +88,15 @@ internal sealed class EfManualTurnaroundOptionsStore(
                 new OccTerminalData(terminal.PublicId, terminal.Code, terminal.Name)))
             .ToArrayAsync(cancellationToken);
 
+        // Active aircraft types, so the new flight carries its type from the start (2-A).
+        var aircraftTypes = await context.AircraftTypes.AsNoTracking()
+            .Where(type => type.IsActive)
+            .OrderBy(type => type.Manufacturer).ThenBy(type => type.Model).ThenBy(type => type.IcaoCode)
+            .Select(type => new ManualTurnaroundAircraftTypeData(type.PublicId, type.IcaoCode, type.IataCode,
+                type.Manufacturer, type.Model, type.SizeCategory == null ? null : type.SizeCategory.ToString()))
+            .ToArrayAsync(cancellationToken);
+
         return new ManualTurnaroundOptionsData(station.Station, operationDate,
-            station.Airport, airlines, airports, stands, charterAirlines);
+            station.Airport, airlines, airports, stands, charterAirlines, aircraftTypes);
     }
 }

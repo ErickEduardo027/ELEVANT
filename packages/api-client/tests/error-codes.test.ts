@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ELEVANT_API_ERROR_CODES } from "../src/errors";
+import { ELEVANT_API_ERROR_CODES, ELEVANT_RULE_REASONS } from "../src/errors";
 
 // Every block adds its own `as const` list to ELEVANT_API_ERROR_CODES; a code lives in one list only.
 describe("Problem Details codes", () => {
@@ -17,6 +17,20 @@ describe("Problem Details codes", () => {
       "termination_date_required", "termination_notice_not_met", "immediate_cause_invalid", "version_awaiting_signatures",
       "version_signed", "airline_signed_other_content", "already_signed", "not_approved", "forbidden"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("keeps the master data and flight feed codes of phase 2 (block C)", () => {
+    for (const code of ["station_code_taken", "airport_has_station", "airport_icao_taken", "invalid_station",
+      "invalid_time_zone", "airport_required", "time_zone_locked", "station_in_use", "terminal_code_taken",
+      "stand_code_taken", "aircraft_type_code_taken", "invalid_terminal", "invalid_stand", "invalid_aircraft_type",
+      "terminal_in_use", "stand_in_use", "aircraft_type_in_use", "terminal_code_locked", "stand_code_locked",
+      "terminal_inactive", "invalid_flight_feed_query", "invalid_flight_import", "flight_proposals_not_pairable",
+      "flight_proposal_closed", "flight_counterpart_unknown", "contract_not_in_force", "contract_ambiguous",
+      "charter_has_contract", "charter_required", "airline_inactive", "flight_proposal_not_dismissed",
+      "flight_proposal_passed", "aircraft_type_unavailable", "stand_unavailable"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A stand in use also comes back as the rule of a rejected coverage configuration (422).
+    expect(ELEVANT_RULE_REASONS).toContain("stand_in_use");
   });
 
   it("keeps the airline permit codes of phase 2 (block B)", () => {

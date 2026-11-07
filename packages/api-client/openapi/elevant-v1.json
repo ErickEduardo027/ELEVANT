@@ -22403,6 +22403,16 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -22807,6 +22817,7 @@
         "tags": [
           "OccFlightFeed"
         ],
+        "summary": "The proposals of a station and date. `view` is `Contracted` (default: airlines with a contract\nin force that day), `Charter` (carriers without contract, ADR-0033) or `Dismissed` (2-N36).\nAirlines whose contract at the station is suspended or expired are in none (2-N16).",
         "operationId": "GetOccFlightFeed",
         "parameters": [
           {
@@ -22825,6 +22836,13 @@
             "schema": {
               "type": "string",
               "format": "date"
+            }
+          },
+          {
+            "name": "view",
+            "in": "query",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -22952,8 +22970,18 @@
         "tags": [
           "OccFlightFeed"
         ],
-        "summary": "Creates the turnaround of a proposed arrival and its departure; repeating it returns the same turnaround.",
+        "summary": "Creates the turnaround of a proposed arrival and its departure, optionally with its aircraft type, stand\nand as a charter without contract (2-B, ADR-0033). The Idempotency-Key is optional while older screens\nexist (expand): without it repeating the pair returns the same turnaround; with it the expected versions\nof both proposals are required and a retry replays the first result.",
         "operationId": "ImportOccFlight",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -23042,7 +23070,7 @@
         "tags": [
           "OccFlightFeed"
         ],
-        "summary": "Hides a proposal OCC will not operate.",
+        "summary": "Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed.",
         "operationId": "DismissOccFlightProposal",
         "parameters": [
           {
@@ -23061,6 +23089,769 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/flight-feed/proposals/{proposalId}/restore": {
+      "post": {
+        "tags": [
+          "OccFlightFeed"
+        ],
+        "summary": "Brings a dismissed proposal back to the review while its flight has not passed (2-N36), with the version\nOCC saw and an Idempotency-Key; a retry replays the first result.",
+        "operationId": "RestoreOccFlightProposal",
+        "parameters": [
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RestoreOccFlightProposalRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreOccFlightProposalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/master-data": {
+      "get": {
+        "tags": [
+          "OccMasterData"
+        ],
+        "operationId": "GetOccMasterData",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccMasterData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/terminals": {
+      "post": {
+        "tags": [
+          "OccMasterData"
+        ],
+        "operationId": "CreateOccTerminal",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateTerminalInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterTerminalData"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterTerminalData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/terminals/{terminalId}": {
+      "put": {
+        "tags": [
+          "OccMasterData"
+        ],
+        "operationId": "UpdateOccTerminal",
+        "parameters": [
+          {
+            "name": "terminalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateTerminalInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterTerminalData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/stands": {
+      "post": {
+        "tags": [
+          "OccMasterData"
+        ],
+        "operationId": "CreateOccStand",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateStandInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterStandData"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterStandData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/stands/{standId}": {
+      "put": {
+        "tags": [
+          "OccMasterData"
+        ],
+        "operationId": "UpdateOccStand",
+        "parameters": [
+          {
+            "name": "standId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateStandInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterStandData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/aircraft-types": {
+      "post": {
+        "tags": [
+          "OccMasterData"
+        ],
+        "operationId": "CreateOccAircraftType",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateAircraftTypeInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterAircraftTypeData"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterAircraftTypeData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/aircraft-types/{aircraftTypeId}": {
+      "put": {
+        "tags": [
+          "OccMasterData"
+        ],
+        "operationId": "UpdateOccAircraftType",
+        "parameters": [
+          {
+            "name": "aircraftTypeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateAircraftTypeInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MasterAircraftTypeData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -30633,6 +31424,240 @@
         ]
       }
     },
+    "/api/v1/governance/stations": {
+      "get": {
+        "tags": [
+          "StationCatalog"
+        ],
+        "operationId": "ListGovernanceStations",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationCatalogData"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "StationCatalog"
+        ],
+        "summary": "A new station; its code is the IATA code of its airport (a new airport needs its data).",
+        "operationId": "CreateGovernanceStation",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateStationInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationCatalogItemData"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationCatalogItemData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/stations/{stationId}": {
+      "put": {
+        "tags": [
+          "StationCatalog"
+        ],
+        "summary": "Renames the station, changes its time zone while it has no history, deactivates or reactivates it.",
+        "operationId": "UpdateGovernanceStation",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/UpdateStationInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StationCatalogItemData"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/suppliers": {
       "get": {
         "tags": [
@@ -36302,6 +37327,34 @@
         },
         "additionalProperties": false
       },
+      "CreateAircraftTypeInput": {
+        "required": [
+          "icaoCode",
+          "manufacturer",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "icaoCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "sizeCategory": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateClientUserInput": {
         "required": [
           "email",
@@ -36557,6 +37610,11 @@
           },
           "charter": {
             "type": "boolean"
+          },
+          "aircraftTypeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -36755,6 +37813,76 @@
         },
         "additionalProperties": false
       },
+      "CreateStandInput": {
+        "required": [
+          "code",
+          "hasBoardingBridge",
+          "isRemote",
+          "stationId",
+          "terminalId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "terminalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "hasBoardingBridge": {
+            "type": "boolean"
+          },
+          "isRemote": {
+            "type": "boolean"
+          },
+          "maxAircraftSize": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateStationInput": {
+        "required": [
+          "code",
+          "ianaTimeZone",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          },
+          "airportIcaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "airportName": {
+            "type": "string",
+            "nullable": true
+          },
+          "airportCity": {
+            "type": "string",
+            "nullable": true
+          },
+          "airportCountryCode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateTariffDraftInput": {
         "required": [
           "currencyCode",
@@ -36777,6 +37905,27 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "CreateTerminalInput": {
+        "required": [
+          "code",
+          "name",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -43650,6 +44799,28 @@
           "departureProposalId": {
             "type": "string",
             "format": "uuid"
+          },
+          "aircraftTypeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "standId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "charter": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "expectedArrivalVersion": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedDepartureVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -44466,6 +45637,39 @@
         },
         "additionalProperties": false
       },
+      "ManualTurnaroundAircraftTypeResponse": {
+        "required": [
+          "icaoCode",
+          "id",
+          "manufacturer",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "sizeCategory": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ManualTurnaroundAirlineResponse": {
         "required": [
           "iataCode",
@@ -44540,6 +45744,13 @@
               "$ref": "#/components/schemas/ManualTurnaroundAirlineResponse"
             },
             "nullable": true
+          },
+          "aircraftTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ManualTurnaroundAircraftTypeResponse"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -44574,6 +45785,126 @@
           "messageId": {
             "type": "string",
             "format": "uuid"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MasterAircraftTypeData": {
+        "required": [
+          "icaoCode",
+          "id",
+          "isActive",
+          "manufacturer",
+          "model",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "sizeCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MasterStandData": {
+        "required": [
+          "code",
+          "hasBoardingBridge",
+          "hasHistory",
+          "id",
+          "isActive",
+          "isRemote",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "terminalId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "code": {
+            "type": "string"
+          },
+          "hasBoardingBridge": {
+            "type": "boolean"
+          },
+          "isRemote": {
+            "type": "boolean"
+          },
+          "maxAircraftSize": {
+            "type": "string",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "hasHistory": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "MasterTerminalData": {
+        "required": [
+          "code",
+          "hasHistory",
+          "id",
+          "isActive",
+          "name",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "hasHistory": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -45646,7 +46977,8 @@
           "proposalId",
           "providerStatus",
           "scheduledAt",
-          "status"
+          "status",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -45731,6 +47063,14 @@
           "lastSeenAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "version": {
+            "type": "string"
+          },
+          "suggestedAircraftTypeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -45768,6 +47108,52 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccMasterData": {
+        "required": [
+          "aircraftTypes",
+          "canCreate",
+          "canUpdate",
+          "stands",
+          "stationCode",
+          "stationId",
+          "terminals"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "terminals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MasterTerminalData"
+            }
+          },
+          "stands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MasterStandData"
+            }
+          },
+          "aircraftTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MasterAircraftTypeData"
+            }
+          },
+          "canCreate": {
+            "type": "boolean"
+          },
+          "canUpdate": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -50991,6 +52377,41 @@
         },
         "additionalProperties": false
       },
+      "RestoreOccFlightProposalRequest": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RestoreOccFlightProposalResponse": {
+        "required": [
+          "proposalId",
+          "replayed",
+          "status",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "RetireServiceInput": {
         "type": "object",
         "properties": {
@@ -52221,6 +53642,106 @@
         },
         "additionalProperties": false
       },
+      "StationAirportData": {
+        "required": [
+          "city",
+          "countryCode",
+          "iataCode",
+          "icaoCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "iataCode": {
+            "type": "string"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "StationCatalogData": {
+        "required": [
+          "availableAirports",
+          "stations"
+        ],
+        "type": "object",
+        "properties": {
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StationCatalogItemData"
+            }
+          },
+          "availableAirports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StationAirportData"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "StationCatalogItemData": {
+        "required": [
+          "airport",
+          "code",
+          "hasHistory",
+          "ianaTimeZone",
+          "id",
+          "isActive",
+          "name",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "hasHistory": {
+            "type": "boolean"
+          },
+          "airport": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StationAirportData"
+              }
+            ]
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "SubmitAirlinePermitInput": {
         "required": [
           "expiresOn",
@@ -52720,6 +54241,38 @@
         },
         "additionalProperties": false
       },
+      "UpdateAircraftTypeInput": {
+        "required": [
+          "expectedVersion",
+          "isActive",
+          "manufacturer",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "sizeCategory": {
+            "type": "string",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "UpdateCharterDetailsRequest": {
         "type": "object",
         "properties": {
@@ -52989,6 +54542,91 @@
           "aircraftRegistration": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateStandInput": {
+        "required": [
+          "code",
+          "expectedVersion",
+          "hasBoardingBridge",
+          "isActive",
+          "isRemote",
+          "terminalId"
+        ],
+        "type": "object",
+        "properties": {
+          "terminalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "hasBoardingBridge": {
+            "type": "boolean"
+          },
+          "isRemote": {
+            "type": "boolean"
+          },
+          "maxAircraftSize": {
+            "type": "string",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateStationInput": {
+        "required": [
+          "expectedVersion",
+          "ianaTimeZone",
+          "isActive",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "UpdateTerminalInput": {
+        "required": [
+          "code",
+          "expectedVersion",
+          "isActive",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -53306,6 +54944,9 @@
       "name": "OccFlightFeed"
     },
     {
+      "name": "OccMasterData"
+    },
+    {
       "name": "OccOperationDocuments"
     },
     {
@@ -53379,6 +55020,9 @@
     },
     {
       "name": "ServiceClosures"
+    },
+    {
+      "name": "StationCatalog"
     },
     {
       "name": "Suppliers"

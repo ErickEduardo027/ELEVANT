@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import ActivityPanel from '../employees/ActivityPanel';
 import { listAudit } from '../../services/humanResourcesEmployeesService';
 import ShellFrame from '../shell/ShellFrame';
-import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon, UsersIcon } from '../shell/components/icons';
+import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon, UsersIcon, MapPinIcon } from '../shell/components/icons';
 import AirlinesPanel from './AirlinesPanel';
 import ClientsPanel from './ClientsPanel';
 import EmailDeliveryPanel from './EmailDeliveryPanel';
 import InternalUsersPanel from './InternalUsersPanel';
+import StationsPanel from './StationsPanel';
 import AccessValidationsPage from '../department-users/AccessValidationsPage';
 import { usePreviewControls } from '../dashboard/usePreviewControls';
 import { useResponsiveSidebar } from '../shell/useResponsiveSidebar';
@@ -31,6 +32,7 @@ const MODULE_INFO = {
   internal: { label: 'Usuarios internos', description: 'Administradores, sub-usuarios y solicitudes por departamento.' },
   validations: { label: 'Validaciones de acceso', description: 'Todas las altas solicitadas por los departamentos.' },
   airlines: { label: 'Aerolíneas', description: 'Catálogo de aerolíneas solicitantes.' },
+  stations: { label: 'Estaciones', description: 'Estaciones de la plataforma: alta, nombre, zona horaria y desactivación.' },
   settings: { label: 'Configuración', description: 'Políticas de acceso, roles heredados y auditoría.' },
 };
 
@@ -42,6 +44,7 @@ const modules = [
   ] },
   { id: 'validations', label: 'Validaciones de acceso', icon: ShieldCheckIcon },
   { id: 'airlines', label: 'Aerolíneas', icon: PlaneIcon },
+  { id: 'stations', label: 'Estaciones', icon: MapPinIcon },
   { id: 'settings', label: 'Configuración', icon: SettingsIcon },
 ];
 const station = () => ({ code: 'AVIAM', localAbbr: 'AST', localTime: new Date().toISOString(), utcTime: new Date().toISOString() });
@@ -131,8 +134,9 @@ export default function GovernanceShell({ user, onLogout }) {
           {error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger"><span>{error}</span>{status === 'error' && <button type="button" onClick={() => { void refresh(); }} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button>}</div>}
           {moduleId === 'internal' && <InternalUsersPanel />}
           {moduleId === 'clients' && <ClientsPanel />}
+          {moduleId === 'stations' && <StationsPanel />}
           {moduleId === 'validations' && <AccessValidationsPage />}
-          {status === 'loading' && !['internal', 'clients', 'validations'].includes(moduleId) ? <div className="rounded-xl bg-white p-8 dark:bg-surface-dark-card">Cargando gobernanza…</div> : null}
+          {status === 'loading' && !['internal', 'clients', 'validations', 'stations'].includes(moduleId) ? <div className="rounded-xl bg-white p-8 dark:bg-surface-dark-card">Cargando gobernanza…</div> : null}
           {status === 'ready' && moduleId === 'home' && <GovernanceHome snapshot={snapshot} tasks={tasks} overview={overview}
             onOpen={setModuleId} onDone={async message => { setError(''); setNotice(message); await refresh(); }}
             onRefresh={refresh} />}

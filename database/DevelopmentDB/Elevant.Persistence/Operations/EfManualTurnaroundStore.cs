@@ -124,15 +124,33 @@ internal sealed class EfManualTurnaroundStore(
         if (request.Charter ? applicableContracts.Length != 0 : applicableContracts.Length != 1)
             return (Conflict(), null);
 
+        // The aircraft type is typed once, here (2-A): stand sizes and ground times read it later.
+        long? aircraftTypeId = null;
+        AircraftSizeCategory? aircraftSize = null;
+        if (request.AircraftTypeId is { } typeId)
+        {
+            var type = await context.AircraftTypes.AsNoTracking()
+                .Where(item => item.PublicId == typeId && item.IsActive)
+                .Select(item => new { item.Id, item.SizeCategory })
+                .SingleOrDefaultAsync(cancellationToken);
+            if (type is null)
+                return (ManualTurnaroundWriteResult.Failed(ManualTurnaroundWriteFailure.Conflict, "aircraft_type_unavailable"),
+                    null);
+            (aircraftTypeId, aircraftSize) = (type.Id, type.SizeCategory);
+        }
+
         var stand = await (
             from item in context.Stands.AsNoTracking()
             join terminal in context.Terminals.AsNoTracking()
                 on item.TerminalId equals (long?)terminal.Id
             where item.PublicId == request.StandId && item.StationId == scope.StationId &&
                   item.IsActive && terminal.StationId == scope.StationId && terminal.IsActive
-            select new { item.Id })
+            select new { item.Id, item.MaxAircraftSize })
             .SingleOrDefaultAsync(cancellationToken);
         if (stand is null) return (Conflict(), null);
+        // With its type known, a wide-body never takes a narrow-body stand (ADR-0030).
+        if (aircraftSize == AircraftSizeCategory.Widebody && stand.MaxAircraftSize == AircraftSizeCategory.Narrowbody)
+            return (ManualTurnaroundWriteResult.Failed(ManualTurnaroundWriteFailure.Conflict, "stand_unavailable"), null);
         var standOverlaps = await (
             from assignment in context.Set<StandAssignment>().AsNoTracking()
             join previousOperation in context.GroundOperations.AsNoTracking()
@@ -163,6 +181,7 @@ internal sealed class EfManualTurnaroundStore(
             StationId = scope.StationId,
             OperationDate = request.OperationDate,
             ContractVersionId = request.Charter ? null : applicableContracts[0],
+            AircraftTypeId = aircraftTypeId,
             CurrentStatus = TurnaroundStatus.Confirmed,
             Source = OperationalDataSource.Manual,
             CreatedAt = now,
@@ -241,6 +260,7 @@ internal sealed class EfManualTurnaroundStore(
                 source = "manual",
                 charter = request.Charter,
                 standId = request.StandId,
+                aircraftTypeId = request.AircraftTypeId,
                 operationDate = request.OperationDate,
                 arrivalFlightNumber = request.ArrivalFlightNumber,
                 departureFlightNumber = request.DepartureFlightNumber,
@@ -293,8 +313,12 @@ internal sealed class EfManualTurnaroundStore(
         var departure = legs.SingleOrDefault(item => item.Direction == FlightDirection.Departure);
         var isCharter = await context.Set<CharterAgreement>().AsNoTracking()
             .AnyAsync(item => item.TurnaroundId == existing.Id, cancellationToken);
+        var aircraftTypeId = existing.AircraftTypeId is { } typeKey
+            ? await context.AircraftTypes.AsNoTracking().Where(item => item.Id == typeKey)
+                .Select(item => (Guid?)item.PublicId).SingleOrDefaultAsync(cancellationToken)
+            : null;
         return airlineId == request.AirlineId && assignedStandId == request.StandId &&
-            isCharter == request.Charter &&
+            isCharter == request.Charter && aircraftTypeId == request.AircraftTypeId &&
             existing.OperationDate == request.OperationDate &&
             arrival is not null && departure is not null &&
             arrival.FlightNumber == request.ArrivalFlightNumber &&

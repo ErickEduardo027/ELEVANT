@@ -16,7 +16,8 @@ public sealed record ManualTurnaroundWriteRequest(
     DateTimeOffset DepartureScheduledAt,
     Guid CorrelationId,
     string RequestId,
-    bool Charter = false);
+    bool Charter = false,
+    Guid? AircraftTypeId = null);
 
 public enum ManualTurnaroundWriteFailure
 {
@@ -24,11 +25,16 @@ public enum ManualTurnaroundWriteFailure
     Conflict,
 }
 
+/// <summary>
+/// The written turnaround, or the failure and its stable Problem Details code when the screens explain it
+/// (<c>aircraft_type_unavailable</c>, <c>stand_unavailable</c>).
+/// </summary>
 public sealed record ManualTurnaroundWriteResult(
     Guid? TurnaroundId,
     string? OperationCode,
     bool Replayed,
-    ManualTurnaroundWriteFailure? Failure)
+    ManualTurnaroundWriteFailure? Failure,
+    string? Code = null)
 {
     public bool IsSuccess => TurnaroundId.HasValue && OperationCode is not null && Failure is null;
 
@@ -38,6 +44,6 @@ public sealed record ManualTurnaroundWriteResult(
     public static ManualTurnaroundWriteResult Existing(Guid id, string operationCode) =>
         new(id, operationCode, true, null);
 
-    public static ManualTurnaroundWriteResult Failed(ManualTurnaroundWriteFailure failure) =>
-        new(null, null, false, failure);
+    public static ManualTurnaroundWriteResult Failed(ManualTurnaroundWriteFailure failure, string? code = null) =>
+        new(null, null, false, failure, code);
 }

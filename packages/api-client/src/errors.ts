@@ -76,15 +76,46 @@ const CONTRACT_LIFECYCLE_CODES = ["content_changed", "already_signed", "not_appr
  */
 const AIRLINE_PERMIT_CODES = ["review_closed", "permit_not_verified", "review_note_required", "invalid_permit",
   "permit_dates_invalid", "permit_expired", "document_invalid", "document_expired"] as const;
+/**
+ * Stations of the platform (phase 2, block C, 2-A): the superadministrator creates them with the IATA code of their
+ * airport (a new airport needs its data), the code never changes, the time zone only while the station has no history,
+ * and a station in use is never deactivated.
+ */
+const STATION_CODES = ["station_code_taken", "airport_has_station", "airport_icao_taken", "invalid_station",
+  "invalid_time_zone", "airport_required", "time_zone_locked", "station_in_use"] as const;
+/**
+ * OCC master data (phase 2, block C, 2-A): terminals, stands and aircraft types. A code is fixed once something used
+ * it, something in use is never deactivated (also from the coverage configuration, as a 422 reason) and a stand
+ * needs an active terminal.
+ */
+const MASTER_DATA_CODES = ["terminal_code_taken", "stand_code_taken", "aircraft_type_code_taken", "invalid_terminal",
+  "invalid_stand", "invalid_aircraft_type", "terminal_in_use", "stand_in_use", "aircraft_type_in_use",
+  "terminal_code_locked", "stand_code_locked", "terminal_inactive"] as const;
+/**
+ * Flight feed review (phase 2, block C): the view and the import of a pair, a carrier whose contract at the station
+ * is suspended or expired (2-N16), a charter without contract (2-B, ADR-0033) and the restore of a dismissed
+ * proposal while its flight has not passed (2-N36).
+ */
+const FLIGHT_FEED_CODES = ["invalid_flight_feed_query", "invalid_flight_import", "flight_proposals_not_pairable",
+  "flight_proposal_closed", "flight_counterpart_unknown", "contract_not_in_force", "contract_ambiguous",
+  "charter_has_contract", "charter_required", "airline_inactive", "flight_proposal_not_dismissed",
+  "flight_proposal_passed"] as const;
+/**
+ * Planning a flight with its aircraft type and stand (phase 2, block C): an inactive or unknown aircraft type, and a
+ * stand that is inactive, of another station or taken in the window (the rules it breaks come in `reasons`).
+ */
+const PLANNING_CODES = ["aircraft_type_unavailable", "stand_unavailable"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
   (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number] |
-  (typeof AIRLINE_PERMIT_CODES)[number];
+  (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
+  (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
-  ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES];
+  ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
+  ...PLANNING_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",
@@ -95,7 +126,9 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   "mixed_airline", "already_invoiced", "operation_not_approved", "nothing_to_invoice",
   // Simulated card payment (ADR-0036).
   "cardholder_invalid", "card_number_invalid", "card_expired", "security_code_invalid", "amount_invalid",
-  "amount_mismatch", "invoice_paid", "idempotency_conflict", "concurrent_payment"] as const;
+  "amount_mismatch", "invoice_paid", "idempotency_conflict", "concurrent_payment",
+  // A stand in use is not deactivated from the coverage configuration (phase 2, block C, 2-A).
+  "stand_in_use"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

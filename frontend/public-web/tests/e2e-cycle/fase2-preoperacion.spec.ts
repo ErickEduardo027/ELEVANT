@@ -281,7 +281,7 @@ test("OCC revisa el mapa de posiciones y el feed de vuelos sin llamar al proveed
   await goPrivate(page, "/admin-occ/positions-map");
   await page.waitForLoadState("networkidle");
   await snap(page, "fase2-occ-mapa-posiciones");
-  // Only reads the stored feed; this stack has AeroDataBox off, so no provider unit is spent.
+  // Only reads the stored feed: the E2E stack runs the simulated feed (or none), never AeroDataBox, so no paid unit is spent.
   const token = await login("occ");
   const feed = await call<{ budget: { configured: boolean } }>(token, "GET",
     `/occ/flight-feed?stationId=${station.id}&date=${localDay()}`);
@@ -342,8 +342,213 @@ test("hueco 1-C · Contratos crea una enmienda del contrato activo y Finanzas ap
   expect(after.approvedVersions.find(item => item.validFrom === start)?.status).toBe("Approved");
 });
 
-test.fixme("hueco 2-A · Superadmin crea una estación y OCC sus terminales, posiciones y tipos de avión", async () => {});
-test.fixme("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posición y charter", async () => {});
+/** Run-unique A–Z letters (the run id's digits become letters) for the synthetic master data of a run. */
+const runLetters = (runId: string, length: number) => runId.toUpperCase()
+  .replace(/[0-9]/g, digit => "ABCDEFGHIJ"[Number(digit)]!).replace(/[^A-Z]/g, "").slice(-length).padStart(length, "Q");
+
+type MasterData = {
+  terminals: Array<{ id: string; code: string; isActive: boolean; version: string }>;
+  stands: Array<{ id: string; terminalId: string | null; code: string; hasBoardingBridge: boolean; isRemote: boolean;
+    maxAircraftSize: string | null; isActive: boolean; version: string }>;
+  aircraftTypes: Array<{ id: string; icaoCode: string; iataCode: string | null; manufacturer: string; model: string;
+    sizeCategory: string | null; isActive: boolean; version: string }>;
+};
+type RunMasterData = { terminalCode: string; standId: string; standCode: string; aircraftTypeId: string; aircraftTypeIcao: string };
+
+test("hueco 2-A · Superadmin crea una estación y OCC sus terminales, posiciones y tipos de avión", async ({ page }) => {
+  const { run, version } = contractOf();
+  const puj = version.stations.find(item => item.code === "PUJ")!;
+  // A station code is its airport's IATA code and never changes: each run uses a synthetic airport of its own.
+  const code = `Q${runLetters(run.runId, 2)}`;
+  const superadmin = await login("superadmin");
+  const contracts = await login("contracts");
+  const stations = async () => (await expectCall<{ stations: Array<{ code: string; isActive: boolean }> }>(200, superadmin,
+    "GET", "/governance/stations")).data.stations;
+  const contractStations = async () => (await expectCall<Array<{ code: string }>>(200, contracts, "GET",
+    "/contracts/commercial-requests/stations")).data.map(item => item.code);
+
+  await loginPrivate(page, "superadmin");
+  await openModule(page, "Estaciones");
+  await expect(page.getByText("Cargando estaciones…")).toBeHidden();
+  if (!(await stations()).some(item => item.code === code)) { // a resumed run created it already
+    const form = page.getByRole("form", { name: "Nueva estación" });
+    await form.getByLabel("Código IATA").fill(code);
+    await form.getByLabel("Nombre", { exact: true }).fill(`Estación E2E ${run.runId}`);
+    await form.getByLabel("Zona horaria (IANA)").fill("America/Santo_Domingo");
+    // A new airport needs its data; a known one is reused without typing it again.
+    if (await form.getByLabel("Código OACI").isVisible()) {
+      await form.getByLabel("Código OACI").fill(`Q${runLetters(run.runId, 3)}`);
+      await form.getByLabel("Nombre del aeropuerto").fill(`Aeropuerto E2E ${run.runId}`);
+      await form.getByLabel("Ciudad").fill("Ciudad E2E");
+      await form.getByLabel("País (ISO, 2 letras)").fill("DO");
+    }
+    await form.getByRole("button", { name: "Crear estación" }).click();
+    await expect(page.getByRole("status").filter({ hasText: `Estación ${code} creada` })).toBeVisible();
+  }
+  const created = page.getByRole("region", { name: "Estaciones registradas" }).getByRole("listitem").filter({ hasText: code });
+  await expect(created).toBeVisible();
+  await snap(page, "fase2-hueco-2a-estacion");
+  // Contratos can assign the new station; once deactivated it no longer offers it, and the row stays.
+  if ((await stations()).find(item => item.code === code)?.isActive) {
+    expect(await contractStations()).toContain(code);
+    await created.getByLabel(`Estación ${code} activa`).uncheck();
+    await created.getByRole("button", { name: "Guardar" }).click();
+    await expect(page.getByRole("status").filter({ hasText: `Estación ${code} desactivada.` })).toBeVisible();
+  }
+  expect(await contractStations()).not.toContain(code);
+  expect((await stations()).find(item => item.code === code)?.isActive).toBe(false);
+
+  // OCC loads its own layout in Datos maestros: a terminal, a stand and an aircraft type of this run.
+  const occ = await login("occ");
+  const terminalCode = `E2E-${runLetters(run.runId, 4)}`;
+  const standCode = `${terminalCode}-1`;
+  const aircraftTypeIcao = `Z${runLetters(run.runId, 3)}`;
+  const masterData = async () => (await expectCall<MasterData>(200, occ, "GET", `/occ/master-data?stationId=${puj.id}`)).data;
+  await loginPrivate(page, "occ");
+  await goPrivate(page, "/admin-occ/master-data");
+  await expect(page.getByText("Cargando los datos maestros…")).toBeHidden();
+  let data = await masterData();
+  if (!data.terminals.some(item => item.code === terminalCode)) {
+    const form = page.getByRole("form", { name: "Nueva terminal" });
+    await form.getByLabel("Código").fill(terminalCode);
+    await form.getByLabel("Nombre").fill(`Terminal E2E ${run.runId}`);
+    await form.getByRole("button", { name: "Crear terminal" }).click();
+    await expect(page.getByRole("status").filter({ hasText: `Terminal ${terminalCode} creada.` })).toBeVisible();
+    data = await masterData();
+  }
+  const terminal = data.terminals.find(item => item.code === terminalCode)!;
+  if (!data.stands.some(item => item.code === standCode)) {
+    const form = page.getByRole("form", { name: "Nueva posición" });
+    await form.getByRole("combobox", { name: /^Terminal/ }).selectOption(terminal.id);
+    await form.getByLabel("Código").fill(standCode);
+    await form.getByRole("button", { name: "Crear posición" }).click();
+    await expect(page.getByRole("status").filter({ hasText: `Posición ${standCode} creada.` })).toBeVisible();
+  }
+  if (!data.aircraftTypes.some(item => item.icaoCode === aircraftTypeIcao)) {
+    const form = page.getByRole("form", { name: "Nuevo tipo de avión" });
+    await form.getByLabel("OACI").fill(aircraftTypeIcao);
+    await form.getByLabel("Fabricante").fill("E2E Aero");
+    await form.getByLabel("Modelo").fill(`Sintético ${run.runId}`);
+    await form.getByRole("combobox", { name: /^Tamaño/ }).selectOption("Narrowbody");
+    await form.getByRole("button", { name: "Crear tipo de avión" }).click();
+    await expect(page.getByRole("status").filter({ hasText: `Tipo de avión ${aircraftTypeIcao} creado.` })).toBeVisible();
+  }
+  data = await masterData();
+  const stand = data.stands.find(item => item.code === standCode)!;
+  const aircraftType = data.aircraftTypes.find(item => item.icaoCode === aircraftTypeIcao)!;
+  expect([stand.terminalId, stand.isActive, aircraftType.isActive]).toEqual([terminal.id, true, true]);
+  await snap(page, "fase2-hueco-2a-datos-maestros");
+
+  // The new terminal reaches Cobertura, and the stand and the type the «Nuevo vuelo» form («type once»).
+  const coverage = await expectCall<{ terminals: Array<{ code: string }> }>(200, occ, "GET",
+    `/occ/coverage?stationId=${puj.id}&date=${localDay()}`);
+  expect(coverage.data.terminals.map(item => item.code)).toContain(terminalCode);
+  await goPrivate(page, "/admin-occ/planning");
+  await page.getByRole("button", { name: "Nuevo vuelo" }).click();
+  const dialog = page.getByRole("dialog", { name: "Nuevo vuelo" });
+  await expect(dialog.getByText("Consultando contratos y aeropuertos…")).toBeHidden();
+  await expect(dialog.getByRole("combobox", { name: /^Posición de estacionamiento/ }).locator("option")
+    .filter({ hasText: `${standCode} · Terminal ${terminalCode}` })).toHaveCount(1);
+  await expect(dialog.getByRole("combobox", { name: /^Tipo de avión/ }).locator("option")
+    .filter({ hasText: aircraftTypeIcao })).toHaveCount(1);
+  await snap(page, "fase2-hueco-2a-nuevo-vuelo");
+  await dialog.getByRole("button", { name: "Cancelar" }).click();
+  saveRun({ masterData: { terminalCode, standId: stand.id, standCode, aircraftTypeId: aircraftType.id,
+    aircraftTypeIcao } satisfies RunMasterData });
+});
+
+test("hueco 2-B · el feed simulado propone un vuelo con modelo de avión, posición y charter", async ({ page }) => {
+  const { run, version } = contractOf();
+  const puj = version.stations.find(item => item.code === "PUJ")!;
+  const master = run.masterData as RunMasterData | undefined;
+  expect(master, "the 2-A step left its synthetic stand and aircraft type").toBeTruthy();
+  const occ = await login("occ");
+  const day = localDay();
+  type Proposal = { proposalId: string; direction: string; flightNumber: string; airlineName: string; status: string;
+    scheduledAt: string; suggestedDepartureId: string | null; aircraftModel: string | null };
+  type Feed = { budget: { configured: boolean; provider: string }; proposals: Proposal[] };
+  const feed = async (view: "Contracted" | "Charter" | "Dismissed") => (await expectCall<Feed>(200, occ, "GET",
+    `/occ/flight-feed?stationId=${puj.id}&date=${day}&view=${view}`)).data;
+  // Only the simulated provider is ever refreshed here: the harness never spends a paid read (AeroDataBox).
+  const current = await feed("Contracted");
+  test.skip(current.budget.provider !== "Simulated" || !current.budget.configured,
+    "El stack no tiene el feed simulado (SimulatedFlightFeed__Enabled en compose.local.e2e.yml).");
+
+  await loginPrivate(page, "occ");
+  await goPrivate(page, "/admin-occ/planning");
+  await page.getByRole("button", { name: "Importar vuelos" }).click();
+  const dialog = page.getByRole("dialog", { name: "Importar vuelos del proveedor" });
+  await expect(dialog.getByText("Cargando vuelos propuestos…")).toBeHidden();
+  const refresh = dialog.getByRole("button", { name: "Actualizar ahora" });
+  if (await refresh.isEnabled()) {
+    await refresh.click();
+    await expect(dialog.getByRole("status").filter({ hasText: /Lista actualizada|sin gastar unidades|Ya se actualizó/ }))
+      .toBeVisible();
+  }
+  // Arrivals still ahead, with the model the provider reported and the departure the same aircraft turns into.
+  const ahead = (await feed("Contracted")).proposals.filter(item => item.direction === "Arrival" && item.status === "Proposed" &&
+    item.suggestedDepartureId && item.aircraftModel && Date.parse(item.scheduledAt) > Date.now() + 15 * 60_000);
+  const chosen = ahead.find(item => item.airlineName === "Demo Airlines") ?? ahead[0];
+  expect(chosen, "the simulated feed proposed a contracted arrival still ahead today").toBeTruthy();
+  const arrivals = dialog.getByRole("list", { name: "Llegadas propuestas" });
+  const row = arrivals.getByRole("listitem").filter({ hasText: chosen!.flightNumber });
+  await expect(row).toContainText(chosen!.aircraftModel!);
+  // A select inside its label is named by the label and the chosen option, hence the anchored names.
+  await row.getByRole("combobox", { name: /^Tipo de avión/ }).selectOption(master!.aircraftTypeId);
+  await row.getByRole("combobox", { name: /^Posición/ }).selectOption(master!.standId);
+  await snap(page, "fase2-hueco-2b-importar");
+  await row.getByRole("button", { name: "Importar escala" }).click();
+  await expect(dialog.getByRole("status").filter({ hasText: /^Escala importada \(EXT-/ })).toBeVisible();
+
+  // The flight came in with its stand and its aircraft type: neither can be deactivated while it is pending.
+  const positions = await expectCall<{ positions: Array<{ code: string;
+    turnarounds: Array<{ arrivalFlightNumber: string | null }> }> }>(200, occ, "GET", `/occ/positions?stationId=${puj.id}&date=${day}`);
+  expect(positions.data.positions.find(item => item.code === master!.standCode)?.turnarounds
+    .some(item => item.arrivalFlightNumber === chosen!.flightNumber)).toBe(true);
+  const data = (await expectCall<MasterData>(200, occ, "GET", `/occ/master-data?stationId=${puj.id}`)).data;
+  const stand = data.stands.find(item => item.id === master!.standId)!;
+  const standOff = await call<{ code?: string }>(occ, "PUT", `/occ/stands/${stand.id}`, { terminalId: stand.terminalId,
+    code: stand.code, hasBoardingBridge: stand.hasBoardingBridge, isRemote: stand.isRemote,
+    maxAircraftSize: stand.maxAircraftSize, isActive: false, expectedVersion: stand.version });
+  expect([standOff.status, standOff.data.code]).toEqual([409, "stand_in_use"]);
+  const type = data.aircraftTypes.find(item => item.id === master!.aircraftTypeId)!;
+  const typeOff = await call<{ code?: string }>(occ, "PUT", `/occ/aircraft-types/${type.id}`, { iataCode: type.iataCode,
+    manufacturer: type.manufacturer, model: type.model, sizeCategory: type.sizeCategory, isActive: false,
+    expectedVersion: type.version });
+  expect([typeOff.status, typeOff.data.code]).toEqual([409, "aircraft_type_in_use"]);
+
+  // A dismissed arrival comes back from «Descartadas» while its flight has not passed (2-N36).
+  const other = ahead.find(item => item.proposalId !== chosen!.proposalId);
+  if (other) {
+    await arrivals.getByRole("listitem").filter({ hasText: other.flightNumber }).getByRole("button", { name: "Descartar" }).click();
+    await expect(dialog.getByRole("status").filter({ hasText: `${other.flightNumber} descartado` })).toBeVisible();
+    await dialog.getByRole("button", { name: "Descartadas" }).click();
+    const dismissed = dialog.getByRole("list", { name: "Llegadas descartadas" }).getByRole("listitem")
+      .filter({ hasText: other.flightNumber });
+    await dismissed.getByRole("button", { name: "Restaurar" }).click();
+    await expect(dialog.getByRole("status").filter({ hasText: `${other.flightNumber} volvió a la revisión.` })).toBeVisible();
+    expect((await feed("Contracted")).proposals.some(item => item.proposalId === other.proposalId)).toBe(true);
+  }
+
+  // A carrier without contract only comes in as a charter, with its prepayment pending in Finanzas (ADR-0033).
+  await dialog.getByRole("button", { name: "Charter sin contrato" }).click();
+  await expect(dialog.getByText("Cargando vuelos propuestos…")).toBeHidden();
+  const charter = (await feed("Charter")).proposals.find(item => item.direction === "Arrival" && item.status === "Proposed" &&
+    item.suggestedDepartureId);
+  if (charter) {
+    await dialog.getByRole("list", { name: "Llegadas propuestas" }).getByRole("listitem").filter({ hasText: charter.flightNumber })
+      .getByRole("button", { name: "Importar como charter" }).click();
+    await expect(dialog.getByRole("status").filter({ hasText: /^Charter importado/ })).toBeVisible();
+    const charters = await expectCall<{ charters: Array<{ airlineName: string; prepaymentStatus: string }> }>(200,
+      await login("finance"), "GET", "/finance/charters");
+    expect(charters.data.charters.some(item => item.airlineName === charter.airlineName && item.prepaymentStatus === "Pending"))
+      .toBe(true);
+  } else {
+    await expect(dialog.getByText("No hay vuelos de aerolíneas sin contrato propuestos para esta fecha.")).toBeVisible();
+    test.info().annotations.push({ type: "charter", description: "Ninguna aerolínea activa sin contrato: no hubo charter que importar." });
+  }
+  await snap(page, "fase2-hueco-2b-charter");
+});
 test("hueco 2-C · una renovación aprobada por Finanzas no cambia precios hasta estar firmada y vigente", async ({ page }) => {
   const { run, contract, version } = contractOf();
   const representative = run.representative as { email: string; name: string };

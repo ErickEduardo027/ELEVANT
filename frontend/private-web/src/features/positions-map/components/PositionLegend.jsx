@@ -24,9 +24,8 @@ export default function PositionLegend({ source }) {
         <>
           <ul className="mt-2 space-y-1.5">
             {Object.entries(POSITION_STATUS_META)
-              .filter(([status]) => source === 'planning'
-                ? status === 'planned' || status === 'unverified'
-                : status !== 'planned' && status !== 'unverified')
+              // The live map also draws planned and unverified markers, so it explains them too (2-N34).
+              .filter(([status]) => source !== 'planning' || status === 'planned' || status === 'unverified')
               .map(([status, meta]) => (
               <li key={status} className="flex items-center gap-2 text-text-secondary-light dark:text-text-secondary-dark">
                 <span

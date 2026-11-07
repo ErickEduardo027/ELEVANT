@@ -1528,6 +1528,16 @@ export interface CorrectExchangeRateInput {
   expectedVersion: string;
 }
 
+export interface CreateAircraftTypeInput {
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  manufacturer: string;
+  model: string;
+  /** @nullable */
+  sizeCategory?: string | null;
+}
+
 export interface CreateClientUserInput {
   firstName: string;
   lastName: string;
@@ -1624,6 +1634,8 @@ export interface CreateManualTurnaroundRequest {
   departureDestinationIata: string;
   departureScheduledAt: string;
   charter: boolean;
+  /** @nullable */
+  aircraftTypeId?: string | null;
 }
 
 export interface CreateOccCoverageRequest {
@@ -1686,6 +1698,30 @@ export interface CreateSessionRequest {
   password: string;
 }
 
+export interface CreateStandInput {
+  stationId: string;
+  terminalId: string;
+  code: string;
+  hasBoardingBridge: boolean;
+  isRemote: boolean;
+  /** @nullable */
+  maxAircraftSize?: string | null;
+}
+
+export interface CreateStationInput {
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+  /** @nullable */
+  airportIcaoCode?: string | null;
+  /** @nullable */
+  airportName?: string | null;
+  /** @nullable */
+  airportCity?: string | null;
+  /** @nullable */
+  airportCountryCode?: string | null;
+}
+
 export interface CreateTariffDraftInput {
   currencyCode: string;
   validFrom: string;
@@ -1693,6 +1729,12 @@ export interface CreateTariffDraftInput {
   note?: string | null;
   /** @nullable */
   copyFromVersionId?: string | null;
+}
+
+export interface CreateTerminalInput {
+  stationId: string;
+  code: string;
+  name: string;
 }
 
 export type SessionPortal = typeof SessionPortal[keyof typeof SessionPortal];
@@ -3658,6 +3700,16 @@ export interface HumanResourcesStaffDistributionResponseHumanResourcesReportPage
 export interface ImportOccFlightRequest {
   arrivalProposalId: string;
   departureProposalId: string;
+  /** @nullable */
+  aircraftTypeId?: string | null;
+  /** @nullable */
+  standId?: string | null;
+  /** @nullable */
+  charter?: boolean | null;
+  /** @nullable */
+  expectedArrivalVersion?: string | null;
+  /** @nullable */
+  expectedDepartureVersion?: string | null;
 }
 
 export interface ImportOccFlightResponse {
@@ -3852,6 +3904,17 @@ export interface ManagedServiceInput {
   version?: string | null;
 }
 
+export interface ManualTurnaroundAircraftTypeResponse {
+  id: string;
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  manufacturer: string;
+  model: string;
+  /** @nullable */
+  sizeCategory?: string | null;
+}
+
 export interface ManualTurnaroundAirlineResponse {
   id: string;
   iataCode: string;
@@ -3893,6 +3956,8 @@ export interface ManualTurnaroundOptionsResponse {
   stands: OccStandResponse[];
   /** @nullable */
   charterAirlines?: ManualTurnaroundAirlineResponse[] | null;
+  /** @nullable */
+  aircraftTypes?: ManualTurnaroundAircraftTypeResponse[] | null;
 }
 
 export interface ManualTurnaroundResponse {
@@ -3903,6 +3968,42 @@ export interface ManualTurnaroundResponse {
 
 export interface MarkOperationalConversationReadRequest {
   messageId: string;
+}
+
+export interface MasterAircraftTypeData {
+  id: string;
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  manufacturer: string;
+  model: string;
+  /** @nullable */
+  sizeCategory?: string | null;
+  isActive: boolean;
+  version: string;
+}
+
+export interface MasterStandData {
+  id: string;
+  /** @nullable */
+  terminalId?: string | null;
+  code: string;
+  hasBoardingBridge: boolean;
+  isRemote: boolean;
+  /** @nullable */
+  maxAircraftSize?: string | null;
+  isActive: boolean;
+  hasHistory: boolean;
+  version: string;
+}
+
+export interface MasterTerminalData {
+  id: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  hasHistory: boolean;
+  version: string;
 }
 
 export interface MediaAssetData {
@@ -4223,6 +4324,9 @@ export interface OccFlightProposalResponse {
   /** @nullable */
   suggestedDepartureId?: string | null;
   lastSeenAt: string;
+  version: string;
+  /** @nullable */
+  suggestedAircraftTypeId?: string | null;
 }
 
 export interface OccFlightFeedResponse {
@@ -4248,6 +4352,16 @@ export interface OccFlightLegResponse {
   estimatedAt?: string | null;
   /** @nullable */
   actualAt?: string | null;
+}
+
+export interface OccMasterData {
+  stationId: string;
+  stationCode: string;
+  terminals: MasterTerminalData[];
+  stands: MasterStandData[];
+  aircraftTypes: MasterAircraftTypeData[];
+  canCreate: boolean;
+  canUpdate: boolean;
 }
 
 export interface OccPlanningTurnaroundContextResponse {
@@ -5615,6 +5729,18 @@ export interface ResolvePreinvoiceDisputeResponse {
   replayed: boolean;
 }
 
+export interface RestoreOccFlightProposalRequest {
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
+export interface RestoreOccFlightProposalResponse {
+  proposalId: string;
+  status: string;
+  version: string;
+  replayed: boolean;
+}
+
 export interface RetireServiceInput {
   /** @nullable */
   expectedVersion?: string | null;
@@ -5921,6 +6047,31 @@ export interface SignOperationDocumentRequest {
   signerIdentification?: string | null;
 }
 
+export interface StationAirportData {
+  id: string;
+  iataCode: string;
+  icaoCode: string;
+  name: string;
+  city: string;
+  countryCode: string;
+}
+
+export interface StationCatalogItemData {
+  id: string;
+  code: string;
+  name: string;
+  ianaTimeZone: string;
+  isActive: boolean;
+  hasHistory: boolean;
+  airport: StationAirportData;
+  version: string;
+}
+
+export interface StationCatalogData {
+  stations: StationCatalogItemData[];
+  availableAirports: StationAirportData[];
+}
+
 export interface SubmitAirlinePermitInput {
   kind: string;
   number: string;
@@ -6077,6 +6228,17 @@ export interface UnregisteredPersonData {
   stations: GovernanceStationData[];
 }
 
+export interface UpdateAircraftTypeInput {
+  /** @nullable */
+  iataCode?: string | null;
+  manufacturer: string;
+  model: string;
+  /** @nullable */
+  sizeCategory?: string | null;
+  isActive: boolean;
+  expectedVersion: string;
+}
+
 export interface UpdateCharterDetailsRequest {
   /** @nullable */
   carrierAddress?: string | null;
@@ -6163,6 +6325,31 @@ export interface UpdateRampFlightDataRequest {
   mtowKg?: number | null;
   /** @nullable */
   aircraftRegistration?: string | null;
+}
+
+export interface UpdateStandInput {
+  terminalId: string;
+  code: string;
+  hasBoardingBridge: boolean;
+  isRemote: boolean;
+  /** @nullable */
+  maxAircraftSize?: string | null;
+  isActive: boolean;
+  expectedVersion: string;
+}
+
+export interface UpdateStationInput {
+  name: string;
+  ianaTimeZone: string;
+  isActive: boolean;
+  expectedVersion: string;
+}
+
+export interface UpdateTerminalInput {
+  code: string;
+  name: string;
+  isActive: boolean;
+  expectedVersion: string;
 }
 
 export interface ValidateAttendanceRequest {
@@ -6636,6 +6823,11 @@ date: string;
 export type GetOccFlightFeedParams = {
 stationId: string;
 date: string;
+view?: string;
+};
+
+export type GetOccMasterDataParams = {
+stationId: string;
 };
 
 export type GetOccPlanningSnapshotParams = {
@@ -16857,6 +17049,11 @@ export const getGetOccFlightFeedUrl = (params: GetOccFlightFeedParams,) => {
   return stringifiedParams.length > 0 ? `/api/v1/occ/flight-feed?${stringifiedParams}` : `/api/v1/occ/flight-feed`
 }
 
+/**
+ * @summary The proposals of a station and date. `view` is `Contracted` (default: airlines with a contract
+in force that day), `Charter` (carriers without contract, ADR-0033) or `Dismissed` (2-N36).
+Airlines whose contract at the station is suspended or expired are in none (2-N16).
+ */
 export const getOccFlightFeed = async (params: GetOccFlightFeedParams, options?: RequestInit): Promise<OccFlightFeedResponse> => {
 
   const res = await fetch(getGetOccFlightFeedUrl(params),
@@ -16924,7 +17121,10 @@ export const getImportOccFlightUrl = () => {
 }
 
 /**
- * @summary Creates the turnaround of a proposed arrival and its departure; repeating it returns the same turnaround.
+ * @summary Creates the turnaround of a proposed arrival and its departure, optionally with its aircraft type, stand
+and as a charter without contract (2-B, ADR-0033). The Idempotency-Key is optional while older screens
+exist (expand): without it repeating the pair returns the same turnaround; with it the expected versions
+of both proposals are required and a retry replays the first result.
  */
 export const importOccFlight = async (importOccFlightRequest: ImportOccFlightRequest, options?: RequestInit): Promise<ImportOccFlightResponse> => {
 
@@ -16961,7 +17161,7 @@ export const getDismissOccFlightProposalUrl = (proposalId: string,) => {
 }
 
 /**
- * @summary Hides a proposal OCC will not operate.
+ * @summary Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed.
  */
 export const dismissOccFlightProposal = async (proposalId: string, options?: RequestInit): Promise<void> => {
 
@@ -16978,6 +17178,287 @@ export const dismissOccFlightProposal = async (proposalId: string, options?: Req
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getRestoreOccFlightProposalUrl = (proposalId: string,) => {
+
+
+
+
+  return `/api/v1/occ/flight-feed/proposals/${proposalId}/restore`
+}
+
+/**
+ * @summary Brings a dismissed proposal back to the review while its flight has not passed (2-N36), with the version
+OCC saw and an Idempotency-Key; a retry replays the first result.
+ */
+export const restoreOccFlightProposal = async (proposalId: string,
+    restoreOccFlightProposalRequest: RestoreOccFlightProposalRequest, options?: RequestInit): Promise<RestoreOccFlightProposalResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRestoreOccFlightProposalUrl(proposalId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(restoreOccFlightProposalRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RestoreOccFlightProposalResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccMasterDataUrl = (params: GetOccMasterDataParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/master-data?${stringifiedParams}` : `/api/v1/occ/master-data`
+}
+
+export const getOccMasterData = async (params: GetOccMasterDataParams, options?: RequestInit): Promise<OccMasterData> => {
+
+  const res = await fetch(getGetOccMasterDataUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccMasterData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateOccTerminalUrl = () => {
+
+
+
+
+  return `/api/v1/occ/terminals`
+}
+
+export const createOccTerminal = async (createTerminalInput: CreateTerminalInput, options?: RequestInit): Promise<MasterTerminalData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateOccTerminalUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createTerminalInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MasterTerminalData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateOccTerminalUrl = (terminalId: string,) => {
+
+
+
+
+  return `/api/v1/occ/terminals/${terminalId}`
+}
+
+export const updateOccTerminal = async (terminalId: string,
+    updateTerminalInput: UpdateTerminalInput, options?: RequestInit): Promise<MasterTerminalData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateOccTerminalUrl(terminalId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateTerminalInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MasterTerminalData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateOccStandUrl = () => {
+
+
+
+
+  return `/api/v1/occ/stands`
+}
+
+export const createOccStand = async (createStandInput: CreateStandInput, options?: RequestInit): Promise<MasterStandData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateOccStandUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createStandInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MasterStandData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateOccStandUrl = (standId: string,) => {
+
+
+
+
+  return `/api/v1/occ/stands/${standId}`
+}
+
+export const updateOccStand = async (standId: string,
+    updateStandInput: UpdateStandInput, options?: RequestInit): Promise<MasterStandData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateOccStandUrl(standId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateStandInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MasterStandData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateOccAircraftTypeUrl = () => {
+
+
+
+
+  return `/api/v1/occ/aircraft-types`
+}
+
+export const createOccAircraftType = async (createAircraftTypeInput: CreateAircraftTypeInput, options?: RequestInit): Promise<MasterAircraftTypeData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateOccAircraftTypeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createAircraftTypeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MasterAircraftTypeData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateOccAircraftTypeUrl = (aircraftTypeId: string,) => {
+
+
+
+
+  return `/api/v1/occ/aircraft-types/${aircraftTypeId}`
+}
+
+export const updateOccAircraftType = async (aircraftTypeId: string,
+    updateAircraftTypeInput: UpdateAircraftTypeInput, options?: RequestInit): Promise<MasterAircraftTypeData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateOccAircraftTypeUrl(aircraftTypeId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateAircraftTypeInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: MasterAircraftTypeData = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -19661,6 +20142,109 @@ const res = await fetch(getReopenServiceUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ServiceClosureData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getListGovernanceStationsUrl = () => {
+
+
+
+
+  return `/api/v1/governance/stations`
+}
+
+export const listGovernanceStations = async ( options?: RequestInit): Promise<StationCatalogData> => {
+
+  const res = await fetch(getListGovernanceStationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: StationCatalogData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateGovernanceStationUrl = () => {
+
+
+
+
+  return `/api/v1/governance/stations`
+}
+
+/**
+ * @summary A new station; its code is the IATA code of its airport (a new airport needs its data).
+ */
+export const createGovernanceStation = async (createStationInput: CreateStationInput, options?: RequestInit): Promise<StationCatalogItemData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateGovernanceStationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createStationInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: StationCatalogItemData = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getUpdateGovernanceStationUrl = (stationId: string,) => {
+
+
+
+
+  return `/api/v1/governance/stations/${stationId}`
+}
+
+/**
+ * @summary Renames the station, changes its time zone while it has no history, deactivates or reactivates it.
+ */
+export const updateGovernanceStation = async (stationId: string,
+    updateStationInput: UpdateStationInput, options?: RequestInit): Promise<StationCatalogItemData> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getUpdateGovernanceStationUrl(stationId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateStationInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: StationCatalogItemData = body ? JSON.parse(body) : {}
   return data
 }
 

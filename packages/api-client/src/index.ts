@@ -10,6 +10,8 @@ export * from "./financePackages";
 export * from "./catalog";
 export * from "./contractDocuments";
 export * from "./airlinePermits";
+export * from "./masterData";
+export * from "./flightFeedReview";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -301,6 +303,24 @@ export {
   type OccFlightFeedBudgetResponse,
   type RefreshOccFlightFeedResponse,
   type ImportOccFlightResponse,
+  type ImportOccFlightRequest,
+  type RestoreOccFlightProposalResponse,
+  type ManualTurnaroundAircraftTypeResponse,
+  type StationCatalogData,
+  type StationCatalogItemData,
+  type StationAirportData,
+  type CreateStationInput,
+  type UpdateStationInput,
+  type OccMasterData,
+  type MasterTerminalData,
+  type MasterStandData,
+  type MasterAircraftTypeData,
+  type CreateTerminalInput,
+  type UpdateTerminalInput,
+  type CreateStandInput,
+  type UpdateStandInput,
+  type CreateAircraftTypeInput,
+  type UpdateAircraftTypeInput,
   type OccReadyContractResponse,
   type LocateOccStandRequest,
   type ContractDocumentResponse,

@@ -90,6 +90,9 @@ public static class DependencyInjection
         services.AddScoped<IHumanResourcesReportStore, EfHumanResourcesReportStore>();
         services.AddScoped<IOccReportStore, EfOccReportStore>();
         services.AddScoped<IOccPositionStore, EfOccPositionStore>();
+        // Master data (2-A): stations by the superadministrator, terminals, stands and aircraft types by OCC.
+        services.AddScoped<IStationCatalogStore, EfStationCatalogStore>();
+        services.AddScoped<IOccMasterDataStore, EfOccMasterDataStore>();
         services.AddScoped<IPositionCoverageStore, EfPositionCoverageStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
         services.AddScoped<IAirlinePortalStandingStore, EfAirlinePortalStandingStore>();
@@ -118,6 +121,8 @@ public static class DependencyInjection
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services, Elevant.Application.Integration.FlightFeedBudget.Default);
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed, Elevant.Application.Abstractions.Integrations.UnconfiguredAirportFlightFeed>(services);
         services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource, Elevant.Persistence.Integration.ObservedAirlineRegistrySource>();
+        // What the simulated flight feed of Development and Test reports (2-B); only read when it is enabled.
+        services.AddSingleton<Elevant.Application.Abstractions.Integrations.ISimulatedFlightFeedCatalog, Elevant.Persistence.Integration.EfSimulatedFlightFeedCatalog>();
         services.AddScoped<EfContractDocumentStore>();
         services.AddScoped<IContractDocumentStore>(provider => provider.GetRequiredService<EfContractDocumentStore>());
         // The PDF renderer lives in Infrastructure; a factory keeps hosts without it (tools, tests) valid.

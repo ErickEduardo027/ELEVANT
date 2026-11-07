@@ -95,6 +95,29 @@ import {
   type RevokeAirlinePermitCommand,
 } from "./airlinePermits";
 import {
+  isMasterAircraftType,
+  isMasterStand,
+  isMasterTerminal,
+  isOccMasterData,
+  isStationCatalog,
+  isStationCatalogItem,
+  normalizedAircraftTypeCreate,
+  normalizedAircraftTypeUpdate,
+  normalizedStandCreate,
+  normalizedStandUpdate,
+  normalizedStationCreate,
+  normalizedStationUpdate,
+  normalizedTerminalCreate,
+  normalizedTerminalUpdate,
+} from "./masterData";
+import {
+  isOccFlightFeedView,
+  isRestoredFlightProposal,
+  normalizedFlightImport,
+  type ImportOccFlightCommand,
+  type OccFlightFeedView,
+} from "./flightFeedReview";
+import {
   isCommercialAccountResponse,
   isEmailOutboxPage,
   isInvoiceEmailStatus,
@@ -275,6 +298,17 @@ import {
   getRefreshOccFlightFeedUrl,
   getImportOccFlightUrl,
   getDismissOccFlightProposalUrl,
+  getRestoreOccFlightProposalUrl,
+  getListGovernanceStationsUrl,
+  getCreateGovernanceStationUrl,
+  getUpdateGovernanceStationUrl,
+  getGetOccMasterDataUrl,
+  getCreateOccTerminalUrl,
+  getUpdateOccTerminalUrl,
+  getCreateOccStandUrl,
+  getUpdateOccStandUrl,
+  getCreateOccAircraftTypeUrl,
+  getUpdateOccAircraftTypeUrl,
   getGetContractDocumentUrl,
   getGetAirlinePermitsUrl,
   getSubmitAirlinePermitUrl,
@@ -437,6 +471,21 @@ import {
   type OccFlightFeedResponse,
   type RefreshOccFlightFeedResponse,
   type ImportOccFlightResponse,
+  type RestoreOccFlightProposalResponse,
+  type StationCatalogData,
+  type StationCatalogItemData,
+  type CreateStationInput,
+  type UpdateStationInput,
+  type OccMasterData,
+  type MasterTerminalData,
+  type MasterStandData,
+  type MasterAircraftTypeData,
+  type CreateTerminalInput,
+  type UpdateTerminalInput,
+  type CreateStandInput,
+  type UpdateStandInput,
+  type CreateAircraftTypeInput,
+  type UpdateAircraftTypeInput,
   type ContractDocumentResponse,
   type AirlinePermitData,
   type AirlinePermitDecisionData,
@@ -1211,14 +1260,50 @@ export interface ElevantApiClient {
   /** Places a stand on the map (WGS84) or clears it with both coordinates null (ADR-0027). */
   locateOccStand(standId: string, request: { latitude: number | null; longitude: number | null; operationDate: string },
     options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
-  /** Flights the paid provider proposed for contracted airlines, and the unit budget (ADR-0028). */
-  getOccFlightFeed(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccFlightFeedResponse>;
+  /**
+   * Flights the feed proposed and the unit budget (ADR-0028). `options.view` is Contracted (default), Charter
+   * (carriers without contract, 2-B) or Dismissed (2-N36); suspended or expired contracts appear in none (2-N16).
+   */
+  getOccFlightFeed(stationId: string, date: string,
+    options?: GetHumanResourcesReportOptions & { readonly view?: OccFlightFeedView }): Promise<OccFlightFeedResponse>;
   /** «Actualizar ahora»: one provider read, at most every ten minutes per station. */
   refreshOccFlightFeed(stationId: string, options?: GetHumanResourcesReportOptions): Promise<RefreshOccFlightFeedResponse>;
   /** Creates the turnaround of a proposed arrival and its departure; repeating it returns the same one. */
   importOccFlight(arrivalProposalId: string, departureProposalId: string,
     options?: GetHumanResourcesReportOptions): Promise<ImportOccFlightResponse>;
   dismissOccFlightProposal(proposalId: string, options?: GetHumanResourcesReportOptions): Promise<void>;
+  /**
+   * «Importar escala» with the intent's Idempotency-Key and the versions on screen (2-B): optionally the aircraft type
+   * (suggested from the provider's model), the stand and the charter mode of a carrier without contract (ADR-0033).
+   * A taken or forbidden stand answers `stand_unavailable` with its rules in `reasons`.
+   */
+  importOccFlightProposals(command: ImportOccFlightCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<ImportOccFlightResponse>;
+  /** Brings a dismissed proposal back while its flight has not passed (2-N36), with the version on screen. */
+  restoreOccFlightProposal(proposalId: string, expectedVersion: string, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<RestoreOccFlightProposalResponse>;
+  /** Every station and the known airports without one; only the superadministrator (2-A). */
+  listGovernanceStations(options?: GetHumanResourcesReportOptions): Promise<StationCatalogData>;
+  /** A new station with the IATA code of its airport; 201 the first time, 200 when the key replays it. */
+  createGovernanceStation(input: CreateStationInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<StationCatalogItemData>;
+  /** Renames, changes the time zone while it has no history, deactivates or reactivates a station. */
+  updateGovernanceStation(stationId: string, input: UpdateStationInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<StationCatalogItemData>;
+  /** Terminals, stands and aircraft types of a station in scope (`operations.master_data.read`). */
+  getOccMasterData(stationId: string, options?: GetHumanResourcesReportOptions): Promise<OccMasterData>;
+  createOccTerminal(input: CreateTerminalInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<MasterTerminalData>;
+  updateOccTerminal(terminalId: string, input: UpdateTerminalInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<MasterTerminalData>;
+  createOccStand(input: CreateStandInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<MasterStandData>;
+  updateOccStand(standId: string, input: UpdateStandInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<MasterStandData>;
+  createOccAircraftType(input: CreateAircraftTypeInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<MasterAircraftTypeData>;
+  updateOccAircraftType(aircraftTypeId: string, input: UpdateAircraftTypeInput, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<MasterAircraftTypeData>;
   /** Contracts OCC can plan flights for at a station on a date (ADR-0027). */
   listOccReadyContracts(stationId: string, date: string,
     options?: GetHumanResourcesReportOptions): Promise<OccReadyContractsResponse>;
@@ -2039,11 +2124,22 @@ const isManualAirline = (airline: unknown) =>
   isRecord(airline) && hasOnlyKeys(airline, ["id", "iataCode", "name"]) &&
   isUuid(airline.id) && isString(airline.iataCode) && isString(airline.name);
 
+/** An active aircraft type a new flight can carry («type once», 2-A). */
+const isManualAircraftType = (type: unknown) =>
+  isRecord(type) && hasOnlyKeys(type, ["id", "icaoCode", "iataCode", "manufacturer", "model", "sizeCategory"]) &&
+  isUuid(type.id) && isNonEmptyString(type.icaoCode) && isOptionalNullable(type.iataCode, isNonEmptyString) &&
+  isNonEmptyString(type.manufacturer) && isNonEmptyString(type.model) &&
+  (type.sizeCategory === undefined || type.sizeCategory === null || type.sizeCategory === "Narrowbody" ||
+    type.sizeCategory === "Widebody");
+
 function isManualTurnaroundOptionsResponse(
   value: unknown,
 ): value is ManualTurnaroundOptionsResponse {
   return isRecord(value) &&
-    hasOnlyKeys(value, ["station", "date", "stationAirport", "airlines", "airports", "stands", "charterAirlines"]) &&
+    hasOnlyKeys(value, ["station", "date", "stationAirport", "airlines", "airports", "stands", "charterAirlines",
+      "aircraftTypes"]) &&
+    (value.aircraftTypes === undefined || value.aircraftTypes === null ||
+      (Array.isArray(value.aircraftTypes) && value.aircraftTypes.every(isManualAircraftType))) &&
     isOccStationResponse(value.station) && isDateOnly(value.date) &&
     isOccAirportResponse(value.stationAirport) &&
     Array.isArray(value.airlines) && value.airlines.every(isManualAirline) &&
@@ -2959,7 +3055,7 @@ function isOccReadyContracts(value: unknown, stationId: string, date: string): v
         isNonEmptyString(service.name) && isNonEmptyString(service.billingUnit)));
 }
 
-const FLIGHT_PROPOSAL_STATUSES = new Set<string>(["Proposed", "Confirmed"]);
+const FLIGHT_PROPOSAL_STATUSES = new Set<string>(["Proposed", "Confirmed", "Dismissed"]);
 const FLIGHT_FEED_REFRESH_STATUSES = new Set<string>(["Refreshed", "Reused", "Throttled", "BudgetExhausted", "Paused",
   "NotConfigured", "NoContracts", "Busy", "Failed"]);
 
@@ -2971,7 +3067,7 @@ function isOccFlightProposal(value: unknown): boolean {
   return isRecord(value) && hasOnlyKeys(value, ["proposalId", "direction", "flightNumber", "airlineId", "airlineName",
     "airlineIataCode", "counterpartIata", "counterpartName", "counterpartKnown", "scheduledAt", "revisedAt", "runwayAt",
     "providerStatus", "aircraftRegistration", "aircraftModel", "terminal", "gate", "status", "turnaroundId",
-    "suggestedDepartureId", "lastSeenAt"]) &&
+    "suggestedDepartureId", "lastSeenAt", "version", "suggestedAircraftTypeId"]) &&
     isUuid(value.proposalId) && (value.direction === "Arrival" || value.direction === "Departure") &&
     isNonEmptyString(value.flightNumber) && isUuid(value.airlineId) && isNonEmptyString(value.airlineName) &&
     isOptionalNullable(value.airlineIataCode, isNonEmptyString) && isOptionalNullable(value.counterpartIata, isNonEmptyString) &&
@@ -2982,10 +3078,14 @@ function isOccFlightProposal(value: unknown): boolean {
     isOptionalNullable(value.terminal, isNonEmptyString) && isOptionalNullable(value.gate, isNonEmptyString) &&
     typeof value.status === "string" && FLIGHT_PROPOSAL_STATUSES.has(value.status) &&
     isOptionalNullable(value.turnaroundId, isUuid) && isOptionalNullable(value.suggestedDepartureId, isUuid) &&
-    isDateTimeOffset(value.lastSeenAt);
+    isDateTimeOffset(value.lastSeenAt) &&
+    // The version of an import or a restore and the type the provider's model suggests (2-B, 2-N36).
+    isNonEmptyString(value.version) && value.version.length <= 64 &&
+    isOptionalNullable(value.suggestedAircraftTypeId, isUuid);
 }
 
-function isOccFlightFeed(value: unknown, stationId: string, date: string): value is OccFlightFeedResponse {
+function isOccFlightFeed(value: unknown, stationId: string, date: string,
+  view: OccFlightFeedView = "Contracted"): value is OccFlightFeedResponse {
   if (!isRecord(value) || !hasOnlyKeys(value, ["stationId", "stationCode", "date", "budget", "lastReadAt",
       "nextManualRefreshAt", "canImport", "proposals"])) return false;
   const budget = value.budget;
@@ -2997,7 +3097,9 @@ function isOccFlightFeed(value: unknown, stationId: string, date: string): value
     isNonNegativeInteger(budget.monthlyUnits) && isOptionalNullable(budget.pausedUntil, isDateTimeOffset) &&
     isOptionalNullable(budget.pauseReason, isNonEmptyString) && isOptionalNullable(value.lastReadAt, isDateTimeOffset) &&
     isOptionalNullable(value.nextManualRefreshAt, isDateTimeOffset) && typeof value.canImport === "boolean" &&
-    Array.isArray(value.proposals) && value.proposals.every(isOccFlightProposal);
+    Array.isArray(value.proposals) && value.proposals.every(isOccFlightProposal) &&
+    // The dismissed view lists only dismissed proposals, the others never one.
+    value.proposals.every(proposal => ((proposal as { status: string }).status === "Dismissed") === (view === "Dismissed"));
 }
 
 function isRefreshOccFlightFeed(value: unknown): value is RefreshOccFlightFeedResponse {
@@ -4815,9 +4917,10 @@ function validatedManualTurnaroundRequest(
 ): CreateManualTurnaroundRequest {
   const keys = ["turnaroundId", "stationId", "airlineId", "standId", "operationDate",
     "arrivalFlightNumber", "arrivalOriginIata", "arrivalScheduledAt",
-    "departureFlightNumber", "departureDestinationIata", "departureScheduledAt", "charter"];
+    "departureFlightNumber", "departureDestinationIata", "departureScheduledAt", "charter", "aircraftTypeId"];
   if (!isRecord(request) || !hasOnlyKeys(request, keys) ||
-      (request.charter !== undefined && typeof request.charter !== "boolean"))
+      (request.charter !== undefined && typeof request.charter !== "boolean") ||
+      (request.aircraftTypeId !== undefined && request.aircraftTypeId !== null && !isUuid(request.aircraftTypeId)))
     throw new TypeError("manual turnaround request has unknown or invalid fields.");
   if (!isUuid(request.turnaroundId) || !isUuid(request.stationId) ||
       !isUuid(request.airlineId) || !isUuid(request.standId) ||
@@ -4851,7 +4954,9 @@ function validatedManualTurnaroundRequest(
     operationDate: request.operationDate,
     arrivalFlightNumber, arrivalOriginIata, arrivalScheduledAt: request.arrivalScheduledAt,
     departureFlightNumber, departureDestinationIata,
-    departureScheduledAt: request.departureScheduledAt, charter: request.charter === true };
+    departureScheduledAt: request.departureScheduledAt, charter: request.charter === true,
+    // Only sent when chosen, so a body without a type stays the one older servers accept.
+    ...(request.aircraftTypeId ? { aircraftTypeId: request.aircraftTypeId } : {}) };
 }
 
 function validatedOccShiftRequest(request: ProgramOccShiftRequest): ProgramOccShiftRequest {
@@ -5452,6 +5557,19 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
     const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
     if (result.status !== 200 || !valid(result.data)) throw malformedResponse(result.status);
+    return result.data;
+  };
+
+  // A master-data command (phase 2, block C): JSON body, Idempotency-Key, 201 on a creation (200 when the key
+  // replays it or on an update) and the record the strict validator accepts.
+  const masterDataCommand = async <T>(method: "POST" | "PUT", path: string, body: unknown, idempotencyKey: string,
+    options: GetHumanResourcesReportOptions | undefined, valid: (value: unknown) => value is T): Promise<T> => {
+    const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
+    const accepted = method === "POST" ? result.status === 201 || result.status === 200 : result.status === 200;
+    if (!accepted || !valid(result.data)) throw malformedResponse(result.status);
     return result.data;
   };
 
@@ -7498,11 +7616,15 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOwnRampCoverage(result.data)) throw malformedResponse(result.status);
       return result.data;
     },
-    async getOccFlightFeed(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
+    async getOccFlightFeed(stationId: string, date: string,
+      options?: GetHumanResourcesReportOptions & { readonly view?: OccFlightFeedView }) {
       const station = validatedUuid(stationId, "stationId");
       if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
-      const result = await execute(getGetOccFlightFeedUrl({ stationId: station, date }), { ...options, method: "GET" }, true);
-      if (!isOccFlightFeed(result.data, station, date)) throw malformedResponse(result.status);
+      const { view, ...init } = options ?? {};
+      if (view !== undefined && !isOccFlightFeedView(view)) throw new TypeError("view must be Contracted, Charter or Dismissed.");
+      const result = await execute(getGetOccFlightFeedUrl(view === undefined ? { stationId: station, date }
+        : { stationId: station, date, view }), { ...init, method: "GET" }, true);
+      if (!isOccFlightFeed(result.data, station, date, view)) throw malformedResponse(result.status);
       return result.data;
     },
     async refreshOccFlightFeed(stationId: string, options?: GetHumanResourcesReportOptions) {
@@ -7530,6 +7652,85 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getDismissOccFlightProposalUrl(validatedUuid(proposalId, "proposalId")),
         { ...options, method: "POST" }, true);
       if (result.status !== 204) throw malformedResponse(result.status);
+    },
+    async importOccFlightProposals(command: ImportOccFlightCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      return catalogCommand("POST", getImportOccFlightUrl(), normalizedFlightImport(command), idempotencyKey, options,
+        (value): value is ImportOccFlightResponse => isRecord(value) &&
+          hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed"]) && isUuid(value.turnaroundId) &&
+          isNonEmptyString(value.operationCode) && typeof value.replayed === "boolean");
+    },
+    async restoreOccFlightProposal(proposalId: string, expectedVersion: string, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const proposal = validatedUuid(proposalId, "proposalId");
+      if (!isNonEmptyString(expectedVersion) || expectedVersion.length > 64) throw new TypeError("expectedVersion is required.");
+      return catalogCommand("POST", getRestoreOccFlightProposalUrl(proposal), { expectedVersion }, idempotencyKey, options,
+        (value): value is RestoreOccFlightProposalResponse => isRestoredFlightProposal(value, proposal));
+    },
+    async listGovernanceStations(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getListGovernanceStationsUrl(), { ...options, method: "GET" }, true);
+      if (!isStationCatalog(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createGovernanceStation(input: CreateStationInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedStationCreate(input);
+      const created = await masterDataCommand("POST", getCreateGovernanceStationUrl(), body, idempotencyKey, options,
+        (value): value is StationCatalogItemData => isStationCatalogItem(value));
+      if (created.code !== body.code) throw malformedResponse(201);
+      return created;
+    },
+    async updateGovernanceStation(stationId: string, input: UpdateStationInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      return masterDataCommand("PUT", getUpdateGovernanceStationUrl(station), normalizedStationUpdate(input), idempotencyKey,
+        options, (value): value is StationCatalogItemData => isStationCatalogItem(value, station));
+    },
+    async getOccMasterData(stationId: string, options?: GetHumanResourcesReportOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      const result = await execute(getGetOccMasterDataUrl({ stationId: station }), { ...options, method: "GET" }, true);
+      if (!isOccMasterData(result.data, station)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async createOccTerminal(input: CreateTerminalInput, idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      const body = normalizedTerminalCreate(input);
+      const created = await masterDataCommand("POST", getCreateOccTerminalUrl(), body, idempotencyKey, options,
+        (value): value is MasterTerminalData => isMasterTerminal(value));
+      if (created.code !== body.code) throw malformedResponse(201);
+      return created;
+    },
+    async updateOccTerminal(terminalId: string, input: UpdateTerminalInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const terminal = validatedUuid(terminalId, "terminalId");
+      return masterDataCommand("PUT", getUpdateOccTerminalUrl(terminal), normalizedTerminalUpdate(input), idempotencyKey,
+        options, (value): value is MasterTerminalData => isMasterTerminal(value, terminal));
+    },
+    async createOccStand(input: CreateStandInput, idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      const body = normalizedStandCreate(input);
+      const created = await masterDataCommand("POST", getCreateOccStandUrl(), body, idempotencyKey, options,
+        (value): value is MasterStandData => isMasterStand(value));
+      if (created.code !== body.code) throw malformedResponse(201);
+      return created;
+    },
+    async updateOccStand(standId: string, input: UpdateStandInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const stand = validatedUuid(standId, "standId");
+      return masterDataCommand("PUT", getUpdateOccStandUrl(stand), normalizedStandUpdate(input), idempotencyKey, options,
+        (value): value is MasterStandData => isMasterStand(value, stand));
+    },
+    async createOccAircraftType(input: CreateAircraftTypeInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedAircraftTypeCreate(input);
+      const created = await masterDataCommand("POST", getCreateOccAircraftTypeUrl(), body, idempotencyKey, options,
+        (value): value is MasterAircraftTypeData => isMasterAircraftType(value));
+      if (created.icaoCode !== body.icaoCode) throw malformedResponse(201);
+      return created;
+    },
+    async updateOccAircraftType(aircraftTypeId: string, input: UpdateAircraftTypeInput, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const type = validatedUuid(aircraftTypeId, "aircraftTypeId");
+      return masterDataCommand("PUT", getUpdateOccAircraftTypeUrl(type), normalizedAircraftTypeUpdate(input), idempotencyKey,
+        options, (value): value is MasterAircraftTypeData => isMasterAircraftType(value, type));
     },
     async listOccReadyContracts(stationId: string, date: string, options?: GetHumanResourcesReportOptions) {
       const station = validatedUuid(stationId, "stationId");
