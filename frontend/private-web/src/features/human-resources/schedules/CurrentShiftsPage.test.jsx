@@ -100,12 +100,12 @@ it('preserves warning station, dates and page across roster refresh channels', a
     fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-08-31' } });
     await waitFor(() => expect(getHumanResourcesScheduleWarnings).toHaveBeenCalledWith(
       { stationId: '20000000-0000-7000-8000-000000000099', from: '2026-08-31',
-        to: '2026-08-31', page: 1, limit: 20 }, expect.anything()));
+        to: '2026-08-31', page: 1, limit: 20, includeReadiness: true }, expect.anything()));
     await userEvent.click(within(screen.getByRole('navigation', { name: 'Páginas de alertas' }))
       .getByRole('button', { name: 'Siguiente página' }));
     await waitFor(() => expect(getHumanResourcesScheduleWarnings).toHaveBeenCalledWith(
       { stationId: '20000000-0000-7000-8000-000000000099', from: '2026-08-31',
-        to: '2026-08-31', page: 2, limit: 20 }, expect.anything()));
+        to: '2026-08-31', page: 2, limit: 20, includeReadiness: true }, expect.anything()));
 
     const assertSelection = () => {
       expect(screen.getByLabelText('Estación de alertas')).toHaveValue(

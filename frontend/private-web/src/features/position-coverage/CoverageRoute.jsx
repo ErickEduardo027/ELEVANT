@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AppLink from '../../components/AppLink';
+import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
 import { OccStationBadge } from '../admin-occ/OccQueueState';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { createCommandKeyHolder } from '../../services/commandKeys';
+import { isConflict } from '../../services/problemMessages';
 import { stationDate } from '../../services/positionsMapService';
 import {
   addOccStandConstraint, createOccCoverage, describeReasons, loadOccCoverage, releaseOccCoverage,
@@ -102,7 +106,10 @@ function CoverageForm({ board, terminal, date, onDone }) {
       {(agent?.isJunior || mentorId) && <label className="block space-y-1 text-sm font-medium">Mentor
         <select className={input} value={mentorId} onChange={event => setMentorId(event.target.value)}>
           <option value="">Sin mentor</option>
-          {mentors.map(item => <option key={item.agentId} value={item.agentId}>{item.name}</option>)}
+          {/* 2-N23: a mentor who is absent or without a current airport permit cannot accompany anyone. */}
+          {mentors.map(item => <option key={item.agentId} value={item.agentId}
+            disabled={item.isAbsent || !item.hasAirportPermit}>
+            {item.name}{item.isAbsent ? ' · ausencia aprobada' : ''}{!item.hasAirportPermit ? ' · carnet vencido' : ''}</option>)}
         </select>
       </label>}
       {selected.length > 2 && <label className="block space-y-1 text-sm font-medium">Vehículo asignado
@@ -164,16 +171,26 @@ function CoverageBoard({ board, terminal, date, onChange }) {
   );
 }
 
-function StandRow({ stand, date, onChange }) {
+/**
+ * One stand's attributes (2-A). The change carries the stand's version on the board, the one «Datos maestros» shows,
+ * and the intent's key: a retry after no answer replays the first result. A stand changed meanwhile, here or in «Datos
+ * maestros», reads the board again; the row's error lives in the parent so it survives that re-read.
+ */
+function StandRow({ stand, date, error, onError, onChange, onStale }) {
   const [draft, setDraft] = useState(stand);
-  const [error, setError] = useState(null);
+  const keys = useRef(createCommandKeyHolder());
   const dirty = ['hasBoardingBridge', 'isRemote', 'maxAircraftSize', 'isActive'].some(key => draft[key] !== stand[key]);
   const save = async () => {
-    setError(null);
+    onError(null);
+    const attributes = { date, hasBoardingBridge: draft.hasBoardingBridge, isRemote: draft.isRemote,
+      maxAircraftSize: draft.maxAircraftSize ?? null, isActive: draft.isActive, expectedVersion: stand.version };
     try {
-      onChange(await updateOccStandAttributes(stand.standId, { date, hasBoardingBridge: draft.hasBoardingBridge,
-        isRemote: draft.isRemote, maxAircraftSize: draft.maxAircraftSize ?? null, isActive: draft.isActive }));
-    } catch (failure) { setError(failure); }
+      onChange(await keys.current.run('stand-attributes', attributes,
+        key => updateOccStandAttributes(stand.standId, attributes, key)));
+    } catch (failure) {
+      onError(failure);
+      if (isConflict(failure)) onStale();
+    }
   };
   const flag = (key, label) => <label className="flex items-center gap-1.5 text-xs">
     <input type="checkbox" checked={draft[key]} onChange={event => setDraft(value => ({ ...value, [key]: event.target.checked }))} />{label}</label>;
@@ -193,11 +210,13 @@ function StandRow({ stand, date, onChange }) {
 }
 
 /** OCC loads the real PUJ layout here: stand attributes, terminal limits and combined stands. */
-function Configuration({ board, terminal, date, onChange }) {
+function Configuration({ board, terminal, date, onChange, onStale }) {
+  const access = useOptionalDepartmentAccess();
   const [max, setMax] = useState(String(terminal.maxStandsPerAgent));
   const [bridge, setBridge] = useState(terminal.requiresBridgeQualification);
   const [rule, setRule] = useState({ standId: '', kind: 'Cancels', affectedStandId: '' });
   const [error, setError] = useState(null);
+  const [standErrors, setStandErrors] = useState({});
   const stands = board.stands.filter(stand => stand.terminalId === terminal.terminalId);
   const run = async action => { setError(null); try { onChange(await action()); } catch (failure) { setError(failure); } };
   return (
@@ -217,9 +236,13 @@ function Configuration({ board, terminal, date, onChange }) {
       <section className={card} aria-label="Atributos de las posiciones">
         <h2 className="text-base font-semibold">Posiciones</h2>
         <p className={`text-xs ${muted}`}>Marca las posiciones con puente, las remotas y el tamaño máximo de avión que admiten.</p>
+        {access?.can('operations.master_data.read') && <p className={`text-xs ${muted}`}>Las terminales y las posiciones nuevas
+          se crean, renombran o desactivan en <AppLink href="/admin-occ/master-data" className="font-semibold text-accent-600 underline">Datos maestros</AppLink>.</p>}
         <ul className="divide-y divide-black/5 dark:divide-white/5">
-          {stands.map(stand => <StandRow key={`${stand.standId}-${stand.hasBoardingBridge}-${stand.isRemote}-${stand.maxAircraftSize}-${stand.isActive}`}
-            stand={stand} date={date} onChange={onChange} />)}
+          {/* A new version on the board (a change here or in «Datos maestros») starts the row again from it. */}
+          {stands.map(stand => <StandRow key={`${stand.standId}-${stand.version}-${stand.hasBoardingBridge}-${stand.isRemote}-${stand.maxAircraftSize}-${stand.isActive}`}
+            stand={stand} date={date} onChange={onChange} onStale={onStale} error={standErrors[stand.standId] ?? null}
+            onError={failure => setStandErrors(all => ({ ...all, [stand.standId]: failure }))} />)}
         </ul>
       </section>
       <section className={`${card} space-y-3`} aria-label="Posiciones combinadas">
@@ -284,15 +307,17 @@ export default function CoverageRoute() {
   const terminal = useMemo(() => board?.terminals.find(item => item.code === terminalCode) ?? board?.terminals[0],
     [board, terminalCode]);
   const onChange = useCallback(next => setState({ status: 'success', board: next }), []);
+  // A refused change because the data moved meanwhile reads the board again before a new attempt.
+  const onStale = useCallback(() => { void live.current(); }, []);
 
   let body;
   if (!station.stationId) body = <p role="alert" className={card}>Tu cuenta no tiene una estación OCC autorizada.</p>;
   else if (state.status === 'loading') body = <p role="status" className={card}>Cargando la cobertura de posiciones…</p>;
   else if (state.status === 'error') body = <div role="alert" className={`${card} flex flex-wrap items-center gap-3`}>
     <p>{state.error?.message}</p><button type="button" className={secondary} onClick={() => setAttempt(value => value + 1)}>Reintentar</button></div>;
-  else if (!terminal) body = <p className={card}>La estación no tiene terminales activas.</p>;
+  else if (!terminal) body = <p role="status" className={card}>La estación no tiene terminales activas. OCC las crea en «Datos maestros».</p>;
   else if (tab === 'configuration') body = <Configuration key={`${terminal.terminalId}-${terminal.maxStandsPerAgent}-${terminal.requiresBridgeQualification}`}
-    board={board} terminal={terminal} date={date} onChange={onChange} />;
+    board={board} terminal={terminal} date={date} onChange={onChange} onStale={onStale} />;
   else body = <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
     <CoverageBoard board={board} terminal={terminal} date={date} onChange={onChange} />
     {board.canAssign ? <CoverageForm key={terminal.terminalId} board={board} terminal={terminal} date={date} onDone={onChange} />

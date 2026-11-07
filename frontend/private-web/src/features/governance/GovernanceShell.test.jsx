@@ -43,7 +43,7 @@ const overview = {
 beforeEach(() => {
   getGovernance.mockResolvedValue({ roles: [], users: [], permissionCodes: [], recentAudit: [], rampProfiles: [] });
   getDepartmentsOverview.mockResolvedValue(overview);
-  listLegacyRoles.mockResolvedValue([{ id: 'role-1', code: 'CUSTOM_A', name: 'Revisor', permissions: ['contracts.requests.read'], activeUsers: 2 }]);
+  listLegacyRoles.mockResolvedValue([{ id: 'role-1', code: 'CUSTOM_A', name: 'Revisor', permissions: ['contracts.requests.read'], activeUsers: 2, version: 'stamp-1' }]);
 });
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
@@ -72,7 +72,8 @@ describe('GovernanceShell', () => {
     await userEvent.click(within(await screen.findByRole('navigation')).getByRole('button', { name: 'Configuración' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Convertir en plantilla de Contratos' }));
     await userEvent.click(screen.getByRole('button', { name: 'Convertir' }));
-    expect(convertLegacyRole).toHaveBeenCalledWith('role-1');
+    // The conversion carries the role version on screen and the intent's key (2-N19, 2-N39).
+    expect(convertLegacyRole).toHaveBeenCalledWith('role-1', 'stamp-1', expect.stringMatching(/^[0-9a-f-]{36}$/));
   });
 
   const task = { requestId: 'req-1', reference: 'REQ-2026-000001', airline: 'Demo Air', representativeName: 'Ana Pérez',

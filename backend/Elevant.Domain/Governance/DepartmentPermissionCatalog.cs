@@ -52,8 +52,14 @@ public static class DepartmentPermissionCatalog
                     Read(), Create("Crear escalas"), Other("assign", "Asignar agentes, posiciones y turnos")),
                 Module("operations", "coverage", "Cobertura de posiciones", "Operación", null, Read(),
                     Other("assign", "Asignar posiciones por turno"), Update("Configurar posiciones y combinaciones")),
+                // Terminals and stands of the station and the aircraft types (2-A); nothing is deleted, only deactivated.
+                Module("operations", "master_data", "Datos maestros", "Operación", null, Read(),
+                    Create("Crear terminales, posiciones y tipos de avión"), Update("Editar y desactivar")),
                 Module("operations", "attendance", "Asistencia OCC", "Operación", "planning",
                     Read(), Create("Registrar observaciones")),
+                // Shared ramp tablets (2-N02): who holds each one; OCC frees a tablet or revokes a lost one.
+                Module("operations", "devices", "Tablets", "Operación", null, Read(),
+                    Other("unbind", "Desvincular tablets"), Other("revoke", "Revocar tablets perdidas")),
                 Module("operations", "review", "Revisión", "Operación", null, Read(), Other("decide", "Aprobar o devolver entregas")),
                 Module("operations", "service_closures", "Clausura de servicios", "Operación", "review",
                     Read(), Create("Solicitar clausura")),

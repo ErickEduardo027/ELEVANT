@@ -13,6 +13,7 @@ import {
 } from "react";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import { BrandMark } from "@/components/marketing/BrandMark";
 
 import {
@@ -144,6 +145,7 @@ export function PortalShell({ children }: { children: ReactNode }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { session, signOut } = useAirlineSession();
+  const { standing } = useAirlineStanding();
 
   const airline = session?.bootstrap.name || "Aerolínea";
   const userInitials = (session?.actor.displayName ?? "EA")
@@ -231,7 +233,8 @@ export function PortalShell({ children }: { children: ReactNode }) {
           </div>
           <div className={styles.topbarContext}>
             <span>Estación autorizada</span>
-            <strong>{session?.bootstrap.stations.map((station) => station.code).join(", ") || "—"}</strong>
+            <strong>{session?.bootstrap.stations.map((station) => station.code).join(", ") ||
+              (standing.status === "ready" && standing.data.readOnly ? "Sin contrato en vigor" : "—")}</strong>
           </div>
           <button className={styles.noticeButton} type="button" disabled aria-label="Notificaciones no disponibles"
             title="Notificaciones pendientes de integración">

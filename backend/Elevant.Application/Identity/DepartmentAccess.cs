@@ -82,20 +82,29 @@ public static class DepartmentAccessResolver
             return new DepartmentAccess(DepartmentAssignmentKind.Member, Department.Operations,
                 new HashSet<string>(StringComparer.Ordinal));
 
-        if (activeRoleCodes.Any(code => code.StartsWith("CUSTOM_", StringComparison.Ordinal)))
+        if (activeRoleCodes.Any(IsLegacyCustomRole))
             return new DepartmentAccess(DepartmentAssignmentKind.Member, Department.Contracts,
                 Within(Department.Contracts, MapLegacyCommercial(legacyCommercialGrants)));
 
         return null;
     }
 
+    /// <summary>
+    /// The role an assignment needs. A Contracts member that still holds a legacy <c>CUSTOM_*</c> role keeps its
+    /// access (2-N19): an edit made before the role was converted created its assignment without the CONTRATOS role.
+    /// </summary>
     private static bool HoldsRoleFor(DepartmentAssignmentFacts assignment, IReadOnlyCollection<string> roles) =>
         assignment.Kind == DepartmentAssignmentKind.SuperAdministrator
             ? roles.Contains("SUPERADMIN", StringComparer.Ordinal)
             : assignment.Department is { } department &&
               (roles.Contains(RoleCodeOf(department), StringComparer.Ordinal) ||
                department == Department.Operations && assignment.Kind == DepartmentAssignmentKind.Member &&
-               roles.Contains("RAMP_AGENT", StringComparer.Ordinal));
+               roles.Contains("RAMP_AGENT", StringComparer.Ordinal) ||
+               department == Department.Contracts && assignment.Kind == DepartmentAssignmentKind.Member &&
+               roles.Any(IsLegacyCustomRole));
+
+    /// <summary>A role created by the retired role editor, mapped to Contracts until it is converted (2-N19, 2-N38).</summary>
+    public static bool IsLegacyCustomRole(string roleCode) => roleCode.StartsWith("CUSTOM_", StringComparison.Ordinal);
 
     /// <summary>
     /// Only roles of the right portal grant access: back-office roles on AVIAM Web and

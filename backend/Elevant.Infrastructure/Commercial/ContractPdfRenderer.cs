@@ -9,8 +9,9 @@ using PdfSharp.Pdf;
 namespace Elevant.Infrastructure.Commercial;
 
 /// <summary>
-/// Formal ground-handling contract: branded header, parties, validity, stations, agreed rates,
-/// numbered terms and the signature block with the SHA-256 of the signed content. Draft versions
+/// Formal ground-handling contract: branded header, parties, validity, stations, agreed rates and,
+/// for versions whose signed content includes them (pricing policy 2, 2-N04), the surcharges (3.1) and
+/// packages (3.2); numbered terms and the signature block with the SHA-256 of the signed content. Draft versions
 /// (still editable or awaiting Finance) carry a diagonal «BORRADOR» watermark and show unconfirmed
 /// prices as «Por definir»; they are for review, never for signature.
 /// </summary>
@@ -72,18 +73,44 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                 (string.IsNullOrWhiteSpace(validity.TerminationTerms) ? string.Empty : " " + validity.TerminationTerms.Trim()));
         }
 
-        writer.Heading("3", "Servicios y tarifas pactadas");
+        writer.Heading("3", document.Pricing is null ? "Servicios y tarifas pactadas" : "Servicios, tarifas, recargos y paquetes");
         writer.Table(
             [new("Código", 0.13, false), new("Servicio", 0.37, false), new("Unidad", 0.18, false),
                 new($"Precio ({document.CurrencyCode})", 0.18, true), new("Mínimo", 0.14, true)],
             document.Rates.Select(rate => (IReadOnlyList<string>)
             [
-                rate.ServiceCode, rate.ServiceName, rate.BillingUnit,
+                rate.ServiceCode, rate.ServiceName, Unit(rate.BillingUnit),
                 rate.PriceConfirmed ? rate.UnitPrice.ToString("N2", Spanish) : "Por definir",
                 rate.MinimumQuantity.ToString("0.##", Spanish),
             ]).ToArray());
         if (draft && document.Rates.Any(rate => !rate.PriceConfirmed))
             writer.Paragraph("«Por definir»: tarifa propuesta pendiente de confirmación por Contratos.", Muted, small: true);
+        // 2-N04: the surcharges and packages that are billed are part of the signed content.
+        if (document.Pricing is { } pricing)
+        {
+            writer.SubHeading("3.1", "Recargos");
+            if (pricing.Charges.Count == 0) writer.Paragraph("Sin recargos en esta versión.", Muted);
+            else
+                writer.Table(
+                    [new("Código", 0.13, false), new("Recargo", 0.31, false), new("Cálculo", 0.24, false),
+                        new($"Valor ({document.CurrencyCode})", 0.17, true), new("Mínimo", 0.15, true)],
+                    pricing.Charges.Select(charge => (IReadOnlyList<string>)
+                    [
+                        charge.ChargeCode, charge.ChargeName, ChargeBasis(charge), ChargeValue(charge),
+                        charge.IsExcluded || charge.MinimumAmount is not > 0 ? "—" : charge.MinimumAmount.Value.ToString("N2", Spanish),
+                    ]).ToArray());
+            writer.SubHeading("3.2", "Paquetes");
+            if (pricing.Packages.Count == 0) writer.Paragraph("Sin paquetes en esta versión.", Muted);
+            else
+                writer.Table(
+                    [new("Código", 0.14, false), new("Paquete", 0.24, false), new("Alcance", 0.17, false),
+                        new("Precio base", 0.14, true), new("Incluye", 0.31, false)],
+                    pricing.Packages.Select(package => (IReadOnlyList<string>)
+                    [
+                        $"{package.Code} v{package.VersionNumber}", package.Name, Scope(package),
+                        $"{package.CurrencyCode} {package.BasePrice.ToString("N2", Spanish)}", Components(package),
+                    ]).ToArray());
+        }
 
         writer.Heading("4", "Términos y condiciones");
         writer.Clauses("4", document.Terms);
@@ -96,8 +123,13 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
         }
         else
         {
-            writer.Paragraph("Cada parte acepta el contenido identificado por esta huella SHA-256. Un cambio en servicios, " +
-                "tarifas, vigencia, estaciones o términos produce otra huella y requiere una nueva firma.", Muted);
+            writer.Paragraph(document.Pricing is null
+                ? "Cada parte acepta el contenido identificado por esta huella SHA-256. Un cambio en servicios, " +
+                  "tarifas, vigencia, estaciones o términos produce otra huella y requiere una nueva firma. Los recargos " +
+                  "y paquetes de esta versión no forman parte de la huella."
+                : "Cada parte acepta el contenido identificado por esta huella SHA-256. Un cambio en servicios, " +
+                  "tarifas, recargos, paquetes, vigencia, estaciones o términos produce otra huella y requiere una nueva firma.",
+                Muted);
             writer.Fingerprint(document.ContentSha256);
             writer.Signatures(document);
         }
@@ -109,6 +141,72 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
     }
 
     private static string Date(DateOnly value) => value.ToString("d 'de' MMMM 'de' yyyy", Spanish);
+
+    /// <summary>Spanish noun of the units every environment starts with; another code prints as stored.</summary>
+    private static string Unit(string? code) => code?.Trim().ToLowerInvariant() switch
+    {
+        "operation" => "operación",
+        "aircraft" => "aeronave",
+        "passenger" => "pasajero",
+        "ton" => "tonelada",
+        "hour" => "hora",
+        "minute" => "minuto",
+        "unit" => "unidad",
+        "service" => "servicio",
+        "day" => "día",
+        null or "" => "—",
+        _ => code.Trim(),
+    };
+
+    private static string ChargeBasis(ContractDocumentCharge charge)
+    {
+        var basis = charge.Method switch
+        {
+            "FixedAmount" => "Monto fijo",
+            "PercentOfService" => "Porcentaje del servicio",
+            "PerHour" => "Por hora",
+            "PerMinute" => "Por minuto",
+            "PerUnit" => $"Por {Unit(charge.BillingUnit)}",
+            _ => charge.Method,
+        };
+        var rule = charge.QuantityRule switch
+        {
+            "ServiceDuration" => "según la duración del servicio",
+            "OperationOverrun" => "según el exceso de la operación",
+            "ArrivalDelay" => "según el retraso de la llegada",
+            "ServiceQuantity" => "según la cantidad del servicio",
+            _ => null,
+        };
+        var grace = charge.GraceMinutes > 0 ? $"{charge.GraceMinutes} min de gracia" : null;
+        return string.Join(", ", new[] { basis, rule, grace }.Where(part => part is not null));
+    }
+
+    private static string ChargeValue(ContractDocumentCharge charge) =>
+        charge.IsExcluded ? "Exento"
+        : charge.Value is not { } value ? "Tarifa general"
+        : charge.Method == "PercentOfService" ? $"{value.ToString("0.##", Spanish)} %"
+        : value.ToString("N2", Spanish);
+
+    private static string Scope(ContractDocumentPackage package) => package.Scope switch
+    {
+        "Turnaround" => "Por escala",
+        "Flight" => package.FlightDirection switch
+        {
+            "Arrival" => "Por vuelo de llegada",
+            "Departure" => "Por vuelo de salida",
+            _ => "Por vuelo",
+        },
+        "Period" => package.PeriodDays is { } days ? $"Por período de {days} días" : "Por período",
+        _ => package.Scope,
+    };
+
+    private static string Components(ContractDocumentPackage package) => package.Components.Count == 0 ? "—"
+        : string.Join("; ", package.Components.Select(component =>
+            $"{component.ServiceCode}: {component.IncludedQuantity.ToString("0.##", Spanish)} {Unit(component.BillingUnit)}" +
+            (component.ExcessBlockPrice > 0
+                ? $", exceso {package.CurrencyCode} {component.ExcessBlockPrice.ToString("N2", Spanish)} por cada " +
+                  $"{component.ExcessBlockSize.ToString("0.##", Spanish)} {Unit(component.BillingUnit)}"
+                : string.Empty)));
 
     private static string VersionStatus(string status) => status switch
     {
@@ -123,20 +221,17 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
 
     private sealed class Writer
     {
-        // PdfSharp's subsetter drops the components of composite glyphs, so «á», «í» or «ó» print
-        // without accents; embedding the complete Noto Sans faces keeps Spanish text intact.
-        private static readonly XPdfFontOptions Embedded = new(PdfSharp.Pdf.PdfFontEncoding.Unicode,
-            PdfSharp.Pdf.PdfFontEmbedding.EmbedCompleteFontFile);
+        // 2-D: every ELEVANT PDF embeds the complete Unicode Noto Sans faces (ElevantPdfFonts).
         private readonly PdfDocument pdf;
-        private readonly XFont body = new(ElevantPdfFontResolver.Typeface, 9.5, XFontStyleEx.Regular, Embedded);
-        private readonly XFont bodyBold = new(ElevantPdfFontResolver.Typeface, 9.5, XFontStyleEx.Bold, Embedded);
-        private readonly XFont small = new(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Regular, Embedded);
-        private readonly XFont smallBold = new(ElevantPdfFontResolver.Typeface, 8, XFontStyleEx.Bold, Embedded);
-        private readonly XFont label = new(ElevantPdfFontResolver.Typeface, 7, XFontStyleEx.Bold, Embedded);
-        private readonly XFont heading = new(ElevantPdfFontResolver.Typeface, 12, XFontStyleEx.Bold, Embedded);
-        private readonly XFont title = new(ElevantPdfFontResolver.Typeface, 17, XFontStyleEx.Bold, Embedded);
-        private readonly XFont watermark = new(ElevantPdfFontResolver.Typeface, 72, XFontStyleEx.Bold, Embedded);
-        private readonly XFont watermarkNote = new(ElevantPdfFontResolver.Typeface, 22, XFontStyleEx.Bold, Embedded);
+        private readonly XFont body = ElevantPdfFonts.Regular(9.5);
+        private readonly XFont bodyBold = ElevantPdfFonts.Bold(9.5);
+        private readonly XFont small = ElevantPdfFonts.Regular(8);
+        private readonly XFont smallBold = ElevantPdfFonts.Bold(8);
+        private readonly XFont label = ElevantPdfFonts.Bold(7);
+        private readonly XFont heading = ElevantPdfFonts.Bold(12);
+        private readonly XFont title = ElevantPdfFonts.Bold(17);
+        private readonly XFont watermark = ElevantPdfFonts.Bold(72);
+        private readonly XFont watermarkNote = ElevantPdfFonts.Bold(22);
         private PdfPage page = null!;
         private XGraphics graphics = null!;
         private double y;
@@ -212,6 +307,16 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                     new XRect(x + 9, y + 21, width - 18, Line), XStringFormats.TopLeft);
             }
             y += 54;
+        }
+
+        /// <summary>A numbered subsection inside a section (3.1, 3.2).</summary>
+        public void SubHeading(string number, string text)
+        {
+            Ensure(Line * 3);
+            y += 4;
+            graphics.DrawString($"{number} {text}", bodyBold, new XSolidBrush(Navy), new XRect(Margin, y, Width, Line),
+                XStringFormats.TopLeft);
+            y += Line + 4;
         }
 
         public void Heading(string number, string text)
@@ -347,8 +452,9 @@ public sealed class ContractPdfRenderer(TimeProvider? timeProvider = null) : ICo
                         new XSolidBrush(lines[line].Item2), new XRect(x + 10, top + 40 + offset + line * Line, column - 20, Line), XStringFormats.TopLeft);
             }
             y = top + 156;
+            // 2-N05: the date of this version's second signature, not the day the contract first activated.
             if (document.SignedOn is { } signedOn)
-                Paragraph($"Contrato firmado por ambas partes el {Date(signedOn)}.", Navy);
+                Paragraph($"Versión firmada por ambas partes el {Date(signedOn)}.", Navy);
         }
 
         /// <summary>Draws the footer («Página X de Y») and, for drafts, the watermark on every page.</summary>

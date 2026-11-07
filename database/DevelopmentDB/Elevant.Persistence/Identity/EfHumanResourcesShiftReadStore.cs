@@ -109,6 +109,7 @@ internal sealed class EfHumanResourcesShiftReadStore(
                 shift.StartsAtLocal,
                 shift.EndsAtLocal,
                 shift.Block,
+                shift.RowVersion,
             }).Skip((page - 1) * limit).Take(limit + 1)
             .ToArrayAsync(cancellationToken);
 
@@ -118,6 +119,6 @@ internal sealed class EfHumanResourcesShiftReadStore(
                 row.EmployeeNumber, row.StationId, row.StationCode,
                 row.TerminalId, row.TerminalCode, row.PositionId, row.PositionCode,
                 row.WorkDate, row.StartsAtLocal, row.EndsAtLocal,
-                row.Block.ToString())).ToArray());
+                row.Block.ToString(), GovernanceSupport.Version(row.RowVersion))).ToArray());
     }
 }

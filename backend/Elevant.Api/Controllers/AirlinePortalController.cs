@@ -28,8 +28,49 @@ public sealed class AirlinePortalController(
     DisputeAirlinePreinvoiceHandler disputeHandler,
     GetNonFiscalInvoiceHandler invoiceReader,
     GetNonFiscalPaymentHandler paymentReader,
-    GetAirlineInvoiceStatementHandler statementReader) : ControllerBase
+    GetAirlineInvoiceStatementHandler statementReader,
+    GetAirlinePortalStandingHandler standingHandler) : ControllerBase
 {
+    /// <summary>
+    /// Where the airline stands with AVIAM (2-N32, 2-N35): overall status, read-only when no contract covers a
+    /// station today, the stations a contract in force covered or covers (all within the treasury scope) and why
+    /// each contract that never activated is still waiting. The bootstrap keeps describing only what is in force today.
+    /// </summary>
+    [HttpGet("standing", Name = "GetAirlinePortalStanding")]
+    [ProducesResponseType<AirlinePortalStandingResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<AirlinePortalStandingResponse>> GetStanding(CancellationToken cancellationToken)
+    {
+        if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var accountId))
+        {
+            Response.Headers.WWWAuthenticate = "Bearer";
+            return CodedProblem<AirlinePortalStandingResponse>(StatusCodes.Status401Unauthorized,
+                "La sesión expiró. Vuelva a iniciar sesión.", "unauthorized");
+        }
+        var result = await standingHandler.HandleAsync(accountId, cancellationToken);
+        if (!result.IsSuccess)
+        {
+            if (result.Failure == AirlinePortalFailure.Unauthorized) Response.Headers.WWWAuthenticate = "Bearer";
+            return result.Failure switch
+            {
+                AirlinePortalFailure.Unauthorized => CodedProblem<AirlinePortalStandingResponse>(
+                    StatusCodes.Status401Unauthorized, "La sesión expiró. Vuelva a iniciar sesión.", "unauthorized"),
+                AirlinePortalFailure.Forbidden => CodedProblem<AirlinePortalStandingResponse>(
+                    StatusCodes.Status403Forbidden, "Su cuenta no tiene acceso al portal de la aerolínea.", "forbidden"),
+                _ => CodedProblem<AirlinePortalStandingResponse>(StatusCodes.Status404NotFound,
+                    "No se encontró la aerolínea de la sesión.", "not_found"),
+            };
+        }
+        var standing = result.Standing!;
+        return Ok(new AirlinePortalStandingResponse(standing.OrganizationId, standing.Status, standing.ReadOnly,
+            standing.Stations.Select(station => new AirlinePortalStandingStationResponse(station.Id, station.Code,
+                station.Name, station.IanaTimeZone, station.Current)).ToArray(),
+            standing.Contracts.Select(contract => new AirlinePortalStandingContractResponse(contract.Id, contract.Code,
+                contract.Status, contract.PendingReason, contract.VersionsAwaitingSignatures)).ToArray()));
+    }
+
     [HttpGet("invoices/{invoiceId:guid}/statement", Name = "GetAirlineInvoiceStatement")]
     [ProducesResponseType<AirlineInvoiceStatementResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
@@ -545,6 +586,14 @@ public sealed class AirlinePortalController(
         AirlinePortalFailure.NotFound => (StatusCodes.Status404NotFound, "Airline portal context was not found."),
         _ => throw new InvalidOperationException("Unsupported airline portal failure."),
     };
+
+    /// <summary>A Problem Details with a Spanish title and a stable code (phase 2 convention).</summary>
+    private ActionResult<T> CodedProblem<T>(int statusCode, string title, string code)
+    {
+        var problem = new ProblemDetails { Status = statusCode, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = statusCode };
+    }
 
     private ActionResult<T> ProblemResult<T>(int statusCode, string title) =>
         new ObjectResult(new ProblemDetails

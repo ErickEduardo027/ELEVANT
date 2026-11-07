@@ -9,6 +9,7 @@ const shift: HumanResourcesShiftPage["shifts"][number] = {
   terminalId: "20000000-0000-7000-8000-000000000004", terminalCode: "A",
   positionId: "20000000-0000-7000-8000-000000000005", positionCode: "RAMP-AGENT",
   workDate: "2026-08-18", startsAtLocal: "06:00:00", endsAtLocal: "14:00:00", block: "Morning",
+  version: "AAAAAAAAB9E=",
 };
 
 it("reads a bounded HR shift week with a fresh token", async () => {

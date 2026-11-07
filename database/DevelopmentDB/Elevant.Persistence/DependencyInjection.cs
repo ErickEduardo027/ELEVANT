@@ -37,6 +37,9 @@ public static class DependencyInjection
         // Portal account emails (ADR-0022): links point at the public portal origin.
         services.TryAddSingleton(configuration.GetSection(Elevant.Application.Identity.AccountEmails.AccountEmailOptions.SectionName)
             .Get<Elevant.Application.Identity.AccountEmails.AccountEmailOptions>() ?? new());
+        // Daily sweep of ramp agents' documents (2-N25): HumanResources:DocumentExpiryNoticeDays, 30 by default.
+        services.TryAddSingleton(configuration.GetSection(Elevant.Application.Identity.HumanResourcesDocumentOptions.SectionName)
+            .Get<Elevant.Application.Identity.HumanResourcesDocumentOptions>() ?? new());
 
         var connectionString = configuration.GetConnectionString(DatabaseConnectionName);
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -88,10 +91,16 @@ public static class DependencyInjection
         services.AddScoped<IHumanResourcesAvailabilityReadStore, EfHumanResourcesAvailabilityReadStore>();
         services.AddScoped<IHumanResourcesAvailabilityWriteStore, EfHumanResourcesAvailabilityWriteStore>();
         services.AddScoped<IHumanResourcesReportStore, EfHumanResourcesReportStore>();
+        services.AddScoped<IHumanResourcesDocumentSweepStore, EfHumanResourcesDocumentSweepStore>();
+        services.AddScoped<IOccAssignmentReadinessStore, EfOccAssignmentReadinessStore>();
         services.AddScoped<IOccReportStore, EfOccReportStore>();
         services.AddScoped<IOccPositionStore, EfOccPositionStore>();
+        // Master data (2-A): stations by the superadministrator, terminals, stands and aircraft types by OCC.
+        services.AddScoped<IStationCatalogStore, EfStationCatalogStore>();
+        services.AddScoped<IOccMasterDataStore, EfOccMasterDataStore>();
         services.AddScoped<IPositionCoverageStore, EfPositionCoverageStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
+        services.AddScoped<IAirlinePortalStandingStore, EfAirlinePortalStandingStore>();
         services.AddScoped<IAirlinePreinvoiceAcceptanceStore, EfAirlinePreinvoiceAcceptanceStore>();
         services.AddScoped<IAirlinePreinvoiceDisputeStore, EfAirlinePreinvoiceDisputeStore>();
         services.AddScoped<IAffiliationStore, EfAffiliationStore>();
@@ -117,6 +126,8 @@ public static class DependencyInjection
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services, Elevant.Application.Integration.FlightFeedBudget.Default);
         Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed, Elevant.Application.Abstractions.Integrations.UnconfiguredAirportFlightFeed>(services);
         services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource, Elevant.Persistence.Integration.ObservedAirlineRegistrySource>();
+        // What the simulated flight feed of Development and Test reports (2-B); only read when it is enabled.
+        services.AddSingleton<Elevant.Application.Abstractions.Integrations.ISimulatedFlightFeedCatalog, Elevant.Persistence.Integration.EfSimulatedFlightFeedCatalog>();
         services.AddScoped<EfContractDocumentStore>();
         services.AddScoped<IContractDocumentStore>(provider => provider.GetRequiredService<EfContractDocumentStore>());
         // The PDF renderer lives in Infrastructure; a factory keeps hosts without it (tools, tests) valid.
@@ -132,6 +143,7 @@ public static class DependencyInjection
                     provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
             ]));
         services.AddScoped<IAirlinePermitStore, EfAirlinePermitStore>();
+        services.AddScoped<IAirlinePortalUserStore, EfAirlinePortalUserStore>();
         services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
@@ -187,6 +199,7 @@ public static class DependencyInjection
         services.AddScoped<IOccShiftProgrammingStore, EfOccShiftProgrammingStore>();
         services.AddScoped<IRampOperationsReadStore, EfRampOperationsReadStore>();
         services.AddScoped<IMobileDeviceCommandStore, EfMobileDeviceCommandStore>();
+        services.AddScoped<IMobileDeviceAdministrationStore, EfMobileDeviceAdministrationStore>();
         services.AddScoped<IRampOperationsCommandStore, EfRampOperationsCommandStore>();
         services.AddScoped<IRampOperationChecklistReadStore, EfRampOperationChecklistReadStore>();
         services.AddScoped<IRampOperationChecklistCommandStore, EfRampOperationChecklistCommandStore>();

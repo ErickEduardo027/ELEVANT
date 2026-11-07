@@ -421,11 +421,15 @@ export default function ChecklistScreen() {
           await load(true);
           return;
         }
-        if (error.code === 'device_conflict') {
+        if (error.code === 'device_conflict' || error.code === 'device_in_use' || error.code === 'device_revoked') {
           setNotice({
             tone: 'error',
             title: 'Dispositivo no autorizado',
-            message: 'Cierra sesión y solicita a AVIAM revisar el vínculo de esta instalación antes de reintentar.',
+            message: error.code === 'device_revoked'
+              ? 'OCC revocó esta tablet. Entrégala a OCC y continúa en otra tablet.'
+              : error.code === 'device_in_use'
+                ? 'Otro agente tiene esta tablet en una operación en curso. Solicita a OCC que la libere.'
+                : 'Cierra sesión y solicita a AVIAM revisar el vínculo de esta instalación antes de reintentar.',
           });
           return;
         }

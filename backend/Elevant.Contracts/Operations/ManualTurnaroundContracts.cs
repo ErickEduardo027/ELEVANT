@@ -15,7 +15,8 @@ public sealed record CreateManualTurnaroundRequest(
     string DepartureFlightNumber,
     string DepartureDestinationIata,
     DateTimeOffset DepartureScheduledAt,
-    bool Charter = false);
+    bool Charter = false,
+    Guid? AircraftTypeId = null);
 
 public sealed record ManualTurnaroundResponse(
     Guid TurnaroundId,
@@ -24,6 +25,10 @@ public sealed record ManualTurnaroundResponse(
 
 public sealed record ManualTurnaroundAirlineResponse(Guid Id, string IataCode, string Name);
 
+/// <summary>An active aircraft type OCC can give a new flight («type once», 2-A).</summary>
+public sealed record ManualTurnaroundAircraftTypeResponse(Guid Id, string IcaoCode, string? IataCode, string Manufacturer,
+    string Model, string? SizeCategory);
+
 public sealed record ManualTurnaroundOptionsResponse(
     OccStationResponse Station,
     DateOnly Date,
@@ -31,4 +36,5 @@ public sealed record ManualTurnaroundOptionsResponse(
     IReadOnlyList<ManualTurnaroundAirlineResponse> Airlines,
     IReadOnlyList<OccAirportResponse> Airports,
     IReadOnlyList<OccStandResponse> Stands,
-    IReadOnlyList<ManualTurnaroundAirlineResponse>? CharterAirlines = null);
+    IReadOnlyList<ManualTurnaroundAirlineResponse>? CharterAirlines = null,
+    IReadOnlyList<ManualTurnaroundAircraftTypeResponse>? AircraftTypes = null);

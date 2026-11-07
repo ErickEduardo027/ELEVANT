@@ -3,6 +3,7 @@ using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Messaging;
 using Elevant.Application.Commercial;
+using Elevant.Application.Common;
 using Elevant.Application.Identity.AccountEmails;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Identity;
@@ -486,7 +487,8 @@ internal sealed class EfCommercialWorkflowStore(
             {
                 PublicId = Guid.CreateVersion7(), ContractId = contract.Id,
                 VersionNumber = 1, Status = ContractVersionStatus.Draft,
-                ValidFrom = DateOnly.FromDateTime(now.UtcDateTime), CurrencyCode = "USD",
+                // 2-F: the proposed start is AVIAM's business day.
+                ValidFrom = BusinessCalendar.Today(now), CurrencyCode = "USD",
             };
             context.ContractVersions.Add(version);
             await context.SaveChangesAsync(cancellationToken);

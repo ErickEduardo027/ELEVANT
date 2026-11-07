@@ -226,7 +226,12 @@ export default function PlanningDrawer({
 
           <Section title={t('drawer.agents')}>
             <ResourceList items={flight.assignedAgents ?? []} emptyLabel={t('drawer.noAgents')}>
-              {agent => <li key={agent.assignmentId}>{agent.displayName} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{agent.employeeNumber}{agent.positionCode ? ` · ${agent.positionCode}` : ''}</span></li>}
+              {agent => <li key={agent.assignmentId}>{agent.displayName} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{agent.employeeNumber}{agent.positionCode ? ` · ${agent.positionCode}` : ''}</span>
+                {agent.unfitReasons?.length > 0 && <span className="mt-0.5 block text-xs font-semibold text-status-danger">
+                  {t('drawer.unfit', { reasons: agent.unfitReasons.map(reason => {
+                    const label = t(`drawer.unfitReasons.${reason}`);
+                    return label === `drawer.unfitReasons.${reason}` ? t('drawer.unfitReasons.other') : label;
+                  }).join(', ') })}</span>}</li>}
             </ResourceList>
             <ReleaseAgent flight={flight} onReleased={onAgentReleased} />
           </Section>

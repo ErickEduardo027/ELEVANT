@@ -305,5 +305,18 @@ public sealed class MobileDevicesEndpointsTests(ElevantApiFactory factory)
             Request = request;
             return Task.FromResult(WriteResult);
         }
+
+        public MobileDeviceReleaseWriteResult ReleaseResult { get; init; } = MobileDeviceReleaseWriteResult.Released();
+
+        public MobileDeviceReleaseWriteRequest? Release { get; private set; }
+
+        public Task<MobileDeviceReleaseWriteResult> ReleaseAsync(
+            MobileDeviceReleaseWriteRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Release = request;
+            return Task.FromResult(ReleaseResult);
+        }
     }
 }

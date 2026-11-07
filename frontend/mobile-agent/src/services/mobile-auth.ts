@@ -16,7 +16,10 @@ import {
   asMobileServiceError,
   MobileServiceError,
 } from './mobile-service-error';
-import { registerCurrentMobileDevice } from './mobile-device';
+import {
+  registerCurrentMobileDevice,
+  releaseCurrentMobileDevice,
+} from './mobile-device';
 
 const SESSION_SCHEMA_VERSION = 1 as const;
 const uuidPattern =
@@ -464,7 +467,20 @@ export async function refreshMobileSession(
   }
 }
 
+/**
+ * Signs out: frees the tablet for the next agent (2-N02, best effort and bounded in time) and clears the session and
+ * its caches. A tablet that cannot reach ELEVANT still signs out; the next agent who signs in on it takes it.
+ */
 export async function logoutMobileAgent(): Promise<void> {
+  let state: LocalSessionState | null = null;
+  try {
+    state = await localSessionState();
+  } catch {
+    state = null;
+  }
+  if (state?.kind === 'active') {
+    await releaseCurrentMobileDevice({ accessToken: state.accessToken });
+  }
   try {
     await clearStoredMobileSession();
   } catch (error) {

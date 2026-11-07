@@ -30,6 +30,14 @@ La usan la lectura de Planificación, las opciones y la creación de vuelos manu
 de agentes. Dos versiones que cubren la misma fecha son un conflicto de datos: no se planifica
 con ninguna.
 
+> **Actualización (7 de noviembre de 2026).** La versión que cubre es una versión que rige:
+> `Approved` y firmada por ambas partes sobre la misma huella, `Superseded` en las fechas que
+> conservó, o la primera versión heredada de un contrato que ya salió de `Draft`. Una versión que
+> Finanzas aprobó y nadie firmó no cubre nada. Ahora el fin de la versión anterior lo recorta la
+> segunda firma de la siguiente, no su aprobación. «No terminado» significa que `TerminatedOn`, el
+> primer día sin cobertura, es posterior a la fecha. El feed de vuelos usa la misma regla. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 ### «Contratos listos para operar»
 
 `GET occ/contracts?stationId&date` (permiso `operations.planning.read`, estación en alcance)

@@ -23,7 +23,7 @@ public sealed partial class SqlServerMigrationTests
         var readiness = scope.ServiceProvider.GetRequiredService<IWorkforceReadinessStore>();
         var shifts = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftWriteStore>();
         var options = scope.ServiceProvider.GetRequiredService<IHumanResourcesShiftReadStore>();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
 
         // Readiness is for Gestión Humana; the ramp agent cannot list it.
         Assert.Null(await readiness.ListReadinessAsync(SeededRampAgentAccount, ct));
@@ -49,15 +49,15 @@ public sealed partial class SqlServerMigrationTests
         Assert.All(mine.Documents, document => Assert.Contains(document.Validity, new[] { "Current", "Expiring", "Expired" }));
 
         // A future shift can be removed (idempotently); a past one is history.
-        Assert.Null((await shifts.RemoveAsync(HumanResourcesAccount, shiftId, ct)).Failure);
-        Assert.Null((await shifts.RemoveAsync(HumanResourcesAccount, shiftId, ct)).Failure);
+        Assert.Null((await shifts.RemoveAsync(HumanResourcesAccount, shiftId, new RemoveHumanResourcesShiftInput(null, null), ct)).Failure);
+        Assert.Null((await shifts.RemoveAsync(HumanResourcesAccount, shiftId, new RemoveHumanResourcesShiftInput(null, null), ct)).Failure);
         Assert.DoesNotContain((await readiness.GetOwnScheduleAsync(SeededRampAgentAccount, today, today.AddDays(13), ct))!.Shifts,
             item => item.Id == shiftId);
         var pastId = Guid.NewGuid();
         Assert.Null((await shifts.RecordAsync(HumanResourcesAccount, pastId, input with { WorkDate = today.AddDays(3) }, ct)).Failure);
         await context.ShiftAssignments.Where(item => item.PublicId == pastId)
             .ExecuteUpdateAsync(update => update.SetProperty(item => item.WorkDate, today.AddDays(-1)), ct);
-        Assert.Equal(HumanResourcesShiftWriteFailure.Conflict, (await shifts.RemoveAsync(HumanResourcesAccount, pastId, ct)).Failure);
-        Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden, (await shifts.RemoveAsync(SeededRampAgentAccount, pastId, ct)).Failure);
+        Assert.Equal(HumanResourcesShiftWriteFailure.Conflict, (await shifts.RemoveAsync(HumanResourcesAccount, pastId, new RemoveHumanResourcesShiftInput(null, null), ct)).Failure);
+        Assert.Equal(HumanResourcesShiftWriteFailure.Forbidden, (await shifts.RemoveAsync(SeededRampAgentAccount, pastId, new RemoveHumanResourcesShiftInput(null, null), ct)).Failure);
     }
 }

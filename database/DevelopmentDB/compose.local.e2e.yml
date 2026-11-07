@@ -2,7 +2,10 @@
 # - S3-compatible private storage (Garage single node) so financial PDFs, contract and operation
 #   evidence work locally like on the VPS (MediaStorage__*);
 # - CORS for the Playwright dev servers (4174 public-web, 4175 private-web);
-# - higher request limits, because every E2E call comes from 127.0.0.1.
+# - higher request limits, because every E2E call comes from 127.0.0.1;
+# - the simulated flight feed (SimulatedFlightFeed__Enabled, hueco 2-B): a deterministic timetable of the
+#   registered airlines that never calls AeroDataBox nor the network. The API refuses to start when AeroDataBox
+#   is enabled too; ELEVANT_E2E_SIMULATED_FLIGHT_FEED=false runs the overlay without any feed.
 #
 # docker compose --env-file database/DevelopmentDB/.env \
 #   -f database/DevelopmentDB/compose.local.yml -f database/DevelopmentDB/compose.local.e2e.yml up --build
@@ -66,6 +69,7 @@ services:
       RateLimiting__PermitLimit: "2000"
       RateLimiting__SessionPermitLimit: "200"
       AccountEmail__PublicWebBaseUrl: "${AccountEmail__PublicWebBaseUrl:-http://localhost:4174}"
+      SimulatedFlightFeed__Enabled: "${ELEVANT_E2E_SIMULATED_FLIGHT_FEED:-true}"
     depends_on:
       media:
         condition: service_started

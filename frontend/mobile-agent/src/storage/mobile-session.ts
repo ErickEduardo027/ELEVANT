@@ -771,6 +771,23 @@ export function assignedOperationsCacheKey(accountId: string) {
   return `${ASSIGNED_OPERATIONS_CACHE_PREFIX}${accountId}`;
 }
 
+/**
+ * The installation ID already stored on this device, or null when it never registered. Signing out releases the
+ * tablet with it (2-N02); unlike {@link readOrCreateMobileInstallationId} it never creates one.
+ */
+export async function readMobileInstallationId() {
+  return withStorageLock(async () => {
+    try {
+      await ensureSecureStoreAvailable();
+      const current = await SecureStore.getItemAsync(MOBILE_INSTALLATION_ID_KEY);
+      return isUuid(current) ? current.toLowerCase() : null;
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
 export async function readOrCreateMobileInstallationId() {
   return withStorageLock(async () => {
     try {

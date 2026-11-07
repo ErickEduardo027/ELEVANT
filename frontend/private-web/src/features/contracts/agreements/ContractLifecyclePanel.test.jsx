@@ -209,3 +209,71 @@ it('explains why an amendment cannot start by its code and offers it only on act
   await screen.findByText('Contrato activo');
   expect(screen.queryByRole('button', { name: 'Crear enmienda' })).not.toBeInTheDocument();
 });
+
+it('terminates an active contract on an effective date that respects the signed notice (2-N14)', async () => {
+  getContractTimeline.mockResolvedValueOnce({ ...timeline('Active'), terminatesOn: null, earliestTerminationOn: '2026-12-05' })
+    .mockResolvedValueOnce({ ...timeline('Active'), terminatesOn: '2026-12-10', earliestTerminationOn: null });
+  applyContractLifecycle.mockResolvedValue({ status: 'Active', draftVersionId: null });
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Terminar' }));
+  const dialog = screen.getByRole('dialog', { name: 'Terminar contrato CT-001' });
+  const effective = within(dialog).getByLabelText(/Fecha efectiva/);
+  // The earliest date the server allows is the default and the lower limit.
+  expect(effective).toHaveAttribute('min', '2026-12-05');
+  expect(effective).toHaveValue('2026-12-05');
+  await userEvent.clear(effective);
+  await userEvent.type(effective, '2026-12-10');
+  await userEvent.type(within(dialog).getByLabelText('Motivo'), 'Fin de la relación comercial.');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Confirmar' }));
+  expect(applyContractLifecycle).toHaveBeenCalledWith('v-1', { action: 'Terminate', reason: 'Fin de la relación comercial.',
+    expectedStatus: 'Active', effectiveOn: '2026-12-10' }, expect.any(String));
+  expect(await screen.findByText(/Se programó la terminación: el contrato cubre operaciones hasta el/)).toBeInTheDocument();
+  // Once scheduled, the panel offers its cancellation and no renewal.
+  expect(await screen.findByRole('button', { name: 'Cancelar terminación' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Renovar' })).not.toBeInTheDocument();
+  expect(screen.getByRole('note')).toHaveTextContent('Terminación programada');
+});
+
+it('ends an active contract at once only with an explicit cause and its note', async () => {
+  getContractTimeline.mockResolvedValue({ ...timeline('Suspended'), terminatesOn: null, earliestTerminationOn: '2026-12-05' });
+  applyContractLifecycle.mockResolvedValue({ status: 'Terminated', draftVersionId: null });
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Terminar' }));
+  const dialog = screen.getByRole('dialog', { name: 'Terminar contrato CT-001' });
+  await userEvent.click(within(dialog).getByLabelText(/Inmediata, por una causa explícita/));
+  await userEvent.type(within(dialog).getByLabelText('Motivo (nota de la causa)'), 'Impago reiterado de tres facturas.');
+  expect(within(dialog).getByRole('button', { name: 'Confirmar' })).toBeDisabled();
+  await userEvent.selectOptions(within(dialog).getByLabelText('Causa inmediata'), 'Breach');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Confirmar' }));
+  expect(applyContractLifecycle).toHaveBeenCalledWith('v-1', { action: 'Terminate', reason: 'Impago reiterado de tres facturas.',
+    expectedStatus: 'Suspended', immediateCause: 'Breach' }, expect.any(String));
+  expect(await screen.findByText('Contrato terminado.')).toBeInTheDocument();
+});
+
+it('cancels a scheduled termination and explains a date before the notice by its code', async () => {
+  getContractTimeline.mockResolvedValue({ ...timeline('Active'), terminatesOn: '2026-12-10', earliestTerminationOn: null });
+  applyContractLifecycle.mockResolvedValueOnce({ status: 'Active', draftVersionId: null });
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Cancelar terminación' }));
+  const dialog = screen.getByRole('dialog', { name: 'Cancelar la terminación del contrato CT-001' });
+  await userEvent.type(within(dialog).getByLabelText('Motivo'), 'La aerolínea renovó su interés.');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Confirmar' }));
+  expect(applyContractLifecycle).toHaveBeenCalledWith('v-1', { action: 'CancelTermination',
+    reason: 'La aerolínea renovó su interés.', expectedStatus: 'Active' }, expect.any(String));
+  expect(await screen.findByText(/Se canceló la terminación programada/)).toBeInTheDocument();
+  cleanup();
+  getContractTimeline.mockResolvedValue({ ...timeline('Active'), terminatesOn: null, earliestTerminationOn: '2026-12-05' });
+  applyContractLifecycle.mockRejectedValueOnce(Object.assign(new Error('Invalid'), { status: 400, code: 'termination_notice_not_met' }));
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Terminar' }));
+  await userEvent.type(within(screen.getByRole('dialog')).getByLabelText('Motivo'), 'Fin de la relación comercial.');
+  await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirmar' }));
+  expect(await screen.findByText(/debe respetar el preaviso firmado/)).toBeInTheDocument();
+});
+
+it('shows the unauthorized state when the history is forbidden', async () => {
+  getContractTimeline.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
+  render(<ContractLifecyclePanel versionId="v-1" canManage />);
+  expect(await screen.findByText('Tu acceso no permite consultar el ciclo de este contrato.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+});

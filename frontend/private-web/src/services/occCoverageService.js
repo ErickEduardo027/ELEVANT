@@ -1,3 +1,4 @@
+import { normalizedStandAttributes } from '@elevant/api-client';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 
@@ -22,11 +23,33 @@ export const COVERAGE_REASON_MESSAGES = {
   agent_overlap: 'El agente ya cubre posiciones en ese horario.',
   mentor_required: 'El agente tiene menos de 3 meses: necesita un mentor experimentado.',
   mentor_not_eligible: 'El mentor debe tener 3 meses o más, estar activo y tener turno en ese horario.',
+  // 2-N23: a mentor on an approved absence or without a current airport permit accompanies nobody.
+  mentor_absent: 'El mentor tiene una ausencia aprobada ese día.',
+  mentor_permit_required: 'El mentor no tiene el carnet aeroportuario vigente.',
   stand_taken: 'Otra persona ya cubre alguna de esas posiciones. Márcalo como refuerzo si es intencional.',
   stand_cancelled: 'Esa posición está anulada por una posición combinada ocupada (por ejemplo 9A anula la 10).',
   stand_narrowbody_only: 'Esa posición solo admite aviones de fuselaje estrecho en este momento.',
   neighbour_widebody: 'Ocuparla limitaría a estrecho una posición vecina que ya tiene un avión ancho.',
+  // A stand in use is never deactivated, from Configuración either (2-A).
+  stand_in_use: 'La posición tiene vuelos sin terminar o coberturas abiertas: no se puede desactivar.',
+  // Nor is a stand of an inactive terminal reactivated there (2-A).
+  terminal_inactive: 'La terminal de esta posición está desactivada: reactívala primero en «Datos maestros».',
 };
+
+/**
+ * The codes of a refused stand change (2-A), each explained by itself: the stand rule it breaks, a version that changed
+ * meanwhile (here or in «Datos maestros») and a reused key or a missing version. The server title is never shown.
+ */
+const COVERAGE_CODE_MESSAGES = Object.freeze({
+  stand_in_use: COVERAGE_REASON_MESSAGES.stand_in_use,
+  terminal_inactive: COVERAGE_REASON_MESSAGES.terminal_inactive,
+  version_conflict: 'La posición cambió mientras la editabas, aquí o en «Datos maestros». Se actualizó la vista; revisa e inténtalo de nuevo.',
+  idempotency_conflict: 'Ese envío ya se usó con otros datos. Se actualizó la vista; inténtalo de nuevo.',
+  expected_version_required: 'Actualiza la vista antes de guardar los cambios de la posición.',
+  idempotency_key_required: 'No se pudo identificar el envío; inténtalo de nuevo.',
+});
+
+const UNCERTAIN_MESSAGE = 'No fue posible completar la acción. Intenta de nuevo.';
 
 export function describeReasons(reasons) {
   return (reasons ?? []).map(reason => COVERAGE_REASON_MESSAGES[reason]).filter(Boolean);
@@ -37,15 +60,17 @@ export function translateCoverageError(error) {
   if (error instanceof TypeError) return Object.assign(new Error('Revisa los datos del formulario.'), { status: 400 });
   if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
   const status = Number.isInteger(error?.status) ? error.status : null;
+  const code = typeof error?.code === 'string' ? error.code : undefined;
   // Keep the rule codes: screens explain each one with describeReasons.
   const reasons = (error?.reasons ?? []).filter(reason => reason in COVERAGE_REASON_MESSAGES);
-  const message = reasons.length ? 'La cobertura no cumple las reglas de asignación.'
+  const message = Object.prototype.hasOwnProperty.call(COVERAGE_CODE_MESSAGES, code ?? '') ? COVERAGE_CODE_MESSAGES[code]
+    : reasons.length ? 'La cobertura no cumple las reglas de asignación.'
     : status === 403 ? 'Tu acceso no permite gestionar la cobertura de posiciones.'
       : status === 404 ? 'El agente, la terminal o la posición ya no está disponible.'
         : status === 409 ? 'Los datos cambiaron mientras trabajabas. Se actualizó la vista; inténtalo de nuevo.'
           : status === 400 ? 'Revisa los datos del formulario.'
-            : 'No fue posible completar la acción. Intenta de nuevo.';
-  return Object.assign(new Error(message), { status, reasons });
+            : UNCERTAIN_MESSAGE;
+  return Object.assign(new Error(message), { status, reasons, code });
 }
 
 async function guarded(request) {
@@ -59,8 +84,20 @@ export const createOccCoverage = command => guarded(() => client().createOccCove
 
 export const releaseOccCoverage = (coverageId, date) => guarded(() => client().releaseOccCoverage(coverageId, date));
 
-export const updateOccStandAttributes = (standId, attributes) =>
-  guarded(() => client().updateOccStandAttributes(standId, attributes));
+/**
+ * The attributes of a stand from Configuración (2-A), with its version on the board and the intent's Idempotency-Key.
+ * A value the server would refuse is explained as invalid data before sending; no answer at all (a network failure) is
+ * uncertain: it keeps no status, so the intent keeps its key and the retry replays the first result.
+ */
+export async function updateOccStandAttributes(standId, attributes, idempotencyKey) {
+  try { normalizedStandAttributes(attributes); } catch {
+    throw Object.assign(new Error('Revisa los datos del formulario.'), { status: 400, reasons: [] });
+  }
+  try { return await client().updateOccStandAttributes(standId, attributes, idempotencyKey); } catch (error) {
+    if (error instanceof TypeError) throw Object.assign(new Error(UNCERTAIN_MESSAGE), { status: null, reasons: [] });
+    throw translateCoverageError(error);
+  }
+}
 
 export const updateOccTerminalRules = (terminalId, rules) => guarded(() => client().updateOccTerminalRules(terminalId, rules));
 

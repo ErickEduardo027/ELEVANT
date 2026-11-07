@@ -66,22 +66,181 @@ public static class AccountEmailTemplates
         action: ("Crear una contraseña nueva", link),
         security: "Si no lo pediste, ignora este correo: tu contraseña no cambia.");
 
-    /// <summary>Both parties signed and the contract is active; the signed PDF travels attached (ADR-0025).</summary>
+    /// <summary>
+    /// Both parties signed and the contract is active; the signed PDF travels attached (ADR-0025). A version
+    /// that starts after <paramref name="today"/> (AVIAM's business day) is signed but not in force yet, and
+    /// the email says from when it is (2-N30).
+    /// </summary>
     public static EmailMessage ContractActivated(string to, string airline, string contractCode, DateOnly validFrom,
-        DateOnly? validTo) => Build(to,
-        subject: $"Contrato {contractCode} activo · ELEVANT",
-        preheader: $"El contrato de {airline} con AVIAM ya está en vigor.",
+        DateOnly? validTo, DateOnly today)
+    {
+        var upcoming = validFrom > today;
+        return Build(to,
+            subject: upcoming ? $"Contrato {contractCode} firmado · vigente desde el {Day(validFrom)} · ELEVANT"
+                : $"Contrato {contractCode} activo · ELEVANT",
+            preheader: upcoming ? $"El contrato de {airline} con AVIAM entra en vigor el {Day(validFrom)}."
+                : $"El contrato de {airline} con AVIAM ya está en vigor.",
+            kicker: "Contratos",
+            title: upcoming ? "Tu contrato está firmado" : "Tu contrato está activo",
+            greeting: null,
+            paragraphs: [upcoming
+                    ? $"El contrato {contractCode} entre AVIAM y {airline} quedó firmado por ambas partes y entra en vigor " +
+                      $"el {Day(validFrom)}. Hasta esa fecha AVIAM no atiende vuelos con esta versión."
+                    : $"El contrato {contractCode} entre AVIAM y {airline} quedó firmado por ambas partes y está en vigor.",
+                $"Vigencia: del {Day(validFrom)} " + (validTo is { } end ? $"al {Day(end)}." : "sin fecha de fin."),
+                "Adjuntamos el PDF firmado. También puedes consultarlo en el portal de aerolíneas."],
+            validity: "Documento firmado por ambas partes",
+            code: null,
+            action: null,
+            security: "Guarda este documento: su huella SHA-256 identifica el contenido que firmaron ambas partes.");
+    }
+
+    /// <summary>
+    /// Contratos confirmed the validity of a version: the airline can review and sign it in the portal (2-N13).
+    /// <paramref name="contractInForce"/> tells a renewal or amendment of an active contract from a new one.
+    /// </summary>
+    public static EmailMessage ContractReadyToSign(string to, string airline, string contractCode, int versionNumber,
+        DateOnly validFrom, DateOnly? validTo, bool contractInForce) => Build(to,
+        subject: $"Contrato {contractCode} listo para firmar · ELEVANT",
+        preheader: $"AVIAM confirmó la vigencia del contrato de {airline}: ya puedes firmarlo en el portal.",
         kicker: "Contratos",
-        title: "Tu contrato está activo",
+        title: "Tu contrato está listo para firmar",
         greeting: null,
-        paragraphs: [$"El contrato {contractCode} entre AVIAM y {airline} quedó firmado por ambas partes y está en vigor.",
-            $"Vigencia: del {validFrom.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)} " +
-            (validTo is { } end ? $"al {end.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}." : "sin fecha de fin."),
-            "Adjuntamos el PDF firmado. También puedes consultarlo en el portal de aerolíneas."],
-        validity: "Documento firmado por ambas partes",
+        paragraphs: [$"Contratos de AVIAM confirmó la vigencia de la versión {versionNumber} del contrato {contractCode} con " +
+            $"{airline}: del {Day(validFrom)} " + (validTo is { } end ? $"al {Day(end)}." : "sin fecha de fin."),
+            "Entra al portal de aerolíneas, en «Contratos», para revisar el documento y firmarlo con la firma de la persona autorizada.",
+            contractInForce
+                ? $"La nueva versión rige desde el {Day(validFrom)} cuando ambas partes la firman; hasta entonces sigue vigente la versión actual."
+                : "El contrato se activa cuando ambas partes lo firman y tu permiso de operación (JAC) está verificado y vigente."],
+        validity: "Pendiente de tu firma",
         code: null,
         action: null,
-        security: "Guarda este documento: su huella SHA-256 identifica el contenido que firmaron ambas partes.");
+        security: "Firma solo si reconoces el contrato. Si tienes dudas, contacta a Contratos de AVIAM antes de firmar.");
+
+    /// <summary>Contratos rejected a permit of the dossier; the airline reads the note it also sees in the portal (2-N13).</summary>
+    public static EmailMessage PermitRejected(string to, string airline, string permitName, string number, string note) =>
+        Build(to,
+            subject: $"Permiso {number} no verificado · ELEVANT",
+            preheader: $"Contratos de AVIAM revisó el {permitName} {number} de {airline}.",
+            kicker: "Permisos de la aerolínea",
+            title: "Tu permiso no fue verificado",
+            greeting: null,
+            paragraphs: [$"Contratos de AVIAM revisó el {permitName} {number} de {airline} y no lo verificó.",
+                $"Motivo: {note}",
+                "Corrige el dato o el documento y envíalo de nuevo desde el portal de aerolíneas, en «Contratos» › «Permisos de la aerolínea»."],
+            validity: "Revisión de Contratos",
+            code: null,
+            action: null,
+            security: "Si no enviaste este permiso, avisa a AVIAM por los canales de contacto de su sitio.");
+
+    /// <summary>
+    /// Contratos revoked the verification of a permit with a reason (2-N09). The contracts it left without a
+    /// usable operating permit were suspended in the same step and are named.
+    /// </summary>
+    public static EmailMessage PermitRevoked(string to, string airline, string permitName, string number, string reason,
+        IReadOnlyCollection<string> suspendedContracts) => Build(to,
+        subject: $"Verificación del permiso {number} revocada · ELEVANT",
+        preheader: $"Contratos de AVIAM revocó la verificación del {permitName} {number} de {airline}.",
+        kicker: "Permisos de la aerolínea",
+        title: "AVIAM revocó la verificación de tu permiso",
+        greeting: null,
+        paragraphs: [$"Contratos de AVIAM revocó la verificación del {permitName} {number} de {airline}: ya no cuenta como permiso válido.",
+            $"Motivo: {reason}",
+            suspendedContracts.Count > 0
+                ? $"Sin otro permiso de operación verificado y vigente, quedaron suspendidos: {string.Join(", ", suspendedContracts)}. " +
+                  "Se reanudan cuando AVIAM verifique un permiso de operación válido."
+                : "Ningún contrato cambió de estado por esta revocación.",
+            "Envía un documento válido desde el portal de aerolíneas, en «Contratos» › «Permisos de la aerolínea»."],
+        validity: "Revisión de Contratos",
+        code: null,
+        action: null,
+        security: "Si no reconoces este permiso, avisa a AVIAM por los canales de contacto de su sitio.");
+
+    /// <summary>A verified permit expires within the notice days (2-N12); the operating permit keeps the contracts active.</summary>
+    public static EmailMessage PermitExpiring(string to, string airline, string permitName, string number, DateOnly expiresOn,
+        bool operatingPermit) => Build(to,
+        subject: $"Tu permiso {number} vence el {Day(expiresOn)} · ELEVANT",
+        preheader: $"El {permitName} {number} de {airline} vence el {Day(expiresOn)}.",
+        kicker: "Permisos de la aerolínea",
+        title: "Tu permiso está por vencer",
+        greeting: null,
+        paragraphs: [$"El {permitName} {number} de {airline} vence el {Day(expiresOn)}.",
+            operatingPermit
+                ? "Envía el permiso renovado desde el portal antes de esa fecha: sin un permiso de operación verificado y vigente, " +
+                  "tus contratos se suspenden hasta que AVIAM verifique uno nuevo."
+                : "Envía el documento renovado desde el portal para mantener al día el expediente de tu aerolínea.",
+            "Si ya enviaste el documento renovado, AVIAM lo está verificando."],
+        validity: $"Vence el {Day(expiresOn)}",
+        code: null,
+        action: null,
+        security: null);
+
+    /// <summary>
+    /// The contract ends within the notice days its version signed (RenewalNoticeDays, 2-N12): the promise of
+    /// the PDF «AVIAM avisa con N días de antelación».
+    /// </summary>
+    public static EmailMessage ContractExpiring(string to, string airline, string contractCode, DateOnly validTo,
+        int? automaticRenewalMonths) => Build(to,
+        subject: $"Tu contrato {contractCode} vence el {Day(validTo)} · ELEVANT",
+        preheader: $"La vigencia del contrato de {airline} con AVIAM termina el {Day(validTo)}.",
+        kicker: "Contratos",
+        title: "Tu contrato está por vencer",
+        greeting: null,
+        paragraphs: [$"La vigencia del contrato {contractCode} entre AVIAM y {airline} termina el {Day(validTo)}.",
+            automaticRenewalMonths is { } months
+                ? $"Se renueva automáticamente por {months} meses: AVIAM prepara la nueva versión, que necesita la firma de ambas partes antes de esa fecha."
+                : "Si deseas continuar con los servicios, contacta a Contratos de AVIAM para renovarlo antes de esa fecha.",
+            "Después del vencimiento, AVIAM no puede atender vuelos nuevos con este contrato."],
+        validity: $"Vence el {Day(validTo)}",
+        code: null,
+        action: null,
+        security: null);
+
+    /// <summary>
+    /// The contract is suspended (2-N12). A manual suspension never carries the internal reason of Contratos;
+    /// a suspension for the operating permit says how it resumes.
+    /// </summary>
+    public static EmailMessage ContractSuspended(string to, string airline, string contractCode,
+        Commercial.ContractSuspensionCause cause) => Build(to,
+        subject: $"Contrato {contractCode} suspendido · ELEVANT",
+        preheader: $"El contrato de {airline} con AVIAM está suspendido.",
+        kicker: "Contratos",
+        title: "Tu contrato está suspendido",
+        greeting: null,
+        paragraphs: [cause switch
+            {
+                Commercial.ContractSuspensionCause.PermitExpired =>
+                    $"El contrato {contractCode} de {airline} quedó suspendido porque venció su permiso de operación. " +
+                    "Envía el permiso renovado desde el portal: cuando AVIAM lo verifique, el contrato se reanuda solo.",
+                Commercial.ContractSuspensionCause.PermitRevoked =>
+                    $"El contrato {contractCode} de {airline} quedó suspendido porque AVIAM revocó la verificación de su permiso de " +
+                    "operación. Envía un permiso válido desde el portal: cuando AVIAM lo verifique, el contrato se reanuda solo.",
+                _ => $"Contratos de AVIAM suspendió el contrato {contractCode} de {airline}. Se pondrá en contacto contigo para " +
+                     "explicarte el motivo y los pasos para reactivarlo.",
+            },
+            "Mientras esté suspendido, AVIAM no puede planificar ni atender vuelos nuevos con este contrato. " +
+            "Tus operaciones, facturas y pagos siguen disponibles en el portal."],
+        validity: "Contrato suspendido",
+        code: null,
+        action: null,
+        security: null);
+
+    /// <summary>
+    /// A portal user of the airline was invited, deactivated, reactivated or got a role changed (2-N20): the airline's
+    /// representatives learn what changed and who did it. <paramref name="change"/> is a full Spanish sentence.
+    /// </summary>
+    public static EmailMessage PortalUserChanged(string to, string airline, string change, string actor) => Build(to,
+        subject: $"Cambio en los usuarios del portal de {airline} · ELEVANT",
+        preheader: change,
+        kicker: "Portal de aerolíneas",
+        title: "Cambió un usuario del portal",
+        greeting: null,
+        paragraphs: [$"{actor} registró este cambio en los usuarios del portal de aerolíneas de {airline}:", change,
+            "Puedes revisar los usuarios del portal, quién firma y quién tiene acceso en «Perfil» del portal de aerolíneas."],
+        validity: "Aviso a los representantes de la aerolínea",
+        code: null,
+        action: null,
+        security: "Si no reconoces este cambio, contacta a AVIAM: solo los representantes de la aerolínea y AVIAM gestionan sus usuarios.");
 
     /// <summary>The simulated e-CF invoice Finance issued, with its PDF attached (ADR-0035).</summary>
     public static EmailMessage InvoiceIssued(string to, string airline, string fiscalNumber, string currency, decimal total,
@@ -262,4 +421,6 @@ public static class AccountEmailTemplates
     }
 
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
+
+    private static string Day(DateOnly day) => day.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
 }

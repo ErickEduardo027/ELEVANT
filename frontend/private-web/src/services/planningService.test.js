@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getManualTurnaroundOptions: vi.fn(),
   createManualTurnaround: vi.fn(),
   programOccShift: vi.fn(),
+  getOccAssignmentReadiness: vi.fn(),
   handleUnauthorizedResponse: vi.fn(),
   readSession: vi.fn(),
 }));
@@ -94,6 +95,12 @@ describe('planningService', () => {
     expect(mocks.getManualTurnaroundOptions).toHaveBeenCalledWith(
       { stationId, date: '2026-08-19' }, { signal: undefined });
     expect(mocks.createManualTurnaround).toHaveBeenCalledWith(request, { signal: undefined });
+  });
+  it('keeps the Problem Details code of a refused manual flight so the dialog explains it (2-A)', async () => {
+    mocks.createManualTurnaround.mockRejectedValueOnce(new ElevantApiError({ kind: 'http', status: 409,
+      title: 'The aircraft type is not available.', code: 'aircraft_type_unavailable' }));
+    await expect(planningService.createManualTurnaround({ turnaroundId })).rejects.toMatchObject({
+      status: 409, code: 'manual-conflict', problemCode: 'aircraft_type_unavailable' });
   });
   it('programs an OCC shift through the shared client', async () => {
     const request = { agentId: 'agent-1', startsAtLocal: '08:00:00', endsAtLocal: '12:00:00' };
@@ -371,5 +378,18 @@ describe('planningService', () => {
       message:
         'No fue posible confirmar la asignación. La planificación se actualizará antes de volver a intentar.',
     });
+  });
+});
+describe('assignment readiness (2-N25)', () => {
+  it('reads the marks of a station and date and hides the failure details', async () => {
+    const marks = { stationId, date: '2026-08-19', assignments: [] };
+    mocks.getOccAssignmentReadiness.mockResolvedValueOnce(marks).mockRejectedValueOnce(new Error('SQL timeout at 10.0.0.4'));
+    mocks.createPrivateWebApiClient.mockReturnValue({ getOccAssignmentReadiness: mocks.getOccAssignmentReadiness });
+    const signal = new AbortController().signal;
+    await expect(planningService.getAssignmentReadiness({ stationId, date: '2026-08-19', signal })).resolves.toEqual(marks);
+    expect(mocks.getOccAssignmentReadiness).toHaveBeenCalledWith({ stationId, date: '2026-08-19' }, { signal });
+    const failure = await planningService.getAssignmentReadiness({ stationId, date: '2026-08-19' }).catch(error => error);
+    expect(failure.message).toBe('No fue posible comprobar si los agentes asignados pueden operar.');
+    expect(failure.message).not.toMatch(/SQL/);
   });
 });

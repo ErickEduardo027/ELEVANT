@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
 import { DEPARTMENTS, getDepartmentsOverview } from '../../services/departmentGovernanceService';
+import { governanceMessage } from '../../services/humanResourcesEmployeesService';
 import DepartmentUsersPage from '../department-users/DepartmentUsersPage';
 import InternalUserDrawer from './InternalUserDrawer';
 import { CalendarIcon, ChevronDownIcon, ShieldCheckIcon, UsersIcon, LayoutGridIcon } from '../shell/components/icons';
@@ -61,7 +62,7 @@ export default function InternalUsersPanel() {
       const overview = await getDepartmentsOverview();
       if (current === version.current) setState({ status: 'ready', overview, error: '' });
     } catch (failure) {
-      if (current === version.current) setState(previous => ({ ...previous, status: previous.overview ? 'ready' : 'error', error: failure.message }));
+      if (current === version.current) setState(previous => ({ ...previous, status: previous.overview ? 'ready' : 'error', error: governanceMessage(failure) }));
     }
   }, []);
 

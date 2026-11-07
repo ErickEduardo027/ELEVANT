@@ -162,7 +162,11 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
             return new FlightFeedIngestResult(response.Flights.Count, 0, 0, 0, 0, 0);
         }
 
-        var airlinesSeen = await HarvestAirlinesAsync(call, response.Flights, cancellationToken);
+        // Only the paid provider's answers feed the observed registry: the simulated feed (2-B) reports
+        // airlines that are already registered.
+        var airlinesSeen = call.Provider == RegistrySource
+            ? await HarvestAirlinesAsync(call, response.Flights, cancellationToken)
+            : 0;
         var (airports, airportsAdded) = await HarvestAirportsAsync(call, response.Flights, cancellationToken);
         var (contracted, created, updatedLegs) = await IngestProposalsAsync(call, zone, response.Flights, airports, cancellationToken);
         if (created + updatedLegs > 0 || contracted > 0)
@@ -247,30 +251,38 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
     }
 
     /// <summary>
-    /// Keeps only legs of airlines with a contract covering their date at the station; the rest of
-    /// the answer is discarded. New legs become proposals; known ones refresh their times, and a
-    /// confirmed leg takes the estimated and actual times with it.
+    /// Keeps the legs of every active registered airline (2-B): those with a contract covering their date at
+    /// the station and, at no extra cost because they come in the same answer, the rest, which OCC reviews as
+    /// charter candidates or never sees while the contract at the station is suspended or expired (2-N16). The
+    /// rest of the answer is discarded. New legs become proposals; known ones refresh their times, and a
+    /// confirmed leg takes the estimated and actual times with it. Only contracted legs are counted.
     /// </summary>
     private async Task<(int Contracted, int Created, int UpdatedLegs)> IngestProposalsAsync(FlightFeedCall call,
         TimeZoneInfo zone, IReadOnlyList<FeedFlight> flights, Dictionary<string, Airport> airports,
         CancellationToken cancellationToken)
     {
         var byDate = flights.Where(flight => flight.Airline is not null && !flight.IsCargo)
-            .GroupBy(flight => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(flight.ScheduledUtc, zone).DateTime));
+            .GroupBy(flight => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(flight.ScheduledUtc, zone).DateTime))
+            .ToArray();
+        if (byDate.Length == 0) return (0, 0, 0);
+        var registered = await context.Airlines.AsNoTracking().Where(airline => airline.IsActive)
+            .Select(airline => new { airline.Id, airline.IataCode, airline.IcaoCode }).ToArrayAsync(cancellationToken);
         var legs = new List<(FeedFlight Flight, DateOnly Date, long AirlineId)>();
+        var contractedLegs = 0;
         foreach (var day in byDate)
         {
-            var contracted = await (from row in ApplicableContracts.For(context, null, call.Station.StationId, day.Key)
-                                    join airline in context.Airlines.AsNoTracking() on row.AirlineId equals airline.Id
-                                    where airline.IsActive
-                                    select new { airline.Id, airline.IataCode, airline.IcaoCode })
-                .Distinct().ToArrayAsync(cancellationToken);
+            var contracted = (await ApplicableContracts.For(context, null, call.Station.StationId, day.Key)
+                .Select(row => row.AirlineId).Distinct().ToArrayAsync(cancellationToken)).ToHashSet();
             foreach (var flight in day)
             {
-                var match = contracted.FirstOrDefault(airline =>
-                    flight.Airline!.IataCode is { } iata && string.Equals(airline.IataCode, iata, StringComparison.OrdinalIgnoreCase) ||
-                    flight.Airline!.IcaoCode is { } icao && string.Equals(airline.IcaoCode, icao, StringComparison.OrdinalIgnoreCase));
-                if (match is not null) legs.Add((flight, day.Key, match.Id));
+                // A code two registered airlines share goes to the one with a contract.
+                var match = registered.Where(airline =>
+                        flight.Airline!.IataCode is { } iata && string.Equals(airline.IataCode, iata, StringComparison.OrdinalIgnoreCase) ||
+                        flight.Airline!.IcaoCode is { } icao && string.Equals(airline.IcaoCode, icao, StringComparison.OrdinalIgnoreCase))
+                    .OrderByDescending(airline => contracted.Contains(airline.Id)).FirstOrDefault();
+                if (match is null) continue;
+                legs.Add((flight, day.Key, match.Id));
+                if (contracted.Contains(match.Id)) contractedLegs++;
             }
         }
         if (legs.Count == 0) return (0, 0, 0);
@@ -330,7 +342,7 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
             if (existing.TryGetValue(Reference(flight), out var proposal) && proposal.CounterpartAirportId is null &&
                 flight.Counterpart?.IataCode is { } code && airports.TryGetValue(code, out var airport))
                 proposal.CounterpartAirportId = airport.Id;
-        return (legs.Count, created, updatedLegs);
+        return (contractedLegs, created, updatedLegs);
     }
 
     /// <summary>Stable key of a leg at the provider: number, direction and scheduled UTC minute.</summary>

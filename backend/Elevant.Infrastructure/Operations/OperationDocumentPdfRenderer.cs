@@ -71,15 +71,15 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
 
     private sealed class Writer
     {
-        private static readonly XPdfFontOptions Embedded = new(PdfFontEncoding.Unicode, PdfFontEmbedding.EmbedCompleteFontFile);
-        private readonly XFont body = new(ElevantPdfFontResolver.Typeface, 8.5, XFontStyleEx.Regular, Embedded);
-        private readonly XFont bold = new(ElevantPdfFontResolver.Typeface, 8.5, XFontStyleEx.Bold, Embedded);
-        private readonly XFont small = new(ElevantPdfFontResolver.Typeface, 7, XFontStyleEx.Regular, Embedded);
-        private readonly XFont smallBold = new(ElevantPdfFontResolver.Typeface, 7, XFontStyleEx.Bold, Embedded);
-        private readonly XFont tiny = new(ElevantPdfFontResolver.Typeface, 5.8, XFontStyleEx.Regular, Embedded);
-        private readonly XFont band = new(ElevantPdfFontResolver.Typeface, 8.5, XFontStyleEx.Bold, Embedded);
-        private readonly XFont brand = new(ElevantPdfFontResolver.Typeface, 24, XFontStyleEx.Bold, Embedded);
-        private readonly XFont title = new(ElevantPdfFontResolver.Typeface, 13, XFontStyleEx.Bold, Embedded);
+        // 2-D: the complete Unicode Noto Sans faces of every ELEVANT PDF (ElevantPdfFonts).
+        private readonly XFont body = ElevantPdfFonts.Regular(8.5);
+        private readonly XFont bold = ElevantPdfFonts.Bold(8.5);
+        private readonly XFont small = ElevantPdfFonts.Regular(7);
+        private readonly XFont smallBold = ElevantPdfFonts.Bold(7);
+        private readonly XFont tiny = ElevantPdfFonts.Regular(5.8);
+        private readonly XFont band = ElevantPdfFonts.Bold(8.5);
+        private readonly XFont brand = ElevantPdfFonts.Bold(24);
+        private readonly XFont title = ElevantPdfFonts.Bold(13);
         private readonly PdfDocument pdf;
         private readonly OperationDocumentContent content;
         private readonly TimeZoneInfo zone;

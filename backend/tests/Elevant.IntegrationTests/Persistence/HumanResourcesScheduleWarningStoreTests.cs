@@ -124,21 +124,21 @@ public sealed partial class SqlServerMigrationTests
         var store = scope.ServiceProvider
             .GetRequiredService<IHumanResourcesScheduleWarningStore>();
         var deniedRole = await store.ListAsync(occId, stationId, day, day, 1, 100,
-            cancellationToken);
+            false, cancellationToken);
         Assert.Equal(ScheduleWarningFailure.ForbiddenRole, deniedRole.Failure);
         Assert.Null(deniedRole.Page);
         var wrongStation = await store.ListAsync(hrId, hiddenStationId, day, day,
-            1, 100, cancellationToken);
+            1, 100, false, cancellationToken);
         Assert.Equal(ScheduleWarningFailure.ForbiddenStation, wrongStation.Failure);
         Assert.Null(wrongStation.Page);
 
         var first = await store.ListAsync(hrId, stationId, day, day, 1, 100,
-            cancellationToken);
+            false, cancellationToken);
         Assert.Null(first.Failure);
         Assert.True(first.Page!.HasMore);
         Assert.Equal(100, first.Page.Warnings.Count);
         var second = await store.ListAsync(hrId, stationId, day, day, 2, 100,
-            cancellationToken);
+            false, cancellationToken);
         Assert.Null(second.Failure);
         Assert.False(second.Page!.HasMore);
         Assert.Single(second.Page.Warnings);
@@ -165,7 +165,7 @@ public sealed partial class SqlServerMigrationTests
                     item.RevokedAt, instant), cancellationToken);
         }
         var revokedStation = await store.ListAsync(hrId, stationId, day, day,
-            2, 100, cancellationToken);
+            2, 100, false, cancellationToken);
         Assert.Equal(ScheduleWarningFailure.ForbiddenStation,
             revokedStation.Failure);
         Assert.Null(revokedStation.Page);
@@ -181,7 +181,7 @@ public sealed partial class SqlServerMigrationTests
                 .ExecuteDeleteAsync(cancellationToken);
         }
         var revokedRole = await store.ListAsync(hrId, stationId, day, day,
-            1, 100, cancellationToken);
+            1, 100, false, cancellationToken);
         Assert.Equal(ScheduleWarningFailure.ForbiddenRole, revokedRole.Failure);
         Assert.Null(revokedRole.Page);
     }

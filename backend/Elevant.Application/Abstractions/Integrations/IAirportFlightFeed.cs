@@ -67,6 +67,19 @@ public sealed record FeedAirport(
     decimal? Latitude,
     decimal? Longitude);
 
+/// <summary>What the simulated feed reports at an airport: the station's time zone and the registered airlines.</summary>
+public sealed record SimulatedFeedScope(string TimeZoneId, IReadOnlyList<FeedAirline> Airlines);
+
+/// <summary>
+/// Reference data the simulated flight feed of Development and Test builds its answer from (2-B): never a
+/// provider, never the network.
+/// </summary>
+public interface ISimulatedFlightFeedCatalog
+{
+    /// <summary>The active station at the airport and the active registered airlines; null without a station.</summary>
+    Task<SimulatedFeedScope?> FindAsync(string airportIataCode, CancellationToken cancellationToken = default);
+}
+
 /// <summary>
 /// The feed when no provider adapter is registered (tests, tools): reports itself unconfigured and
 /// never calls anything. Infrastructure registers the real or disabled adapter over it.

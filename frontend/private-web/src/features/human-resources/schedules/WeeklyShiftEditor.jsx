@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   getAllHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions, listRampAgentReadiness,
   recordHumanResourcesShift, removeHumanResourcesShift,
 } from '../../../services/humanResourcesShiftsReadService';
+import { getApprovedAbsences } from '../../../services/humanResourcesAvailabilityService';
+import { businessToday } from '../../../services/businessDay';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { HUMAN_RESOURCES_PROBLEMS } from '../../../services/humanResourcesProblems';
+import { problemMessage } from '../../../services/problemMessages';
 import { OCC_SHIFT_PRESETS } from '../../planning/components/occShiftPresets';
 import { addDays, toDateKey } from './mappers';
 
@@ -13,31 +18,47 @@ const time = value => value.slice(0, 5);
 const withSeconds = value => (value.length === 5 ? `${value}:00` : value);
 
 function problem(error) {
-  if (error?.status === 403) return 'Tu acceso no permite programar turnos en esa estación.';
-  if (error?.status === 409) return 'Ese día ya tiene turno o el agente no tiene esa estación o terminal asignada.';
   if (error instanceof TypeError) return 'Revisa los datos del turno.';
-  return 'No fue posible guardar el turno. Intenta de nuevo.';
+  return problemMessage(error, HUMAN_RESOURCES_PROBLEMS, {
+    forbidden: 'Tu acceso no permite programar turnos en esa estación.',
+    fallback: 'No fue posible guardar el turno. Intenta de nuevo.',
+  });
+}
+
+/** The approved absence of an agent on a date, if any (both dates included). */
+function absenceOn(absences, rampProfileId, date) {
+  return absences?.find(item => item.rampProfileId === rampProfileId && item.startsOn <= date && date <= item.endsOn)
+    ?? null;
 }
 
 /**
  * Weekly shift editor for Gestión Humana (ADR-0026): one row per ramp agent, one cell per day.
  * A cell takes a template (the same presets OCC uses) at a station and terminal of the agent,
  * or removes the shift if the day has not passed. «Copiar semana anterior» repeats last week's
- * shifts on the days that are still free.
+ * shifts on the days that are still free, never on an approved absence (2-N24). «Today» is
+ * AVIAM's business day, never the UTC one (2-N31).
  */
 export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }) {
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
   const from = toDateKey(days[0]);
   const to = toDateKey(days[6]);
-  const today = toDateKey(new Date());
+  const today = businessToday();
   const [state, setState] = useState({ status: 'loading' });
+  const [localRevision, setLocalRevision] = useState(0);
   const [cell, setCell] = useState(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
+  const removal = useRef(createCommandKeyHolder());
 
   const load = useCallback(async signal => {
-    const [agents, shifts] = await Promise.all([listRampAgentReadiness(), getAllHumanResourcesShifts(from, to, { signal })]);
-    return { agents, shifts };
+    const [agents, shifts, absences] = await Promise.all([listRampAgentReadiness(),
+      getAllHumanResourcesShifts(from, to, { signal }),
+      // Without access to the requests the editor still works: the server refuses a shift on an absence anyway.
+      getApprovedAbsences(from, to, { signal }).catch(error => {
+        if (error?.name === 'AbortError') throw error;
+        return null;
+      })]);
+    return { agents, shifts, absences };
   }, [from, to]);
 
   useEffect(() => {
@@ -47,10 +68,10 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
       .then(data => { if (!controller.signal.aborted) setState({ status: 'success', ...data }); })
       .catch(error => {
         if (controller.signal.aborted || error?.name === 'AbortError') return;
-        setState({ status: error?.status === 403 ? 'forbidden' : 'error' });
+        setState({ status: error?.status === 401 ? 'unauthorized' : error?.status === 403 ? 'forbidden' : 'error' });
       });
     return () => controller.abort();
-  }, [load, revision]);
+  }, [load, revision, localRevision]);
 
   async function openCell(agent, date) {
     setNotice('');
@@ -78,6 +99,7 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
       onChanged?.();
     } catch (error) {
       setCell(current => ({ ...current, message: problem(error) }));
+      if (error?.status === 409) setLocalRevision(value => value + 1);
     } finally {
       setBusy(false);
     }
@@ -87,11 +109,15 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
     setBusy(true);
     setNotice('');
     try {
-      await removeHumanResourcesShift(shift.id);
+      // One intent per shift and version: an uncertain answer repeats the same key (2-N11).
+      await removal.current.run('remove', [shift.id, shift.version], key =>
+        removeHumanResourcesShift(shift.id, shift.version, key));
       setNotice(`Turno del ${shift.workDate} de ${shift.agentName} eliminado.`);
       onChanged?.();
     } catch (error) {
-      setNotice(error?.status === 409 ? 'Los turnos pasados no se eliminan: quedan en el historial.' : problem(error));
+      setNotice(problem(error));
+      // The shift changed, is past or is still worked: the week is read again.
+      if (error?.status === 409 || error?.status === 404) setLocalRevision(value => value + 1);
     } finally {
       setBusy(false);
     }
@@ -103,22 +129,33 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
     try {
       const previous = await getAllHumanResourcesShifts(toDateKey(addDays(days[0], -7)), toDateKey(addDays(days[0], -1)));
       const taken = new Set(state.shifts.map(item => `${item.rampProfileId}|${item.workDate}`));
+      // An agent who left the ramp gets no new shift: skipped without asking the server.
+      const activeAgents = new Set(state.agents.map(agent => agent.rampProfileId));
       let created = 0;
-      let skipped = 0;
+      let absent = 0;
+      let occupied = 0;
+      let other = 0;
       for (const shift of previous) {
         const date = toDateKey(addDays(new Date(`${shift.workDate}T12:00:00`), 7));
-        if (date < today || taken.has(`${shift.rampProfileId}|${date}`)) { skipped++; continue; }
+        if (date < today || taken.has(`${shift.rampProfileId}|${date}`)) { occupied++; continue; }
+        if (absenceOn(state.absences, shift.rampProfileId, date)) { absent++; continue; }
+        if (!activeAgents.has(shift.rampProfileId)) { other++; continue; }
         try {
           await recordHumanResourcesShift(crypto.randomUUID(), { rampProfileId: shift.rampProfileId, stationId: shift.stationId,
             terminalId: shift.terminalId, workDate: date, startsAtLocal: withSeconds(shift.startsAtLocal),
             endsAtLocal: withSeconds(shift.endsAtLocal), notes: null });
           created++;
-        } catch {
-          skipped++;
+        } catch (error) {
+          if (error?.code === 'shift_on_approved_absence') absent++;
+          else if (error?.code === 'shift_day_taken') occupied++;
+          else other++;
         }
       }
+      const skipped = absent + occupied + other;
+      const details = [absent && `${absent} por ausencia aprobada`, occupied && `${occupied} por día ocupado o pasado`,
+        other && `${other} sin acceso, sin alcance o agente inactivo`].filter(Boolean).join(', ');
       setNotice(previous.length === 0 ? 'La semana anterior no tiene turnos.'
-        : `Semana copiada: ${created} turnos creados${skipped ? `, ${skipped} omitidos (día ocupado, pasado o sin acceso)` : ''}.`);
+        : `Semana copiada: ${created} turnos creados${skipped ? `, ${skipped} omitidos (${details})` : ''}.`);
       onChanged?.();
     } catch (error) {
       setNotice(problem(error));
@@ -128,10 +165,20 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
   }
 
   if (state.status === 'loading') return <p role="status" className="rounded-xl bg-white/70 p-5 text-sm dark:bg-surface-dark-card">Cargando la semana…</p>;
-  if (state.status !== 'success') return <p role="alert" className="rounded-xl border border-status-danger/30 p-5 text-sm text-status-danger">
-    {state.status === 'forbidden' ? 'No tienes acceso al editor de turnos.' : 'No se pudo cargar la semana.'}</p>;
+  if (state.status !== 'success') return <div role="alert" className="rounded-xl border border-status-danger/30 p-5 text-sm text-status-danger">
+    <p>{state.status === 'forbidden' ? 'No tienes acceso al editor de turnos.'
+      : state.status === 'unauthorized' ? 'La sesión expiró. Vuelve a iniciar sesión.' : 'No se pudo cargar la semana.'}</p>
+    {state.status === 'error' && <button type="button" onClick={() => setLocalRevision(value => value + 1)}
+      className="mt-3 rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white">Reintentar</button>}
+  </div>;
 
   const byCell = new Map(state.shifts.map(item => [`${item.rampProfileId}|${item.workDate}`, item]));
+  const active = new Set(state.agents.map(agent => agent.rampProfileId));
+  // Shifts left by an agent who no longer works the ramp (before the release path existed) are shown to be removed.
+  const former = [...new Map(state.shifts.filter(item => !active.has(item.rampProfileId))
+    .map(item => [item.rampProfileId, { rampProfileId: item.rampProfileId, agentName: item.agentName, inactive: true }]))
+    .values()];
+  const rows = [...state.agents, ...former];
   const selected = cell?.stations?.find(item => item.id === cell.stationId);
 
   return (
@@ -146,28 +193,37 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
           Copiar semana anterior</button>
       </div>
       {notice && <p role="status" className="text-sm">{notice}</p>}
-      {state.agents.length === 0 ? <p className="rounded-xl border p-6 text-center text-sm">No hay agentes de rampa activos.</p> : (
+      {state.absences === null && <p className="text-xs text-text-secondary-light">
+        No pudimos leer las ausencias aprobadas de la semana; ELEVANT igual impide programar un turno sobre ellas.</p>}
+      {rows.length === 0 ? <p className="rounded-xl border p-6 text-center text-sm">No hay agentes de rampa activos.</p> : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] border-separate border-spacing-1 text-left text-xs">
             <thead><tr><th className="p-2 text-text-secondary-light">Agente</th>
               {days.map(day => <th key={toDateKey(day)} className="p-2 font-semibold capitalize">{DAY.format(day)}</th>)}</tr></thead>
-            <tbody>{state.agents.map(agent => <tr key={agent.rampProfileId}>
+            <tbody>{rows.map(agent => <tr key={agent.rampProfileId}>
               <th scope="row" className="p-2 align-top font-semibold">{agent.agentName}
-                <span className={`mt-1 block w-max rounded-full px-2 py-0.5 text-[10px] font-semibold ${agent.ready
-                  ? 'bg-status-success/15 text-status-success' : 'bg-status-danger/15 text-status-danger'}`}>
-                  {agent.ready ? 'Puede operar' : 'Le falta algo'}</span></th>
+                {agent.inactive
+                  ? <span className="mt-1 block w-max rounded-full bg-black/10 px-2 py-0.5 text-[10px] font-semibold">
+                    Ya no trabaja en rampa</span>
+                  : <span className={`mt-1 block w-max rounded-full px-2 py-0.5 text-[10px] font-semibold ${agent.ready
+                    ? 'bg-status-success/15 text-status-success' : 'bg-status-danger/15 text-status-danger'}`}>
+                    {agent.ready ? 'Puede operar' : 'Le falta algo'}</span>}</th>
               {days.map(day => {
                 const date = toDateKey(day);
                 const shift = byCell.get(`${agent.rampProfileId}|${date}`);
                 const past = date < today;
+                const absence = absenceOn(state.absences, agent.rampProfileId, date);
                 return <td key={date} className="h-16 rounded-lg border border-black/5 p-1 align-top dark:border-white/10">
+                  {absence && <p className="mb-1 w-max rounded-full bg-status-warning/15 px-2 py-0.5 text-[10px] font-semibold text-status-warning">
+                    {absence.type === 'Restriction' ? 'Restricción aprobada' : 'Ausencia aprobada'}</p>}
                   {shift ? <div className="space-y-1">
                     <p className="font-semibold">{time(shift.startsAtLocal)}–{time(shift.endsAtLocal)}</p>
                     <p className="text-text-secondary-light">{BLOCK[shift.block]} · {shift.stationCode} {shift.terminalCode}</p>
                     {!past && <button type="button" disabled={busy} onClick={() => remove(shift)}
                       aria-label={`Quitar turno de ${agent.agentName} el ${date}`}
                       className="text-status-danger underline disabled:opacity-50">Quitar</button>}
-                  </div> : !past && <button type="button" disabled={busy} onClick={() => openCell(agent, date)}
+                  </div> : !past && !absence && !agent.inactive && <button type="button" disabled={busy}
+                    onClick={() => openCell(agent, date)}
                     aria-label={`Asignar turno a ${agent.agentName} el ${date}`}
                     className="h-full w-full rounded-md text-text-secondary-light hover:bg-accent-600/10 disabled:opacity-50">+</button>}
                 </td>;

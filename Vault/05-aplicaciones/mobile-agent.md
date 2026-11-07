@@ -150,6 +150,27 @@ La app sigue la orientación del dispositivo. Según la
 Las escrituras siguen registrando el dispositivo antes de cada comando. Solo la
 lectura periódica de asistencia reutiliza el registro confirmado de la sesión.
 
+## Fase 2: tablets compartidas
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
+([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+
+- **Una tablet pasa entre agentes.** Iniciar sesión vincula la instalación a la
+  cuenta y la toma del agente anterior, con auditoría, salvo que ese agente
+  trabaje una operación en curso (`device_in_use_by_active_agent`).
+- **Cerrar sesión la libera.** La app llama a `POST mobile/device/release` con
+  una clave de la instalación y un tiempo límite; sin conexión, la sesión se
+  cierra igual y el siguiente inicio de sesión toma la tablet
+  ([servicio](../../frontend/mobile-agent/src/services/mobile-device.ts)).
+- **Revocada.** Una tablet que OCC revocó no vuelve a registrarse
+  (`device_revoked`), y la app lo explica al iniciar sesión.
+- **Fin del servicio en rampa.** La baja, el traslado fuera de rampa, el paso a
+  oficina y la desactivación del perfil cierran las tablets del agente.
+- **APK desplegada.** La respuesta de éxito del registro no cambió. La APK
+  anterior no libera la tablet al cerrar sesión, pero el siguiente agente la
+  toma igual.
+
 ## Desarrollo local
 
 Desde `frontend/mobile-agent`:

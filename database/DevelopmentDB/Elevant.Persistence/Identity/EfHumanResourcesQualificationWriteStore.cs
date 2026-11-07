@@ -1,5 +1,6 @@
 using System.Data;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
@@ -31,7 +32,7 @@ internal sealed class EfHumanResourcesQualificationWriteStore(
                 HumanResourcesQualificationWriteFailure.Forbidden);
 
         var now = clock.GetUtcNow();
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = BusinessCalendar.Today(now);
         if (qualificationId == Guid.Empty || input is null || !Valid(input, today))
             return HumanResourcesQualificationWriteResult.Failed(
                 HumanResourcesQualificationWriteFailure.Invalid);

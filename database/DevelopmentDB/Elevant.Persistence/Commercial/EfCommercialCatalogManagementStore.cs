@@ -2,6 +2,7 @@ using System.Data;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Commercial;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
@@ -174,7 +175,8 @@ internal sealed class EfCommercialCatalogManagementStore(
                     return Step.Fail(CatalogMutationFailure.Conflict, "version_conflict");
                 if (!service.IsActive)
                     return Step.Fail(CatalogMutationFailure.Conflict, CommercialCatalogIssues.ServiceRetired);
-                if (await InForceAsync(service.Id, DateOnly.FromDateTime(now.UtcDateTime), cancellationToken))
+                // 2-F: a contract keeps the service in force by AVIAM's business day, not the UTC day.
+                if (await InForceAsync(service.Id, BusinessCalendar.Today(now), cancellationToken))
                     return Step.Fail(CatalogMutationFailure.Conflict, CommercialCatalogIssues.ServiceInActiveContract);
                 var beforePublic = service.IsPublic;
                 service.IsActive = false;

@@ -173,6 +173,43 @@ public sealed class ScheduleWarningEvaluatorTests
         Assert.DoesNotContain(warning.Evidence, item => item.ShiftId == hidden.Id);
     }
 
+    [Fact]
+    public void ReadinessFactsWarnAboutAnAbsenceAndUncoveringDocumentsOnlyWhenGiven()
+    {
+        // 2-N24: a shift on an approved absence and a current document that ends before the shift's date.
+        var shift = Shift(14, Puj, "PUJ", "America/Santo_Domingo", 7, 8, 0, 16, 0);
+        var day = new DateOnly(2026, 10, 7);
+        var readiness = new ScheduleReadinessFacts(
+            [new ScheduleAgentAbsence(Agent, day.AddDays(-1), day.AddDays(2))],
+            [new ScheduleAgentDocument(Agent, "AirportId", new DateOnly(2025, 1, 1), day.AddDays(-1)),
+             new ScheduleAgentDocument(Agent, "RampDriverLicense", new DateOnly(2025, 1, 1), day.AddYears(1))]);
+
+        Assert.Empty(Evaluate([shift], day));
+        var warnings = ScheduleWarningEvaluator.Evaluate([shift], Puj,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Santo_Domingo"), day, day, Rule, readiness);
+        Assert.Equal([ScheduleWarningKind.ApprovedAbsence, ScheduleWarningKind.DocumentExpired],
+            warnings.Select(item => item.Kind));
+        Assert.Equal("AirportId", warnings[1].Reason);
+        Assert.All(warnings, item => Assert.Equal(shift.Id, item.AnchorShiftId));
+
+        // Both documents uncovered name both; a covering document and no absence warn about nothing.
+        var expired = readiness with
+        {
+            Absences = [],
+            Documents = [new ScheduleAgentDocument(Agent, "AirportId", day.AddDays(1), day.AddYears(1)),
+                new ScheduleAgentDocument(Agent, "RampDriverLicense", new DateOnly(2025, 1, 1), day.AddDays(-3))],
+        };
+        Assert.Equal("AirportId,RampDriverLicense", Assert.Single(ScheduleWarningEvaluator.Evaluate([shift], Puj,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Santo_Domingo"), day, day, Rule, expired)).Reason);
+        var fine = readiness with
+        {
+            Absences = [new ScheduleAgentAbsence(Guid.NewGuid(), day, day)],
+            Documents = [new ScheduleAgentDocument(Agent, "AirportId", new DateOnly(2025, 1, 1), day)],
+        };
+        Assert.Empty(ScheduleWarningEvaluator.Evaluate([shift], Puj,
+            TimeZoneInfo.FindSystemTimeZoneById("America/Santo_Domingo"), day, day, Rule, fine));
+    }
+
     private static IReadOnlyList<ScheduleWarning> Evaluate(
         IReadOnlyList<ScheduleShift> shifts, DateOnly day) =>
         ScheduleWarningEvaluator.Evaluate(shifts, Puj,

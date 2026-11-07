@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 
 namespace Elevant.Application.Commercial;
 
@@ -18,7 +19,8 @@ public sealed class GetAirlinePortalBootstrapHandler(
         if (failure is not null)
             return AirlinePortalBootstrapResult.Failed(failure.Value);
 
-        var onDate = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        // 2-F: the stations in force today follow AVIAM's business day, not the UTC day.
+        var onDate = BusinessCalendar.Today(timeProvider.GetUtcNow());
         var bootstrap = await readStore.GetBootstrapAsync(
             organizationId!.Value, onDate, cancellationToken);
         return bootstrap is null || bootstrap.OrganizationId != organizationId

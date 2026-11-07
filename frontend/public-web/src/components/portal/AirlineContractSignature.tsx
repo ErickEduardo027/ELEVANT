@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ElevantApiError, type ContractDocumentResponse } from "@elevant/api-client";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { contractProblem } from "@/lib/contract-problems";
 import { ContractPdfActions } from "./ContractPdfActions";
 import { SignaturePad } from "./SignaturePad";
 import styles from "./AirlinePortalPage.module.css";
@@ -27,15 +28,8 @@ export function validitySummary(document: ContractDocumentResponse): string[] {
   return lines;
 }
 
-function problem(error: unknown) {
-  const status = error instanceof ElevantApiError ? error.status : null;
-  if (status === 403) return "Su cuenta no puede firmar este contrato.";
-  if (status === 404) return "Esta versión ya no tiene documento disponible.";
-  if (status === 409 && error instanceof ElevantApiError && error.code === "validity_pending")
-    return "Contratos aún está fijando la vigencia; podrá firmar cuando la confirme.";
-  if (status === 409) return "El contrato cambió o ya fue firmado; se volvió a cargar. Revíselo antes de firmar.";
-  return "No fue posible completar la operación. Intente de nuevo.";
-}
+/** By Problem Details code, then status (phase 2, block A): the server title is never shown. */
+const problem = (error: unknown) => contractProblem(error);
 
 /** Download and signature of one approved contract version in the airline portal. */
 export function AirlineContractSignature({ versionId, fileName }: { versionId: string; fileName: string }) {
@@ -98,9 +92,14 @@ export function AirlineContractSignature({ versionId, fileName }: { versionId: s
               : party === "Aviam" ? "Contrafirma después de su aerolínea" : "Pendiente de firma"}</p></li>;
         })}
       </ul>
-      {/* signedOn belongs to the contract; this version counts as signed only with both parties on it. */}
+      {/* 2-N05: signedOn is the day of this version's second signature, over the same content. */}
       {document.signedOn && document.signatures.length === 2 &&
         <p className={styles.note}>Firmado por ambas partes el {document.signedOn}.</p>}
+      {/* 2-N20: the airline still signs this version, but only its representatives and signers do. */}
+      {document.versionStatus === "Approved" && document.validity && document.contractStatus !== "Terminated" &&
+        !document.signatures.some(item => item.party === "Airline") && document.signableBy !== "Airline" &&
+        <p className={styles.note}>La firma de su aerolínea está pendiente. Solo sus representantes y firmantes firman
+          contratos: pida a su representante que lo firme o que lo marque como firmante en «Perfil».</p>}
       {document.signableBy === "Airline" && <form onSubmit={sign} noValidate className={styles.draftCommentForm}>
         <label htmlFor={`signer-${versionId}`}>Nombre completo de quien firma</label>
         <input id={`signer-${versionId}`} value={name} maxLength={160} onChange={event => setName(event.target.value)} />

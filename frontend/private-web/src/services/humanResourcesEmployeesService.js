@@ -1,4 +1,5 @@
 import { commercialApi } from './commercialGovernanceApi';
+import { COMMON_PROBLEM_MESSAGES, problemMessage } from './problemMessages';
 
 const json = (method, body) => ({ method, body: JSON.stringify(body) });
 const query = params => {
@@ -17,9 +18,25 @@ export const listEmployees = (filters = {}) => commercialApi(`${hr}/employees${q
 export const getEmployee = id => commercialApi(`${hr}/employees/${id}`);
 export const getEmployeeOptions = () => commercialApi(`${hr}/employees/options`);
 export const createEmployee = values => commercialApi(`${hr}/employees`, json('POST', values));
-export const updateEmployee = (id, values) => commercialApi(`${hr}/employees/${id}`, json('PUT', values));
-export const transferEmployee = (id, values) => commercialApi(`${hr}/employees/${id}/transfer`, json('POST', values));
-export const terminateEmployee = (id, values) => commercialApi(`${hr}/employees/${id}/termination`, json('POST', values));
+const keyed = idempotencyKey => (idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {});
+/**
+ * Saves the record with the `expectedVersion` on screen and the intent's Idempotency-Key. Moving a ramp agent to an
+ * office position releases their ramp work (2-N06), or fails with `agent_has_operation_in_progress`.
+ */
+export const updateEmployee = (id, values, idempotencyKey) =>
+  commercialApi(`${hr}/employees/${id}`, { ...json('PUT', values), ...keyed(idempotencyKey) });
+/**
+ * Transfers the employee with the `version` on screen and the intent's Idempotency-Key. Leaving the ramp releases the
+ * agent's coverages, unstarted operations and shifts (2-N06), or fails with `agent_has_operation_in_progress`.
+ */
+export const transferEmployee = (id, values, idempotencyKey) =>
+  commercialApi(`${hr}/employees/${id}/transfer`, { ...json('POST', values), ...keyed(idempotencyKey) });
+/**
+ * Terminates the employee on a date up to AVIAM's today (2-N31) with the intent's Idempotency-Key; their ramp work is
+ * released the same way (2-N06).
+ */
+export const terminateEmployee = (id, values, idempotencyKey) =>
+  commercialApi(`${hr}/employees/${id}/termination`, { ...json('POST', values), ...keyed(idempotencyKey) });
 export const listUnregisteredPersons = () => commercialApi(`${hr}/employees/unregistered`);
 export const registerEmployee = values => commercialApi(`${hr}/employees/registrations`, json('POST', values));
 
@@ -108,12 +125,54 @@ const MESSAGES = {
   permissions_required: 'Un sub-usuario necesita una plantilla o al menos un permiso.',
   ramp_agents_use_requests: 'Los agentes de rampa se solicitan desde Centro de Operaciones (requieren supervisor y terminales).',
   stations_outside_employee: 'Las estaciones de la cuenta deben ser estaciones del empleado.',
+  // Phase 2, block D: the release of a ramp agent's work on termination, transfer or an office position (2-N06,
+  // 2-N31). Only the agent unblocks it by sending the operation from the tablet; OCC has no action that does.
+  agent_has_operation_in_progress:
+    'El agente tiene una operación en curso o devuelta para corrección. Debe enviarla desde la tablet (si fue devuelta, corregirla y reenviarla) antes de continuar; mientras tanto no se registra el cambio y su perfil de rampa sigue activo.',
+  termination_date_invalid: 'La fecha de baja no puede ser posterior a hoy.',
+  invalid_transfer: 'Elija el departamento de destino y entre 1 y 20 estaciones.',
+  protected_person: 'Nadie puede trasladarse o darse de baja a sí mismo ni al superadministrador.',
+  version_conflict: 'El expediente cambió mientras lo revisaba. Vuelva a abrirlo e intente de nuevo.',
+  idempotency_conflict: 'Ese envío ya se usó con otros datos. Vuelva a abrir el expediente e intente de nuevo.',
+  not_found: 'El empleado ya no existe o no está en su alcance.',
+  // Phase 2, block E: governance commands always answer a code (2-N39).
+  employee_transferred: 'El empleado se trasladó a otro departamento: solo ese departamento solicita su acceso y Gestión Humana lo valida.',
+  requester_no_longer_administrator: 'Quien pidió este acceso ya no administra el departamento. Rechace la solicitud o pida al departamento una nueva.',
+  access_request_closed: 'La solicitud ya fue resuelta o cancelada. Se actualizó la bandeja.',
+  invalid_department_user: 'Revise el nombre, el correo y elija entre 1 y 20 estaciones.',
+  invalid_access_request: 'Revise el empleado, las estaciones y las terminales de la solicitud.',
+  invalid_access_profile: 'La plantilla necesita un nombre de 3 a 80 caracteres y al menos un permiso del departamento.',
+  invalid_internal_user: 'Revise el tipo de cuenta, la contraseña temporal y las estaciones.',
+  avatar_invalid: 'La foto ya no está disponible; vuelva a cargarla.',
+  profile_name_in_use: 'Ya existe una plantilla activa con ese nombre.',
+  profile_has_pending_requests: 'La plantilla tiene solicitudes pendientes; resuélvalas antes de desactivarla.',
+  legacy_role_converted: 'El rol ya se convirtió en plantilla.',
+  legacy_role_empty: 'El rol no tiene permisos que convertir.',
+  role_missing: 'Falta el rol base del departamento. Contacte a soporte.',
+  legacy_governance_retired: 'Esta función se retiró: el acceso se solicita para un empleado y Gestión Humana lo valida.',
+  governance_conflict: 'Los datos cambiaron mientras los editaba. Actualice e intente de nuevo.',
+  invalid_governance_data: 'Revise los datos e intente de nuevo.',
+  protected_user: 'Esa cuenta está protegida: no puede modificarla desde aquí.',
+  forbidden: 'No tiene permiso para esta acción.',
 };
 
-/** Message for a governance failure: the server's rule code wins over the generic title. */
-export function governanceMessage(error, fallback) {
-  if (error?.code && MESSAGES[error.code]) return MESSAGES[error.code];
-  if (error?.status === 409) return fallback ?? 'Los datos cambiaron mientras los editaba. Se actualizó la vista.';
-  if (error?.status === 403) return 'No tiene permiso para esta acción.';
-  return error?.message ?? 'No se pudo completar la acción.';
+/** The rule messages of the employee commands, for screens that resolve them with `problemMessage`. */
+export const EMPLOYEE_MESSAGES = Object.freeze({ ...MESSAGES });
+
+const known = code => typeof code === 'string' &&
+  (Object.prototype.hasOwnProperty.call(MESSAGES, code) || Object.prototype.hasOwnProperty.call(COMMON_PROBLEM_MESSAGES, code));
+
+const DEFAULT_CONFLICT = 'Los datos cambiaron mientras los editaba. Se actualizó la vista.';
+/** Codes that only say «it changed»: a screen that names its own conflict explains them in its words. */
+const GENERIC_CONFLICTS = new Set(['version_conflict', 'governance_conflict']);
+
+/**
+ * Message for a governance failure from its code (2-N39): the server title and any exception text are never shown.
+ * `conflictFallback` explains a 409 whose code the screen does not know or that only says the record changed.
+ */
+export function governanceMessage(error, conflictFallback) {
+  if (error?.status === 409 &&
+      (!known(error?.code) || (conflictFallback && GENERIC_CONFLICTS.has(error.code))))
+    return conflictFallback ?? DEFAULT_CONFLICT;
+  return problemMessage(error, MESSAGES);
 }

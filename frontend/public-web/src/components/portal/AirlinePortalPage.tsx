@@ -8,11 +8,15 @@ import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse, type Ai
   type AirlinePortalOperationResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import { AirlineContractPage } from "./AirlineContractPage";
 import { billingUnitLabel } from "@/lib/billing-units";
+import { standingNotice } from "@/lib/contract-status";
+import { operationStatusLabel } from "@/lib/operation-status";
 import { AirlineFinancePage } from "./AirlineFinancePage";
 import { AirlineDocumentsPage } from "./AirlineDocumentsPage";
 import { AirlineReportsPage } from "./AirlineReportsPage";
+import { AirlinePortalUsersSection } from "./AirlinePortalUsersSection";
 import styles from "./AirlinePortalPage.module.css";
 
 type View = "overview" | "flights" | "flightDetail" | "requests" | "contracts"
@@ -36,7 +40,7 @@ function Operation({ operation }: { operation: AirlinePortalBootstrapResponse["c
       <p>{[operation.arrivalFlightNumber, operation.departureFlightNumber].filter(Boolean).join(" → ") || "Vuelo no informado"}</p>
     </div>
     <div className={styles.operationSide}>
-      <span>{operation.status}</span>
+      <span>{operationStatusLabel(operation.status)}</span>
       <Link href={`/portal/vuelos/${encodeURIComponent(operation.id)}`}>Ver {operation.code}</Link>
     </div>
   </li>;
@@ -231,7 +235,7 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
       <dl className={styles.details}>
         <div><dt>Estación</dt><dd>{operation.stationCode}</dd></div>
         <div><dt>Fecha operativa</dt><dd>{operation.operationDate}</dd></div>
-        <div><dt>Estado</dt><dd>{operation.status}</dd></div>
+        <div><dt>Estado</dt><dd>{operationStatusLabel(operation.status)}</dd></div>
         {operation.arrivalFlightNumber && <div><dt>Vuelo de llegada</dt><dd>{operation.arrivalFlightNumber}</dd></div>}
         {operation.departureFlightNumber && <div><dt>Vuelo de salida</dt><dd>{operation.departureFlightNumber}</dd></div>}
       </dl>
@@ -334,17 +338,31 @@ function AirlineRequestsPage({ airlineName }: { airlineName: string }) {
 
 export function AirlinePortalPage({ view, operationId }: { view: View; operationId?: string }) {
   const { session } = useAirlineSession();
+  const { standing, retry: retryStanding } = useAirlineStanding();
   if (!session) return null;
   const { actor, bootstrap } = session;
   const { currentOperations: operations, stations } = bootstrap;
+  // 2-N32: a suspended or expired contract keeps its stations as history instead of «0 estaciones».
+  const standingData = standing.status === "ready" ? standing.data : null;
+  const history = standingData?.stations.filter(station => !station.current) ?? [];
+  const notice = standingNotice(standingData);
   const countStatus = (...statuses: string[]) => operations.filter((operation) =>
     statuses.includes(operation.status.replace(/[^a-z]/gi, "").toLowerCase())).length;
 
   if (view === "overview") return <div className={styles.page}>
     <header className={styles.hero}>
       <span className={styles.kicker}>Operación autorizada</span><h1>{bootstrap.name}</h1>
-      <p>{operations.length} operaciones reales en la ventana actual · {stations.length} estación(es) autorizada(s) · {bootstrap.iataCode || bootstrap.icaoCode}</p>
+      <p>{operations.length} operaciones reales en la ventana actual · {stations.length} estación(es) en vigor{history.length
+        ? ` · ${history.length} con historial` : ""} · {bootstrap.iataCode || bootstrap.icaoCode}</p>
     </header>
+    {standing.status === "loading" && <p className={styles.note} role="status">Consultando el estado del contrato…</p>}
+    {standing.status === "error" && <section className={styles.panel} role="alert">
+      <p>No se pudo consultar el estado de su contrato.</p><button type="button" onClick={retryStanding}>Reintentar</button>
+    </section>}
+    {standing.status === "forbidden" && <p className={styles.note} role="alert">Su cuenta no puede consultar el estado del contrato.</p>}
+    {notice && <section className={styles.panel} role="status" aria-label="Estado del contrato">
+      <p>{notice}</p><Link href="/portal/contratos">Ver contratos</Link>
+    </section>}
     <div className={styles.metrics} aria-label="Estado de las operaciones visibles">
       <div><span>Operaciones visibles</span><strong>{operations.length}</strong></div>
       <div><span>En curso</span><strong>{countStatus("inprogress")}</strong></div>
@@ -354,7 +372,9 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
     <section className={styles.panel} aria-labelledby="current-operations-heading">
       <div className={styles.sectionHeading}><h2 id="current-operations-heading">Operaciones actuales</h2><Link href="/portal/vuelos">Ver vuelos</Link></div>
       {operations.length ? <ul className={styles.operations}>{operations.slice(0, 5).map((operation) => <Operation key={operation.id} operation={operation} />)}</ul>
-        : <p className={styles.empty}>No hay operaciones en la ventana actual para esta aerolínea.</p>}
+        : <p className={styles.empty}>{standingData?.readOnly
+          ? "No hay operaciones en curso: ningún contrato está en vigor hoy. El historial sigue en Vuelos."
+          : "No hay operaciones en la ventana actual para esta aerolínea."}</p>}
     </section>
   </div>;
 
@@ -383,8 +403,15 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
       </dl>
       <h2>Estaciones autorizadas</h2>
       {stations.length ? <ul className={styles.stations}>{stations.map((station) => <li key={station.id}>{station.code} · {station.name}</li>)}</ul>
-        : <p className={styles.empty}>No hay estaciones autorizadas.</p>}
+        : <p className={styles.empty}>{history.length ? "Ningún contrato está en vigor hoy." : "No hay estaciones autorizadas."}</p>}
+      {history.length > 0 && <>
+        <h2>Estaciones con historial</h2>
+        <ul className={styles.stations} aria-label="Estaciones con historial">{history.map((station) =>
+          <li key={station.id}>{station.code} · {station.name} · sin contrato en vigor</li>)}</ul>
+      </>}
     </section>
+    {/* 2-N20: who has access to the portal and who signs; representatives manage the users. */}
+    <AirlinePortalUsersSection key={actor.accountId} airlineName={bootstrap.name} />
   </div>;
 
   if (view === "requests") return <AirlineRequestsPage

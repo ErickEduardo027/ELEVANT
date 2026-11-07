@@ -14,6 +14,8 @@ export type MobileServiceErrorCode =
   | 'not_found'
   | 'conflict'
   | 'device_conflict'
+  | 'device_in_use'
+  | 'device_revoked'
   | 'malformed_response'
   | 'request_failed'
   | 'storage_unavailable'
@@ -29,6 +31,8 @@ const messages: Record<MobileServiceErrorCode, string> = {
   not_found: 'La operación ya no está disponible.',
   conflict: 'La operación cambió y debe actualizarse.',
   device_conflict: 'El registro seguro del dispositivo entró en conflicto.',
+  device_in_use: 'Otro agente usa esta tablet en una operación en curso.',
+  device_revoked: 'OCC revocó esta tablet.',
   malformed_response: 'ELEVANT devolvió una respuesta no compatible.',
   request_failed: 'No fue posible completar la solicitud.',
   storage_unavailable: 'No fue posible acceder al almacenamiento seguro.',
@@ -105,6 +109,21 @@ export function asMobileServiceError(
       return new MobileServiceError('malformed_response', {
         status: error.status,
         traceId: error.traceId,
+      });
+    }
+    // 2-N02: the server names why the tablet cannot be used by this account.
+    if (error.code === 'device_in_use_by_active_agent') {
+      return new MobileServiceError('device_in_use', {
+        status: error.status,
+        traceId: error.traceId,
+        retryable: false,
+      });
+    }
+    if (error.code === 'device_revoked') {
+      return new MobileServiceError('device_revoked', {
+        status: error.status,
+        traceId: error.traceId,
+        retryable: false,
       });
     }
     if (error.status === 401) {

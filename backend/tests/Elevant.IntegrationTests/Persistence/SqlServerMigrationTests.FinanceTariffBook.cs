@@ -181,7 +181,7 @@ public sealed partial class SqlServerMigrationTests
     }
 
     private static async Task<ServiceProvider> SeededFinanceProviderAsync(TemporaryDatabase database,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, TimeProvider? clock = null)
     {
         await using (var migration = CreateContext(database.ConnectionString))
             await migration.Database.MigrateAsync(cancellationToken);
@@ -194,7 +194,7 @@ public sealed partial class SqlServerMigrationTests
                 InitialPasswords.Contracts, InitialPasswords.Finance,
                 "Synthetic-SuperAdmin!789"), cancellationToken);
         return new ServiceCollection().AddLogging()
-            .AddSingleton<TimeProvider>(TimeProvider.System)
+            .AddSingleton(clock ?? TimeProvider.System)
             .AddPersistence(new ConfigurationBuilder().AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {

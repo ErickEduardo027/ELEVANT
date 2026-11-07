@@ -10,6 +10,8 @@ owner: equipo-elevant
 last_verified: "2026-11-06"
 verified_commit: "8a79fe70a3c592ab3f5dc8af1e7c03f1314b526d"
 sources:
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/GoverningContractVersions.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs
   - docs/superpowers/plans/2026-10-18-finance-platform.md
   - backend/Elevant.Application/Commercial/ContractAmendment.cs
   - backend/Elevant.Application/Finance/BillingUnitNames.cs
@@ -107,9 +109,21 @@ Desde [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments
 - **Aprobación de precios.** Aprobar no activa el contrato: después vienen la vigencia, las dos firmas y el permiso de operación ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)). La decisión exige la versión esperada y acepta `Idempotency-Key`. Se bloquea con un código por causa: paquete retirado o fuera de la moneda o la vigencia, cobertura ambigua, paquete con un servicio que no está en el contrato, servicio dado de baja o inicio no posterior a la versión aprobada vigente. La aerolínea no ve el motivo de una devolución.
 - **Revisores por estación.** Contratos solo envía un borrador si alguien con `finance.contract_approvals.decide` cubre todas sus estaciones. El aviso llega a las cuentas con `finance.contract_approvals.read` que cubren todas las estaciones de la versión, aunque no puedan decidir.
 - **Precio base único.** Alta del borrador, editor de Contratos y comparación de Finanzas usan la misma estación base: la única de la versión, o la tarifa general si tiene varias.
-- **Enmienda.** Contratos la crea sobre un contrato activo o suspendido (`POST contracts/versions/{id}/amendments`). Parte de la última versión aprobada, hereda su fin, estaciones, cargos y paquetes, copia las tarifas sin confirmar y solo pide «Vigente desde», que debe caer después del inicio de esa versión y no después de su fin.
+- **Enmienda.** Contratos la crea sobre un contrato activo o suspendido (`POST contracts/versions/{id}/amendments`). Parte de la versión que rige, hereda su fin, estaciones, cargos y paquetes, copia las tarifas sin confirmar y solo pide «Vigente desde», que debe caer después del inicio de esa versión y no después de su fin. Desde la fase 2, la que rige es la aprobada y firmada por ambas partes, o la heredada con la que el contrato se activó (ver abajo).
 - **Paquetes.** Finanzas descarta un borrador (`finance.packages.delete`, queda `Discarded`) o retira una versión publicada (`finance.packages.retire`, queda `Retired`), siempre con motivo. Una versión retirada ya no se vincula y bloquea el envío y la aprobación de los borradores que la usan; los contratos aprobados conservan su paquete congelado y retirar no revive la versión anterior.
 - **Tarifarios.** Tarifas, cargos, unidades y tasas responden un código por causa, y sus listas distinguen error recuperable, falta de permiso y vacío. Finanzas traduce el ámbito del paquete y los estados `Superseded`, `Discarded` y `Retired`.
+
+### Fase 2 del ciclo: qué versión se factura
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+
+- **Aprobar no reemplaza.** La aprobación de Finanzas ya no marca `Superseded` ni recorta la versión en vigor: esa versión sigue rigiendo y facturándose hasta la segunda firma de la nueva, sobre la misma huella ([regla](../../database/DevelopmentDB/Elevant.Persistence/Commercial/GoverningContractVersions.cs)). Una enmienda retroactiva no cambia precios antes de firmarse, y un servicio ya ejecutado conserva la tarifa con la que se capturó.
+- **Frontera de los paquetes.** La valoración de paquetes toma la segunda firma de la versión que reemplaza como frontera; una versión heredada sin firmas usa su aprobación ([valoración](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs)).
+- **Contenido firmado.** Aprobar fija `PricingPolicyVersion = 2`: los recargos congelados y los paquetes vinculados entran en la huella y en el PDF, y la aerolínea los ve en «Recargos y paquetes».
+- **Contratos terminados.** Finanzas no aprueba una versión de un contrato terminado, ni una que empieza en la fecha de una terminación programada o después (`contract_terminated`, `termination_scheduled`); devolverla sigue siendo posible.
+- **Renovaciones.** Una renovación copia los recargos negociados y las exenciones de la versión en vigor, pero no los que Finanzas solo heredó de la tarifa base, que se vuelven a tomar al aprobar la renovación.
 
 La evidencia OCC y las marcas de cargo deben coincidir con la entrega aprobada. Una marca posterior que altere esa evidencia bloquea la valoración. El móvil sigue enviando marcas mediante su endpoint e idempotencia de instalación, sin recibir precios.
 

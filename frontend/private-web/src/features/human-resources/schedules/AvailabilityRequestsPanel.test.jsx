@@ -1,15 +1,17 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import AvailabilityRequestsPanel from './AvailabilityRequestsPanel';
-import { getHumanResourcesAvailabilityRequests,
+import { amendHumanResourcesAvailabilityRequest, getHumanResourcesAvailabilityRequests,
   recordHumanResourcesAvailabilityRequest,
   resolveHumanResourcesAvailabilityRequest } from
   '../../../services/humanResourcesAvailabilityService';
+import { addDays, businessToday } from '../../../services/businessDay';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 
 vi.mock('../../../services/humanResourcesAvailabilityService', () => ({
+  amendHumanResourcesAvailabilityRequest: vi.fn(),
   getHumanResourcesAvailabilityRequests: vi.fn(),
   recordHumanResourcesAvailabilityRequest: vi.fn(),
   resolveHumanResourcesAvailabilityRequest: vi.fn(),
@@ -24,7 +26,7 @@ const to = '2026-10-11';
 const row = { id, rampProfileId: agentId, agentName: 'Riley Ramp',
   employeeNumber: 'DEV-RA-001', startsOn: from, endsOn: '2026-10-06',
   type: 'DayOff', status: 'Pending', reason: 'Synthetic planned leave',
-  requestedAt: '2026-09-30T12:00:00Z', resolvedAt: null, resolutionNote: null };
+  requestedAt: '2026-09-30T12:00:00Z', resolvedAt: null, resolutionNote: null, version: 'AAAAAAAAB9E=' };
 const page = (requests, number = 1, hasMore = false) =>
   ({ from, to, page: number, limit: 20, hasMore, requests });
 
@@ -72,8 +74,14 @@ it('records and decides a request, then re-reads the authoritative page', async 
     }));
   expect(await screen.findByText('Synthetic planned leave')).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: 'Aprobar' }));
+  // The decision carries the version on screen and the intent's key (2-N08).
   await waitFor(() => expect(resolveHumanResourcesAvailabilityRequest)
-    .toHaveBeenCalledWith(id, { decision: 'Approve', note: null }));
+    .toHaveBeenCalledWith(id, { decision: 'Approve', note: null, expectedVersion: 'AAAAAAAAB9E=' },
+      expect.stringMatching(/^[0-9a-f-]{36}$/)));
+  // The answer does not say what was released: OCC hears only of each released operation, never "the" notice.
+  const approved = await screen.findByText(/Solicitud aprobada\. Si el agente tenía coberturas/);
+  expect(approved).toHaveTextContent('se liberaron; OCC recibe un aviso por cada operación liberada.');
+  expect(approved).not.toHaveTextContent(/OCC recibió el aviso/);
   expect(await screen.findByText('Aprobada')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
 });
@@ -143,13 +151,16 @@ it('fails closed on role loss and rechecks a colliding resolution', async () => 
     .mockResolvedValueOnce(page([{ ...row, status: 'Approved',
       resolvedAt: '2026-09-30T13:00:00Z' }]))
     .mockRejectedValueOnce({ status: 403 });
-  resolveHumanResourcesAvailabilityRequest.mockRejectedValueOnce({ status: 409 });
+  resolveHumanResourcesAvailabilityRequest.mockRejectedValueOnce({ status: 409, code: 'agent_has_operation_in_progress' });
   const user = userEvent.setup();
   const { rerender } = render(<AvailabilityRequestsPanel from={from} to={to}
     revision={0} onDenied={onDenied} />);
   await screen.findByText('Synthetic planned leave');
   await user.click(screen.getByRole('button', { name: 'Aprobar' }));
-  expect(await screen.findByText(/conserva una asignación activa/)).toBeInTheDocument();
+  // Only the agent unblocks it by sending the operation from the tablet; OCC has no action that closes it.
+  const refusal = await screen.findByText(/tiene una operación en curso o devuelta/);
+  expect(refusal).toHaveTextContent('Debe enviarla desde la tablet (si fue devuelta, corregirla y reenviarla)');
+  expect(refusal).not.toHaveTextContent(/OCC/);
   expect(screen.getByText('Aprobada')).toBeInTheDocument();
   rerender(<AvailabilityRequestsPanel from={from} to={to}
     revision={1} onDenied={onDenied} />);
@@ -197,7 +208,7 @@ it('cancels a pending request with a reason and hides decisions without the deci
   await user.type(within(form).getByRole('textbox', { name: 'Motivo de la cancelación' }), '  El agente desistió ');
   await user.click(within(form).getByRole('button', { name: 'Confirmar cancelación' }));
   expect(resolveHumanResourcesAvailabilityRequest).toHaveBeenCalledWith(id,
-    { decision: 'Cancel', note: 'El agente desistió' });
+    { decision: 'Cancel', note: 'El agente desistió', expectedVersion: 'AAAAAAAAB9E=' }, expect.any(String));
   expect(await screen.findByText('Solicitud cancelada.')).toBeInTheDocument();
   expect(await screen.findByText('Cancelada')).toBeInTheDocument();
   unmount();
@@ -209,4 +220,87 @@ it('cancels a pending request with a reason and hides decisions without the deci
   expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Cancelar solicitud' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Nueva solicitud' })).not.toBeInTheDocument();
+});
+
+it('retries an uncertain decision with the same key and body', async () => {
+  getHumanResourcesAvailabilityRequests.mockResolvedValue(page([row]));
+  resolveHumanResourcesAvailabilityRequest.mockRejectedValueOnce(new Error('timeout'))
+    .mockResolvedValueOnce({ id, status: 'Approved' });
+  const user = userEvent.setup();
+  render(<AvailabilityRequestsPanel from={from} to={to} revision={0} />);
+  await user.click(await screen.findByRole('button', { name: 'Aprobar' }));
+  await user.click(await screen.findByRole('button', { name: 'Reintentar misma decisión' }));
+  await waitFor(() => expect(resolveHumanResourcesAvailabilityRequest).toHaveBeenCalledTimes(2));
+  expect(resolveHumanResourcesAvailabilityRequest.mock.calls[1]).toEqual(resolveHumanResourcesAvailabilityRequest.mock.calls[0]);
+});
+
+describe('approved absences (2-N22)', () => {
+  const today = businessToday();
+  const approved = (startsIn, endsIn, type = 'DayOff') => ({ ...row, status: 'Approved', type,
+    startsOn: addDays(today, startsIn), endsOn: addDays(today, endsIn), resolvedAt: '2026-09-30T13:00:00Z' });
+
+  it('cancels one that has not started with a reason, its version and a key, and re-reads the week', async () => {
+    const onChanged = vi.fn();
+    const future = approved(3, 5);
+    getHumanResourcesAvailabilityRequests.mockResolvedValueOnce(page([future]))
+      .mockResolvedValueOnce(page([{ ...future, status: 'Cancelled' }]));
+    amendHumanResourcesAvailabilityRequest.mockResolvedValue({ id, status: 'Cancelled', endsOn: future.endsOn,
+      version: 'AAAAAAAAB9I=' });
+    const user = userEvent.setup();
+    render(<AvailabilityRequestsPanel from={from} to={to} revision={0} onChanged={onChanged} />);
+    await user.click(await screen.findByRole('button', { name: 'Cancelar ausencia' }));
+    const form = screen.getByRole('form', { name: 'Cancelar la ausencia de Riley Ramp' });
+    await user.type(within(form).getByRole('textbox', { name: 'Motivo del cambio' }), '  Se pospone a enero ');
+    await user.click(within(form).getByRole('button', { name: 'Confirmar cancelación de la ausencia' }));
+    await waitFor(() => expect(amendHumanResourcesAvailabilityRequest).toHaveBeenCalledWith(id,
+      { action: 'Cancel', endsOn: null, reason: 'Se pospone a enero', expectedVersion: 'AAAAAAAAB9E=' },
+      expect.stringMatching(/^[0-9a-f-]{36}$/)));
+    expect(await screen.findByText(/Ausencia cancelada\. Lo que su aprobación liberó no vuelve/)).toBeInTheDocument();
+    expect(await screen.findByText('Cancelada')).toBeInTheDocument();
+    expect(onChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it('shortens one in progress to a day no earlier than yesterday and explains a refusal by its code', async () => {
+    const running = approved(-2, 4, 'Restriction');
+    getHumanResourcesAvailabilityRequests.mockResolvedValue(page([running]));
+    amendHumanResourcesAvailabilityRequest.mockRejectedValueOnce({ status: 400, code: 'absence_end_invalid' })
+      .mockResolvedValueOnce({ id, status: 'Approved', endsOn: today, version: 'AAAAAAAAB9I=' });
+    const user = userEvent.setup();
+    render(<AvailabilityRequestsPanel from={from} to={to} revision={0} />);
+    // It already started: it is shortened, never cancelled.
+    expect(await screen.findByRole('button', { name: 'Acortar ausencia' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar ausencia' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Acortar ausencia' }));
+    const form = screen.getByRole('form', { name: 'Acortar la ausencia de Riley Ramp' });
+    const day = within(form).getByLabelText('Nuevo último día');
+    expect(day).toHaveAttribute('min', addDays(today, -1));
+    expect(day).toHaveAttribute('max', addDays(today, 3));
+    await user.clear(day);
+    await user.type(day, today);
+    await user.type(within(form).getByRole('textbox', { name: 'Motivo del cambio' }), 'Alta médica anticipada');
+    await user.click(within(form).getByRole('button', { name: 'Confirmar nuevo último día' }));
+    expect(await screen.findByText(/El nuevo último día debe ser anterior al actual/)).toBeInTheDocument();
+    await user.click(within(form).getByRole('button', { name: 'Confirmar nuevo último día' }));
+    await waitFor(() => expect(amendHumanResourcesAvailabilityRequest).toHaveBeenCalledTimes(2));
+    expect(amendHumanResourcesAvailabilityRequest.mock.calls[1][1]).toEqual({ action: 'Shorten', endsOn: today,
+      reason: 'Alta médica anticipada', expectedVersion: 'AAAAAAAAB9E=' });
+    // A 4xx settled the first intent: the second attempt is a new one.
+    expect(amendHumanResourcesAvailabilityRequest.mock.calls[1][2]).not.toBe(amendHumanResourcesAvailabilityRequest.mock.calls[0][2]);
+    expect(await screen.findByText(/Ausencia acortada/)).toBeInTheDocument();
+  });
+
+  it('offers nothing on an absence that ended, on a shift change or without the decide permission', async () => {
+    getHumanResourcesAvailabilityRequests.mockResolvedValueOnce(page([approved(-5, -1),
+      { ...approved(3, 4, 'ShiftChange'), id: '50000000-0000-7000-8000-000000000082' }]));
+    render(<AvailabilityRequestsPanel from={from} to={to} revision={0} />);
+    await screen.findAllByText('Aprobada');
+    expect(screen.queryByRole('button', { name: 'Acortar ausencia' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancelar ausencia' })).not.toBeInTheDocument();
+    cleanup();
+    useOptionalDepartmentAccess.mockReturnValue({ can: () => false });
+    getHumanResourcesAvailabilityRequests.mockResolvedValueOnce(page([approved(3, 5)]));
+    render(<AvailabilityRequestsPanel from={from} to={to} revision={0} />);
+    await screen.findByText('Aprobada');
+    expect(screen.queryByRole('button', { name: 'Cancelar ausencia' })).not.toBeInTheDocument();
+  });
 });

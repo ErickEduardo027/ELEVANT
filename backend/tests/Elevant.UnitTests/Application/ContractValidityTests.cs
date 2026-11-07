@@ -129,7 +129,7 @@ public sealed class ContractValidityTests
     public void TheActivationEmailCarriesTheSignedPdf()
     {
         var email = AccountEmailTemplates.ContractActivated("ana@example.test", "Demo Airlines", "CTR-2026-0007",
-            Today, Today.AddYears(1));
+            Today, Today.AddYears(1), Today);
         Assert.Contains("CTR-2026-0007", email.Subject);
         Assert.Contains("cid:elevant-logo", email.HtmlBody);
         Assert.Contains("PDF firmado", email.TextBody);

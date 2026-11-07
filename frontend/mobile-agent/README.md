@@ -104,6 +104,20 @@ AVIAM y al menos un scope de estación. Los comandos operativos registran primer
 la instalación actual y la API vuelve a validar cuenta, asignación, estación y
 vínculo del dispositivo antes de aceptar cualquier escritura.
 
+Las tablets son compartidas (fase 2, bloque E): iniciar sesión vincula la
+instalación a la cuenta y la toma de otro agente, salvo que ese agente tenga una
+operación en curso (`device_in_use_by_active_agent`). Cerrar sesión libera la
+tablet con `POST /api/v1/mobile/device/release` (mejor esfuerzo, con tiempo
+límite: sin conexión la sesión se cierra igual y el siguiente inicio de sesión
+la toma). Cada inicio de sesión abre su propio vínculo con la tablet (la API lo
+reconoce por la emisión del token) y la liberación lleva como versión esperada
+el `lastSeenAt` del registro más reciente que confirmó la sesión: si llega tarde,
+después de que el agente volvió a iniciar sesión en la misma tablet, responde
+`version_conflict` y no libera nada; las escrituras de la propia sesión nunca la
+rechazan. OCC puede liberarla o revocarla desde «Tablets»; una tablet revocada
+(`device_revoked`) no vuelve a registrarse y la app lo explica al iniciar sesión.
+La APK anterior no libera al cerrar sesión, pero el siguiente agente la toma igual.
+
 El bearer token se guarda exclusivamente con `expo-secure-store`; nunca forma
 parte del objeto de sesión entregado a la UI, AsyncStorage ni logs. Token y
 metadata se enlazan mediante una revisión aleatoria: una pareja incompleta o

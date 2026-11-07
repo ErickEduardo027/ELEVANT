@@ -8,6 +8,7 @@ using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -565,26 +566,31 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(ContractStatus.Terminated, (await ContractAsync()).Status);
         Assert.Equal(ContractVersionStatus.Rejected, await context.ContractVersions.AsNoTracking()
             .Where(item => item.PublicId == again.DraftVersionId).Select(item => item.Status).SingleAsync(ct));
-        Assert.Equal(ContractVersionStatus.Approved, await context.ContractVersions.AsNoTracking()
-            .Where(item => item.PublicId == SeededContractVersion).Select(item => item.Status).SingleAsync(ct));
+        // 2-N15: the approved version nobody signed closes too; it keeps its approval and nothing is deleted.
+        var closed = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == SeededContractVersion, ct);
+        Assert.Equal(ContractVersionStatus.Rejected, closed.Status);
+        Assert.NotNull(closed.ApprovedAt);
+        Assert.True(await context.AuditEntries.AnyAsync(item => item.Action == "commercial.contract.version_withdrawn" &&
+            item.EntityPublicId == SeededContractVersion, ct));
         Assert.DoesNotContain((await book.ListContractApprovalsAsync(FinanceAccount, true, ct))!,
             item => item.VersionId == again.DraftVersionId);
         Assert.Equal(1, await context.Set<ContractStatusEvent>().CountAsync(item => item.ContractId == contractId &&
             item.FromStatus == ContractStatus.Draft && item.ToStatus == ContractStatus.Terminated, ct));
-        var document = (await documents.ReadAsync(PortalAirlineAccount, SeededContractVersion, ct)).Document!;
-        Assert.Null(document.SignableBy);
+        // Its document is history now: nobody reads it as an offer, and nobody signs it.
+        Assert.Equal(ContractDocumentFailure.NotFound,
+            (await documents.ReadAsync(PortalAirlineAccount, SeededContractVersion, ct)).Failure);
         var signed = await documents.SignAsync(PortalAirlineAccount, SeededContractVersion, new SignContractInput(
-            Guid.NewGuid(), "Casey Airline", "Director", document.ContentSha256, true, SignaturePng), ct);
-        Assert.Equal(("contract_terminated", ContractDocumentFailure.Conflict), (signed.Code, signed.Failure));
+            Guid.NewGuid(), "Casey Airline", "Director", new string('a', 64), true, SignaturePng), ct);
+        Assert.Equal(("not_found", ContractDocumentFailure.NotFound), (signed.Code, signed.Failure));
     }
 
     /// <summary>
-    /// 1-B: «Descartar contrato» committed while Contratos confirms the validity, or while the airline signs, wins.
-    /// Each command reads the contract before its checks and writes it, so its rowversion refuses the write with
-    /// <c>contract_terminated</c> instead of confirming or signing a closed contract.
+    /// 1-B with the serializable commands of 2-N28: while Contratos confirms the validity, or while the airline signs,
+    /// the command holds the contract it checked until it commits, so «Descartar contrato» cannot commit in between
+    /// (it waits for the lock); a termination committed before refuses the write with <c>contract_terminated</c>.
     /// </summary>
     [Fact]
-    public async Task ATerminationCommittedWhileTheValidityOrASignatureIsWrittenRefusesTheWrite()
+    public async Task ATerminationCannotCommitWhileTheValidityOrASignatureIsWrittenAndOneCommittedBeforeRefusesIt()
     {
         var ct = TestContext.Current.CancellationToken;
         var master = ResolveMasterConnection();
@@ -594,9 +600,8 @@ public sealed partial class SqlServerMigrationTests
         await using var scope = provider.CreateAsyncScope();
         var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
         var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
-        var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
         var actors = scope.ServiceProvider.GetRequiredService<IActorContextResolver>();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var version = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == SeededContractVersion, ct);
         async Task<Contract> ContractAsync() =>
             await context.Contracts.AsNoTracking().SingleAsync(item => item.Id == version.ContractId, ct);
@@ -604,8 +609,15 @@ public sealed partial class SqlServerMigrationTests
         async Task ReopenAsync() => await context.Contracts.Where(item => item.Id == version.ContractId)
             .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, ContractStatus.Draft)
                 .SetProperty(item => item.SignedOn, (DateOnly?)null).SetProperty(item => item.TerminatedOn, (DateOnly?)null), ct);
-        // The command's save waits at the gate, after every check, while «Descartar contrato» commits.
-        async Task<ContractDocumentResult> RaceAsync(Func<IContractDocumentStore, Task<ContractDocumentResult>> command)
+        // «Descartar contrato» committed before the command reads the contract.
+        async Task TerminateAsync() => await context.Contracts.Where(item => item.Id == version.ContractId)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, ContractStatus.Terminated)
+                .SetProperty(item => item.TerminatedOn, (DateOnly?)today), ct);
+        ContractValidityInput Validity(string expectedSha256) => new(today, today.AddYears(1).AddDays(-1), "Automatic", 12,
+            30, 60, "Incumplimiento grave de pago.", expectedSha256);
+        // The command's save waits at the gate, after every check: a termination from another connection waits for the
+        // command's lock on the contract and gives up after its LOCK_TIMEOUT, so nothing commits in between.
+        async Task<ContractDocumentResult> GatedAsync(Func<IContractDocumentStore, Task<ContractDocumentResult>> command)
         {
             var gate = new SavingChangesGate();
             await using var gated = new ElevantDbContext(new DbContextOptionsBuilder<ElevantDbContext>()
@@ -614,8 +626,17 @@ public sealed partial class SqlServerMigrationTests
             await gate.Entered.WaitAsync(TimeSpan.FromSeconds(15), ct);
             try
             {
-                Assert.Equal("Terminated", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
-                    new ContractLifecycleInput("Terminate", RetireReason, "Draft"), Guid.NewGuid(), ct)).Status);
+                // Without the retrying strategy, so the lock timeout surfaces at once.
+                await using var other = new ElevantDbContext(new DbContextOptionsBuilder<ElevantDbContext>()
+                    .UseSqlServer(database.ConnectionString,
+                        sql => sql.UseCompatibilityLevel(ElevantSqlServerOptions.CompatibilityLevel)).Options);
+                await other.Database.OpenConnectionAsync(ct);
+                await other.Database.ExecuteSqlRawAsync("SET LOCK_TIMEOUT 2000", ct);
+                // Without a retrying strategy EF wraps the lock timeout, a transient error, in its own exception.
+                var blocked = await Assert.ThrowsAnyAsync<Exception>(() => other.Contracts
+                    .Where(item => item.Id == version.ContractId)
+                    .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, ContractStatus.Terminated), ct));
+                Assert.Equal(1222, (blocked as SqlException ?? blocked.InnerException as SqlException)?.Number);
             }
             finally
             {
@@ -624,23 +645,32 @@ public sealed partial class SqlServerMigrationTests
             return await running;
         }
 
-        // Contratos confirms the validity: nothing is confirmed and the final code is not assigned.
+        // Terminated before Contratos confirms the validity: nothing is confirmed and the final code is not assigned.
         await ReopenAsync();
         var draftCode = (await ContractAsync()).ContractCode;
         var unconfirmed = (await documents.ReadAsync(ContractsAdministrator, SeededContractVersion, ct)).Document!;
-        var confirmation = await RaceAsync(store => store.SetValidityAsync(ContractsAdministrator, SeededContractVersion,
-            new ContractValidityInput(today, today.AddYears(1).AddDays(-1), "Automatic", 12, 30, 60,
-                "Incumplimiento grave de pago.", unconfirmed.ContentSha256), ct));
-        Assert.Equal(("contract_terminated", ContractDocumentFailure.Conflict), (confirmation.Code, confirmation.Failure));
+        await TerminateAsync();
+        var refused = await documents.SetValidityAsync(ContractsAdministrator, SeededContractVersion,
+            Validity(unconfirmed.ContentSha256), Guid.NewGuid(), ct);
+        Assert.Equal(("contract_terminated", ContractDocumentFailure.Conflict), (refused.Code, refused.Failure));
         Assert.Null((await context.ContractVersions.AsNoTracking().SingleAsync(item => item.Id == version.Id, ct))
             .ValidityConfirmedAt);
         Assert.Equal(draftCode, (await ContractAsync()).ContractCode);
 
-        // The airline signs: no signature, no signing date, no audit and no notice to Contratos.
+        // A termination while the validity is written waits: the validity is confirmed and the contract stays open.
         await ReopenAsync();
-        var hash = await ConfirmValidityAsync(documents, SeededContractVersion, today, ct);
-        var signature = await RaceAsync(store => store.SignAsync(PortalAirlineAccount, SeededContractVersion,
-            new SignContractInput(Guid.NewGuid(), "Casey Airline", "Director", hash, true, SignaturePng), ct));
+        var confirmation = await GatedAsync(store => store.SetValidityAsync(ContractsAdministrator, SeededContractVersion,
+            Validity(unconfirmed.ContentSha256), Guid.NewGuid(), ct));
+        Assert.Equal(((string?)null, (ContractDocumentFailure?)null), (confirmation.Code, confirmation.Failure));
+        Assert.NotNull((await context.ContractVersions.AsNoTracking().SingleAsync(item => item.Id == version.Id, ct))
+            .ValidityConfirmedAt);
+        Assert.Equal(ContractStatus.Draft, (await ContractAsync()).Status);
+        var hash = (await documents.ReadAsync(ContractsAdministrator, SeededContractVersion, ct)).Document!.ContentSha256;
+
+        // Terminated before the airline signs: no signature, no signing date, no audit and no notice to Contratos.
+        await TerminateAsync();
+        var signature = await documents.SignAsync(PortalAirlineAccount, SeededContractVersion,
+            new SignContractInput(Guid.NewGuid(), "Casey Airline", "Director", hash, true, SignaturePng), ct);
         Assert.Equal(("contract_terminated", ContractDocumentFailure.Conflict), (signature.Code, signature.Failure));
         Assert.False(await context.ContractSignatures.AnyAsync(item => item.ContractVersionId == version.Id, ct));
         var closed = await ContractAsync();
@@ -649,5 +679,13 @@ public sealed partial class SqlServerMigrationTests
             item.EntityPublicId == SeededContractVersion, ct));
         Assert.False(await context.DepartmentNotifications.AnyAsync(item => item.Kind == "contract_signed" &&
             item.SourceId == SeededContractVersion, ct));
+
+        // A termination while the airline signs waits: the signature is recorded and the contract stays open.
+        await ReopenAsync();
+        var signed = await GatedAsync(store => store.SignAsync(PortalAirlineAccount, SeededContractVersion,
+            new SignContractInput(Guid.NewGuid(), "Casey Airline", "Director", hash, true, SignaturePng), ct));
+        Assert.Equal(((string?)null, (ContractDocumentFailure?)null), (signed.Code, signed.Failure));
+        Assert.True(await context.ContractSignatures.AnyAsync(item => item.ContractVersionId == version.Id, ct));
+        Assert.Equal(ContractStatus.Draft, (await ContractAsync()).Status);
     }
 }

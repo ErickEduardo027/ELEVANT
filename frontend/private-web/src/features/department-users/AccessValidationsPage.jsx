@@ -51,7 +51,7 @@ export default function AccessValidationsPage() {
       setState({ status: 'ready', page, catalogs, error: '' });
     } catch (failure) {
       if (current !== version.current) return;
-      setState(previous => ({ ...previous, status: previous.page ? 'ready' : 'error', error: failure.message }));
+      setState(previous => ({ ...previous, status: previous.page ? 'ready' : 'error', error: governanceMessage(failure) }));
     }
   }, [filters]);
 

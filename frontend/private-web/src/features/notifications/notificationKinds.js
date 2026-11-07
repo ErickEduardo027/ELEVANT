@@ -13,6 +13,10 @@ const KIND_LABELS = {
     incident_reported: 'Incidencia reportada en rampa',
     deviation_reported: 'Desviación reportada en rampa',
     flight_changed: 'Cambió el vuelo (posición u horario)',
+    // Phase 2, block D: Gestión Humana took the agent off the operation (baja, traslado o ausencia, 2-N06, 2-N08), or
+    // a document of the assigned agent no longer covers its date (2-N25). Only ADMIN_OCC receives them.
+    agent_released: 'Gestión Humana liberó al agente de la operación: reasígnela',
+    agent_document_not_current: 'El agente asignado no tiene un documento vigente para la operación',
     fallback: 'Evento operativo',
   },
   en: {
@@ -27,6 +31,8 @@ const KIND_LABELS = {
     incident_reported: 'Incident reported on the ramp',
     deviation_reported: 'Deviation reported on the ramp',
     flight_changed: 'The flight changed (stand or time)',
+    agent_released: 'Human Resources released the agent from the operation: reassign it',
+    agent_document_not_current: 'The assigned agent lacks a current document for the operation',
     fallback: 'Operational event',
   },
 };
@@ -48,7 +54,11 @@ export function isMessageNotification(kind) {
   return MESSAGE_KINDS.has(kind);
 }
 
+// What OCC does about it is assign the operation again: these notices open the planning board.
+const PLANNING_KINDS = new Set(['agent_released', 'agent_document_not_current']);
+
 export function notificationTargetPath(notification) {
+  if (PLANNING_KINDS.has(notification.kind)) return '/admin-occ/planning';
   const target = isMessageNotification(notification.kind) ? 'chat' : 'review';
   return `/admin-occ/${target}?operationId=${notification.operationId}`;
 }

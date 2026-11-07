@@ -4,16 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ElevantApiError, type AirlineContractPageResponse } from "@elevant/api-client";
 import type { AirlineDraftData } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
+import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
+import { AirlineContractPricing } from "./AirlineContractPricing";
 import { AirlineContractSignature } from "./AirlineContractSignature";
 import { ContractPdfActions } from "./ContractPdfActions";
 import { AirlinePermitsSection, ContractTimeline } from "./AirlinePermitsSection";
 import { billingUnitLabel } from "@/lib/billing-units";
+import { contractStatusLabel, standingContract, terminationNote, versionAwaitingSignatures } from "@/lib/contract-status";
 import styles from "./AirlinePortalPage.module.css";
-
-const STATUS: Record<string, string> = {
-  Draft: "Borrador", Active: "Activo", Suspended: "Suspendido",
-  Terminated: "Terminado", Expired: "Vencido",
-};
 
 /** Why an observation was refused, by its Problem Details code; the server title is never shown. */
 const COMMENT_ERRORS: Record<string, string> = {
@@ -43,6 +41,9 @@ function money(amount: number, currency: string) {
 
 export function AirlineContractPage() {
   const { session, getContracts, getDrafts, commentDraft, downloadContractDraft, draftRevision } = useAirlineSession();
+  const { standing } = useAirlineStanding();
+  // 2-N35: what a contract that never activated waits for comes from the standing; without it, no «Borrador» either.
+  const standingData = standing.status === "ready" ? standing.data : null;
   const [reloadDrafts, setReloadDrafts] = useState(0);
   const accountId = session?.actor.accountId;
   const [pages, setPages] = useState<AirlineContractPageResponse[]>([]);
@@ -105,16 +106,17 @@ export function AirlineContractPage() {
       <p className={styles.empty}>Todavía no existe un contrato consultable para esta aerolínea.</p>
     </section> : null}
     {contracts.length > 0 && <div className={styles.contractGrid}>
-      {contracts.map(contract => <article className={styles.panel} key={contract.id}>
+      {contracts.map(contract => { const known = standingContract(standingData, contract.id); return <article className={styles.panel} key={contract.id}>
         <div className={styles.sectionHeading}>
           <div><span className={styles.kicker}>Contrato · {contract.code}</span>
             <h2>{contract.code}</h2></div>
-          <span>{STATUS[contract.status] ?? contract.status}</span>
+          <span>{contractStatusLabel(contract.status, known?.pendingReason)}</span>
         </div>
         <p className={styles.note}>Firmado: {contract.signedOn ?? "Sin fecha registrada"}
-          {contract.terminatedOn ? ` · Terminado: ${contract.terminatedOn}` : ""}</p>
+          {terminationNote(contract.status, contract.terminatedOn)}</p>
         {contract.approvedVersions.map(version => <section key={version.id} className={styles.contractVersion}>
           <h3>Versión aprobada {version.versionNumber}</h3>
+          {versionAwaitingSignatures(known, version.id) && <p><strong className={styles.draftBadge}>Pendiente de firmas</strong></p>}
           <p>Vigencia: {version.validFrom} — {version.validTo ?? "sin fecha de fin"} · {version.currencyCode}</p>
           <p>Estaciones: {version.stations.map(station => `${station.code} · ${station.name}`).join(", ") || "Sin estaciones registradas"}</p>
           <div className={styles.contractRateList}>
@@ -123,10 +125,11 @@ export function AirlineContractPage() {
               <span>Precio por {billingUnitLabel(rate.billingUnit)}: {money(rate.unitPrice, version.currencyCode)} · cantidad mínima {rate.minimumQuantity}</span>
             </div>) : <p>Sin tarifas registradas en esta versión.</p>}
           </div>
+          <AirlineContractPricing versionId={version.id} />
           <AirlineContractSignature versionId={version.id} fileName={`contrato-${contract.code}-v${version.versionNumber}.pdf`} />
           <ContractTimeline versionId={version.id} />
         </section>)}
-      </article>)}
+      </article>; })}
     </div>}
     {hasMore && <button className={styles.loadMore} type="button" disabled={loading}
       onClick={() => void loadMore()}>{loading ? "Cargando…" : "Cargar más contratos"}</button>}

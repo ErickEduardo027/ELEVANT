@@ -513,9 +513,10 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
             return null;
         }
 
+        // 2-C: the stations of the version that governs today; an approved version nobody signed covers none.
         var stationRows = await (
             from contract in context.Contracts.AsNoTracking()
-            join version in context.ContractVersions.AsNoTracking()
+            join version in GoverningContractVersions.Of(context)
                 on contract.Id equals version.ContractId
             join link in context.Set<ContractVersionStation>().AsNoTracking()
                 on version.Id equals link.ContractVersionId
@@ -523,7 +524,6 @@ internal sealed class EfAirlinePortalReadStore(ElevantDbContext context) : IAirl
                 on link.StationId equals station.Id
             where contract.AirlineId == airline.Id &&
                   contract.Status == ContractStatus.Active &&
-                  version.Status == ContractVersionStatus.Approved &&
                   version.ValidFrom <= onDate &&
                   (version.ValidTo == null || version.ValidTo >= onDate) &&
                   station.IsActive

@@ -263,3 +263,22 @@ export function getFilterOptions(flights) {
     ),
   };
 }
+
+/**
+ * The flights with the planning board's marks (2-N25): each assigned agent whose assignment is unfit gets its
+ * `unfitReasons`, and the flight counts them in `unfitAgentCount`. Fit flights keep their identity.
+ */
+export function withAssignmentReadiness(flights, readiness) {
+  if (!Array.isArray(readiness?.assignments) || readiness.assignments.length === 0) return flights;
+  const reasons = new Map(readiness.assignments.map(item => [String(item.assignmentId).toLowerCase(), item.reasons]));
+  return flights.map(flight => {
+    let unfit = 0;
+    const agents = (flight.assignedAgents ?? []).map(agent => {
+      const found = agent.assignmentId ? reasons.get(String(agent.assignmentId).toLowerCase()) : undefined;
+      if (!found?.length) return agent;
+      unfit += 1;
+      return { ...agent, unfitReasons: [...found] };
+    });
+    return unfit === 0 ? flight : { ...flight, assignedAgents: agents, unfitAgentCount: unfit };
+  });
+}

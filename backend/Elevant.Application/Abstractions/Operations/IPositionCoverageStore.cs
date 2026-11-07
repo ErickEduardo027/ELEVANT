@@ -9,8 +9,9 @@ public sealed record CoverageStandRefData(Guid StandId, string Code);
 
 /// <param name="MaxAircraftSize">Narrowbody or Widebody; null admits any size.</param>
 /// <param name="CoveredBy">Names of the agents covering the stand on the board's date.</param>
+/// <param name="Version">Rowversion in base64 (the one master data shows): the expected version of its next change.</param>
 public sealed record CoverageStandData(Guid StandId, string Code, Guid? TerminalId, bool IsActive, bool HasBoardingBridge,
-    bool IsRemote, string? MaxAircraftSize, IReadOnlyList<string> CoveredBy);
+    bool IsRemote, string? MaxAircraftSize, IReadOnlyList<string> CoveredBy, string Version);
 
 public sealed record StandConstraintData(Guid Id, Guid StandId, string StandCode, Guid AffectedStandId,
     string AffectedStandCode, string Kind);
@@ -33,17 +34,28 @@ public sealed record CoverageBoardData(Guid StationId, string StationCode, DateO
 public sealed record CreateCoverageInput(Guid AgentId, Guid TerminalId, IReadOnlyList<Guid> StandIds, DateOnly Date,
     DateTimeOffset? StartsAt, DateTimeOffset? EndsAt, Guid? MentorAgentId, string? VehicleCode, bool IsReinforcement);
 
-public sealed record StandAttributesInput(bool HasBoardingBridge, bool IsRemote, string? MaxAircraftSize, bool IsActive);
+/// <summary>
+/// The attributes of a stand. <paramref name="ExpectedVersion"/> is the stand's version the caller saw: optional while
+/// older screens exist (expand), required with an Idempotency-Key.
+/// </summary>
+public sealed record StandAttributesInput(bool HasBoardingBridge, bool IsRemote, string? MaxAircraftSize, bool IsActive,
+    string? ExpectedVersion = null);
 
 public sealed record TerminalRulesInput(int? MaxStandsPerAgent, bool RequiresBridgeQualification);
 
 public sealed record StandConstraintInput(Guid StandId, Guid AffectedStandId, string Kind);
 
 /// <param name="Reasons">Broken rules (codes) when <see cref="Failure"/> is Rejected.</param>
-public sealed record CoverageResult(CoverageBoardData? Board, PositionCoverageFailure? Failure, IReadOnlyList<string> Reasons)
+/// <param name="Code">
+/// Stable Problem Details code of the failure, when it has one (2-A: <c>stand_in_use</c>, <c>terminal_inactive</c>,
+/// <c>version_conflict</c>, <c>idempotency_conflict</c>, <c>expected_version_required</c>).
+/// </param>
+public sealed record CoverageResult(CoverageBoardData? Board, PositionCoverageFailure? Failure, IReadOnlyList<string> Reasons,
+    string? Code = null)
 {
-    public static CoverageResult Fail(PositionCoverageFailure failure, IReadOnlyList<string>? reasons = null) =>
-        new(null, failure, reasons ?? []);
+    public static CoverageResult Fail(PositionCoverageFailure failure, IReadOnlyList<string>? reasons = null,
+        string? code = null) =>
+        new(null, failure, reasons ?? [], code);
 }
 
 /// <summary>A stand coverage of the signed-in ramp agent («Mis posiciones de hoy»).</summary>
@@ -63,8 +75,14 @@ public interface IPositionCoverageStore
 
     Task<CoverageResult> ReleaseAsync(Guid actorId, Guid coverageId, DateOnly date, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// The bridge, remote, size and active flags of a stand. A stand in use is not deactivated (<c>stand_in_use</c>)
+    /// and one of an inactive terminal is not reactivated (<c>terminal_inactive</c>), as in master data (2-A). The
+    /// Idempotency-Key is optional while older screens exist (expand): with it the expected version is required and
+    /// a retry replays the first result; a stale version is <c>version_conflict</c>.
+    /// </summary>
     Task<CoverageResult> UpdateStandAsync(Guid actorId, Guid standId, StandAttributesInput input, DateOnly date,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey = null, CancellationToken cancellationToken = default);
 
     Task<CoverageResult> UpdateTerminalAsync(Guid actorId, Guid terminalId, TerminalRulesInput input, DateOnly date,
         CancellationToken cancellationToken = default);

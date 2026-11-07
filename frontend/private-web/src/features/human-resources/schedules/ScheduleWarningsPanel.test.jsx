@@ -47,7 +47,7 @@ it('shows an honest empty authorized page and preliminary rule, not a compliance
   expect(screen.getByText(/orientación preliminar/i)).toBeInTheDocument();
   expect(screen.queryByText(/cumple la ley|horas extra pagadas/i)).not.toBeInTheDocument();
   expect(getHumanResourcesScheduleWarnings).toHaveBeenCalledWith(
-    { stationId, from, to, page: 1, limit: 20 },
+    { stationId, from, to, page: 1, limit: 20, includeReadiness: true },
     expect.objectContaining({ signal: expect.any(AbortSignal) }));
 });
 
@@ -140,13 +140,27 @@ it('caps a 31-day roster default and lets GH consult the remaining day explicitl
   render(<ScheduleWarningsPanel from="2026-08-01" to="2026-08-31" revision={0}
     visibleShiftIds={[]} />);
   await waitFor(() => expect(getHumanResourcesScheduleWarnings).toHaveBeenCalledWith(
-    { stationId, from: '2026-08-01', to: '2026-08-30', page: 1, limit: 20 },
+    { stationId, from: '2026-08-01', to: '2026-08-30', page: 1, limit: 20, includeReadiness: true },
     expect.anything()));
   expect(screen.getByText(/día restante del mes/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-08-31' } });
   expect(screen.getByText(/intervalo válido/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Hasta'), { target: { value: '2026-08-31' } });
   await waitFor(() => expect(getHumanResourcesScheduleWarnings).toHaveBeenCalledWith(
-    { stationId, from: '2026-08-31', to: '2026-08-31', page: 1, limit: 20 },
+    { stationId, from: '2026-08-31', to: '2026-08-31', page: 1, limit: 20, includeReadiness: true },
     expect.anything()));
+});
+
+it('explains the readiness warnings of a shift on an absence or without a current document (2-N24)', async () => {
+  getHumanResourcesScheduleWarnings.mockResolvedValue({ ...basePage, warnings: [
+    { ...warning, kind: 'ApprovedAbsence', measuredMinutes: null, thresholdMinutes: null },
+    { ...warning, kind: 'DocumentExpired', measuredMinutes: null, thresholdMinutes: null,
+      reason: 'AirportId,RampDriverLicense' },
+  ] });
+  render(<ScheduleWarningsPanel from={from} to={to} revision={0} visibleShiftIds={[]} />);
+  expect(await screen.findByText(/Turno sobre una ausencia aprobada/)).toBeInTheDocument();
+  expect(screen.getByText(/día libre o una restricción aprobada ese día/)).toBeInTheDocument();
+  expect(screen.getByText(/Turno sin documento vigente/)).toBeInTheDocument();
+  expect(screen.getByText('Sin vigencia en la fecha del turno: carnet aeroportuario y licencia de conducir en rampa. OCC no podrá asignarle vuelos ese día.'))
+    .toBeInTheDocument();
 });

@@ -174,8 +174,10 @@ export default function CurrentShiftsPage({ initialDate = new Date() }) {
     {requestsAuthorized && mode !== 'week' && <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
       Ausencias y solicitudes · semana del {weekFrom} al {weekTo}. Esta sección conserva su consulta semanal.
     </p>}
+    {/* An approved, cancelled or shortened absence changes the agent's shifts (2-N08, 2-N22). */}
     {requestsAuthorized && <AvailabilityRequestsPanel key={`${weekFrom}-${weekTo}`}
       from={weekFrom} to={weekTo} revision={revision}
+      onChanged={() => setRevision(value => value + 1)}
       onDenied={status => {
         requestVersion.current += 1;
         setRequestsAuthorizedKey(null);

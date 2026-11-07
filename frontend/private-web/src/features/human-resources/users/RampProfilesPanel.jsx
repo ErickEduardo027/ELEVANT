@@ -5,10 +5,43 @@ import FileDropField from '../../../components/FileDropField';
 import PrivateMediaImage from '../../../components/PrivateMediaImage';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { rampProfilesPanelMessages } from './rampProfilesPanelMessages';
+import { businessToday } from '../../../services/businessDay';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 
 const blank = () => ({ firstName: '', lastName: '', employeeNumber: '', category: '',
   hireDate: '', isActive: true, stationIds: [], terminalIds: [],
-  supervisorProfileId: '', avatarMediaUrl: null });
+  supervisorProfileId: '', avatarMediaUrl: null, expectedVersion: null });
+
+/** Message key of each refusal of a save by its Problem Details code; the server title is never shown. */
+const SAVE_ERRORS = Object.freeze({
+  // Deactivating ends the agent's ramp duty, which an operation in progress or returned refuses (2-N06).
+  agent_has_operation_in_progress: 'errors.operationInProgress',
+  version_conflict: 'errors.changed',
+  idempotency_conflict: 'errors.changed',
+  expected_version_required: 'errors.changed',
+  ramp_profile_conflict: 'errors.changed',
+  employee_record_mismatch: 'errors.recordChanged',
+  employee_terminated: 'errors.employeeTerminated',
+  employee_number_in_use: 'errors.employeeNumberInUse',
+  stations_invalid: 'errors.stationsInvalid',
+  terminals_invalid: 'errors.terminalsInvalid',
+  supervisor_invalid: 'errors.supervisorInvalid',
+  supervisor_cycle: 'errors.supervisorCycle',
+  avatar_invalid: 'errors.avatarInvalid',
+  invalid_ramp_profile: 'errors.invalid',
+  not_found: 'errors.notFound',
+});
+const STATUS_ERRORS = Object.freeze({ 400: 'errors.invalid', 401: 'errors.session', 403: 'errors.forbidden',
+  404: 'errors.notFound', 409: 'errors.changed' });
+/** The profile moved on: the editor re-reads it before a new intent. */
+const REREAD = new Set(['errors.changed', 'errors.recordChanged', 'errors.notFound']);
+
+/** A code first, then the status; without either the result is uncertain and the retry keeps the key. */
+function saveError(failure) {
+  const code = typeof failure?.code === 'string' ? failure.code : '';
+  if (Object.prototype.hasOwnProperty.call(SAVE_ERRORS, code)) return SAVE_ERRORS[code];
+  return STATUS_ERRORS[failure?.status] ?? 'errors.save';
+}
 
 function accountStatusKey(profile) {
   if (!profile.hasAccount) return 'account.none';
@@ -35,17 +68,24 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const requestVersion = useRef(0);
+  // One Idempotency-Key per save intent (2-N06), and the photo that intent uploaded: a retry after an uncertain
+  // answer sends the same body with the same key, so the server answers the first save.
+  const intent = useRef(createCommandKeyHolder());
+  const uploaded = useRef(null);
+  /** Re-reads the directory; answers the catalog it shows, or null. */
   const refresh = useCallback(async () => {
     const request = ++requestVersion.current;
     try {
       const nextCatalog = await getRampProfiles();
-      if (request !== requestVersion.current) return;
+      if (request !== requestVersion.current) return null;
       setCatalog(nextCatalog);
       setError('');
+      return nextCatalog;
     } catch {
-      if (request !== requestVersion.current) return;
+      if (request !== requestVersion.current) return null;
       setCatalog(null);
       setError('errors.refresh');
+      return null;
     }
   }, []);
   useEffect(() => {
@@ -72,10 +112,14 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
     setEditingId(null);
     setForm(blank());
     setAvatar(null);
+    uploaded.current = null;
+    intent.current.reset();
   }, [catalog, editingId]);
 
   function edit(profile) {
     setAvatar(null);
+    uploaded.current = null;
+    intent.current.reset();
     setEditingId(profile.id);
     setForm({ firstName: profile.firstName, lastName: profile.lastName,
       employeeNumber: profile.employeeNumber, category: profile.category,
@@ -83,8 +127,20 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
       stationIds: profile.stations.map(station => station.id),
       terminalIds: profile.terminals?.map(terminal => terminal.id) ?? [],
       supervisorProfileId: profile.supervisorProfileId ?? '',
-      avatarMediaUrl: profile.avatarMediaUrl ?? null });
+      avatarMediaUrl: profile.avatarMediaUrl ?? null,
+      // The version the server compares: a save of a profile that changed meanwhile is refused.
+      expectedVersion: profile.version ?? null });
     setNotice('');
+  }
+  function close() {
+    setEditingId(null); setForm(blank()); setAvatar(null);
+    uploaded.current = null;
+    intent.current.reset();
+  }
+  async function uploadedAvatar(file) {
+    if (uploaded.current?.file !== file)
+      uploaded.current = { file, url: (await uploadCommercialMedia('avatar', file)).url };
+    return uploaded.current.url;
   }
   async function save(event) {
     event.preventDefault();
@@ -98,12 +154,23 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
       const values = { ...form, supervisor: { id: form.supervisorProfileId || null } };
       delete values.supervisorProfileId;
       if (!catalog?.availableTerminals) delete values.terminalIds;
-      if (avatar) values.avatarMediaUrl = (await uploadCommercialMedia('avatar', avatar)).url;
-      await saveRampProfile(editingId, values);
+      if (avatar) values.avatarMediaUrl = await uploadedAvatar(avatar);
+      await intent.current.run('saveRampProfile', [editingId, values], key =>
+        saveRampProfile(editingId, values, key));
       setNotice('saved');
-      setEditingId(null); setForm(blank()); setAvatar(null);
+      close();
       await refresh();
-    } catch { setError('errors.save'); }
+    } catch (failure) {
+      const message = saveError(failure);
+      // A 409 means re-reading before a new intent: the form takes the profile as it is now.
+      if (REREAD.has(message)) {
+        const next = await refresh();
+        if (!next) return;
+        const current = next.profiles.find(profile => profile.id === editingId);
+        if (current) edit(current);
+      }
+      setError(message);
+    }
     finally { setBusy(false); }
   }
   const persistedSupervisorId = catalog?.profiles.find(profile => profile.id === editingId)?.supervisorProfileId;
@@ -131,7 +198,7 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
         {['firstName', 'lastName', 'employeeNumber', 'category'].map(key =>
           <label key={key} className="mt-4 block text-xs font-semibold">{t(`fields.${key}`)}<input required readOnly title={t('editedInRecord')} maxLength={key === 'employeeNumber' ? 32 : key === 'category' ? 120 : 100} value={form[key]} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>)}
         <p className="mt-4 rounded-lg bg-black/[.03] p-3 text-xs dark:bg-white/[.04]">{t('recordNotice')}</p>
-        <label className="mt-4 block text-xs font-semibold">{t('hireDate')}<input required readOnly type="date" max={new Date().toISOString().slice(0, 10)} value={form.hireDate} onChange={event => setForm(current => ({ ...current, hireDate: event.target.value }))} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
+        <label className="mt-4 block text-xs font-semibold">{t('hireDate')}<input required readOnly type="date" max={businessToday()} value={form.hireDate} onChange={event => setForm(current => ({ ...current, hireDate: event.target.value }))} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
         {form.avatarMediaUrl && !avatar && <PrivateMediaImage url={form.avatarMediaUrl} alt={t('currentPhoto')} className="mt-4 h-20 w-20 rounded-full object-cover" />}
         <FileDropField label={t('photo')} accept="image/png,image/jpeg,image/webp" file={avatar} onFile={setAvatar} hint={t('photoHint')} />
         <fieldset className="mt-4"><legend className="text-xs font-semibold">{t('stations')}</legend><div className="mt-2 space-y-2">{catalog?.availableStations.filter(station => !stationFilter || stationFilter.includes(station.id) ||
@@ -166,7 +233,7 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
           </select>
         </label>
         {editingId && <label className="mt-4 flex items-center gap-2 text-sm"><input type="checkbox" checked={form.isActive} onChange={event => setForm(current => ({ ...current, isActive: event.target.checked }))} />{t('profileActive')}</label>}
-        <div className="mt-5 flex gap-2"><button disabled={busy || !catalog} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{t('save')}</button><button type="button" onClick={() => { setEditingId(null); setForm(blank()); setAvatar(null); }} className="rounded-lg border px-4 py-2 text-sm">{t('cancel')}</button></div>
+        <div className="mt-5 flex gap-2"><button disabled={busy || !catalog} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{t('save')}</button><button type="button" onClick={close} className="rounded-lg border px-4 py-2 text-sm">{t('cancel')}</button></div>
       </form>}
     </div>
   </div>;

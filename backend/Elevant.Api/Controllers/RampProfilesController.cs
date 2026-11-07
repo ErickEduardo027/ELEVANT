@@ -28,6 +28,9 @@ public sealed class RampProfilesController(IRampProfileStore store,
     [HttpPost(Name = "CreateRampProfile")]
     [RequestSizeLimit(32768)]
     [ProducesResponseType<RampProfileData>(StatusCodes.Status201Created, "application/json")]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Create([FromBody] SaveRampProfileInput input,
         CancellationToken cancellationToken)
     {
@@ -35,14 +38,23 @@ public sealed class RampProfilesController(IRampProfileStore store,
         return Result(await store.SaveAsync(actorId, null, input, cancellationToken), 201);
     }
 
+    /// <summary>
+    /// Saves the operational profile with the <c>version</c> the editor read (<c>expectedVersion</c>) and the intent's
+    /// Idempotency-Key, both optional while older screens exist (expand): with the key the version is required and a
+    /// retry answers the first save. Deactivating it ends the agent's ramp duty through the release path (2-N06).
+    /// </summary>
     [HttpPut("{id:guid}", Name = "UpdateRampProfile")]
     [RequestSizeLimit(32768)]
     [ProducesResponseType<RampProfileData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     public async Task<IActionResult> Update(Guid id, [FromBody] SaveRampProfileInput input,
-        CancellationToken cancellationToken)
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryActor(out var actorId)) return Unauthorized();
-        return Result(await store.SaveAsync(actorId, id, input, cancellationToken), 200);
+        return Result(await store.SaveAsync(actorId, id, input, idempotencyKey, cancellationToken), 200);
     }
 
     [HttpGet("access-requests", Name = "ListHumanResourcesMobileAccessRequests")]
@@ -80,13 +92,15 @@ public sealed class RampProfilesController(IRampProfileStore store,
             _ => throw new InvalidOperationException(),
         };
 
+    // Every refusal of a save carries its rule (2-N06): the store's code or the default of its kind, with a Spanish
+    // title the clients never show. A refused permission stays a bare 403.
     private IActionResult Result(RampProfileResult result, int successStatus) => result.Failure switch
     {
         null => StatusCode(successStatus, result.Profile),
         RampProfileFailure.Forbidden => Forbid(),
-        RampProfileFailure.Invalid => Problem(statusCode: 400, title: "Invalid ramp profile."),
-        RampProfileFailure.NotFound => Problem(statusCode: 404, title: "Ramp profile not found."),
-        RampProfileFailure.Conflict => Problem(statusCode: 409, title: "Ramp profile conflicts with current state."),
+        RampProfileFailure.Invalid => HumanResourcesProblems.Failure(this, 400, result.Code, "invalid_ramp_profile"),
+        RampProfileFailure.NotFound => HumanResourcesProblems.Failure(this, 404, result.Code, "not_found"),
+        RampProfileFailure.Conflict => HumanResourcesProblems.Failure(this, 409, result.Code, "ramp_profile_conflict"),
         _ => throw new InvalidOperationException(),
     };
 

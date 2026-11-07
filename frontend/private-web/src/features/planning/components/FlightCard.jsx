@@ -117,6 +117,11 @@ export default function FlightCard({ flight, now, onSelect }) {
         {flight.hasAssignmentGap && (
           <span className="rounded-full bg-status-warning/10 px-2 py-0.5 text-[10px] font-semibold text-status-warning">{t('card.needsResources')}</span>
         )}
+        {/* 2-N25: an assigned agent who cannot do it on this date; OCC decides, nothing is released. */}
+        {flight.unfitAgentCount > 0 && (
+          <span className="rounded-full bg-status-danger/10 px-2 py-0.5 text-[10px] font-semibold text-status-danger">
+            {flight.unfitAgentCount === 1 ? t('card.unfitAgentOne') : t('card.unfitAgentMany', { count: flight.unfitAgentCount })}</span>
+        )}
       </div>
     </article>
   );

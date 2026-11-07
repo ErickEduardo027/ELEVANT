@@ -124,6 +124,11 @@ cada exportación admite hasta 5 000 filas.
   `SignedOn`. Desde noviembre de 2026 la segunda firma, con la aprobación de
   Finanzas y un permiso de operación verificado, es también lo que activa el
   contrato ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
+  *Posterior al commit verificado de esta nota: desde la fase 2 del ciclo,
+  `SignedOn` se fija una sola vez, con el día hábil de la primera activación, y
+  una renovación nunca lo mueve; cada versión cuenta como firmada el día de su
+  segunda firma
+  ([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).*
 - **Origen.** Todo contrato nace de una solicitud aprobada. La pantalla lo
   explica y lleva a Solicitudes.
 - **Formato de impresión (segunda ronda, noviembre de 2026).** `ContractPdfRenderer`

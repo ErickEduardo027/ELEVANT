@@ -1,15 +1,17 @@
+using Elevant.Application.Common;
+
 namespace Elevant.Persistence.Identity;
 
 /// <summary>
-/// Ramp profile scope dates are written as UTC calendar dates by the profile
-/// editor. Audit attribution must evaluate them using that same convention.
+/// Ramp scope dates are AVIAM's business days (2-N31): the profile editor, the employee records and the access
+/// validation write them with <see cref="BusinessCalendar"/>. Audit attribution evaluates them the same way.
 /// </summary>
 internal static class RampScopeValidity
 {
     public static bool IsCurrent(DateOnly validFrom, DateOnly? validTo,
         DateTimeOffset at)
     {
-        var date = DateOnly.FromDateTime(at.UtcDateTime);
+        var date = BusinessCalendar.Today(at);
         return validFrom <= date && (validTo is null || validTo >= date);
     }
 }

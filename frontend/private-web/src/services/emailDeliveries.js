@@ -13,6 +13,15 @@ export const EMAIL_PURPOSES = Object.freeze({
   InvoiceIssued: 'Factura emitida',
   PaymentReceived: 'Pago recibido',
   CommercialDecision: 'Decisión de solicitud',
+  // Phase 2, block B: what the airline is told about its contracts and permits.
+  ContractReadyToSign: 'Contrato listo para firmar',
+  PermitRejected: 'Permiso rechazado',
+  PermitRevoked: 'Verificación de permiso revocada',
+  PermitExpiring: 'Permiso por vencer',
+  ContractExpiring: 'Contrato por vencer',
+  ContractSuspended: 'Contrato suspendido',
+  // Phase 2, block E: the representatives learn who joined, left or changed role in their portal (2-N20).
+  PortalUserChanged: 'Cambio de usuarios del portal',
 });
 
 export const EMAIL_STATUSES = Object.freeze({
@@ -50,6 +59,13 @@ export const EMAIL_RECOVERY = Object.freeze({
   InvoiceIssued: 'Descargue el PDF de la factura y entréguelo por otro canal.',
   PaymentReceived: 'El recibo sigue disponible en el portal de la aerolínea.',
   CommercialDecision: 'Comunique la decisión al solicitante por otro canal.',
+  ContractReadyToSign: 'El contrato sigue disponible para firmar en el portal; avise a la aerolínea por otro canal.',
+  PermitRejected: 'La aerolínea ve el motivo del rechazo en su portal; avísele por otro canal si hace falta.',
+  PermitRevoked: 'La aerolínea ve la revocación y su motivo en su portal; avísele por otro canal si hace falta.',
+  PermitExpiring: 'El vencimiento se ve en el portal de la aerolínea; recuérdeselo por otro canal.',
+  ContractExpiring: 'El vencimiento se ve en el portal de la aerolínea; recuérdeselo por otro canal.',
+  ContractSuspended: 'El estado del contrato se ve en el portal de la aerolínea; avísele por otro canal.',
+  PortalUserChanged: 'Los representantes ven sus usuarios y roles en el portal; avíseles del cambio por otro canal si hace falta.',
 });
 
 /**

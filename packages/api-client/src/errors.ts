@@ -59,13 +59,86 @@ const CATALOG_CODES = ["service_in_active_contract", "retirement_command_require
  */
 const GOVERNANCE_ACCOUNT_CODES = ["email_has_account", "email_in_use_other_airline", "email_in_use_internal",
   "account_disabled", "account_not_found", "invalid_client_user", "invalid_email_outbox_query"] as const;
+/**
+ * Contract lifecycle (phase 2, block A): the document, its signatures and their race with the validity step
+ * (2-N28), the withdrawal of a version both parties have not signed (2-N10), a renewal or an amendment while an
+ * approved version waits for its signatures (2-N01), and the termination with notice or an immediate cause and
+ * the versions that cannot start on or after it (2-N14, 2-N15). `contract_terminated` is in CONTRACT_DRAFT_CODES.
+ */
+const CONTRACT_LIFECYCLE_CODES = ["content_changed", "already_signed", "not_approved", "signature_invalid",
+  "invalid_contract_document", "airline_signed_other_content", "version_signed", "version_awaiting_signatures",
+  "termination_scheduled", "termination_not_scheduled", "termination_date_required", "termination_notice_not_met",
+  "immediate_cause_invalid", "forbidden"] as const;
+/**
+ * Airline permit dossier (phase 2, block B): only a submitted permit is reviewed and only a verified one is revoked
+ * (2-N09), the note a rejection needs, the dates, kind, number and issuer of a submission, and a scan that is not the
+ * airline's upload or was uploaded before the media link window and must be uploaded again (2-N37).
+ */
+const AIRLINE_PERMIT_CODES = ["review_closed", "permit_not_verified", "review_note_required", "invalid_permit",
+  "permit_dates_invalid", "permit_expired", "document_invalid", "document_expired"] as const;
+/**
+ * Stations of the platform (phase 2, block C, 2-A): the superadministrator creates them with the IATA code of their
+ * airport (a new airport needs its data), the code never changes, the time zone only while the station has no history,
+ * and a station in use is never deactivated.
+ */
+const STATION_CODES = ["station_code_taken", "airport_has_station", "airport_icao_taken", "invalid_station",
+  "invalid_time_zone", "airport_required", "time_zone_locked", "station_in_use"] as const;
+/**
+ * OCC master data (phase 2, block C, 2-A): terminals, stands and aircraft types. A code is fixed once something used
+ * it, something in use is never deactivated (also from the coverage configuration, as a 422 reason) and a stand
+ * needs an active terminal.
+ */
+const MASTER_DATA_CODES = ["terminal_code_taken", "stand_code_taken", "aircraft_type_code_taken", "invalid_terminal",
+  "invalid_stand", "invalid_aircraft_type", "terminal_in_use", "stand_in_use", "aircraft_type_in_use",
+  "terminal_code_locked", "stand_code_locked", "terminal_inactive"] as const;
+/**
+ * Flight feed review (phase 2, block C): the view and the import of a pair, a carrier whose contract at the station
+ * is suspended or expired (2-N16), a charter without contract (2-B, ADR-0033) and the restore of a dismissed
+ * proposal while its flight has not passed (2-N36).
+ */
+const FLIGHT_FEED_CODES = ["invalid_flight_feed_query", "invalid_flight_import", "flight_proposals_not_pairable",
+  "flight_proposal_closed", "flight_counterpart_unknown", "contract_not_in_force", "contract_ambiguous",
+  "charter_has_contract", "charter_required", "airline_inactive", "flight_proposal_not_dismissed",
+  "flight_proposal_passed"] as const;
+/**
+ * Planning a flight with its aircraft type and stand (phase 2, block C): an inactive or unknown aircraft type, and a
+ * stand that is inactive, of another station or taken in the window (the rules it breaks come in `reasons`).
+ */
+const PLANNING_CODES = ["aircraft_type_unavailable", "stand_unavailable"] as const;
+/**
+ * Gestión Humana (phase 2, block D): the one release path of a ramp agent, which an operation in progress or returned
+ * refuses (2-N06, 2-N08); the availability requests and the cancellation or shortening of an approved absence
+ * (2-N22); the shifts that are past, still worked or on an approved absence (2-N11, 2-N24); and the planning board's
+ * readiness query (2-N25).
+ */
+const HUMAN_RESOURCES_CODES = ["agent_has_operation_in_progress", "invalid_availability_request", "agent_unavailable",
+  "availability_overlap", "availability_request_closed", "absence_not_approved", "absence_started", "absence_ended",
+  "absence_end_invalid", "invalid_absence_amendment", "invalid_shift", "shift_scope_missing", "shift_day_taken",
+  "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query"] as const;
+/**
+ * Access (phase 2, block E): shared tablets that pass between agents, are released at sign-out and that OCC frees or
+ * revokes (2-N02); the airline's representatives and signers, the only ones that sign contracts and submit the JAC
+ * permit (2-N20); a transferred employee that only its new department brings back (2-N07) and the requests of an
+ * administrator that left (2-N33); the retired legacy governance writes (2-N38) and the default codes every governance
+ * command answers (2-N39).
+ */
+const ACCESS_CODES = ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
+  "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",
+  "last_representative", "invalid_portal_user", "employee_transferred", "requester_no_longer_administrator",
+  "legacy_governance_retired", "access_request_closed", "invalid_governance_data", "governance_conflict",
+  "protected_user"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
-  (typeof GOVERNANCE_ACCOUNT_CODES)[number];
+  (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number] |
+  (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
+  (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
+  (typeof ACCESS_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
-  ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES];
+  ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
+  ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
+  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",
@@ -76,7 +149,12 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   "mixed_airline", "already_invoiced", "operation_not_approved", "nothing_to_invoice",
   // Simulated card payment (ADR-0036).
   "cardholder_invalid", "card_number_invalid", "card_expired", "security_code_invalid", "amount_invalid",
-  "amount_mismatch", "invoice_paid", "idempotency_conflict", "concurrent_payment"] as const;
+  "amount_mismatch", "invoice_paid", "idempotency_conflict", "concurrent_payment",
+  // A stand in use is not deactivated, nor one of an inactive terminal reactivated, from the coverage configuration
+  // (phase 2, block C, 2-A).
+  "stand_in_use", "terminal_inactive",
+  // A mentor on an approved absence or without a current airport permit accompanies nobody (phase 2, block D, 2-N23).
+  "mentor_absent", "mentor_permit_required"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

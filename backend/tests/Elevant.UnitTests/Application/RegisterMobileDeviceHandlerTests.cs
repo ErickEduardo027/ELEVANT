@@ -49,6 +49,24 @@ public sealed class RegisterMobileDeviceHandlerTests
         Assert.Equal("1.2.3", store.Request.AppVersion);
         Assert.Equal("Ramp tablet", store.Request.DeviceName);
         Assert.Equal("Android 16", store.Request.OperatingSystemVersion);
+        Assert.Null(store.Request.SessionStartedAt);
+    }
+
+    [Fact]
+    public async Task TheStoreLearnsWhenTheAgentsSessionBegan()
+    {
+        // 2-N02: the first registration of a session renews a binding the agent still holds from an earlier one.
+        var started = new DateTimeOffset(2026, 11, 7, 10, 30, 0, TimeSpan.Zero);
+        var store = new StubStore(MobileDeviceRegistrationWriteResult.Success(
+            new MobileDeviceRegistrationData(InstallationId, "Android", "1.2.3", LastSeenAt), DeviceId));
+        var handler = new RegisterMobileDeviceHandler(new StubActorContextResolver(CreateActor()), store);
+
+        var result = await handler.HandleAsync(
+            CreateCommand() with { SessionStartedAt = started },
+            TestContext.Current.CancellationToken);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(started, store.Request!.SessionStartedAt);
     }
 
     [Theory]
@@ -218,5 +236,10 @@ public sealed class RegisterMobileDeviceHandlerTests
             Request = request;
             return Task.FromResult(result);
         }
+
+        public Task<MobileDeviceReleaseWriteResult> ReleaseAsync(
+            MobileDeviceReleaseWriteRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("The registration handler never releases a tablet.");
     }
 }

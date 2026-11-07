@@ -132,7 +132,7 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Ajuste | Línea manual de Finanzas en una prefactura borrador, positiva o negativa, con motivo. | Una nota de crédito sobre una factura emitida. |
 | Listo para Finanzas | Regla del servidor que decide si un borrador puede enviarse a Finanzas, con un código por cada causa pendiente. | La aprobación de Finanzas. |
 | Descartar un borrador | Cerrar sin borrar una versión que no prosperó: queda `Rejected` y, si el contrato nunca se activó, el contrato se termina. | Una devolución de Finanzas, que regresa la versión a `Draft`. |
-| Enmienda | Versión nueva de un contrato activo o suspendido, creada desde la última versión aprobada con su propio «Vigente desde»; vuelve a pasar por Finanzas y por las firmas. | Una renovación, que abre la vigencia siguiente. |
+| Enmienda | Versión nueva de un contrato activo o suspendido, creada desde la última versión aprobada con su propio «Vigente desde»; vuelve a pasar por Finanzas y por las firmas. Desde la fase 2 parte de la versión que rige (ver abajo). | Una renovación, que abre la vigencia siguiente. |
 | Aprobación de Finanzas | Revisión que aprueba una versión de contrato enviada por Contratos o la devuelve con motivo; el contrato se activa después, con ambas firmas y el permiso de operación. La aerolínea no ve el motivo de una devolución. | La aprobación de una entrega por OCC. |
 | Ocultar del catálogo | Quitar «Visible al público» a un servicio: sale del catálogo público, pero sigue en los contratos y en OCC. | Dar de baja el servicio. |
 | Dar de baja un servicio | Comando con motivo que saca el servicio del catálogo, de los contratos nuevos y de la operación; se rechaza mientras un contrato en vigor o en aprobación lo use. | Ocultarlo o aprobar su clausura. |
@@ -145,6 +145,27 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Pago con tarjeta simulado | Pago del saldo completo de una factura desde el portal con una pasarela simulada; guarda solo marca y últimos 4 dígitos ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). | Un cobro real: no se mueve dinero. |
 | e-NCF | Número de la factura e-CF simulada: `E31` y 10 dígitos consecutivos. | El número interno `NF-…`, que se conserva. |
 | Saldo | Total de la factura menos pagos y notas de crédito; su estado (pendiente, parcial, pagada, vencida) es una proyección. | Una conciliación bancaria. |
+
+### Términos de la fase 2 del ciclo
+
+Posterior al commit verificado de esta nota: estos términos describen el código
+de la fase 2 «Pre-operación» (`50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+
+| Término | Significado | No confundir con |
+| --- | --- | --- |
+| Versión que rige | La versión que fija precios, servicios, estaciones, recargos y paquetes de una fecha: una `Approved` firmada por ambas partes sobre la misma huella, una `Superseded` en las fechas que conservó o, como exención heredada, la primera versión aprobada de un contrato que ya salió de `Draft`. | Una versión que Finanzas aprobó y nadie firmó, que no cubre nada. |
+| Segunda firma | La firma que completa la aceptación de ambas partes sobre la misma huella. Desde ella la versión rige y la anterior termina, a más tardar, la víspera de su inicio. | La aprobación de Finanzas, que ya no reemplaza nada. |
+| Retirar una versión | Comando de Contratos que deja `Rejected`, con motivo, una versión aprobada que todavía no rige; una firma de una sola parte se anula en la auditoría y nunca se borra. | Descartar un borrador, que cierra una versión antes de la aprobación. |
+| Terminación programada | Terminación con una fecha efectiva que respeta el preaviso firmado. `TerminatedOn` es el primer día sin cobertura; se puede cancelar antes de esa fecha, y el barrido la ejecuta. | Una terminación inmediata por incumplimiento o mutuo acuerdo. |
+| Permiso revocado | Permiso de operación verificado que Contratos dejó sin efecto con motivo (`Revoked`). Conserva su verificación original y suspende los contratos activos que se quedan sin un permiso usable. | Un permiso rechazado, que nunca se verificó. |
+| Representante del portal | Cuenta del portal que gestiona los usuarios de su aerolínea: la aprovisionada para la solicitud aprobada, hasta la primera designación, o quien designe el superadministrador. Firma contratos y envía el permiso JAC. | Un rol de departamento: es un grant de cuenta (`airline_portal.representative`). |
+| Firmante del portal | Usuario del portal que un representante o el superadministrador marca para firmar contratos y enviar el permiso JAC (`airline_portal.signer`). | Un usuario del portal sin ese grant, que no firma ni envía permisos. |
+| Día hábil | El día del calendario de la estación o, si la regla no tiene estación, de `America/Santo_Domingo` ([`BusinessCalendar`](../../backend/Elevant.Application/Common/BusinessCalendar.cs)). Lo usan, entre otras, las reglas de contratos, permisos y Gestión Humana; Finanzas todavía no: sigue contando el día UTC. | El día UTC, que de 20:00 a 23:59 en República Dominicana ya es el siguiente. |
+| Liberación del agente | Lo que la baja, el traslado fuera de rampa, el paso a oficina, la desactivación del perfil o una ausencia aprobada le quitan al agente en la misma transacción: coberturas, asignaciones en las operaciones que no empezaron y turnos que no empezaron. | La aptitud de una asignación, que solo marca al agente y no libera nada. |
+| Datos maestros | Terminales y posiciones de una estación, y los tipos de avión compartidos por todas, que OCC crea, edita y desactiva; nada en uso se desactiva y nada se borra. | Las estaciones, que solo crea el superadministrador. |
+| Tablet compartida | Instalación de la app de rampa que pasa al agente que inicia sesión y se libera al cerrar la sesión; OCC la desvincula o revoca una perdida. | El binding, que es el registro de cada vínculo entre instalación y cuenta. |
+| Feed simulado | Proveedor de vuelos determinista y sin red (`Simulated`), apagado por defecto, solo para los entornos Development o Test y activado únicamente por el overlay del arnés E2E. | AeroDataBox, el feed real que usa el VPS Development. |
 
 ## Integración y trazabilidad
 

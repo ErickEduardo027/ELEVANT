@@ -260,8 +260,20 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!, item => item.Id == requestId && item.Status == "Pending");
         Assert.Equal(MobileAccessRequestFailure.Forbidden, (await requests.RejectAsync(
             contractsId, requestId, "No procede", pending.Request.Version, cancellationToken)).Failure);
-        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RejectAsync(
-            superAdminId, requestId, "No procede", "stale-request-version", cancellationToken)).Failure);
+        // 2-N39: each refusal of the legacy rejection names its rule.
+        async Task<(MobileAccessRequestFailure?, string?)> RefusedAsync(Guid id, string reason, string version)
+        {
+            var refused = await requests.RejectAsync(superAdminId, id, reason, version, cancellationToken);
+            return (refused.Failure, refused.Code);
+        }
+        Assert.Equal((MobileAccessRequestFailure.Conflict, "version_conflict"),
+            await RefusedAsync(requestId, "No procede", "stale-request-version"));
+        Assert.Equal((MobileAccessRequestFailure.Invalid, "reason_required"),
+            await RefusedAsync(requestId, "   ", pending.Request.Version));
+        Assert.Equal((MobileAccessRequestFailure.Invalid, "expected_version_required"),
+            await RefusedAsync(requestId, "No procede", " "));
+        Assert.Equal((MobileAccessRequestFailure.NotFound, "not_found"),
+            await RefusedAsync(Guid.CreateVersion7(), "No procede", pending.Request.Version));
         var rejected = await requests.RejectAsync(superAdminId, requestId,
             "Datos por revisar", pending.Request.Version, cancellationToken);
         Assert.Equal("Rejected", rejected.Request!.Status);
@@ -328,9 +340,8 @@ public sealed partial class SqlServerMigrationTests
             approval, cancellationToken)).Id);
         Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
             approval with { TemporaryPassword = "Different-Ramp!5678" }, cancellationToken)).Failure);
-        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RejectAsync(
-            superAdminId, renewedId, "Too late", reviewedRequest.Version,
-            cancellationToken)).Failure);
+        Assert.Equal((MobileAccessRequestFailure.Conflict, "access_request_closed"),
+            await RefusedAsync(renewedId, "Too late", reviewedRequest.Version));
         Assert.Contains((await requests.ListForHumanResourcesAsync(humanResourcesId,
             cancellationToken))!, item => item.Id == renewedId &&
                 item.Status == "Fulfilled" && item.AccountId == created.Id);
@@ -964,7 +975,7 @@ public sealed partial class SqlServerMigrationTests
     }
 
     [Fact]
-    public async Task HumanResourcesAvailabilityWriteReplaysResolvesAndRejectsActiveAssignment()
+    public async Task HumanResourcesAvailabilityWriteReplaysResolvesAndReleasesTheAbsenceDays()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         var masterConnection = ResolveMasterConnection();
@@ -1011,14 +1022,14 @@ public sealed partial class SqlServerMigrationTests
                 cancellationToken)).Failure);
             Assert.Null((await store.ResolveAsync(hrId, firstId,
                 new ResolveHumanResourcesAvailabilityInput("Approve", "Coverage arranged"),
-                cancellationToken)).Failure);
+                null, cancellationToken)).Failure);
             Assert.Null((await store.ResolveAsync(hrId, firstId,
                 new ResolveHumanResourcesAvailabilityInput("Approve", "Coverage arranged"),
-                cancellationToken)).Failure);
+                null, cancellationToken)).Failure);
             Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
                 (await store.ResolveAsync(hrId, firstId,
                 new ResolveHumanResourcesAvailabilityInput("Reject", "Different decision"),
-                cancellationToken)).Failure);
+                null, cancellationToken)).Failure);
         }
         var raceDate = date.AddDays(10);
         async Task<HumanResourcesAvailabilityWriteResult> RaceRecordAsync(Guid id)
@@ -1109,18 +1120,6 @@ public sealed partial class SqlServerMigrationTests
             });
             await setup.SaveChangesAsync(cancellationToken);
         }
-        await using (var scope = provider.CreateAsyncScope())
-        {
-            var store = scope.ServiceProvider
-                .GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
-            Assert.Null((await store.RecordAsync(hrId, collidingId, input with
-            { StartsOn = collidingDate, EndsOn = collidingDate },
-                cancellationToken)).Failure);
-            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
-                (await store.ResolveAsync(hrId, collidingId,
-                    new ResolveHumanResourcesAvailabilityInput("Approve", null),
-                    cancellationToken)).Failure);
-        }
         await using (var inspection = CreateContext(database.ConnectionString))
         {
             var saved = await inspection.AvailabilityRequests.AsNoTracking()
@@ -1141,6 +1140,7 @@ public sealed partial class SqlServerMigrationTests
             var occKey = await inspection.Users.AsNoTracking()
                 .Where(item => item.PublicId == occId).Select(item => item.Id)
                 .SingleAsync(cancellationToken);
+            // Nothing to release in 2031: the approval only announces the agent's days to OCC.
             var occHints = await inspection.OutboxMessages.AsNoTracking()
                 .Where(message => message.PayloadJson.Contains("\"resource\":\"occ_planning\""))
                 .ToArrayAsync(cancellationToken);
@@ -1153,68 +1153,67 @@ public sealed partial class SqlServerMigrationTests
                 StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain(input.Reason, occHint.PayloadJson,
                 StringComparison.Ordinal);
-            Assert.Equal(AvailabilityRequestStatus.Pending,
-                (await inspection.AvailabilityRequests.AsNoTracking()
-                    .SingleAsync(request => request.PublicId == collidingId,
-                        cancellationToken)).Status);
-            var turnaroundKey = await inspection.Turnarounds.Where(turnaround =>
-                turnaround.OperationCode == "HR-ABSENCE-COLLISION")
-                .Select(turnaround => turnaround.Id).SingleAsync(cancellationToken);
-            var operationKey = await inspection.GroundOperations.Where(operation =>
-                operation.TurnaroundId == turnaroundKey).Select(operation => operation.Id)
-                .SingleAsync(cancellationToken);
-            var assignment = await inspection.OperationAgentAssignments.SingleAsync(item =>
-                item.GroundOperationId == operationKey && item.ReleasedAt == null,
-                cancellationToken);
-            assignment.ReleasedAt = DateTimeOffset.UtcNow;
-            await inspection.SaveChangesAsync(cancellationToken);
         }
         await using (var scope = provider.CreateAsyncScope())
         {
             var store = scope.ServiceProvider
                 .GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
-            Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
-                (await store.ResolveAsync(hrId, collidingId,
-                    new ResolveHumanResourcesAvailabilityInput("Approve", null),
-                    cancellationToken)).Failure);
+            Assert.Null((await store.RecordAsync(hrId, collidingId, input with
+            { StartsOn = collidingDate, EndsOn = collidingDate },
+                cancellationToken)).Failure);
+            // 2-N08: approving releases the agent's work of that day instead of refusing it — the operation of
+            // the day and, through the night shift of the last day, the one after midnight.
+            Assert.Null((await store.ResolveAsync(hrId, collidingId,
+                new ResolveHumanResourcesAvailabilityInput("Approve", null),
+                null, cancellationToken)).Failure);
         }
         await using (var inspection = CreateContext(database.ConnectionString))
         {
-            var turnaroundKey = await inspection.Turnarounds.Where(turnaround =>
-                turnaround.OperationCode == "HR-ABSENCE-OVERNIGHT")
-                .Select(turnaround => turnaround.Id).SingleAsync(cancellationToken);
-            var operationKey = await inspection.GroundOperations.Where(operation =>
-                operation.TurnaroundId == turnaroundKey).Select(operation => operation.Id)
-                .SingleAsync(cancellationToken);
-            var assignment = await inspection.OperationAgentAssignments.SingleAsync(item =>
-                item.GroundOperationId == operationKey && item.ReleasedAt == null,
-                cancellationToken);
-            assignment.ReleasedAt = DateTimeOffset.UtcNow;
-            await inspection.SaveChangesAsync(cancellationToken);
+            Assert.Equal(AvailabilityRequestStatus.Approved,
+                (await inspection.AvailabilityRequests.AsNoTracking()
+                    .SingleAsync(request => request.PublicId == collidingId,
+                        cancellationToken)).Status);
+            foreach (var code in new[] { "HR-ABSENCE-COLLISION", "HR-ABSENCE-OVERNIGHT" })
+            {
+                var operationKey = await (from turnaround in inspection.Turnarounds.AsNoTracking()
+                                          join operation in inspection.GroundOperations.AsNoTracking()
+                                              on turnaround.Id equals operation.TurnaroundId
+                                          where turnaround.OperationCode == code
+                                          select operation.Id).SingleAsync(cancellationToken);
+                Assert.False(await inspection.OperationAgentAssignments.AnyAsync(item =>
+                    item.GroundOperationId == operationKey && item.ReleasedAt == null, cancellationToken), code);
+            }
+            var agentKey = await inspection.RampAgents.Where(agent => agent.PublicId == agentId)
+                .Select(agent => agent.Id).SingleAsync(cancellationToken);
+            Assert.False(await inspection.ShiftAssignments.AnyAsync(shift => shift.RampAgentId == agentKey &&
+                shift.WorkDate == collidingDate, cancellationToken));
+            Assert.Equal(2, await inspection.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.agent_release.operation_released", cancellationToken));
+            Assert.Equal(1, await inspection.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.agent_release.shift_removed", cancellationToken));
+            var occKey = await inspection.Users.AsNoTracking().Where(item => item.PublicId == occId)
+                .Select(item => item.Id).SingleAsync(cancellationToken);
+            Assert.Equal(2, await inspection.OperationalNotifications.CountAsync(item =>
+                item.Kind == "agent_released" && item.RecipientAccountId == occKey, cancellationToken));
+            Assert.True(await inspection.OutboxMessages.CountAsync(message =>
+                message.PayloadJson.Contains("\"resource\":\"occ_planning\""), cancellationToken) > 1);
         }
         await using (var scope = provider.CreateAsyncScope())
         {
             var store = scope.ServiceProvider
                 .GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
-            Assert.Null((await store.ResolveAsync(hrId, collidingId,
-                new ResolveHumanResourcesAvailabilityInput("Approve", null),
-                cancellationToken)).Failure);
             var rejectedId = Guid.NewGuid();
             Assert.Null((await store.RecordAsync(hrId, rejectedId, input with
             { StartsOn = collidingDate.AddDays(2), EndsOn = collidingDate.AddDays(2),
               Type = "ShiftChange" }, cancellationToken)).Failure);
             Assert.Null((await store.ResolveAsync(hrId, rejectedId,
                 new ResolveHumanResourcesAvailabilityInput("Reject", "Not scheduled"),
-                cancellationToken)).Failure);
+                null, cancellationToken)).Failure);
             Assert.Equal(HumanResourcesAvailabilityWriteFailure.Forbidden,
                 (await store.ResolveAsync(occId, rejectedId,
                     new ResolveHumanResourcesAvailabilityInput("Reject", "Not scheduled"),
-                    cancellationToken)).Failure);
+                    null, cancellationToken)).Failure);
         }
-        await using (var inspection = CreateContext(database.ConnectionString))
-            Assert.Equal(2, await inspection.OutboxMessages.AsNoTracking()
-                .CountAsync(message => message.PayloadJson.Contains(
-                    "\"resource\":\"occ_planning\""), cancellationToken));
         await using (var revoke = CreateContext(database.ConnectionString))
         {
             var hrKey = await revoke.Users.Where(user => user.PublicId == hrId)
@@ -1273,18 +1272,34 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken);
         Assert.Null(result.Failure);
         Assert.False(result.Profile!.IsActive);
-        Assert.Equal(before + 1, await CountOccPlanningHintsAsync());
+        // 2-N06: deactivating the profile ends the ramp duty through the release path, so the station is invalidated
+        // by the profile and by the seeded flight it released; every invalidation names the station, never the agent.
+        Assert.True(await CountOccPlanningHintsAsync() > before);
         await using var inspection = CreateContext(database.ConnectionString);
-        var hint = Assert.Single(await inspection.OutboxMessages.AsNoTracking()
-            .Where(item => item.PayloadJson.Contains("\"resource\":\"occ_planning\""))
-            .ToArrayAsync(cancellationToken));
-        var payload = AccountChangeOutboxWriter.Decode(hint);
-        Assert.Equal(stationId, payload.ResourceId);
-        Assert.Equal(await inspection.Users.AsNoTracking()
+        var occKey = await inspection.Users.AsNoTracking()
             .Where(item => item.PublicId == occId).Select(item => item.Id)
-            .SingleAsync(cancellationToken), payload.RecipientAccountId);
-        Assert.DoesNotContain(profile.Id.ToString(), hint.PayloadJson,
-            StringComparison.OrdinalIgnoreCase);
+            .SingleAsync(cancellationToken);
+        var hints = await inspection.OutboxMessages.AsNoTracking()
+            .Where(item => item.PayloadJson.Contains("\"resource\":\"occ_planning\""))
+            .ToArrayAsync(cancellationToken);
+        Assert.NotEmpty(hints);
+        Assert.All(hints, hint =>
+        {
+            var payload = AccountChangeOutboxWriter.Decode(hint);
+            Assert.Equal(stationId, payload.ResourceId);
+            Assert.Equal(occKey, payload.RecipientAccountId);
+            Assert.DoesNotContain(profile.Id.ToString(), hint.PayloadJson, StringComparison.OrdinalIgnoreCase);
+        });
+        var flight = await (from turnaround in inspection.Turnarounds.AsNoTracking()
+                            join operation in inspection.GroundOperations.AsNoTracking()
+                                on turnaround.Id equals operation.TurnaroundId
+                            where turnaround.OperationCode == "DEV-TAT-0001"
+                            select new { operation.Id, operation.CurrentStatus }).SingleAsync(cancellationToken);
+        Assert.Equal(GroundOperationStatus.Planned, flight.CurrentStatus);
+        Assert.False(await inspection.OperationAgentAssignments.AnyAsync(item =>
+            item.GroundOperationId == flight.Id && item.ReleasedAt == null, cancellationToken));
+        Assert.True(await inspection.AuditEntries.AnyAsync(entry =>
+            entry.Action == "hr.agent_release.operation_released", cancellationToken));
 
         async Task<int> CountOccPlanningHintsAsync()
         {
@@ -6486,14 +6501,31 @@ public sealed partial class SqlServerMigrationTests
                     cancellationToken);
         }
 
-        var foreignBinding = await RegisterAsync();
-        Assert.Equal(
-            MobileDeviceRegistrationWriteFailure.Forbidden,
-            foreignBinding.Failure);
+        // The tablet bound to another account still refuses this agent's ramp commands (fail closed)...
         var foreignBindingStart = await StartAsync(
             Guid.Parse("82000000-0000-7000-8000-000000000017"),
             operationId);
         Assert.Equal(RampOperationStartWriteFailure.Forbidden, foreignBindingStart.Failure);
+        // ...until the agent signs in on it: a shared tablet passes to the agent who signs in, because the account
+        // that held it works no operation in progress (2-N02). The previous binding closes, audited, never deleted.
+        var takeover = await RegisterAsync();
+        Assert.True(takeover.IsSuccess);
+        await using (var takeoverContext = CreateContext(database.ConnectionString))
+        {
+            var bindings = await (
+                    from binding in takeoverContext.Set<MobileDeviceAccountBinding>().AsNoTracking()
+                    join device in takeoverContext.MobileDevices.AsNoTracking()
+                        on binding.MobileDeviceId equals device.Id
+                    join account in takeoverContext.Users.AsNoTracking() on binding.AccountId equals account.Id
+                    where device.InstallationId == installationId
+                    select new { account.PublicId, binding.UnboundAt })
+                .ToArrayAsync(cancellationToken);
+            Assert.Equal(accountId, Assert.Single(bindings, binding => binding.UnboundAt == null).PublicId);
+            Assert.Contains(bindings, binding => binding.PublicId == Guid.Parse("40000000-0000-7000-8000-000000000001") &&
+                binding.UnboundAt != null);
+            Assert.True(await takeoverContext.AuditEntries.AnyAsync(entry =>
+                entry.Action == "mobile_device.binding_taken_over", cancellationToken));
+        }
     }
 
     [Theory]
@@ -8472,9 +8504,16 @@ public sealed partial class SqlServerMigrationTests
             .CountAsync(cancellationToken));
         Assert.Equal(2, await verify.OperationalNotifications.AsNoTracking()
             .CountAsync(cancellationToken));
-        var changeHints = await verify.OutboxMessages.AsNoTracking()
+        var allHints = await verify.OutboxMessages.AsNoTracking()
             .Where(message => message.EventType == "account.changed.v1")
             .ToArrayAsync(cancellationToken);
+        // 2-N02: binding the agent's tablet also tells OCC's tablet screen to re-read it, once.
+        var tabletHint = Assert.Single(allHints,
+            message => AccountChangeOutboxWriter.Decode(message).Resource == "mobile_devices");
+        var tabletRecipient = AccountChangeOutboxWriter.Decode(tabletHint).RecipientAccountId;
+        Assert.Equal(occId, await verify.Users.AsNoTracking().Where(user => user.Id == tabletRecipient)
+            .Select(user => user.PublicId).SingleAsync(cancellationToken));
+        var changeHints = allHints.Where(message => message != tabletHint).ToArray();
         // ADR-0029: each message also reaches the other participant, not only the sender.
         Assert.Equal(6, changeHints.Length);
         Assert.Equal(6, changeHints.Select(message => message.PublicId).Distinct().Count());

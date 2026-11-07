@@ -138,10 +138,57 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
         Assert.Equal(id, json.RootElement.GetProperty("id").GetGuid());
 
         stub.Conflict = true;
+        stub.Code = "shift_on_approved_absence";
         using var second = await client.PutAsJsonAsync(
             $"/api/v1/human-resources/shifts/{id:D}", input,
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        using var problem = JsonDocument.Parse(await second.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("shift_on_approved_absence", problem.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task ShiftRemovalPassesTheVersionAndTheKeyAndMapsItsRules()
+    {
+        var id = Guid.NewGuid();
+        var stub = new WriteStub();
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IHumanResourcesShiftWriteStore>();
+                services.AddSingleton<IHumanResourcesShiftWriteStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+
+        // An older client: no version, no key (expand).
+        using (var legacy = await client.DeleteAsync($"/api/v1/human-resources/shifts/{id:D}",
+                   TestContext.Current.CancellationToken))
+            Assert.Equal(HttpStatusCode.NoContent, legacy.StatusCode);
+        Assert.Equal(new RemoveHumanResourcesShiftInput(null, null), stub.RemoveInput);
+
+        var key = Guid.NewGuid();
+        async Task<HttpResponseMessage> RemoveAsync()
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Delete,
+                $"/api/v1/human-resources/shifts/{id:D}?version=AAAAAAAAB9E%3D");
+            request.Headers.Add("Idempotency-Key", key.ToString("D"));
+            return await client.SendAsync(request, TestContext.Current.CancellationToken);
+        }
+        using (var removed = await RemoveAsync())
+            Assert.Equal(HttpStatusCode.NoContent, removed.StatusCode);
+        Assert.Equal(new RemoveHumanResourcesShiftInput("AAAAAAAAB9E=", key), stub.RemoveInput);
+        foreach (var code in new[] { "shift_in_use", "shift_in_past", "version_conflict" })
+        {
+            stub.Conflict = true;
+            stub.Code = code;
+            using var refused = await RemoveAsync();
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            using var problem = JsonDocument.Parse(await refused.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            Assert.Equal(code, problem.RootElement.GetProperty("code").GetString());
+        }
     }
 
     [Fact]
@@ -178,7 +225,7 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
                 [new HumanResourcesShiftData(shiftId, Guid.NewGuid(), "Riley Ramp",
                     "DEV-RA-001", Guid.NewGuid(), "PUJ", Guid.NewGuid(), "A",
                     Guid.NewGuid(), "RAMP-AGENT", new DateOnly(2026, 8, 18),
-                    new TimeOnly(6, 0), new TimeOnly(14, 0), "Morning")]),
+                    new TimeOnly(6, 0), new TimeOnly(14, 0), "Morning", "AAAAAAAAB9E=")]),
         };
         await using var application = factory.WithWebHostBuilder(builder =>
             builder.ConfigureTestServices(services =>
@@ -219,6 +266,9 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
         Assert.Equal(shiftId, json.RootElement.GetProperty("shifts")[0].GetProperty("id").GetGuid());
         Assert.Equal("PUJ", json.RootElement.GetProperty("shifts")[0]
             .GetProperty("stationCode").GetString());
+        // The version is the expected version of the shift's removal (2-N11).
+        Assert.Equal("AAAAAAAAB9E=", json.RootElement.GetProperty("shifts")[0]
+            .GetProperty("version").GetString());
         Assert.Equal((AccountId, new DateOnly(2026, 8, 17), new DateOnly(2026, 8, 23), 2, 1), stub.Request);
     }
 
@@ -327,6 +377,8 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
         { get; private set; }
         public bool Conflict { get; set; }
         public bool Forbidden { get; set; }
+        public string? Code { get; set; }
+        public RemoveHumanResourcesShiftInput? RemoveInput { get; private set; }
 
         public Task<HumanResourcesShiftWriteResult> RecordAsync(Guid actorId, Guid shiftId,
             RecordHumanResourcesShiftInput input, CancellationToken cancellationToken = default)
@@ -335,18 +387,19 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
             return Task.FromResult(Forbidden
                 ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Forbidden)
                 : Conflict
-                    ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict)
+                    ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict, Code)
                     : HumanResourcesShiftWriteResult.Success(shiftId));
         }
 
         public Guid? Removed { get; private set; }
 
         public Task<HumanResourcesShiftWriteResult> RemoveAsync(Guid actorId, Guid shiftId,
-            CancellationToken cancellationToken = default)
+            RemoveHumanResourcesShiftInput input, CancellationToken cancellationToken = default)
         {
             Removed = shiftId;
+            RemoveInput = input;
             return Task.FromResult(Conflict
-                ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict)
+                ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict, Code)
                 : HumanResourcesShiftWriteResult.Success(shiftId));
         }
     }

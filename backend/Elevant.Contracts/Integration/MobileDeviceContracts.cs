@@ -38,6 +38,29 @@ public sealed record RegisterMobileDeviceRequest
     public string? OperatingSystemVersion { get; init; }
 }
 
+/// <summary>The tablet frees its binding when the agent signs out (2-N02); the next agent binds it at sign-in.</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ReleaseMobileDeviceRequest
+{
+    public ReleaseMobileDeviceRequest(Guid installationId, string? expectedVersion = null)
+    {
+        InstallationId = installationId;
+        ExpectedVersion = expectedVersion;
+    }
+
+    [Required]
+    public Guid InstallationId { get; init; }
+
+    /// <summary>
+    /// The <c>lastSeenAt</c> of the newest registration the agent's session confirmed. Each sign-in opens its own
+    /// binding, so a release that arrives after the agent signed in on the tablet again answers
+    /// <c>version_conflict</c> and frees nothing; the session's own writes never refuse it. Optional: without it only
+    /// the holder is checked.
+    /// </summary>
+    [StringLength(64, MinimumLength = 1)]
+    public string? ExpectedVersion { get; init; }
+}
+
 public sealed record RegisterMobileDeviceResponse
 {
     public RegisterMobileDeviceResponse(

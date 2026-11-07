@@ -15,4 +15,5 @@ public sealed record CreateManualTurnaroundCommand(
     DateTimeOffset DepartureScheduledAt,
     Guid CorrelationId,
     string RequestId,
-    bool Charter = false);
+    bool Charter = false,
+    Guid? AircraftTypeId = null);

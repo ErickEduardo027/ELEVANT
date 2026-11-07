@@ -38,8 +38,13 @@ export async function commercialApi(path, options = {}) {
 export const getGovernance = () => commercialApi('/governance');
 export const getGovernanceAudit = (page = 1) => commercialApi(`/governance/audit?page=${page}&limit=25`);
 export const getRampProfiles = () => commercialApi('/human-resources/ramp-profiles');
-export const saveRampProfile = (id, values) => commercialApi(id ? `/human-resources/ramp-profiles/${id}` : '/human-resources/ramp-profiles', {
+/**
+ * Creates (no id) or saves a ramp profile. An update carries the profile's `version` on screen as `expectedVersion`
+ * and the intent's Idempotency-Key: deactivating it releases the agent's work (2-N06), so a retry must never repeat it.
+ */
+export const saveRampProfile = (id, values, idempotencyKey) => commercialApi(id ? `/human-resources/ramp-profiles/${id}` : '/human-resources/ramp-profiles', {
   method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
+  ...(id && idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
 });
 export const getManagedAirlines = () => commercialApi('/governance/airlines');
 export const enrichManagedAirlines = () => commercialApi('/governance/airlines/enrichment', { method: 'POST' });
@@ -233,22 +238,47 @@ export async function downloadContractDocument(versionId, fileName) {
 export const signContractVersion = (versionId, request, idempotencyKey) =>
   contractCall(() => contractClient().signContractVersion(versionId, request, idempotencyKey));
 
-/** Contratos confirms validity, renewal and termination before signatures (ADR-0025). */
-export const setContractValidity = (versionId, request) =>
-  contractCall(() => contractClient().setContractValidity(versionId, request));
+/**
+ * Contratos confirms validity, renewal and termination before signatures (ADR-0025) with the intent's
+ * Idempotency-Key: a retry of the same body after an uncertain result replays the first answer.
+ */
+export const setContractValidity = (versionId, request, idempotencyKey) =>
+  contractCall(() => contractClient().setContractValidity(versionId, request, idempotencyKey));
 
-/** Airline permit dossier for Contratos (ADR-0024); review is Submitted, Verified or Rejected. */
+/**
+ * Contratos withdraws an approved version both parties have not signed, with a reason and the content hash
+ * on screen (2-N10). Answers the version (Rejected), its contract and, for a contract that never activated,
+ * the new draft with the same content (`draftVersionId`).
+ */
+export const withdrawContractVersion = (versionId, command, idempotencyKey) =>
+  contractCall(() => contractClient().withdrawContractVersion(versionId, command, idempotencyKey));
+
+/**
+ * Airline permit dossier for Contratos (ADR-0024): one review state (Submitted, Verified, Rejected or Revoked) or
+ * every permit, validated by the shared client.
+ */
 export const getAirlinePermitsForContracts = (review = '') =>
-  commercialApi(`/contracts/permits${review ? `?review=${encodeURIComponent(review)}` : ''}`);
-export const reviewAirlinePermit = (permitId, verified, note, expectedVersion) =>
-  commercialApi(`/contracts/permits/${permitId}/review`, {
-    method: 'POST', body: JSON.stringify({ verified, note: note || null, expectedVersion }),
-  });
+  contractCall(() => contractClient().getContractsAirlinePermits(review || null, { cache: 'no-store' }));
+/**
+ * Verifies or rejects a submitted permit: `{ verified, note, expectedVersion }` with the intent's Idempotency-Key.
+ * Answers the permit and the contracts the review activated or resumed (2-N30).
+ */
+export const reviewAirlinePermit = (permitId, command, idempotencyKey) =>
+  contractCall(() => contractClient().reviewAirlinePermit(permitId, command, idempotencyKey));
+/**
+ * Revokes a verified permit: `{ reason, expectedVersion }` with the intent's Idempotency-Key (2-N09). The active
+ * contracts left without a usable operating permit are suspended at once; the answer names them.
+ */
+export const revokeAirlinePermit = (permitId, command, idempotencyKey) =>
+  contractCall(() => contractClient().revokeAirlinePermit(permitId, command, idempotencyKey));
 /** Contract history (request, Finance, signatures, permits and status), oldest first. */
 export const getContractTimeline = versionId => commercialApi(`/contract-versions/${versionId}/timeline`);
 /**
- * Suspend, Reactivate, Terminate (also «Descartar contrato» for one that never activated) or Renew
- * (validFrom/validTo) with a reason, the status the user saw and the intent's Idempotency-Key.
+ * Suspend, Reactivate, Terminate (also «Descartar contrato» for one that never activated), CancelTermination
+ * or Renew (validFrom/validTo) with a reason, the status the user saw and the intent's Idempotency-Key. A
+ * termination of an active or suspended contract carries `effectiveOn` (its first day without coverage) or an
+ * `immediateCause` (`Breach` or `MutualAgreement`) (2-N14). The history (`getContractTimeline`) tells
+ * `terminatesOn` and `earliestTerminationOn`.
  */
 export const applyContractLifecycle = (versionId, values, idempotencyKey) => commercialApi(
   `/contract-versions/${versionId}/lifecycle`, {

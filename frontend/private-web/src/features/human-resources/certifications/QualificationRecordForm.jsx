@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { businessToday } from '../../../services/businessDay';
 import { getRampProfiles } from '../../../services/commercialGovernanceApi';
 import { getHumanResourcesQualificationEquipmentTypes, getHumanResourcesQualifications,
   recordHumanResourcesQualification } from '../../../services/humanResourcesQualificationsReadService';
@@ -16,7 +17,8 @@ export default function QualificationRecordForm({ initialQualification, onRecord
   const [pending, setPending] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const today = new Date().toISOString().slice(0, 10);
+  // AVIAM's business day, like the server validates it (2-N31).
+  const today = businessToday();
 
   useEffect(() => {
     let active = true;

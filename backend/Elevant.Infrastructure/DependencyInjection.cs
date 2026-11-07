@@ -51,7 +51,19 @@ public static class DependencyInjection
             .Get<Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxOptions>() ?? new();
         services.AddSingleton(new Elevant.Application.Integration.FlightFeedBudget(
             Math.Max(0, aeroDataBox.DailyUnitLimit), Math.Max(0, aeroDataBox.MonthlyUnitLimit)));
-        if (aeroDataBox.Enabled && !string.IsNullOrWhiteSpace(aeroDataBox.ApiKey))
+        // The simulated feed (2-B) is opt-in, only for Development or Test and never next to AeroDataBox.
+        var simulatedFeed = configuration.GetSection(Integrations.SimulatedFlightFeed.SimulatedFlightFeedOptions.SectionName)
+            .Get<Integrations.SimulatedFlightFeed.SimulatedFlightFeedOptions>() ?? new();
+        if (simulatedFeed.Enabled)
+        {
+            if (environment is not ("Development" or "Test"))
+                throw new InvalidOperationException("The simulated flight feed requires Development or Test.");
+            if (aeroDataBox.Enabled)
+                throw new InvalidOperationException("The simulated flight feed cannot run while AeroDataBox is enabled.");
+            services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed,
+                Integrations.SimulatedFlightFeed.SimulatedAirportFlightFeed>();
+        }
+        else if (aeroDataBox.Enabled && !string.IsNullOrWhiteSpace(aeroDataBox.ApiKey))
             services.AddSingleton<Elevant.Application.Abstractions.Integrations.IAirportFlightFeed>(_ =>
                 new Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxAirportFlightFeed(
                     new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(20) },

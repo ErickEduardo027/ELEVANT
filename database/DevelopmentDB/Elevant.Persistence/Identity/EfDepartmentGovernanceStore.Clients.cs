@@ -14,6 +14,9 @@ namespace Elevant.Persistence.Identity;
 
 internal sealed partial class EfDepartmentGovernanceStore
 {
+    /// <summary>Who made a change of portal users, as the airline's representatives read it.</summary>
+    private const string AviamActor = "Superadministración de AVIAM";
+
     public async Task<IReadOnlyList<ClientAirlineData>?> ListClientsAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
@@ -47,29 +50,49 @@ internal sealed partial class EfDepartmentGovernanceStore
         if (actor is null || !actor.IsSuper) return null;
         var organization = await AirlineOrganizationAsync(organizationId, cancellationToken);
         if (organization is null) return null;
-        return await (from membership in context.OrganizationMemberships.AsNoTracking()
-                      join user in context.Users.AsNoTracking() on membership.AccountId equals user.Id
-                      join person in context.Persons.AsNoTracking() on user.PersonId equals person.Id
-                      where membership.OrganizationId == organization.Value && membership.Kind == MembershipKind.AirlineClient
-                      orderby person.LastName, person.FirstName
-                      select new ClientUserData(user.PublicId, person.FirstName, person.LastName, user.Email ?? string.Empty,
-                          user.Status.ToString(), user.MustChangePassword, user.LastLoginAt,
-                          Convert.ToBase64String(user.RowVersion), user.InvitationStatus == InvitationStatus.Sent))
+        var rows = await (from membership in context.OrganizationMemberships.AsNoTracking()
+                          join user in context.Users.AsNoTracking() on membership.AccountId equals user.Id
+                          join person in context.Persons.AsNoTracking() on user.PersonId equals person.Id
+                          where membership.OrganizationId == organization.Value && membership.Kind == MembershipKind.AirlineClient
+                          orderby person.LastName, person.FirstName
+                          select new
+                          {
+                              user.Id, user.PublicId, person.FirstName, person.LastName, Email = user.Email ?? string.Empty,
+                              user.Status, user.MustChangePassword, user.LastLoginAt, user.RowVersion, user.InvitationStatus,
+                          })
             .ToArrayAsync(cancellationToken);
+        var flags = await AirlinePortalRoles.FlagsAsync(context, organization.Value, rows.Select(row => row.Id).ToArray(),
+            cancellationToken);
+        return rows.Select(row => new ClientUserData(row.PublicId, row.FirstName, row.LastName, row.Email,
+            row.Status.ToString(), row.MustChangePassword, row.LastLoginAt, Convert.ToBase64String(row.RowVersion),
+            row.InvitationStatus == InvitationStatus.Sent, flags[row.Id].Representative, flags[row.Id].Signer)).ToArray();
     }
 
-    /// <summary>The super administrator adds portal users to an airline that already has its organization.</summary>
+    /// <summary>
+    /// The super administrator adds portal users to an airline that already has its organization. The optional
+    /// Idempotency-Key replays the account it created (2-N39); the airline's representatives hear of it (2-N20).
+    /// </summary>
     public async Task<GovernanceResult> CreateClientUserAsync(Guid actorId, Guid organizationId,
-        CreateClientUserInput input, CancellationToken cancellationToken = default)
+        CreateClientUserInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.IsSuper) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
         var organization = await AirlineOrganizationAsync(organizationId, cancellationToken);
-        if (organization is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+        if (organization is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
+        if (idempotencyKey == Guid.Empty)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
         if (input is null || !GovernanceSupport.ValidName(input.FirstName) || !GovernanceSupport.ValidName(input.LastName) ||
             !GovernanceSupport.ValidEmail(input.Email))
             return GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.InvalidClientUser);
         var invite = string.IsNullOrWhiteSpace(input.TemporaryPassword);
+        var receipt = ReceiptOf(actor, idempotencyKey, "governance.client_user.create", new
+        {
+            organizationId, firstName = input.FirstName.Trim(), lastName = input.LastName.Trim(),
+            email = input.Email.Trim().ToUpperInvariant(), invite,
+        });
+        if (await ReplayAsync(receipt, cancellationToken,
+                id => PasswordMatchesAsync(id, invite ? null : input.TemporaryPassword, cancellationToken)) is { } replay)
+            return replay;
         // An invitation needs the portal origin for its activation link.
         if (invite && emailOptions.Link("/activar", "x") is null)
             return GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.InvitationsUnavailable);
@@ -79,69 +102,37 @@ internal sealed partial class EfDepartmentGovernanceStore
         return await InSerializableTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
-            var role = await context.Roles.SingleOrDefaultAsync(item =>
-                item.NormalizedName == "AIRLINE_CLIENT" && item.IsActive, cancellationToken);
-            if (role is null) return GovernanceResult.Failed(GovernanceFailure.Conflict);
-            var email = input.Email.Trim();
-            var person = new Person
-            {
-                PublicId = Guid.CreateVersion7(),
-                FirstName = input.FirstName.Trim(),
-                LastName = input.LastName.Trim(),
-                PrimaryEmail = email,
-                IdentificationType = "GOVERNANCE_ACCOUNT",
-                IdentificationNumber = Guid.CreateVersion7().ToString("N"),
-            };
-            context.Persons.Add(person);
-            await context.SaveChangesAsync(cancellationToken);
-            var account = new ApplicationUser
-            {
-                PublicId = Guid.CreateVersion7(),
-                PersonId = person.Id,
-                UserName = email,
-                Email = email,
-                EmailConfirmed = !invite,
-                LockoutEnabled = true,
-                Status = AccountLifecycleStatus.Active,
-                InvitationStatus = invite ? InvitationStatus.Sent : InvitationStatus.Accepted,
-                MustChangePassword = !invite,
-            };
-            var created = invite ? await userManager.CreateAsync(account)
-                : await userManager.CreateAsync(account, input.TemporaryPassword!);
-            if (!created.Succeeded)
-                return created.Errors.Any(error => error.Code is "DuplicateUserName" or "DuplicateEmail")
-                    ? GovernanceResult.Failed(GovernanceFailure.Conflict, GovernanceAccountIssues.EmailInUse)
-                    : GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.PasswordPolicy);
-            context.Set<IdentityUserRole<long>>().Add(new IdentityUserRole<long> { UserId = account.Id, RoleId = role.Id });
-            context.OrganizationMemberships.Add(new OrganizationMembership
-            {
-                PublicId = Guid.CreateVersion7(),
-                AccountId = account.Id,
-                OrganizationId = organization.Value,
-                Kind = MembershipKind.AirlineClient,
-                Status = MembershipStatus.Active,
-            });
+            var created = await PortalAccounts.AddAsync(context, userManager, emailOptions, organization.Value,
+                input.FirstName, input.LastName, input.Email, invite ? null : input.TemporaryPassword, now, cancellationToken);
+            if (created.Account is not { } account)
+                return GovernanceResult.Failed(created.Conflict ? GovernanceFailure.Conflict : GovernanceFailure.Invalid,
+                    created.FailureCode);
             GovernanceSupport.AddAudit(context, actor.Id, "governance.client_user.created", "iam.accounts",
                 account.PublicId, null, [], now, new AuditFieldChangeData("organization", null, organizationId.ToString()));
-            if (invite)
-            {
-                var airline = await context.Organizations.Where(item => item.Id == organization.Value)
-                    .Select(item => item.DisplayName).SingleAsync(cancellationToken);
-                if (!EfAccountEmailStore.AddActivation(context, emailOptions, account, person.FirstName, airline, now))
-                    return GovernanceResult.Failed(GovernanceFailure.Invalid, GovernanceAccountIssues.InvitationsUnavailable);
-            }
+            await context.SaveChangesAsync(cancellationToken);
+            await AirlinePortalRoles.NotifyRepresentativesAsync(context, organization.Value,
+                $"Se creó el acceso de {input.FirstName.Trim()} {input.LastName.Trim()} ({account.Email}) al portal.",
+                AviamActor, null, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(account.PublicId);
-        }, cancellationToken);
+        }, cancellationToken, receipt);
     }
 
     public async Task<GovernanceResult> SetClientUserStatusAsync(Guid actorId, Guid organizationId, Guid userId,
-        SetDepartmentUserStatusInput input, CancellationToken cancellationToken = default)
+        SetDepartmentUserStatusInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var target = await ClientTargetAsync(actorId, organizationId, userId, cancellationToken);
-        if (target.Failure is { } failure) return GovernanceResult.Failed(failure);
+        if (target.Failure is { } failure)
+            return GovernanceResult.Failed(failure, failure == GovernanceFailure.NotFound ? "not_found" : null);
+        if (idempotencyKey == Guid.Empty)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
         if (input is null || string.IsNullOrWhiteSpace(input.ExpectedVersion))
             return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        var receipt = idempotencyKey is { } key
+            ? new CommandReceipt(target.ActorId, key, "governance.client_user.set_status",
+                CommercialCommandReceipts.Hash(new { organizationId, userId, input.IsActive, input.ExpectedVersion }))
+            : null;
+        if (await ReplayAsync(receipt, cancellationToken) is { } replay) return replay;
         return await InSerializableTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
@@ -155,9 +146,90 @@ internal sealed partial class EfDepartmentGovernanceStore
                     ? "governance.client_user.reactivated" : "governance.client_user.deactivated",
                 "iam.accounts", user.PublicId, null, [], now, new AuditFieldChangeData("user.status", before.ToString(), user.Status.ToString()));
             await context.SaveChangesAsync(cancellationToken);
+            if (before != user.Status)
+                await AirlinePortalRoles.NotifyRepresentativesAsync(context, target.OrganizationId,
+                    $"{(input.IsActive ? "Se reactivó" : "Se desactivó")} el acceso de {await PortalUserNameAsync(user.Id, cancellationToken)}.",
+                    AviamActor, null, now, cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(user.PublicId);
-        }, cancellationToken);
+        }, cancellationToken, receipt);
     }
+
+    /// <summary>
+    /// The super administrator designates representatives and signers (2-N20). Taking the role from the last active
+    /// representative is refused (<c>last_representative</c>): somebody must keep managing the airline's users.
+    /// </summary>
+    public async Task<GovernanceResult> SetClientUserPortalRoleAsync(Guid actorId, Guid organizationId, Guid userId,
+        SetClientUserPortalRoleInput input, Guid idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        var target = await ClientTargetAsync(actorId, organizationId, userId, cancellationToken);
+        if (target.Failure is { } failure)
+            return GovernanceResult.Failed(failure, failure == GovernanceFailure.NotFound ? "not_found" : null);
+        if (idempotencyKey == Guid.Empty)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
+        if (input is null || string.IsNullOrWhiteSpace(input.ExpectedVersion))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        var receipt = new CommandReceipt(target.ActorId, idempotencyKey, "governance.client_user.portal_role",
+            CommercialCommandReceipts.Hash(new { organizationId, userId, input.Representative, input.Signer, input.ExpectedVersion }));
+        if (await ReplayAsync(receipt, cancellationToken) is { } replay) return replay;
+        return await InSerializableTransactionAsync(async () =>
+        {
+            var now = timeProvider.GetUtcNow();
+            var user = await context.Users.SingleAsync(item => item.Id == target.AccountId, cancellationToken);
+            if (GovernanceSupport.Version(user.RowVersion) != input.ExpectedVersion)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
+            var flags = (await AirlinePortalRoles.FlagsAsync(context, target.OrganizationId, [user.Id], cancellationToken))[user.Id];
+            var holders = await AirlinePortalRoles.OfAsync(context, target.OrganizationId, cancellationToken);
+            var changes = new List<AuditFieldChangeData>();
+            var name = await PortalUserNameAsync(user.Id, cancellationToken);
+            var notices = new List<string>();
+            if (input.Representative != flags.Representative)
+            {
+                if (input.Representative)
+                {
+                    await AirlinePortalRoles.GrantRepresentativeAsync(context, target.OrganizationId, user.Id, cancellationToken);
+                    notices.Add($"{name} ahora es representante de la aerolínea en el portal.");
+                }
+                else
+                {
+                    if (holders.Representatives.Contains(user.Id) &&
+                        holders.Representatives.All(account => account == user.Id))
+                        return GovernanceResult.Failed(GovernanceFailure.Conflict, "last_representative");
+                    await AirlinePortalRoles.RecordImplicitRepresentativesAsync(context, holders, cancellationToken);
+                    await context.SaveChangesAsync(cancellationToken);
+                    await AirlinePortalRoles.RevokeAsync(context, user.Id, AirlinePortalRoles.RepresentativeGrant, cancellationToken);
+                    notices.Add($"{name} dejó de ser representante de la aerolínea en el portal.");
+                }
+                changes.Add(new AuditFieldChangeData("portal.representative", Flag(flags.Representative), Flag(input.Representative)));
+            }
+            if (input.Signer != flags.Signer)
+            {
+                if (input.Signer) await AirlinePortalRoles.GrantAsync(context, user.Id, AirlinePortalRoles.SignerGrant, cancellationToken);
+                else await AirlinePortalRoles.RevokeAsync(context, user.Id, AirlinePortalRoles.SignerGrant, cancellationToken);
+                notices.Add(input.Signer
+                    ? $"{name} ahora puede firmar contratos y enviar el permiso de operación."
+                    : $"{name} ya no puede firmar contratos ni enviar el permiso de operación.");
+                changes.Add(new AuditFieldChangeData("portal.signer", Flag(flags.Signer), Flag(input.Signer)));
+            }
+            if (changes.Count == 0) return GovernanceResult.Success(user.PublicId);
+            // The account version moves with its roles, so a screen that saw the old ones re-reads.
+            user.ConcurrencyStamp = Guid.NewGuid().ToString();
+            user.UpdatedAt = now;
+            GovernanceSupport.AddAudit(context, target.ActorId, "governance.client_user.portal_role_changed", "iam.accounts",
+                user.PublicId, null, [], now, [.. changes]);
+            await context.SaveChangesAsync(cancellationToken);
+            await AirlinePortalRoles.NotifyRepresentativesAsync(context, target.OrganizationId, string.Join(' ', notices),
+                AviamActor, null, now, cancellationToken);
+            await context.SaveChangesAsync(cancellationToken);
+            return GovernanceResult.Success(user.PublicId);
+        }, cancellationToken, receipt);
+    }
+
+    private static string Flag(bool value) => value ? "true" : "false";
+
+    /// <summary>«Ana Rivera (ana@aerolinea.test)», as the representatives read it in a notice.</summary>
+    private Task<string> PortalUserNameAsync(long accountId, CancellationToken cancellationToken) =>
+        PortalAccounts.NameAsync(context, accountId, cancellationToken);
 
     private const string ClientPasswordResetAction = "governance.client_user.password_reset";
 
@@ -257,21 +329,23 @@ internal sealed partial class EfDepartmentGovernanceStore
             : GovernanceResult.Failed(GovernanceFailure.Conflict, "idempotency_conflict");
     }
 
-    private sealed record ClientTarget(long ActorId, long AccountId, GovernanceFailure? Failure);
+    private sealed record ClientTarget(long ActorId, long AccountId, long OrganizationId, GovernanceFailure? Failure);
 
     private async Task<ClientTarget> ClientTargetAsync(Guid actorId, Guid organizationId, Guid userId,
         CancellationToken cancellationToken)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
-        if (actor is null || !actor.IsSuper) return new(0, 0, GovernanceFailure.Forbidden);
+        if (actor is null || !actor.IsSuper) return new(0, 0, 0, GovernanceFailure.Forbidden);
         var organization = await AirlineOrganizationAsync(organizationId, cancellationToken);
-        if (organization is null) return new(actor.Id, 0, GovernanceFailure.NotFound);
+        if (organization is null) return new(actor.Id, 0, 0, GovernanceFailure.NotFound);
         var accountId = await (from membership in context.OrganizationMemberships.AsNoTracking()
                                join user in context.Users.AsNoTracking() on membership.AccountId equals user.Id
                                where user.PublicId == userId && membership.OrganizationId == organization.Value &&
                                    membership.Kind == MembershipKind.AirlineClient
                                select (long?)user.Id).FirstOrDefaultAsync(cancellationToken);
-        return accountId is null ? new(actor.Id, 0, GovernanceFailure.NotFound) : new(actor.Id, accountId.Value, null);
+        return accountId is null
+            ? new(actor.Id, 0, organization.Value, GovernanceFailure.NotFound)
+            : new(actor.Id, accountId.Value, organization.Value, null);
     }
 
     private Task<long?> AirlineOrganizationAsync(Guid organizationId, CancellationToken cancellationToken) =>
@@ -302,41 +376,51 @@ internal sealed partial class EfDepartmentGovernanceStore
             .ToDictionaryAsync(item => item.Key, item => item.Count, cancellationToken);
         return roles.Select(role => new LegacyRoleData(role.PublicId, role.NormalizedName!, role.Name ?? role.NormalizedName!,
             DepartmentAccessResolver.MapLegacyCommercial(permissions[role.Id]).Order(StringComparer.Ordinal).ToArray(),
-            users.GetValueOrDefault(role.Id))).ToArray();
+            users.GetValueOrDefault(role.Id), role.ConcurrencyStamp)).ToArray();
     }
 
     /// <summary>
-    /// Turns a legacy CUSTOM_* role into a Contracts template: its holders become
-    /// Contracts members that follow the template, and the legacy role is retired.
+    /// Turns a legacy CUSTOM_* role into a Contracts template: its holders become Contracts members that follow
+    /// the template and the legacy role is retired. A holder an administrator already edited keeps the permissions
+    /// chosen for it (2-N19). With an Idempotency-Key the role version is required and a retry replays (2-N39).
     /// </summary>
-    public async Task<GovernanceResult> ConvertLegacyRoleAsync(Guid actorId, Guid roleId,
-        CancellationToken cancellationToken = default)
+    public async Task<GovernanceResult> ConvertLegacyRoleAsync(Guid actorId, Guid roleId, ConvertLegacyRoleInput? input,
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.IsSuper) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
+        if (idempotencyKey == Guid.Empty)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
+        var expected = string.IsNullOrWhiteSpace(input?.ExpectedVersion) ? null : input.ExpectedVersion;
+        if (idempotencyKey is not null && expected is null)
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        var receipt = ReceiptOf(actor, idempotencyKey, "governance.legacy_role.convert", new { roleId, expected });
+        if (await ReplayAsync(receipt, cancellationToken) is { } replay) return replay;
         return await InSerializableTransactionAsync(async () =>
         {
             var now = timeProvider.GetUtcNow();
             var role = await context.Roles.SingleOrDefaultAsync(item => item.PublicId == roleId, cancellationToken);
-            if (role is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+            if (role is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
             if (!role.IsCustom || !role.IsActive || role.NormalizedName?.StartsWith("CUSTOM_", StringComparison.Ordinal) != true)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "legacy_role_converted");
+            if (expected is not null && role.ConcurrencyStamp != expected)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             var codes = DepartmentAccessResolver.MapLegacyCommercial(await (
                     from grant in context.Set<RolePermissionGrant>()
                     join permission in context.Permissions on grant.PermissionId equals permission.Id
                     where grant.RoleId == role.Id
                     select permission.Code).ToArrayAsync(cancellationToken))
                 .Distinct().Order(StringComparer.Ordinal).ToArray();
-            if (codes.Length == 0) return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            if (codes.Length == 0) return GovernanceResult.Failed(GovernanceFailure.Conflict, "legacy_role_empty");
             var contractsRole = await context.Roles.SingleOrDefaultAsync(item =>
                 item.NormalizedName == DepartmentAccessResolver.RoleCodeOf(Department.Contracts) && item.IsActive,
                 cancellationToken);
-            if (contractsRole is null) return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            if (contractsRole is null) return GovernanceResult.Failed(GovernanceFailure.Conflict, "role_missing");
             var name = (role.Name ?? role.NormalizedName!).Trim();
             if (name.Length > 80) name = name[..80];
             if (await context.AccessProfiles.AnyAsync(item => item.Department == Department.Contracts && item.IsActive &&
                     item.Name == name, cancellationToken))
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "profile_name_in_use");
 
             var profile = new AccessProfile
             {
@@ -351,6 +435,11 @@ internal sealed partial class EfDepartmentGovernanceStore
 
             var links = await context.Set<IdentityUserRole<long>>().Where(link => link.RoleId == role.Id)
                 .ToArrayAsync(cancellationToken);
+            var holders = links.Select(link => link.UserId).ToArray();
+            var explicitGrants = (await context.AccountPermissionGrants.AsNoTracking()
+                    .Where(grant => holders.Contains(grant.AccountId)).Select(grant => grant.AccountId)
+                    .ToArrayAsync(cancellationToken)).ToHashSet();
+            var kept = 0;
             foreach (var link in links)
             {
                 context.Set<IdentityUserRole<long>>().Remove(link);
@@ -368,22 +457,30 @@ internal sealed partial class EfDepartmentGovernanceStore
                     });
                 else if (assignment.Kind == DepartmentAssignmentKind.Member && assignment.Department == Department.Contracts)
                 {
+                    // 2-N19: permissions an administrator chose for this member win over the role's template.
+                    if (assignment.AccessProfileId is null && explicitGrants.Contains(link.UserId))
+                    {
+                        kept++;
+                        continue;
+                    }
                     assignment.AccessProfileId = profile.Id;
                     assignment.UpdatedAt = now;
                 }
             }
             role.IsActive = false;
             await context.SaveChangesAsync(cancellationToken);
-            foreach (var user in await context.Users.Where(user => links.Select(link => link.UserId).Contains(user.Id))
-                         .ToArrayAsync(cancellationToken))
+            foreach (var user in await context.Users.Where(user => holders.Contains(user.Id)).ToArrayAsync(cancellationToken))
                 await userManager.UpdateSecurityStampAsync(user);
             GovernanceSupport.AddAudit(context, actor.Id, "governance.legacy_role.converted", "iam.access_profiles",
                 profile.PublicId, null, [], now, new AuditFieldChangeData("role", role.NormalizedName, null),
                 new AuditFieldChangeData("profile.permissions", null, string.Join(',', codes)),
-                new AuditFieldChangeData("profile.members", null, links.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                new AuditFieldChangeData("profile.members", null,
+                    (links.Length - kept).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                new AuditFieldChangeData("members.kept_permissions", null,
+                    kept.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             await NotifyDepartmentAsync(Department.Contracts, "department_users", profile.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(profile.PublicId);
-        }, cancellationToken);
+        }, cancellationToken, receipt);
     }
 }

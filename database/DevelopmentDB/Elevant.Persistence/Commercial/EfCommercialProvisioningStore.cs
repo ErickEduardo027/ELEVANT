@@ -139,6 +139,8 @@ internal sealed class EfCommercialProvisioningStore(
                 });
                 request.ProvisionedAccountId = account.Id;
                 request.UpdatedAt = now;
+                // 2-N20: the provisioned account represents the airline in its portal.
+                await AirlinePortalRoles.GrantRepresentativeAsync(context, organizationId, account.Id, cancellationToken);
                 Audit(actor, "commercial.airline_account.provisioned", account.PublicId, organizationId, now,
                     $"Commercial request {request.RequestCode}");
                 AccountChangeOutboxWriter.Add(context, account.Id, null,
@@ -197,6 +199,8 @@ internal sealed class EfCommercialProvisioningStore(
                 }
                 request.ProvisionedAccountId = account.Id;
                 request.UpdatedAt = now;
+                // 2-N20: the provisioned account represents the airline in its portal.
+                await AirlinePortalRoles.GrantRepresentativeAsync(context, organizationId, account.Id, cancellationToken);
                 Audit(actor, "commercial.airline_account.linked", account.PublicId, organizationId, now,
                     $"Commercial request {request.RequestCode}",
                     new AuditFieldChangeData("membership.status", before, MembershipStatus.Active.ToString()));

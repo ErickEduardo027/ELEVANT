@@ -250,12 +250,16 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
     }
 
     /// <summary>
-    /// 1-C: a new Draft from the latest approved version with «Vigente desde» after its start and not
-    /// after its end, which it inherits. Rates are copied unconfirmed (units as codes, 1-E), with the
-    /// stations, the negotiated charges and the packages; the actor's station scope covers both the
-    /// version in the route and the approved version copied, otherwise the contract is not found. The
-    /// status the user saw is the token (the same one the contract lifecycle uses); the serializable
-    /// transaction re-checks that no other draft is in progress.
+    /// 1-C: a new Draft from the latest approved version that governs (signed by both parties, 2-C) with
+    /// «Vigente desde» after its start and not after its end, which it inherits. Not while another
+    /// approved version waits for its signatures (version_awaiting_signatures), nor on a terminated
+    /// contract or on or after a scheduled termination (2-N15). Rates are copied unconfirmed (units as codes, 1-E), with the
+    /// stations, the negotiated charges and the packages (<see cref="ContractVersionCopy"/>): a surcharge Finance only
+    /// inherited from the base tariff is not copied, so approving the amendment inherits the base tariff of its own start
+    /// and a later renewal never takes the old base value as negotiated (2-N03). The actor's station scope covers both the
+    /// version in the route and the approved version copied, otherwise the contract is not found. The status the user saw
+    /// is the token (the same one the contract lifecycle uses); the serializable transaction re-checks that no
+    /// other draft is in progress.
     /// </summary>
     public async Task<PackageWriteResult> CreateAmendmentAsync(Guid actorId, Guid versionId, Guid idempotencyKey,
         CreateAmendmentInput input, CancellationToken cancellationToken = default)
@@ -272,7 +276,8 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             var route = await context.ContractVersions.AsNoTracking().SingleOrDefaultAsync(x => x.PublicId == versionId, cancellationToken);
             if (route is null || !await ContractInScopeAsync(actorId, route.Id, cancellationToken)) return PackageWriteResult.Fail("not_found");
             var contract = await context.Contracts.SingleAsync(x => x.Id == route.ContractId, cancellationToken);
-            var source = await context.ContractVersions.AsNoTracking()
+            // The amendment starts from the version that governs (2-C), never from one nobody signed.
+            var source = await GoverningContractVersions.Of(context).AsNoTracking()
                 .Where(x => x.ContractId == contract.Id && x.Status == ContractVersionStatus.Approved)
                 .OrderByDescending(x => x.ValidFrom).ThenByDescending(x => x.VersionNumber).FirstOrDefaultAsync(cancellationToken);
             // The amendment copies the stations, rates, charges and packages of that approved version, which may
@@ -281,10 +286,16 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             if (source is not null && !await ContractInScopeAsync(actorId, source.Id, cancellationToken))
                 return PackageWriteResult.Fail("not_found");
             if (contract.Status != expected) return PackageWriteResult.Fail("version_conflict");
+            // 2-N15: a terminated contract is not amended, and nothing starts on or after a scheduled termination.
+            if (ContractLifecycle.ClosedFor(contract.Status, contract.TerminatedOn, input.ValidFrom) is { } closed)
+                return PackageWriteResult.Fail(closed);
             if (!ContractAmendment.CanAmend(contract.Status)) return PackageWriteResult.Fail(ContractAmendmentIssues.ContractNotAmendable);
             if (await context.ContractVersions.AnyAsync(x => x.ContractId == contract.Id &&
                     (x.Status == ContractVersionStatus.Draft || x.Status == ContractVersionStatus.PendingFinanceApproval), cancellationToken))
                 return PackageWriteResult.Fail(ContractAmendmentIssues.DraftInProgress);
+            // 2-N01: an approved version still waiting for both signatures is finished or withdrawn first.
+            if (await GoverningContractVersions.AwaitingSignatures(context).AnyAsync(x => x.ContractId == contract.Id, cancellationToken))
+                return PackageWriteResult.Fail(ContractLifecycleIssues.VersionAwaitingSignatures);
             if (source is null) return PackageWriteResult.Fail(ContractAmendmentIssues.NoApprovedVersion);
             if (ContractAmendment.StartIssue(input.ValidFrom, source.ValidFrom, source.ValidTo) is { } issue)
                 return PackageWriteResult.Fail(issue);
@@ -298,24 +309,7 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             };
             context.ContractVersions.Add(next);
             await context.SaveChangesAsync(cancellationToken);
-            var units = await BillingUnitCodes.LoadAsync(context, cancellationToken);
-            foreach (var rate in await context.ContractServiceRates.AsNoTracking().Where(x => x.ContractVersionId == source.Id).ToArrayAsync(cancellationToken))
-                context.ContractServiceRates.Add(new()
-                {
-                    PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, ServiceDefinitionId = rate.ServiceDefinitionId,
-                    BillingUnit = units.Normalize(rate.BillingUnit), UnitPrice = rate.UnitPrice, MinimumQuantity = rate.MinimumQuantity,
-                    IsConfirmed = false, CreatedAt = now, UpdatedAt = now,
-                });
-            foreach (var station in await context.Set<ContractVersionStation>().AsNoTracking().Where(x => x.ContractVersionId == source.Id).Select(x => x.StationId).ToArrayAsync(cancellationToken))
-                context.Add(new ContractVersionStation { ContractVersionId = next.Id, StationId = station });
-            foreach (var rate in await context.ContractChargeRates.AsNoTracking().Where(x => x.ContractVersionId == source.Id).ToArrayAsync(cancellationToken))
-                context.ContractChargeRates.Add(new()
-                {
-                    PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, ChargeDefinitionId = rate.ChargeDefinitionId,
-                    IsExcluded = rate.IsExcluded, Value = rate.Value, MinimumAmount = rate.MinimumAmount, CreatedAt = now, UpdatedAt = now,
-                });
-            foreach (var package in await context.Set<ContractServicePackage>().AsNoTracking().Where(x => x.ContractVersionId == source.Id).Select(x => x.PackageVersionId).ToArrayAsync(cancellationToken))
-                context.Set<ContractServicePackage>().Add(new() { PublicId = Guid.CreateVersion7(), ContractVersionId = next.Id, PackageVersionId = package, CreatedAt = now, UpdatedAt = now });
+            await ContractVersionCopy.CopyAsync(context, source, next, ratesConfirmed: false, now, cancellationToken);
             CommercialAuditWriter.Add(context, actor.Id, "commercial.contract.amendment_created", "commercial.contract_versions",
                 next.PublicId, null, new AuditFieldChangeData("amendment.valid_from",
                     source.ValidFrom.ToString("O", CultureInfo.InvariantCulture),

@@ -58,6 +58,35 @@ public sealed class ContractPdfRendererTests
     }
 
     [Fact]
+    public void AVersionWithPricingPrintsItsSurchargesAndPackages()
+    {
+        var plain = Document("Approved", terms: 3);
+        var pricing = new ContractPricingTerms(
+            [
+                new ContractDocumentCharge("NIGHT", "Recargo nocturno", "PercentOfService", null, "One", 0, 0m, false, 25m, 0m),
+                new ContractDocumentCharge("WEEKEND", "Recargo de fin de semana", "FixedAmount", "operation", "One", 0, 0m,
+                    true, null, null),
+                new ContractDocumentCharge("GPU-OT", "Exceso de GPU", "PerMinute", "minute", "OperationOverrun", 15, 1m,
+                    false, 2m, 10m),
+            ],
+            [
+                new ContractDocumentPackage("TAT", "Escala completa", 3, "Turnaround", null, null, 500m, "USD",
+                    [new ContractDocumentPackageComponent("RAMP", "Rampa", "operation", 1m, 1m, 120m),
+                        new ContractDocumentPackageComponent("GPU", "Planta", "minute", 60m, 15m, 20m)]),
+                new ContractDocumentPackage("ARR", "Llegada", 1, "Flight", "Arrival", null, 150m, "USD", []),
+                new ContractDocumentPackage("MONTH", "Mensual", 1, "Period", null, 30, 9000m, "USD", []),
+            ]);
+        var priced = plain with { Pricing = pricing };
+
+        var plainBytes = Render(plain);
+        var pricedBytes = Render(priced);
+        using var pdf = PdfReader.Open(new MemoryStream(pricedBytes), PdfDocumentOpenMode.Import);
+        Assert.True(pdf.PageCount >= 1);
+        Assert.True(pricedBytes.Length > plainBytes.Length);
+        Assert.NotEqual(plain.ContentSha256, priced.ContentSha256);
+    }
+
+    [Fact]
     public void UnconfirmedPriceDoesNotChangeTheSignedFingerprint()
     {
         var confirmed = Document("Draft");

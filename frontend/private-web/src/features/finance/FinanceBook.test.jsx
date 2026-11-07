@@ -131,18 +131,18 @@ describe('ContractApprovalsPage', () => {
   });
 
   it.each([
-    ['Active', /El contrato ya está activo: al aprobar, estos precios rigen desde el 1 de septiembre de 2026 y la versión vigente termina el día anterior, sin esperar firmas ni otra activación\./,
-      /^Precios aprobados\. Rigen desde el 1 de septiembre de 2026; la versión anterior termina el día anterior\.$/],
-    ['Suspended', /El contrato está suspendido: al aprobar, estos precios reemplazan a la versión vigente desde el 1 de septiembre de 2026 .*se aplican cuando el contrato se reactive\./,
-      /^Precios aprobados\. Reemplazan a la versión vigente desde el 1 de septiembre de 2026 y se aplican cuando el contrato se reactive\.$/],
-  ])('explains that approving an amendment of a %s contract replaces the version in force (1-F)', async (contractStatus, explained, done) => {
+    ['Active', /El contrato ya está activo: al aprobar, estos precios todavía no rigen\. Contratos confirma la vigencia y firman la aerolínea y AVIAM; con la segunda firma rigen desde el 1 de septiembre de 2026 y la versión vigente termina el día anterior\./,
+      /^Precios aprobados\. Rigen desde el 1 de septiembre de 2026 cuando firmen la aerolínea y AVIAM; hasta entonces se factura con la versión vigente\.$/],
+    ['Suspended', /El contrato está suspendido: al aprobar, estos precios todavía no rigen\. .*reemplazan a la versión vigente desde el 1 de septiembre de 2026 .*se aplican cuando el contrato se reactive\./,
+      /^Precios aprobados\. Reemplazan a la versión vigente desde el 1 de septiembre de 2026 cuando firmen la aerolínea y AVIAM, y se aplican cuando el contrato se reactive\.$/],
+  ])('explains that approving an amendment of a %s contract replaces the version in force at its second signature (1-F, 2-C)', async (contractStatus, explained, done) => {
     const amendment = { ...summary, contractStatus };
     listContractApprovals.mockResolvedValue([amendment]);
     getContractApproval.mockResolvedValue({ summary: amendment, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] });
     decideContractApproval.mockResolvedValue({ id: 'v-1' });
     renderWith(<ContractApprovalsPage />);
     await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
-    // The validity is the date the new prices apply from, not a step still pending before the signatures.
+    // The validity is the date the new prices apply from once both parties sign.
     expect(await screen.findByText(/desde esa fecha/)).toBeInTheDocument();
     expect(screen.queryByText(/Contratos la confirma después de tu aprobación/)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Aprobar precios' }));

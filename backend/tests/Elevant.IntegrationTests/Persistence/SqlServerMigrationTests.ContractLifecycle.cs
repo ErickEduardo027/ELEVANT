@@ -29,7 +29,7 @@ public sealed partial class SqlServerMigrationTests
         var current = (await documents.ReadAsync(ContractsAdministrator, versionId, ct)).Document!;
         var result = await documents.SetValidityAsync(ContractsAdministrator, versionId, new ContractValidityInput(
             from, from.AddYears(1).AddDays(-1), "Automatic", 12, 30, 60, "Incumplimiento grave de pago.",
-            current.ContentSha256), ct);
+            current.ContentSha256), null, ct);
         Assert.Null(result.Code);
         Assert.Null(result.Failure);
         return result.Document!.ContentSha256;
@@ -48,7 +48,8 @@ public sealed partial class SqlServerMigrationTests
         var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
         var permits = scope.ServiceProvider.GetRequiredService<IAirlinePermitStore>();
         var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // 2-F: contract and permit days are AVIAM's business days, whatever the hour of the run.
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var contractId = await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion)
             .Select(item => item.ContractId).SingleAsync(ct);
         async Task<Contract> ContractAsync() => await context.Contracts.AsNoTracking().SingleAsync(item => item.Id == contractId, ct);
@@ -76,17 +77,17 @@ public sealed partial class SqlServerMigrationTests
         // The airline submits its permit; Contratos verifies it and the contract activates at once.
         Assert.Null(await permits.ListForAirlineAsync(ContractsAdministrator, ct));
         Assert.Equal("permit_expired", (await permits.SubmitAsync(PortalAirlineAccount,
-            new SubmitAirlinePermitInput("OperatingPermit", "JAC-2026-001", "JAC", today.AddDays(-400), today.AddDays(-1), null), ct)).Code);
+            new SubmitAirlinePermitInput("OperatingPermit", "JAC-2026-001", "JAC", today.AddDays(-400), today.AddDays(-1), null), null, ct)).Code);
         var submitted = (await permits.SubmitAsync(PortalAirlineAccount,
-            new SubmitAirlinePermitInput("OperatingPermit", "JAC-2026-002", "Junta de Aviación Civil", today.AddDays(-30), today.AddDays(20), null), ct)).Permit!;
+            new SubmitAirlinePermitInput("OperatingPermit", "JAC-2026-002", "Junta de Aviación Civil", today.AddDays(-30), today.AddDays(20), null), null, ct)).Permit!;
         Assert.Equal(("Submitted", "Expiring"), (submitted.Review, submitted.Validity));
         Assert.Equal(AirlinePermitFailure.Forbidden, (await permits.ReviewAsync(PortalAirlineAccount, submitted.Id,
-            new ReviewAirlinePermitInput(true, null, submitted.Version), ct)).Failure);
+            new ReviewAirlinePermitInput(true, null, submitted.Version), null, ct)).Failure);
         Assert.Equal("review_note_required", (await permits.ReviewAsync(ContractsAdministrator, submitted.Id,
-            new ReviewAirlinePermitInput(false, null, submitted.Version), ct)).Code);
+            new ReviewAirlinePermitInput(false, null, submitted.Version), null, ct)).Code);
         Assert.Contains((await permits.ListForContractsAsync(ContractsAdministrator, "Submitted", ct))!, item => item.Id == submitted.Id);
         Assert.Equal("Verified", (await permits.ReviewAsync(ContractsAdministrator, submitted.Id,
-            new ReviewAirlinePermitInput(true, "Vigente según la JAC.", submitted.Version), ct)).Permit!.Review);
+            new ReviewAirlinePermitInput(true, "Vigente según la JAC.", submitted.Version), null, ct)).Permit!.Review);
         var active = await ContractAsync();
         Assert.Equal(ContractStatus.Active, active.Status);
         Assert.NotNull(active.SignedOn);
@@ -129,8 +130,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("permit_required", (await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
             new ContractLifecycleInput("Reactivate", "Intento sin permiso", "Suspended"), null, ct)).Code);
         var renewed = (await permits.SubmitAsync(PortalAirlineAccount,
-            new SubmitAirlinePermitInput("OperatingPermit", "JAC-2027-001", "Junta de Aviación Civil", today, today.AddYears(1), null), ct)).Permit!;
-        await permits.ReviewAsync(ContractsAdministrator, renewed.Id, new ReviewAirlinePermitInput(true, null, renewed.Version), ct);
+            new SubmitAirlinePermitInput("OperatingPermit", "JAC-2027-001", "Junta de Aviación Civil", today, today.AddYears(1), null), null, ct)).Permit!;
+        await permits.ReviewAsync(ContractsAdministrator, renewed.Id, new ReviewAirlinePermitInput(true, null, renewed.Version), null, ct);
         Assert.Equal(ContractStatus.Active, (await ContractAsync()).Status);
 
         // Renewal copies the version in force into a draft for Finance; only one at a time.
@@ -189,7 +190,8 @@ public sealed partial class SqlServerMigrationTests
         var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
         var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
         var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        // 2-F: contract and permit days are AVIAM's business days, whatever the hour of the run.
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var contractId = await context.ContractVersions.Where(item => item.PublicId == SeededContractVersion)
             .Select(item => item.ContractId).SingleAsync(ct);
 

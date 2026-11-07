@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useCommercialRevalidation } from '../../../hooks/useCommercialRevalidation';
 import { billingUnitLabel } from '../../../services/billingUnits';
 import { getManagedContracts } from '../../../services/commercialGovernanceApi';
+import { contractStatusLabel } from '../contractStatus';
 import ContractDetailDrawer from './ContractDetailDrawer';
 
 const TITLES = {
@@ -67,7 +68,7 @@ export default function ManagedAgreementsPage({ mode = 'contracts', canSign = fa
           <div className="flex flex-wrap items-start justify-between gap-3"><div>
             <p className="font-mono text-xs text-accent-600">{contract.code}</p>
             <h2 className="mt-1 font-semibold">{contract.airline}</h2>
-            <p className="text-xs text-text-secondary-light">{contract.airlineCode} · {contract.status}</p>
+            <p className="text-xs text-text-secondary-light">{contract.airlineCode} · {contractStatusLabel(contract.status)}</p>
           </div><span className="text-xs text-text-secondary-light">{contract.approvedVersions.length} versiones publicadas</span></div>
           {contract.approvedVersions.map(version => <div key={version.id} className="mt-3 border-t border-black/5 pt-3 text-sm dark:border-white/10">
             <p>Versión {version.versionNumber} · {version.status === 'Superseded' ? 'Reemplazada' : 'Aprobada'} · {date(version.validFrom)} — {date(version.validTo)} · {version.currencyCode}</p>

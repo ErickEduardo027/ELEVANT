@@ -33,6 +33,7 @@ public sealed class HumanResourcesScheduleWarningsController(
         [FromQuery(Name = "from")] DateOnly? from,
         [FromQuery(Name = "to")] DateOnly? to,
         [FromQuery] int page = 1, [FromQuery] int limit = 20,
+        [FromQuery] bool includeReadiness = false,
         CancellationToken cancellationToken = default)
     {
         if (stationId is null || stationId == Guid.Empty ||
@@ -45,8 +46,9 @@ public sealed class HumanResourcesScheduleWarningsController(
                 out var actorId) || actorId == Guid.Empty)
             return Unauthorized();
 
+        // 2-N24: only a client that asks for them receives the ApprovedAbsence and DocumentExpired kinds.
         var result = await store.ListAsync(actorId, stationId.Value,
-            from.Value, to.Value, page, limit, cancellationToken);
+            from.Value, to.Value, page, limit, includeReadiness, cancellationToken);
         if (result.Failure is { } failure)
             return failure switch
             {

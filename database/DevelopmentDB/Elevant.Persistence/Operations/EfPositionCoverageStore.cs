@@ -2,6 +2,7 @@ using System.Data;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
@@ -9,6 +10,7 @@ using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Realtime;
 using Microsoft.EntityFrameworkCore;
 
@@ -25,6 +27,7 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
     private const string ReadPermission = "operations.coverage.read";
     private const string AssignPermission = "operations.coverage.assign";
     private const string ConfigurePermission = "operations.coverage.update";
+    private const string ConfigureStandAction = "occ.stand.configure";
 
     /// <summary>Equipment type whose current qualification is the boarding-bridge qualification.</summary>
     public const string BridgeEquipmentTypeCode = "BOARDING-BRIDGE";
@@ -83,16 +86,20 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
             var mentorShift = mentor is null ? null : await ShiftWindowAsync(mentor.Id, scope.StationId, input.Date, zone,
                 cancellationToken);
 
-            var facts = await AgentFactsAsync([agent.Id], input.Date, cancellationToken);
+            // 2-N23: the mentor's absence and airport permit count as much as the agent's.
+            var facts = await AgentFactsAsync(mentor is null ? [agent.Id] : [agent.Id, mentor.Id], input.Date,
+                cancellationToken);
             var standKeys = stands.Select(item => item.Id).ToArray();
             var active = context.Set<PositionCoverage>().AsNoTracking()
                 .Where(item => item.ReleasedAt == null && item.StartsAt < endsAt && startsAt < item.EndsAt);
             var agentOverlap = await active.AnyAsync(item => item.RampAgentId == agent.Id, cancellationToken);
+            // A coverage left open by an agent who no longer works the ramp takes no stand (2-N06, legacy rows).
             var overlaps = await (from other in active
                                   join item in context.Set<PositionCoverageStand>().AsNoTracking()
                                       on other.Id equals item.PositionCoverageId
                                   join stand in context.Stands.AsNoTracking() on item.StandId equals stand.Id
-                                  where standKeys.Contains(item.StandId) && other.RampAgentId != agent.Id
+                                  join holder in context.RampAgents.AsNoTracking() on other.RampAgentId equals holder.Id
+                                  where standKeys.Contains(item.StandId) && other.RampAgentId != agent.Id && holder.IsActive
                                   select new { stand.PublicId, stand.Code, other.RampAgentId, other.MentorRampAgentId })
                 .ToArrayAsync(cancellationToken);
 
@@ -106,7 +113,8 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                     shift is not null && shift.StartsAt <= startsAt && endsAt <= shift.EndsAt,
                     facts.Absent.Contains(agent.Id), agentOverlap),
                 mentor is null ? null : new CoverageMentorFacts(mentor.IsActive, mentor.HireDate,
-                    mentorShift is not null && mentorShift.StartsAt <= startsAt && endsAt <= mentorShift.EndsAt),
+                    mentorShift is not null && mentorShift.StartsAt <= startsAt && endsAt <= mentorShift.EndsAt,
+                    facts.Absent.Contains(mentor.Id), facts.AirportPermit.Contains(mentor.Id)),
                 string.IsNullOrEmpty(vehicle) ? null : vehicle, input.IsReinforcement,
                 overlaps.Select(item => new CoverageStandOverlap(item.PublicId, item.Code,
                     item.RampAgentId == mentor?.Id || item.MentorRampAgentId == agent.Id)).ToArray());
@@ -159,23 +167,108 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
     }
 
     public async Task<CoverageResult> UpdateStandAsync(Guid actorId, Guid standId, StandAttributesInput input, DateOnly date,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey = null, CancellationToken cancellationToken = default)
     {
         if (!TryParseSize(input.MaxAircraftSize, out var size)) return CoverageResult.Fail(PositionCoverageFailure.Invalid);
-        var stand = await context.Stands.SingleOrDefaultAsync(item => item.PublicId == standId, cancellationToken);
-        if (stand is null) return CoverageResult.Fail(PositionCoverageFailure.NotFound);
-        var (scope, failure) = await ScopeForStationAsync(actorId, stand.StationId, ConfigurePermission, cancellationToken);
+        if (idempotencyKey == Guid.Empty)
+            return CoverageResult.Fail(PositionCoverageFailure.Invalid, null, "idempotency_key_required");
+        if (idempotencyKey is not null && string.IsNullOrWhiteSpace(input.ExpectedVersion))
+            return CoverageResult.Fail(PositionCoverageFailure.Invalid, null, "expected_version_required");
+        var stationId = await context.Stands.AsNoTracking().Where(item => item.PublicId == standId)
+            .Select(item => (long?)item.StationId).SingleOrDefaultAsync(cancellationToken);
+        if (stationId is null) return CoverageResult.Fail(PositionCoverageFailure.NotFound);
+        var (scope, failure) = await ScopeForStationAsync(actorId, stationId.Value, ConfigurePermission, cancellationToken);
         if (scope is null) return CoverageResult.Fail(failure!.Value);
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            standId, date, input.HasBoardingBridge, input.IsRemote, size = size?.ToString(), input.IsActive,
+            expected = input.ExpectedVersion,
+        });
+        CoverageResult? refusal;
+        try
+        {
+            // The receipt, the change, its audit and its announcement commit together: a replay repeats none of them.
+            refusal = await context.Database.CreateExecutionStrategy().ExecuteAsync(async token =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+                if (idempotencyKey is { } key)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, key, scope.AccountId, ConfigureStandAction,
+                        hash, token);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return CoverageResult.Fail(PositionCoverageFailure.Conflict, null, "idempotency_conflict");
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay) return null;
+                }
+                var refused = await ConfigureStandAsync(scope, standId, input, size, token);
+                if (refused is not null)
+                {
+                    await transaction.RollbackAsync(token);
+                    context.ChangeTracker.Clear();
+                    return refused;
+                }
+                if (idempotencyKey is { } receipt)
+                {
+                    CommercialCommandReceipts.Add(context, receipt, scope.AccountId, ConfigureStandAction, hash, standId, Now());
+                    await context.SaveChangesAsync(token);
+                }
+                await transaction.CommitAsync(token);
+                context.ChangeTracker.Clear();
+                return null;
+            }, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return CoverageResult.Fail(PositionCoverageFailure.Conflict, null, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is { } key && CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent attempt with the same key committed first: its result is the answer.
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, scope.AccountId, ConfigureStandAction, hash,
+                cancellationToken);
+            refusal = concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? null
+                : CoverageResult.Fail(PositionCoverageFailure.Conflict, null, "idempotency_conflict");
+        }
+        catch (DbUpdateException)
+        {
+            context.ChangeTracker.Clear();
+            return CoverageResult.Fail(PositionCoverageFailure.Conflict);
+        }
+        return refusal ?? new CoverageResult(await BoardAsync(scope, date, cancellationToken), null, []);
+    }
+
+    /// <summary>
+    /// Applies the attributes in the command's transaction under the stand rules of «Datos maestros» (2-A), each one
+    /// back as the reason and the code: a stand in use is never deactivated and one of an inactive terminal is never
+    /// reactivated. Null when saved; the refusal otherwise.
+    /// </summary>
+    private async Task<CoverageResult?> ConfigureStandAsync(Scope scope, Guid standId, StandAttributesInput input,
+        AircraftSizeCategory? size, CancellationToken cancellationToken)
+    {
+        var stand = await context.Stands.SingleAsync(item => item.PublicId == standId, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(input.ExpectedVersion) &&
+            MasterDataCommand.Version(stand.RowVersion) != input.ExpectedVersion)
+            return CoverageResult.Fail(PositionCoverageFailure.Conflict, null, "version_conflict");
+        if (input.IsActive && stand.TerminalId is { } terminalId &&
+            !await context.Terminals.AsNoTracking().AnyAsync(item => item.Id == terminalId && item.IsActive, cancellationToken))
+            return CoverageResult.Fail(PositionCoverageFailure.Rejected, ["terminal_inactive"], "terminal_inactive");
         var now = Now();
+        if (stand.IsActive && !input.IsActive && await MasterDataUsage.StandInUseAsync(context, stand.Id,
+                MasterDataUsage.Since(BusinessCalendar.Today(now, scope.TimeZone)), now, cancellationToken))
+            return CoverageResult.Fail(PositionCoverageFailure.Rejected, ["stand_in_use"], "stand_in_use");
         stand.HasBoardingBridge = input.HasBoardingBridge;
         stand.IsRemote = input.IsRemote;
         stand.MaxAircraftSize = size;
         stand.IsActive = input.IsActive;
         stand.UpdatedAt = now;
-        Audit(scope, "occ.stand.configured", nameof(Stand), stand.PublicId, now, stand.Code, input);
+        Audit(scope, "occ.stand.configured", nameof(Stand), stand.PublicId, now, stand.Code,
+            new { input.HasBoardingBridge, input.IsRemote, input.MaxAircraftSize, input.IsActive });
         await AnnounceAsync(scope, now, cancellationToken);
-        if (!await SaveAsync(cancellationToken)) return CoverageResult.Fail(PositionCoverageFailure.Conflict);
-        return new CoverageResult(await BoardAsync(scope, date, cancellationToken), null, []);
+        await context.SaveChangesAsync(cancellationToken);
+        return null;
     }
 
     public async Task<CoverageResult> UpdateTerminalAsync(Guid actorId, Guid terminalId, TerminalRulesInput input, DateOnly date,
@@ -344,7 +437,7 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
         var stands = await context.Stands.AsNoTracking().Where(item => item.StationId == scope.StationId)
             .OrderBy(item => item.Code)
             .Select(item => new { item.Id, item.PublicId, item.Code, item.TerminalId, item.IsActive, item.HasBoardingBridge,
-                item.IsRemote, item.MaxAircraftSize })
+                item.IsRemote, item.MaxAircraftSize, item.RowVersion })
             .ToArrayAsync(cancellationToken);
         var standById = stands.ToDictionary(item => item.Id);
         var constraints = await context.Set<StandConstraint>().AsNoTracking()
@@ -396,7 +489,7 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
             stands.Select(item => new CoverageStandData(item.PublicId, item.Code,
                 item.TerminalId is { } terminalId && terminalById.TryGetValue(terminalId, out var terminal) ? terminal.PublicId : null,
                 item.IsActive, item.HasBoardingBridge, item.IsRemote, item.MaxAircraftSize?.ToString(),
-                coveredBy[item.Id].Distinct().ToArray())).ToArray(),
+                coveredBy[item.Id].Distinct().ToArray(), MasterDataCommand.Version(item.RowVersion))).ToArray(),
             constraints.Where(item => standById.ContainsKey(item.StandId) && standById.ContainsKey(item.AffectedStandId))
                 .Select(item => new StandConstraintData(item.PublicId, standById[item.StandId].PublicId,
                     standById[item.StandId].Code, standById[item.AffectedStandId].PublicId, standById[item.AffectedStandId].Code,

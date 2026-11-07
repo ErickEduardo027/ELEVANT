@@ -10,6 +10,7 @@ import {
   updateDepartmentUser,
 } from '../../services/departmentGovernanceService';
 import { governanceMessage, listAccessCandidates } from '../../services/humanResourcesEmployeesService';
+import { createCommandKeyHolder } from '../../services/commandKeys';
 import { departmentUsersMessages } from './departmentUsersMessages';
 import GeneratePasswordField from './GeneratePasswordField';
 import PermissionMatrix from './PermissionMatrix';
@@ -18,10 +19,20 @@ import { newRequestId } from './useDepartmentGovernance';
 const inputClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const labelClass = 'block text-xs font-semibold text-ink-900 dark:text-text-primary-dark';
 
+/**
+ * Stations of the account outside its employee record (2-N21): an edit from before the rule left them there. The
+ * server only accepts the record's stations, so the edit leaves these out and says so.
+ */
+function stationsOutsideRecord(user) {
+  if (!user?.employeeStations) return [];
+  return (user.stations ?? []).filter(station => !user.employeeStations.some(item => item.id === station.id));
+}
+
 function blank(user) {
+  const outside = stationsOutsideRecord(user).map(station => station.id);
   return {
     temporaryPassword: '',
-    stationIds: user?.stations?.map(station => station.id) ?? [],
+    stationIds: (user?.stations ?? []).map(station => station.id).filter(id => !outside.includes(id)),
     grantMode: user && !user.accessProfileId ? 'custom' : 'profile',
     accessProfileId: user?.accessProfileId ?? '',
     permissionCodes: user && !user.accessProfileId ? user.permissions : [],
@@ -98,6 +109,7 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const requestId = useRef(newRequestId());
+  const keys = useRef(createCommandKeyHolder());
 
   useEffect(() => {
     if (!open) return;
@@ -106,6 +118,7 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
     setAvatar(null);
     setError('');
     requestId.current = newRequestId();
+    keys.current.reset();
   }, [open, user]);
 
   const isEdit = mode === 'edit';
@@ -128,10 +141,13 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
     });
   }
 
-  // Stations an access may use: those of the employee that the actor also holds.
-  const grantableStations = isEdit
+  // Stations an access may use: those of the employee that the actor also holds. An account without employee
+  // record (older accounts) keeps the actor's stations as the limit (2-N21).
+  const employeeStations = isEdit ? user?.employeeStations : employee?.stations;
+  const grantableStations = isEdit && !employeeStations
     ? options?.stations ?? []
-    : (options?.stations ?? []).filter(station => employee?.stations.some(item => item.id === station.id));
+    : (options?.stations ?? []).filter(station => employeeStations?.some(item => item.id === station.id));
+  const droppedStations = isEdit ? stationsOutsideRecord(user) : [];
 
   async function submit(event) {
     event.preventDefault();
@@ -150,17 +166,19 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
           : { accessProfileId: null, permissionCodes: form.permissionCodes }
         : { accessProfileId: null, permissionCodes: null };
       if (isEdit) {
-        await updateDepartmentUser(department, user.id, { firstName: user.firstName, lastName: user.lastName, email: user.email,
-          stationIds: form.stationIds, avatarMediaUrl, ...grants, expectedVersion: user.version });
+        const body = { firstName: user.firstName, lastName: user.lastName, email: user.email,
+          stationIds: form.stationIds, avatarMediaUrl, ...grants, expectedVersion: user.version };
+        await keys.current.run('department-user.update', { id: user.id, ...body },
+          key => updateDepartmentUser(department, user.id, body, key));
       } else if (mode === 'request') {
         await requestDepartmentUserAccess(department, {
           requestId: requestId.current, employeeId: employee.employeeId, stationIds: form.stationIds, avatarMediaUrl, ...grants,
           ...(isRamp ? { terminalIds: form.terminalIds, supervisorRampAgentId: form.supervisorRampAgentId || null } : {}),
         });
       } else {
-        await createDepartmentAdministrator(department, {
-          employeeId: employee.employeeId, stationIds: form.stationIds, temporaryPassword: form.temporaryPassword,
-        });
+        const body = { employeeId: employee.employeeId, stationIds: form.stationIds, temporaryPassword: form.temporaryPassword };
+        await keys.current.run('department-user.administrator', body,
+          key => createDepartmentAdministrator(department, body, key));
       }
       onSaved(mode);
     } catch (failure) {
@@ -199,8 +217,14 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
             <fieldset>
               <legend className={labelClass}>{t('common.stations')}</legend>
               <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">
-                {isEdit ? t('account.stationsHintEdit') : t('account.stationsHintRequest')}
+                {isEdit ? (employeeStations ? t('account.stationsHintEditEmployee') : t('account.stationsHintEdit'))
+                  : t('account.stationsHintRequest')}
               </p>
+              {droppedStations.length > 0 && (
+                <p role="status" className="mt-1 text-xs font-semibold text-status-warning">
+                  {t('account.stationsOutsideRecord', { codes: droppedStations.map(station => station.code).join(', ') })}
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap gap-2">
                 {grantableStations.map(station => (
                   <label key={station.id} className={`flex min-h-[40px] items-center gap-2 rounded-lg border px-3 text-sm ${form.stationIds.includes(station.id) ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 dark:border-white/10'}`}>

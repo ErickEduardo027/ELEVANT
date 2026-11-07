@@ -9,7 +9,7 @@ const request: HumanResourcesAvailabilityRequestPage["requests"][number] = {
   startsOn: "2026-10-01", endsOn: "2026-10-02", type: "DayOff",
   status: "Approved", reason: "Synthetic leave",
   requestedAt: "2026-09-30T12:00:00Z", resolvedAt: "2026-09-30T13:00:00Z",
-  resolutionNote: null,
+  resolutionNote: null, version: "AAAAAAAAB9E=",
 };
 
 it("reads an HR availability window with a fresh token and explicit paging", async () => {

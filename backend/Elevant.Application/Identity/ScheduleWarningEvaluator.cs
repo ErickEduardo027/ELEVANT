@@ -16,7 +16,24 @@ public enum ScheduleWarningKind
     ShortRest,
     SevenDayLoad,
     Unevaluable,
+    /// <summary>The shift falls on an approved day off or restriction (2-N24); only with readiness facts.</summary>
+    ApprovedAbsence,
+    /// <summary>A current airport permit or ramp licence does not cover the shift's date (2-N24); only with readiness facts.</summary>
+    DocumentExpired,
 }
+
+/// <summary>An approved day off or restriction of an agent (both dates included).</summary>
+public sealed record ScheduleAgentAbsence(Guid RampProfileId, DateOnly StartsOn, DateOnly EndsOn);
+
+/// <summary>A current airport document of an agent (<c>AirportId</c> or <c>RampDriverLicense</c>).</summary>
+public sealed record ScheduleAgentDocument(Guid RampProfileId, string DocumentType, DateOnly IssuedOn, DateOnly ExpiresOn);
+
+/// <summary>
+/// What «¿Puede operar?» knows about the agents of the evaluated shifts. When it is given the evaluator also
+/// warns about shifts on an approved absence and about documents that do not cover the shift's date.
+/// </summary>
+public sealed record ScheduleReadinessFacts(
+    IReadOnlyList<ScheduleAgentAbsence> Absences, IReadOnlyList<ScheduleAgentDocument> Documents);
 
 public sealed record ScheduleWarningEvidence(
     Guid ShiftId, Guid StationId, string StationCode,
@@ -44,7 +61,7 @@ public static class ScheduleWarningEvaluator
     public static IReadOnlyList<ScheduleWarning> Evaluate(
         IReadOnlyList<ScheduleShift> shifts, Guid requestedStationId,
         TimeZoneInfo requestedZone, DateOnly from, DateOnly to,
-        ScheduleWarningRule rule)
+        ScheduleWarningRule rule, ScheduleReadinessFacts? readiness = null)
     {
         ArgumentNullException.ThrowIfNull(shifts);
         ArgumentNullException.ThrowIfNull(requestedZone);
@@ -73,6 +90,7 @@ public static class ScheduleWarningEvaluator
 
             foreach (var target in targets)
             {
+                if (readiness is not null) AddReadinessWarnings(warnings, target, readiness, rule);
                 if (!target.IsValid)
                 {
                     warnings.Add(Create(target, ScheduleWarningKind.Unevaluable,
@@ -155,6 +173,29 @@ public static class ScheduleWarningEvaluator
             .ThenBy(item => item.EmployeeNumber, StringComparer.Ordinal)
             .ThenBy(item => item.Kind)
             .ThenBy(item => item.AnchorShiftId).ToArray();
+    }
+
+    /// <summary>Documents every ramp agent needs to be assigned by OCC (<c>OccAgentEligibilityPolicy</c>).</summary>
+    private static readonly string[] RequiredDocuments = ["AirportId", "RampDriverLicense"];
+
+    /// <summary>
+    /// 2-N24: a shift on an approved absence, and the current documents that do not cover its date (the
+    /// reason names them, in a stable order). A missing document is «¿Puede operar?», not a schedule warning.
+    /// </summary>
+    private static void AddReadinessWarnings(List<ScheduleWarning> warnings, Interval target,
+        ScheduleReadinessFacts readiness, ScheduleWarningRule rule)
+    {
+        var shift = target.Shift;
+        if (readiness.Absences.Any(absence => absence.RampProfileId == shift.RampProfileId &&
+                absence.StartsOn <= shift.WorkDate && shift.WorkDate <= absence.EndsOn))
+            warnings.Add(Create(target, ScheduleWarningKind.ApprovedAbsence, [target], null, null, rule, null));
+        var uncovered = RequiredDocuments.Where(type => readiness.Documents.Any(document =>
+                document.RampProfileId == shift.RampProfileId && document.DocumentType == type &&
+                (shift.WorkDate < document.IssuedOn || document.ExpiresOn < shift.WorkDate)))
+            .ToArray();
+        if (uncovered.Length > 0)
+            warnings.Add(Create(target, ScheduleWarningKind.DocumentExpired, [target], null, null, rule,
+                string.Join(",", uncovered)));
     }
 
     private static Interval Convert(ScheduleShift shift)
