@@ -420,13 +420,17 @@ Son las mismas reglas que OCC aplica al asignar. El menú ya no muestra contador
 fijos de ejemplo. Fuentes: [editor](../../frontend/private-web/src/features/human-resources/schedules/WeeklyShiftEditor.jsx),
 [panel](../../frontend/private-web/src/features/human-resources/users/RampReadinessPanel.jsx) y
 [ADR-0026](../../docs/adr/0026-ramp-staff-readiness-and-hr-shifts.md).
+La fase 2 del ciclo cambió quitar turnos, copiar la semana y las ausencias: ver
+[Pre-operación (fase 2)](#pre-operación-fase-2).
 
 ## OCC listo: contratos listos, posiciones ubicadas y mapa en Planificación
 
 Admin OCC suma «Contratos listos»: por fecha, las aerolíneas con contrato activo y
 firmado cuya versión aprobada cubre esa fecha en PUJ, con código, versión, vigencia,
 renovación, servicios (sin precios) y vuelos planificados ese día. Es la misma regla
-que usan Planificación, los vuelos manuales y la asignación de agentes.
+que usan Planificación, los vuelos manuales y la asignación de agentes. Desde la
+fase 2 esa versión debe estar firmada por ambas partes: ver
+[Pre-operación (fase 2)](#pre-operación-fase-2).
 
 En el Mapa de posiciones, OCC ubica cada posición con «Ubicar en el mapa» y un clic
 en el punto real, o la quita. Las coordenadas guardadas en `ref.stands` reemplazan a
@@ -451,6 +455,9 @@ lectura reciente y respeta el presupuesto. Abrir el diálogo nunca gasta unidade
 configurada, el diálogo lo dice y no hay llamadas. Fuentes:
 [diálogo](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx) y
 [ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md).
+La fase 2 sumó las vistas «Charter sin contrato» y «Descartadas», el tipo de
+avión, la posición y la restauración: ver
+[Pre-operación (fase 2)](#pre-operación-fase-2).
 
 ## Chat con presencia y cierre de sesión confirmado
 
@@ -514,6 +521,43 @@ y cuando Finanzas devuelve o aprueba un borrador. Fuentes:
 [Paquetes](../../frontend/private-web/src/features/finance/packages/PackagesPage.jsx),
 [bandeja de correos](../../frontend/private-web/src/features/governance/EmailOutboxPanel.jsx) y
 [adaptadores](../../frontend/private-web/src/services/README.md).
+
+## Pre-operación (fase 2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre.
+
+La fase 2 del ciclo operativo
+([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md))
+sigue la misma convención de errores, claves y estados de la fase 1. Las fechas
+se proponen y se limitan con `businessToday()`
+([día hábil](../../frontend/private-web/src/services/businessDay.js)), nunca con
+el día UTC del navegador.
+
+| Pantalla | Comportamiento |
+| --- | --- |
+| Contratos → Contratos | El ciclo de vida termina con la fecha que permite el preaviso firmado o con una causa inmediata, cancela una terminación programada y avisa cuando hay una. El detalle ofrece «Retirar versión» para una versión aprobada que no firmaron ambas partes. La vigencia se envía con su clave, y los estados del contrato salen de un mapa compartido ([estados](../../frontend/private-web/src/features/contracts/contractStatus.js)). El listado todavía muestra «Aprobada» para una versión que espera las firmas. |
+| Contratos → Permisos de aerolíneas | «Revocar verificación» con motivo, filtro «Revocados» y un aviso que se arma con los contratos que el servidor activó, reanudó o suspendió. |
+| Superadministración | «Estaciones» crea, renombra y desactiva estaciones, y cambia su zona horaria mientras no tienen historia ([panel](../../frontend/private-web/src/features/governance/StationsPanel.jsx)). «Clientes» designa representantes y firmantes de cada aerolínea. Las altas y ediciones de gobernanza envían una clave por intención y explican cada código. |
+| OCC → Datos maestros | `/admin-occ/master-data`, con `operations.master_data.read`: terminales, posiciones y tipos de avión de la estación, con alta, edición y desactivación ([pantalla](../../frontend/private-web/src/features/master-data/MasterDataRoute.jsx)). |
+| OCC → Cobertura de posiciones | Explica `stand_in_use` cuando se intenta desactivar una posición en uso y enlaza a Datos maestros. El selector de mentor marca y deshabilita a quien tiene una ausencia aprobada o no tiene carnet vigente. |
+| OCC → Tablets | `/admin-occ/devices`, con `operations.devices.read`: quién tiene cada tablet compartida, y los botones para liberarla o revocar una perdida ([pantalla](../../frontend/private-web/src/features/devices/DevicesRoute.jsx)). |
+| OCC → Planificación | «Importar vuelos» tiene las vistas «Con contrato», «Charter sin contrato» y «Descartadas». Al importar se elige el tipo de avión (con el sugerido preseleccionado) y la posición, o se importa como charter; una propuesta descartada se restaura. El motivo de pausa del proveedor sale en español. «Nuevo vuelo» permite elegir el tipo de avión, que es opcional. El tablero marca «Agente no apto» con sus razones. |
+| OCC → Mapa de posiciones | En vivo, el resumen y la leyenda cuentan también «Planificada» y «Sin ocupación verificada». |
+| Gestión Humana → Horarios | El editor semanal envía la versión y una clave al quitar un turno, marca los días de ausencia y no ofrece «+» en ellos. «Copiar semana anterior» omite ausencias y agentes que ya salieron y cuenta cada causa. Las solicitudes aprobadas se cancelan o se acortan con motivo («Cancelar ausencia» y «Acortar ausencia»). Las alertas piden `includeReadiness` y explican la ausencia aprobada y el documento vencido. |
+| Gestión Humana → Empleados y perfiles de rampa | La baja y el traslado envían una clave y explican qué se libera; un agente con una operación en curso o devuelta no se da de baja ni sale de la rampa (`agent_has_operation_in_progress`). |
+
+La campana muestra los avisos nuevos con su título y destino: los del ciclo del
+contrato para Contratos, los vencimientos de documentos para Gestión Humana, y
+`agent_released` y `agent_document_not_current` para OCC, que abren
+Planificación. Fuentes:
+[ciclo de vida](../../frontend/private-web/src/features/contracts/agreements/ContractLifecyclePanel.jsx),
+[permisos](../../frontend/private-web/src/features/contracts/permits/AirlinePermitsPage.jsx),
+[feed](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx),
+[editor semanal](../../frontend/private-web/src/features/human-resources/schedules/WeeklyShiftEditor.jsx),
+[ausencias](../../frontend/private-web/src/features/human-resources/schedules/AvailabilityRequestsPanel.jsx),
+[avisos de departamento](../../frontend/private-web/src/features/notifications/departmentNotifications.js) y
+[avisos de OCC](../../frontend/private-web/src/features/notifications/notificationKinds.js).
 
 ## Estado de integración
 

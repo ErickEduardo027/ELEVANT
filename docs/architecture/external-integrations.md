@@ -19,6 +19,17 @@ Antes de habilitar tráfico real se debe definir:
 
 Las claves solo entran como secretos de ambiente. No se exponen a web/móvil, OpenAPI, logs, Problem Details ni archivos de configuración versionados.
 
+## Feed de vuelos: AeroDataBox y proveedor simulado
+
+El feed de vuelos que sí está conectado es AeroDataBox, detrás del puerto `IAirportFlightFeed` ([ADR-0028](../adr/0028-aerodatabox-flight-feed-with-unit-budget.md)). Solo el servidor lo llama, con un presupuesto de unidades, y sin `AeroDataBox:Enabled` y una clave no hay ninguna llamada.
+
+El mismo puerto tiene un segundo adaptador, `SimulatedAirportFlightFeed` ([ADR-0038](../adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)), para recorrer el ciclo sin gastar la cuota:
+
+- Se activa con `SimulatedFlightFeed:Enabled=true` y está apagado por defecto. La API se niega a arrancar si se activa fuera de los entornos `Development` o `Test`, o junto con AeroDataBox.
+- Responde un horario determinista de las aerolíneas activas registradas, sin red, con su propio nombre de proveedor (`Simulated`), así que su registro de uso, su candado y su presupuesto no se mezclan con los de AeroDataBox.
+- No alimenta el registro de aerolíneas observadas.
+- Solo lo activa el overlay del arnés E2E, `database/DevelopmentDB/compose.local.e2e.yml`. La plantilla del VPS Development no lo define.
+
 ## Regla para nuevos proveedores
 
 Primero se define la necesidad del caso de uso y el puerto mínimo. Después se construye el adaptador. Si se cambia de proveedor, Domain y los contratos públicos solo cambian cuando cambie realmente el producto, no por la forma particular de la API externa.

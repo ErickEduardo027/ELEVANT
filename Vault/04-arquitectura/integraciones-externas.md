@@ -40,10 +40,42 @@ Solo el servidor llama al proveedor, y solo desde `FlightFeedSynchronizer` (el w
 - **Cuándo:** cada mitad del día una vez; mañana una vez desde las 18:00; refresco cada 15 min cerca de un vuelo contratado, cada 60 min si quedan vuelos, nunca si no hay. Al 80 % del presupuesto el intervalo se duplica; al límite (1 200 por día y 38 000 por mes, UTC) se detiene.
 - **Cuánto:** un día de actividad máxima gasta 100–200 unidades, alrededor del 12 % del plan de 40 000 al mes.
 - **Seguridad del gasto:** registro de cada llamada en `integration.provider_usage_entries`, un único turno por proveedor en `integration.provider_sync_leases`, pausa tras cuota agotada (hasta el día siguiente), clave rechazada (6 h), 429 (`Retry-After`) o fallos (espera creciente hasta 1 h).
-- **Qué se guarda:** solo los tramos de aerolíneas con contrato, como propuestas que OCC importa o descarta (`integration.external_flight_proposals`). Todas las aerolíneas vistas alimentan `ref.airline_registry_entries`, que la verificación de aerolíneas consulta antes de Wikidata y OpenFlights; los aeropuertos contrarios completan `ref.airports` con zona horaria y coordenadas. Ambas cosas sin unidades extra.
+- **Qué se guarda:** solo los tramos de aerolíneas con contrato, como propuestas que OCC importa o descarta (`integration.external_flight_proposals`); la fase 2 lo amplió (ver [Fase 2](#fase-2-feed-ampliado-y-proveedor-simulado)). Todas las aerolíneas vistas alimentan `ref.airline_registry_entries`, que la verificación de aerolíneas consulta antes de Wikidata y OpenFlights; los aeropuertos contrarios completan `ref.airports` con zona horaria y coordenadas. Ambas cosas sin unidades extra.
 - **Apagado por defecto:** sin `AeroDataBox:Enabled` y clave no hay llamadas. En CI nunca se llama; la única prueba real es opt-in (`ELEVANT_LIVE_AERODATABOX=1`, 2 unidades).
 
 Pendiente: enlazar OpenSky con los vuelos importados y mostrar el consumo en Superadministración.
+
+### Fase 2: feed ampliado y proveedor simulado
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+
+- **Qué se guarda ahora.** Los tramos de todas las aerolíneas activas
+  registradas, sin unidades extra porque llegan en la misma respuesta. OCC ve
+  aparte las que no tienen contrato en vigor ese día, como candidatas a
+  charter, y nunca ve las de un contrato suspendido o vencido en la estación.
+  El ritmo de lecturas y el conteo de tramos contratados siguen contando solo
+  las contratadas.
+- **Importar.** OCC elige el tipo de avión, que se sugiere desde el modelo
+  informado, la posición y el modo charter sin contrato. Una propuesta
+  descartada se restaura mientras su vuelo no haya pasado.
+- **Proveedor simulado.** `SimulatedAirportFlightFeed` es un segundo adaptador
+  del mismo puerto. Responde un horario determinista de las aerolíneas activas
+  registradas, sin red, con su propio nombre de proveedor (`Simulated`): su
+  registro de uso, su turno y su consumo no se mezclan con los de AeroDataBox,
+  y no alimenta `ref.airline_registry_entries`. Se activa con
+  `SimulatedFlightFeed__Enabled`, apagado por defecto. La API se niega a
+  arrancar si se activa fuera de los entornos `Development` o `Test` o junto con
+  AeroDataBox
+  ([registro](../../backend/Elevant.Infrastructure/DependencyInjection.cs) y
+  [adaptador](../../backend/Elevant.Infrastructure/Integrations/SimulatedFlightFeed/SimulatedAirportFlightFeed.cs)).
+- **Dónde se activa.** Solo el overlay de Compose del arnés E2E, en
+  `database/DevelopmentDB`, lo enciende
+  ([guía local](../../docs/workflows/local-development.md#recorrido-e2e-del-ciclo-completo)).
+  La plantilla del VPS Development
+  ([`compose.development.api.yml`](../../backend/compose.development.api.yml))
+  no lo define, así que allí el feed sigue siendo AeroDataBox.
 
 Private Web sí descarga estilos/tiles cartográficos públicos directamente en el navegador. Esa dependencia visual es real y está limitada por CSP, pero no suministra información operacional canónica ni rompe la regla que prohíbe consultar proveedores de aviación desde los clientes.
 
@@ -54,7 +86,7 @@ Private Web sí descarga estilos/tiles cartográficos públicos directamente en 
 | AeroDataBox FIDS | Implementado ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)) | Worker y «Actualizar ahora» del servidor, con presupuesto de unidades | Ninguna pantalla llama al proveedor; sin clave no hay llamadas. |
 | FlightAware/AeroAPI | Objetivo con shell | Binding de opciones únicamente | No hay `HttpClient`, adapter, autenticación, request, respuesta, caché o tráfico real. |
 | Puerto `IFlightInformationProvider` | Implementado como interfaz | Ningún consumidor/implementación registrado | La existencia del puerto no devuelve vuelos ni valida el contrato del proveedor. |
-| Referencias externas en turnaround/flight leg | Implementadas | La importación de OCC las completa con `AeroDataBox` y la referencia del tramo; las lecturas posteriores actualizan horas estimadas y reales | No hay reconciliación automática con escalas manuales. |
+| Referencias externas en turnaround/flight leg | Implementadas | La importación de OCC las completa con `AeroDataBox` y la referencia del tramo; las lecturas posteriores actualizan horas estimadas y reales. Con el proveedor simulado del arnés E2E, el proveedor es `Simulated` | No hay reconciliación automática con escalas manuales. |
 | OpenFreeMap/OpenMapTiles/MapLibre demo | Implementado en Private Web | El navegador carga estilos/tiles para mapas; CSP permite orígenes concretos | No son fuente de estado operativo ni integración de vuelos. |
 | Object storage S3-compatible | Diferido | Ninguno | No hay bucket, adapter, metadata contractual, uploads ni persistencia binaria aprobada. |
 | Chat/notificaciones externas | Diferido o prototipo | Stores/adaptadores de prototipo y hubs vacíos | No hay proveedor, contrato backend o entrega durable real. |

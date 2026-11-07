@@ -33,6 +33,8 @@ Los clientes no acceden a SQL ni al proveedor fiscal. JWT identifica la cuenta; 
 
 > **Actualización (6 de noviembre de 2026).** Contratos crea las enmiendas con un comando propio, desde la última versión aprobada, y Finanzas puede descartar un borrador de paquete (`Discarded`) o retirar uno publicado (`Retired`). Los contratos aprobados conservan el paquete congelado. Ver [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).
 
+> **Actualización (7 de noviembre de 2026).** La enmienda parte ahora de la versión que rige (aprobada y firmada por ambas partes sobre la misma huella, o la heredada con la que el contrato se activó), y no se crea mientras otra versión aprobada espera las firmas. Aprobar ya no reemplaza la versión en vigor: el reemplazo ocurre en la segunda firma, y una enmienda retroactiva no cambia precios antes de firmarse. La valoración de paquetes toma esa segunda firma como frontera. Los recargos congelados y los paquetes vinculados forman parte del contenido firmado. Ver [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 La prefactura permite ajustes justificados y recálculo explícito en borrador. La disputa bloquea la emisión. La factura congela las líneas aceptadas, jerarquía, razones, importes y snapshot comercial; una corrección posterior usa notas vinculadas, sin reescribir el original.
 
 ### 3. Tratamientos tributarios explícitos

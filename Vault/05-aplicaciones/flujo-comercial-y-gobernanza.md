@@ -7,9 +7,15 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-06"
+last_verified: "2026-11-07"
 verified_commit: pending
 sources:
+  - docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md
+  - backend/Elevant.Api/Controllers/ContractDocumentsController.cs
+  - backend/Elevant.Api/Controllers/ContractLifecycleController.cs
+  - backend/Elevant.Api/Controllers/AirlinePortalUsersController.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/AirlinePortalRoles.cs
+  - database/DevelopmentDB/Elevant.Persistence/Commercial/AirlineNoticeEmails.cs
   - docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md
   - docs/workflows/commercial-intake-and-governance.md
   - docs/deployment/dokploy-configuration.md
@@ -69,6 +75,9 @@ carrusel público.
 Esta capacidad está integrada en `Development` por el merge #114, y la fase 1
 «Comercial» del ciclo operativo la completó
 ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+La fase 2 «Pre-operación» completó la vigencia, las firmas, el permiso de
+operación, el ciclo de vida del contrato y los usuarios del portal
+([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
 Esta evidencia de repositorio no demuestra que la versión esté desplegada ni
 aceptada operativamente en el VPS. El
 [recorrido detallado](../../docs/workflows/commercial-intake-and-governance.md)
@@ -87,9 +96,10 @@ flowchart LR
     B --> T[Contratos ajusta alcance y tarifas y envía a Finanzas]
     T --> F[Finanzas aprueba precios]
     F --> G[Contratos fija vigencia y renovación]
-    G --> H[Firma dibujada de la aerolínea]
-    H --> I[Contrafirma de AVIAM]
-    I --> J[Contrato activo y PDF firmado por correo]
+    G --> H[Firma dibujada de un representante o firmante de la aerolínea]
+    H --> I[Contrafirma de AVIAM sobre la misma huella]
+    I --> K[Permiso de operación verificado]
+    K --> J[Contrato activo y PDF firmado por correo]
 ```
 
 La fase pre-operativa (ADR-0025) añade el paso de vigencia después de Finanzas, el código
@@ -167,16 +177,62 @@ En **Borradores**:
   `contracts.drafts.delete`): la versión queda `Rejected` y, si el contrato
   nunca se activó, el contrato se termina.
 
-La aprobación de Finanzas no activa el contrato. Pasa a activo cuando ambas
-partes firmaron la versión aprobada y la aerolínea tiene un permiso de
-operación verificado y vigente. La aerolínea envía sus permisos desde el
-portal y Contratos los verifica en «Permisos de aerolíneas». Contratos puede
-suspender, reactivar, terminar, renovar o enmendar el contrato. Una enmienda
-parte de la última versión aprobada y pide solo «Vigente desde». Un barrido
-horario vence los contratos sin versión vigente, suspende los de permiso
-vencido y avisa 30 días antes de cada vencimiento. La línea de tiempo del
-contrato reúne todo el ciclo
+La aprobación de Finanzas no activa el contrato ni pone en vigor la versión.
+El contrato pasa a activo cuando ambas partes firmaron la versión aprobada
+sobre la misma huella y la aerolínea tiene un permiso de operación verificado
+y vigente. La aerolínea envía sus permisos desde el portal y Contratos los
+verifica en «Permisos de aerolíneas». La línea de tiempo del contrato reúne
+todo el ciclo
 ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
+
+## Vigencia, firmas y ciclo de vida (fase 2)
+
+Desde la fase 2 del ciclo
+([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)):
+
+- **Qué se factura.** Una versión rige solo desde su segunda firma. Hasta
+  entonces, la versión en vigor sigue rigiendo y facturándose. En la segunda
+  firma, la anterior termina a más tardar la víspera del nuevo inicio, y los
+  vuelos aún no ejecutados cuyas líneas coinciden con las tarifas firmadas
+  pasan a la versión nueva.
+- **Vigencia y firmas.** Al fijar la vigencia, la aerolínea recibe el correo
+  «listo para firmar». Firman sus representantes y firmantes; AVIAM solo
+  contrafirma la misma huella. La firma y la vigencia corren serializadas, y
+  quien pierde la carrera recibe `content_changed`. El contenido firmado
+  incluye los recargos y los paquetes, que el portal muestra en «Recargos y
+  paquetes».
+- **Permisos.** Contratos verifica o rechaza un permiso enviado y revoca con
+  motivo uno verificado. La revocación suspende en la misma transacción los
+  contratos activos que se quedan sin un permiso usable, y verificar uno nuevo
+  los reanuda. Cada decisión explica qué contratos activó, reanudó o suspendió.
+- **Ciclo de vida.** Contratos suspende, reactiva, renueva y termina:
+  - Renovar copia la versión en vigor con sus recargos negociados,
+    exenciones y paquetes, también desde un contrato vencido.
+  - Terminar respeta el preaviso firmado o pide una causa inmediata
+    (incumplimiento o mutuo acuerdo). Una terminación con fecha futura se
+    puede cancelar antes de su día. Terminar cierra los borradores y las
+    versiones aprobadas sin firmar.
+  - «Retirar versión» deja `Rejected`, con motivo, una versión aprobada que no
+    firmaron ambas partes.
+  - Una enmienda parte de la versión que rige y pide solo «Vigente desde». Ni
+    la renovación ni la enmienda se crean mientras otra versión aprobada espera
+    las firmas.
+- **Barrido.** Cada hora activa, vence y suspende contratos, y termina los que
+  llegan a su fecha programada. Avisa del vencimiento de un contrato los días
+  de aviso que firmó su versión (30 si no tiene) y del de un permiso a 30
+  días. Reintenta la renovación automática que no pudo iniciarse y avisa a
+  Contratos como máximo una vez por día hábil.
+- **Correos a la aerolínea.** Todas sus cuentas activas del portal reciben el
+  «listo para firmar», el rechazo o la revocación de un permiso, los avisos de
+  vencimiento y la suspensión, sin el motivo interno de Contratos
+  ([destinatarios](../../database/DevelopmentDB/Elevant.Persistence/Commercial/AirlineNoticeEmails.cs)).
+- **Usuarios del portal.** El representante de la aerolínea es la cuenta
+  aprovisionada, o quien designe Superadministración en «Clientes». Invita,
+  desactiva y reactiva usuarios desde el portal y marca firmantes. Solo los
+  representantes y los firmantes firman contratos y envían el permiso JAC
+  ([roles](../../database/DevelopmentDB/Elevant.Persistence/Commercial/AirlinePortalRoles.cs)).
+  Una aerolínea cuyas cuentas creó solo Superadministración, sin
+  aprovisionamiento, no tiene representante hasta que se designe uno.
 
 ## Catálogo y fichas de aerolínea
 
@@ -225,7 +281,11 @@ servicio.
 **Usuarios internos** (administradores y sub-usuarios por departamento; ver
 [Gobernanza por departamento](../03-dominio/gobernanza-por-departamento.md)).
 Clientes muestra carga, error con reintento y falta de permiso, y explica cada
-error por su código. **Configuración** reúne las políticas de acceso, la
+error por su código. Desde la fase 2, Clientes también designa representantes y
+firmantes de cada aerolínea, y nunca quita el rol al último representante
+activo. **Estaciones** crea las estaciones de la plataforma con el IATA de su
+aeropuerto, cambia su zona horaria mientras no tienen historia y no desactiva
+una estación en uso. **Configuración** reúne las políticas de acceso, la
 conversión de roles heredados y la auditoría paginada con actor y cambios de
 campos permitidos; contraseñas y correos no se incluyen en el detalle. Su
 panel «Correo del sistema» muestra si SMTP está configurado, una prueba de
@@ -237,7 +297,7 @@ perfil operativo de la elegibilidad de OCC para una tarea concreta.
 El POST público vuelve a validar que los servicios elegidos sigan activos y publicados. La lista visible y la admisión usan el mismo predicado del servidor; un UUID conocido de un servicio interno no amplía el catálogo público. La admisión mantiene una transacción serializable entre esa lectura y su escritura: una retirada concurrente no se intercala entre ambas. Una relectura fallida en el formulario conserva la última selección y permite reintentar; el servidor sigue siendo la autoridad al enviar.
 El cliente compartido no introduce un máximo de 1 000 entradas que el endpoint de catálogo no promete; un catálogo mayor sigue sujeto a validación de forma e identificadores. Una futura paginación requiere un cambio coordinado de API y clientes.
 
-El API conserva la autoridad sobre permisos de roles personalizados, identidad de la aerolínea y estado contractual. Los avisos internos se guardan en el outbox y se recuperan por cuenta; SignalR indica que se debe releer. Los avisos internos no se envían por correo: por correo salen la decisión al solicitante, los de la cuenta del portal y el PDF del contrato activado. La promoción requiere que el operador prepare el secreto sintético y reconcilie el Compose Raw de Database Release según el [checkpoint de Dokploy](../../docs/deployment/dokploy-configuration.md), antes de publicar en Development.
+El API conserva la autoridad sobre permisos de roles personalizados, identidad de la aerolínea y estado contractual. Los avisos internos se guardan en el outbox y se recuperan por cuenta; SignalR indica que se debe releer. Los avisos internos no se envían por correo: por correo salen la decisión al solicitante, los de la cuenta del portal, el PDF del contrato activado y, desde la fase 2, los avisos a la aerolínea sobre sus contratos, sus permisos y sus usuarios del portal. La promoción requiere que el operador prepare el secreto sintético y reconcilie el Compose Raw de Database Release según el [checkpoint de Dokploy](../../docs/deployment/dokploy-configuration.md), antes de publicar en Development.
 
 Las decisiones de Contratos crean avisos durables: verificar un perfil invalida sus solicitudes abiertas, y confirmar al representante, aprobar, rechazar o cancelar invalida la solicitud correspondiente. La mutación y los avisos se confirman juntos en SQL; otra sesión puede recuperar el cambio por cursor aunque pierda SignalR. Esto no demuestra la latencia del navegador ni una promoción al VPS.
 
@@ -267,5 +327,18 @@ Hacer obligatorio lo que falta, y retirar el `DELETE` obsoleto del catálogo,
 es el paso «contract» que registra
 [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md),
 junto con los demás pendientes de la fase.
+
+La fase 2 suma a ese paso la vigencia, el envío y la revisión del permiso, que
+aceptan la clave como opcional. Los comandos nuevos (retirar una versión,
+revocar un permiso y los usuarios del portal) la exigen. También quedan
+abiertos:
+
+- el listado de Contratos muestra «Aprobada» para una versión que espera las
+  firmas;
+- la renovación firmada de un contrato suspendido no envía el PDF firmado;
+- los correos nuevos a la aerolínea aparecen en la bandeja referidos a la cuenta
+  del portal, no al contrato ni al permiso.
+
+Ver [ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
 Volver al [Mapa de aplicaciones](README.md).

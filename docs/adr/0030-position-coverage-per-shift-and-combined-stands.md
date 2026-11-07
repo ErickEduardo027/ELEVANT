@@ -60,6 +60,8 @@ Hasta ahora la asignación tenía estas limitaciones:
 - un avión ancho va a una posición limitada a estrecho (`stand_narrowbody_only`);
 - se limitaría a un vecino que ya tiene un avión ancho (`neighbour_widebody`).
 
+> **Actualización (7 de noviembre de 2026).** La cobertura también comprueba que el mentor no tenga una ausencia aprobada y que su carnet aeroportuario esté vigente (`mentor_absent` y `mentor_permit_required`). Con el tipo de avión que ahora aceptan el vuelo manual y la importación del feed, un avión ancho no entra en una posición limitada a estrecho (`stand_unavailable`). La importación aplica además las mismas reglas del mapa; el vuelo manual, solo la de tamaño. Desactivar desde la configuración una posición en uso responde `422` con la razón `stand_in_use`. Ver [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 ### Comportamiento
 
 **La cobertura**
@@ -99,6 +101,8 @@ Se actualiza con `ramp_schedule`.
 **Datos**
 - El plano real de PUJ lo carga OCC desde Configuración.
 - El seed de Development solo trae un ejemplo sintético: Terminal B con máximo 2 y puente, B01 y B02 con puente, `BOARDING-BRIDGE` y un A333 ancho.
+
+> **Actualización (7 de noviembre de 2026).** OCC crea, edita y desactiva terminales, posiciones y tipos de avión en «Datos maestros», con el permiso nuevo `operations.master_data.*`; la configuración de cobertura conserva los atributos de las posiciones y las combinaciones. El superadministrador crea las estaciones. Nada en uso se desactiva y nada se borra. Ver [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
 ## Consecuencias
 

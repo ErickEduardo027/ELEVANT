@@ -107,7 +107,7 @@ El modelo dispone de historias explícitas para turnaround, operación y servici
 - Un activo de equipo sólo puede participar en una asignación abierta a la vez.
 - `OperationalPosition` expresa la función/habilitación requerida; `AssignmentRole` es un texto contextual de la asignación y su taxonomía aún no está cerrada.
 - Los intervalos de asignación no pueden terminar antes de empezar, pero el esquema no impide todos los solapamientos entre operaciones o recursos.
-- Un vuelo solo se planifica si un contrato `Active`, firmado y no terminado tiene una versión `Approved` o `Superseded` que cubre esa fecha en esa estación; es una sola regla para Planificación, vuelos manuales y asignación ([ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md)). El vuelo manual guarda esa versión en `contract_version_id`; los vuelos anteriores quedan sin ella.
+- Un vuelo solo se planifica si un contrato `Active`, firmado y no terminado tiene una versión `Approved` o `Superseded` que cubre esa fecha en esa estación; es una sola regla para Planificación, vuelos manuales y asignación ([ADR-0027](../../docs/adr/0027-occ-ready-contracts-and-stand-locations.md)). El vuelo manual guarda esa versión en `contract_version_id`; los vuelos anteriores quedan sin ella. Desde la fase 2 la versión `Approved` debe estar firmada por ambas partes: ver [Pre-operación](#pre-operación-fase-2-del-ciclo).
 - Una posición (`ref.stands`) puede tener latitud y longitud WGS84 que OCC ubicó en el mapa; sin ellas, el mapa usa una referencia interna sin verificar.
 
 ## Servicios e hitos
@@ -141,7 +141,7 @@ Los incidentes registran tipo, severidad, descripción y tiempos de ocurrencia, 
 
 `OperationalDataSource` admite `Internal`, `Manual`, `AirlineClient` y `ExternalProvider`. Turnaround, tramo, hito y eventos relevantes conservan fuente y, cuando corresponde, referencia/observación externa. El enum no decide precedencia, reconciliación ni confianza entre fuentes; esa política sigue abierta.
 
-Los vuelos que informa el proveedor (AeroDataBox) entran como **propuestas**, nunca como escalas. Una escala importada guarda `Source = ExternalProvider`, `ExternalProvider = AeroDataBox` y la referencia del tramo; sus tramos reciben después las horas revisadas y reales del proveedor. La escala solo se crea cuando OCC confirma la llegada con su salida ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)).
+Los vuelos que informa el proveedor (AeroDataBox) entran como **propuestas**, nunca como escalas. Una escala importada guarda `Source = ExternalProvider`, `ExternalProvider = AeroDataBox` y la referencia del tramo; sus tramos reciben después las horas revisadas y reales del proveedor. La escala solo se crea cuando OCC confirma la llegada con su salida ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)). La fase 2 amplió qué se propone y qué se importa: ver [Pre-operación](#pre-operación-fase-2-del-ciclo).
 
 ## Estado de disponibilidad
 
@@ -249,6 +249,47 @@ La [política](../../backend/Elevant.Application/Operations/AutomaticSurcharges.
 - posición inicial y final, con los minutos entre el último cambio y el bloqueo;
 - tiempo en tierra frente al permitido;
 - demoras IATA y desviaciones.
+
+No se ha verificado en el VPS.
+
+## Pre-operación (fase 2 del ciclo)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
+([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+
+- **Qué contrato cubre un vuelo.** La versión que cubre es la que rige:
+  `Approved` y firmada por ambas partes sobre la misma huella, `Superseded` en
+  las fechas que conservó, o la primera versión heredada de un contrato que ya
+  salió de `Draft`. Una versión que Finanzas aprobó y nadie firmó no cubre nada.
+  `TerminatedOn` es el primer día sin cobertura. En la segunda firma de una
+  versión nueva, los vuelos `Scheduled` o `Confirmed` que la anterior cubría y
+  cuyas operaciones no empezaron pasan a la versión firmada, si sus líneas
+  coinciden con las tarifas firmadas; si no, conservan su versión y sus
+  precios.
+- **Datos maestros.** OCC crea, edita y desactiva terminales, posiciones y tipos
+  de avión, y el superadministrador las estaciones; nada en uso se desactiva y
+  nada se borra. El vuelo manual y la importación del feed aceptan el tipo de
+  avión, y con él un avión ancho no entra en una posición limitada a estrecho.
+- **Feed de vuelos.** Se guardan también los tramos de las aerolíneas activas
+  registradas sin contrato en vigor, que OCC revisa como candidatas a charter.
+  Las aerolíneas con un contrato suspendido o vencido en la estación no se
+  proponen. La importación acepta tipo de avión, posición y modo charter, y
+  una propuesta descartada se restaura mientras su vuelo no haya pasado. Para
+  el ciclo local hay un proveedor simulado que nunca llama a AeroDataBox; las
+  escalas importadas de él guardan `ExternalProvider = Simulated`.
+- **Liberación del agente.** La baja, el traslado fuera de rampa, el paso a
+  oficina, la desactivación del perfil y una ausencia aprobada liberan las
+  coberturas del agente, sus asignaciones en las operaciones que no empezaron
+  (una operación que se queda sin agentes vuelve a `Planned`) y sus turnos no
+  iniciados, dentro de la misma transacción
+  ([ruta única](../../database/DevelopmentDB/Elevant.Persistence/Operations/RampAgentRelease.cs)).
+  Una operación en curso o devuelta para corrección bloquea la liberación. OCC
+  recibe `agent_released` por cada operación que debe reasignar.
+- **Cobertura y aptitud.** La cobertura comprueba también la ausencia y el
+  carnet del mentor. Planificación marca al agente asignado que ya no está
+  apto (inactivo, ausente o sin carnet o licencia vigente) mediante una
+  proyección que no libera nada.
 
 No se ha verificado en el VPS.
 

@@ -90,6 +90,26 @@ flowchart LR
 | Operación | solicitud operativa | `Submitted`, `InReview`, `Accepted`, `Rejected`, `Completed`, `Cancelled` |
 | Mobile | comando | `Received`, `Processed`, `Rejected`, `Failed` |
 
+Posterior al commit verificado de esta nota, la fase 2 del ciclo (código de
+`50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md))
+sumó estos estados y reglas de tiempo, sin migración porque se guardan como
+texto o reutilizan columnas existentes:
+
+- **Permiso de aerolínea:** `Submitted`, `Verified`, `Rejected` y `Revoked`. La
+  revocación conserva la verificación original y queda en la auditoría.
+- **Versión de contrato:** una versión aprobada que Contratos retira antes de
+  ambas firmas pasa a `Rejected` y conserva su aprobación. Una terminación
+  programada guarda en `TerminatedOn` su primer día sin cobertura, mientras el
+  contrato conserva su estado.
+- **Correo:** los propósitos nuevos de los avisos a la aerolínea y de los
+  usuarios del portal usan los estados de la cola que ya existían.
+- **Día hábil:** las reglas que cuentan días (vigencia y firma de contratos,
+  permisos, terminaciones, barridos, bajas, turnos y documentos del personal)
+  usan el calendario de la estación o, sin estación, el de
+  `America/Santo_Domingo`, nunca el día UTC
+  ([calendario](../../backend/Elevant.Application/Common/BusinessCalendar.cs)).
+
 ## Historia explícita y ausencia deliberada
 
 Tienen tablas de eventos de estado: turnaround, operación en tierra, servicio ejecutado, solicitud comercial y contrato. Tienen registros naturalmente históricos: ciclos, scopes, asignaciones, versiones, respuestas, envíos y decisiones.

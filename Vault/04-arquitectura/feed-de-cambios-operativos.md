@@ -157,3 +157,38 @@ Desconecta los hubs en segundo plano y conserva el sondeo de respaldo.
 **Pruebas.** La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Realtime.cs)
 cubre el aviso a ambos lados, los no leídos, el «Visto» y que el cursor nunca retrocede. Esto
 **no** demuestra todavía latencia en el VPS ni entrega con la app cerrada.
+
+## Fase 2 del ciclo: pre-operación
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+Las pistas siguen sin llevar datos: los clientes releen por REST.
+
+**Pistas nuevas o ampliadas:**
+
+- `mobile_devices` para las cuentas con `operations.devices.read`, cuando una
+  tablet cambia de agente, se libera, se desvincula o se revoca
+  ([vínculos de tablet](../../database/DevelopmentDB/Elevant.Persistence/Integration/MobileDeviceBindings.cs)).
+  La pantalla «Tablets» de OCC relee con ella.
+- `occ_planning` también para los cambios de estaciones y datos maestros, la
+  liberación de un agente, la cancelación o el acortamiento de una ausencia y
+  la segunda firma de una versión, que puede mover vuelos a la versión firmada
+  ([reemplazo de versiones](../../database/DevelopmentDB/Elevant.Persistence/Commercial/ContractVersionSupersession.cs)).
+- `airline_contracts` para las cuentas del portal de la aerolínea cuando cambia
+  el ciclo de vida de su contrato o la revisión de sus permisos; el portal
+  relee también su estado (`GET airline/portal/standing`).
+
+**Notificaciones nuevas:**
+
+- `agent_released` para OCC (solo `ADMIN_OCC`) por cada operación que perdió
+  al agente, y `assignment_released` para la tablet del agente
+  ([liberación](../../database/DevelopmentDB/Elevant.Persistence/Operations/RampAgentRelease.cs));
+- `agent_document_not_current` para OCC, una vez por asignación, cuando un
+  documento del agente vence o se corrige; nunca llega a la tablet;
+- de departamento para Contratos, sobre la vigencia, la renovación automática
+  iniciada o bloqueada, la terminación programada, cancelada o cumplida y la
+  versión retirada; y para Gestión Humana, sobre los carnets, licencias y
+  habilitaciones por vencer.
+
+Esto tampoco demuestra latencia en el VPS ni entrega con la aplicación cerrada.
