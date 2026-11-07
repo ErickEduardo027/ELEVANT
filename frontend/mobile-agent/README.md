@@ -139,7 +139,10 @@ reservan el payload y la clave de idempotencia antes de tocar la red. Ante
 timeout, desconexión, `429` o `5xx`, la interfaz bloquea la edición incompatible
 y el siguiente intento reutiliza exactamente el mismo comando. Un rechazo
 determinístico descarta la reserva y obliga a consultar nuevamente el estado
-canónico.
+canónico. El error conserva el código de Problem Details: si el contrato de la
+aerolínea ya no está vigente (`409 contract_not_in_force`), el inicio lo
+explica en español y pide avisar a OCC; una versión anterior de la app muestra
+el conflicto genérico.
 
 La entrega a OCC requiere conexión, checklist enviado, servicios terminados y
 cola de incidencias sincronizada. El agente confirma explícitamente el cierre

@@ -73,6 +73,6 @@ public sealed class StartRampOperationHandler(
                     RampOperationsFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "Unsupported ramp operation start failure."),
-            });
+            }, result.Code);
     }
 }

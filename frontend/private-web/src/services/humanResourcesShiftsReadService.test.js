@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { readSession, handleUnauthorizedResponse } from '../features/auth/authService';
-import { getHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions, recordHumanResourcesShift,
-  removeHumanResourcesShift } from './humanResourcesShiftsReadService';
+import { adjustHumanResourcesShift, getHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions,
+  recordHumanResourcesShift, removeHumanResourcesShift } from './humanResourcesShiftsReadService';
 
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: vi.fn() }));
 vi.mock('../features/auth/authService', () => ({
@@ -69,4 +69,21 @@ it('removes a shift with its version and the intent key (2-N11)', async () => {
   createPrivateWebApiClient.mockReturnValue({ removeHumanResourcesShift: remove });
   await expect(removeHumanResourcesShift('sh-1', 'AAAAAAAAB9E=', 'key-1')).resolves.toBeUndefined();
   expect(remove).toHaveBeenCalledWith('sh-1', 'AAAAAAAAB9E=', 'key-1');
+});
+
+it('adjusts a shift with its version, the reason and the intent key, and keeps the code of a refusal (3-E)', async () => {
+  readSession.mockReturnValue({ token: 'hr-token' });
+  const command = { startsAtLocal: '08:00:00', endsAtLocal: '13:00:00', reason: 'El vuelo se extendió.',
+    expectedVersion: 'AAAAAAAAB9E=' };
+  const adjusted = { id: 'sh-1', startsAtLocal: '08:00:00', endsAtLocal: '13:00:00', version: 'AAAAAAAAB9I=' };
+  const adjust = vi.fn().mockResolvedValueOnce(adjusted)
+    .mockRejectedValueOnce(Object.assign(new Error('HTTP 409'), { status: 409, code: 'shift_uncovers_work' }))
+    .mockRejectedValueOnce(Object.assign(new Error('HTTP 401'), { status: 401 }));
+  createPrivateWebApiClient.mockReturnValue({ adjustHumanResourcesShift: adjust });
+  await expect(adjustHumanResourcesShift('sh-1', command, 'key-1')).resolves.toEqual(adjusted);
+  expect(adjust).toHaveBeenCalledWith('sh-1', command, 'key-1');
+  await expect(adjustHumanResourcesShift('sh-1', command, 'key-2')).rejects.toMatchObject({
+    status: 409, code: 'shift_uncovers_work' });
+  await expect(adjustHumanResourcesShift('sh-1', command, 'key-3')).rejects.toMatchObject({ status: 401 });
+  expect(handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
 });

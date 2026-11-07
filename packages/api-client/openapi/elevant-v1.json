@@ -23008,6 +23008,112 @@
             "Bearer": []
           }
         ]
+      },
+      "patch": {
+        "tags": [
+          "HumanResourcesShifts"
+        ],
+        "summary": "«Ajustar horario» (3-E): Gestión Humana and OCC change the hours of a shift of today or later in its station's\ncalendar, with a reason, the shift's `version` and an Idempotency-Key (required). The adjusted shift keeps\ncovering the agent's coverages and operations in it (`shift_uncovers_work`); a past shift\n(`shift_in_past`) or one whose attendance was validated (`attendance_validated`) stays as it is.",
+        "operationId": "AdjustHumanResourcesShift",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AdjustHumanResourcesShiftRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesShiftAdjusted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
       }
     },
     "/api/v1/contracts/agreements": {
@@ -23442,7 +23548,18 @@
         "tags": [
           "OccCoverage"
         ],
+        "summary": "Hands an agent their stands for a window of the shift (ADR-0030). 3-J: with an Idempotency-Key (optional while\nolder clients exist) a repeated attempt answers the board instead of a second coverage; the key with another body\nis `idempotency_conflict`.",
         "operationId": "CreateOccCoverage",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -23541,6 +23658,7 @@
         "tags": [
           "OccCoverage"
         ],
+        "summary": "Releases a coverage; releasing twice answers the board. The Idempotency-Key works as in the creation.",
         "operationId": "ReleaseOccCoverage",
         "parameters": [
           {
@@ -23560,6 +23678,14 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -23569,6 +23695,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -24010,8 +24146,104 @@
         "tags": [
           "OccCoverage"
         ],
-        "summary": "Releases the agent of an operation not yet started so OCC can assign another (ADR-0030).",
+        "summary": "Releases the agent of an operation not yet started so OCC can assign another (ADR-0030). 3-J:\n`expectedAssignmentId` is the assignment OCC saw (another one is `assignment_changed`) and the\nIdempotency-Key replays the release; both are optional while older clients exist, and a key needs the assignment\n(`expected_version_required`). A started operation is `operation_started`: OCC hands it over instead.",
         "operationId": "ReleaseOccOperationAgent",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "expectedAssignmentId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/assignment/handover-options": {
+      "get": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "summary": "«Relevar agente» (3-F): the agents who may take an operation in progress or returned for correction from its agent,\nwith OCC's assignment rules over what is left of it. Another status is `handover_not_allowed`.",
+        "operationId": "GetOccHandoverOptions",
         "parameters": [
           {
             "name": "turnaroundId",
@@ -24024,8 +24256,124 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccHandoverOptionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/assignment/handover": {
+      "post": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "summary": "«Relevar agente» (3-F): OCC hands an operation in progress or returned to another eligible agent, with the\nassignment it saw (`assignment_changed` otherwise), a reason of 5 to 500 characters and an Idempotency-Key\n(required). The operation keeps its status and evidence; both agents are told.",
+        "operationId": "HandOverOccOperation",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/HandOverOccOperationRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccOperationHandoverResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized",
@@ -26337,6 +26685,92 @@
           },
           "500": {
             "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/agents/{agentId}/shift": {
+      "get": {
+        "tags": [
+          "OccPlanning"
+        ],
+        "summary": "The shift an agent already has on the flight's day (3-E), with its version, so OCC adjusts it with\n`AdjustHumanResourcesShift` instead of programming a second one; 404 `shift_not_found` when there is none.",
+        "operationId": "GetOccAgentShift",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAgentShiftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -32188,7 +32622,7 @@
         "tags": [
           "RampOperations"
         ],
-        "summary": "Returns only active operations assigned to the current ramp agent.",
+        "summary": "The operations of the current ramp agent's queue (3-N01): assigned, in progress, handed over (pending or in review)\nand returned, then the ones OCC approved in the last 48 hours; the active ones first, at most 100.",
         "operationId": "GetRampAssignedOperations",
         "responses": {
           "200": {
@@ -34968,6 +35402,32 @@
           "parentLineId": {
             "type": "string",
             "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdjustHumanResourcesShiftRequest": {
+        "required": [
+          "endsAtLocal",
+          "startsAtLocal"
+        ],
+        "type": "object",
+        "properties": {
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedVersion": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -45637,6 +46097,28 @@
         },
         "additionalProperties": false
       },
+      "HandOverOccOperationRequest": {
+        "required": [
+          "agentId",
+          "expectedAssignmentId"
+        ],
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedAssignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesAccountMovementResponse": {
         "required": [
           "accountId",
@@ -46801,6 +47283,33 @@
           "reason": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "HumanResourcesShiftAdjusted": {
+        "required": [
+          "endsAtLocal",
+          "id",
+          "startsAtLocal",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -48538,6 +49047,47 @@
         },
         "additionalProperties": false
       },
+      "OccAgentShiftResponse": {
+        "required": [
+          "agentId",
+          "endsAtLocal",
+          "shiftId",
+          "startsAtLocal",
+          "terminalCode",
+          "version",
+          "workDate"
+        ],
+        "type": "object",
+        "properties": {
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "terminalCode": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "OccAircraftResponse": {
         "required": [
           "icaoCode",
@@ -49523,6 +50073,59 @@
         },
         "additionalProperties": false
       },
+      "OccHandoverOptionsResponse": {
+        "required": [
+          "agents",
+          "currentAgentId",
+          "currentAgentName",
+          "currentAssignmentId",
+          "operationId",
+          "operationStatus",
+          "remainingFrom",
+          "remainingUntil",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationStatus": {
+            "type": "string"
+          },
+          "currentAssignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currentAgentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currentAgentName": {
+            "type": "string"
+          },
+          "remainingFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remainingUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAgentOptionResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "OccMasterData": {
         "required": [
           "aircraftTypes",
@@ -49692,6 +50295,38 @@
             "items": {
               "$ref": "#/components/schemas/OccMobileDeviceData"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccOperationHandoverResponse": {
+        "required": [
+          "agentId",
+          "assignmentId",
+          "previousAgentId",
+          "replayed",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousAgentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "replayed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

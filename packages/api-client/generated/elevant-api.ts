@@ -190,6 +190,15 @@ export interface AddPreinvoiceAdjustmentInput {
   parentLineId?: string | null;
 }
 
+export interface AdjustHumanResourcesShiftRequest {
+  startsAtLocal: string;
+  endsAtLocal: string;
+  /** @nullable */
+  reason?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface AffiliationStationOptionResponse {
   id: string;
   code: string;
@@ -3372,6 +3381,13 @@ export interface GovernanceSnapshot {
   rampProfiles: GovernanceRampProfileData[];
 }
 
+export interface HandOverOccOperationRequest {
+  agentId: string;
+  expectedAssignmentId: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface HumanResourcesAccountMovementResponse {
   id: string;
   accountId: string;
@@ -3665,6 +3681,13 @@ export interface HumanResourcesScheduleWarningPageResponse {
   ruleVersion: string;
   ruleEffectiveOn: string;
   warnings: HumanResourcesScheduleWarningResponse[];
+}
+
+export interface HumanResourcesShiftAdjusted {
+  id: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  version: string;
 }
 
 export interface HumanResourcesShiftTerminalOption {
@@ -4135,6 +4158,16 @@ export interface OccAgentOptionResponse {
   eligibilityReasons: string[];
 }
 
+export interface OccAgentShiftResponse {
+  shiftId: string;
+  agentId: string;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  terminalCode: string;
+  version: string;
+}
+
 export interface OccAircraftResponse {
   id: string;
   icaoCode: string;
@@ -4438,6 +4471,18 @@ export interface OccFlightLegResponse {
   actualAt?: string | null;
 }
 
+export interface OccHandoverOptionsResponse {
+  turnaroundId: string;
+  operationId: string;
+  operationStatus: string;
+  currentAssignmentId: string;
+  currentAgentId: string;
+  currentAgentName: string;
+  remainingFrom: string;
+  remainingUntil: string;
+  agents: OccAgentOptionResponse[];
+}
+
 export interface OccMasterData {
   stationId: string;
   stationCode: string;
@@ -4484,6 +4529,14 @@ export interface OccMobileDevicesData {
   canUnbind: boolean;
   canRevoke: boolean;
   devices: OccMobileDeviceData[];
+}
+
+export interface OccOperationHandoverResponse {
+  turnaroundId: string;
+  assignmentId: string;
+  agentId: string;
+  previousAgentId: string;
+  replayed: boolean;
 }
 
 export interface OccPlanningTurnaroundContextResponse {
@@ -7006,6 +7059,10 @@ date: string;
 
 export type RemoveOccStandConstraintParams = {
 date: string;
+};
+
+export type ReleaseOccOperationAgentParams = {
+expectedAssignmentId?: string;
 };
 
 export type GetOccFlightFeedParams = {
@@ -17076,6 +17133,47 @@ export const removeHumanResourcesShift = async (id: string,
 
 
 
+export const getAdjustHumanResourcesShiftUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/shifts/${id}`
+}
+
+/**
+ * @summary «Ajustar horario» (3-E): Gestión Humana and OCC change the hours of a shift of today or later in its station's
+calendar, with a reason, the shift's `version` and an Idempotency-Key (required). The adjusted shift keeps
+covering the agent's coverages and operations in it (`shift_uncovers_work`); a past shift
+(`shift_in_past`) or one whose attendance was validated (`attendance_validated`) stays as it is.
+ */
+export const adjustHumanResourcesShift = async (id: string,
+    adjustHumanResourcesShiftRequest?: AdjustHumanResourcesShiftRequest, options?: RequestInit): Promise<HumanResourcesShiftAdjusted> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAdjustHumanResourcesShiftUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(adjustHumanResourcesShiftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesShiftAdjusted = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getListManagedContractsUrl = (params?: ListManagedContractsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -17265,6 +17363,11 @@ export const getCreateOccCoverageUrl = () => {
   return `/api/v1/occ/coverage`
 }
 
+/**
+ * @summary Hands an agent their stands for a window of the shift (ADR-0030). 3-J: with an Idempotency-Key (optional while
+older clients exist) a repeated attempt answers the board instead of a second coverage; the key with another body
+is `idempotency_conflict`.
+ */
 export const createOccCoverage = async (createOccCoverageRequest: CreateOccCoverageRequest, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
@@ -17307,6 +17410,9 @@ export const getReleaseOccCoverageUrl = (coverageId: string,
   return stringifiedParams.length > 0 ? `/api/v1/occ/coverage/${coverageId}/release?${stringifiedParams}` : `/api/v1/occ/coverage/${coverageId}/release`
 }
 
+/**
+ * @summary Releases a coverage; releasing twice answers the board. The Idempotency-Key works as in the creation.
+ */
 export const releaseOccCoverage = async (coverageId: string,
     params: ReleaseOccCoverageParams, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
 
@@ -17469,20 +17575,32 @@ export const removeOccStandConstraint = async (constraintId: string,
 
 
 
-export const getReleaseOccOperationAgentUrl = (turnaroundId: string,) => {
+export const getReleaseOccOperationAgentUrl = (turnaroundId: string,
+    params?: ReleaseOccOperationAgentParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/release`
+  return stringifiedParams.length > 0 ? `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/release?${stringifiedParams}` : `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/release`
 }
 
 /**
- * @summary Releases the agent of an operation not yet started so OCC can assign another (ADR-0030).
+ * @summary Releases the agent of an operation not yet started so OCC can assign another (ADR-0030). 3-J:
+`expectedAssignmentId` is the assignment OCC saw (another one is `assignment_changed`) and the
+Idempotency-Key replays the release; both are optional while older clients exist, and a key needs the assignment
+(`expected_version_required`). A started operation is `operation_started`: OCC hands it over instead.
  */
-export const releaseOccOperationAgent = async (turnaroundId: string, options?: RequestInit): Promise<void> => {
+export const releaseOccOperationAgent = async (turnaroundId: string,
+    params?: ReleaseOccOperationAgentParams, options?: RequestInit): Promise<void> => {
 
-  const res = await fetch(getReleaseOccOperationAgentUrl(turnaroundId),
+  const res = await fetch(getReleaseOccOperationAgentUrl(turnaroundId,params),
   {
     ...options,
     method: 'POST'
@@ -17495,6 +17613,78 @@ export const releaseOccOperationAgent = async (turnaroundId: string, options?: R
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getGetOccHandoverOptionsUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/handover-options`
+}
+
+/**
+ * @summary «Relevar agente» (3-F): the agents who may take an operation in progress or returned for correction from its agent,
+with OCC's assignment rules over what is left of it. Another status is `handover_not_allowed`.
+ */
+export const getOccHandoverOptions = async (turnaroundId: string, options?: RequestInit): Promise<OccHandoverOptionsResponse> => {
+
+  const res = await fetch(getGetOccHandoverOptionsUrl(turnaroundId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccHandoverOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getHandOverOccOperationUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/handover`
+}
+
+/**
+ * @summary «Relevar agente» (3-F): OCC hands an operation in progress or returned to another eligible agent, with the
+assignment it saw (`assignment_changed` otherwise), a reason of 5 to 500 characters and an Idempotency-Key
+(required). The operation keeps its status and evidence; both agents are told.
+ */
+export const handOverOccOperation = async (turnaroundId: string,
+    handOverOccOperationRequest: HandOverOccOperationRequest, options?: RequestInit): Promise<OccOperationHandoverResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getHandOverOccOperationUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(handOverOccOperationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccOperationHandoverResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -18346,6 +18536,40 @@ const res = await fetch(getProgramOccShiftUrl(turnaroundId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: ProgramOccShiftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAgentShiftUrl = (turnaroundId: string,
+    agentId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/agents/${agentId}/shift`
+}
+
+/**
+ * @summary The shift an agent already has on the flight's day (3-E), with its version, so OCC adjusts it with
+`AdjustHumanResourcesShift` instead of programming a second one; 404 `shift_not_found` when there is none.
+ */
+export const getOccAgentShift = async (turnaroundId: string,
+    agentId: string, options?: RequestInit): Promise<OccAgentShiftResponse> => {
+
+  const res = await fetch(getGetOccAgentShiftUrl(turnaroundId,agentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAgentShiftResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -20399,7 +20623,8 @@ export const getGetRampAssignedOperationsUrl = () => {
 }
 
 /**
- * @summary Returns only active operations assigned to the current ramp agent.
+ * @summary The operations of the current ramp agent's queue (3-N01): assigned, in progress, handed over (pending or in review)
+and returned, then the ones OCC approved in the last 48 hours; the active ones first, at most 100.
  */
 export const getRampAssignedOperations = async ( options?: RequestInit): Promise<RampAssignedOperationsResponse> => {
 

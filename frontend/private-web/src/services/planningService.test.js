@@ -436,3 +436,27 @@ describe('turnaround changes (3-A, 3-N21)', () => {
     expect(mocks.handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
   });
 });
+
+describe("the agent's shift of the flight's day (3-E)", () => {
+  const client = { getOccAgentShift: vi.fn(), programOccShift: vi.fn() };
+  beforeEach(() => { mocks.createPrivateWebApiClient.mockReturnValue(client); });
+
+  it('reads it with cancellation and keeps the code of a missing shift', async () => {
+    const shift = { shiftId: 'shift-1', agentId: 'agent-1', workDate: '2026-08-19', startsAtLocal: '08:00:00',
+      endsAtLocal: '12:00:00', terminalCode: 'A', version: 'AAAAAAAAB9E=' };
+    client.getOccAgentShift.mockResolvedValueOnce(shift)
+      .mockRejectedValueOnce(new ElevantApiError({ kind: 'http', status: 404, code: 'shift_not_found' }));
+    const signal = new AbortController().signal;
+    await expect(planningService.getOccAgentShift(turnaroundId, 'agent-1', { signal })).resolves.toEqual(shift);
+    expect(client.getOccAgentShift).toHaveBeenCalledWith(turnaroundId, 'agent-1', { signal });
+    await expect(planningService.getOccAgentShift(turnaroundId, 'agent-1')).rejects.toMatchObject({
+      status: 404, code: 'shift_not_found' });
+  });
+
+  it('keeps the code of a shift the agent already has that day when programming another one', async () => {
+    client.programOccShift.mockRejectedValueOnce(new ElevantApiError({ kind: 'http', status: 409,
+      code: 'shift_day_taken' }));
+    await expect(planningService.programPlanningShift(turnaroundId, { agentId: 'agent-1' })).rejects.toMatchObject({
+      status: 409, problemCode: 'shift_day_taken' });
+  });
+});

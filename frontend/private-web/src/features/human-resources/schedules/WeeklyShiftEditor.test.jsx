@@ -3,15 +3,15 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import WeeklyShiftEditor from './WeeklyShiftEditor';
 import {
-  getAllHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions, listRampAgentReadiness,
-  recordHumanResourcesShift, removeHumanResourcesShift,
+  adjustHumanResourcesShift, getAllHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions,
+  listRampAgentReadiness, recordHumanResourcesShift, removeHumanResourcesShift,
 } from '../../../services/humanResourcesShiftsReadService';
 
 import { getApprovedAbsences } from '../../../services/humanResourcesAvailabilityService';
 
 vi.mock('../../../services/humanResourcesShiftsReadService', () => ({
   getAllHumanResourcesShifts: vi.fn(), getHumanResourcesShiftAssignmentOptions: vi.fn(), listRampAgentReadiness: vi.fn(),
-  recordHumanResourcesShift: vi.fn(), removeHumanResourcesShift: vi.fn(),
+  recordHumanResourcesShift: vi.fn(), removeHumanResourcesShift: vi.fn(), adjustHumanResourcesShift: vi.fn(),
 }));
 vi.mock('../../../services/humanResourcesAvailabilityService', () => ({ getApprovedAbsences: vi.fn() }));
 
@@ -129,3 +129,51 @@ it('keeps working when the absences cannot be read and offers a retry when the w
   await userEvent.click(await screen.findByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByRole('region', { name: 'Editor semanal de turnos' })).toBeInTheDocument();
 });
+
+it('adjusts the hours of a future shift with a reason, its version and the intent key (3-E)', async () => {
+  const onChanged = vi.fn();
+  adjustHumanResourcesShift
+    .mockRejectedValueOnce(Object.assign(new Error('HTTP 409'), { status: 409, code: 'shift_uncovers_work' }))
+    .mockResolvedValueOnce({ id: 'sh-1', startsAtLocal: '06:00:00', endsAtLocal: '17:30:00', version: 'AAAAAAAAB9I=' });
+  render(<WeeklyShiftEditor weekStart={weekStart} onChanged={onChanged} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Ajustar horario de Ana Ramp el 2099-01-06' }));
+  const form = await screen.findByRole('form', { name: 'Ajustar horario' });
+  expect(within(form).getByText(/Turno actual 07:00–16:00/)).toBeInTheDocument();
+  expect(within(form).getByLabelText('Inicio')).toHaveValue('07:00');
+  const save = within(form).getByRole('button', { name: 'Guardar horario' });
+  expect(save).toBeDisabled();
+  await userEvent.clear(within(form).getByLabelText('Inicio'));
+  await userEvent.type(within(form).getByLabelText('Inicio'), '06:00');
+  await userEvent.clear(within(form).getByLabelText('Fin'));
+  await userEvent.type(within(form).getByLabelText('Fin'), '17:30');
+  await userEvent.type(within(form).getByLabelText('Motivo del ajuste'), '  Refuerzo por vuelos retrasados  ');
+  await userEvent.click(save);
+
+  // A broken rule keeps the form with the reason in Spanish.
+  expect(await within(form).findByRole('alert')).toHaveTextContent(
+    'El nuevo horario deja sin cubrir posiciones u operaciones que el agente ya tiene en ese turno.');
+  await userEvent.click(save);
+  expect(await screen.findByText('Horario del 2099-01-06 de Ana Ramp ajustado a 06:00–17:30.')).toBeInTheDocument();
+  const command = { startsAtLocal: '06:00:00', endsAtLocal: '17:30:00', reason: 'Refuerzo por vuelos retrasados',
+    expectedVersion: 'AAAAAAAAB9E=' };
+  expect(adjustHumanResourcesShift).toHaveBeenNthCalledWith(1, 'sh-1', command, '00000000-0000-4000-8000-000000000001');
+  expect(adjustHumanResourcesShift).toHaveBeenNthCalledWith(2, 'sh-1', command, '00000000-0000-4000-8000-000000000001');
+  expect(onChanged).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole('form', { name: 'Ajustar horario' })).not.toBeInTheDocument();
+});
+
+it('reads the week again when the shift changed meanwhile (3-E)', async () => {
+  adjustHumanResourcesShift.mockRejectedValueOnce(Object.assign(new Error('HTTP 409'), { status: 409,
+    code: 'version_conflict' }));
+  render(<WeeklyShiftEditor weekStart={weekStart} />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Ajustar horario de Ana Ramp el 2099-01-06' }));
+  const form = await screen.findByRole('form', { name: 'Ajustar horario' });
+  await userEvent.type(within(form).getByLabelText('Motivo del ajuste'), 'Refuerzo por vuelos retrasados');
+  await userEvent.clear(within(form).getByLabelText('Fin'));
+  await userEvent.type(within(form).getByLabelText('Fin'), '18:00');
+  await userEvent.click(within(form).getByRole('button', { name: 'Guardar horario' }));
+  expect(await screen.findByText('El turno cambió mientras lo editabas. Actualizamos la semana; revisa e intenta de nuevo.'))
+    .toBeInTheDocument();
+  await vi.waitFor(() => expect(getAllHumanResourcesShifts).toHaveBeenCalledTimes(2));
+});
+

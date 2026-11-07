@@ -74,11 +74,16 @@ estas razones estables: `agent_inactive`, `mobile_account_unavailable`,
 `station_scope_missing`, `terminal_scope_missing`,
 `operational_position_unavailable`, `qualification_not_current`,
 `airport_id_not_current`, `ramp_driver_license_not_current`,
-`shift_not_compatible` y `assignment_conflict`. El cliente muestra
-esas razones, pero no debe reconstruir ni reemplazar la política del servidor.
-`assignment_conflict` también falla cerrado cuando otra asignación activa del
-agente tiene una ventana horaria ausente o no positiva; el cliente nunca debe
-interpretar un horario incompleto como disponibilidad.
+`shift_not_compatible`, `mentor_required` y `assignment_conflict`. El cliente
+muestra esas razones, pero no debe reconstruir ni reemplazar la política del
+servidor. `assignment_conflict` significa que el agente ya lleva tres
+operaciones simultáneas que lo ocupan (asignadas, en curso o devueltas para
+corrección) en la ventana de la escala; las entregadas, aprobadas o canceladas
+no cuentan. También falla cerrado: una operación que ocupa al agente con una
+ventana horaria ausente o no positiva cuenta como simultánea, y el cliente nunca
+debe interpretar un horario incompleto como disponibilidad. `mentor_required`
+indica un agente con menos de tres meses sin una cobertura con mentor a la hora
+de la escala.
 
 La respuesta de opciones incluye un `ETag` fuerte y opaco de la representación
 asignable completa: operación, turnaround, stand, contrato, servicios y

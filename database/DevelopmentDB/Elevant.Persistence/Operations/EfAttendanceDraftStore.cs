@@ -231,7 +231,7 @@ internal sealed class EfAttendanceDraftStore(
             assignment = await context.OperationAgentAssignments.AsNoTracking()
                 .SingleOrDefaultAsync(item => item.PublicId == assignmentId,
                     cancellationToken);
-        if (assignment is null || lockForWrite && assignment.ReleasedAt is not null)
+        if (assignment is null)
             return (null, AttendanceDraftFailure.NotFound);
 
         var operation = await (from ground in context.GroundOperations.AsNoTracking()
@@ -249,9 +249,15 @@ internal sealed class EfAttendanceDraftStore(
                 StationInternalId = station.Id,
                 StationPublicId = station.PublicId,
                 AirlineOrganizationInternalId = airline.OrganizationId,
+                ground.ActualStartAt,
             }).SingleOrDefaultAsync(cancellationToken);
         if (operation is null || !actor.StationScopes.Any(scope =>
                 scope.StationId == operation.StationPublicId))
+            return (null, AttendanceDraftFailure.NotFound);
+        // A released assignment takes no new attendance, except one OCC released by a handover after the start (3-F):
+        // the agent worked until then, so OCC still records it. The tablet's lane stays closed below.
+        if (lockForWrite && assignment.ReleasedAt is { } releasedAt &&
+            !(writeLane == AttendanceDraftLane.Occ && operation.ActualStartAt is { } startedAt && releasedAt > startedAt))
             return (null, AttendanceDraftFailure.NotFound);
 
         if (writeLane == AttendanceDraftLane.RampAgent ||

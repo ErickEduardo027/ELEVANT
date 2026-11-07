@@ -39,11 +39,33 @@ const messages: Record<MobileServiceErrorCode, string> = {
   cancelled: 'La solicitud fue cancelada.',
 };
 
+/**
+ * The Problem Details codes the tablet explains in Spanish (phase 3, block B). The server's title is never shown; a
+ * code this version does not know keeps the message of its status, as the deployed APK does.
+ */
+const problemMessages: ReadonlyMap<string, string> = new Map([
+  // 3-N04: the airline's contract stopped being in force before the operation started.
+  ['contract_not_in_force',
+    'El contrato de la aerolínea no está vigente. No inicies la operación y avisa a OCC.'],
+]);
+
 type MobileServiceErrorOptions = Readonly<{
   status?: number;
   traceId?: string;
   retryable?: boolean;
+  problemCode?: string;
 }>;
+
+/** A Problem Details code as the API sends it (snake_case), or undefined. */
+function safeProblemCode(value: string | undefined) {
+  return typeof value === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(value)
+    ? value
+    : undefined;
+}
+
+function messageFor(code: MobileServiceErrorCode, problemCode: string | undefined) {
+  return (problemCode === undefined ? undefined : problemMessages.get(problemCode)) ?? messages[code];
+}
 
 function safeTraceId(value: string | undefined) {
   if (typeof value !== 'string') return undefined;
@@ -59,16 +81,22 @@ export class MobileServiceError extends Error {
   readonly status: number | undefined;
   readonly traceId: string | undefined;
   readonly retryable: boolean;
+  /**
+   * The Problem Details code the API sent (`contract_not_in_force`, 3-N04), so a screen explains the cause; `code`
+   * stays the kind of failure every screen already handles.
+   */
+  readonly problemCode: string | undefined;
 
   constructor(
     code: MobileServiceErrorCode,
     options: MobileServiceErrorOptions = {},
   ) {
-    super(messages[code]);
+    super(messageFor(code, safeProblemCode(options.problemCode)));
     this.name = 'MobileServiceError';
     this.code = code;
     this.status = Number.isInteger(options.status) ? options.status : undefined;
     this.traceId = safeTraceId(options.traceId);
+    this.problemCode = safeProblemCode(options.problemCode);
     this.retryable =
       options.retryable ??
       [
@@ -138,16 +166,20 @@ export function asMobileServiceError(
         traceId: error.traceId,
       });
     }
+    // 3-N04: the Problem Details code travels with the failure, so a screen names the cause (the contract that is no
+    // longer in force) while every screen keeps reacting to the kind of failure it already knows.
     if (error.status === 404) {
       return new MobileServiceError('not_found', {
         status: error.status,
         traceId: error.traceId,
+        problemCode: error.code,
       });
     }
     if (error.status === 409) {
       return new MobileServiceError('conflict', {
         status: error.status,
         traceId: error.traceId,
+        problemCode: error.code,
       });
     }
 
@@ -155,6 +187,7 @@ export function asMobileServiceError(
       status: error.status,
       traceId: error.traceId,
       retryable: error.status >= 500 || error.status === 429,
+      problemCode: error.code,
     });
   }
 

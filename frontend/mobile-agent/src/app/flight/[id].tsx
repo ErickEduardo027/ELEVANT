@@ -1312,6 +1312,14 @@ function startErrorNotice(error: MobileServiceError): StartNotice {
       message: 'La operación ya no pertenece a tu lista. Estamos actualizando el detalle.',
     };
   }
+  // 3-N04: the airline's contract is no longer in force; the operation does not start until OCC decides.
+  if (error.code === 'conflict' && error.problemCode === 'contract_not_in_force') {
+    return {
+      tone: 'error',
+      title: 'Contrato no vigente',
+      message: error.message,
+    };
+  }
   if (error.code === 'conflict') {
     return {
       tone: 'warning',

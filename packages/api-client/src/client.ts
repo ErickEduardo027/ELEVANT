@@ -337,6 +337,10 @@ import {
   getAddOccStandConstraintUrl,
   getRemoveOccStandConstraintUrl,
   getReleaseOccOperationAgentUrl,
+  getGetOccHandoverOptionsUrl,
+  getHandOverOccOperationUrl,
+  getGetOccAgentShiftUrl,
+  getAdjustHumanResourcesShiftUrl,
   getGetOwnRampCoverageUrl,
   getRecordOccArrivalUrl,
   getGetOccTurnaroundUrl,
@@ -539,6 +543,10 @@ import {
   type OccTurnaroundDetailResponse,
   type RampAircraftTypesResponse,
   type OccCoverageBoardResponse,
+  type OccHandoverOptionsResponse,
+  type OccOperationHandoverResponse,
+  type OccAgentShiftResponse,
+  type HumanResourcesShiftAdjusted,
   type RampOwnCoverageListResponse,
   type OccReadyContractsResponse,
   type OccFlightFeedResponse,
@@ -699,6 +707,39 @@ export interface OccCoverageCommand {
   mentorAgentId?: string | null;
   vehicleCode?: string | null;
   isReinforcement: boolean;
+}
+
+/**
+ * A coverage command with the intent's Idempotency-Key (3-J): optional while older clients exist (expand); the same
+ * key and body answer the board again instead of a second coverage.
+ */
+export type OccCoverageCommandOptions = GetHumanResourcesReportOptions & { readonly idempotencyKey?: string | null };
+
+/**
+ * «Liberar agente» (3-J): the assignment OCC saw and the intent's Idempotency-Key, both optional while older clients
+ * exist; a key needs the assignment, as the server asks (`expected_version_required`).
+ */
+export type ReleaseOccOperationAgentOptions = GetHumanResourcesReportOptions & {
+  readonly expectedAssignmentId?: string | null;
+  readonly idempotencyKey?: string | null;
+};
+
+/** «Relevar agente» (3-F): who takes the operation, the assignment OCC saw and the reason (5 to 500 characters). */
+export interface HandOverOccOperationCommand {
+  readonly agentId: string;
+  readonly expectedAssignmentId: string;
+  readonly reason: string;
+}
+
+/**
+ * «Ajustar horario» (3-E): the new local hours of the shift (HH:mm:ss; an end at or before the start crosses
+ * midnight, at most 16 hours), the reason (5 to 500 characters) and the shift's `version` on screen.
+ */
+export interface AdjustHumanResourcesShiftCommand {
+  readonly startsAtLocal: string;
+  readonly endsAtLocal: string;
+  readonly reason: string;
+  readonly expectedVersion: string;
 }
 
 export interface OccStandAttributesCommand {
@@ -1082,6 +1123,13 @@ export interface ElevantApiClient {
   removeHumanResourcesShift(id: string, expectedVersion?: string | null, idempotencyKey?: string | null,
     options?: GetHumanResourcesReportOptions): Promise<void>;
   /**
+   * «Ajustar horario» (3-E): Gestión Humana and OCC change the hours of a shift of today or later with its version, a
+   * reason and the intent's key (required). It keeps covering the agent's work (`shift_uncovers_work`); a past shift
+   * (`shift_in_past`) or one with a validated attendance (`attendance_validated`) stays.
+   */
+  adjustHumanResourcesShift(id: string, command: AdjustHumanResourcesShiftCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<HumanResourcesShiftAdjusted>;
+  /**
    * The planning board's marks (2-N25): the assignments of the station's operations on the date whose agent is
    * inactive, on an approved absence or without a current airport permit or ramp licence. Nothing is released.
    */
@@ -1371,8 +1419,10 @@ export interface ElevantApiClient {
   getRampAircraftTypes(options?: GetHumanResourcesReportOptions): Promise<RampAircraftTypesResponse>;
   /** Position coverage per shift (ADR-0030). A rejected coverage throws 422 with `reasons`. */
   getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
-  createOccCoverage(request: OccCoverageCommand, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
-  releaseOccCoverage(coverageId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  /** With `options.idempotencyKey` a repeated attempt answers the board instead of a second coverage (3-J). */
+  createOccCoverage(request: OccCoverageCommand, options?: OccCoverageCommandOptions): Promise<OccCoverageBoardResponse>;
+  /** Releasing twice answers the board; `options.idempotencyKey` replays the release (3-J). */
+  releaseOccCoverage(coverageId: string, date: string, options?: OccCoverageCommandOptions): Promise<OccCoverageBoardResponse>;
   updateOccStandAttributes(standId: string, request: OccStandAttributesCommand,
     options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
   updateOccTerminalRules(terminalId: string, request: { date: string; maxStandsPerAgent: number | null; requiresBridgeQualification: boolean },
@@ -1381,8 +1431,22 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
   removeOccStandConstraint(constraintId: string, date: string,
     options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
-  /** Releases the agent of an operation not yet started so OCC can assign another. */
-  releaseOccOperationAgent(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<void>;
+  /**
+   * Releases the agent of an operation not yet started so OCC can assign another. With the assignment OCC saw
+   * (`assignment_changed` otherwise) and the intent's key (3-J); a started operation is `operation_started`.
+   */
+  releaseOccOperationAgent(turnaroundId: string, options?: ReleaseOccOperationAgentOptions): Promise<void>;
+  /**
+   * «Relevar agente» (3-F): who works an operation in progress or returned now and the agents of the station that may
+   * take what is left of it (`handover_not_allowed` in any other status).
+   */
+  getOccHandoverOptions(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccHandoverOptionsResponse>;
+  /** «Relevar agente» (3-F): hands the operation to another eligible agent with the intent's key (required). */
+  handOverOccOperation(turnaroundId: string, command: HandOverOccOperationCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccOperationHandoverResponse>;
+  /** The agent's shift of the flight's day with its version (3-E); `shift_not_found` (404) when there is none. */
+  getOccAgentShift(turnaroundId: string, agentId: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccAgentShiftResponse>;
   /** «Mis posiciones de hoy» of the signed-in ramp agent. */
   getOwnRampCoverage(options?: GetOperationalCommunicationOptions): Promise<RampOwnCoverageListResponse>;
   /** Places a stand on the map (WGS84) or clears it with both coordinates null (ADR-0027). */
@@ -2395,6 +2459,91 @@ function isOccAgentOptionResponse(value: unknown) {
     Array.isArray(value.eligibilityReasons) &&
     value.eligibilityReasons.every(isString)
   );
+}
+
+/** A local clock the API answers (HH:mm:ss). */
+const LOCAL_CLOCK = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/;
+/** A local clock a shift adjustment sends: whole minutes, as the server requires (3-E). */
+const LOCAL_MINUTE = /^([01]\d|2[0-3]):[0-5]\d:00$/;
+/** The statuses OCC hands an operation over in (3-F). */
+const HANDOVER_STATUSES: readonly string[] = ["InProgress", "Returned"];
+
+/**
+ * «Relevar agente» (3-F): the route's operation in progress or returned, the agent and assignment that work it now,
+ * the window left (it ends after it starts) and the agents evaluated for it; the current agent is never offered.
+ */
+function isOccHandoverOptions(value: unknown, turnaroundId: string): value is OccHandoverOptionsResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["turnaroundId", "operationId", "operationStatus", "currentAssignmentId",
+      "currentAgentId", "currentAgentName", "remainingFrom", "remainingUntil", "agents"]) ||
+      !isUuid(value.turnaroundId) || value.turnaroundId.toLowerCase() !== turnaroundId || !isUuid(value.operationId) ||
+      !isString(value.operationStatus) || !HANDOVER_STATUSES.includes(value.operationStatus) ||
+      !isUuid(value.currentAssignmentId) || !isUuid(value.currentAgentId) || !isNonEmptyString(value.currentAgentName) ||
+      !isDateTimeOffset(value.remainingFrom) || !isDateTimeOffset(value.remainingUntil) ||
+      Date.parse(value.remainingUntil) <= Date.parse(value.remainingFrom) ||
+      !Array.isArray(value.agents) || value.agents.length > 1000 || !value.agents.every(isOccAgentOptionResponse))
+    return false;
+  const current = value.currentAgentId.toLowerCase();
+  return value.agents.every(agent => String((agent as { id: string }).id).toLowerCase() !== current);
+}
+
+/** The handed-over operation (3-F): the route's turnaround and the new assignment of the agent OCC chose. */
+function isOccOperationHandover(value: unknown, turnaroundId: string, agentId: string):
+  value is OccOperationHandoverResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "assignmentId", "agentId", "previousAgentId", "replayed"]) &&
+    isUuid(value.turnaroundId) && value.turnaroundId.toLowerCase() === turnaroundId && isUuid(value.assignmentId) &&
+    isUuid(value.agentId) && value.agentId.toLowerCase() === agentId && isUuid(value.previousAgentId) &&
+    value.previousAgentId.toLowerCase() !== agentId && typeof value.replayed === "boolean";
+}
+
+/** The route agent's shift of the flight's day (3-E), with the version «Ajustar turno» sends back. */
+function isOccAgentShift(value: unknown, agentId: string): value is OccAgentShiftResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["shiftId", "agentId", "workDate", "startsAtLocal", "endsAtLocal", "terminalCode", "version"]) &&
+    isUuid(value.shiftId) && isUuid(value.agentId) && value.agentId.toLowerCase() === agentId &&
+    isDateOnly(value.workDate) && isString(value.startsAtLocal) && LOCAL_CLOCK.test(value.startsAtLocal) &&
+    isString(value.endsAtLocal) && LOCAL_CLOCK.test(value.endsAtLocal) && isNonEmptyString(value.terminalCode) &&
+    isRecordVersion(value.version);
+}
+
+/** The route's adjusted shift (3-E) with its new version. */
+function isHumanResourcesShiftAdjusted(value: unknown, shiftId: string): value is HumanResourcesShiftAdjusted {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "startsAtLocal", "endsAtLocal", "version"]) &&
+    isUuid(value.id) && value.id.toLowerCase() === shiftId && isString(value.startsAtLocal) &&
+    LOCAL_CLOCK.test(value.startsAtLocal) && isString(value.endsAtLocal) && LOCAL_CLOCK.test(value.endsAtLocal) &&
+    isRecordVersion(value.version);
+}
+
+/** A reason the audit keeps: trimmed, from 5 to 500 characters. */
+function validatedAgentReason(reason: unknown) {
+  const trimmed = typeof reason === "string" ? reason.trim() : "";
+  if (trimmed.length < 5 || trimmed.length > 500) throw new TypeError("reason must have 5 to 500 characters.");
+  return trimmed;
+}
+
+/** «Relevar agente» (3-F): the agent, the assignment OCC saw and the reason. */
+function validatedHandoverCommand(command: HandOverOccOperationCommand) {
+  if (!isRecord(command) || !hasOnlyKeys(command, ["agentId", "expectedAssignmentId", "reason"]))
+    throw new TypeError("The handover is invalid.");
+  return { agentId: validatedUuid(command.agentId, "agentId"),
+    expectedAssignmentId: validatedUuid(command.expectedAssignmentId, "expectedAssignmentId"),
+    reason: validatedAgentReason(command.reason) };
+}
+
+/** «Ajustar horario» (3-E): distinct whole-minute local times at most 16 hours apart, the reason and the version. */
+function validatedShiftAdjustment(command: AdjustHumanResourcesShiftCommand) {
+  if (!isRecord(command) || !hasOnlyKeys(command, ["startsAtLocal", "endsAtLocal", "reason", "expectedVersion"]) ||
+      !isString(command.startsAtLocal) || !isString(command.endsAtLocal) || !LOCAL_MINUTE.test(command.startsAtLocal) ||
+      !LOCAL_MINUTE.test(command.endsAtLocal) || command.startsAtLocal === command.endsAtLocal ||
+      !isRecordVersion(command.expectedVersion))
+    throw new TypeError("The shift adjustment needs distinct local HH:mm:00 times and the shift's version.");
+  const minutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+  const start = minutes(command.startsAtLocal);
+  const end = minutes(command.endsAtLocal);
+  if ((end > start ? end - start : end + 1440 - start) > 16 * 60)
+    throw new TypeError("A shift cannot exceed sixteen hours.");
+  return { startsAtLocal: command.startsAtLocal, endsAtLocal: command.endsAtLocal,
+    reason: validatedAgentReason(command.reason), expectedVersion: command.expectedVersion };
 }
 
 function isOccPlanningTurnaroundContextResponse(value: unknown) {
@@ -5847,11 +5996,14 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return turnaroundWithMetadata(result, turnaroundId);
   };
 
-  const coverageCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions,
+  // A coverage command; the intent's Idempotency-Key travels only when the screen sends one (3-J, expand).
+  const coverageCommand = async (path: string, body: unknown, options?: OccCoverageCommandOptions,
     method: "POST" | "PUT" | "DELETE" = "POST") => {
-    const headers = headersFrom(options?.headers, "Request headers");
+    const { idempotencyKey, ...init } = options ?? {};
+    const headers = headersFrom(init.headers, "Request headers");
     if (body !== undefined) headers.set("content-type", "application/json");
-    const result = await execute(path, { ...options, method, headers,
+    if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...init, method, headers,
       ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
     if (!isOccCoverageBoard(result.data)) throw malformedResponse(result.status);
     return result.data;
@@ -6626,6 +6778,18 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getRemoveHumanResourcesShiftUrl(shiftId,
         expectedVersion == null ? undefined : { version: expectedVersion }), { ...options, method: "DELETE", headers }, true);
       if (result.status !== 204) throw malformedResponse(result.status);
+    },
+    async adjustHumanResourcesShift(id: string, command: AdjustHumanResourcesShiftCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const shiftId = validatedUuid(id, "Shift ID");
+      const body = validatedShiftAdjustment(command);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getAdjustHumanResourcesShiftUrl(shiftId),
+        { ...options, method: "PATCH", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isHumanResourcesShiftAdjusted(result.data, shiftId)) throw malformedResponse(result.status);
+      return result.data;
     },
     async getOccAssignmentReadiness(query: OccAssignmentReadinessQuery, options?: GetHumanResourcesReportOptions) {
       const scope = validatedOccAssignmentReadinessQuery(query);
@@ -7881,7 +8045,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccCoverageBoard(result.data, station)) throw malformedResponse(result.status);
       return result.data;
     },
-    async createOccCoverage(request: OccCoverageCommand, options?: GetHumanResourcesReportOptions) {
+    async createOccCoverage(request: OccCoverageCommand, options?: OccCoverageCommandOptions) {
       const standIds = Array.isArray(request?.standIds) ? request.standIds.map(id => validatedUuid(id, "standId")) : [];
       const vehicleCode = typeof request?.vehicleCode === "string" && request.vehicleCode.trim() ? request.vehicleCode.trim() : null;
       const startsAt = request?.startsAt ?? null;
@@ -7898,7 +8062,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         mentorAgentId: request.mentorAgentId ? validatedUuid(request.mentorAgentId, "mentorAgentId") : null,
         vehicleCode, isReinforcement: request.isReinforcement }, options);
     },
-    async releaseOccCoverage(coverageId: string, date: string, options?: GetHumanResourcesReportOptions) {
+    async releaseOccCoverage(coverageId: string, date: string, options?: OccCoverageCommandOptions) {
       if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
       return coverageCommand(getReleaseOccCoverageUrl(validatedUuid(coverageId, "coverageId"), { date }), undefined, options);
     },
@@ -7937,9 +8101,44 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return coverageCommand(getRemoveOccStandConstraintUrl(validatedUuid(constraintId, "constraintId"), { date }),
         undefined, options, "DELETE");
     },
-    async releaseOccOperationAgent(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
-      await execute(getReleaseOccOperationAgentUrl(validatedUuid(turnaroundId, "turnaroundId")),
-        { ...options, method: "POST" }, true);
+    async releaseOccOperationAgent(turnaroundId: string, options?: ReleaseOccOperationAgentOptions) {
+      const { expectedAssignmentId, idempotencyKey, ...init } = options ?? {};
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const expected = expectedAssignmentId == null ? null : validatedUuid(expectedAssignmentId, "expectedAssignmentId");
+      // A key needs the assignment on screen, like the server asks (expected_version_required).
+      if (idempotencyKey != null && expected === null)
+        throw new TypeError("A keyed agent release needs the assignment on screen.");
+      const headers = headersFrom(init.headers, "Request headers");
+      if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getReleaseOccOperationAgentUrl(turnaround,
+        expected === null ? undefined : { expectedAssignmentId: expected }), { ...init, method: "POST", headers }, true);
+      if (result.status !== 204) throw malformedResponse(result.status);
+    },
+    async getOccHandoverOptions(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const result = await execute(getGetOccHandoverOptionsUrl(turnaround), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccHandoverOptions(result.data, turnaround)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async handOverOccOperation(turnaroundId: string, command: HandOverOccOperationCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const body = validatedHandoverCommand(command);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getHandOverOccOperationUrl(turnaround),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isOccOperationHandover(result.data, turnaround, body.agentId))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccAgentShift(turnaroundId: string, agentId: string, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const agent = validatedUuid(agentId, "agentId");
+      const result = await execute(getGetOccAgentShiftUrl(turnaround, agent), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAgentShift(result.data, agent)) throw malformedResponse(result.status);
+      return result.data;
     },
     async getOwnRampCoverage(options?: GetOperationalCommunicationOptions) {
       const result = await execute(getGetOwnRampCoverageUrl(), { ...options, method: "GET" }, true);

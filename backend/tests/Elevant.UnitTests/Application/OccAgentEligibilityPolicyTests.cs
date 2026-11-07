@@ -28,6 +28,7 @@ public sealed class OccAgentEligibilityPolicyTests
             HasCompatibleShift = false,
             HasAssignmentConflict = true,
             HasApprovedAbsence = true,
+            RequiresMentor = true,
         });
 
         Assert.False(result.Eligible);
@@ -42,6 +43,7 @@ public sealed class OccAgentEligibilityPolicyTests
                 "ramp_driver_license_not_current",
                 "shift_not_compatible",
                 "approved_absence",
+                "mentor_required",
                 "assignment_conflict",
             ],
             result.EligibilityReasons);
@@ -68,6 +70,8 @@ public sealed class OccAgentEligibilityPolicyTests
             },
             { "assignment_conflict", candidate => candidate with { HasAssignmentConflict = true } },
             { "approved_absence", candidate => candidate with { HasApprovedAbsence = true } },
+            // 3-D: an agent with less than three months and no coverage with a mentor never works alone.
+            { "mentor_required", candidate => candidate with { RequiresMentor = true } },
         };
 
     [Theory]

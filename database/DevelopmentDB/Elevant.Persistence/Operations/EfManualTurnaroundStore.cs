@@ -158,17 +158,11 @@ internal sealed class EfManualTurnaroundStore(
         // With its type known, a wide-body never takes a narrow-body stand (ADR-0030).
         if (aircraftSize == AircraftSizeCategory.Widebody && stand.MaxAircraftSize == AircraftSizeCategory.Narrowbody)
             return (ManualTurnaroundWriteResult.Failed(ManualTurnaroundWriteFailure.Conflict, "stand_unavailable"), null);
-        var standOverlaps = await (
-            from assignment in context.Set<StandAssignment>().AsNoTracking()
-            join previousOperation in context.GroundOperations.AsNoTracking()
-                on assignment.TurnaroundId equals previousOperation.TurnaroundId
-            where assignment.StandId == stand.Id && assignment.AssignedTo == null &&
-                  previousOperation.CurrentStatus != GroundOperationStatus.Cancelled &&
-                  (previousOperation.PlannedStartAt == null ||
-                   previousOperation.PlannedEndAt == null ||
-                   (previousOperation.PlannedStartAt < request.DepartureScheduledAt &&
-                    request.ArrivalScheduledAt < previousOperation.PlannedEndAt))
-            select assignment.Id).AnyAsync(cancellationToken);
+        // The flights that hold a stand are the one query of StandAvailability: an approved or closed flight no longer
+        // blocks it (3-D).
+        var standOverlaps = await StandAvailability.Occupying(context, scope.StationId, request.ArrivalScheduledAt,
+                request.DepartureScheduledAt, null)
+            .AnyAsync(item => item.StandId == stand.Id, cancellationToken);
         if (standOverlaps) return (Conflict(), null);
 
         var airports = await context.Airports.AsNoTracking()

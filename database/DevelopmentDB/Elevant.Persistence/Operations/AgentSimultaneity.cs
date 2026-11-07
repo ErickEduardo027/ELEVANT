@@ -6,9 +6,10 @@ using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Operations;
 
 /// <summary>
-/// How many operations already occupy each agent in a window (<see cref="OperationOccupancyRules"/>): open assignments
-/// of other operations that hold the agent (assigned, in progress or returned) whose planned window overlaps it. The
-/// stand reassignment and the reschedule of a flight compare it with
+/// How many operations already occupy each agent in a window (<see cref="OperationOccupancyRules"/>, 3-D): open
+/// assignments of other operations that hold the agent (assigned, in progress or returned) whose planned window
+/// overlaps it. An operation that holds the agent without a valid window counts as overlapping, so the rule fails
+/// closed. The one count planning, the stand reassignment, the handover and the reschedule of a flight compare with
 /// <see cref="OperationOccupancyRules.MaxSimultaneousOperations"/>.
 /// </summary>
 internal static class AgentSimultaneity
@@ -27,10 +28,13 @@ internal static class AgentSimultaneity
                             join other in context.GroundOperations.AsNoTracking() on open.GroundOperationId equals other.Id
                             where ids.Contains(open.RampAgentId) && open.ReleasedAt == null &&
                                   (excludeOperationId == null || other.Id != excludeOperationId) &&
+                                  // Enums stored as text: explicit comparisons, never an array Contains.
                                   (other.CurrentStatus == GroundOperationStatus.Assigned ||
                                    other.CurrentStatus == GroundOperationStatus.InProgress ||
                                    other.CurrentStatus == GroundOperationStatus.Returned) &&
-                                  other.PlannedStartAt < end && start < other.PlannedEndAt
+                                  (other.PlannedStartAt == null || other.PlannedEndAt == null ||
+                                   other.PlannedStartAt >= other.PlannedEndAt ||
+                                   (other.PlannedStartAt < end && start < other.PlannedEndAt))
                             select open.RampAgentId)
             .ToArrayAsync(cancellationToken);
         return agents.GroupBy(agent => agent).ToDictionary(group => group.Key, group => group.Count());

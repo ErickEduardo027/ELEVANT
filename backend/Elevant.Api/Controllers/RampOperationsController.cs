@@ -22,7 +22,10 @@ public sealed class RampOperationsController(
     GetRampAssignedOperationsHandler handler,
     StartRampOperationHandler startHandler) : ControllerBase
 {
-    /// <summary>Returns only active operations assigned to the current ramp agent.</summary>
+    /// <summary>
+    /// The operations of the current ramp agent's queue (3-N01): assigned, in progress, handed over (pending or in review)
+    /// and returned, then the ones OCC approved in the last 48 hours; the active ones first, at most 100.
+    /// </summary>
     [HttpGet(Name = "GetRampAssignedOperations")]
     [ProducesResponseType<RampAssignedOperationsResponse>(
         StatusCodes.Status200OK,
@@ -90,6 +93,13 @@ public sealed class RampOperationsController(
 
         if (!result.IsSuccess)
         {
+            // 3-N04: a coded refusal keeps the status the deployed APK explains (409) and adds the code the new one shows.
+            if (result.Failure == RampOperationsFailure.Conflict && result.Code is { } code)
+                return RampProblems.Coded(this, StatusCodes.Status409Conflict, code switch
+                {
+                    "contract_not_in_force" => "El contrato de la aerolínea no está vigente: la operación no puede iniciar.",
+                    _ => "La operación no puede iniciar en su estado actual.",
+                }, code);
             return FailureResult<RampOperationStartResponse>(result.Failure!.Value);
         }
 

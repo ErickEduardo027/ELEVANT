@@ -1,3 +1,5 @@
+using Elevant.Application.Operations;
+
 namespace Elevant.Application.Abstractions.Operations;
 
 public enum PositionCoverageFailure { Forbidden, NotFound, Invalid, Conflict, Rejected }
@@ -54,6 +56,43 @@ public sealed record OwnCoverageData(Guid Id, string StationCode, string Termina
     DateTimeOffset StartsAt, DateTimeOffset EndsAt, string? MentorName, string? VehicleCode, bool IsReinforcement);
 
 /// <summary>
+/// OCC's release of an operation's agent (3-J): the assignment OCC saw (<paramref name="ExpectedAssignmentId"/>) and the
+/// intent's Idempotency-Key. Both are optional while older clients exist (expand); a key needs the assignment.
+/// </summary>
+public sealed record ReleaseOperationAgentInput(Guid? ExpectedAssignmentId = null, Guid? IdempotencyKey = null);
+
+/// <summary>Outcome of a command on an operation's agent; <paramref name="Code"/> names the rule a failure broke.</summary>
+public sealed record OperationAgentCommandResult(PositionCoverageFailure? Failure, string? Code = null)
+{
+    // Both arguments: «new(null)» would bind to the record's copy constructor.
+    public static readonly OperationAgentCommandResult Done = new(null, null);
+
+    public static OperationAgentCommandResult Fail(PositionCoverageFailure failure, string code) => new(failure, code);
+}
+
+/// <summary>
+/// «Relevar agente» (3-F): who works the operation now and the agents of the station that may take what is left of it,
+/// evaluated with OCC's assignment rules over the remaining window (the current agent is not listed).
+/// </summary>
+public sealed record OccHandoverOptionsData(Guid TurnaroundId, Guid OperationId, string OperationStatus,
+    Guid CurrentAssignmentId, Guid CurrentAgentId, string CurrentAgentName, DateTimeOffset RemainingFrom,
+    DateTimeOffset RemainingUntil, IReadOnlyList<OccAgentOptionData> Agents);
+
+/// <summary>The agent who takes the operation, the assignment OCC saw and the reason (5 to 500 characters).</summary>
+public sealed record HandOverOperationInput(Guid AgentId, Guid ExpectedAssignmentId, string? Reason);
+
+/// <summary>The new assignment of a handed-over operation; <paramref name="Replayed"/> when the key repeated it.</summary>
+public sealed record OccOperationHandoverData(Guid TurnaroundId, Guid AssignmentId, Guid AgentId, Guid PreviousAgentId,
+    bool Replayed);
+
+public sealed record OccHandoverResult<T>(T? Value, PositionCoverageFailure? Failure, string? Code = null) where T : class
+{
+    public static OccHandoverResult<T> Success(T value) => new(value, null);
+
+    public static OccHandoverResult<T> Fail(PositionCoverageFailure failure, string code) => new(null, failure, code);
+}
+
+/// <summary>
 /// Position coverage per shift (ADR-0030): OCC hands each agent the stands they cover during a
 /// window of their shift, under Pillier's rules, and configures the stands and their combinations.
 /// </summary>
@@ -61,10 +100,17 @@ public interface IPositionCoverageStore
 {
     Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date, CancellationToken cancellationToken = default);
 
-    Task<CoverageResult> CreateAsync(Guid actorId, Guid stationId, CreateCoverageInput input,
+    /// <summary>
+    /// Creates a coverage (ADR-0030). With an Idempotency-Key (optional while older clients exist, 3-J) the same key and
+    /// body answer the board again instead of a second coverage; the key with another body is
+    /// <c>idempotency_conflict</c>.
+    /// </summary>
+    Task<CoverageResult> CreateAsync(Guid actorId, Guid stationId, CreateCoverageInput input, Guid? idempotencyKey,
         CancellationToken cancellationToken = default);
 
-    Task<CoverageResult> ReleaseAsync(Guid actorId, Guid coverageId, DateOnly date, CancellationToken cancellationToken = default);
+    /// <summary>Releases a coverage; releasing twice answers the board. The key works as in <see cref="CreateAsync"/>.</summary>
+    Task<CoverageResult> ReleaseAsync(Guid actorId, Guid coverageId, DateOnly date, Guid? idempotencyKey,
+        CancellationToken cancellationToken = default);
 
     Task<CoverageResult> UpdateStandAsync(Guid actorId, Guid standId, StandAttributesInput input, DateOnly date,
         CancellationToken cancellationToken = default);
@@ -80,10 +126,26 @@ public interface IPositionCoverageStore
 
     /// <summary>
     /// OCC releases the agent of an operation that has not started, so it can assign another; the
-    /// operation returns to Planned and the agent is told (<c>assignment_released</c>).
+    /// operation returns to Planned and the agent is told (<c>assignment_released</c>). 3-J: another agent than the one
+    /// OCC saw is <c>assignment_changed</c>; a started operation is <c>operation_started</c> (it is handed over instead);
+    /// the same key replays the release.
     /// </summary>
-    Task<PositionCoverageFailure?> ReleaseOperationAgentAsync(Guid actorId, Guid turnaroundId,
+    Task<OperationAgentCommandResult> ReleaseOperationAgentAsync(Guid actorId, Guid turnaroundId,
+        ReleaseOperationAgentInput input, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 3-F: the agents who may take an operation in progress or returned for correction from its agent
+    /// (<c>handover_not_allowed</c> in any other status).
+    /// </summary>
+    Task<OccHandoverResult<OccHandoverOptionsData>> ReadHandoverOptionsAsync(Guid actorId, Guid turnaroundId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 3-F: OCC hands an operation in progress or returned to another eligible agent with a reason. The Idempotency-Key is
+    /// required; the operation keeps its status and its evidence (each row keeps its author); both agents are told.
+    /// </summary>
+    Task<OccHandoverResult<OccOperationHandoverData>> HandOverOperationAsync(Guid actorId, Guid turnaroundId,
+        HandOverOperationInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
 
     /// <summary>Today's coverages of the signed-in ramp agent; null when the account is not one.</summary>
     Task<IReadOnlyList<OwnCoverageData>?> ReadOwnAsync(Guid accountId, CancellationToken cancellationToken = default);

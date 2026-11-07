@@ -21,10 +21,15 @@ public enum RampOperationStartWriteFailure
     IdempotencyKeyConflict,
 }
 
+/// <summary>
+/// The start of a ramp operation; <paramref name="Code"/> names the rule a refusal broke when the tablet can explain it
+/// (<c>contract_not_in_force</c>, 3-N04). A replay of the device receipt answers the same code.
+/// </summary>
 public sealed record RampOperationStartWriteResult(
     RampOperationStartData? Start,
     RampOperationStartWriteFailure? Failure,
-    Guid? CommitReceiptId)
+    Guid? CommitReceiptId,
+    string? Code = null)
 {
     public bool IsSuccess => Start is not null && Failure is null;
 
@@ -35,6 +40,7 @@ public sealed record RampOperationStartWriteResult(
 
     public static RampOperationStartWriteResult Failed(
         RampOperationStartWriteFailure failure,
-        Guid? commitReceiptId = null) =>
-        new(null, failure, commitReceiptId);
+        Guid? commitReceiptId = null,
+        string? code = null) =>
+        new(null, failure, commitReceiptId, code);
 }

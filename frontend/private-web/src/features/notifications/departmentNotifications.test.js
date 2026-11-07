@@ -53,11 +53,20 @@ describe('ramp agent notices of phase 2 (block D)', () => {
     expect(described.target).toEqual({ moduleId: 'finance-charters' });
   });
 
-  it.each(['agent_released', 'agent_document_not_current', 'flight_cancelled_by_provider', 'flight_diverted_by_provider'])(
+  it.each(['agent_released', 'agent_document_not_current', 'flight_cancelled_by_provider', 'flight_diverted_by_provider',
+    // Phase 3, block B: a stand change without an eligible agent (3-N05) and a contract out of force (3-N04).
+    'stand_change_unassigned', 'contract_not_in_force'])(
     '%s tells OCC in Spanish and opens the planning board', kind => {
     expect(notificationKindLabel(kind)).not.toBe(notificationKindLabel('unknown_kind'));
     expect(notificationKindLabel(kind, 'en')).not.toBe(notificationKindLabel('unknown_kind', 'en'));
     expect(notificationTargetPath({ kind, operationId: 'op-1' })).toBe('/admin-occ/planning');
+  });
+
+  it('says in Spanish why OCC has to reassign or hold the flight (3-N05, 3-N04)', () => {
+    expect(notificationKindLabel('stand_change_unassigned'))
+      .toBe('El cambio de posición dejó la operación sin agente elegible: reasígnela');
+    expect(notificationKindLabel('contract_not_in_force'))
+      .toBe('El contrato de la aerolínea ya no está vigente: la operación no puede iniciar');
   });
 
   it('keeps the review and chat destinations of the other notices', () => {

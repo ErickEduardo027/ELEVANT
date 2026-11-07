@@ -24,6 +24,10 @@ export const HUMAN_RESOURCES_PROBLEMS = Object.freeze({
   shift_in_past: 'Los turnos de días pasados no se quitan: quedan en el historial.',
   shift_in_use:
     'El agente ya cubre posiciones o tiene operaciones asignadas en ese turno. Pida a OCC que las libere antes de quitarlo.',
+  // «Ajustar horario» (phase 3, block B, 3-E).
+  shift_uncovers_work:
+    'El nuevo horario deja sin cubrir posiciones u operaciones que el agente ya tiene en ese turno.',
+  attendance_validated: 'La asistencia de ese turno ya fue validada: su horario no se ajusta.',
   termination_date_invalid: 'La fecha de baja no puede ser posterior a hoy.',
   termination_before_hire: 'La fecha de baja es anterior al ingreso.',
   invalid_transfer: 'Elija el departamento de destino y entre 1 y 20 estaciones.',

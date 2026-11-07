@@ -1,6 +1,9 @@
 namespace Elevant.Application.Operations;
 
-/// <summary>Evaluates the stable, first-version OCC agent eligibility rules.</summary>
+/// <summary>
+/// Evaluates OCC's agent eligibility: the same rules for the manual assignment, the stand reassignment and the
+/// handover (3-D, 3-F, 3-N05).
+/// </summary>
 public static class OccAgentEligibilityPolicy
 {
     public static OccAgentOptionData Evaluate(OccAgentCandidateData candidate)
@@ -58,6 +61,13 @@ public static class OccAgentEligibilityPolicy
             reasons.Add("approved_absence");
         }
 
+        // Pillier: an agent with less than three months never works alone (ADR-0030); the coverage names the mentor.
+        if (candidate.RequiresMentor)
+        {
+            reasons.Add("mentor_required");
+        }
+
+        // The agent already carries three simultaneous operations (3-D, OperationOccupancyRules).
         if (candidate.HasAssignmentConflict)
         {
             reasons.Add("assignment_conflict");

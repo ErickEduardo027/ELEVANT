@@ -72,6 +72,14 @@ public sealed class PositionCoveragePolicyTests
         Assert.Equal(["mentor_not_eligible", "mentor_absent", "mentor_permit_required"], PositionCoveragePolicy.Evaluate(both));
     }
 
+    [Fact]
+    public void ACoverageNeedsTheAgentsScopeInItsTerminal()
+    {
+        // 3-N05: the tablet only lets the agent work stands of a terminal they have a current scope in.
+        var outOfScope = Candidate() with { Agent = Candidate().Agent with { HasTerminalScope = false } };
+        Assert.Equal(["terminal_scope_missing"], PositionCoveragePolicy.Evaluate(outOfScope));
+    }
+
     [Theory]
     [InlineData(-3, false)]
     [InlineData(-2, true)]

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  getAllHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions, listRampAgentReadiness,
-  recordHumanResourcesShift, removeHumanResourcesShift,
+  adjustHumanResourcesShift, getAllHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions,
+  listRampAgentReadiness, recordHumanResourcesShift, removeHumanResourcesShift,
 } from '../../../services/humanResourcesShiftsReadService';
 import { getApprovedAbsences } from '../../../services/humanResourcesAvailabilityService';
 import { businessToday } from '../../../services/businessDay';
@@ -25,6 +25,24 @@ function problem(error) {
   });
 }
 
+/** What «Ajustar horario» says besides the shared Gestión Humana codes (3-E). */
+const ADJUSTMENT_PROBLEMS = Object.freeze({
+  ...HUMAN_RESOURCES_PROBLEMS,
+  shift_in_past: 'Los turnos de días pasados no se ajustan: quedan en el historial.',
+  invalid_shift: 'Revisa las horas: no pueden coincidir y el turno dura como máximo 16 horas.',
+  version_conflict: 'El turno cambió mientras lo editabas. Actualizamos la semana; revisa e intenta de nuevo.',
+});
+
+function adjustmentProblem(error) {
+  if (error instanceof TypeError) {
+    return 'Revisa las horas y el motivo: el turno dura como máximo 16 horas y el motivo tiene de 5 a 500 caracteres.';
+  }
+  return problemMessage(error, ADJUSTMENT_PROBLEMS, {
+    forbidden: 'Tu acceso no permite ajustar turnos en esa estación.',
+    fallback: 'No fue posible ajustar el turno. Intenta de nuevo: el mismo envío no lo ajusta dos veces.',
+  });
+}
+
 /** The approved absence of an agent on a date, if any (both dates included). */
 function absenceOn(absences, rampProfileId, date) {
   return absences?.find(item => item.rampProfileId === rampProfileId && item.startsOn <= date && date <= item.endsOn)
@@ -36,7 +54,9 @@ function absenceOn(absences, rampProfileId, date) {
  * A cell takes a template (the same presets OCC uses) at a station and terminal of the agent,
  * or removes the shift if the day has not passed. «Copiar semana anterior» repeats last week's
  * shifts on the days that are still free, never on an approved absence (2-N24). «Today» is
- * AVIAM's business day, never the UTC one (2-N31).
+ * AVIAM's business day, never the UTC one (2-N31). «Ajustar horario» changes the hours of a shift of
+ * today or later with a reason, its version and the intent's key, as OCC does from planning (3-E):
+ * it keeps covering the agent's coverages and operations, and a validated attendance freezes it.
  */
 export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }) {
   const days = Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
@@ -49,6 +69,8 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const removal = useRef(createCommandKeyHolder());
+  const [adjusting, setAdjusting] = useState(null);
+  const adjustment = useRef(createCommandKeyHolder());
 
   const load = useCallback(async signal => {
     const [agents, shifts, absences] = await Promise.all([listRampAgentReadiness(),
@@ -75,6 +97,7 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
 
   async function openCell(agent, date) {
     setNotice('');
+    setAdjusting(null);
     setCell({ agent, date, status: 'loading' });
     try {
       const options = await getHumanResourcesShiftAssignmentOptions({ rampProfileId: agent.rampProfileId, workDate: date });
@@ -118,6 +141,41 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
       setNotice(problem(error));
       // The shift changed, is past or is still worked: the week is read again.
       if (error?.status === 409 || error?.status === 404) setLocalRevision(value => value + 1);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openAdjustment(shift) {
+    setNotice('');
+    setCell(null);
+    setAdjusting({ shift, startsAtLocal: time(shift.startsAtLocal), endsAtLocal: time(shift.endsAtLocal), reason: '',
+      message: '' });
+  }
+
+  async function saveAdjustment(event) {
+    event.preventDefault();
+    const { shift, startsAtLocal, endsAtLocal } = adjusting;
+    const command = { startsAtLocal: withSeconds(startsAtLocal), endsAtLocal: withSeconds(endsAtLocal),
+      reason: adjusting.reason.trim(), expectedVersion: shift.version };
+    setBusy(true);
+    try {
+      // One intent per shift and body: an uncertain answer repeats the same key, so the shift is adjusted once.
+      await adjustment.current.run('adjust', [shift.id, command], key =>
+        adjustHumanResourcesShift(shift.id, command, key));
+      setAdjusting(null);
+      setNotice(`Horario del ${shift.workDate} de ${shift.agentName} ajustado a ${startsAtLocal}–${endsAtLocal}.`);
+      onChanged?.();
+    } catch (error) {
+      // The shift changed or is gone: the week is read again and the form closes; a broken rule keeps the form.
+      if (error?.status === 404 || (error?.status === 409 &&
+          (error.code === 'version_conflict' || error.code === 'idempotency_conflict'))) {
+        setAdjusting(null);
+        setNotice(adjustmentProblem(error));
+        setLocalRevision(value => value + 1);
+      } else {
+        setAdjusting(current => current && { ...current, message: adjustmentProblem(error) });
+      }
     } finally {
       setBusy(false);
     }
@@ -219,9 +277,14 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
                   {shift ? <div className="space-y-1">
                     <p className="font-semibold">{time(shift.startsAtLocal)}–{time(shift.endsAtLocal)}</p>
                     <p className="text-text-secondary-light">{BLOCK[shift.block]} · {shift.stationCode} {shift.terminalCode}</p>
-                    {!past && <button type="button" disabled={busy} onClick={() => remove(shift)}
-                      aria-label={`Quitar turno de ${agent.agentName} el ${date}`}
-                      className="text-status-danger underline disabled:opacity-50">Quitar</button>}
+                    {!past && <div className="flex flex-wrap gap-2">
+                      {!agent.inactive && <button type="button" disabled={busy} onClick={() => openAdjustment(shift)}
+                        aria-label={`Ajustar horario de ${agent.agentName} el ${date}`}
+                        className="text-accent-600 underline disabled:opacity-50">Ajustar</button>}
+                      <button type="button" disabled={busy} onClick={() => remove(shift)}
+                        aria-label={`Quitar turno de ${agent.agentName} el ${date}`}
+                        className="text-status-danger underline disabled:opacity-50">Quitar</button>
+                    </div>}
                   </div> : !past && !absence && !agent.inactive && <button type="button" disabled={busy}
                     onClick={() => openCell(agent, date)}
                     aria-label={`Asignar turno a ${agent.agentName} el ${date}`}
@@ -232,6 +295,9 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
           </table>
         </div>
       )}
+      {adjusting && <ShiftAdjustmentForm adjusting={adjusting} busy={busy} onSubmit={saveAdjustment}
+        onChange={changes => setAdjusting(current => ({ ...current, ...changes, message: '' }))}
+        onCancel={() => setAdjusting(null)} />}
       {cell && (
         <form onSubmit={saveCell} aria-label="Asignar turno" className="grid gap-2 rounded-xl border border-accent-600/30 p-3 sm:grid-cols-4">
           <p className="sm:col-span-4 font-semibold">{cell.agent.agentName} · {cell.date}</p>
@@ -264,5 +330,42 @@ export default function WeeklyShiftEditor({ weekStart, revision = 0, onChanged }
         </form>
       )}
     </section>
+  );
+}
+
+/**
+ * «Ajustar horario» of one shift (3-E): the new local start and end (an end before the start finishes the next day)
+ * and the reason the audit keeps.
+ */
+function ShiftAdjustmentForm({ adjusting, busy, onSubmit, onChange, onCancel }) {
+  const { shift, startsAtLocal, endsAtLocal } = adjusting;
+  const reason = adjusting.reason.trim();
+  const valid = Boolean(startsAtLocal && endsAtLocal) && startsAtLocal !== endsAtLocal && reason.length >= 5 &&
+    reason.length <= 500;
+  return (
+    <form onSubmit={onSubmit} aria-label="Ajustar horario"
+      className="grid gap-2 rounded-xl border border-accent-600/30 p-3 sm:grid-cols-4">
+      <p className="sm:col-span-4 font-semibold">{shift.agentName} · {shift.workDate} · Turno actual
+        {' '}{time(shift.startsAtLocal)}–{time(shift.endsAtLocal)} · {shift.stationCode} {shift.terminalCode}</p>
+      <label className="grid gap-1 text-sm">Inicio
+        <input type="time" step="60" required value={startsAtLocal}
+          onChange={event => onChange({ startsAtLocal: event.target.value })} className="rounded-lg border px-2 py-2" /></label>
+      <label className="grid gap-1 text-sm">Fin
+        <input type="time" step="60" required value={endsAtLocal}
+          onChange={event => onChange({ endsAtLocal: event.target.value })} className="rounded-lg border px-2 py-2" /></label>
+      <label className="grid gap-1 text-sm sm:col-span-2">Motivo del ajuste
+        <input type="text" maxLength={500} required value={adjusting.reason}
+          onChange={event => onChange({ reason: event.target.value })} className="rounded-lg border px-2 py-2" /></label>
+      {startsAtLocal && endsAtLocal && startsAtLocal > endsAtLocal &&
+        <p className="sm:col-span-4 text-xs text-text-secondary-light">Termina al día siguiente, hora local de la estación.</p>}
+      <p className="sm:col-span-4 text-xs text-text-secondary-light">El nuevo horario debe seguir cubriendo las posiciones
+        y operaciones del agente. El motivo, de 5 a 500 caracteres, queda en la auditoría.</p>
+      <div className="flex items-end gap-2 sm:col-span-4">
+        <button type="submit" disabled={busy || !valid}
+          className="rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">Guardar horario</button>
+        <button type="button" onClick={onCancel} className="rounded-lg border px-3 py-2 text-sm">Cancelar</button>
+      </div>
+      {adjusting.message && <p role="alert" className="sm:col-span-4 text-sm text-status-danger">{adjusting.message}</p>}
+    </form>
   );
 }

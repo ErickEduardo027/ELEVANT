@@ -764,6 +764,68 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task ShiftProgrammingNamesTheShiftTheAgentAlreadyHasThatDay()
+    {
+        // 3-E: another shift that day is adjusted, never doubled; the code tells the screen to offer the adjustment.
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            ShiftWriteResult = OccShiftWriteResult.Failed(OccShiftWriteFailure.Conflict, "shift_day_taken"),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/shift",
+            new { agentId = AgentId, startsAtLocal = "08:00:00", endsAtLocal = "13:00:00" },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("shift_day_taken", problem.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task OccReadsTheAgentsShiftOfTheFlightsDay()
+    {
+        var shiftId = Guid.NewGuid();
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            AgentShiftResult = OccAgentShiftReadResult.Found(new OccAgentShiftData(shiftId, AgentId,
+                new DateOnly(2026, 11, 9), new TimeOnly(8, 0), new TimeOnly(12, 0), "A", "AAAAAAAAB9E=")),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        var route = $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/agents/{AgentId:D}/shift";
+
+        using (var response = await client.GetAsync(route, TestContext.Current.CancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertPrivateResponse(response);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            Assert.Equal(["shiftId", "agentId", "workDate", "startsAtLocal", "endsAtLocal", "terminalCode", "version"],
+                json.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(shiftId, json.RootElement.GetProperty("shiftId").GetGuid());
+            Assert.Equal("12:00:00", json.RootElement.GetProperty("endsAtLocal").GetString());
+        }
+        Assert.Equal([StationId], state.AgentShiftRequest!.AllowedStationIds);
+        Assert.Equal((TurnaroundId, AgentId), (state.AgentShiftRequest.TurnaroundId, state.AgentShiftRequest.AgentId));
+
+        // No shift that day: a coded 404, so the screen offers «Programar turno».
+        var none = new OccState { Actor = CreateActor() };
+        await using var withoutShift = CreateApplication(none);
+        using var noShiftClient = CreateAuthenticatedClient(withoutShift);
+        using var missing = await noShiftClient.GetAsync(route, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        using var problem = JsonDocument.Parse(await missing.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("shift_not_found", problem.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task ShiftProgrammingRejectsUnknownBodyMembers()
     {
         var state = new OccState { Actor = CreateActor() };
@@ -1080,5 +1142,16 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
             return Task.FromResult(ShiftWriteResult);
         }
 
+        public OccAgentShiftReadRequest? AgentShiftRequest { get; private set; }
+
+        public OccAgentShiftReadResult AgentShiftResult { get; init; } =
+            OccAgentShiftReadResult.Failed(OccAgentShiftReadFailure.ShiftNotFound);
+
+        public Task<OccAgentShiftReadResult> GetAgentShiftAsync(
+            OccAgentShiftReadRequest request, CancellationToken cancellationToken = default)
+        {
+            AgentShiftRequest = request;
+            return Task.FromResult(AgentShiftResult);
+        }
     }
 }

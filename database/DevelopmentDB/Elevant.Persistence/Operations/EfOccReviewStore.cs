@@ -670,6 +670,11 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             turnaround.CurrentStatus = TurnaroundStatus.Completed;
             turnaround.UpdatedAt = now;
         }
+
+        // 3-D: the approved operation no longer holds its agent nor its stand (OperationOccupancyRules); the planning
+        // board and the agent's schedule hear that both are free. Nothing is closed: the assignment and the stand stay
+        // as the record. RampAgentRelease owns this step; every approval keeps calling it.
+        await RampAgentRelease.ReleaseOnApprovalAsync(context, operation, turnaround.StationId, now, cancellationToken);
     }
 
     private static string ConcurrencyToken(

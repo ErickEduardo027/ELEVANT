@@ -17,6 +17,12 @@ vi.mock('../../../services/attendanceDraftService', () => ({
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: async () => {}, stop: async () => {} }),
 }));
+const agents = vi.hoisted(() => ({ release: vi.fn(), options: vi.fn(), handOver: vi.fn() }));
+vi.mock('../../../services/occCoverageService', () => ({
+  releaseOccOperationAgent: agents.release,
+  loadOccHandoverOptions: agents.options,
+  handOverOccOperation: agents.handOver,
+}));
 
 const ASSIGNED_FLIGHT = createPlanningFlight();
 const FLIGHT = createPlanningFlight({
@@ -32,7 +38,21 @@ const FLIGHT = createPlanningFlight({
 beforeEach(() => {
   attendance.read.mockReset();
   attendance.read.mockImplementation(() => new Promise(() => {}));
+  for (const mock of Object.values(agents)) mock.mockReset();
 });
+
+const STARTED = createPlanningFlight({ operationStatus: 'InProgress' });
+const HANDOVER_OPTIONS = {
+  turnaroundId: STARTED.turnaroundId, operationId: 'operation-1', operationStatus: 'InProgress',
+  currentAssignmentId: 'assignment-agent-1', currentAgentId: 'agent-1', currentAgentName: 'Riley Ramp',
+  remainingFrom: '2026-08-19T14:10:00Z', remainingUntil: '2026-08-19T15:00:00Z',
+  agents: [
+    { id: 'agent-2', displayName: 'Ximena Ramp', employeeNumber: 'QA-RA-302', eligible: true, eligibilityReasons: [] },
+    { id: 'agent-3', displayName: 'Mateo Ramp', employeeNumber: 'DEV-RA-002', eligible: false,
+      eligibilityReasons: ['mentor_required', 'assignment_conflict'] },
+  ],
+};
+const conflict = code => Object.assign(new Error(`HTTP 409 ${code}`), { status: 409, code });
 
 function renderDrawer(overrides = {}) {
   const props = {
@@ -255,7 +275,97 @@ describe('PlanningDrawer', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Liberar agente' }));
 
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('también con la llegada ya registrada'));
+    expect(agents.release).not.toHaveBeenCalled();
     confirm.mockRestore();
+  });
+
+  it('releases the agent OCC sees with the intent key, and re-reads when another agent took it (3-J)', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const onAgentReleased = vi.fn();
+    const onStale = vi.fn();
+    agents.release.mockRejectedValueOnce(Object.assign(new Error('network'), { status: undefined }))
+      .mockRejectedValueOnce(conflict('assignment_changed'))
+      .mockResolvedValueOnce(undefined);
+    renderDrawer({ flight: createPlanningFlight({ operationStatus: 'Assigned' }), onAgentReleased, onStale });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Liberar agente' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar la liberación');
+    // The same intent after an answer that never came keeps its key, so the server replays it.
+    await userEvent.click(screen.getByRole('button', { name: 'Liberar agente' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Otro usuario cambió el agente de la operación');
+    const [first, second] = agents.release.mock.calls;
+    expect(first).toEqual([STARTED.turnaroundId, { expectedAssignmentId: 'assignment-agent-1',
+      idempotencyKey: expect.any(String) }]);
+    expect(second[1].idempotencyKey).toBe(first[1].idempotencyKey);
+    expect(onStale).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Liberar agente' }));
+    await waitFor(() => expect(onAgentReleased).toHaveBeenCalledTimes(1));
+    expect(agents.release.mock.calls[2][1].idempotencyKey).not.toBe(first[1].idempotencyKey);
+    confirm.mockRestore();
+  });
+
+  it('hands a started operation to an eligible agent with a reason and the assignment on screen (3-F)', async () => {
+    agents.options.mockResolvedValue(HANDOVER_OPTIONS);
+    agents.handOver.mockResolvedValue({ turnaroundId: STARTED.turnaroundId, assignmentId: 'assignment-agent-2',
+      agentId: 'agent-2', previousAgentId: 'agent-1', replayed: false });
+    const onAgentHandedOver = vi.fn();
+    renderDrawer({ flight: STARTED, onAgentReleased: vi.fn(), onAgentHandedOver });
+
+    const form = await screen.findByRole('form', { name: 'Relevar agente' });
+    expect(within(form).getByText(/Agente actual: Riley Ramp/)).toHaveTextContent('Queda de 10:10 a 11:00 (hora local).');
+    // The release before the start is not offered once the agent started.
+    expect(screen.queryByRole('button', { name: 'Liberar agente' })).not.toBeInTheDocument();
+    expect(within(form).getByText(/No elegibles/)).toHaveTextContent(
+      'Mateo Ramp (Menos de 3 meses: necesita un mentor en su cobertura, Ya tiene 3 operaciones simultáneas)');
+    expect(within(form).queryByRole('option', { name: /Mateo Ramp/ })).not.toBeInTheDocument();
+    const submit = within(form).getByRole('button', { name: 'Relevar agente' });
+    await userEvent.selectOptions(within(form).getByLabelText('Agente que recibe la operación'), 'agent-2');
+    expect(submit).toBeDisabled();
+    await userEvent.type(within(form).getByLabelText('Motivo del relevo'), '  Riley terminó su turno.  ');
+    await userEvent.click(submit);
+
+    await waitFor(() => expect(onAgentHandedOver).toHaveBeenCalledWith('Ximena Ramp'));
+    expect(agents.handOver).toHaveBeenCalledWith(STARTED.turnaroundId, { agentId: 'agent-2',
+      expectedAssignmentId: 'assignment-agent-1', reason: 'Riley terminó su turno.' }, expect.any(String));
+    expect(agents.options).toHaveBeenCalledWith(STARTED.turnaroundId, { signal: expect.any(AbortSignal) });
+  });
+
+  it('reads the options again when the agent or the eligibility changed, and explains the code (3-F)', async () => {
+    agents.options.mockResolvedValue(HANDOVER_OPTIONS);
+    agents.handOver.mockRejectedValueOnce(conflict('agent_not_eligible'));
+    const onStale = vi.fn();
+    renderDrawer({ flight: STARTED, onAgentHandedOver: vi.fn(), onStale });
+    const form = await screen.findByRole('form', { name: 'Relevar agente' });
+    await userEvent.selectOptions(within(form).getByLabelText('Agente que recibe la operación'), 'agent-2');
+    await userEvent.type(within(form).getByLabelText('Motivo del relevo'), 'Riley terminó su turno.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Relevar agente' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('El agente ya no es elegible para lo que queda de la operación');
+    await waitFor(() => expect(agents.options).toHaveBeenCalledTimes(2));
+    expect(onStale).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the empty, recoverable-error and unauthorized states of the handover (3-F)', async () => {
+    agents.options.mockResolvedValueOnce({ ...HANDOVER_OPTIONS, agents: [HANDOVER_OPTIONS.agents[1]] });
+    const empty = renderDrawer({ flight: STARTED, onAgentHandedOver: vi.fn() });
+    expect(await screen.findByText('No hay agentes elegibles ahora.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Relevar agente' })).not.toBeInTheDocument();
+    empty.unmount();
+
+    agents.options.mockRejectedValueOnce(Object.assign(new Error('network'), { status: 503 }))
+      .mockResolvedValueOnce(HANDOVER_OPTIONS);
+    const failing = renderDrawer({ flight: STARTED, onAgentHandedOver: vi.fn() });
+    expect(await screen.findByText('No fue posible consultar los agentes para el relevo.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByRole('form', { name: 'Relevar agente' })).toBeInTheDocument();
+    failing.unmount();
+
+    agents.options.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { status: 403 }));
+    renderDrawer({ flight: STARTED, onAgentHandedOver: vi.fn() });
+    expect(await screen.findByText('Su acceso no permite relevar agentes en esta estación.')).toBeInTheDocument();
+    // A returned operation is handed over too; an assigned one is released instead.
+    expect(createPlanningFlight({ operationStatus: 'Returned' }).operationStatus).toBe('Returned');
   });
 
   it('focuses the close control and dismisses with the Escape key', async () => {

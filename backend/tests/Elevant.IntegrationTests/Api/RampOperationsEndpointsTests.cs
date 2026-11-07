@@ -259,6 +259,29 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task AStartWithoutAContractInForceKeepsTheConflictAndNamesIt()
+    {
+        // 3-N04: the deployed APK keeps explaining the 409; the new one shows the code's message.
+        var state = new RampState
+        {
+            Actor = CreateActor(),
+            StartResult = RampOperationStartWriteResult.Failed(RampOperationStartWriteFailure.Conflict, ReceiptId,
+                "contract_not_in_force"),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = CreateStartRequest();
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        AssertPrivateResponse(response);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal(409, problem.GetProperty("status").GetInt32());
+        Assert.Equal("contract_not_in_force", problem.GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task OpenApiPublishesTheAuthenticatedParameterlessRampRead()
     {
         using var client = factory.CreateClient();

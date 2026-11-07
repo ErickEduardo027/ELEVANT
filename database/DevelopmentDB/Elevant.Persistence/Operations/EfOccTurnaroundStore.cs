@@ -322,8 +322,8 @@ internal sealed class EfOccTurnaroundStore(ElevantDbContext context, IActorConte
             });
             // ADR-0030: the flight follows the agent covering the new stand. Saved before the notice below, so it reaches
             // the agents who keep the flight, never the one the move released (who hears «assignment_released»).
-            await CoverageReassignment.FollowStandAsync(context, turnaround.Id, scope.StationId, target, scope.AccountId, now,
-                cancellationToken);
+            await CoverageReassignment.FollowStandAsync(context, timeProvider, turnaround.Id, scope.StationId, target,
+                scope.AccountId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
         }
         var changeId = Audit(scope, turnaround, "occ.turnaround.rescheduled", reason, now, [.. changes]);
@@ -420,7 +420,7 @@ internal sealed class EfOccTurnaroundStore(ElevantDbContext context, IActorConte
                     endLocal))))
             reasons.Add("shift_not_covering");
         var overlaps = await AgentSimultaneity.CountOverlapsAsync(context, agents, operationId, start, end, cancellationToken);
-        if (agents.Any(agent => overlaps.GetValueOrDefault(agent) >= OperationOccupancyRules.MaxSimultaneousOperations))
+        if (agents.Any(agent => OperationOccupancyRules.AtCapacity(overlaps.GetValueOrDefault(agent))))
             reasons.Add("simultaneous_limit");
         return reasons;
     }

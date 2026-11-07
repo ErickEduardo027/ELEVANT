@@ -50,6 +50,7 @@ describe('OccAssignmentPanel', () => {
                 'operational_position_unavailable',
                 'assignment_conflict',
                 'approved_absence',
+                'mentor_required',
               ],
             },
           ],
@@ -62,8 +63,12 @@ describe('OccAssignmentPanel', () => {
     expect(screen.getByText(/Turno no compatible/)).toHaveTextContent(
       'Sin posición operativa compatible'
     );
+    // 3-D: the conflict is the fourth simultaneous operation; a junior without a mentor never works alone.
     expect(screen.getByText(/Turno no compatible/)).toHaveTextContent(
-      'Conflicto con otra asignación activa'
+      'Ya tiene 3 operaciones simultáneas'
+    );
+    expect(screen.getByText(/Turno no compatible/)).toHaveTextContent(
+      'Menos de 3 meses: necesita un mentor en su cobertura'
     );
     expect(screen.getByText(/Turno no compatible/)).toHaveTextContent(
       'Ausencia aprobada para la fecha'

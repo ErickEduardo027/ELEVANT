@@ -5,6 +5,7 @@ using Elevant.Application.Operations;
 using Elevant.Application.Operations.AssignOccOperation;
 using Elevant.Application.Operations.CreateManualTurnaround;
 using Elevant.Application.Operations.GetManualTurnaroundOptions;
+using Elevant.Application.Operations.GetOccAgentShift;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Elevant.Application.Operations.ProgramOccShift;
@@ -28,7 +29,8 @@ public sealed class OccPlanningController(
     AssignOccOperationHandler assignmentHandler,
     GetManualTurnaroundOptionsHandler manualOptionsHandler,
     CreateManualTurnaroundHandler createManualHandler,
-    ProgramOccShiftHandler shiftHandler) : ControllerBase
+    ProgramOccShiftHandler shiftHandler,
+    GetOccAgentShiftHandler agentShiftHandler) : ControllerBase
 {
     /// <summary>Returns the planning snapshot for an authorized station and operation date.</summary>
     [HttpGet(Name = "GetOccPlanningSnapshot")]
@@ -191,10 +193,47 @@ public sealed class OccPlanningController(
             request.StartsAtLocal, request.EndsAtLocal,
             Guid.NewGuid(), HttpContext.TraceIdentifier), cancellationToken);
         if (!result.IsSuccess)
+        {
+            // 3-E: the agent already has another shift that day: the screen offers to adjust it.
+            if (result.Failure == OccPlanningFailure.Conflict && result.Code is { } code)
+                return CodedResult<ProgramOccShiftResponse>(StatusCodes.Status409Conflict,
+                    "El agente ya tiene un turno ese día: ajústelo para cubrir el vuelo.", code);
             return FailureResult<ProgramOccShiftResponse>(result.Failure!.Value);
+        }
 
         return StatusCode(result.Replayed ? StatusCodes.Status200OK : StatusCodes.Status201Created,
             new ProgramOccShiftResponse(turnaroundId, result.ShiftId!.Value, result.Replayed));
+    }
+
+    /// <summary>
+    /// The shift an agent already has on the flight's day (3-E), with its version, so OCC adjusts it with
+    /// <c>AdjustHumanResourcesShift</c> instead of programming a second one; 404 <c>shift_not_found</c> when there is none.
+    /// </summary>
+    [HttpGet("turnarounds/{turnaroundId:guid}/agents/{agentId:guid}/shift", Name = "GetOccAgentShift")]
+    [ProducesResponseType<OccAgentShiftResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<OccAgentShiftResponse>> GetAgentShift(
+        [FromRoute] Guid turnaroundId,
+        [FromRoute] Guid agentId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+            return UnauthorizedResult<OccAgentShiftResponse>();
+
+        var result = await agentShiftHandler.HandleAsync(new GetOccAgentShiftQuery(accountId, turnaroundId, agentId),
+            cancellationToken);
+        if (!result.IsSuccess)
+            return result.Code is { } code
+                ? CodedResult<OccAgentShiftResponse>(StatusCodes.Status404NotFound,
+                    "El agente no tiene turno ese día en esta estación.", code)
+                : FailureResult<OccAgentShiftResponse>(result.Failure!.Value);
+
+        var shift = result.Shift!;
+        return Ok(new OccAgentShiftResponse(shift.ShiftId, shift.AgentId, shift.WorkDate, shift.StartsAtLocal,
+            shift.EndsAtLocal, shift.TerminalCode, shift.Version));
     }
 
     /// <summary>Assigns one eligible agent and materializes all applicable contracted services.</summary>

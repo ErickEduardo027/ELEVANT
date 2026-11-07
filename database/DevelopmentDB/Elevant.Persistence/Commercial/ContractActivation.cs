@@ -5,6 +5,7 @@ using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
+using Elevant.Persistence.Operations;
 using Elevant.Persistence.Realtime;
 using Microsoft.EntityFrameworkCore;
 
@@ -82,10 +83,16 @@ internal static class ContractActivation
             permit.Kind == AirlinePermitKind.OperatingPermit && permit.Review == AirlinePermitReview.Verified &&
             permit.ExpiresOn >= today, cancellationToken);
 
-    /// <summary>Contratos and the airline's portal accounts learn about a lifecycle change.</summary>
+    /// <summary>
+    /// Contratos and the airline's portal accounts learn about a lifecycle change. When the change takes the contract
+    /// out of force (suspended, terminated or expired: the sweep, a revoked permit or Contratos' own action), OCC hears it
+    /// for each operation that can no longer start (3-N04).
+    /// </summary>
     public static async Task AnnounceAsync(ElevantDbContext context, Contract contract, string kind, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        if (LeftForce(context, contract, kind))
+            await ContractOperationsNotice.NotifyOccAsync(context, contract, now, cancellationToken);
         var airline = await context.Airlines.AsNoTracking().Where(item => item.Id == contract.AirlineId)
             .Select(item => new { item.Name, item.OrganizationId }).SingleAsync(cancellationToken);
         await DepartmentNotificationWriter.NotifyAsync(context, Department.Contracts, "contracts.agreements.read", kind,
@@ -96,6 +103,21 @@ internal static class ContractActivation
             .Select(item => item.AccountId).Distinct().ToArrayAsync(cancellationToken);
         foreach (var account in accounts)
             AccountChangeOutboxWriter.Add(context, account, null, "airline_contracts", contract.PublicId, now);
+    }
+
+    /// <summary>
+    /// The change being announced took the contract out of force: it was active and now it is suspended, terminated or
+    /// expired. The manual actions announce «contract_lifecycle», so the status decides, not the kind; a contract that
+    /// was already out of force told OCC when it left. An untracked contract falls back to the kind.
+    /// </summary>
+    private static bool LeftForce(ElevantDbContext context, Contract contract, string kind)
+    {
+        if (contract.Status is not (ContractStatus.Suspended or ContractStatus.Terminated or ContractStatus.Expired))
+            return false;
+        var entry = context.ChangeTracker.Entries<Contract>().FirstOrDefault(item => ReferenceEquals(item.Entity, contract));
+        return entry is null
+            ? kind is "contract_suspended" or "contract_terminated" or "contract_expired"
+            : entry.Property(item => item.Status).OriginalValue == ContractStatus.Active;
     }
 
     /// <summary>

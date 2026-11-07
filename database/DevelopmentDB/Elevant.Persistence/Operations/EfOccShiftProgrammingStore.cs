@@ -22,6 +22,49 @@ internal sealed class EfOccShiftProgrammingStore(
     IOccPlanningReadStore planningReadStore,
     TimeProvider timeProvider) : IOccShiftProgrammingStore
 {
+    /// <summary>The agent already has another shift that day (the code Gestión Humana uses too).</summary>
+    public const string ShiftDayTakenCode = "shift_day_taken";
+
+    public async Task<OccAgentShiftReadResult> GetAgentShiftAsync(OccAgentShiftReadRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var now = timeProvider.GetUtcNow();
+        var actor = await new EfActorContextResolver(context, timeProvider)
+            .ResolveAsync(request.ActorAccountId, cancellationToken);
+        if (actor is null ||
+            !actor.HasPermission("operations.planning.assign") ||
+            !actor.Memberships.Any(membership =>
+                membership.OrganizationType == OrganizationType.AviamOperator &&
+                membership.Kind == MembershipKind.InternalStaff))
+            return OccAgentShiftReadResult.Failed(OccAgentShiftReadFailure.NotFound);
+        var target = await (
+            from turnaround in context.Turnarounds.AsNoTracking()
+            join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+            join account in context.Users.AsNoTracking() on request.ActorAccountId equals account.PublicId
+            where turnaround.PublicId == request.TurnaroundId &&
+                  station.IsActive && request.AllowedStationIds.Contains(station.PublicId) &&
+                  context.AccountStationScopes.AsNoTracking().Any(grant =>
+                      grant.AccountId == account.Id && grant.StationId == station.Id &&
+                      grant.GrantedAt <= now && grant.RevokedAt == null)
+            select new { turnaround.OperationDate, StationId = station.Id, station.PublicId })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (target is null || !actor.StationScopes.Any(scope => scope.StationId == target.PublicId))
+            return OccAgentShiftReadResult.Failed(OccAgentShiftReadFailure.NotFound);
+        var shift = await (
+            from item in context.ShiftAssignments.AsNoTracking()
+            join agent in context.RampAgents.AsNoTracking() on item.RampAgentId equals agent.Id
+            join terminal in context.Terminals.AsNoTracking() on item.TerminalId equals terminal.Id
+            where agent.PublicId == request.AgentId && item.StationId == target.StationId &&
+                  item.WorkDate == target.OperationDate
+            select new OccAgentShiftData(item.PublicId, agent.PublicId, item.WorkDate, item.StartsAtLocal,
+                item.EndsAtLocal, terminal.Code, Convert.ToBase64String(item.RowVersion)))
+            .SingleOrDefaultAsync(cancellationToken);
+        return shift is null
+            ? OccAgentShiftReadResult.Failed(OccAgentShiftReadFailure.ShiftNotFound)
+            : OccAgentShiftReadResult.Found(shift);
+    }
+
     public async Task<OccShiftWriteResult> ProgramAsync(
         OccShiftWriteRequest request,
         CancellationToken cancellationToken = default)
@@ -157,12 +200,13 @@ internal sealed class EfOccShiftProgrammingStore(
             .AsNoTracking().SingleOrDefaultAsync(cancellationToken);
         if (existing is not null)
         {
+            // One shift per agent and day (ADR-0026): another one that day is adjusted, never doubled (3-E).
             if (existing.StationId != target.StationId ||
                 existing.TerminalId != standContext.TerminalId ||
                 existing.OperationalPositionId != position.Id ||
                 existing.StartsAtLocal != request.StartsAtLocal ||
                 existing.EndsAtLocal != request.EndsAtLocal)
-                return (Conflict(), null);
+                return (OccShiftWriteResult.Failed(OccShiftWriteFailure.Conflict, ShiftDayTakenCode), null);
             await RequireEligibleCandidateAsync(target.PublicId, request.TurnaroundId,
                 request.AgentId, cancellationToken);
             return (OccShiftWriteResult.Existing(existing.PublicId), null);

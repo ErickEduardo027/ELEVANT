@@ -256,6 +256,13 @@ export const changeTurnaroundStatus = (turnaroundId, command, { ifMatch, idempot
   turnaroundRequest(() => createPlanningClient().changeOccTurnaroundStatus(turnaroundId, command, { ifMatch, idempotencyKey }),
     'invalid_turnaround_change');
 
+/**
+ * The shift the agent already has on the flight's day at its station, with its `version` (3-E): OCC adjusts it with
+ * «Ajustar turno del día» instead of programming a second one. Without one the API answers 404 `shift_not_found`.
+ */
+export const getOccAgentShift = (turnaroundId, agentId, { signal } = {}) =>
+  turnaroundRequest(() => createPlanningClient().getOccAgentShift(turnaroundId, agentId, { signal }), 'invalid_shift');
+
 /** The minimal carrier of a charter (3-N21). */
 export const createCharterAirline = (command, idempotencyKey) =>
   turnaroundRequest(() => createPlanningClient().createOccCharterAirline(command, idempotencyKey), 'invalid_charter_airline');

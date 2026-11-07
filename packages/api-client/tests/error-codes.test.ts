@@ -59,6 +59,17 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_RULE_REASONS).toContain(reason);
   });
 
+  it("knows the coverage, assignment and handover codes of phase 3 (block B)", () => {
+    for (const code of ["assignment_changed", "handover_not_allowed", "same_agent", "agent_not_eligible",
+      "invalid_handover", "shift_not_found", "invalid_coverage_request", "coverage_rejected", "operation_started"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // An adjusted shift keeps covering the agent's work and a validated attendance freezes it (3-E).
+    for (const code of ["shift_uncovers_work", "attendance_validated", "shift_day_taken", "shift_in_past"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A coverage needs the agent's scope in its terminal (3-N05); a junior needs a mentor.
+    for (const reason of ["terminal_scope_missing", "mentor_required"]) expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

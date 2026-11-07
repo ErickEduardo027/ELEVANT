@@ -30,6 +30,7 @@ export const planningMessages = {
       readinessRetry: 'Reintentar comprobación',
       assigned: 'Operación asignada a {agent}.',
       shiftProgrammed: 'Turno programado. Actualizando elegibilidad antes de asignar.',
+      shiftAdjusted: 'Turno ajustado. Actualizando elegibilidad antes de asignar.',
       flightCreated: 'Vuelo {code} creado. Puede asignar la operación desde esta planificación.',
     },
     filters: {
@@ -164,6 +165,25 @@ export const planningMessages = {
       releaseConfirm: '¿Liberar al agente de esta operación? Después puede asignar a otro agente desde este panel, también con la llegada ya registrada, mientras la operación no haya iniciado.',
       releasing: 'Liberando…',
       releaseAgent: 'Liberar agente',
+      releaseError: 'No se pudo confirmar la liberación. Reintente: el mismo envío no libera dos veces.',
+      handover: 'Relevar agente',
+      handoverHint: 'La operación ya inició: pásela a otro agente elegible. Conserva su estado y su evidencia; los dos agentes reciben el aviso.',
+      handoverCurrent: 'Agente actual: {name}',
+      handoverRemaining: 'Queda de {from} a {until} (hora local).',
+      handoverLoading: 'Buscando agentes para el relevo…',
+      handoverLoadError: 'No fue posible consultar los agentes para el relevo.',
+      handoverForbidden: 'Su acceso no permite relevar agentes en esta estación.',
+      handoverRetry: 'Reintentar',
+      handoverEmpty: 'No hay agentes elegibles ahora.',
+      handoverAgent: 'Agente que recibe la operación',
+      handoverSelect: 'Seleccione agente',
+      handoverIneligible: 'No elegibles: {list}',
+      handoverReason: 'Motivo del relevo',
+      handoverReasonHint: 'Entre 5 y 500 caracteres; queda en la auditoría.',
+      handoverSubmit: 'Relevar agente',
+      handoverSubmitting: 'Relevando…',
+      handoverDone: 'Operación relevada a {name}.',
+      handoverError: 'No se pudo confirmar el relevo. Reintente con los mismos datos para comprobar el resultado.',
     },
     change: {
       rescheduleTitle: 'Editar vuelo',
@@ -213,7 +233,10 @@ export const planningMessages = {
         ramp_driver_license_not_current: 'Licencia de rampa no vigente',
         shift_not_compatible: 'Turno no compatible',
         approved_absence: 'Ausencia aprobada para la fecha',
-        assignment_conflict: 'Conflicto con otra asignación activa',
+        // Pillier: an agent with less than three months never works alone (3-D).
+        mentor_required: 'Menos de 3 meses: necesita un mentor en su cobertura',
+        // 3-D: up to three simultaneous operations per agent; approved ones no longer count.
+        assignment_conflict: 'Ya tiene 3 operaciones simultáneas',
       },
       unknownReason: 'No cumple una condición operativa',
       sessionExpired: 'La sesión expiró. Será redirigido al acceso.',
@@ -253,8 +276,9 @@ export const planningMessages = {
     shift: {
       sessionEnded: 'La sesión terminó. Inicie sesión nuevamente.',
       forbidden: 'Ya no tiene permiso para programar turnos.',
-      conflict: 'El turno, agente o alcance cambiaron. Actualice las opciones antes de reintentar.',
+      conflict: 'El vuelo, el agente o su alcance cambiaron. Actualizamos las opciones: revise e intente de nuevo.',
       error: 'No se pudo confirmar el turno. Reintente con los mismos datos para comprobar el resultado.',
+      dayTaken: 'El agente ya tiene turno ese día: ajústelo para cubrir el vuelo.',
       formLabel: 'Programación de turno',
       title: 'Programar cobertura de rampa',
       hint: 'Estos agentes cumplen las demás condiciones, pero no tienen un turno compatible. El intervalo local debe cubrir toda la operación; después se actualizarán las opciones de asignación.',
@@ -267,6 +291,17 @@ export const planningMessages = {
       overnight: 'Fin al día siguiente, hora local de la estación.',
       submit: 'Programar turno',
       submitting: 'Programando…',
+      loadingShift: 'Consultando el turno del agente…',
+      shiftReadError: 'No fue posible consultar el turno del agente. Puede reintentar.',
+      retryShift: 'Reintentar',
+      adjustTitle: 'Ajustar turno del día',
+      adjustHint: 'El agente ya tiene turno ese día. El nuevo horario debe cubrir el vuelo y seguir cubriendo sus otras posiciones y operaciones.',
+      current: 'Turno actual: {start}–{end} · Terminal {terminal}',
+      reason: 'Motivo del ajuste',
+      reasonHint: 'Entre 5 y 500 caracteres; queda en la auditoría.',
+      adjustSubmit: 'Ajustar turno',
+      adjustSubmitting: 'Ajustando…',
+      otherTerminal: 'El turno del agente ese día es de la Terminal {shift} y el vuelo es de la Terminal {flight}: ajustar el horario no lo habilita para este vuelo.',
     },
     attendance: {
       notRecorded: 'Sin registrar',
@@ -396,6 +431,7 @@ export const planningMessages = {
       readinessRetry: 'Retry check',
       assigned: 'Operation assigned to {agent}.',
       shiftProgrammed: 'Shift scheduled. Refreshing eligibility before assignment.',
+      shiftAdjusted: 'Shift adjusted. Refreshing eligibility before assignment.',
       flightCreated: 'Flight {code} created. You can assign the operation from this planning.',
     },
     filters: {
@@ -530,6 +566,25 @@ export const planningMessages = {
       releaseConfirm: 'Release the agent from this operation? You can then assign another agent from this panel, also once the arrival is recorded, while the operation has not started.',
       releasing: 'Releasing…',
       releaseAgent: 'Release agent',
+      releaseError: 'The release could not be confirmed. Retry: the same attempt never releases twice.',
+      handover: 'Hand over agent',
+      handoverHint: 'The operation already started: hand it to another eligible agent. It keeps its status and evidence; both agents are told.',
+      handoverCurrent: 'Current agent: {name}',
+      handoverRemaining: 'Left from {from} to {until} (local time).',
+      handoverLoading: 'Looking for agents for the handover…',
+      handoverLoadError: 'The agents for the handover could not be retrieved.',
+      handoverForbidden: 'Your access does not allow handing over agents at this station.',
+      handoverRetry: 'Retry',
+      handoverEmpty: 'No agent is eligible right now.',
+      handoverAgent: 'Agent who takes the operation',
+      handoverSelect: 'Select agent',
+      handoverIneligible: 'Not eligible: {list}',
+      handoverReason: 'Reason for the handover',
+      handoverReasonHint: 'Between 5 and 500 characters; kept in the audit trail.',
+      handoverSubmit: 'Hand over agent',
+      handoverSubmitting: 'Handing over…',
+      handoverDone: 'Operation handed over to {name}.',
+      handoverError: 'The handover could not be confirmed. Retry with the same data to check the result.',
     },
     change: {
       rescheduleTitle: 'Edit flight',
@@ -579,7 +634,8 @@ export const planningMessages = {
         ramp_driver_license_not_current: 'Ramp driving permit not current',
         shift_not_compatible: 'Shift not compatible',
         approved_absence: 'Approved absence for the date',
-        assignment_conflict: 'Conflicts with another active assignment',
+        mentor_required: 'Under 3 months: needs a mentor in their coverage',
+        assignment_conflict: 'Already has 3 simultaneous operations',
       },
       unknownReason: 'Does not meet an operational requirement',
       sessionExpired: 'Your session expired. You will be redirected to sign in.',
@@ -619,8 +675,9 @@ export const planningMessages = {
     shift: {
       sessionEnded: 'Your session ended. Sign in again.',
       forbidden: 'You no longer have permission to schedule shifts.',
-      conflict: 'The shift, agent or scope changed. Refresh the options before retrying.',
+      conflict: 'The flight, the agent or their scope changed. The options were refreshed: check and try again.',
       error: 'The shift could not be confirmed. Retry with the same data to check the result.',
+      dayTaken: 'The agent already has a shift that day: adjust it to cover the flight.',
       formLabel: 'Shift scheduling',
       title: 'Schedule ramp coverage',
       hint: 'These agents meet every other requirement but have no compatible shift. The local interval must cover the whole operation; assignment options will be refreshed afterwards.',
@@ -633,6 +690,17 @@ export const planningMessages = {
       overnight: 'Ends the next day, station local time.',
       submit: 'Schedule shift',
       submitting: 'Scheduling…',
+      loadingShift: "Checking the agent's shift…",
+      shiftReadError: "The agent's shift could not be retrieved. You can retry.",
+      retryShift: 'Retry',
+      adjustTitle: "Adjust the day's shift",
+      adjustHint: 'The agent already has a shift that day. The new hours must cover the flight and keep covering their other stands and operations.',
+      current: 'Current shift: {start}–{end} · Terminal {terminal}',
+      reason: 'Reason for the adjustment',
+      reasonHint: 'Between 5 and 500 characters; kept in the audit trail.',
+      adjustSubmit: 'Adjust shift',
+      adjustSubmitting: 'Adjusting…',
+      otherTerminal: "The agent's shift that day is in Terminal {shift} and the flight is in Terminal {flight}: adjusting the hours does not make them available for this flight.",
     },
     attendance: {
       notRecorded: 'Not recorded',
@@ -758,6 +826,42 @@ export const TURNAROUND_PROBLEM_MESSAGES = Object.freeze({
   version_conflict: 'El vuelo cambió mientras lo revisaba. Se actualizó; revise e intente de nuevo.',
   idempotency_conflict: 'Ese envío ya se usó con otros datos. Se actualizó el vuelo; intente de nuevo.',
   expected_version_required: 'Actualice el vuelo antes de guardar los cambios.',
+});
+
+/**
+ * Spanish explanation of each Problem Details code of OCC's commands on an operation's agent (phase 3, block B):
+ * «Liberar agente» with the assignment OCC saw (3-J) and «Relevar agente» of a started operation (3-F). The server title
+ * is never shown; a code this map does not list falls back to the shared messages.
+ */
+export const AGENT_COMMAND_PROBLEM_MESSAGES = Object.freeze({
+  assignment_changed: 'Otro usuario cambió el agente de la operación; se actualizaron los datos.',
+  operation_started: 'La operación ya inició: no se libera, se releva a otro agente con «Relevar agente».',
+  handover_not_allowed: 'Solo se releva una operación en curso o devuelta para corrección.',
+  same_agent: 'Elija un agente distinto al actual.',
+  agent_not_eligible: 'El agente ya no es elegible para lo que queda de la operación; elija otro.',
+  invalid_handover: 'Revise el agente y el motivo del relevo.',
+  reason_required: 'Indique el motivo (entre 5 y 500 caracteres).',
+  not_found: 'El vuelo ya no existe o no está en su alcance. Actualice la planificación.',
+  version_conflict: 'El agente o la operación cambiaron mientras los revisaba. Se actualizaron los datos; intente de nuevo.',
+  idempotency_conflict: 'Ese envío ya se usó con otros datos. Se actualizaron los datos; intente de nuevo.',
+  expected_version_required: 'Actualice la planificación antes de liberar al agente.',
+});
+
+/**
+ * Spanish explanation of each Problem Details code of «Programar turno» and «Ajustar turno del día» from Planificación
+ * (phase 3, block B, 3-E). The server title is never shown.
+ */
+export const SHIFT_PROBLEM_MESSAGES = Object.freeze({
+  shift_day_taken: 'El agente ya tiene turno ese día: ajústelo para cubrir el vuelo.',
+  shift_uncovers_work: 'El nuevo horario deja sin cubrir posiciones u operaciones ya asignadas al agente.',
+  attendance_validated: 'La asistencia de ese turno ya fue validada; no se puede ajustar.',
+  shift_in_past: 'Los turnos pasados no se ajustan.',
+  shift_not_found: 'El agente ya no tiene ese turno. Actualizamos las opciones.',
+  invalid_shift: 'Revise las horas del turno: no pueden coincidir y duran como máximo 16 horas.',
+  reason_required: 'Indique el motivo del ajuste (entre 5 y 500 caracteres).',
+  version_conflict: 'El turno cambió mientras lo revisaba. Se actualizó; revise e intente de nuevo.',
+  idempotency_conflict: 'Ese envío ya se usó con otros datos. Se actualizó el turno; intente de nuevo.',
+  not_found: 'El turno ya no existe o no está en su alcance.',
 });
 
 /** Why a rescheduled flight's agent cannot keep it (`assigned_agent_unavailable`), in Spanish. */

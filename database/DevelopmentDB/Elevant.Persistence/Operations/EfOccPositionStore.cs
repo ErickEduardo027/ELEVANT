@@ -193,19 +193,11 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             if (stand is null) return Outcome.Fail(OccPositionFailure.NotFound, "not_found");
             var window = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == current.TurnaroundId)
                 .Select(item => new { item.PlannedStartAt, item.PlannedEndAt }).FirstOrDefaultAsync(cancellationToken);
-            // Combined stands (ADR-0030): an impossible combination is rejected with the rule it breaks.
-            var occupied = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
-                                  join operation in context.GroundOperations.AsNoTracking() on assignment.TurnaroundId equals operation.TurnaroundId
-                                  join parked in context.Stands.AsNoTracking() on assignment.StandId equals parked.Id
-                                  join turnaround in context.Turnarounds.AsNoTracking() on assignment.TurnaroundId equals turnaround.Id
-                                  from type in context.AircraftTypes.AsNoTracking().Where(type => type.Id == turnaround.AircraftTypeId).DefaultIfEmpty()
-                                  where parked.StationId == current.StationId && assignment.AssignedTo == null &&
-                                        assignment.TurnaroundId != current.TurnaroundId &&
-                                        operation.CurrentStatus != GroundOperationStatus.Cancelled &&
-                                        (window == null || window.PlannedStartAt == null || window.PlannedEndAt == null ||
-                                         operation.PlannedStartAt == null || operation.PlannedEndAt == null ||
-                                         (operation.PlannedStartAt < window.PlannedEndAt && window.PlannedStartAt < operation.PlannedEndAt))
-                                  select new { parked.Id, parked.Code, Size = type == null ? null : type.SizeCategory })
+            // Combined stands (ADR-0030): an impossible combination is rejected with the rule it breaks. The flights that
+            // hold a stand are the one query of StandAvailability: an approved or closed flight no longer does (3-D).
+            var occupied = await StandAvailability.Occupying(context, current.StationId, window?.PlannedStartAt,
+                    window?.PlannedEndAt, current.TurnaroundId)
+                .Select(item => new { Id = item.StandId, Code = item.StandCode, Size = item.AircraftSize })
                 .ToArrayAsync(cancellationToken);
             var rules = await context.Set<StandConstraint>().AsNoTracking()
                 .Where(item => item.StationId == current.StationId && item.IsActive)
@@ -240,9 +232,9 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 CreatedAt = now, UpdatedAt = now,
             });
             current.Turnaround.UpdatedAt = now;
-            // The flight follows the agent covering the new stand (ADR-0030).
-            await CoverageReassignment.FollowStandAsync(context, current.TurnaroundId, current.StationId, stand.Id,
-                current.AccountId, now, cancellationToken);
+            // The flight follows the agent covering the new stand (ADR-0030), under the manual assignment's rules (3-N05).
+            await CoverageReassignment.FollowStandAsync(context, timeProvider, current.TurnaroundId, current.StationId,
+                stand.Id, current.AccountId, now, cancellationToken);
             return await AnnounceAsync(current, active is null ? "occ.stand.assigned" : "occ.stand.reassigned", stand.Code, now,
                 cancellationToken);
         }, cancellationToken);

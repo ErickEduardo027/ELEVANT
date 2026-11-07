@@ -106,21 +106,28 @@ const FLIGHT_FEED_CODES = ["invalid_flight_feed_query", "invalid_flight_import",
  * block A: a flight changes only before its operation starts or while it is open (3-A), its assigned agent must still
  * cover the new window (`reasons`), a recorded arrival and the aircraft type are frozen from the first submission
  * (3-N08, 3-B), the same flight is planned once (3-N07), and the positions map and the charter carrier name their
- * invalid requests (3-N10, 3-N21).
+ * invalid requests (3-N10, 3-N21). Phase 3, block B: OCC releases the agent it saw (`assignment_changed`) of an
+ * operation not started yet, hands an operation in progress or returned to another eligible agent (3-F), reads the
+ * agent's shift of the flight's day (3-E), and the coverage commands name their invalid requests and broken rules
+ * (3-J).
  */
 const PLANNING_CODES = ["aircraft_type_unavailable", "stand_unavailable", "operation_started", "turnaround_closed",
   "assigned_agent_unavailable", "invalid_turnaround_change", "arrival_locked", "aircraft_type_locked",
-  "flight_already_planned", "invalid_charter_airline", "invalid_position_request"] as const;
+  "flight_already_planned", "invalid_charter_airline", "invalid_position_request", "assignment_changed",
+  "handover_not_allowed", "same_agent", "agent_not_eligible", "invalid_handover", "shift_not_found",
+  "invalid_coverage_request", "coverage_rejected"] as const;
 /**
  * Gestión Humana (phase 2, block D): the one release path of a ramp agent, which an operation in progress or returned
  * refuses (2-N06, 2-N08); the availability requests and the cancellation or shortening of an approved absence
  * (2-N22); the shifts that are past, still worked or on an approved absence (2-N11, 2-N24); and the planning board's
- * readiness query (2-N25).
+ * readiness query (2-N25). Phase 3, block B: an adjusted shift keeps covering the agent's work and a validated
+ * attendance freezes it (3-E).
  */
 const HUMAN_RESOURCES_CODES = ["agent_has_operation_in_progress", "invalid_availability_request", "agent_unavailable",
   "availability_overlap", "availability_request_closed", "absence_not_approved", "absence_started", "absence_ended",
   "absence_end_invalid", "invalid_absence_amendment", "invalid_shift", "shift_scope_missing", "shift_day_taken",
-  "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query"] as const;
+  "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query", "shift_uncovers_work",
+  "attendance_validated"] as const;
 /**
  * Access (phase 2, block E): shared tablets that pass between agents, are released at sign-out and that OCC frees or
  * revokes (2-N02); the airline's representatives and signers, the only ones that sign contracts and submit the JAC
@@ -161,7 +168,9 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   // A mentor on an approved absence or without a current airport permit accompanies nobody (phase 2, block D, 2-N23).
   "mentor_absent", "mentor_permit_required",
   // A rescheduled flight's agent would carry a fourth simultaneous operation (phase 3, block A, 3-A).
-  "simultaneous_limit"] as const;
+  "simultaneous_limit",
+  // A coverage needs the agent's current scope in its terminal, as the tablet does (phase 3, block B, 3-N05).
+  "terminal_scope_missing"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

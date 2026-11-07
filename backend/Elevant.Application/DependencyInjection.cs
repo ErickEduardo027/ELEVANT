@@ -7,6 +7,7 @@ using Elevant.Application.Operations.AssignOccOperation;
 using Elevant.Application.Operations.CreateManualTurnaround;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetManualTurnaroundOptions;
+using Elevant.Application.Operations.GetOccAgentShift;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Elevant.Application.Operations.ProgramOccShift;
 using Elevant.Application.Operations.GetRampAssignedOperations;
@@ -61,6 +62,7 @@ public static class DependencyInjection
         services.AddScoped<CreateManualTurnaroundHandler>();
         services.AddScoped<GetManualTurnaroundOptionsHandler>();
         services.AddScoped<ProgramOccShiftHandler>();
+        services.AddScoped<GetOccAgentShiftHandler>();
         services.AddScoped<GetRampAssignedOperationsHandler>();
         services.AddScoped<RegisterMobileDeviceHandler>();
         services.AddScoped<StartRampOperationHandler>();

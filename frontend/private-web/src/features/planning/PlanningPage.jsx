@@ -268,10 +268,11 @@ export default function PlanningPage({
         assignmentState={assignment}
         onAssign={assignOperation}
         onRetryOptions={() => setOptionsRetryToken(token => token + 1)}
-        onShiftProgrammed={() => {
+        onShiftProgrammed={kind => {
           assignment.reset();
           setOptionsRetryToken(token => token + 1);
-          showToast(t('page.shiftProgrammed'), 'success');
+          // 3-E: «Ajustar turno del día» widened the shift the agent already had instead of programming another one.
+          showToast(t(kind === 'adjusted' ? 'page.shiftAdjusted' : 'page.shiftProgrammed'), 'success');
         }}
         onAgentReleased={() => {
           assignment.reset();
@@ -279,6 +280,19 @@ export default function PlanningPage({
           // The operation is Planned again: the board re-reads it so the panel offers another agent (3-C).
           onRetry();
           showToast('Agente liberado. Ya puedes asignar a otro.', 'success');
+        }}
+        onAgentHandedOver={name => {
+          // 3-F: the operation keeps its status with the new agent; the board re-reads who works it.
+          assignment.reset();
+          setOptionsRetryToken(token => token + 1);
+          onRetry();
+          showToast(t('drawer.handoverDone', { name }), 'success');
+        }}
+        onStale={() => {
+          // A 409 on the agent's commands: the board and the options are read again before a new intent (3-J).
+          assignment.reset();
+          setOptionsRetryToken(token => token + 1);
+          onRetry();
         }}
         onChangeFlight={mode => {
           if (!selectedFlight?.turnaroundId) return;

@@ -4754,8 +4754,9 @@ public sealed partial class SqlServerMigrationTests
             var overlappingWindowRiley = Assert.Single(
                 overlappingWindowOptions.AgentCandidates,
                 candidate => candidate.EmployeeNumber == "DEV-RA-001");
-            Assert.True(overlappingWindowRiley.HasAssignmentConflict);
-            Assert.Contains(
+            // 3-D: one overlapping operation is one of the three an agent may carry at once.
+            Assert.False(overlappingWindowRiley.HasAssignmentConflict);
+            Assert.DoesNotContain(
                 "assignment_conflict",
                 OccAgentEligibilityPolicy.Evaluate(overlappingWindowRiley)
                     .EligibilityReasons);
@@ -5563,8 +5564,9 @@ public sealed partial class SqlServerMigrationTests
         Assert.True(shiftReplay.IsSuccess);
         Assert.True(shiftReplay.Replayed);
         Assert.Equal(shift.ShiftId, shiftReplay.ShiftId);
-        Assert.Equal(OccShiftWriteFailure.Conflict,
-            (await ProgramShiftAsync(shiftRequest with { EndsAtLocal = new TimeOnly(13, 0) })).Failure);
+        // 3-E: another shift that day is adjusted, never doubled; the conflict names it for the screen.
+        var otherHours = await ProgramShiftAsync(shiftRequest with { EndsAtLocal = new TimeOnly(13, 0) });
+        Assert.Equal((OccShiftWriteFailure.Conflict, "shift_day_taken"), (otherHours.Failure, otherHours.Code));
         Assert.Equal(OccShiftWriteFailure.NotFound,
             (await ProgramShiftAsync(shiftRequest with { AllowedStationIds = [] })).Failure);
         await using (var beforeAssignment = CreateContext(database.ConnectionString))
@@ -5803,8 +5805,34 @@ public sealed partial class SqlServerMigrationTests
                 .ToArrayAsync(cancellationToken));
         }
 
+        // 3-D: an agent carries up to three simultaneous operations and one that holds the agent without a valid
+        // window counts as overlapping (it fails closed). Two more operations of the agent overlap the flight, so the
+        // windowless third one is one too many; they are cancelled once the windows are back.
+        var capacityOperations = new List<long>();
         await using (var mutationContext = CreateContext(database.ConnectionString))
         {
+            var fixture = await ReleaseFixtureAsync(mutationContext, cancellationToken);
+            var target = await mutationContext.GroundOperations.AsNoTracking()
+                .Where(item => item.Id == operationId)
+                .Select(item => new { item.PlannedStartAt, item.PlannedEndAt })
+                .SingleAsync(cancellationToken);
+            var targetDate = await mutationContext.Turnarounds.AsNoTracking()
+                .Where(item => item.Id == turnaroundInternalId)
+                .Select(item => item.OperationDate)
+                .SingleAsync(cancellationToken);
+            foreach (var code in new[] { "CAPACITY-OVERLAP-1", "CAPACITY-OVERLAP-2" })
+            {
+                var overlapping = await AddAgentOperationAsync(mutationContext, fixture, code, targetDate,
+                    fixture.AgentKey, GroundOperationStatus.Assigned, cancellationToken);
+                await mutationContext.GroundOperations
+                    .Where(item => item.Id == overlapping)
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(item => item.PlannedStartAt, target.PlannedStartAt)
+                            .SetProperty(item => item.PlannedEndAt, target.PlannedEndAt),
+                        cancellationToken);
+                capacityOperations.Add(overlapping);
+            }
             await mutationContext.GroundOperations
                 .Where(item => item.Id == activeAssignmentOperationId)
                 .ExecuteUpdateAsync(
@@ -5849,6 +5877,12 @@ public sealed partial class SqlServerMigrationTests
                     setters => setters
                         .SetProperty(item => item.PlannedStartAt, activeAssignmentStart)
                         .SetProperty(item => item.PlannedEndAt, activeAssignmentEnd),
+                    cancellationToken);
+            // A cancelled operation no longer holds its agent: the rest of the test starts from the seeded load.
+            await mutationContext.GroundOperations
+                .Where(item => capacityOperations.Contains(item.Id))
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.CurrentStatus, GroundOperationStatus.Cancelled),
                     cancellationToken);
         }
 

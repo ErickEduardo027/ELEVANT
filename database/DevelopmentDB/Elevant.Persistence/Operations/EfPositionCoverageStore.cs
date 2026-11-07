@@ -8,10 +8,14 @@ using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
+using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Realtime;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Operations;
 
@@ -26,6 +30,33 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
     private const string ReadPermission = "operations.coverage.read";
     private const string AssignPermission = "operations.coverage.assign";
     private const string ConfigurePermission = "operations.coverage.update";
+    private const string PlanningAssignPermission = "operations.planning.assign";
+
+    // Receipts of the Idempotency-Key (3-J, 3-F): one action per command.
+    private const string CreateAction = "occ.coverage.create";
+    private const string ReleaseAction = "occ.coverage.release";
+    private const string AgentReleaseAction = "occ.operation.release_agent";
+    private const string HandoverAction = "occ.operation.handover";
+
+    /// <summary>The audit of a handover (3-F); it names both agents and the reason.</summary>
+    public const string HandedOverAuditAction = "occ.operation.handed_over";
+
+    // Problem Details codes (packages/api-client/src/errors.ts).
+    private const string NotFoundCode = "not_found";
+    private const string VersionConflictCode = "version_conflict";
+    private const string IdempotencyConflictCode = "idempotency_conflict";
+    private const string IdempotencyKeyRequiredCode = "idempotency_key_required";
+    private const string ExpectedVersionRequiredCode = "expected_version_required";
+    private const string ReasonRequiredCode = "reason_required";
+    public const string AssignmentChangedCode = "assignment_changed";
+    public const string OperationStartedCode = "operation_started";
+    public const string HandoverNotAllowedCode = "handover_not_allowed";
+    public const string SameAgentCode = "same_agent";
+    public const string AgentNotEligibleCode = "agent_not_eligible";
+    public const string InvalidHandoverCode = "invalid_handover";
+
+    /// <summary>A late operation still has this much left for the agent who takes it (3-F).</summary>
+    private static readonly TimeSpan MinimumRemaining = TimeSpan.FromMinutes(15);
 
     /// <summary>Equipment type whose current qualification is the boarding-bridge qualification.</summary>
     public const string BridgeEquipmentTypeCode = "BOARDING-BRIDGE";
@@ -41,8 +72,11 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
     }
 
     public async Task<CoverageResult> CreateAsync(Guid actorId, Guid stationId, CreateCoverageInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
+        // 3-J: the key is optional while older clients exist (expand); an empty one is never a key.
+        if (idempotencyKey == Guid.Empty)
+            return CoverageResult.Fail(PositionCoverageFailure.Invalid, null, IdempotencyKeyRequiredCode);
         var vehicle = input.VehicleCode?.Trim();
         var standIds = input.StandIds?.Distinct().ToArray() ?? [];
         if (vehicle is { Length: > 32 } || standIds.Length > 6 || standIds.Any(id => id == Guid.Empty) ||
@@ -51,12 +85,18 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
             return CoverageResult.Fail(PositionCoverageFailure.Invalid);
         var (scope, failure) = await ScopeAsync(actorId, stationId, AssignPermission, cancellationToken);
         if (scope is null) return CoverageResult.Fail(failure!.Value);
-
-        return await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        // The normalized body: the stands in a fixed order, the instants in milliseconds, never the key.
+        var hash = CommercialCommandReceipts.Hash(new
         {
-            context.ChangeTracker.Clear();
-            await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
-                cancellationToken);
+            stationId, input.AgentId, input.TerminalId, standIds = standIds.Order().ToArray(), input.Date,
+            startsAt = input.StartsAt is { } starting ? Truncate(starting) : (DateTimeOffset?)null,
+            endsAt = input.EndsAt is { } ending ? Truncate(ending) : (DateTimeOffset?)null,
+            input.MentorAgentId, vehicle = string.IsNullOrEmpty(vehicle) ? null : vehicle, input.IsReinforcement,
+        });
+
+        return await CommandAsync(idempotencyKey, scope.AccountId, CreateAction, hash,
+            () => BoardAsync(scope, input.Date, cancellationToken), async () =>
+        {
             var terminal = await context.Terminals.AsNoTracking()
                 .Where(item => item.PublicId == input.TerminalId && item.StationId == scope.StationId && item.IsActive)
                 .Select(item => new { item.Id, item.MaxStandsPerAgent, item.RequiresBridgeQualification })
@@ -68,25 +108,31 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                     .Select(item => new { item.Id, item.IsActive, item.HireDate }).SingleOrDefaultAsync(cancellationToken)
                 : null;
             if (terminal is null || agent is null || (input.MentorAgentId is not null && mentor is null))
-                return CoverageResult.Fail(PositionCoverageFailure.NotFound);
+                return (CoverageResult.Fail(PositionCoverageFailure.NotFound), Guid.Empty);
             var stands = await context.Stands.AsNoTracking()
                 .Where(item => standIds.Contains(item.PublicId) && item.StationId == scope.StationId)
                 .Select(item => new { item.Id, item.PublicId, item.Code, item.IsActive, item.TerminalId, item.HasBoardingBridge })
                 .ToArrayAsync(cancellationToken);
-            if (stands.Length != standIds.Length) return CoverageResult.Fail(PositionCoverageFailure.NotFound);
+            if (stands.Length != standIds.Length) return (CoverageResult.Fail(PositionCoverageFailure.NotFound), Guid.Empty);
 
-            var zone = TimeZoneInfo.FindSystemTimeZoneById(scope.TimeZone);
+            var zone = BusinessCalendar.Zone(scope.TimeZone);
             var shift = await ShiftWindowAsync(agent.Id, scope.StationId, input.Date, zone, cancellationToken);
             var startsAt = Truncate(input.StartsAt ?? shift?.StartsAt ?? default);
             var endsAt = Truncate(input.EndsAt ?? shift?.EndsAt ?? default);
             if (shift is null && input.StartsAt is null)
-                return CoverageResult.Fail(PositionCoverageFailure.Rejected, ["shift_not_covering"]);
+                return (CoverageResult.Fail(PositionCoverageFailure.Rejected, ["shift_not_covering"]), Guid.Empty);
             var mentorShift = mentor is null ? null : await ShiftWindowAsync(mentor.Id, scope.StationId, input.Date, zone,
                 cancellationToken);
 
-            // 2-N23: the mentor's absence and airport permit count as much as the agent's.
+            // 2-N23: the mentor's absence and airport permit count as much as the agent's. 3-N05: the documents stay
+            // current until the local day the coverage ends (a night shift ends the next day).
+            var lastDay = endsAt > startsAt ? BusinessCalendar.Today(endsAt.AddMilliseconds(-1), scope.TimeZone) : input.Date;
             var facts = await AgentFactsAsync(mentor is null ? [agent.Id] : [agent.Id, mentor.Id], input.Date,
-                cancellationToken);
+                cancellationToken, lastDay > input.Date ? lastDay : input.Date);
+            // 3-N05: the tablet works a stand only with a current scope in its terminal.
+            var terminalScope = await context.Set<RampAgentTerminalScope>().AsNoTracking().AnyAsync(item =>
+                item.RampAgentId == agent.Id && item.TerminalId == terminal.Id && item.ValidFrom <= input.Date &&
+                (item.ValidTo == null || item.ValidTo >= input.Date), cancellationToken);
             var standKeys = stands.Select(item => item.Id).ToArray();
             var active = context.Set<PositionCoverage>().AsNoTracking()
                 .Where(item => item.ReleasedAt == null && item.StartsAt < endsAt && startsAt < item.EndsAt);
@@ -109,7 +155,7 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                 new CoverageAgentFacts(agent.IsActive, agent.HireDate, facts.AirportPermit.Contains(agent.Id),
                     facts.DriverLicense.Contains(agent.Id), facts.BridgeQualified.Contains(agent.Id),
                     shift is not null && shift.StartsAt <= startsAt && endsAt <= shift.EndsAt,
-                    facts.Absent.Contains(agent.Id), agentOverlap),
+                    facts.Absent.Contains(agent.Id), agentOverlap, terminalScope),
                 mentor is null ? null : new CoverageMentorFacts(mentor.IsActive, mentor.HireDate,
                     mentorShift is not null && mentorShift.StartsAt <= startsAt && endsAt <= mentorShift.EndsAt,
                     facts.Absent.Contains(mentor.Id), facts.AirportPermit.Contains(mentor.Id)),
@@ -117,7 +163,7 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                 overlaps.Select(item => new CoverageStandOverlap(item.PublicId, item.Code,
                     item.RampAgentId == mentor?.Id || item.MentorRampAgentId == agent.Id)).ToArray());
             var reasons = PositionCoveragePolicy.Evaluate(candidate);
-            if (reasons.Count > 0) return CoverageResult.Fail(PositionCoverageFailure.Rejected, reasons);
+            if (reasons.Count > 0) return (CoverageResult.Fail(PositionCoverageFailure.Rejected, reasons), Guid.Empty);
 
             var now = Now();
             var coverage = new PositionCoverage
@@ -135,33 +181,41 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                 mentorId = input.MentorAgentId, vehicle = candidate.VehicleCode, input.IsReinforcement,
             });
             await AnnounceAsync(scope, now, cancellationToken, agent.Id, mentor?.Id);
-            await context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-            return new CoverageResult(await BoardAsync(scope, input.Date, cancellationToken), null, []);
-        });
+            return ((CoverageResult?)null, coverage.PublicId);
+        }, cancellationToken);
     }
 
-    public async Task<CoverageResult> ReleaseAsync(Guid actorId, Guid coverageId, DateOnly date,
+    public async Task<CoverageResult> ReleaseAsync(Guid actorId, Guid coverageId, DateOnly date, Guid? idempotencyKey,
         CancellationToken cancellationToken = default)
     {
-        var coverage = await context.Set<PositionCoverage>().SingleOrDefaultAsync(item => item.PublicId == coverageId,
-            cancellationToken);
-        if (coverage is null) return CoverageResult.Fail(PositionCoverageFailure.NotFound);
-        var stationId = await context.Stations.AsNoTracking().Where(item => item.Id == coverage.StationId)
-            .Select(item => item.PublicId).SingleAsync(cancellationToken);
-        var (scope, failure) = await ScopeAsync(actorId, stationId, AssignPermission, cancellationToken);
+        if (idempotencyKey == Guid.Empty)
+            return CoverageResult.Fail(PositionCoverageFailure.Invalid, null, IdempotencyKeyRequiredCode);
+        var station = await (from item in context.Set<PositionCoverage>().AsNoTracking()
+                             join owner in context.Stations.AsNoTracking() on item.StationId equals owner.Id
+                             where item.PublicId == coverageId
+                             select (Guid?)owner.PublicId).SingleOrDefaultAsync(cancellationToken);
+        if (station is null) return CoverageResult.Fail(PositionCoverageFailure.NotFound);
+        var (scope, failure) = await ScopeAsync(actorId, station.Value, AssignPermission, cancellationToken);
         if (scope is null) return CoverageResult.Fail(failure!.Value);
-        if (coverage.ReleasedAt is null)
+        var hash = CommercialCommandReceipts.Hash(new { coverageId, date });
+
+        return await CommandAsync(idempotencyKey, scope.AccountId, ReleaseAction, hash,
+            () => BoardAsync(scope, date, cancellationToken), async () =>
         {
-            var now = Now();
-            coverage.ReleasedAt = now < coverage.CreatedAt ? coverage.CreatedAt : now;
-            coverage.ReleasedByAccountId = scope.AccountId;
-            coverage.UpdatedAt = now;
-            Audit(scope, "occ.coverage.released", nameof(PositionCoverage), coverage.PublicId, now, null, null);
-            await AnnounceAsync(scope, now, cancellationToken, coverage.RampAgentId, coverage.MentorRampAgentId);
-            if (!await SaveAsync(cancellationToken)) return CoverageResult.Fail(PositionCoverageFailure.Conflict);
-        }
-        return new CoverageResult(await BoardAsync(scope, date, cancellationToken), null, []);
+            var coverage = await context.Set<PositionCoverage>().SingleAsync(item => item.PublicId == coverageId,
+                cancellationToken);
+            // Releasing twice answers the board: the coverage is released once.
+            if (coverage.ReleasedAt is null)
+            {
+                var now = Now();
+                coverage.ReleasedAt = now < coverage.CreatedAt ? coverage.CreatedAt : now;
+                coverage.ReleasedByAccountId = scope.AccountId;
+                coverage.UpdatedAt = now;
+                Audit(scope, "occ.coverage.released", nameof(PositionCoverage), coverage.PublicId, now, null, null);
+                await AnnounceAsync(scope, now, cancellationToken, coverage.RampAgentId, coverage.MentorRampAgentId);
+            }
+            return ((CoverageResult?)null, coverage.PublicId);
+        }, cancellationToken);
     }
 
     public async Task<CoverageResult> UpdateStandAsync(Guid actorId, Guid standId, StandAttributesInput input, DateOnly date,
@@ -258,47 +312,275 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
         return new CoverageResult(await BoardAsync(scope, date, cancellationToken), null, []);
     }
 
-    public async Task<PositionCoverageFailure?> ReleaseOperationAgentAsync(Guid actorId, Guid turnaroundId,
+    public async Task<OperationAgentCommandResult> ReleaseOperationAgentAsync(Guid actorId, Guid turnaroundId,
+        ReleaseOperationAgentInput input, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        // 3-J, expand: the key and the assignment OCC saw are optional for older clients; a key needs the assignment.
+        if (input.IdempotencyKey == Guid.Empty)
+            return OperationAgentCommandResult.Fail(PositionCoverageFailure.Invalid, IdempotencyKeyRequiredCode);
+        if (input.ExpectedAssignmentId == Guid.Empty || (input.IdempotencyKey is not null && input.ExpectedAssignmentId is null))
+            return OperationAgentCommandResult.Fail(PositionCoverageFailure.Invalid, ExpectedVersionRequiredCode);
+        var target = await TargetAsync(turnaroundId, cancellationToken);
+        if (target is null) return OperationAgentCommandResult.Fail(PositionCoverageFailure.NotFound, NotFoundCode);
+        var (scope, failure) = await ScopeAsync(actorId, target.StationPublicId, PlanningAssignPermission, cancellationToken);
+        if (scope is null)
+            return new OperationAgentCommandResult(failure, failure == PositionCoverageFailure.NotFound ? NotFoundCode : null);
+        var key = input.IdempotencyKey;
+        var hash = CommercialCommandReceipts.Hash(new { turnaroundId, expectedAssignmentId = input.ExpectedAssignmentId });
+        try
+        {
+            return await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+                    cancellationToken);
+                if (key is { } receipt)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, receipt, scope.AccountId, AgentReleaseAction,
+                        hash, cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return OperationAgentCommandResult.Fail(PositionCoverageFailure.Conflict, IdempotencyConflictCode);
+                    // The same intent answered again: the agent was released by its first attempt.
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay) return OperationAgentCommandResult.Done;
+                }
+                var operation = await LockOperationAsync(target.OperationId, cancellationToken);
+                var open = await context.OperationAgentAssignments
+                    .Where(item => item.GroundOperationId == operation.Id && item.ReleasedAt == null)
+                    .ToArrayAsync(cancellationToken);
+                // Another agent than the one OCC saw holds it now: the screen reads it again before a new intent.
+                if (input.ExpectedAssignmentId is { } expected && !open.Any(item => item.PublicId == expected))
+                    return OperationAgentCommandResult.Fail(PositionCoverageFailure.Conflict, AssignmentChangedCode);
+                // Only before the agent starts: afterwards the evidence is the agent's, and OCC hands it over (3-F).
+                if (Started(operation))
+                    return OperationAgentCommandResult.Fail(PositionCoverageFailure.Conflict, OperationStartedCode);
+                if (operation.CurrentStatus != GroundOperationStatus.Assigned || open.Length == 0)
+                    return OperationAgentCommandResult.Fail(PositionCoverageFailure.Conflict, AssignmentChangedCode);
+                var now = Now();
+                // The one release path (RampAgentRelease): back to Planned, the tablet hears «assignment_released».
+                await RampAgentRelease.ReleaseOperationAsync(context, operation, open, scope.StationId, target.AirlineId,
+                    scope.AccountId, "OCC lo liberó desde Planificación", "occ.operation.agent_released", null,
+                    key ?? Guid.CreateVersion7(), now, cancellationToken);
+                if (key is { } done)
+                    CommercialCommandReceipts.Add(context, done, scope.AccountId, AgentReleaseAction, hash, open[0].PublicId, now);
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return OperationAgentCommandResult.Done;
+            });
+        }
+        catch (DbUpdateException exception) when (key is { } receipt && CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent attempt of the same intent committed first.
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, receipt, scope.AccountId, AgentReleaseAction,
+                hash, cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? OperationAgentCommandResult.Done
+                : OperationAgentCommandResult.Fail(PositionCoverageFailure.Conflict, IdempotencyConflictCode);
+        }
+        catch (Exception exception) when (IsConcurrentWrite(exception))
+        {
+            context.ChangeTracker.Clear();
+            return OperationAgentCommandResult.Fail(PositionCoverageFailure.Conflict, VersionConflictCode);
+        }
+    }
+
+    public async Task<OccHandoverResult<OccHandoverOptionsData>> ReadHandoverOptionsAsync(Guid actorId, Guid turnaroundId,
         CancellationToken cancellationToken = default)
     {
-        var target = await (from operation in context.GroundOperations
-                            join turnaround in context.Turnarounds on operation.TurnaroundId equals turnaround.Id
-                            join station in context.Stations on turnaround.StationId equals station.Id
-                            where turnaround.PublicId == turnaroundId
-                            select new { operation.Id, Station = station.PublicId, turnaround.AirlineId })
-            .FirstOrDefaultAsync(cancellationToken);
-        if (target is null) return PositionCoverageFailure.NotFound;
-        var (scope, failure) = await ScopeAsync(actorId, target.Station, "operations.planning.assign", cancellationToken);
-        if (scope is null) return failure;
-        var operationRow = await context.GroundOperations.SingleAsync(item => item.Id == target.Id, cancellationToken);
-        var open = await context.OperationAgentAssignments
-            .Where(item => item.GroundOperationId == target.Id && item.ReleasedAt == null).ToArrayAsync(cancellationToken);
-        // Only before the agent starts: afterwards the operation's evidence belongs to that agent.
-        if (operationRow.CurrentStatus != GroundOperationStatus.Assigned || open.Length == 0)
-            return PositionCoverageFailure.Conflict;
-        var now = Now();
-        foreach (var assignment in open)
-        {
-            assignment.ReleasedAt = now < assignment.AssignedAt ? assignment.AssignedAt : now;
-            assignment.UpdatedAt = now;
-            await OperationalNotificationWriter.NotifyAgentAsync(context, assignment.RampAgentId, scope.StationId, target.Id,
-                assignment.PublicId, "assignment_released", now, cancellationToken);
-        }
-        operationRow.CurrentStatus = GroundOperationStatus.Planned;
-        operationRow.UpdatedAt = now;
-        context.Set<GroundOperationStatusEvent>().Add(new GroundOperationStatusEvent
-        {
-            GroundOperationId = target.Id, FromStatus = GroundOperationStatus.Assigned, ToStatus = GroundOperationStatus.Planned,
-            OccurredAt = now, ActorAccountId = scope.AccountId, Reason = "Agent released from OCC planning.",
-        });
-        Audit(scope, "occ.operation.agent_released", nameof(GroundOperation), operationRow.PublicId, now, null, null);
-        var organizationId = await context.Airlines.AsNoTracking().Where(item => item.Id == target.AirlineId)
-            .Select(item => item.OrganizationId).SingleAsync(cancellationToken);
-        await AirlineOperationChangeWriter.AddAsync(context, organizationId, operationRow.PublicId, now, cancellationToken);
-        await RampOperationChangeWriter.AnnounceAsync(context, target.Id, now, false, cancellationToken,
-            open.Select(item => item.RampAgentId).ToArray());
-        return await SaveAsync(cancellationToken) ? null : PositionCoverageFailure.Conflict;
+        var target = await TargetAsync(turnaroundId, cancellationToken);
+        if (target is null) return OccHandoverResult<OccHandoverOptionsData>.Fail(PositionCoverageFailure.NotFound, NotFoundCode);
+        var (scope, failure) = await ScopeAsync(actorId, target.StationPublicId, PlanningAssignPermission, cancellationToken);
+        if (scope is null)
+            return new(null, failure, failure == PositionCoverageFailure.NotFound ? NotFoundCode : null);
+        var operation = await context.GroundOperations.AsNoTracking()
+            .SingleAsync(item => item.Id == target.OperationId, cancellationToken);
+        var open = await context.OperationAgentAssignments.AsNoTracking()
+            .Where(item => item.GroundOperationId == operation.Id && item.ReleasedAt == null)
+            .ToArrayAsync(cancellationToken);
+        if (!CanHandOver(operation.CurrentStatus) || open.Length != 1)
+            return OccHandoverResult<OccHandoverOptionsData>.Fail(PositionCoverageFailure.Conflict, HandoverNotAllowedCode);
+        var current = open[0];
+        var (from, until) = RemainingWindow(operation);
+        var candidates = await HandoverCandidatesAsync(target, operation, from, until, null, cancellationToken);
+        var names = await NamesAsync([current.RampAgentId], cancellationToken);
+        return OccHandoverResult<OccHandoverOptionsData>.Success(new OccHandoverOptionsData(target.TurnaroundPublicId,
+            operation.PublicId, operation.CurrentStatus.ToString(), current.PublicId, publicIds[current.RampAgentId],
+            names.GetValueOrDefault(current.RampAgentId) ?? "—", from, until,
+            candidates.Where(candidate => candidate.AgentId != current.RampAgentId)
+                .Select(candidate => OccAgentEligibilityPolicy.Evaluate(candidate.Data)).ToArray()));
     }
+
+    public async Task<OccHandoverResult<OccOperationHandoverData>> HandOverOperationAsync(Guid actorId, Guid turnaroundId,
+        HandOverOperationInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        // A new command (3-F): the key, the assignment OCC saw and the reason are required.
+        if (idempotencyKey is not { } key || key == Guid.Empty)
+            return HandoverFail(PositionCoverageFailure.Invalid, IdempotencyKeyRequiredCode);
+        if (input is null || input.AgentId == Guid.Empty)
+            return HandoverFail(PositionCoverageFailure.Invalid, InvalidHandoverCode);
+        if (input.ExpectedAssignmentId == Guid.Empty)
+            return HandoverFail(PositionCoverageFailure.Invalid, ExpectedVersionRequiredCode);
+        var reason = input.Reason?.Trim();
+        if (reason is not { Length: >= 5 and <= 500 })
+            return HandoverFail(PositionCoverageFailure.Invalid, ReasonRequiredCode);
+        var target = await TargetAsync(turnaroundId, cancellationToken);
+        if (target is null) return HandoverFail(PositionCoverageFailure.NotFound, NotFoundCode);
+        var (scope, failure) = await ScopeAsync(actorId, target.StationPublicId, PlanningAssignPermission, cancellationToken);
+        if (scope is null)
+            return new(null, failure, failure == PositionCoverageFailure.NotFound ? NotFoundCode : null);
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            turnaroundId, input.AgentId, input.ExpectedAssignmentId, reason,
+        });
+        try
+        {
+            return await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+                    cancellationToken);
+                var prior = await CommercialCommandReceipts.FindAsync(context, key, scope.AccountId, HandoverAction, hash,
+                    cancellationToken);
+                if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                    return HandoverFail(PositionCoverageFailure.Conflict, IdempotencyConflictCode);
+                if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                    return await HandedOverAsync(target, prior.ResultId, input.ExpectedAssignmentId, cancellationToken);
+
+                // The operation and the agent who takes it are locked: a concurrent handover or assignment waits.
+                var operation = await LockOperationAsync(target.OperationId, cancellationToken);
+                var newAgent = await context.RampAgents
+                    .FromSqlInterpolated($"""
+                        SELECT * FROM [hr].[ramp_agents] WITH (UPDLOCK, HOLDLOCK)
+                        WHERE [public_id] = {input.AgentId}
+                        """)
+                    .AsNoTracking().Select(item => new { item.Id, item.PublicId }).SingleOrDefaultAsync(cancellationToken);
+                if (!CanHandOver(operation.CurrentStatus))
+                    return HandoverFail(PositionCoverageFailure.Conflict, HandoverNotAllowedCode);
+                var open = await context.OperationAgentAssignments
+                    .Where(item => item.GroundOperationId == operation.Id && item.ReleasedAt == null)
+                    .ToArrayAsync(cancellationToken);
+                if (open.Length != 1 || open[0].PublicId != input.ExpectedAssignmentId)
+                    return HandoverFail(PositionCoverageFailure.Conflict, AssignmentChangedCode);
+                var previous = open[0];
+                if (newAgent is null) return HandoverFail(PositionCoverageFailure.Conflict, AgentNotEligibleCode);
+                if (newAgent.Id == previous.RampAgentId) return HandoverFail(PositionCoverageFailure.Invalid, SameAgentCode);
+
+                // The manual assignment's rules over what is left of the operation: documents on its date, the terminal
+                // of its stand, a shift there now, absences, mobile account, mentor and the three simultaneous operations.
+                var (from, until) = RemainingWindow(operation);
+                var candidate = (await HandoverCandidatesAsync(target, operation, from, until, [newAgent.Id],
+                    cancellationToken)).SingleOrDefault();
+                if (candidate is null || !OccAgentEligibilityPolicy.Evaluate(candidate.Data).Eligible ||
+                    candidate.Data.OperationalPositionId is not { } positionPublicId)
+                    return HandoverFail(PositionCoverageFailure.Conflict, AgentNotEligibleCode);
+                var positionId = await context.OperationalPositions.AsNoTracking()
+                    .Where(item => item.PublicId == positionPublicId).Select(item => (long?)item.Id)
+                    .SingleOrDefaultAsync(cancellationToken);
+                var now = Now();
+                var assignment = await RampAgentRelease.ReplaceAgentAsync(context, operation, previous, newAgent.Id, positionId,
+                    scope.StationId, target.AirlineId, scope.AccountId, reason, HandedOverAuditAction, key, now,
+                    cancellationToken);
+                CommercialCommandReceipts.Add(context, key, scope.AccountId, HandoverAction, hash, assignment.PublicId, now);
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                var previousAgent = await context.RampAgents.AsNoTracking().Where(item => item.Id == previous.RampAgentId)
+                    .Select(item => item.PublicId).SingleAsync(cancellationToken);
+                return OccHandoverResult<OccOperationHandoverData>.Success(new OccOperationHandoverData(
+                    target.TurnaroundPublicId, assignment.PublicId, newAgent.PublicId, previousAgent, false));
+            });
+        }
+        catch (DbUpdateException exception) when (CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, scope.AccountId, HandoverAction, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? await HandedOverAsync(target, concurrent.ResultId, input.ExpectedAssignmentId, cancellationToken)
+                : HandoverFail(PositionCoverageFailure.Conflict, IdempotencyConflictCode);
+        }
+        catch (Exception exception) when (IsConcurrentWrite(exception))
+        {
+            context.ChangeTracker.Clear();
+            return HandoverFail(PositionCoverageFailure.Conflict, VersionConflictCode);
+        }
+    }
+
+    /// <summary>The handover a key already answered, as it was: the new assignment and the agent it replaced.</summary>
+    private async Task<OccHandoverResult<OccOperationHandoverData>> HandedOverAsync(OperationTarget target, Guid assignmentId,
+        Guid previousAssignmentId, CancellationToken cancellationToken)
+    {
+        var agents = await (from assignment in context.OperationAgentAssignments.AsNoTracking()
+                            join agent in context.RampAgents.AsNoTracking() on assignment.RampAgentId equals agent.Id
+                            where assignment.PublicId == assignmentId || assignment.PublicId == previousAssignmentId
+                            select new { assignment.PublicId, Agent = agent.PublicId })
+            .ToDictionaryAsync(item => item.PublicId, item => item.Agent, cancellationToken);
+        return agents.TryGetValue(assignmentId, out var agentId) && agents.TryGetValue(previousAssignmentId, out var previous)
+            ? OccHandoverResult<OccOperationHandoverData>.Success(new OccOperationHandoverData(target.TurnaroundPublicId,
+                assignmentId, agentId, previous, true))
+            : HandoverFail(PositionCoverageFailure.Conflict, AssignmentChangedCode);
+    }
+
+    private static OccHandoverResult<OccOperationHandoverData> HandoverFail(PositionCoverageFailure failure, string code) =>
+        OccHandoverResult<OccOperationHandoverData>.Fail(failure, code);
+
+    /// <summary>3-F: OCC hands over an operation its agent already started, or one returned for correction.</summary>
+    private static bool CanHandOver(GroundOperationStatus status) =>
+        status is GroundOperationStatus.InProgress or GroundOperationStatus.Returned;
+
+    /// <summary>The agent started it, or it already went further: its evidence is the agent's.</summary>
+    private static bool Started(GroundOperation operation) =>
+        OperationOccupancyRules.HasStarted(operation.ActualStartAt) ||
+        operation.CurrentStatus is GroundOperationStatus.InProgress or GroundOperationStatus.Returned or
+            GroundOperationStatus.PendingReview or GroundOperationStatus.InReview or GroundOperationStatus.Approved;
+
+    /// <summary>
+    /// What is left of an operation from now (3-F): from now, or its planned start if that comes later, to its planned
+    /// end, never shorter than <see cref="MinimumRemaining"/> (an operation running late still needs an agent).
+    /// </summary>
+    private (DateTimeOffset From, DateTimeOffset Until) RemainingWindow(GroundOperation operation)
+    {
+        var now = Now();
+        var from = operation.PlannedStartAt is { } start && start > now ? start : now;
+        var until = operation.PlannedEndAt is { } end && end > from + MinimumRemaining ? end : from + MinimumRemaining;
+        return (from, until);
+    }
+
+    /// <summary>The agents OCC's eligibility evaluates for the rest of the operation, at the terminal of its stand.</summary>
+    private async Task<EfOccPlanningReadStore.AgentCandidate[]> HandoverCandidatesAsync(OperationTarget target,
+        GroundOperation operation, DateTimeOffset from, DateTimeOffset until, IReadOnlyCollection<long>? onlyAgentIds,
+        CancellationToken cancellationToken)
+    {
+        var terminalId = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
+                                join stand in context.Stands.AsNoTracking() on assignment.StandId equals stand.Id
+                                where assignment.TurnaroundId == target.TurnaroundId && assignment.AssignedTo == null
+                                select stand.TerminalId).FirstOrDefaultAsync(cancellationToken);
+        return await new EfOccPlanningReadStore(context, timeProvider).BuildAgentCandidatesAsync(operation.Id,
+            target.StationId, terminalId, target.OperationDate, from, from, until, target.TimeZone, onlyAgentIds,
+            cancellationToken);
+    }
+
+    private sealed record OperationTarget(long OperationId, long TurnaroundId, Guid TurnaroundPublicId, Guid StationPublicId,
+        long StationId, long AirlineId, DateOnly OperationDate, string TimeZone);
+
+    /// <summary>The operation of a turnaround with its station, read before the transaction to resolve the actor's scope.</summary>
+    private Task<OperationTarget?> TargetAsync(Guid turnaroundId, CancellationToken cancellationToken) =>
+        (from operation in context.GroundOperations.AsNoTracking()
+         join turnaround in context.Turnarounds.AsNoTracking() on operation.TurnaroundId equals turnaround.Id
+         join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+         where turnaround.PublicId == turnaroundId
+         select new OperationTarget(operation.Id, turnaround.Id, turnaround.PublicId, station.PublicId, station.Id,
+             turnaround.AirlineId, turnaround.OperationDate, station.IanaTimeZone))
+        .FirstOrDefaultAsync(cancellationToken);
+
+    /// <summary>The operation, locked for this transaction: a concurrent command on it waits and then sees this one.</summary>
+    private Task<GroundOperation> LockOperationAsync(long operationId, CancellationToken cancellationToken) =>
+        context.GroundOperations
+            .FromSqlInterpolated($"""
+                SELECT * FROM [ops].[ground_operations] WITH (UPDLOCK, HOLDLOCK)
+                WHERE [id] = {operationId}
+                """)
+            .SingleAsync(cancellationToken);
 
     public async Task<IReadOnlyList<OwnCoverageData>?> ReadOwnAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
@@ -434,16 +716,22 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
     private sealed record AgentFacts(HashSet<long> AirportPermit, HashSet<long> DriverLicense, HashSet<long> BridgeQualified,
         HashSet<long> Absent);
 
-    private async Task<AgentFacts> AgentFactsAsync(long[] agentIds, DateOnly date, CancellationToken cancellationToken)
+    /// <summary>
+    /// The documents current on <paramref name="date"/> and still on <paramref name="untilDate"/> (the local day a night
+    /// coverage ends, 3-N05; the same day by default), and the approved absences of <paramref name="date"/>.
+    /// </summary>
+    private async Task<AgentFacts> AgentFactsAsync(long[] agentIds, DateOnly date, CancellationToken cancellationToken,
+        DateOnly? untilDate = null)
     {
+        var until = untilDate is { } last && last > date ? last : date;
         var permits = await context.AirportPermitCycles.AsNoTracking()
             .Where(cycle => agentIds.Contains(cycle.RampAgentId) && cycle.IsCurrent && cycle.IssuedOn <= date &&
-                            cycle.ExpiresOn >= date)
+                            cycle.ExpiresOn >= until)
             .Select(cycle => new { cycle.RampAgentId, cycle.DocumentType }).Distinct().ToArrayAsync(cancellationToken);
         var bridge = await (from cycle in context.QualificationCycles.AsNoTracking()
                             join type in context.EquipmentTypes.AsNoTracking() on cycle.EquipmentTypeId equals type.Id
                             where agentIds.Contains(cycle.RampAgentId) && type.Code == BridgeEquipmentTypeCode &&
-                                  cycle.IsCurrent && cycle.ObtainedOn <= date && cycle.ExpiresOn >= date
+                                  cycle.IsCurrent && cycle.ObtainedOn <= date && cycle.ExpiresOn >= until
                             select cycle.RampAgentId).Distinct().ToArrayAsync(cancellationToken);
         var absent = await context.AvailabilityRequests.AsNoTracking()
             .Where(request => agentIds.Contains(request.RampAgentId) && request.Status == AvailabilityRequestStatus.Approved &&
@@ -547,6 +835,68 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
         foreach (var agentId in agentIds.OfType<long>().Distinct())
             await RampOperationChangeWriter.AnnounceScheduleAsync(context, agentId, scope.StationPublicId, now, cancellationToken);
     }
+
+    /// <summary>
+    /// One coverage command (3-J) in a serializable transaction, like the master-data commands: the Idempotency-Key's
+    /// receipt when the client sent one, the work, the receipt and the commit (<see cref="CommercialCommandReceipts"/>).
+    /// A replay answers the board again without repeating the audit or the announcements; the key with another body is
+    /// <c>idempotency_conflict</c>; a deadlock or a concurrent write is <c>version_conflict</c> and the screen re-reads.
+    /// </summary>
+    private async Task<CoverageResult> CommandAsync(Guid? key, long accountId, string action, string hash,
+        Func<Task<CoverageBoardData>> answer, Func<Task<(CoverageResult? Failure, Guid ResultId)>> work,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+                    cancellationToken);
+                if (key is { } receipt)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, receipt, accountId, action, hash,
+                        cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return CoverageResult.Fail(PositionCoverageFailure.Conflict, null, IdempotencyConflictCode);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                        return new CoverageResult(await answer(), null, []);
+                }
+                var (failure, resultId) = await work();
+                if (failure is not null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    context.ChangeTracker.Clear();
+                    return failure;
+                }
+                if (key is { } done) CommercialCommandReceipts.Add(context, done, accountId, action, hash, resultId, Now());
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return new CoverageResult(await answer(), null, []);
+            });
+        }
+        catch (DbUpdateException exception) when (key is { } receipt && CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent attempt of the same intent committed first.
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, receipt, accountId, action, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? new CoverageResult(await answer(), null, [])
+                : CoverageResult.Fail(PositionCoverageFailure.Conflict, null, IdempotencyConflictCode);
+        }
+        catch (Exception exception) when (IsConcurrentWrite(exception))
+        {
+            context.ChangeTracker.Clear();
+            return CoverageResult.Fail(PositionCoverageFailure.Conflict, null, VersionConflictCode);
+        }
+    }
+
+    /// <summary>A stale row, a deadlock, a snapshot conflict or a unique index another command filled first.</summary>
+    private static bool IsConcurrentWrite(Exception exception) =>
+        exception is DbUpdateConcurrencyException ||
+        (exception is DbUpdateException or RetryLimitExceededException or SqlException &&
+         exception.GetBaseException() is SqlException { Number: 1205 or 3960 or 2601 or 2627 });
 
     private async Task<bool> SaveAsync(CancellationToken cancellationToken)
     {

@@ -7,12 +7,15 @@ import { API, loadRun, saveRun } from "./support/env";
 // planning screen, the agent runs it on the tablet (through the API, as the APK does, with its
 // installation id), OCC approves the close from the review screen, and the airline sees the
 // operation and its Service Order in the portal. The gap steps (huecos 3-A, 3-B, 3-C) then reschedule,
-// cancel and divert flights, read the aircraft type the tablet typed and assign an agent after the arrival.
+// cancel and divert flights, read the aircraft type the tablet typed and assign an agent after the arrival; then
+// (huecos 3-D, 3-E, 3-F, 3-J) the approval frees the agent and the stand, the agent carries up to three flights at once,
+// OCC adjusts the agent's shift of the day, hands a started operation over and repeats its coverage commands safely.
 
 type RunContract = { airline: string; approvedVersions: Array<{ stations: Array<{ id: string; code: string }> }> };
 type Leg = { flightNumber: string; scheduledAt: string };
 type Turnaround = { id: string; operationCode: string; status: string; arrival: Leg | null; departure: Leg | null;
-  operation: { id: string; status: string } | null; agents: Array<{ displayName: string }>;
+  operation: { id: string; status: string } | null;
+  agents: Array<{ displayName: string; assignmentId?: string; agentId?: string }>;
   stand?: { id: string; code: string } | null; aircraft?: { id: string; icaoCode: string } | null };
 type Flight = { arrivalNumber: string; turnaroundId: string; operationCode: string; arrivalAt: string; departureAt: string };
 type Shift = { workDate: string; startsAtLocal: string; endsAtLocal: string };
@@ -23,6 +26,18 @@ type Problem = { code?: string; reasons?: string[] };
 type ManualOptions = { airlines: Array<{ id: string; iataCode: string }>;
   stands: Array<{ id: string; code: string; terminal: { code: string } | null }>;
   aircraftTypes?: Array<{ id: string; icaoCode: string }> };
+type AgentOption = { id: string; displayName: string; eligible: boolean; eligibilityReasons: string[] };
+/** A shift as Gestión Humana lists it: its version is the expected version of «Ajustar horario» (hueco 3-E). */
+type HumanResourcesShift = { id: string; agentName: string; workDate: string; startsAtLocal: string; endsAtLocal: string;
+  terminalCode: string; version: string };
+/** «Relevar agente» (hueco 3-F): who works the started operation now and who may take what is left of it. */
+type HandoverOptions = { operationStatus: string; currentAssignmentId: string; currentAgentId: string;
+  currentAgentName: string; agents: AgentOption[] };
+type CoverageBoard = { terminals: Array<{ terminalId: string; code: string }>;
+  stands: Array<{ standId: string; code: string; terminalId: string | null; isActive: boolean; hasBoardingBridge: boolean }>;
+  agents: Array<{ agentId: string; name: string; terminalId: string }>;
+  coverages: Array<{ id: string; agentId: string }> };
+type Device = Awaited<ReturnType<typeof tablet>>;
 
 const AGENT = "Riley Ramp";
 const MINUTE = 60_000;
@@ -45,7 +60,7 @@ const strokes = [[0.05, 0.6, 0.2, 0.2, 0.35, 0.75, 0.5, 0.3]];
 /**
  * A 90-minute turnaround inside the agent's shift that ends as close to now as possible (the tablet
  * records past milestones, never future ones) and does not overlap the agent's other flights of the
- * day: an approved operation still holds its agent (hueco 3-D).
+ * day, so the run's flight, its review and its documents stay on their own.
  */
 function freeWindow(shift: Shift, busy: Array<[number, number]>) {
   const start = Date.parse(`${shift.workDate}T${shift.startsAtLocal}-04:00`); // America/Santo_Domingo, no DST
@@ -56,7 +71,7 @@ function freeWindow(shift: Shift, busy: Array<[number, number]>) {
     if (departure > end || busy.some(([from, to]) => arrival < to && departure > from)) continue;
     return { arrivalAt: new Date(arrival).toISOString(), departureAt: new Date(departure).toISOString() };
   }
-  throw new Error("The agent's shift has no free 90-minute window left today (hueco 3-D keeps approved flights).");
+  throw new Error("The agent's shift has no free 90-minute window left today.");
 }
 
 /**
@@ -167,6 +182,100 @@ async function cancelLeftovers(occ: string, station: string, offsets: number[]) 
     if (detail.data.allowedActions.includes("cancel"))
       await changeStatus(occ, item.id, "Cancelled", "Limpieza de un intento anterior del ciclo E2E.");
   }
+}
+
+/**
+ * The first of the offsets whose flight number has no open flight today: a started gap flight of an earlier attempt
+ * cannot be cancelled, and the same flight is planned once a day (hueco 3-N07).
+ */
+async function freeOffset(station: string, offsets: number[]) {
+  const { run, airline } = runState();
+  const open = new Set((await todaysTurnarounds(station)).filter(item => isOpen(item.status))
+    .map(item => item.arrival?.flightNumber));
+  return offsets.find(offset => !open.has(`${airline.iata}${runDigits(run.runId) + offset}`)) ?? null;
+}
+
+/** The statuses whose operation holds its agent (hueco 3-D): approved, handed-over or cancelled ones do not. */
+const HOLDS_AGENT = ["Assigned", "InProgress", "Returned"];
+
+/** The windows of today's flights whose operation holds the run's agent. */
+async function holdingWindows(station: string) {
+  return (await todaysTurnarounds(station))
+    .filter(item => item.operation && HOLDS_AGENT.includes(item.operation.status) &&
+      item.agents.some(agent => agent.displayName === AGENT) && item.arrival && item.departure)
+    .map(item => [Date.parse(item.arrival!.scheduledAt), Date.parse(item.departure!.scheduledAt)] as [number, number]);
+}
+
+/**
+ * OCC assigns the run's agent through the API with the version of the options it read, under the same rules as the
+ * planning screen; the agent's option tells why it is refused.
+ */
+async function assignAgent(occ: string, turnaroundId: string) {
+  const options = await expectCall<{ agents: AgentOption[] }>(200, occ, "GET", `/occ/planning/options?turnaroundId=${turnaroundId}`);
+  const agent = options.data.agents.find(item => item.displayName === AGENT);
+  expect(agent, "the agent is a candidate of the flight").toBeTruthy();
+  const result = await call<Problem>(occ, "POST", `/occ/planning/turnarounds/${turnaroundId}/assignment`,
+    { agentId: agent!.id }, { "if-match": options.etag ?? "" });
+  return { agent: agent!, status: result.status };
+}
+
+/** Today's shift of the run's agent as Gestión Humana lists it, with its version. */
+async function todaysShift(hr: string) {
+  const day = localDay();
+  const shifts = await expectCall<{ shifts: HumanResourcesShift[] }>(200, hr, "GET",
+    `/human-resources/shifts?from=${day}&to=${day}&page=1&limit=100`);
+  const shift = shifts.data.shifts.find(item => item.agentName === AGENT);
+  expect(shift, "the agent has today's shift").toBeTruthy();
+  return shift!;
+}
+
+/** A local clock (HH:mm or HH:mm:ss) moved by whole minutes within the day, as HH:mm:00. */
+function clockPlus(clock: string, minutes: number) {
+  const value = ((Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3, 5)) + minutes) % 1440 + 1440) % 1440;
+  return `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}:00`;
+}
+
+/** The operation of a flight on the agent's tablet. */
+async function tabletOperation(device: Device, turnaroundId: string) {
+  const mine = await device.get<{ operations: Array<{ operation: { id: string }; turnaround: { id: string };
+    services: Array<{ id: string }> }> }>("/ramp/operations");
+  const found = mine.data.operations.find(item => item.turnaround.id === turnaroundId);
+  expect(found, "the flight reaches the agent's tablet").toBeTruthy();
+  return found!;
+}
+
+/**
+ * The agent closes a started gap flight from the tablet so it no longer holds the agent: every service not
+ * performed, the checklist and the hand-off to OCC (the operation waits in the review, unbilled).
+ */
+async function handOffUnperformed(device: Device, turnaroundId: string) {
+  const { operation, services } = await tabletOperation(device, turnaroundId);
+  for (const service of services)
+    await device.send(200, "POST", `/ramp/operations/${operation.id}/services/${service.id}/transition`,
+      { targetStatus: "NotPerformed", executedQuantity: 0, note: "No se prestó: vuelo de prueba del ciclo E2E." });
+  const checklist = await device.get<{ checklist: { id: string; sections: Array<{ items: Array<{ id: string }> }> } }>(
+    `/ramp/operations/${operation.id}/checklist`);
+  await device.send(200, "POST", `/ramp/operations/${operation.id}/checklist/submit`, {
+    checklistId: checklist.data.checklist.id,
+    answers: checklist.data.checklist.sections.flatMap(section => section.items)
+      .map(item => ({ itemId: item.id, value: "Ok", note: null })),
+  });
+  await device.send([200, 201], "POST", `/ramp/operations/${operation.id}/submit`,
+    { agentNote: "Vuelo de prueba del ciclo E2E: no se prestaron servicios." });
+}
+
+/**
+ * A stand of the agent's terminal created once per stack (never removed): the seeded terminal has two, and three
+ * flights of the agent at the same time need three stands (hueco 3-D).
+ */
+async function ensureStand(occ: string, station: string, terminalCode: string, code: string) {
+  type Master = { terminals: Array<{ id: string; code: string; isActive: boolean }>; stands: Array<{ code: string }> };
+  const data = (await expectCall<Master>(200, occ, "GET", `/occ/master-data?stationId=${station}`)).data;
+  if (data.stands.some(item => item.code === code)) return;
+  const terminal = data.terminals.find(item => item.code === terminalCode && item.isActive);
+  expect(terminal, `terminal ${terminalCode} is active at PUJ`).toBeTruthy();
+  await expectCall(201, occ, "POST", "/occ/stands", { stationId: station, terminalId: terminal!.id, code,
+    hasBoardingBridge: false, isRemote: false, maxAircraftSize: null });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -553,11 +662,287 @@ test("hueco 3-C · OCC asigna un agente después de registrar la llegada", async
   const notices = await device.get<{ notifications: Array<{ kind: string }> }>("/notifications");
   expect(notices.data.notifications.some(item => item.kind === "assignment_released")).toBe(true);
 });
-test.fixme("hueco 3-D · aprobar libera al agente y la posición; un agente opera hasta 3 vuelos simultáneos", async () => {});
-test.fixme("hueco 3-E · OCC ajusta el turno del día de un agente", async () => {});
-test.fixme("hueco 3-F · OCC pasa una operación iniciada a otro agente (relevo)", async () => {});
+test("hueco 3-D · aprobar libera al agente y la posición; un agente opera hasta 3 vuelos simultáneos", async ({ page }) => {
+  const { run, station } = runState();
+  const occ = await login("occ");
+  await cancelLeftovers(occ, station, [6, 7, 8, 9]);
+  const approved = run.flight as Flight;
+  const record = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${approved.turnaroundId}`);
+  expect(record.data.turnaround.operation?.status, "OCC approved the run's flight").toBe("Approved");
+  const standCode = record.data.turnaround.stand?.code;
+  expect(standCode, "the approved flight keeps its stand of record").toBeTruthy();
+  // The approved flight's window: it no longer holds its agent nor its stand there.
+  const window = { arrivalAt: approved.arrivalAt, departureAt: approved.departureAt };
+  const [from, until] = [Date.parse(window.arrivalAt), Date.parse(window.departureAt)];
+  const holding = (await holdingWindows(station)).filter(([start, end]) => start < until && end > from).length;
+  if (holding >= 3) {
+    test.skip(true, "El agente ya lleva tres operaciones en esa ventana.");
+    return;
+  }
+  await ensureStand(occ, station, "A", "A-E2E");
+
+  // Another flight takes the approved flight's stand in that window, and the agent takes it and the next ones.
+  const flights = [await planFlight(occ, station, 6, window, { standCode: standCode! })];
+  for (let index = 1; index < 3 - holding; index += 1)
+    flights.push(await planFlight(occ, station, 6 + index, window, { terminals: ["A"] }));
+  for (const flight of flights)
+    expect((await assignAgent(occ, flight.turnaroundId)).status, `${flight.operationCode} is assigned`).toBe(200);
+  // A fourth flight at the same time is one too many: the API refuses it and the screen says why.
+  const fourth = await planFlight(occ, station, 9, window);
+  const refused = await assignAgent(occ, fourth.turnaroundId);
+  expect(refused.agent.eligibilityReasons).toContain("assignment_conflict");
+  expect(refused.status).toBe(409);
+  await loginPrivate(page, "occ");
+  await openFlight(page, fourth.operationCode);
+  const form = page.getByRole("form", { name: "Asignación de operación" });
+  await expect(form.locator("label").filter({ hasText: AGENT })).toContainText("Ya tiene 3 operaciones simultáneas");
+  await snap(page, "fase3-hueco-3d-tope-de-tres");
+
+  // The tablet lists the active operations first and keeps the recently approved one after them (hueco 3-N01).
+  const device = await tablet();
+  const queue = (await device.get<{ operations: Array<{ turnaround: { id: string } }> }>("/ramp/operations"))
+    .data.operations.map(item => item.turnaround.id);
+  const positions = flights.map(flight => queue.indexOf(flight.turnaroundId));
+  expect(positions.every(position => position >= 0), "the assigned flights reach the tablet").toBe(true);
+  expect(queue.indexOf(approved.turnaroundId)).toBeGreaterThan(Math.max(...positions));
+
+  for (const flight of [...flights, fourth])
+    await changeStatus(occ, flight.turnaroundId, "Cancelled", "Vuelo de prueba del ciclo E2E (hueco 3-D): se cancela al terminar.");
+});
+test("hueco 3-E · OCC ajusta el turno del día de un agente", async ({ page }) => {
+  const { station } = runState();
+  const occ = await login("occ");
+  const hr = await login("hr");
+  await cancelLeftovers(occ, station, [10]);
+  const shift = await todaysShift(hr);
+  const original = { start: shift.startsAtLocal.slice(0, 5), end: shift.endsAtLocal.slice(0, 5) };
+  // A flight in the agent's terminal that blocks before the shift starts: the shift of the day does not cover it.
+  const shiftStart = Date.parse(`${shift.workDate}T${shift.startsAtLocal}-04:00`); // America/Santo_Domingo, no DST
+  const window = { arrivalAt: new Date(shiftStart - 45 * MINUTE).toISOString(),
+    departureAt: new Date(shiftStart - 15 * MINUTE).toISOString() };
+  if (stationDay(window.arrivalAt) !== shift.workDate) {
+    test.skip(true, "El turno del agente empieza demasiado temprano para un vuelo previo el mismo día.");
+    return;
+  }
+  const flight = await planFlight(occ, station, 10, window, { terminals: [shift.terminalCode] });
+
+  // OCC adjusts the agent's shift from Planificación instead of programming a second one, in the station's local time.
+  await loginPrivate(page, "occ");
+  await openFlight(page, flight.operationCode);
+  const programming = page.getByRole("form", { name: "Programación de turno" });
+  await expect(programming).toBeVisible();
+  const agents = programming.getByLabel("Agente para turno");
+  await agents.selectOption((await agents.locator("option").filter({ hasText: AGENT }).getAttribute("value"))!);
+  const adjust = page.getByRole("form", { name: "Ajustar turno del día" });
+  await expect(adjust).toContainText(`Turno actual: ${original.start}–${original.end}`);
+  // The proposal widens the shift until it covers the flight.
+  await expect(adjust.getByLabel("Inicio del turno local")).toHaveValue(stationInput(window.arrivalAt).slice(11, 16));
+  await expect(adjust.getByLabel("Fin del turno local")).toHaveValue(original.end);
+  await adjust.getByLabel("Motivo del ajuste").fill("El agente cubre la llegada temprana (ciclo E2E, hueco 3-E).");
+  await snap(page, "fase3-hueco-3e-ajustar-turno");
+  await adjust.getByRole("button", { name: "Ajustar turno" }).click();
+  await expect(page.getByText("Turno ajustado. Actualizando elegibilidad antes de asignar.")).toBeVisible();
+  const assignment = page.getByRole("form", { name: "Asignación de operación" });
+  await expect(assignment.locator("label").filter({ hasText: AGENT })).toContainText("Elegible");
+
+  // The same shift, widened; the version OCC read before is stale.
+  const widened = await todaysShift(hr);
+  expect([widened.id, widened.startsAtLocal.slice(0, 5), widened.endsAtLocal.slice(0, 5)])
+    .toEqual([shift.id, stationInput(window.arrivalAt).slice(11, 16), original.end]);
+  const route = `/human-resources/shifts/${shift.id}`;
+  const back = { startsAtLocal: shift.startsAtLocal, endsAtLocal: shift.endsAtLocal,
+    reason: "Se restaura el horario del turno (ciclo E2E).", expectedVersion: shift.version };
+  const stale = await call<Problem>(occ, "PATCH", route, back);
+  expect([stale.status, stale.data.code]).toEqual([409, "version_conflict"]);
+  // With the flight assigned, the shift no longer shrinks back: it would leave the flight uncovered.
+  expect((await assignAgent(occ, flight.turnaroundId)).status).toBe(200);
+  const uncovering = await call<Problem>(occ, "PATCH", route, { ...back, expectedVersion: widened.version });
+  expect([uncovering.status, uncovering.data.code]).toEqual([409, "shift_uncovers_work"]);
+  await changeStatus(occ, flight.turnaroundId, "Cancelled", "Vuelo de prueba del ciclo E2E (hueco 3-E): se cancela al terminar.");
+
+  // The same key and body replay the adjustment; that key with another body is refused.
+  const key = { "idempotency-key": crypto.randomUUID() };
+  const halfway = { ...back, startsAtLocal: clockPlus(shift.startsAtLocal, -5),
+    reason: "Ajuste intermedio del turno (ciclo E2E).", expectedVersion: (await todaysShift(hr)).version };
+  const adjusted = await expectCall<{ version: string }>(200, hr, "PATCH", route, halfway, key);
+  expect((await expectCall<{ version: string }>(200, hr, "PATCH", route, halfway, key)).data.version)
+    .toBe(adjusted.data.version);
+  const reused = await call<Problem>(hr, "PATCH", route, { ...halfway, reason: "Otro motivo con la misma clave." }, key);
+  expect([reused.status, reused.data.code]).toEqual([409, "idempotency_conflict"]);
+
+  // Gestión Humana gives the shift its hours back from the weekly editor.
+  await loginPrivate(page, "hr");
+  await goPrivate(page, "/gestion-humana/schedules");
+  const editor = page.getByRole("region", { name: "Editor semanal de turnos" });
+  await editor.getByRole("button", { name: `Ajustar horario de ${AGENT} el ${shift.workDate}` }).click();
+  const restore = page.getByRole("form", { name: "Ajustar horario" });
+  await restore.getByLabel("Inicio", { exact: true }).fill(original.start);
+  await restore.getByLabel("Fin", { exact: true }).fill(original.end);
+  await restore.getByLabel("Motivo del ajuste").fill("Se restaura el horario del turno (ciclo E2E, hueco 3-E).");
+  await snap(page, "fase3-hueco-3e-gh-ajustar-horario");
+  await restore.getByRole("button", { name: "Guardar horario" }).click();
+  await expect(editor.getByRole("status").filter({ hasText: "ajustado a" }))
+    .toContainText(`ajustado a ${original.start}–${original.end}`);
+  const restored = await todaysShift(hr);
+  expect([restored.startsAtLocal.slice(0, 5), restored.endsAtLocal.slice(0, 5)]).toEqual([original.start, original.end]);
+});
+test("hueco 3-F · OCC pasa una operación iniciada a otro agente (relevo)", async ({ page }) => {
+  const { run, station } = runState();
+  const occ = await login("occ");
+  const offset = await freeOffset(station, [12, 14, 16, 18]);
+  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 45);
+  if (offset === null || !window) {
+    test.skip(true, "No queda un número de vuelo libre o una ventana de 45 minutos en el turno del agente hoy.");
+    return;
+  }
+  const flight = await planFlight(occ, station, offset, window, { terminals: ["A"] });
+  expect((await assignAgent(occ, flight.turnaroundId)).status).toBe(200);
+  const device = await tablet();
+  const { operation } = await tabletOperation(device, flight.turnaroundId);
+  await device.send(200, "POST", `/ramp/operations/${operation.id}/start`);
+
+  // Started, the agent is no longer released: OCC hands the operation over (hueco 3-J).
+  const started = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
+  const current = started.data.turnaround.agents[0]!;
+  const release = await call<Problem>(occ, "POST",
+    `/occ/planning/turnarounds/${flight.turnaroundId}/assignment/release?expectedAssignmentId=${current.assignmentId}`);
+  expect([release.status, release.data.code]).toEqual([409, "operation_started"]);
+
+  // «Relevar agente»: who works it now and who may take what is left of it; the current agent is never offered.
+  const options = (await expectCall<HandoverOptions>(200, occ, "GET",
+    `/occ/planning/turnarounds/${flight.turnaroundId}/assignment/handover-options`)).data;
+  expect([options.operationStatus, options.currentAgentName, options.currentAssignmentId])
+    .toEqual(["InProgress", AGENT, current.assignmentId]);
+  expect(options.agents.some(agent => agent.id === options.currentAgentId)).toBe(false);
+  await loginPrivate(page, "occ");
+  await openFlight(page, flight.operationCode);
+  const handover = page.getByRole("form", { name: "Relevar agente" });
+  await expect(handover).toContainText(`Agente actual: ${AGENT}`);
+  const eligible = options.agents.filter(agent => agent.eligible);
+  if (eligible.length === 0) await expect(handover).toContainText("No hay agentes elegibles ahora.");
+  await snap(page, "fase3-hueco-3f-relevo");
+
+  // A handover names another eligible agent, the assignment OCC saw and a reason.
+  const route = `/occ/planning/turnarounds/${flight.turnaroundId}/assignment/handover`;
+  const reason = "El agente pasa a cubrir otra posición (ciclo E2E, hueco 3-F).";
+  const refusals: Array<[Record<string, string>, number, string]> = [
+    [{ agentId: options.currentAgentId, expectedAssignmentId: options.currentAssignmentId, reason }, 400, "same_agent"],
+    [{ agentId: crypto.randomUUID(), expectedAssignmentId: crypto.randomUUID(), reason }, 409, "assignment_changed"],
+    [{ agentId: crypto.randomUUID(), expectedAssignmentId: options.currentAssignmentId, reason }, 409, "agent_not_eligible"],
+    [{ agentId: crypto.randomUUID(), expectedAssignmentId: options.currentAssignmentId, reason: "ok" }, 400, "reason_required"],
+  ];
+  for (const [body, status, code] of refusals) {
+    const refused = await call<Problem>(occ, "POST", route, body);
+    expect([refused.status, refused.data.code], code).toEqual([status, code]);
+  }
+  // An approved operation is not handed over.
+  const closed = await call<Problem>(occ, "GET",
+    `/occ/planning/turnarounds/${(run.flight as Flight).turnaroundId}/assignment/handover-options`);
+  expect([closed.status, closed.data.code]).toEqual([409, "handover_not_allowed"]);
+
+  if (eligible.length > 0) {
+    // Another agent of the station takes it: the operation keeps its status and the agent's tablet lets it go.
+    const target = eligible[0]!;
+    await handover.getByLabel("Agente que recibe la operación").selectOption(target.id);
+    await handover.getByLabel("Motivo del relevo").fill(reason);
+    await handover.getByRole("button", { name: "Relevar agente" }).click();
+    await expect(page.getByText(`Operación relevada a ${target.displayName}.`)).toBeVisible();
+    const handed = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
+    expect([handed.data.turnaround.operation?.status, handed.data.turnaround.agents.map(agent => agent.displayName)])
+      .toEqual(["InProgress", [target.displayName]]);
+    const queue = await device.get<{ operations: Array<{ turnaround: { id: string } }> }>("/ramp/operations");
+    expect(queue.data.operations.some(item => item.turnaround.id === flight.turnaroundId)).toBe(false);
+    // Back to the run's agent, with the same key and body replaying the answer, so the run closes it from its tablet.
+    const key = { "idempotency-key": crypto.randomUUID() };
+    const giveBack = { agentId: options.currentAgentId, expectedAssignmentId: handed.data.turnaround.agents[0]!.assignmentId,
+      reason: "El agente original retoma la operación (ciclo E2E)." };
+    const returned = await expectCall<{ assignmentId: string; replayed: boolean }>(200, occ, "POST", route, giveBack, key);
+    const replayed = await expectCall<{ assignmentId: string; replayed: boolean }>(200, occ, "POST", route, giveBack, key);
+    expect([replayed.data.assignmentId, replayed.data.replayed]).toEqual([returned.data.assignmentId, true]);
+  }
+
+  // The agent closes the test flight from the tablet: it no longer holds the agent nor waits on the ramp.
+  await handOffUnperformed(device, flight.turnaroundId);
+});
 test.fixme("hueco 3-G · OCC gestiona las incidencias de la operación", async () => {});
 test.fixme("hueco 3-H · OCC reabre una operación aprobada que aún no se facturó", async () => {});
 test.fixme("hueco 3-I · la tablet sin conexión encola inicio, servicios, cargos, checklist y chat con su hora", async () => {});
-test.fixme("hueco 3-J · crear y liberar cobertura y liberar un agente son idempotentes", async () => {});
+test("hueco 3-J · crear y liberar cobertura y liberar un agente son idempotentes", async ({ page }) => {
+  const { run, station } = runState();
+  const occ = await login("occ");
+  const date = localDay();
+  const board = (await expectCall<CoverageBoard>(200, occ, "GET", `/occ/coverage?stationId=${station}&date=${date}`)).data;
+  const agent = board.agents.find(item => item.name === AGENT);
+  expect(agent, "the agent has today's shift at PUJ").toBeTruthy();
+  const mine = (value: CoverageBoard) => value.coverages.filter(item => item.agentId === agent!.agentId);
+  for (const left of mine(board)) // an earlier attempt's coverage of the agent
+    await expectCall(200, occ, "POST", `/occ/coverage/${left.id}/release?date=${date}`);
+  const stand = board.stands.find(item => item.terminalId === agent!.terminalId && item.isActive && !item.hasBoardingBridge);
+  const terminal = board.terminals.find(item => item.terminalId === agent!.terminalId);
+  expect(stand && terminal, "the agent's terminal has a stand without a bridge").toBeTruthy();
+
+  // The same key and body answer the board again: one coverage, never «El agente ya cubre posiciones en ese horario».
+  const body = { stationId: station, date, agentId: agent!.agentId, terminalId: agent!.terminalId, standIds: [stand!.standId],
+    startsAt: null, endsAt: null, mentorAgentId: null, vehicleCode: null, isReinforcement: false };
+  const key = { "idempotency-key": crypto.randomUUID() };
+  const created = await expectCall<CoverageBoard>(200, occ, "POST", "/occ/coverage", body, key);
+  expect(mine(created.data)).toHaveLength(1);
+  const again = await expectCall<CoverageBoard>(200, occ, "POST", "/occ/coverage", body, key);
+  expect(mine(again.data).map(item => item.id)).toEqual(mine(created.data).map(item => item.id));
+  const reused = await call<Problem>(occ, "POST", "/occ/coverage", { ...body, isReinforcement: true }, key);
+  expect([reused.status, reused.data.code]).toEqual([409, "idempotency_conflict"]);
+  const another = await call<Problem>(occ, "POST", "/occ/coverage", body); // a new intent with a new key
+  expect(another.status).toBe(422);
+  expect(another.data.reasons).toContain("agent_overlap");
+  // Releasing answers the board; the same key repeats it and that key with another date is refused.
+  const coverage = mine(created.data)[0]!.id;
+  const release = { "idempotency-key": crypto.randomUUID() };
+  const released = await expectCall<CoverageBoard>(200, occ, "POST", `/occ/coverage/${coverage}/release?date=${date}`,
+    undefined, release);
+  expect(mine(released.data)).toHaveLength(0);
+  await expectCall(200, occ, "POST", `/occ/coverage/${coverage}/release?date=${date}`, undefined, release);
+  const tomorrow = new Date(Date.parse(`${date}T12:00:00Z`) + 24 * 60 * MINUTE).toISOString().slice(0, 10);
+  const otherDay = await call<Problem>(occ, "POST", `/occ/coverage/${coverage}/release?date=${tomorrow}`, undefined, release);
+  expect([otherDay.status, otherDay.data.code]).toEqual([409, "idempotency_conflict"]);
+
+  // The coverage screen hands the stand to the agent and frees it, each intent with its own key.
+  await loginPrivate(page, "occ");
+  await goPrivate(page, "/admin-occ/position-coverage");
+  await expect(page.getByText("Cargando la cobertura de posiciones…")).toBeHidden();
+  await page.getByRole("navigation", { name: "Terminal y vista" })
+    .getByRole("button", { name: `Terminal ${terminal!.code}`, exact: true }).click();
+  const form = page.getByRole("form", { name: "Asignar posiciones" });
+  const agents = form.getByLabel("Agente", { exact: true });
+  await agents.selectOption((await agents.locator("option").filter({ hasText: AGENT }).getAttribute("value"))!);
+  await form.getByRole("button", { name: stand!.code, exact: true }).click();
+  await snap(page, "fase3-hueco-3j-cobertura");
+  await form.getByRole("button", { name: "Asignar posiciones" }).click();
+  const row = page.getByRole("region", { name: "Coberturas del día" }).getByRole("listitem").filter({ hasText: AGENT });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Liberar" }).click();
+  await expect(row).toHaveCount(0);
+
+  // «Liberar agente» names the assignment OCC saw: a key needs it, another one is refused, the same key repeats it.
+  const offset = await freeOffset(station, [13, 15, 17]);
+  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 30);
+  if (offset === null || !window) {
+    test.skip(true, "No queda un número de vuelo libre o una ventana de 30 minutos en el turno del agente hoy.");
+    return;
+  }
+  const flight = await planFlight(occ, station, offset, window, { terminals: ["A"] });
+  expect((await assignAgent(occ, flight.turnaroundId)).status).toBe(200);
+  const assigned = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
+  const assignmentId = assigned.data.turnaround.agents[0]!.assignmentId;
+  const route = `/occ/planning/turnarounds/${flight.turnaroundId}/assignment/release`;
+  const unversioned = await call<Problem>(occ, "POST", route);
+  expect([unversioned.status, unversioned.data.code]).toEqual([400, "expected_version_required"]);
+  const changed = await call<Problem>(occ, "POST", `${route}?expectedAssignmentId=${crypto.randomUUID()}`);
+  expect([changed.status, changed.data.code]).toEqual([409, "assignment_changed"]);
+  const intent = { "idempotency-key": crypto.randomUUID() };
+  await expectCall(204, occ, "POST", `${route}?expectedAssignmentId=${assignmentId}`, undefined, intent);
+  await expectCall(204, occ, "POST", `${route}?expectedAssignmentId=${assignmentId}`, undefined, intent);
+  const freed = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
+  expect([freed.data.turnaround.operation?.status, freed.data.turnaround.agents]).toEqual(["Planned", []]);
+  await changeStatus(occ, flight.turnaroundId, "Cancelled", "Vuelo de prueba del ciclo E2E (hueco 3-J): se cancela al terminar.");
+});
 test.fixme("hueco 3-K · sin código muerto en la tablet ni en el cliente", async () => {});

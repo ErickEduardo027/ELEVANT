@@ -23,6 +23,12 @@ internal sealed class EfRampOperationsCommandStore(
     TimeProvider timeProvider) : IRampOperationsCommandStore
 {
     private const string StartCommandType = "ramp.operation.start.v1";
+
+    /// <summary>
+    /// 3-N04: the airline has no contract in force on the operation's date (suspended, terminated or expired), so the
+    /// operation does not start. What already started ends normally; a charter flight has no contract (ADR-0033).
+    /// </summary>
+    public const string ContractNotInForceCode = "contract_not_in_force";
     private static readonly TimeSpan ReceiptRetention = TimeSpan.FromDays(30);
     private static readonly JsonSerializerOptions ReceiptJsonOptions =
         new(JsonSerializerDefaults.Web);
@@ -226,7 +232,8 @@ internal sealed class EfRampOperationsCommandStore(
                     turnaround.OperationDate,
                     turnaround.CurrentStatus,
                     station.Id,
-                    airline.OrganizationId))
+                    airline.OrganizationId,
+                    airline.Id))
             .SingleOrDefaultAsync(cancellationToken);
         if (scope is null)
         {
@@ -328,6 +335,22 @@ internal sealed class EfRampOperationsCommandStore(
                 cancellationToken);
         }
 
+        // 3-N04: no new work for an airline whose contract stopped being in force; what already started ends normally
+        // (it never reaches this point). The receipt keeps the code, so a repeated tap answers the same refusal.
+        if (!await context.Set<CharterAgreement>().AsNoTracking()
+                .AnyAsync(item => item.TurnaroundId == operation.TurnaroundId, cancellationToken) &&
+            !await ApplicableContracts.For(context, scope.AirlineInternalId, scope.StationInternalId, scope.OperationDate)
+                .AnyAsync(cancellationToken))
+        {
+            return await RejectAsync(
+                receipt,
+                RampOperationStartWriteFailure.Conflict,
+                ContractNotInForceCode,
+                "The airline has no contract in force on the operation's date.",
+                now,
+                cancellationToken);
+        }
+
         operation.CurrentStatus = GroundOperationStatus.InProgress;
         operation.ActualStartAt = now;
         operation.UpdatedAt = now;
@@ -423,8 +446,12 @@ internal sealed class EfRampOperationsCommandStore(
         receipt.ErrorMessage = errorMessage;
         receipt.UpdatedAt = now;
         await context.SaveChangesAsync(cancellationToken);
-        return RampOperationStartWriteResult.Failed(failure, receipt.PublicId);
+        return RampOperationStartWriteResult.Failed(failure, receipt.PublicId, PublicCode(errorCode));
     }
+
+    /// <summary>The code a refusal shows the tablet; the generic ones are explained by their status.</summary>
+    private static string? PublicCode(string errorCode) =>
+        errorCode is "not_found" or "conflict" ? null : errorCode;
 
     private static RampOperationStartWriteResult Replay(
         MobileCommandReceipt receipt,
@@ -460,11 +487,11 @@ internal sealed class EfRampOperationsCommandStore(
             var failure = receipt.ErrorCode switch
             {
                 "not_found" => RampOperationStartWriteFailure.NotFound,
-                "conflict" => RampOperationStartWriteFailure.Conflict,
+                "conflict" or ContractNotInForceCode => RampOperationStartWriteFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "The stored mobile command rejection is invalid."),
             };
-            return RampOperationStartWriteResult.Failed(failure, receipt.PublicId);
+            return RampOperationStartWriteResult.Failed(failure, receipt.PublicId, PublicCode(receipt.ErrorCode));
         }
 
         return RampOperationStartWriteResult.Failed(
@@ -514,7 +541,8 @@ internal sealed class EfRampOperationsCommandStore(
         DateOnly OperationDate,
         TurnaroundStatus TurnaroundStatus,
         long StationInternalId,
-        long AirlineOrganizationInternalId);
+        long AirlineOrganizationInternalId,
+        long AirlineInternalId);
 
     private sealed record StandScope(
         long StationInternalId,

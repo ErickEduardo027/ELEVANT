@@ -34,6 +34,9 @@ internal static class SafeAuditChanges
         "turnaround.status", "turnaround.arrival_flight", "turnaround.arrival_origin", "turnaround.arrival_scheduled",
         "turnaround.departure_flight", "turnaround.departure_destination", "turnaround.departure_scheduled",
         "turnaround.operation_date", "turnaround.aircraft_type", "turnaround.stand", "airline.name",
+        // Agents (phase 3, block B): the agent a handover or a stand change hands the operation to (3-F, 3-N05), by
+        // employee number, and the hours of a shift OCC or Gestión Humana adjusted (3-E).
+        "assignment.agent", "shift.starts_at", "shift.ends_at", "shift.block",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)
