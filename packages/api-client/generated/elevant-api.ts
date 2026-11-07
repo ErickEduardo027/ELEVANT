@@ -7224,8 +7224,8 @@ export const getGetAirlinePortalStandingUrl = () => {
 
 /**
  * @summary Where the airline stands with AVIAM (2-N32, 2-N35): overall status, read-only when no contract covers a
-station today, the stations of its approved contracts (the treasury scope) and why each contract that
-never activated is still waiting. The bootstrap keeps describing only what is in force today.
+station today, the stations a contract in force covered or covers (all within the treasury scope) and why
+each contract that never activated is still waiting. The bootstrap keeps describing only what is in force today.
  */
 export const getAirlinePortalStanding = async ( options?: RequestInit): Promise<AirlinePortalStandingResponse> => {
 

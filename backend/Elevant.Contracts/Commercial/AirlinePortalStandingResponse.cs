@@ -3,7 +3,7 @@ namespace Elevant.Contracts.Commercial;
 /// <summary>
 /// Where the airline stands with AVIAM (2-N32): <c>Status</c> is Active, Pending, Suspended, Expired,
 /// Terminated or None; <c>ReadOnly</c> means no contract covers any station today, while history, invoices
-/// and payments stay available. The stations are every station of its approved contracts.
+/// and payments stay available. The stations are those a contract in force covered or covers.
 /// </summary>
 public sealed record AirlinePortalStandingResponse(
     Guid OrganizationId,

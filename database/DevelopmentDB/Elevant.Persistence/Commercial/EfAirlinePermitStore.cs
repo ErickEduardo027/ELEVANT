@@ -65,18 +65,13 @@ internal sealed class EfAirlinePermitStore(ElevantDbContext context, CommercialP
         // Expand phase: the key is optional; a submission creates the permit, so it has no expected version.
         if (idempotencyKey == Guid.Empty)
             return AirlinePermitResult.Failed(AirlinePermitFailure.Invalid, "idempotency_key_required");
-        var today = Today();
         if (input is null || !Enum.TryParse<AirlinePermitKind>(input.Kind, out var kind) || !Enum.IsDefined(kind) ||
             Text(input.Number, 60) is not { } number || Text(input.Issuer, 120) is not { } issuer)
             return AirlinePermitResult.Failed(AirlinePermitFailure.Invalid, AirlinePermitIssues.Invalid);
-        if (input.IssuedOn > today || input.ExpiresOn < input.IssuedOn)
+        if (input.ExpiresOn < input.IssuedOn)
             return AirlinePermitResult.Failed(AirlinePermitFailure.Invalid, AirlinePermitIssues.DatesInvalid);
-        if (input.ExpiresOn < today)
-            return AirlinePermitResult.Failed(AirlinePermitFailure.Invalid, AirlinePermitIssues.Expired);
         var document = string.IsNullOrWhiteSpace(input.DocumentUrl) ? null : input.DocumentUrl.Trim();
         var accountId = await AccountIdAsync(actorId, cancellationToken);
-        if (document is not null && await DocumentIssueAsync(accountId, document, cancellationToken) is { } issue)
-            return AirlinePermitResult.Failed(AirlinePermitFailure.Invalid, issue);
         var hash = CommercialCommandReceipts.Hash(new
         {
             kind, number, issuer, input.IssuedOn, input.ExpiresOn, document,
@@ -84,7 +79,15 @@ internal sealed class EfAirlinePermitStore(ElevantDbContext context, CommercialP
 
         return await CommandAsync(idempotencyKey, accountId, SubmitAction, hash, async () =>
         {
+            // 2-N09: what depends on the clock (the business day and the media link window, 2-N37) is checked after
+            // the receipt, so a retry with the same key and body answers the permit it created even once the permit
+            // or its scan expired in between; a new submission is still refused.
             var now = Now();
+            var today = BusinessCalendar.Today(now);
+            if (input.IssuedOn > today) return Outcome.Fail(AirlinePermitFailure.Invalid, AirlinePermitIssues.DatesInvalid);
+            if (input.ExpiresOn < today) return Outcome.Fail(AirlinePermitFailure.Invalid, AirlinePermitIssues.Expired);
+            if (document is not null && await DocumentIssueAsync(accountId, document, now, cancellationToken) is { } issue)
+                return Outcome.Fail(AirlinePermitFailure.Invalid, issue);
             var permit = new AirlinePermit
             {
                 PublicId = Guid.CreateVersion7(), AirlineId = airline, Kind = kind, Number = number, Issuer = issuer,
@@ -337,10 +340,11 @@ internal sealed class EfAirlinePermitStore(ElevantDbContext context, CommercialP
     }
 
     /// <summary>
-    /// Why the scan cannot be linked: it is not an upload of this account for a permit, or it was uploaded
-    /// before the media link window and the cleanup may already be removing it (2-N37).
+    /// Why the scan cannot be linked at <paramref name="now"/>: it is not an upload of this account for a permit,
+    /// or it was uploaded before the media link window and the cleanup may already be removing it (2-N37).
     /// </summary>
-    private async Task<string?> DocumentIssueAsync(long accountId, string url, CancellationToken cancellationToken)
+    private async Task<string?> DocumentIssueAsync(long accountId, string url, DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
         const string prefix = "/api/v1/media/";
         if (!url.StartsWith(prefix, StringComparison.Ordinal) || !Guid.TryParse(url[prefix.Length..], out var id))
@@ -349,7 +353,7 @@ internal sealed class EfAirlinePermitStore(ElevantDbContext context, CommercialP
             .Where(asset => asset.PublicId == id && asset.Purpose == "airline-permit" && asset.UploadedByAccountId == accountId)
             .Select(asset => (DateTimeOffset?)asset.CreatedAt).SingleOrDefaultAsync(cancellationToken);
         if (uploadedAt is null) return AirlinePermitIssues.DocumentInvalid;
-        return uploadedAt < CommercialMediaLinkPolicy.LinkCutoff(timeProvider.GetUtcNow()) ? AirlinePermitIssues.DocumentExpired : null;
+        return uploadedAt < CommercialMediaLinkPolicy.LinkCutoff(now) ? AirlinePermitIssues.DocumentExpired : null;
     }
 
     /// <summary>The airline's portal accounts re-read their dossier and contracts.</summary>

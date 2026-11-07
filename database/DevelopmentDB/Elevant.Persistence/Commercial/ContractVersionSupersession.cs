@@ -27,9 +27,20 @@ internal static class ContractVersionSupersession
     public static async Task ApplyAsync(ElevantDbContext context, ContractVersion next, long actor, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        // 2-N12: the coverage end moves with the version that now governs, so its expiry notice restarts.
         var contract = await context.Contracts.SingleAsync(item => item.Id == next.ContractId, cancellationToken);
-        contract.ExpiryNoticeSentAt = null;
+        // The ends the contract was covered until before this second signature: the other versions that govern and,
+        // as the legacy exemption (the first approved version of a contract that left Draft), this one already.
+        var ends = await GoverningContractVersions.Of(context).AsNoTracking()
+            .Where(item => item.ContractId == next.ContractId && item.Id != next.Id)
+            .Select(item => new { item.Id, item.ValidTo })
+            .ToDictionaryAsync(item => item.Id, item => item.ValidTo, cancellationToken);
+        var firstApproved = !await context.ContractVersions.AsNoTracking().AnyAsync(earlier =>
+            earlier.ContractId == next.ContractId && earlier.VersionNumber < next.VersionNumber &&
+            (earlier.Status == ContractVersionStatus.Approved || earlier.Status == ContractVersionStatus.Superseded),
+            cancellationToken);
+        var coveredUntil = ContractVersionGovernance.CoverageEnd(
+            ContractVersionGovernance.Governs(ContractVersionStatus.Approved, false, firstApproved, contract.Status)
+                ? ends.Values.Append(next.ValidTo) : ends.Values);
         var replaced = await context.ContractVersions.Where(item => item.ContractId == next.ContractId &&
                 item.Id != next.Id && item.Status == ContractVersionStatus.Approved && item.ValidFrom < next.ValidFrom)
             .ToArrayAsync(cancellationToken);
@@ -45,6 +56,11 @@ internal static class ContractVersionSupersession
             version.ValidTo = end;
             version.UpdatedAt = now;
         }
+        // 2-N12: the expiry notice restarts only when the coverage end moves. A renewal moves it; an amendment that
+        // keeps the end of the version it replaces does not, so the airline is never told twice about the same end.
+        // Every replaced version governs from now on as superseded, with the end it keeps.
+        foreach (var version in replaced.Append(next)) ends[version.Id] = version.ValidTo;
+        if (ContractVersionGovernance.CoverageEnd(ends.Values) != coveredUntil) contract.ExpiryNoticeSentAt = null;
         await RebindFlightsAsync(context, replaced.Select(item => item.Id).ToArray(), next, actor, now, cancellationToken);
         // OCC re-reads «Contratos listos» and the planning of the stations the version covers.
         foreach (var station in await (from link in context.Set<ContractVersionStation>().AsNoTracking()

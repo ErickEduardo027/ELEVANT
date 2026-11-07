@@ -1,4 +1,6 @@
+using System.Globalization;
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Commercial;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
@@ -23,6 +25,174 @@ public sealed partial class SqlServerMigrationTests
 
     private static async Task<int> EmailsAsync(ElevantDbContext context, EmailPurpose purpose, CancellationToken ct) =>
         await context.EmailOutbox.AsNoTracking().CountAsync(item => item.Purpose == purpose, ct);
+
+    /// <summary>The organization of the airline of a contract: the tenant of its portal standing.</summary>
+    private static async Task<Guid> OrganizationOfContractAsync(ElevantDbContext context, long contractId,
+        CancellationToken ct) =>
+        await (from contract in context.Contracts
+               join airline in context.Airlines on contract.AirlineId equals airline.Id
+               join item in context.Organizations on airline.OrganizationId equals item.Id
+               where contract.Id == contractId
+               select item.PublicId).SingleAsync(ct);
+
+    /// <summary>
+    /// A second version of the seeded contract Finance approved from <paramref name="start"/>, with the stations of the
+    /// version in force and <paramref name="stations"/>; nobody signed it yet.
+    /// </summary>
+    private static async Task<Guid> ApprovedAmendmentAsync(ElevantDbContext context, DateOnly start, CancellationToken ct,
+        params long[] stations)
+    {
+        var inForce = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == SeededContractVersion, ct);
+        var now = DateTimeOffset.UtcNow;
+        var version = new ContractVersion
+        {
+            PublicId = Guid.NewGuid(), ContractId = inForce.ContractId, VersionNumber = 2,
+            Status = ContractVersionStatus.Approved, ValidFrom = start, ValidTo = start.AddYears(1),
+            CurrencyCode = inForce.CurrencyCode, Terms = inForce.Terms, ApprovedAt = now, CreatedAt = now, UpdatedAt = now,
+        };
+        context.ContractVersions.Add(version);
+        await context.SaveChangesAsync(ct);
+        var current = await context.Set<ContractVersionStation>().AsNoTracking()
+            .Where(item => item.ContractVersionId == inForce.Id).Select(item => item.StationId).ToArrayAsync(ct);
+        context.Set<ContractVersionStation>().AddRange(current.Concat(stations).Select(station =>
+            new ContractVersionStation { ContractVersionId = version.Id, StationId = station }));
+        await context.SaveChangesAsync(ct);
+        context.ChangeTracker.Clear();
+        return version.PublicId;
+    }
+
+    [Fact]
+    public async Task APermitSubmissionRetriedAfterItsDayOrItsScanWindowEndedAnswersThePermitItCreated()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        // 21:00 on 5 November in Santo Domingo: the last hours of the business day.
+        var clock = new MovableTimeProvider(EveningInSantoDomingo);
+        await using var provider = await SeededFinanceProviderAsync(database, ct, clock);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var permits = scope.ServiceProvider.GetRequiredService<IAirlinePermitStore>();
+        var portalAccount = await context.Users.Where(user => user.PublicId == PortalAirlineAccount).Select(user => user.Id)
+            .SingleAsync(ct);
+
+        // A permit current until today, with a scan uploaded almost six days ago: the submission is accepted.
+        var scan = new MediaAsset
+        {
+            PublicId = Guid.CreateVersion7(), Purpose = "airline-permit", ObjectKey = $"airline-permit/{Guid.NewGuid():N}",
+            ContentType = "application/pdf", Length = 8, Sha256 = new string('b', 64), UploadedByAccountId = portalAccount,
+            CreatedAt = clock.Now.AddDays(-6).AddHours(1),
+        };
+        context.MediaAssets.Add(scan);
+        await context.SaveChangesAsync(ct);
+        context.ChangeTracker.Clear();
+        var input = new SubmitAirlinePermitInput("OperatingPermit", "JAC-B-RETRY", "Junta de Aviación Civil",
+            SantoDomingoToday.AddDays(-300), SantoDomingoToday, $"/api/v1/media/{scan.PublicId}");
+        var key = Guid.NewGuid();
+        var first = await permits.SubmitAsync(PortalAirlineAccount, input, key, ct);
+        Assert.Null(first.Code);
+
+        // 2-N09: the answer is lost and the retry comes four hours later, when the permit expired yesterday and the scan
+        // is past the link window (2-N37): the same key and body answer the permit already created, created once.
+        clock.Now = clock.Now.AddHours(4);
+        var replay = await permits.SubmitAsync(PortalAirlineAccount, input, key, ct);
+        Assert.Null(replay.Code);
+        Assert.Equal(first.Permit!.Id, replay.Permit!.Id);
+        Assert.Equal(1, await context.AirlinePermits.CountAsync(item => item.Number == "JAC-B-RETRY", ct));
+        Assert.Equal(1, await context.DepartmentNotifications.CountAsync(item => item.Kind == "permit_submitted" &&
+            item.SourceId == first.Permit.Id, ct));
+        // A new submission is checked against the clock; the key with another body is still a conflict.
+        Assert.Equal(AirlinePermitIssues.Expired, (await permits.SubmitAsync(PortalAirlineAccount, input, Guid.NewGuid(), ct)).Code);
+        var renewed = input with { ExpiresOn = SantoDomingoToday.AddYears(1) };
+        Assert.Equal(AirlinePermitIssues.DocumentExpired, (await permits.SubmitAsync(PortalAirlineAccount, renewed,
+            Guid.NewGuid(), ct)).Code);
+        Assert.Equal("idempotency_conflict", (await permits.SubmitAsync(PortalAirlineAccount, renewed, key, ct)).Code);
+        Assert.Equal(1, await context.AirlinePermits.CountAsync(item => item.Number == "JAC-B-RETRY", ct));
+    }
+
+    [Fact]
+    public async Task TheExpiryNoticeRestartsOnlyWhenTheEndOfTheCoverageMoves()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        var clock = new MovableTimeProvider(EveningInSantoDomingo);
+        await using var provider = await SeededFinanceProviderAsync(database, ct, clock);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
+        var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
+        var drafts = scope.ServiceProvider.GetRequiredService<IContractDraftStore>();
+        var book = scope.ServiceProvider.GetRequiredService<IFinanceTariffBookStore>();
+        var packages = scope.ServiceProvider.GetRequiredService<IFinancePackageStore>();
+        var contractId = await SeededContractIdAsync(context, ct);
+        var day = SantoDomingoToday;
+        async Task<DateTimeOffset?> NoticeSentAsync() => await context.Contracts.AsNoTracking()
+            .Where(item => item.Id == contractId).Select(item => item.ExpiryNoticeSentAt).SingleAsync(ct);
+        async Task ConfirmAsync(Guid versionId, DateOnly from, DateOnly to, int noticeDays)
+        {
+            var current = (await documents.ReadAsync(ContractsAdministrator, versionId, ct)).Document!;
+            Assert.Null((await documents.SetValidityAsync(ContractsAdministrator, versionId, new ContractValidityInput(from, to,
+                "Manual", null, noticeDays, 0, null, current.ContentSha256), Guid.NewGuid(), ct)).Code);
+        }
+        // An amendment of the contract from a day, through Finance, its validity and both signatures.
+        async Task AmendAsync(DateOnly from, DateOnly to, int noticeDays)
+        {
+            var created = await packages.CreateAmendmentAsync(ContractsAdministrator, SeededContractVersion, Guid.NewGuid(),
+                new CreateAmendmentInput("Active", from), ct);
+            Assert.True(created.IsSuccess, created.Code);
+            var draft = Assert.Single((await drafts.ListForContractsAsync(ContractsAdministrator, ct))!,
+                item => item.Id == created.Id);
+            Assert.True((await drafts.UpdateAsync(ContractsAdministrator, draft.Id, new UpdateContractDraftInput(draft.ValidFrom,
+                draft.ValidTo, draft.CurrencyCode, draft.Terms!, draft.Rates.Select(rate => new UpdateDraftRateInput(rate.Id,
+                    rate.BillingUnit, rate.UnitPrice, rate.MinimumQuantity, true)).ToArray(), null, draft.Version),
+                Guid.NewGuid(), ct)).IsSuccess);
+            draft = Assert.Single((await drafts.ListForContractsAsync(ContractsAdministrator, ct))!, item => item.Id == draft.Id);
+            var submitted = await drafts.ActivateAsync(ContractsAdministrator, draft.Id,
+                new SubmitContractDraftInput(draft.Version), Guid.NewGuid(), ct);
+            Assert.True(submitted.IsSuccess, submitted.Code);
+            var pending = (await book.GetContractApprovalAsync(FinanceAccount, draft.Id, ct))!;
+            Assert.True((await book.DecideContractApprovalAsync(FinanceAccount, draft.Id,
+                new DecideContractApprovalInput("Approved", null, pending.Summary.Version), Guid.NewGuid(), ct)).IsSuccess);
+            await ConfirmAsync(draft.Id, from, to, noticeDays);
+            await SignByBothAsync(documents, draft.Id, ct);
+            context.ChangeTracker.Clear();
+        }
+
+        // The legacy version in force ends in 40 days and signs 35 days of notice: the end is announced on day 5.
+        var end = day.AddDays(40);
+        await ConfirmAsync(SeededContractVersion, day, end, 35);
+        Assert.Equal(0, (await lifecycle.SweepAsync(ct)).ContractNotices);
+        clock.Now = clock.Now.AddDays(5);
+        Assert.Equal(1, (await lifecycle.SweepAsync(ct)).ContractNotices);
+        var sent = await EmailsAsync(context, EmailPurpose.ContractExpiring, ct);
+        Assert.NotEqual(0, sent);
+
+        // 2-N12: its validity confirmed again with the same end and 20 days of notice: that end is not announced twice
+        // when the 20 days fall due.
+        await ConfirmAsync(SeededContractVersion, day.AddDays(5), end, 20);
+        Assert.NotNull(await NoticeSentAsync());
+        clock.Now = clock.Now.AddDays(15);
+        Assert.Equal(0, (await lifecycle.SweepAsync(ct)).ContractNotices);
+
+        // An amendment signed after the notice keeps that end: nobody is told about it again.
+        await AmendAsync(day.AddDays(10), end, 25);
+        Assert.NotNull(await NoticeSentAsync());
+        Assert.Equal(0, (await lifecycle.SweepAsync(ct)).ContractNotices);
+        Assert.Equal(sent, await EmailsAsync(context, EmailPurpose.ContractExpiring, ct));
+
+        // One that moves the end restarts the notice, and the new end is announced.
+        var moved = end.AddDays(5);
+        await AmendAsync(day.AddDays(15), moved, 25);
+        Assert.Null(await NoticeSentAsync());
+        Assert.Equal(1, (await lifecycle.SweepAsync(ct)).ContractNotices);
+        Assert.True(await EmailsAsync(context, EmailPurpose.ContractExpiring, ct) > sent);
+        var latest = await context.EmailOutbox.AsNoTracking().Where(item => item.Purpose == EmailPurpose.ContractExpiring)
+            .OrderByDescending(item => item.Id).FirstAsync(ct);
+        Assert.Contains(moved.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture), latest.Subject);
+    }
 
     [Fact]
     public async Task PermitCommandsAreIdempotentReviewOnlySubmittedPermitsAndARevocationSuspendsAndResumes()
@@ -241,11 +411,7 @@ public sealed partial class SqlServerMigrationTests
         var standing = scope.ServiceProvider.GetRequiredService<IAirlinePortalStandingStore>();
         var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
         var contractId = await SeededContractIdAsync(context, ct);
-        var organization = await (from contract in context.Contracts
-                                  join airline in context.Airlines on contract.AirlineId equals airline.Id
-                                  join item in context.Organizations on airline.OrganizationId equals item.Id
-                                  where contract.Id == contractId
-                                  select item.PublicId).SingleAsync(ct);
+        var organization = await OrganizationOfContractAsync(context, contractId, ct);
 
         var active = (await standing.GetStandingAsync(organization, BusinessToday, ct))!;
         Assert.Equal((AirlinePortalStandings.Active, false), (active.Status, active.ReadOnly));
@@ -253,6 +419,18 @@ public sealed partial class SqlServerMigrationTests
         Assert.Contains(active.Stations, station => station.Current);
         Assert.Null(Assert.Single(active.Contracts).PendingReason);
         Assert.Null(await standing.GetStandingAsync(Guid.NewGuid(), BusinessToday, ct));
+
+        // 2-N32: an amendment Finance approved adds MIA but waits for both signatures. No contract in force ever covered
+        // MIA, so it is no history, not even from the day the amendment would start.
+        var mia = await SecondStationAsync(context, ct);
+        var amendment = await ApprovedAmendmentAsync(context, BusinessToday.AddDays(10), ct, mia.Id);
+        foreach (var onDate in new[] { BusinessToday, BusinessToday.AddDays(10) })
+        {
+            var awaiting = (await standing.GetStandingAsync(organization, onDate, ct))!;
+            Assert.Equal(active.Stations.Select(station => (station.Code, station.Current)),
+                awaiting.Stations.Select(station => (station.Code, station.Current)));
+            Assert.Contains(amendment, Assert.Single(awaiting.Contracts).VersionsAwaitingSignatures);
+        }
 
         // 2-N32: suspended, nothing is in force, but the stations of its history stay listed.
         await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion,
@@ -270,5 +448,35 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((AirlinePortalStandings.Pending, AirlinePortalStandings.PendingSignatures),
             (pending.Status, row.PendingReason));
         Assert.Contains(SeededContractVersion, row.VersionsAwaitingSignatures);
+        // It was never in force, so none of its stations is history.
+        Assert.Empty(pending.Stations);
+        Assert.True(pending.ReadOnly);
+    }
+
+    [Fact]
+    public async Task AStationOfASignedVersionIsNoHistoryBeforeTheVersionStarts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var standing = scope.ServiceProvider.GetRequiredService<IAirlinePortalStandingStore>();
+        var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
+        var organization = await OrganizationOfContractAsync(context, await SeededContractIdAsync(context, ct), ct);
+
+        // 2-N32: both parties sign an amendment that adds MIA from day 10. Until then the version in force covers PUJ
+        // and MIA is neither current nor history; from that day the amendment covers both.
+        var mia = await SecondStationAsync(context, ct);
+        var start = BusinessToday.AddDays(10);
+        await SignByBothAsync(documents, await ApprovedAmendmentAsync(context, start, ct, mia.Id), ct);
+        var today = (await standing.GetStandingAsync(organization, BusinessToday, ct))!;
+        Assert.Equal(new[] { (Code: "PUJ", Current: true) },
+            today.Stations.Select(station => (station.Code, station.Current)));
+        var started = (await standing.GetStandingAsync(organization, start, ct))!;
+        Assert.Equal(new[] { (Code: "MIA", Current: true), (Code: "PUJ", Current: true) },
+            started.Stations.Select(station => (station.Code, station.Current)));
     }
 }

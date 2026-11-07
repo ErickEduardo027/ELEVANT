@@ -46,4 +46,21 @@ public static class ContractVersionGovernance
         var dayBefore = nextStart.AddDays(-1);
         return currentEnd is { } end && end < dayBefore ? end : dayBefore;
     }
+
+    /// <summary>
+    /// The last day the governing versions of a contract cover, from their ends (2-N12): the latest end,
+    /// <see cref="DateOnly.MaxValue"/> when one of them has none, or null when no version governs. The expiry
+    /// notice restarts only when it moves: a renewal moves it, an amendment that keeps the end does not.
+    /// </summary>
+    public static DateOnly? CoverageEnd(IEnumerable<DateOnly?> ends)
+    {
+        ArgumentNullException.ThrowIfNull(ends);
+        DateOnly? last = null;
+        foreach (var end in ends)
+        {
+            var day = end ?? DateOnly.MaxValue;
+            if (last is not { } latest || day > latest) last = day;
+        }
+        return last;
+    }
 }

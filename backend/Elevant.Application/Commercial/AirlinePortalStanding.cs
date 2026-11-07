@@ -3,8 +3,9 @@ using Elevant.Domain.Enumerations;
 namespace Elevant.Application.Commercial;
 
 /// <summary>
-/// A station of the airline's contracts (2-N32): every station of a version Finance approved, the same
-/// scope its treasury history keeps, and whether a contract in force covers it today.
+/// A station of the airline's contracts (2-N32): one a contract in force covered or covers, from a version
+/// that governed or governs and already started (never one only waiting for its signatures), and whether
+/// a contract in force covers it today.
 /// </summary>
 public sealed record AirlinePortalStandingStationData(Guid Id, string Code, string Name, string IanaTimeZone, bool Current);
 
