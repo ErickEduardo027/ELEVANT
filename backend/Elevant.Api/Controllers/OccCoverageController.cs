@@ -69,6 +69,12 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         return Map(await store.ReleaseAsync(actorId, coverageId, date, cancellationToken));
     }
 
+    /// <summary>
+    /// The bridge, remote, size and active flags of a stand, under the master-data rules (2-A): a stand in use is not
+    /// deactivated and one of an inactive terminal is not reactivated (422 with the rule in <c>reasons</c>). The
+    /// Idempotency-Key and <c>expectedVersion</c> (the stand's version on the board) are optional while older screens
+    /// exist (expand); with the key the version is required and a retry replays the first result.
+    /// </summary>
     [HttpPut("occ/stands/{standId:guid}/attributes", Name = "UpdateOccStandAttributes")]
     [RequestSizeLimit(1024)]
     [Consumes("application/json")]
@@ -80,11 +86,13 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
     [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(422, "application/problem+json")]
     public async Task<ActionResult<OccCoverageBoardResponse>> UpdateStand([FromRoute] Guid standId,
-        [FromBody, BindRequired] UpdateOccStandAttributesRequest request, CancellationToken cancellationToken)
+        [FromBody, BindRequired] UpdateOccStandAttributesRequest request,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryAccount(out var actorId)) return Unauthorized<OccCoverageBoardResponse>();
         return Map(await store.UpdateStandAsync(actorId, standId, new StandAttributesInput(request.HasBoardingBridge,
-            request.IsRemote, request.MaxAircraftSize, request.IsActive), request.Date, cancellationToken));
+            request.IsRemote, request.MaxAircraftSize, request.IsActive, request.ExpectedVersion), request.Date,
+            idempotencyKey, cancellationToken));
     }
 
     [HttpPut("occ/terminals/{terminalId:guid}/coverage-rules", Name = "UpdateOccTerminalRules")]
@@ -169,12 +177,16 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
             item.IsReinforcement)).ToArray()));
     }
 
+    // A failure with a stable code carries it (version_conflict, idempotency_conflict, expected_version_required…).
     private ActionResult<OccCoverageBoardResponse> Map(CoverageResult result) => result.Failure switch
     {
-        PositionCoverageFailure.Forbidden => Problem<OccCoverageBoardResponse>(403, "Position coverage access is forbidden."),
-        PositionCoverageFailure.NotFound => Problem<OccCoverageBoardResponse>(404, "The station, agent, terminal or stand was not found."),
-        PositionCoverageFailure.Invalid => Problem<OccCoverageBoardResponse>(400, "The coverage request is invalid."),
-        PositionCoverageFailure.Conflict => Problem<OccCoverageBoardResponse>(409, "The data changed; read the board again."),
+        PositionCoverageFailure.Forbidden => Problem<OccCoverageBoardResponse>(403, "Position coverage access is forbidden.",
+            result.Code),
+        PositionCoverageFailure.NotFound => Problem<OccCoverageBoardResponse>(404,
+            "The station, agent, terminal or stand was not found.", result.Code),
+        PositionCoverageFailure.Invalid => Problem<OccCoverageBoardResponse>(400, "The coverage request is invalid.", result.Code),
+        PositionCoverageFailure.Conflict => Problem<OccCoverageBoardResponse>(409, "The data changed; read the board again.",
+            result.Code),
         PositionCoverageFailure.Rejected => Rejected(result.Reasons, result.Code),
         _ => Ok(Board(result.Board!)),
     };
@@ -186,7 +198,7 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
             Status = 422, Title = "The coverage breaks assignment rules.", Instance = HttpContext.Request.Path,
         };
         problem.Extensions["reasons"] = reasons;
-        // A stand in use is not deactivated (2-A): the same code as the master-data screen.
+        // A stand in use or of an inactive terminal (2-A): the same codes as the master-data screen.
         if (code is not null) problem.Extensions["code"] = code;
         return new ObjectResult(problem) { StatusCode = 422 };
     }
@@ -195,7 +207,7 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         board.Terminals.Select(item => new OccCoverageTerminalResponse(item.TerminalId, item.Code, item.Name,
             item.MaxStandsPerAgent, item.RequiresBridgeQualification)).ToArray(),
         board.Stands.Select(item => new OccCoverageStandResponse(item.StandId, item.Code, item.TerminalId, item.IsActive,
-            item.HasBoardingBridge, item.IsRemote, item.MaxAircraftSize, item.CoveredBy)).ToArray(),
+            item.HasBoardingBridge, item.IsRemote, item.MaxAircraftSize, item.CoveredBy, item.Version)).ToArray(),
         board.Constraints.Select(item => new OccStandConstraintResponse(item.Id, item.StandId, item.StandCode,
             item.AffectedStandId, item.AffectedStandCode, item.Kind)).ToArray(),
         board.Agents.Select(item => new OccCoverageAgentResponse(item.AgentId, item.Name, item.EmployeeNumber, item.TerminalId,
@@ -215,7 +227,10 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         return Problem<T>(401, "Authentication failed.");
     }
 
-    private ActionResult<T> Problem<T>(int status, string title) =>
-        new ObjectResult(new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path })
-            { StatusCode = status };
+    private ActionResult<T> Problem<T>(int status, string title, string? code = null)
+    {
+        var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
+        if (code is not null) problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status };
+    }
 }

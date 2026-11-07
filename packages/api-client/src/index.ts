@@ -17,6 +17,7 @@ export * from "./mobileDevices";
 export * from "./airlinePortalUsers";
 export {
   createElevantApiClient,
+  normalizedStandAttributes,
   type CreateSessionOptions,
   type GetAccountChangesOptions,
   type ChangePasswordOptions,

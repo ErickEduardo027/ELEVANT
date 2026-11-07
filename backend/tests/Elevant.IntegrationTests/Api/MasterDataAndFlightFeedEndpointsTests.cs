@@ -15,7 +15,8 @@ namespace Elevant.IntegrationTests.Api;
 /// <summary>
 /// Phase 2, block C: the master-data commands require their Idempotency-Key, answer 201 or the replay and fail
 /// with Spanish, coded Problem Details (2-A); the flight feed review takes its view, the import its optional key
-/// and fields, the restore its required key, and a refused stand carries its rules (2-B, 2-N16, 2-N36).
+/// and fields, the restore its required key, the dismissal and the coverage stand attributes their optional key and
+/// version, and a refused stand carries its rules (2-A, 2-B, 2-N16, 2-N36).
 /// </summary>
 public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory factory) : IClassFixture<ElevantApiFactory>
 {
@@ -162,6 +163,108 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
         Assert.DoesNotContain("The ", passedProblem.Title, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task TheDismissalKeepsItsOlderCallAndTakesTheVersionWithItsKey()
+    {
+        var store = new FeedStub();
+        await using var application = Application(services => Replace<IOccFlightFeedStore>(services, store));
+        using var client = Authorized(application);
+        var proposal = Guid.NewGuid();
+        var path = $"occ/flight-feed/proposals/{proposal}/dismiss";
+
+        // Older screens send no body and no key (expand).
+        using var legacy = await client.PostAsync($"/api/v1/{path}", null, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NoContent, legacy.StatusCode);
+        Assert.Equal((proposal, (string?)null, (Guid?)null), store.LastDismiss);
+
+        var key = Guid.NewGuid();
+        using var keyed = await SendAsync(client, HttpMethod.Post, path, key, new { expectedVersion = "AAAAAAAAB9E=" });
+        Assert.Equal(HttpStatusCode.NoContent, keyed.StatusCode);
+        Assert.Equal((proposal, "AAAAAAAAB9E=", (Guid?)key), store.LastDismiss);
+        using var unknownField = await SendAsync(client, HttpMethod.Post, path, Guid.NewGuid(),
+            new { expectedVersion = "AAAAAAAAB9E=", reason = "duplicate" });
+        Assert.Equal(HttpStatusCode.BadRequest, unknownField.StatusCode);
+        using var badKey = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/{path}")
+            { Content = JsonContent.Create(new { expectedVersion = "AAAAAAAAB9E=" }) };
+        badKey.Headers.Add("Idempotency-Key", "not-a-key");
+        using var badKeyAnswer = await client.SendAsync(badKey, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, badKeyAnswer.StatusCode);
+
+        foreach (var (result, status, code) in new[]
+        {
+            (new OccFlightProposalDismissResult(OccFlightFeedFailure.Conflict, "version_conflict"), HttpStatusCode.Conflict,
+                "version_conflict"),
+            (new OccFlightProposalDismissResult(OccFlightFeedFailure.Conflict, "idempotency_conflict"), HttpStatusCode.Conflict,
+                "idempotency_conflict"),
+            (new OccFlightProposalDismissResult(OccFlightFeedFailure.Invalid, "expected_version_required"),
+                HttpStatusCode.BadRequest, "expected_version_required"),
+            // A failure without its own code keeps the code older screens know.
+            (new OccFlightProposalDismissResult(OccFlightFeedFailure.Conflict), HttpStatusCode.Conflict, "flight_proposal_closed"),
+        })
+        {
+            store.DismissResult = result;
+            using var refused = await SendAsync(client, HttpMethod.Post, path, Guid.NewGuid(), new { expectedVersion = "AAAAAAAAB9E=" });
+            var problem = await ProblemAsync(refused);
+            Assert.Equal((status, code), (refused.StatusCode, problem.Code));
+            Assert.DoesNotContain("The ", problem.Title, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task TheCoverageStandAttributesTakeTheirOptionalKeyAndVersionAndAnswerCodedProblems()
+    {
+        var store = new CoverageStub();
+        await using var application = Application(services => Replace<IPositionCoverageStore>(services, store));
+        using var client = Authorized(application);
+        var path = $"occ/stands/{StandId}/attributes";
+        var attributes = new { date = "2026-11-06", hasBoardingBridge = true, isRemote = false, maxAircraftSize = "Narrowbody",
+            isActive = true };
+
+        // Older screens send neither the key nor the version (expand); the board carries the version of every stand.
+        using var legacy = await client.PutAsJsonAsync($"/api/v1/{path}", attributes, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+        Assert.Equal(((Guid?)StandId, (string?)null, (Guid?)null), (store.LastStand, store.LastInput!.ExpectedVersion,
+            store.LastKey));
+        using (var board = JsonDocument.Parse(await legacy.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
+            Assert.Equal(["standId", "code", "terminalId", "isActive", "hasBoardingBridge", "isRemote", "maxAircraftSize",
+                "coveredBy", "version"], board.RootElement.GetProperty("stands")[0].EnumerateObject().Select(item => item.Name)
+                .ToArray());
+
+        var key = Guid.NewGuid();
+        using var keyed = await SendAsync(client, HttpMethod.Put, path, key, new
+        {
+            attributes.date, attributes.hasBoardingBridge, attributes.isRemote, attributes.maxAircraftSize, attributes.isActive,
+            expectedVersion = "AAAAAAAAB9E=",
+        });
+        Assert.Equal(HttpStatusCode.OK, keyed.StatusCode);
+        Assert.Equal(((string?)"AAAAAAAAB9E=", (Guid?)key, (DateOnly?)new DateOnly(2026, 11, 6)),
+            (store.LastInput!.ExpectedVersion, store.LastKey, store.LastDate));
+
+        foreach (var (result, status, code) in new[]
+        {
+            (CoverageResult.Fail(PositionCoverageFailure.Conflict, null, "version_conflict"), HttpStatusCode.Conflict,
+                "version_conflict"),
+            (CoverageResult.Fail(PositionCoverageFailure.Conflict, null, "idempotency_conflict"), HttpStatusCode.Conflict,
+                "idempotency_conflict"),
+            (CoverageResult.Fail(PositionCoverageFailure.Invalid, null, "expected_version_required"), HttpStatusCode.BadRequest,
+                "expected_version_required"),
+            (CoverageResult.Fail(PositionCoverageFailure.Rejected, ["terminal_inactive"], "terminal_inactive"),
+                (HttpStatusCode)422, "terminal_inactive"),
+        })
+        {
+            store.Result = result;
+            using var refused = await SendAsync(client, HttpMethod.Put, path, Guid.NewGuid(), new
+            {
+                attributes.date, attributes.hasBoardingBridge, attributes.isRemote, attributes.maxAircraftSize,
+                attributes.isActive, expectedVersion = "AAAAAAAAB9E=",
+            });
+            Assert.Equal((status, code), (refused.StatusCode, (await ProblemAsync(refused)).Code));
+        }
+        using var last = await SendAsync(client, HttpMethod.Put, path, Guid.NewGuid(), attributes);
+        using (var rejected = JsonDocument.Parse(await last.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
+            Assert.Equal("terminal_inactive", rejected.RootElement.GetProperty("reasons")[0].GetString());
+    }
+
     private static async Task<HttpResponseMessage> SendAsync(HttpClient client, HttpMethod method, string path, Guid key, object body)
     {
         using var request = new HttpRequestMessage(method, $"/api/v1/{path}") { Content = JsonContent.Create(body) };
@@ -306,8 +409,15 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
             return Task.FromResult(ImportResult);
         }
 
-        public Task<OccFlightFeedFailure?> DismissAsync(Guid actorId, Guid proposalId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<OccFlightFeedFailure?>(null);
+        public OccFlightProposalDismissResult DismissResult { get; set; } = new(null);
+        public (Guid, string?, Guid?)? LastDismiss { get; private set; }
+
+        public Task<OccFlightProposalDismissResult> DismissAsync(Guid actorId, Guid proposalId, string? expectedVersion = null,
+            Guid? idempotencyKey = null, CancellationToken cancellationToken = default)
+        {
+            LastDismiss = (proposalId, expectedVersion, idempotencyKey);
+            return Task.FromResult(DismissResult);
+        }
 
         public Task<OccFlightProposalRestoreResult> RestoreAsync(Guid actorId, Guid proposalId, string? expectedVersion,
             Guid idempotencyKey, CancellationToken cancellationToken = default)
@@ -315,5 +425,47 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
             LastRestore = (proposalId, expectedVersion, idempotencyKey);
             return Task.FromResult(RestoreResult with { ProposalId = RestoreResult.ProposalId is null ? null : proposalId });
         }
+    }
+
+    private sealed class CoverageStub : IPositionCoverageStore
+    {
+        public CoverageResult? Result { get; set; }
+        public Guid? LastStand { get; private set; }
+        public StandAttributesInput? LastInput { get; private set; }
+        public DateOnly? LastDate { get; private set; }
+        public Guid? LastKey { get; private set; }
+
+        public Task<CoverageResult> UpdateStandAsync(Guid actorId, Guid standId, StandAttributesInput input, DateOnly date,
+            Guid? idempotencyKey = null, CancellationToken cancellationToken = default)
+        {
+            (LastStand, LastInput, LastDate, LastKey) = (standId, input, date, idempotencyKey);
+            return Task.FromResult(Result ?? new CoverageResult(new CoverageBoardData(StationId, "PUJ", date, [],
+                [new CoverageStandData(standId, "A01", null, input.IsActive, input.HasBoardingBridge, input.IsRemote,
+                    input.MaxAircraftSize, [], "AAAAAAAAB9F=")], [], [], [], true, true), null, []));
+        }
+
+        public Task<CoverageResult> ReadAsync(Guid actorId, Guid stationId, DateOnly date,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<CoverageResult> CreateAsync(Guid actorId, Guid stationId, CreateCoverageInput input,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<CoverageResult> ReleaseAsync(Guid actorId, Guid coverageId, DateOnly date,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<CoverageResult> UpdateTerminalAsync(Guid actorId, Guid terminalId, TerminalRulesInput input, DateOnly date,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<CoverageResult> AddConstraintAsync(Guid actorId, StandConstraintInput input, DateOnly date,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<CoverageResult> RemoveConstraintAsync(Guid actorId, Guid constraintId, DateOnly date,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<PositionCoverageFailure?> ReleaseOperationAgentAsync(Guid actorId, Guid turnaroundId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<OwnCoverageData>?> ReadOwnAsync(Guid accountId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

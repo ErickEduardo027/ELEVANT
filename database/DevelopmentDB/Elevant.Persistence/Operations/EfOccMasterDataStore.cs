@@ -17,7 +17,8 @@ namespace Elevant.Persistence.Operations;
 /// OCC master data (2-A): the terminals and stands of a station in scope and the shared aircraft types, under
 /// <c>operations.master_data.*</c>. A code changes only while nothing used it; something in use is never
 /// deactivated; nothing is deleted. Every change is audited and announced to the station's OCC
-/// (<c>occ_planning</c>), so coverage, positions and planning read it again.
+/// (<c>occ_planning</c>), so coverage, positions and planning read it again; an aircraft type is shared, so its
+/// change is announced to the OCC of every active station.
 /// </summary>
 internal sealed class EfOccMasterDataStore(ElevantDbContext context, IActorContextResolver actors, TimeProvider timeProvider)
     : IOccMasterDataStore
@@ -287,6 +288,7 @@ internal sealed class EfOccMasterDataStore(ElevantDbContext context, IActorConte
                     now, new("aircraft_type.icao", null, icao), new("aircraft_type.iata", null, iata),
                     new("aircraft_type.manufacturer", null, manufacturer), new("aircraft_type.model", null, model),
                     new("aircraft_type.size", null, size?.ToString()), new("aircraft_type.active", null, "true"));
+                await AnnounceToEveryStationAsync(now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
                 return Step.Done(type.PublicId);
             }, AircraftTypeAsync, cancellationToken);
@@ -337,9 +339,22 @@ internal sealed class EfOccMasterDataStore(ElevantDbContext context, IActorConte
                     new("aircraft_type.active", Flag(type.IsActive), Flag(input.IsActive)));
                 (type.IataCode, type.Manufacturer, type.Model, type.SizeCategory, type.IsActive, type.UpdatedAt) =
                     (iata, manufacturer, model, size, input.IsActive, now);
+                await AnnounceToEveryStationAsync(now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
                 return Step.Done(type.PublicId);
             }, AircraftTypeAsync, cancellationToken);
+    }
+
+    /// <summary>
+    /// The aircraft types are shared: «Datos maestros», the planning and the stand rules of every active station read
+    /// them again (<c>occ_planning</c>), in the command's transaction.
+    /// </summary>
+    private async Task AnnounceToEveryStationAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var stations = await context.Stations.AsNoTracking().Where(item => item.IsActive)
+            .Select(item => new { item.Id, item.PublicId }).ToArrayAsync(cancellationToken);
+        foreach (var station in stations)
+            await OccPlanningChangeWriter.AddForStationAsync(context, station.Id, station.PublicId, now, cancellationToken);
     }
 
     private async Task<MasterTerminalData?> TerminalAsync(Guid terminalId)

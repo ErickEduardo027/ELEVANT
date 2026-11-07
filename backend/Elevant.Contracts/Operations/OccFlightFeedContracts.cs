@@ -48,5 +48,12 @@ public sealed record ImportOccFlightResponse(Guid TurnaroundId, string Operation
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record RestoreOccFlightProposalRequest(string? ExpectedVersion);
 
+/// <summary>
+/// «Descartar» a proposal with the version OCC saw (2-N36). Optional while older screens send no body (expand);
+/// required with an Idempotency-Key.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record DismissOccFlightProposalRequest(string? ExpectedVersion);
+
 /// <summary>The restored proposal, back in the review, and its new version.</summary>
 public sealed record RestoreOccFlightProposalResponse(Guid ProposalId, string Status, string Version, bool Replayed);

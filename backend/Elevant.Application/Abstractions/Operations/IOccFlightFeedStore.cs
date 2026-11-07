@@ -55,6 +55,9 @@ public sealed record OccFlightImportResult(Guid? TurnaroundId, string? Operation
 public sealed record OccFlightProposalRestoreResult(Guid? ProposalId, string? Version, OccFlightFeedFailure? Failure,
     string? Code = null, bool Replayed = false);
 
+/// <summary>A dismissed proposal (2-N36), or the failure with its stable Problem Details code.</summary>
+public sealed record OccFlightProposalDismissResult(OccFlightFeedFailure? Failure, string? Code = null, bool Replayed = false);
+
 /// <summary>OCC review of the provider's proposed flights (ADR-0028).</summary>
 public interface IOccFlightFeedStore
 {
@@ -70,8 +73,14 @@ public interface IOccFlightFeedStore
     Task<OccFlightImportResult> ImportAsync(Guid actorId, OccFlightImportInput input, Guid? idempotencyKey,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Hides a proposal OCC will not operate; later reads do not bring it back.</summary>
-    Task<OccFlightFeedFailure?> DismissAsync(Guid actorId, Guid proposalId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Hides a proposal OCC will not operate; later reads do not bring it back, only «Restaurar» (2-N36). The
+    /// Idempotency-Key is optional while older screens exist (expand): with it the expected version is required and a
+    /// retry replays the first result instead of dismissing a proposal someone restored meanwhile; a stale version is
+    /// <c>version_conflict</c>.
+    /// </summary>
+    Task<OccFlightProposalDismissResult> DismissAsync(Guid actorId, Guid proposalId, string? expectedVersion = null,
+        Guid? idempotencyKey = null, CancellationToken cancellationToken = default);
 
     /// <summary>Brings a dismissed proposal back to the review while its flight has not passed (2-N36).</summary>
     Task<OccFlightProposalRestoreResult> RestoreAsync(Guid actorId, Guid proposalId, string? expectedVersion,

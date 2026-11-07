@@ -23571,12 +23571,21 @@
         "tags": [
           "OccCoverage"
         ],
+        "summary": "The bridge, remote, size and active flags of a stand, under the master-data rules (2-A): a stand in use is not\ndeactivated and one of an inactive terminal is not reactivated (422 with the rule in `reasons`). The\nIdempotency-Key and `expectedVersion` (the stand's version on the board) are optional while older screens\nexist (expand); with the key the version is required and a retry replays the first result.",
         "operationId": "UpdateOccStandAttributes",
         "parameters": [
           {
             "name": "standId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -24324,7 +24333,7 @@
         "tags": [
           "OccFlightFeed"
         ],
-        "summary": "Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed.",
+        "summary": "Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed. The\nIdempotency-Key and the body with `expectedVersion` are optional while older screens exist (expand): with\nthe key the version is required and a retry replays the first result, so it never dismisses again a proposal\nsomeone restored meanwhile.",
         "operationId": "DismissOccFlightProposal",
         "parameters": [
           {
@@ -24335,11 +24344,60 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DismissOccFlightProposalRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DismissOccFlightProposalRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/DismissOccFlightProposalRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized",
@@ -40033,6 +40091,16 @@
         },
         "additionalProperties": false
       },
+      "DismissOccFlightProposalRequest": {
+        "type": "object",
+        "properties": {
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "DisputeAirlinePreinvoiceRequest": {
         "required": [
           "description",
@@ -48445,7 +48513,8 @@
           "hasBoardingBridge",
           "isActive",
           "isRemote",
-          "standId"
+          "standId",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -48479,6 +48548,9 @@
             "items": {
               "type": "string"
             }
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -56375,6 +56447,10 @@
           },
           "isActive": {
             "type": "boolean"
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

@@ -35,6 +35,7 @@ internal sealed class EfOccFlightFeedStore(
     private const string CreatePermission = "operations.planning.create";
     private const string ImportAction = "occ.flight_proposal.import";
     private const string RestoreAction = "occ.flight_proposal.restore";
+    private const string DismissAction = "occ.flight_proposal.dismiss";
     private static readonly TimeSpan MinTurn = TimeSpan.FromMinutes(20);
     private static readonly TimeSpan MaxTurn = TimeSpan.FromHours(8);
 
@@ -362,20 +363,84 @@ internal sealed class EfOccFlightFeedStore(
         return new(turnaroundId, turnaround.OperationCode, null);
     }
 
-    public async Task<OccFlightFeedFailure?> DismissAsync(Guid actorId, Guid proposalId,
-        CancellationToken cancellationToken = default)
+    public async Task<OccFlightProposalDismissResult> DismissAsync(Guid actorId, Guid proposalId, string? expectedVersion = null,
+        Guid? idempotencyKey = null, CancellationToken cancellationToken = default)
+    {
+        if (idempotencyKey == Guid.Empty) return DismissFailed(OccFlightFeedFailure.Invalid, "idempotency_key_required");
+        if (idempotencyKey is not null && string.IsNullOrWhiteSpace(expectedVersion))
+            return DismissFailed(OccFlightFeedFailure.Invalid, "expected_version_required");
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (actor is null) return DismissFailed(OccFlightFeedFailure.Forbidden, "forbidden");
+        var accountId = await AccountIdAsync(actorId, cancellationToken);
+        var hash = CommercialCommandReceipts.Hash(new { proposalId, expected = expectedVersion });
+        try
+        {
+            // The receipt, the decision, its audit and its announcement commit together: a replay repeats none of them.
+            return await context.Database.CreateExecutionStrategy().ExecuteAsync(async token =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
+                if (idempotencyKey is { } key)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, key, accountId, DismissAction, hash, token);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return DismissFailed(OccFlightFeedFailure.Conflict, "idempotency_conflict");
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                        return new OccFlightProposalDismissResult(null, null, true);
+                }
+                var result = await DismissInsideTransactionAsync(actor, accountId, proposalId, expectedVersion, token);
+                if (result.Failure is not null)
+                {
+                    await transaction.RollbackAsync(token);
+                    context.ChangeTracker.Clear();
+                    return result;
+                }
+                if (idempotencyKey is { } receipt)
+                {
+                    CommercialCommandReceipts.Add(context, receipt, accountId, DismissAction, hash, proposalId, Now());
+                    await context.SaveChangesAsync(token);
+                }
+                await transaction.CommitAsync(token);
+                context.ChangeTracker.Clear();
+                return result;
+            }, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return DismissFailed(OccFlightFeedFailure.Conflict, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is { } key && CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, accountId, DismissAction, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? new OccFlightProposalDismissResult(null, null, true)
+                : DismissFailed(OccFlightFeedFailure.Conflict, "idempotency_conflict");
+        }
+    }
+
+    /// <summary>
+    /// The dismissal inside the command's transaction. A confirmed proposal is closed (<c>flight_proposal_closed</c>);
+    /// with an expected version a proposal that changed since, such as one restored meanwhile, is
+    /// <c>version_conflict</c>; one already dismissed stays as it is.
+    /// </summary>
+    private async Task<OccFlightProposalDismissResult> DismissInsideTransactionAsync(ActorContext actor, long accountId,
+        Guid proposalId, string? expectedVersion, CancellationToken cancellationToken)
     {
         var proposal = await context.Set<ExternalFlightProposal>().SingleOrDefaultAsync(item => item.PublicId == proposalId,
             cancellationToken);
-        if (proposal is null) return OccFlightFeedFailure.NotFound;
+        if (proposal is null) return DismissFailed(OccFlightFeedFailure.NotFound, "not_found");
         var station = await context.Stations.AsNoTracking().Where(item => item.Id == proposal.StationId)
             .Select(item => item.PublicId).SingleAsync(cancellationToken);
-        var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (!Allowed(actor, CreatePermission, station)) return OccFlightFeedFailure.Forbidden;
-        if (proposal.Status == ExternalFlightProposalStatus.Dismissed) return null;
-        if (proposal.Status == ExternalFlightProposalStatus.Confirmed) return OccFlightFeedFailure.Conflict;
+        if (!Allowed(actor, CreatePermission, station)) return DismissFailed(OccFlightFeedFailure.Forbidden, "forbidden");
+        if (proposal.Status == ExternalFlightProposalStatus.Confirmed)
+            return DismissFailed(OccFlightFeedFailure.Conflict, "flight_proposal_closed");
+        if (!string.IsNullOrWhiteSpace(expectedVersion) && Version(proposal.RowVersion) != expectedVersion)
+            return DismissFailed(OccFlightFeedFailure.Conflict, "version_conflict");
+        if (proposal.Status == ExternalFlightProposalStatus.Dismissed) return new OccFlightProposalDismissResult(null);
         var now = Now();
-        var accountId = await AccountIdAsync(actorId, cancellationToken);
         proposal.Status = ExternalFlightProposalStatus.Dismissed;
         proposal.DecidedAt = now;
         proposal.DecidedByAccountId = accountId;
@@ -386,15 +451,8 @@ internal sealed class EfOccFlightFeedStore(
                 nameof(ExternalFlightProposalStatus.Proposed),
                 nameof(ExternalFlightProposalStatus.Dismissed)));
         await OccPlanningChangeWriter.AddForStationAsync(context, proposal.StationId, station, now, cancellationToken);
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            return OccFlightFeedFailure.Conflict;
-        }
-        return null;
+        await context.SaveChangesAsync(cancellationToken);
+        return new OccFlightProposalDismissResult(null);
     }
 
     public async Task<OccFlightProposalRestoreResult> RestoreAsync(Guid actorId, Guid proposalId, string? expectedVersion,
@@ -559,4 +617,7 @@ internal sealed class EfOccFlightFeedStore(
 
     private static OccFlightProposalRestoreResult RestoreFailed(OccFlightFeedFailure failure, string code) =>
         new(null, null, failure, code);
+
+    private static OccFlightProposalDismissResult DismissFailed(OccFlightFeedFailure failure, string code) =>
+        new(failure, code);
 }

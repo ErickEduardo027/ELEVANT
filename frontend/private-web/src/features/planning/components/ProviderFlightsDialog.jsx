@@ -80,6 +80,7 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
   const [message, setMessage] = useState({ tone: '', text: '', reasons: [] });
   const importKeys = useRef(createCommandKeyHolder());
   const restoreKeys = useRef(createCommandKeyHolder());
+  const dismissKeys = useRef(createCommandKeyHolder());
 
   useEffect(() => {
     const controller = new AbortController();
@@ -167,7 +168,10 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
       key => restoreOccFlightProposal(item.proposalId, item.version, key)),
     `${item.flightNumber} volvió a la revisión.`);
 
-  const dismiss = item => run(`dismiss-${item.proposalId}`, () => dismissOccFlightProposal(item.proposalId),
+  // The version on screen and the intent's key (2-N36): a retry never dismisses a proposal restored meanwhile.
+  const dismiss = item => run(`dismiss-${item.proposalId}`,
+    () => dismissKeys.current.run('dismiss', { proposalId: item.proposalId, expectedVersion: item.version },
+      key => dismissOccFlightProposal(item.proposalId, item.version, key)),
     `${item.flightNumber} descartado. Puedes restaurarlo desde «Descartadas».`);
 
   return (

@@ -25,7 +25,7 @@ export const STATION_MESSAGES = Object.freeze({
   airport_has_station: 'Ese aeropuerto ya tiene una estación.',
   station_code_taken: 'Ya existe una estación con ese código.',
   time_zone_locked: 'La estación ya tiene vuelos, turnos, coberturas o contratos: su zona horaria no cambia.',
-  station_in_use: 'La estación tiene contratos vigentes o vuelos sin terminar: no se puede desactivar.',
+  station_in_use: 'La estación tiene contratos vigentes, vuelos sin terminar, turnos programados o coberturas abiertas: no se puede desactivar.',
   version_conflict: 'La estación cambió mientras la editaba. Se actualizó la lista; revise e intente de nuevo.',
 });
 

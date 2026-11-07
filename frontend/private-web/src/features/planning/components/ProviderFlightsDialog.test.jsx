@@ -55,7 +55,8 @@ it('imports an arrival with its suggested departure, type and a stand, with the 
     expectedArrivalVersion: 'v-arr', expectedDepartureVersion: 'v-dep', aircraftTypeId: 't-a320', standId: 's-a01',
     charter: false }, expect.stringMatching(/^[0-9a-f-]{36}$/));
   expect(onImported).toHaveBeenCalled();
-  expect(loadOccFlightFeed).toHaveBeenCalledTimes(2);
+  // The list is read again by an effect after the answer is shown: wait for it instead of racing it under load.
+  await waitFor(() => expect(loadOccFlightFeed).toHaveBeenCalledTimes(2));
   expect(loadOccFlightFeed).toHaveBeenLastCalledWith(stationId, '2026-11-03', expect.objectContaining({ view: 'Contracted' }));
 });
 
@@ -131,7 +132,25 @@ it('refreshes through the server, explains its answer and dismisses a leg', asyn
   expect(await screen.findByText(/se usó sin gastar unidades/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
   expect(await screen.findByText(/ZZ161 descartado/)).toBeInTheDocument();
-  expect(dismissOccFlightProposal).toHaveBeenCalledWith('arr');
+  // The dismissal carries the version on screen and the intent's key (2-N36).
+  expect(dismissOccFlightProposal).toHaveBeenCalledWith('arr', 'v-arr', expect.stringMatching(/^[0-9a-f-]{36}$/));
+});
+
+it('retries an uncertain dismissal with the same key and reads the list again when the proposal changed (2-N36)', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  loadOccFlightFeed.mockResolvedValue(feed([leg('arr', 'Arrival', 'ZZ161')]));
+  dismissOccFlightProposal.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    .mockRejectedValueOnce(problem(409, 'version_conflict'));
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Descartar' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('No fue posible completar la acción. Intenta nuevamente.');
+  fireEvent.click(screen.getByRole('button', { name: 'Descartar' }));
+  expect(await screen.findByText(/El vuelo propuesto cambió mientras lo revisabas/)).toBeInTheDocument();
+  const [first, second] = dismissOccFlightProposal.mock.calls;
+  expect(second).toEqual(first);
+  expect(first).toEqual(['arr', 'v-arr', expect.stringMatching(/^[0-9a-f-]{36}$/)]);
+  await waitFor(() => expect(loadOccFlightFeed).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText(/cannot be imported/)).not.toBeInTheDocument();
 });
 
 it('explains a paused feed in Spanish, never by its raw code (2-N29)', async () => {

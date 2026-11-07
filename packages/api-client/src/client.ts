@@ -681,6 +681,8 @@ export interface OccStandAttributesCommand {
   isRemote: boolean;
   maxAircraftSize: "Narrowbody" | "Widebody" | null;
   isActive: boolean;
+  /** The stand's `version` on the board, the one «Datos maestros» shows (2-A); a stale one is `version_conflict`. */
+  expectedVersion: string;
 }
 export type HumanResourcesReportKind = "expirations" | "account-movements" |
   "staff-distribution" | "qualification-coverage";
@@ -1325,7 +1327,12 @@ export interface ElevantApiClient {
   getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
   createOccCoverage(request: OccCoverageCommand, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
   releaseOccCoverage(coverageId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
-  updateOccStandAttributes(standId: string, request: OccStandAttributesCommand,
+  /**
+   * The bridge, remote, size and active flags of a stand with the version on the board and the intent's
+   * Idempotency-Key (2-A): a stand in use is not deactivated (`stand_in_use`) and one of an inactive terminal is not
+   * reactivated (`terminal_inactive`), both 422 with the rule in `reasons`; a stale version is `version_conflict`.
+   */
+  updateOccStandAttributes(standId: string, request: OccStandAttributesCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
   updateOccTerminalRules(terminalId: string, request: { date: string; maxStandsPerAgent: number | null; requiresBridgeQualification: boolean },
     options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
@@ -1351,7 +1358,12 @@ export interface ElevantApiClient {
   /** Creates the turnaround of a proposed arrival and its departure; repeating it returns the same one. */
   importOccFlight(arrivalProposalId: string, departureProposalId: string,
     options?: GetHumanResourcesReportOptions): Promise<ImportOccFlightResponse>;
-  dismissOccFlightProposal(proposalId: string, options?: GetHumanResourcesReportOptions): Promise<void>;
+  /**
+   * «Descartar» with the version on screen and the intent's Idempotency-Key (2-N36): a retry replays the first result
+   * instead of dismissing a proposal restored meanwhile, and a stale version is `version_conflict`.
+   */
+  dismissOccFlightProposal(proposalId: string, expectedVersion: string, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<void>;
   /**
    * «Importar escala» with the intent's Idempotency-Key and the versions on screen (2-B): optionally the aircraft type
    * (suggested from the provider's model), the stand and the charter mode of a carrier without contract (ADR-0033).
@@ -3089,6 +3101,20 @@ const AIRCRAFT_SIZES = new Set<string>(["Narrowbody", "Widebody"]);
 const STAND_CONSTRAINT_KINDS = new Set<string>(["Cancels", "NarrowbodyOnly"]);
 const isStringList = (value: unknown) => Array.isArray(value) && value.length <= 50 && value.every(isNonEmptyString);
 
+/**
+ * The body of a stand change from the coverage configuration (2-A): its flags, its size and the stand's version on
+ * the board. A value the server would refuse throws a TypeError before anything is sent.
+ */
+export function normalizedStandAttributes(request: OccStandAttributesCommand): OccStandAttributesCommand {
+  if (!isRecord(request) || !isDateOnly(request.date) || typeof request.hasBoardingBridge !== "boolean" ||
+      typeof request.isRemote !== "boolean" || typeof request.isActive !== "boolean" ||
+      (request.maxAircraftSize !== null && !AIRCRAFT_SIZES.has(request.maxAircraftSize)) ||
+      !isNonEmptyString(request.expectedVersion) || request.expectedVersion.length > 64)
+    throw new TypeError("The stand attributes are invalid.");
+  return { date: request.date, hasBoardingBridge: request.hasBoardingBridge, isRemote: request.isRemote,
+    maxAircraftSize: request.maxAircraftSize, isActive: request.isActive, expectedVersion: request.expectedVersion };
+}
+
 function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCoverageBoardResponse {
   return isRecord(value) && hasOnlyKeys(value, ["stationId", "stationCode", "date", "terminals", "stands", "constraints",
       "agents", "coverages", "canAssign", "canConfigure"]) &&
@@ -3100,10 +3126,13 @@ function isOccCoverageBoard(value: unknown, stationId?: string): value is OccCov
       isUuid(item.terminalId) && isNonEmptyString(item.code) && isNonEmptyString(item.name) &&
       Number.isInteger(item.maxStandsPerAgent) && typeof item.requiresBridgeQualification === "boolean") &&
     Array.isArray(value.stands) && value.stands.every(item => isRecord(item) &&
-      hasOnlyKeys(item, ["standId", "code", "terminalId", "isActive", "hasBoardingBridge", "isRemote", "maxAircraftSize", "coveredBy"]) &&
+      hasOnlyKeys(item, ["standId", "code", "terminalId", "isActive", "hasBoardingBridge", "isRemote", "maxAircraftSize", "coveredBy",
+        "version"]) &&
       isUuid(item.standId) && isNonEmptyString(item.code) && isOptionalNullable(item.terminalId, isUuid) &&
       typeof item.isActive === "boolean" && typeof item.hasBoardingBridge === "boolean" && typeof item.isRemote === "boolean" &&
-      (item.maxAircraftSize == null || AIRCRAFT_SIZES.has(item.maxAircraftSize as string)) && isStringList(item.coveredBy)) &&
+      (item.maxAircraftSize == null || AIRCRAFT_SIZES.has(item.maxAircraftSize as string)) && isStringList(item.coveredBy) &&
+      // The version of the stand's next change, the one «Datos maestros» shows (2-A).
+      isNonEmptyString(item.version) && item.version.length <= 64) &&
     Array.isArray(value.constraints) && value.constraints.every(item => isRecord(item) &&
       hasOnlyKeys(item, ["id", "standId", "standCode", "affectedStandId", "affectedStandCode", "kind"]) &&
       isUuid(item.id) && isUuid(item.standId) && isNonEmptyString(item.standCode) && isUuid(item.affectedStandId) &&
@@ -7776,15 +7805,13 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
       return coverageCommand(getReleaseOccCoverageUrl(validatedUuid(coverageId, "coverageId"), { date }), undefined, options);
     },
-    async updateOccStandAttributes(standId: string, request: OccStandAttributesCommand,
+    async updateOccStandAttributes(standId: string, request: OccStandAttributesCommand, idempotencyKey: string,
       options?: GetHumanResourcesReportOptions) {
-      if (!isDateOnly(request?.date) || typeof request.hasBoardingBridge !== "boolean" || typeof request.isRemote !== "boolean" ||
-          typeof request.isActive !== "boolean" ||
-          (request.maxAircraftSize !== null && !AIRCRAFT_SIZES.has(request.maxAircraftSize)))
-        throw new TypeError("The stand attributes are invalid.");
-      return coverageCommand(getUpdateOccStandAttributesUrl(validatedUuid(standId, "standId")), {
-        date: request.date, hasBoardingBridge: request.hasBoardingBridge, isRemote: request.isRemote,
-        maxAircraftSize: request.maxAircraftSize, isActive: request.isActive }, options, "PUT");
+      const body = normalizedStandAttributes(request);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      return coverageCommand(getUpdateOccStandAttributesUrl(validatedUuid(standId, "standId")), body,
+        { ...options, headers }, "PUT");
     },
     async updateOccTerminalRules(terminalId: string,
       request: { date: string; maxStandsPerAgent: number | null; requiresBridgeQualification: boolean },
@@ -7852,9 +7879,15 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           !isNonEmptyString(data.operationCode) || typeof data.replayed !== "boolean") throw malformedResponse(result.status);
       return data as unknown as ImportOccFlightResponse;
     },
-    async dismissOccFlightProposal(proposalId: string, options?: GetHumanResourcesReportOptions) {
-      const result = await execute(getDismissOccFlightProposalUrl(validatedUuid(proposalId, "proposalId")),
-        { ...options, method: "POST" }, true);
+    async dismissOccFlightProposal(proposalId: string, expectedVersion: string, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const proposal = validatedUuid(proposalId, "proposalId");
+      if (!isNonEmptyString(expectedVersion) || expectedVersion.length > 64) throw new TypeError("expectedVersion is required.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getDismissOccFlightProposalUrl(proposal),
+        { ...options, method: "POST", headers, body: JSON.stringify({ expectedVersion }) }, true);
       if (result.status !== 204) throw malformedResponse(result.status);
     },
     async importOccFlightProposals(command: ImportOccFlightCommand, idempotencyKey: string,

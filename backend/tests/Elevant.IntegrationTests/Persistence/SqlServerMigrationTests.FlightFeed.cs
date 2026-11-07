@@ -135,9 +135,11 @@ public sealed partial class SqlServerMigrationTests
             .Where(leg => leg.TurnaroundId == turnaround.Id && leg.Direction == FlightDirection.Arrival)
             .Select(leg => leg.EstimatedAt).SingleAsync(ct));
         var extra = await context.Set<ExternalFlightProposal>().AsNoTracking().SingleAsync(item => item.FlightNumber == "ZZ301", ct);
-        Assert.Null(await occ.DismissAsync(SeededOccAccount, extra.PublicId, ct));
-        Assert.Null(await occ.DismissAsync(SeededOccAccount, extra.PublicId, ct));
-        Assert.Equal(OccFlightFeedFailure.Conflict, await occ.DismissAsync(SeededOccAccount, arrival.ProposalId, ct));
+        // Without a key or a version (older screens) a second dismissal still answers success.
+        Assert.Null((await occ.DismissAsync(SeededOccAccount, extra.PublicId, cancellationToken: ct)).Failure);
+        Assert.Null((await occ.DismissAsync(SeededOccAccount, extra.PublicId, cancellationToken: ct)).Failure);
+        var closed = await occ.DismissAsync(SeededOccAccount, arrival.ProposalId, cancellationToken: ct);
+        Assert.Equal((OccFlightFeedFailure.Conflict, "flight_proposal_closed"), (closed.Failure, closed.Code));
         var afterDismiss = (await occ.ListAsync(SeededOccAccount, SeededPujStation, DateOnly.FromDateTime(localNoon),
             cancellationToken: ct))!;
         Assert.DoesNotContain(afterDismiss.Proposals, item => item.ProposalId == extra.PublicId);

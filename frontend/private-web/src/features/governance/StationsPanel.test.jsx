@@ -57,7 +57,7 @@ it('keeps the time zone of a station with history and explains why a station in 
 
   fireEvent.click(within(list).getByLabelText('Estación PUJ activa'));
   fireEvent.click(within(list).getByRole('button', { name: 'Guardar' }));
-  expect(await screen.findByText(/tiene contratos vigentes o vuelos sin terminar/)).toBeInTheDocument();
+  expect(await screen.findByText(/vuelos sin terminar, turnos programados o coberturas abiertas/)).toBeInTheDocument();
   expect(screen.queryByText('The station is in use.')).not.toBeInTheDocument();
   expect(updateStation).toHaveBeenCalledWith('st-puj', { name: 'Punta Cana', ianaTimeZone: 'America/Santo_Domingo', isActive: false,
     expectedVersion: 'v-puj' }, expect.any(String));

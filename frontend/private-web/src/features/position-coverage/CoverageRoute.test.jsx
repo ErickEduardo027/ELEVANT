@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import CoverageRoute from './CoverageRoute';
 import { createOccCoverage, loadOccCoverage, releaseOccCoverage, updateOccStandAttributes } from '../../services/occCoverageService';
 
@@ -16,7 +16,7 @@ vi.mock('../../services/occCoverageService', async importOriginal => ({
 const terminalA = { terminalId: 't-a', code: 'A', name: 'Terminal A', maxStandsPerAgent: 3, requiresBridgeQualification: false };
 const terminalB = { terminalId: 't-b', code: 'B', name: 'Terminal B', maxStandsPerAgent: 2, requiresBridgeQualification: true };
 const stand = (code, terminalId, extra = {}) => ({ standId: `s-${code}`, code, terminalId, isActive: true, hasBoardingBridge: false,
-  isRemote: false, maxAircraftSize: null, coveredBy: [], ...extra });
+  isRemote: false, maxAircraftSize: null, coveredBy: [], version: `v-${code}`, ...extra });
 const agent = { agentId: 'ag-1', name: 'Riley Ramp', employeeNumber: 'DEV-RA-001', terminalId: 't-a', terminalCode: 'A',
   shiftStartsAt: '2026-08-19T10:00:00Z', shiftEndsAt: '2026-08-19T18:00:00Z', isJunior: true, hasAirportPermit: true,
   hasDriverLicense: false, hasBridgeQualification: false, isAbsent: false };
@@ -76,7 +76,47 @@ it('explains in Configuración why a stand in use stays active, and where new st
   fireEvent.click(within(row).getByLabelText('Activa'));
   fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
   expect(await within(row).findByRole('alert')).toHaveTextContent('La posición tiene vuelos sin terminar o coberturas abiertas');
-  expect(updateOccStandAttributes).toHaveBeenCalledWith('s-A01', expect.objectContaining({ isActive: false }));
+  // The change carries the stand's version on the board and the intent's key (2-A).
+  expect(updateOccStandAttributes).toHaveBeenCalledWith('s-A01', expect.objectContaining({ isActive: false,
+    expectedVersion: 'v-A01' }), expect.stringMatching(/^[0-9a-f-]{36}$/));
+});
+
+it('keeps the key of an uncertain stand change and reads the board again when the stand changed meanwhile (2-A)', async () => {
+  const { translateCoverageError } = await vi.importActual('../../services/occCoverageService');
+  const renamed = { ...board, stands: [stand('A01', 't-a', { version: 'v-A01-b' }), ...board.stands.slice(1)] };
+  loadOccCoverage.mockResolvedValueOnce(board).mockResolvedValueOnce(renamed);
+  updateOccStandAttributes.mockRejectedValueOnce(Object.assign(new Error('No fue posible completar la acción. Intenta de nuevo.'),
+    { status: null, reasons: [] }))
+    .mockRejectedValueOnce(translateCoverageError({ status: 409, code: 'version_conflict' }));
+  render(<CoverageRoute />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configuración' }));
+  const stands = screen.getByRole('region', { name: 'Atributos de las posiciones' });
+  const row = within(stands).getByText('A01').closest('li');
+  fireEvent.click(within(row).getByLabelText('Remota'));
+  fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
+  expect(await within(row).findByRole('alert')).toHaveTextContent('No fue posible completar la acción');
+  fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
+  // The stand changed in «Datos maestros»: the message stays while the board is read again with its new version.
+  expect(await screen.findByText(/La posición cambió mientras la editabas, aquí o en «Datos maestros»/)).toBeInTheDocument();
+  await waitFor(() => expect(loadOccCoverage).toHaveBeenCalledTimes(2));
+  const [first, second] = updateOccStandAttributes.mock.calls;
+  expect(second[2]).toBe(first[2]);
+  expect(second[1]).toEqual({ date: expect.any(String), hasBoardingBridge: false, isRemote: true, maxAircraftSize: null,
+    isActive: true, expectedVersion: 'v-A01' });
+  expect(screen.queryByText(/data changed/i)).not.toBeInTheDocument();
+});
+
+it('explains why a stand of an inactive terminal is not reactivated from Configuración (2-A)', async () => {
+  const { translateCoverageError } = await vi.importActual('../../services/occCoverageService');
+  loadOccCoverage.mockResolvedValue({ ...board, stands: [stand('A01', 't-a', { isActive: false }), ...board.stands.slice(1)] });
+  updateOccStandAttributes.mockRejectedValueOnce(translateCoverageError({ status: 422, code: 'terminal_inactive',
+    reasons: ['terminal_inactive'] }));
+  render(<CoverageRoute />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Configuración' }));
+  const row = within(screen.getByRole('region', { name: 'Atributos de las posiciones' })).getByText('A01').closest('li');
+  fireEvent.click(within(row).getByLabelText('Activa'));
+  fireEvent.click(within(row).getByRole('button', { name: 'Guardar' }));
+  expect(await within(row).findByRole('alert')).toHaveTextContent('La terminal de esta posición está desactivada');
 });
 
 it('says where terminals are created when the station has none active', async () => {

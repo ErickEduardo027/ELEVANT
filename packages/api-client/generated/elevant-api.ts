@@ -1985,6 +1985,11 @@ export interface DiscardContractDraftInput {
   reason: string;
 }
 
+export interface DismissOccFlightProposalRequest {
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface DisputeAirlinePreinvoiceRequest {
   requestId: string;
   subject: string;
@@ -4289,6 +4294,7 @@ export interface OccCoverageStandResponse {
   /** @nullable */
   maxAircraftSize?: string | null;
   coveredBy: string[];
+  version: string;
 }
 
 export interface OccStandConstraintResponse {
@@ -6422,6 +6428,8 @@ export interface UpdateOccStandAttributesRequest {
   /** @nullable */
   maxAircraftSize?: string | null;
   isActive: boolean;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface UpdateOccTerminalRulesRequest {
@@ -17308,6 +17316,12 @@ export const getUpdateOccStandAttributesUrl = (standId: string,) => {
   return `/api/v1/occ/stands/${standId}/attributes`
 }
 
+/**
+ * @summary The bridge, remote, size and active flags of a stand, under the master-data rules (2-A): a stand in use is not
+deactivated and one of an inactive terminal is not reactivated (422 with the rule in `reasons`). The
+Idempotency-Key and `expectedVersion` (the stand's version on the board) are optional while older screens
+exist (expand); with the key the version is required and a retry replays the first result.
+ */
 export const updateOccStandAttributes = async (standId: string,
     updateOccStandAttributesRequest: UpdateOccStandAttributesRequest, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
 
@@ -17630,16 +17644,26 @@ export const getDismissOccFlightProposalUrl = (proposalId: string,) => {
 }
 
 /**
- * @summary Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed.
+ * @summary Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed. The
+Idempotency-Key and the body with `expectedVersion` are optional while older screens exist (expand): with
+the key the version is required and a retry replays the first result, so it never dismisses again a proposal
+someone restored meanwhile.
  */
-export const dismissOccFlightProposal = async (proposalId: string, options?: RequestInit): Promise<void> => {
+export const dismissOccFlightProposal = async (proposalId: string,
+    dismissOccFlightProposalRequest?: DismissOccFlightProposalRequest, options?: RequestInit): Promise<void> => {
 
-  const res = await fetch(getDismissOccFlightProposalUrl(proposalId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDismissOccFlightProposalUrl(proposalId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(dismissOccFlightProposalRequest)
   }
 )
 
