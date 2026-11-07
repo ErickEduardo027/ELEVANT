@@ -166,7 +166,9 @@ cambió qué versión rige y cómo termina un contrato:
   reemplaza nada: la versión en vigor sigue rigiendo y facturándose hasta la
   segunda firma de la nueva. En esa firma, la anterior pasa a `Superseded` y
   termina, a más tardar, la víspera del nuevo inicio. Los vuelos aún no
-  ejecutados que coinciden con las tarifas firmadas pasan a la versión nueva, y
+  ejecutados pasan a la versión nueva y sus líneas se replanifican sobre las
+  tarifas firmadas (se conservan las que mantienen su servicio, se retiran las
+  demás y se crean las que faltan, con aviso a la tablet del agente), y
   un servicio ejecutado conserva su tarifa
   ([reglas](../../backend/Elevant.Application/Commercial/ContractVersionGovernance.cs),
   [consultas](../../database/DevelopmentDB/Elevant.Persistence/Commercial/GoverningContractVersions.cs)

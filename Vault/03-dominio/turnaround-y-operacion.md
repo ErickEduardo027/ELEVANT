@@ -264,9 +264,10 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
   salió de `Draft`. Una versión que Finanzas aprobó y nadie firmó no cubre nada.
   `TerminatedOn` es el primer día sin cobertura. En la segunda firma de una
   versión nueva, los vuelos `Scheduled` o `Confirmed` que la anterior cubría y
-  cuyas operaciones no empezaron pasan a la versión firmada, si sus líneas
-  coinciden con las tarifas firmadas; si no, conservan su versión y sus
-  precios.
+  cuyas operaciones no empezaron pasan a la versión firmada; si sus líneas no
+  coinciden con las tarifas firmadas, se replanifican sobre ellas en el orden en
+  que OCC las materializa (auditoría `occ.operation.services_replanned` y aviso
+  a la tablet del agente asignado).
 - **Datos maestros.** OCC crea, edita y desactiva terminales, posiciones y tipos
   de avión, y el superadministrador las estaciones; nada en uso se desactiva y
   nada se borra. El vuelo manual y la importación del feed aceptan el tipo de

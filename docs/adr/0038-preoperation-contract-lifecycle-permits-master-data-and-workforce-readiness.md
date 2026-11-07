@@ -56,7 +56,7 @@ Este ADR recoge cómo se cerraron, en cinco bloques: A (`54bd1fa4`, ciclo de vid
 - **La aprobación de Finanzas no reemplaza nada.** La versión en vigor sigue rigiendo, y facturándose, con su fin, hasta que la nueva recibe su segunda firma. La aprobación ya no marca `Superseded` ni recorta la versión anterior.
 - **La segunda firma reemplaza** (`ContractVersionSupersession`):
   - las versiones aprobadas que empiezan antes pasan a `Superseded` con `ValidTo = mín(fin, inicio nuevo − 1)`, con auditoría `commercial.contract.version_superseded`;
-  - los vuelos que esas versiones cubrían dentro de las fechas y estaciones de la nueva, `Scheduled` o `Confirmed` y con sus operaciones sin empezar, pasan a la versión firmada si sus líneas planificadas coinciden posición por posición con las tarifas firmadas. Si no coinciden, conservan su versión y sus precios;
+  - los vuelos que esas versiones cubrían dentro de las fechas y estaciones de la nueva, `Scheduled` o `Confirmed` y con sus operaciones sin empezar, pasan a la versión firmada aunque sus líneas planificadas no coincidan posición por posición con las tarifas firmadas. Sus líneas se replanifican sobre esas tarifas en el orden en que OCC las materializa: se conservan las que mantienen su servicio, se retiran las demás con su evento y se crean las que faltan, con auditoría `occ.operation.services_replanned` y aviso a la tablet del agente asignado (corrección de la revisión del bloque A);
   - un servicio ya ejecutado conserva la tarifa con la que se capturó;
   - OCC relee la planificación de esas estaciones (`occ_planning`).
 - **Quién lee la regla.** `ApplicableContracts` (Planificación, vuelos manuales, feed de vuelos y asignación de agentes), el barrido de vencimientos y avisos, la activación, la reactivación, la renovación, la enmienda y las estaciones del bootstrap del portal. También `FinancePackageValuation`, que toma la segunda firma como frontera; para una versión heredada sin firmas, su aprobación.
@@ -235,6 +235,8 @@ Este ADR recoge cómo se cerraron, en cinco bloques: A (`54bd1fa4`, ciclo de vid
 
 **9. Arnés E2E del ciclo completo.**
 - En `frontend/public-web/tests/e2e-cycle/fase2-preoperacion.spec.ts`, los pasos `hueco …` de la fase son pruebas reales, sin `test.fixme`: 2-A, 2-B, 2-C, 2-D, 2-E, 2-F, 2-N20, y 2-N38 con 2-N02.
+- El 7 de noviembre de 2026 la corrida de las fases 1 y 2 contra el stack local reconstruido con la rama completa (bloques, correcciones de revisión e integración con Development) pasó entera: 32 de 32 pasos, 14 de la fase 1 y 18 de la fase 2, incluidos 2-N20 y 2-N38 con 2-N02.
+- El arnés solo corre entre las 08:30 y las 22:30 de la hora local, porque la plantilla de turno del agente tiene que cubrir el vuelo de la corrida.
 - El paso 2-B se salta si el feed de la API no es el proveedor simulado, para no gastar nunca unidades de AeroDataBox. Importa una llegada con tipo de avión y posición, descarta y restaura otra, e importa un charter. Si no hay ninguna aerolínea activa sin contrato, comprueba el estado vacío de «Charter sin contrato» y lo anota.
 - El overlay `compose.local.e2e.yml` suma el feed simulado. Ningún workflow de CI ejecuta el arnés, y una corrida local no prueba un despliegue (ADR-0037).
 
@@ -285,7 +287,6 @@ Ningún bloque toca el seed ni `verify-development.sql`. Las únicas claves de c
 
 **Queda pendiente**
 - **Paso «contract».** Continúa el de ADR-0037. Cuando no queden clientes antiguos, hará obligatoria la `Idempotency-Key` en los comandos de la lista «Fase expand», y la versión esperada donde hoy acompaña a la clave (la resolución de disponibilidad y quitar un turno).
-- **Vuelos sin reatar.** Un vuelo planificado cuyas líneas no coinciden posición por posición con las tarifas firmadas conserva su versión y sus precios al reemplazarse la versión, y OCC no puede volver a planificarlo sobre la versión recortada. Falta una rematerialización controlada de esas líneas.
 - **PDF de una renovación de un contrato suspendido.** Su renovación firmada no encola el PDF firmado: solo lo hacen los contratos activos o recién activados.
 - **Contratos → Contratos.** El listado muestra como «Aprobada» una versión aprobada que espera las firmas; el portal ya la marca «Pendiente de firmas».
 - **Bandeja de correos.** Los seis correos nuevos a la aerolínea aparecen referidos a la cuenta del portal, no al contrato ni al permiso. Referirlos al documento exige cambiar el worker de envío, que hoy trata cualquier referencia como un adjunto.
@@ -297,7 +298,6 @@ Ningún bloque toca el seed ni `verify-development.sql`. Las únicas claves de c
 - **Reglas del vuelo manual.** Solo aplica la regla de tamaño; unificarlo con las reglas de posiciones combinadas cambiaría un comportamiento existente y requiere una decisión de producto.
 - **Avisos duplicados.** Desactivar un perfil de rampa con trabajo deja dos avisos `occ_planning` idénticos en la misma transacción. Es inofensivo.
 - **Clientes de Gestión Humana.** Empleados y perfiles de rampa siguen llamando a la API por `commercialApi`, no por el cliente compartido.
-- **E2E.** Los pasos 2-N20, y 2-N38 con 2-N02, llegaron con el bloque E, después de la corrida de la fase contra el stack (`b6a90eca`). Sus autores solo los comprobaron con typecheck y lint, y este ADR no registra una corrida de esos pasos contra el stack.
 - **Restablecimiento de contraseña de los usuarios internos.** Sigue fallando sin proveedores de tokens de Identity (ADR-0037).
 
 ## Trazabilidad de huecos

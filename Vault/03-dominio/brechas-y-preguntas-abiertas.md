@@ -90,7 +90,6 @@ Posterior al commit verificado de esta nota, el 6 de noviembre de 2026 salió de
 El 7 de noviembre de 2026, también después del commit verificado, la fase 2 «Pre-operación» sacó de esta lista los solapamientos entre versiones y la suspensión y terminación del contrato ([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)). Una versión nueva rige solo desde su segunda firma, y esa firma termina la anterior, a más tardar, la víspera de su inicio. La terminación respeta el preaviso firmado o pide una causa inmediata, y revocar el permiso de operación suspende los contratos que se quedan sin uno usable. Siguen abiertos:
 
 - el paso «contract» de los comandos que la fase 2 amplió con una `Idempotency-Key` opcional;
-- los vuelos planificados cuyas líneas no coinciden con las tarifas firmadas, que conservan la versión reemplazada y sus precios;
 - los datos heredados que ninguna migración corrige, como las versiones que una aprobación anterior ya recortó.
 
 ### Operación, evidencia y revisión
