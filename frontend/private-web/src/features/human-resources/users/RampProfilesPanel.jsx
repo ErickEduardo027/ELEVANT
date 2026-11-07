@@ -5,6 +5,7 @@ import FileDropField from '../../../components/FileDropField';
 import PrivateMediaImage from '../../../components/PrivateMediaImage';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { rampProfilesPanelMessages } from './rampProfilesPanelMessages';
+import { businessToday } from '../../../services/businessDay';
 
 const blank = () => ({ firstName: '', lastName: '', employeeNumber: '', category: '',
   hireDate: '', isActive: true, stationIds: [], terminalIds: [],
@@ -103,7 +104,10 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
       setNotice('saved');
       setEditingId(null); setForm(blank()); setAvatar(null);
       await refresh();
-    } catch { setError('errors.save'); }
+    } catch (failure) {
+      // Deactivating ends the agent's ramp duty, which an operation in progress refuses (2-N06).
+      setError(failure?.code === 'agent_has_operation_in_progress' ? 'errors.operationInProgress' : 'errors.save');
+    }
     finally { setBusy(false); }
   }
   const persistedSupervisorId = catalog?.profiles.find(profile => profile.id === editingId)?.supervisorProfileId;
@@ -131,7 +135,7 @@ export default function RampProfilesPanel({ canEdit = false, embedded = false, s
         {['firstName', 'lastName', 'employeeNumber', 'category'].map(key =>
           <label key={key} className="mt-4 block text-xs font-semibold">{t(`fields.${key}`)}<input required readOnly title={t('editedInRecord')} maxLength={key === 'employeeNumber' ? 32 : key === 'category' ? 120 : 100} value={form[key]} onChange={event => setForm(current => ({ ...current, [key]: event.target.value }))} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>)}
         <p className="mt-4 rounded-lg bg-black/[.03] p-3 text-xs dark:bg-white/[.04]">{t('recordNotice')}</p>
-        <label className="mt-4 block text-xs font-semibold">{t('hireDate')}<input required readOnly type="date" max={new Date().toISOString().slice(0, 10)} value={form.hireDate} onChange={event => setForm(current => ({ ...current, hireDate: event.target.value }))} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
+        <label className="mt-4 block text-xs font-semibold">{t('hireDate')}<input required readOnly type="date" max={businessToday()} value={form.hireDate} onChange={event => setForm(current => ({ ...current, hireDate: event.target.value }))} className="mt-1 w-full rounded-lg border p-2 text-sm dark:bg-surface-dark" /></label>
         {form.avatarMediaUrl && !avatar && <PrivateMediaImage url={form.avatarMediaUrl} alt={t('currentPhoto')} className="mt-4 h-20 w-20 rounded-full object-cover" />}
         <FileDropField label={t('photo')} accept="image/png,image/jpeg,image/webp" file={avatar} onFile={setAvatar} hint={t('photoHint')} />
         <fieldset className="mt-4"><legend className="text-xs font-semibold">{t('stations')}</legend><div className="mt-2 space-y-2">{catalog?.availableStations.filter(station => !stationFilter || stationFilter.includes(station.id) ||

@@ -8,7 +8,12 @@ const FIELD = 'rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm tex
 const KIND_LABELS = {
   Overlap: 'Turnos superpuestos', ShortRest: 'Descanso corto',
   SevenDayLoad: 'Carga programada en siete días', Unevaluable: 'No evaluable',
+  // 2-N24: a shift on an approved absence, or outside a current airport document of the agent.
+  ApprovedAbsence: 'Turno sobre una ausencia aprobada', DocumentExpired: 'Turno sin documento vigente',
 };
+const DOCUMENT_LABELS = { AirportId: 'carnet aeroportuario', RampDriverLicense: 'licencia de conducir en rampa' };
+const documentsOf = reason => String(reason ?? '').split(',').filter(Boolean)
+  .map(code => DOCUMENT_LABELS[code] ?? 'documento').join(' y ');
 const REASONS = {
   AmbiguousLocalTime: 'Hora local ambigua por cambio de horario',
   InvalidLocalTime: 'Hora local inexistente por cambio de horario',
@@ -71,7 +76,7 @@ export default function ScheduleWarningsPanel({ from: rosterFrom, to: rosterTo,
     const version = ++requestVersion.current;
     if (!session?.token || !stationId || !rangeAllowed) return () => controller.abort();
     setState({ key: queryKey, status: 'loading', data: null });
-    getHumanResourcesScheduleWarnings({ stationId, from, to, page, limit: PAGE_LIMIT },
+    getHumanResourcesScheduleWarnings({ stationId, from, to, page, limit: PAGE_LIMIT, includeReadiness: true },
       { signal: controller.signal })
       .then(data => {
         if (!controller.signal.aborted && version === requestVersion.current)
@@ -152,6 +157,10 @@ export default function ScheduleWarningsPanel({ from: rosterFrom, to: rosterTo,
             </div>
             {item.kind === 'Unevaluable' &&
               <p className="mt-2 text-sm">{REASONS[item.reason] ?? 'Datos de horario no evaluables con seguridad'}</p>}
+            {item.kind === 'ApprovedAbsence' &&
+              <p className="mt-2 text-sm">El agente tiene un día libre o una restricción aprobada ese día: quite el turno o revise la ausencia.</p>}
+            {item.kind === 'DocumentExpired' &&
+              <p className="mt-2 text-sm">Sin vigencia en la fecha del turno: {documentsOf(item.reason)}. OCC no podrá asignarle vuelos ese día.</p>}
             {!item.hasRestrictedEvidence && item.measuredMinutes != null &&
               <p className="mt-2 text-sm">{item.measuredMinutes} minutos
                 {item.thresholdMinutes != null && ` · umbral preliminar ${item.thresholdMinutes} minutos`}</p>}

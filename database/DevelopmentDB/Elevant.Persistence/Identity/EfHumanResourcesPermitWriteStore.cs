@@ -1,5 +1,6 @@
 using System.Data;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
@@ -31,7 +32,8 @@ internal sealed class EfHumanResourcesPermitWriteStore(
                 HumanResourcesPermitWriteFailure.Forbidden);
 
         var now = clock.GetUtcNow();
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        // AVIAM's business day, never the UTC one (2-N31).
+        var today = BusinessCalendar.Today(now);
         if (permitId == Guid.Empty || input is null || !Valid(input, today))
             return HumanResourcesPermitWriteResult.Failed(
                 HumanResourcesPermitWriteFailure.Invalid);
@@ -119,6 +121,10 @@ internal sealed class EfHumanResourcesPermitWriteStore(
                 await Elevant.Persistence.Operations.RampOperationChangeWriter.AnnounceScheduleAsync(context, agent.Id, permitId, now, cancellationToken);
                 await OccPlanningChangeWriter.AddForAgentAsync(context, agent.Id,
                     today, DateOnly.MaxValue, now, cancellationToken);
+                // 2-N25: a corrected or new cycle that no longer covers an assigned operation tells OCC, once per
+                // assignment; nothing is released.
+                await context.SaveChangesAsync(cancellationToken);
+                await AgentDocumentNotices.NotifyUncoveredAssignmentsAsync(context, [agent.Id], now, cancellationToken);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return HumanResourcesPermitWriteResult.Success(permitId,

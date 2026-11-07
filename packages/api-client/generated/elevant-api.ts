@@ -760,6 +760,14 @@ export interface AirlineTreasuryStatementResponse {
   aging: AirlineTreasuryAgingResponse[];
 }
 
+export interface AmendHumanResourcesAvailabilityInput {
+  action: string;
+  /** @nullable */
+  endsOn?: string | null;
+  reason: string;
+  expectedVersion: string;
+}
+
 export interface ApplyRampServiceChargeRequest {
   chargeId: string;
   action: string;
@@ -3379,6 +3387,13 @@ export interface HumanResourcesAttendancePageResponse {
   items: HumanResourcesAttendanceRowResponse[];
 }
 
+export interface HumanResourcesAvailabilityAmended {
+  id: string;
+  status: string;
+  endsOn: string;
+  version: string;
+}
+
 export interface HumanResourcesAvailabilityRequestData {
   id: string;
   rampProfileId: string;
@@ -3394,6 +3409,7 @@ export interface HumanResourcesAvailabilityRequestData {
   resolvedAt?: string | null;
   /** @nullable */
   resolutionNote?: string | null;
+  version: string;
 }
 
 export interface HumanResourcesAvailabilityRequestPage {
@@ -3653,6 +3669,7 @@ export interface HumanResourcesShiftData {
   startsAtLocal: string;
   endsAtLocal: string;
   block: string;
+  version: string;
 }
 
 export interface HumanResourcesShiftPage {
@@ -4153,6 +4170,19 @@ export interface OccAssignedEquipmentResponse {
   equipmentTypeName: string;
   status: string;
   assignedAt: string;
+}
+
+export interface OccUnfitAssignmentResponse {
+  assignmentId: string;
+  turnaroundId: string;
+  agentId: string;
+  reasons: string[];
+}
+
+export interface OccAssignmentReadinessResponse {
+  stationId: string;
+  date: string;
+  assignments: OccUnfitAssignmentResponse[];
 }
 
 export interface OccGroundOperationResponse {
@@ -5714,6 +5744,8 @@ export interface ResolveHumanResourcesAvailabilityInput {
   decision: string;
   /** @nullable */
   note?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ResolvePreinvoiceDisputeRequest {
@@ -6788,6 +6820,7 @@ from?: string;
 to?: string;
 page?: number;
 limit?: number;
+includeReadiness?: boolean;
 };
 
 export type GetHumanResourcesShiftAssignmentOptionsParams = {
@@ -6802,9 +6835,18 @@ page?: number;
 limit?: number;
 };
 
+export type RemoveHumanResourcesShiftParams = {
+version?: string;
+};
+
 export type ListManagedContractsParams = {
 page?: number;
 limit?: number;
+};
+
+export type GetOccAssignmentReadinessParams = {
+stationId: string;
+date: string;
 };
 
 export type GetOccCoverageParams = {
@@ -15481,6 +15523,12 @@ export const getResolveHumanResourcesAvailabilityRequestUrl = (id: string,) => {
   return `/api/v1/human-resources/availability-requests/${id}/resolution`
 }
 
+/**
+ * @summary Approves, rejects or cancels a pending request. Approving a day off or a restriction releases the agent's
+coverages, unstarted operations and unstarted shifts of those days (2-N08); an operation in progress keeps
+the agent (`agent_has_operation_in_progress`). The Idempotency-Key and the expected version are
+optional while older clients exist (expand); a key needs the version.
+ */
 export const resolveHumanResourcesAvailabilityRequest = async (id: string,
     resolveHumanResourcesAvailabilityInput?: ResolveHumanResourcesAvailabilityInput, options?: RequestInit): Promise<HumanResourcesAvailabilityWritten> => {
 
@@ -15503,6 +15551,46 @@ const res = await fetch(getResolveHumanResourcesAvailabilityRequestUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: HumanResourcesAvailabilityWritten = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getAmendHumanResourcesAvailabilityRequestUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/availability-requests/${id}/amendment`
+}
+
+/**
+ * @summary Cancels an approved absence that has not started, or shortens one that has not ended to a last day no
+earlier than yesterday (2-N22). Always with a reason, the version on screen and an Idempotency-Key; what
+the approval released does not come back.
+ */
+export const amendHumanResourcesAvailabilityRequest = async (id: string,
+    amendHumanResourcesAvailabilityInput: AmendHumanResourcesAvailabilityInput, options?: RequestInit): Promise<HumanResourcesAvailabilityAmended> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAmendHumanResourcesAvailabilityRequestUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(amendHumanResourcesAvailabilityInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesAvailabilityAmended = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -15704,6 +15792,10 @@ export const getTransferEmployeeUrl = (id: string,) => {
   return `/api/v1/human-resources/employees/${id}/transfer`
 }
 
+/**
+ * @summary Transfers the employee; leaving the ramp releases the agent's coverages, unstarted operations and shifts
+(2-N06). The Idempotency-Key is optional while older clients exist (expand).
+ */
 export const transferEmployee = async (id: string,
     transferEmployeeInput?: TransferEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -15739,6 +15831,10 @@ export const getTerminateEmployeeUrl = (id: string,) => {
   return `/api/v1/human-resources/employees/${id}/termination`
 }
 
+/**
+ * @summary Terminates the employee on a date up to AVIAM's today (2-N31) and releases their ramp work (2-N06). The
+Idempotency-Key is optional while older clients exist (expand).
+ */
 export const terminateEmployee = async (id: string,
     terminateEmployeeInput?: TerminateEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -16622,20 +16718,32 @@ const res = await fetch(getRecordHumanResourcesShiftUrl(id),
 
 
 
-export const getRemoveHumanResourcesShiftUrl = (id: string,) => {
+export const getRemoveHumanResourcesShiftUrl = (id: string,
+    params?: RemoveHumanResourcesShiftParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/human-resources/shifts/${id}`
+  return stringifiedParams.length > 0 ? `/api/v1/human-resources/shifts/${id}?${stringifiedParams}` : `/api/v1/human-resources/shifts/${id}`
 }
 
 /**
- * @summary Removes a shift of today or later (ADR-0026); past shifts are history.
+ * @summary Removes a shift of today or later in its station's calendar (ADR-0026, 2-N31); past shifts are history
+(`shift_in_past`) and a shift whose agent already covers stands or carries operations in it stays
+(`shift_in_use`, 2-N11). The expected version travels as `?version=`; it and the
+Idempotency-Key are optional while older clients exist (expand), and a key needs the version.
  */
-export const removeHumanResourcesShift = async (id: string, options?: RequestInit): Promise<void> => {
+export const removeHumanResourcesShift = async (id: string,
+    params?: RemoveHumanResourcesShiftParams, options?: RequestInit): Promise<void> => {
 
-  const res = await fetch(getRemoveHumanResourcesShiftUrl(id),
+  const res = await fetch(getRemoveHumanResourcesShiftUrl(id,params),
   {
     ...options,
     method: 'DELETE'
@@ -16720,6 +16828,41 @@ const res = await fetch(getRegisterMobileDeviceUrl(),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RegisterMobileDeviceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAssignmentReadinessUrl = (params: GetOccAssignmentReadinessParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/occ/planning/assignment-readiness?${stringifiedParams}` : `/api/v1/occ/planning/assignment-readiness`
+}
+
+export const getOccAssignmentReadiness = async (params: GetOccAssignmentReadinessParams, options?: RequestInit): Promise<OccAssignmentReadinessResponse> => {
+
+  const res = await fetch(getGetOccAssignmentReadinessUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAssignmentReadinessResponse = body ? JSON.parse(body) : {}
   return data
 }
 

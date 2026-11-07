@@ -18,8 +18,19 @@ export const getEmployee = id => commercialApi(`${hr}/employees/${id}`);
 export const getEmployeeOptions = () => commercialApi(`${hr}/employees/options`);
 export const createEmployee = values => commercialApi(`${hr}/employees`, json('POST', values));
 export const updateEmployee = (id, values) => commercialApi(`${hr}/employees/${id}`, json('PUT', values));
-export const transferEmployee = (id, values) => commercialApi(`${hr}/employees/${id}/transfer`, json('POST', values));
-export const terminateEmployee = (id, values) => commercialApi(`${hr}/employees/${id}/termination`, json('POST', values));
+const keyed = idempotencyKey => (idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {});
+/**
+ * Transfers the employee with the `version` on screen and the intent's Idempotency-Key. Leaving the ramp releases the
+ * agent's coverages, unstarted operations and shifts (2-N06), or fails with `agent_has_operation_in_progress`.
+ */
+export const transferEmployee = (id, values, idempotencyKey) =>
+  commercialApi(`${hr}/employees/${id}/transfer`, { ...json('POST', values), ...keyed(idempotencyKey) });
+/**
+ * Terminates the employee on a date up to AVIAM's today (2-N31) with the intent's Idempotency-Key; their ramp work is
+ * released the same way (2-N06).
+ */
+export const terminateEmployee = (id, values, idempotencyKey) =>
+  commercialApi(`${hr}/employees/${id}/termination`, { ...json('POST', values), ...keyed(idempotencyKey) });
 export const listUnregisteredPersons = () => commercialApi(`${hr}/employees/unregistered`);
 export const registerEmployee = values => commercialApi(`${hr}/employees/registrations`, json('POST', values));
 
@@ -108,7 +119,19 @@ const MESSAGES = {
   permissions_required: 'Un sub-usuario necesita una plantilla o al menos un permiso.',
   ramp_agents_use_requests: 'Los agentes de rampa se solicitan desde Centro de Operaciones (requieren supervisor y terminales).',
   stations_outside_employee: 'Las estaciones de la cuenta deben ser estaciones del empleado.',
+  // Phase 2, block D: the release of a ramp agent's work on termination or transfer (2-N06, 2-N31).
+  agent_has_operation_in_progress:
+    'El agente tiene una operación en curso o devuelta para corrección. Pida a OCC que la cierre antes de continuar.',
+  termination_date_invalid: 'La fecha de baja no puede ser posterior a hoy.',
+  invalid_transfer: 'Elija el departamento de destino y entre 1 y 20 estaciones.',
+  protected_person: 'Nadie puede trasladarse o darse de baja a sí mismo ni al superadministrador.',
+  version_conflict: 'El expediente cambió mientras lo revisaba. Vuelva a abrirlo e intente de nuevo.',
+  idempotency_conflict: 'Ese envío ya se usó con otros datos. Vuelva a abrir el expediente e intente de nuevo.',
+  not_found: 'El empleado ya no existe o no está en su alcance.',
 };
+
+/** The rule messages of the employee commands, for screens that resolve them with `problemMessage`. */
+export const EMPLOYEE_MESSAGES = Object.freeze({ ...MESSAGES });
 
 /** Message for a governance failure: the server's rule code wins over the generic title. */
 export function governanceMessage(error, fallback) {

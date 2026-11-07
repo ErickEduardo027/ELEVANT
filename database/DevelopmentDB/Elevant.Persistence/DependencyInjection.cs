@@ -37,6 +37,9 @@ public static class DependencyInjection
         // Portal account emails (ADR-0022): links point at the public portal origin.
         services.TryAddSingleton(configuration.GetSection(Elevant.Application.Identity.AccountEmails.AccountEmailOptions.SectionName)
             .Get<Elevant.Application.Identity.AccountEmails.AccountEmailOptions>() ?? new());
+        // Daily sweep of ramp agents' documents (2-N25): HumanResources:DocumentExpiryNoticeDays, 30 by default.
+        services.TryAddSingleton(configuration.GetSection(Elevant.Application.Identity.HumanResourcesDocumentOptions.SectionName)
+            .Get<Elevant.Application.Identity.HumanResourcesDocumentOptions>() ?? new());
 
         var connectionString = configuration.GetConnectionString(DatabaseConnectionName);
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -88,6 +91,8 @@ public static class DependencyInjection
         services.AddScoped<IHumanResourcesAvailabilityReadStore, EfHumanResourcesAvailabilityReadStore>();
         services.AddScoped<IHumanResourcesAvailabilityWriteStore, EfHumanResourcesAvailabilityWriteStore>();
         services.AddScoped<IHumanResourcesReportStore, EfHumanResourcesReportStore>();
+        services.AddScoped<IHumanResourcesDocumentSweepStore, EfHumanResourcesDocumentSweepStore>();
+        services.AddScoped<IOccAssignmentReadinessStore, EfOccAssignmentReadinessStore>();
         services.AddScoped<IOccReportStore, EfOccReportStore>();
         services.AddScoped<IOccPositionStore, EfOccPositionStore>();
         // Master data (2-A): stations by the superadministrator, terminals, stands and aircraft types by OCC.

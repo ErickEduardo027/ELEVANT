@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
@@ -335,7 +336,7 @@ internal sealed partial class EfDepartmentGovernanceStore
                 GovernanceSupport.Version(request.RowVersion) != input.ExpectedVersion)
                 return GovernanceResult.Failed(GovernanceFailure.Conflict);
             var now = timeProvider.GetUtcNow();
-            var today = DateOnly.FromDateTime(now.UtcDateTime);
+            var today = BusinessCalendar.Today(now);
             long[] stations;
             ApplicationUser? account;
             if (request.EmployeeId is not null)

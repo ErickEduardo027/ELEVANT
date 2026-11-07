@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Domain.Enumerations;
 using Elevant.Domain.Governance;
 using Elevant.Infrastructure.Identity;
@@ -179,7 +180,8 @@ internal sealed class EfHumanResourcesPermitReadStore(
             throw new ArgumentOutOfRangeException(nameof(query));
     }
 
-    private DateOnly Today() => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+    // AVIAM's business day, never the UTC one (2-N31).
+    private DateOnly Today() => BusinessCalendar.Today(clock.GetUtcNow());
 
     private async Task<bool> AuthorizedAsync(Guid actorId, CancellationToken cancellationToken)
     {

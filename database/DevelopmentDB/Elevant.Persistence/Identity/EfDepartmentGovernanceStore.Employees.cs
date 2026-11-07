@@ -1,11 +1,15 @@
+using System.Data;
 using System.Text.RegularExpressions;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Domain.Governance;
 using Elevant.Domain.Validation;
 using Elevant.Infrastructure.Identity;
+using Elevant.Persistence.Commercial;
+using Elevant.Persistence.Operations;
 using Elevant.Persistence.Realtime;
 using Microsoft.EntityFrameworkCore;
 
@@ -107,7 +111,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
                                  select new { assignment.Department, position.Name, assignment.ValidFrom, assignment.ValidTo,
                                      ChangedBy = person.FirstName + " " + person.LastName, assignment.Reason })
             .ToArrayAsync(cancellationToken);
-        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
         var agentId = await context.RampAgents.AsNoTracking().Where(agent => agent.PersonId == facts.Person.Id)
             .Select(agent => (long?)agent.Id).SingleOrDefaultAsync(cancellationToken);
         var futureShifts = agentId is null ? 0 : await context.ShiftAssignments.CountAsync(shift =>
@@ -172,7 +176,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
         var email = string.IsNullOrWhiteSpace(input.CorporateEmail) ? null : input.CorporateEmail.Trim();
         if (email is not null && !GovernanceSupport.ValidEmail(email))
             return (null, GovernanceResult.Failed(GovernanceFailure.Invalid, "email_invalid"));
-        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
         if (input.HireDate == default || input.HireDate > today.AddDays(30) || input.HireDate < new DateOnly(1950, 1, 1))
             return (null, GovernanceResult.Failed(GovernanceFailure.Invalid, "hire_date_invalid"));
         var position = await context.JobPositions.AsNoTracking().SingleOrDefaultAsync(item =>
@@ -264,7 +268,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             context.Employees.Add(employee);
             await context.SaveChangesAsync(cancellationToken);
             OpenAssignment(employee, actor.Id, now, "Alta del empleado");
-            SetEmployeeStations(employee.Id, shape.Stations, [], now);
+            await SetEmployeeStationsAsync(employee.Id, shape.Stations, [], now, cancellationToken);
             if (shape.Position.IsRampPosition)
                 await EnsureRampAgentAsync(person.Id, employee, shape.Position, shape.Stations, now, cancellationToken);
             if (shape.RequisitionId is { } requisitionId)
@@ -311,6 +315,11 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
                 return GovernanceResult.Failed(GovernanceFailure.Conflict, "ramp_position_requires_inactive_account");
 
             var now = timeProvider.GetUtcNow();
+            // Moving to an office position ends the ramp duty first (2-N06): nothing changes if it cannot.
+            if (!shape.Position.IsRampPosition &&
+                await EndRampDutyAsync(person.Id, actor.Id, RampAgentRelease.Cause.OfficePosition, now,
+                    cancellationToken) is { } blocked)
+                return blocked;
             var changes = new List<AuditFieldChangeData>();
             if (person.FirstName != shape.FirstName || person.LastName != shape.LastName)
                 changes.Add(new AuditFieldChangeData("employee.name", $"{person.FirstName} {person.LastName}",
@@ -337,7 +346,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             }
             var current = await context.EmployeeStations
                 .Where(item => item.EmployeeId == employee.Id && item.ValidTo == null).ToArrayAsync(cancellationToken);
-            SetEmployeeStations(employee.Id, shape.Stations, current, now);
+            await SetEmployeeStationsAsync(employee.Id, shape.Stations, current, now, cancellationToken);
             // Account scopes can never exceed the employee's stations.
             if (account is not null)
             {
@@ -351,8 +360,6 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             if (shape.Position.IsRampPosition)
                 await EnsureRampAgentAsync(person.Id, employee, shape.Position,
                     account?.Status == AccountLifecycleStatus.Active ? null : shape.Stations, now, cancellationToken);
-            else
-                await DeactivateRampAgentAsync(person.Id, now, cancellationToken);
             GovernanceSupport.AddAudit(context, actor.Id, "hr.employee.updated", "hr.employees", employee.PublicId, null,
                 shape.Stations.Select(station => (long?)station).ToArray(), now, employee.Department, [.. changes]);
             await NotifyEmployeesAsync(employee.Department, employee.PublicId, now, cancellationToken);
@@ -362,37 +369,51 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
     }
 
     public async Task<GovernanceResult> TransferEmployeeAsync(Guid actorId, Guid employeeId, TransferEmployeeInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.Can(EmployeesTerminate)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
-        if (input is null || !TryParse(input.Department, out var department) ||
-            string.IsNullOrWhiteSpace(input.ExpectedVersion) || input.StationIds is not { Count: > 0 and <= 20 } ||
-            input.Reason?.Trim().Length is not (>= 3 and <= 500))
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        // Expand phase: the key is optional; the expected version always comes in the body.
+        if (idempotencyKey == Guid.Empty) return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
+        if (string.IsNullOrWhiteSpace(input?.ExpectedVersion))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        if (!TryParse(input.Department, out var department) || input.StationIds is not { Count: > 0 and <= 20 })
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "invalid_transfer");
+        if (input.Reason?.Trim().Length is not (>= 3 and <= 500))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "reason_required");
         var position = await context.JobPositions.AsNoTracking().SingleOrDefaultAsync(item =>
             item.PublicId == input.PositionId && item.Department == department && item.IsActive, cancellationToken);
         if (position is null) return GovernanceResult.Failed(GovernanceFailure.Invalid, "position_invalid");
         var stations = await ResolveStationsAsync(actor, input.StationIds, cancellationToken);
         if (stations is null) return GovernanceResult.Failed(GovernanceFailure.Invalid, "stations_invalid");
+        var reason = input.Reason!.Trim();
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            employeeId, department = input.Department, input.PositionId, stations = input.StationIds.Order().ToArray(), reason,
+            input.ExpectedVersion,
+        });
 
-        return await InSerializableTransactionAsync(async () =>
+        return await InKeyedTransactionAsync(actor, idempotencyKey, "hr.employee.transfer", hash, async () =>
         {
             var facts = await FactsAsync(employeeId, tracked: true, cancellationToken);
-            if (facts is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+            if (facts is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
             var employee = facts.Employee;
             if (GovernanceSupport.Version(employee.RowVersion) != input.ExpectedVersion)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             if (employee.Status != EmployeeStatus.Active)
                 return GovernanceResult.Failed(GovernanceFailure.Conflict, "employee_terminated");
             if (employee.Department == department)
                 return GovernanceResult.Failed(GovernanceFailure.Invalid, "same_department");
             if (await IsProtectedPersonAsync(actor, facts.Person.Id, cancellationToken))
-                return GovernanceResult.Failed(GovernanceFailure.Protected);
+                return GovernanceResult.Failed(GovernanceFailure.Protected, "protected_person");
 
             var now = timeProvider.GetUtcNow();
+            // Leaving the ramp releases the agent's work first (2-N06); nothing changes if it cannot.
+            if (!position.IsRampPosition &&
+                await EndRampDutyAsync(facts.Person.Id, actor.Id, RampAgentRelease.Cause.Transfer, now,
+                    cancellationToken) is { } blocked)
+                return blocked;
             var previous = employee.Department;
-            var reason = input.Reason!.Trim();
             await CloseAssignmentAsync(employee.Id, now, cancellationToken);
             employee.Department = department;
             employee.JobPositionId = position.Id;
@@ -400,14 +421,12 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             OpenAssignment(employee, actor.Id, now, reason);
             var current = await context.EmployeeStations
                 .Where(item => item.EmployeeId == employee.Id && item.ValidTo == null).ToArrayAsync(cancellationToken);
-            SetEmployeeStations(employee.Id, stations, current, now);
+            await SetEmployeeStationsAsync(employee.Id, stations, current, now, cancellationToken);
             // Access belongs to the old department: it ends until the new department requests it.
             var revoked = await SuspendAccessAsync(actor.Id, facts.Person.Id, employee.Id, "Traslado de departamento",
                 now, cancellationToken);
             if (position.IsRampPosition)
                 await EnsureRampAgentAsync(facts.Person.Id, employee, position, stations, now, cancellationToken);
-            else
-                await DeactivateRampAgentAsync(facts.Person.Id, now, cancellationToken);
             foreach (var affected in new[] { previous, department })
                 GovernanceSupport.AddAudit(context, actor.Id, "hr.employee.transferred", "hr.employees", employee.PublicId,
                     reason, [], now, affected,
@@ -422,31 +441,41 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
     }
 
     public async Task<GovernanceResult> TerminateEmployeeAsync(Guid actorId, Guid employeeId, TerminateEmployeeInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.Can(EmployeesTerminate)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
-        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
-        if (input is null || string.IsNullOrWhiteSpace(input.ExpectedVersion) || input.TerminatedOn == default ||
-            input.TerminatedOn > today || input.Reason?.Trim().Length is not (>= 3 and <= 500))
-            return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        // Expand phase: the key is optional; the expected version always comes in the body.
+        if (idempotencyKey == Guid.Empty) return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
+        if (string.IsNullOrWhiteSpace(input?.ExpectedVersion))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        // 2-N31: «today» is AVIAM's business day, never the UTC one (from 20:00 it is already tomorrow).
+        if (input.TerminatedOn == default || input.TerminatedOn > BusinessCalendar.Today(timeProvider.GetUtcNow()))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "termination_date_invalid");
+        if (input.Reason?.Trim().Length is not (>= 3 and <= 500))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "reason_required");
+        var reason = input.Reason!.Trim();
+        var hash = CommercialCommandReceipts.Hash(new { employeeId, input.TerminatedOn, reason, input.ExpectedVersion });
 
-        return await InSerializableTransactionAsync(async () =>
+        return await InKeyedTransactionAsync(actor, idempotencyKey, "hr.employee.terminate", hash, async () =>
         {
             var facts = await FactsAsync(employeeId, tracked: true, cancellationToken);
-            if (facts is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+            if (facts is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
             var employee = facts.Employee;
             if (GovernanceSupport.Version(employee.RowVersion) != input.ExpectedVersion)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             if (employee.Status != EmployeeStatus.Active)
                 return GovernanceResult.Failed(GovernanceFailure.Conflict, "employee_terminated");
             if (input.TerminatedOn < employee.HireDate)
                 return GovernanceResult.Failed(GovernanceFailure.Invalid, "termination_before_hire");
             if (await IsProtectedPersonAsync(actor, facts.Person.Id, cancellationToken))
-                return GovernanceResult.Failed(GovernanceFailure.Protected);
+                return GovernanceResult.Failed(GovernanceFailure.Protected, "protected_person");
 
             var now = timeProvider.GetUtcNow();
-            var reason = input.Reason!.Trim();
+            // The agent's work is released first (2-N06); nothing changes if an operation keeps them.
+            if (await EndRampDutyAsync(facts.Person.Id, actor.Id, RampAgentRelease.Cause.Termination, now,
+                    cancellationToken) is { } blocked)
+                return blocked;
             employee.Status = EmployeeStatus.Terminated;
             employee.TerminatedOn = input.TerminatedOn;
             employee.TerminationReason = reason;
@@ -455,10 +484,9 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             await CloseAssignmentAsync(employee.Id, now, cancellationToken);
             var current = await context.EmployeeStations
                 .Where(item => item.EmployeeId == employee.Id && item.ValidTo == null).ToArrayAsync(cancellationToken);
-            SetEmployeeStations(employee.Id, [], current, now);
+            await SetEmployeeStationsAsync(employee.Id, [], current, now, cancellationToken);
             var revoked = await SuspendAccessAsync(actor.Id, facts.Person.Id, employee.Id, "Empleado dado de baja", now,
                 cancellationToken);
-            await DeactivateRampAgentAsync(facts.Person.Id, now, cancellationToken);
             GovernanceSupport.AddAudit(context, actor.Id, "hr.employee.terminated", "hr.employees", employee.PublicId,
                 reason, [], now, employee.Department,
                 new AuditFieldChangeData("employee.status", nameof(EmployeeStatus.Active), nameof(EmployeeStatus.Terminated)),
@@ -467,6 +495,67 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(employee.PublicId);
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// The receipt pattern of the phase 2 commands (<see cref="CommercialCommandReceipts"/>) for the employee
+    /// commands that take an Idempotency-Key: one serializable transaction holds the receipt lookup, the work and
+    /// the receipt, so a replay answers the first result and never repeats its release, audit or notices.
+    /// </summary>
+    private async Task<GovernanceResult> InKeyedTransactionAsync(Actor actor, Guid? key, string action, string hash,
+        Func<Task<GovernanceResult>> work, CancellationToken cancellationToken)
+    {
+        var strategy = context.Database.CreateExecutionStrategy();
+        try
+        {
+            return await strategy.ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+                    cancellationToken);
+                if (key is { } receipt)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, receipt, actor.Id, action, hash,
+                        cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return GovernanceResult.Failed(GovernanceFailure.Conflict, "idempotency_conflict");
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                        return GovernanceResult.Success(prior.ResultId);
+                }
+                var result = await work();
+                if (!result.IsSuccess)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    context.ChangeTracker.Clear();
+                    return result;
+                }
+                if (key is { } done)
+                    CommercialCommandReceipts.Add(context, done, actor.Id, action, hash, result.Id!.Value,
+                        timeProvider.GetUtcNow());
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return result;
+            });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (key is { } concurrentKey && CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, concurrentKey, actor.Id, action, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? GovernanceResult.Success(concurrent.ResultId)
+                : GovernanceResult.Failed(GovernanceFailure.Conflict, "idempotency_conflict");
+        }
+        catch (DbUpdateException)
+        {
+            context.ChangeTracker.Clear();
+            return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
+        }
     }
 
     /// <summary>Nobody transfers or terminates themselves or the super administrator's record.</summary>
@@ -530,13 +619,29 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    private void SetEmployeeStations(long employeeId, long[] stations, IReadOnlyList<EmployeeStation> current,
-        DateTimeOffset now)
+    /// <summary>
+    /// The employee's stations follow <paramref name="stations"/>: the ones that leave end today and the new ones
+    /// start today, each in its station's calendar (2-N31).
+    /// </summary>
+    private async Task SetEmployeeStationsAsync(long employeeId, long[] stations, IReadOnlyList<EmployeeStation> current,
+        DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
-        foreach (var item in current.Where(item => !stations.Contains(item.StationId))) item.ValidTo = today;
+        var today = await StationTodayAsync(stations.Concat(current.Select(item => item.StationId)), now, cancellationToken);
+        foreach (var item in current.Where(item => !stations.Contains(item.StationId)))
+            item.ValidTo = today(item.StationId) < item.ValidFrom ? item.ValidFrom : today(item.StationId);
         foreach (var station in stations.Except(current.Select(item => item.StationId)))
-            context.EmployeeStations.Add(new EmployeeStation { EmployeeId = employeeId, StationId = station, ValidFrom = today });
+            context.EmployeeStations.Add(new EmployeeStation
+            { EmployeeId = employeeId, StationId = station, ValidFrom = today(station) });
+    }
+
+    /// <summary>«Today» of each station in its own time zone, never the UTC day (2-N31).</summary>
+    private async Task<Func<long, DateOnly>> StationTodayAsync(IEnumerable<long> stationIds, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var ids = stationIds.Distinct().ToArray();
+        var zones = ids.Length == 0 ? [] : await context.Stations.AsNoTracking().Where(station => ids.Contains(station.Id))
+            .ToDictionaryAsync(station => station.Id, station => station.IanaTimeZone, cancellationToken);
+        return stationId => BusinessCalendar.Today(now, zones.GetValueOrDefault(stationId));
     }
 
     /// <summary>
@@ -568,28 +673,32 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             agent.UpdatedAt = now;
         }
         if (stations is null) return;
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
         var scopes = await context.Set<RampAgentStationScope>()
             .Where(scope => scope.RampAgentId == agent.Id && scope.ValidTo == null).ToArrayAsync(cancellationToken);
-        foreach (var scope in scopes.Where(scope => !stations.Contains(scope.StationId))) scope.ValidTo = today;
+        var today = await StationTodayAsync(stations.Concat(scopes.Select(scope => scope.StationId)), now, cancellationToken);
+        foreach (var scope in scopes.Where(scope => !stations.Contains(scope.StationId)))
+            scope.ValidTo = today(scope.StationId) < scope.ValidFrom ? scope.ValidFrom : today(scope.StationId);
         foreach (var station in stations.Except(scopes.Select(scope => scope.StationId)))
             context.Set<RampAgentStationScope>().Add(new RampAgentStationScope
-            { RampAgentId = agent.Id, StationId = station, ValidFrom = today });
+            { RampAgentId = agent.Id, StationId = station, ValidFrom = today(station) });
     }
 
-    private async Task DeactivateRampAgentAsync(long personId, DateTimeOffset now, CancellationToken cancellationToken)
+    /// <summary>
+    /// The end of the person's ramp duty (termination, transfer out of the ramp, office position) through the one
+    /// release path (<see cref="RampAgentRelease.EndRampDutyAsync"/>). Null when it ended or there was no active
+    /// ramp agent; otherwise the failure that keeps the command from changing anything.
+    /// </summary>
+    private async Task<GovernanceResult?> EndRampDutyAsync(long personId, long actorAccountId, RampAgentRelease.Cause cause,
+        DateTimeOffset now, CancellationToken cancellationToken)
     {
-        var agent = await context.RampAgents.SingleOrDefaultAsync(item => item.PersonId == personId, cancellationToken);
-        if (agent is null || !agent.IsActive) return;
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
-        agent.IsActive = false;
-        agent.UpdatedAt = now;
-        foreach (var scope in await context.Set<RampAgentStationScope>()
-                     .Where(scope => scope.RampAgentId == agent.Id && scope.ValidTo == null).ToArrayAsync(cancellationToken))
-            scope.ValidTo = today;
-        foreach (var scope in await context.Set<RampAgentTerminalScope>()
-                     .Where(scope => scope.RampAgentId == agent.Id && scope.ValidTo == null).ToArrayAsync(cancellationToken))
-            scope.ValidTo = today;
+        var agentId = await context.RampAgents.Where(item => item.PersonId == personId && item.IsActive)
+            .Select(item => (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
+        if (agentId is null) return null;
+        var outcome = await RampAgentRelease.EndRampDutyAsync(context, agentId.Value, actorAccountId, cause, now,
+            cancellationToken);
+        return outcome.Blocked
+            ? GovernanceResult.Failed(GovernanceFailure.Conflict, RampAgentRelease.OperationInProgressCode)
+            : null;
     }
 
     /// <summary>Human Resources readers and the department's administrators re-read employees.</summary>
@@ -711,7 +820,7 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             context.Employees.Add(employee);
             await context.SaveChangesAsync(cancellationToken);
             OpenAssignment(employee, actor.Id, now, "Registro de expediente de una cuenta existente");
-            SetEmployeeStations(employee.Id, shape.Stations, [], now);
+            await SetEmployeeStationsAsync(employee.Id, shape.Stations, [], now, cancellationToken);
             if (shape.Position.IsRampPosition)
                 await EnsureRampAgentAsync(personId, employee, shape.Position, null, now, cancellationToken);
             GovernanceSupport.AddAudit(context, actor.Id, "hr.employee.registered", "hr.employees", employee.PublicId, null,

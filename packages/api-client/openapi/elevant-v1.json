@@ -19249,12 +19249,21 @@
         "tags": [
           "HumanResourcesAvailabilityRequests"
         ],
+        "summary": "Approves, rejects or cancels a pending request. Approving a day off or a restriction releases the agent's\ncoverages, unstarted operations and unstarted shifts of those days (2-N08); an operation in progress keeps\nthe agent (`agent_has_operation_in_progress`). The Idempotency-Key and the expected version are\noptional while older clients exist (expand); a key needs the version.",
         "operationId": "ResolveHumanResourcesAvailabilityRequest",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -19325,6 +19334,126 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/human-resources/availability-requests/{id}/amendment": {
+      "post": {
+        "tags": [
+          "HumanResourcesAvailabilityRequests"
+        ],
+        "summary": "Cancels an approved absence that has not started, or shortens one that has not ended to a last day no\nearlier than yesterday (2-N22). Always with a reason, the version on screen and an Idempotency-Key; what\nthe approval released does not come back.",
+        "operationId": "AmendHumanResourcesAvailabilityRequest",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AmendHumanResourcesAvailabilityInput"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesAvailabilityAmended"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19645,12 +19774,21 @@
         "tags": [
           "HumanResourcesEmployees"
         ],
+        "summary": "Transfers the employee; leaving the ramp releases the agent's coverages, unstarted operations and shifts\n(2-N06). The Idempotency-Key is optional while older clients exist (expand).",
         "operationId": "TransferEmployee",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -19698,6 +19836,46 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -19712,12 +19890,21 @@
         "tags": [
           "HumanResourcesEmployees"
         ],
+        "summary": "Terminates the employee on a date up to AVIAM's today (2-N31) and releases their ramp work (2-N06). The\nIdempotency-Key is optional while older clients exist (expand).",
         "operationId": "TerminateEmployee",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -19762,6 +19949,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CommercialIdResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -21480,6 +21707,14 @@
               "format": "int32",
               "default": 20
             }
+          },
+          {
+            "name": "includeReadiness",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
@@ -21815,13 +22050,28 @@
         "tags": [
           "HumanResourcesShifts"
         ],
-        "summary": "Removes a shift of today or later (ADR-0026); past shifts are history.",
+        "summary": "Removes a shift of today or later in its station's calendar (ADR-0026, 2-N31); past shifts are history\n(`shift_in_past`) and a shift whose agent already covers stands or carries operations in it stays\n(`shift_in_use`, 2-N11). The expected version travels as `?version=`; it and the\nIdempotency-Key are optional while older clients exist (expand), and a key needs the version.",
         "operationId": "RemoveHumanResourcesShift",
         "parameters": [
           {
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -21854,6 +22104,16 @@
           },
           "403": {
             "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22029,6 +22289,91 @@
           },
           "500": {
             "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/assignment-readiness": {
+      "get": {
+        "tags": [
+          "OccAssignmentReadiness"
+        ],
+        "operationId": "GetOccAssignmentReadiness",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAssignmentReadinessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -34795,6 +35140,31 @@
         },
         "additionalProperties": false
       },
+      "AmendHumanResourcesAvailabilityInput": {
+        "required": [
+          "action",
+          "expectedVersion",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "endsOn": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ApplyRampServiceChargeRequest": {
         "required": [
           "action",
@@ -43547,6 +43917,32 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesAvailabilityAmended": {
+        "required": [
+          "endsOn",
+          "id",
+          "status",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "endsOn": {
+            "type": "string",
+            "format": "date"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesAvailabilityRequestData": {
         "required": [
           "agentName",
@@ -43558,7 +43954,8 @@
           "requestedAt",
           "startsOn",
           "status",
-          "type"
+          "type",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -43605,6 +44002,9 @@
           "resolutionNote": {
             "type": "string",
             "nullable": true
+          },
+          "version": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -44522,6 +44922,7 @@
           "stationId",
           "terminalCode",
           "terminalId",
+          "version",
           "workDate"
         ],
         "type": "object",
@@ -44576,6 +44977,9 @@
             "format": "time"
           },
           "block": {
+            "type": "string"
+          },
+          "version": {
             "type": "string"
           }
         },
@@ -46464,6 +46868,31 @@
           "assignedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAssignmentReadinessResponse": {
+        "required": [
+          "assignments",
+          "date",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccUnfitAssignmentResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -48577,6 +49006,36 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/OccOperationServiceResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccUnfitAssignmentResponse": {
+        "required": [
+          "agentId",
+          "assignmentId",
+          "reasons",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           }
         },
@@ -52326,6 +52785,10 @@
           "note": {
             "type": "string",
             "nullable": true
+          },
+          "expectedVersion": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -54936,6 +55399,9 @@
     },
     {
       "name": "MobileDevices"
+    },
+    {
+      "name": "OccAssignmentReadiness"
     },
     {
       "name": "OccCoverage"

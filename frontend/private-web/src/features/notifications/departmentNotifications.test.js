@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CONTRACT_MODULE_IDS } from '../contracts/shell/modules';
 import { describeNotification } from './departmentNotifications';
+import { notificationKindLabel, notificationTargetPath } from './notificationKinds';
 
 describe('contract lifecycle notifications (phase 2, block A)', () => {
   it.each([
@@ -32,5 +33,27 @@ describe('contract notifications without a title or a destination before (2-N29)
   it('still names an unknown kind in Spanish without a destination', () => {
     expect(describeNotification({ kind: 'something_new', subject: null })).toMatchObject({ title: 'Nueva notificación',
       target: null });
+  });
+});
+
+describe('ramp agent notices of phase 2 (block D)', () => {
+  it.each([
+    ['agent_document_expiring', 'Un carnet o una licencia de rampa está por vencer', '/gestion-humana/permits'],
+    ['agent_qualification_expiring', 'Una habilitación de un agente está por vencer', '/gestion-humana/certifications'],
+  ])('%s warns Gestión Humana and opens the documents (2-N25)', (kind, title, path) => {
+    const described = describeNotification({ kind, subject: 'Carnet aeroportuario · Riley Ramp (DEV-RA-001) · vence el 2026-11-30' });
+    expect(described.title).toBe(title);
+    expect(described.target).toEqual({ path });
+  });
+
+  it.each(['agent_released', 'agent_document_not_current'])('%s tells OCC in Spanish and opens the planning board', kind => {
+    expect(notificationKindLabel(kind)).not.toBe(notificationKindLabel('unknown_kind'));
+    expect(notificationKindLabel(kind, 'en')).not.toBe(notificationKindLabel('unknown_kind', 'en'));
+    expect(notificationTargetPath({ kind, operationId: 'op-1' })).toBe('/admin-occ/planning');
+  });
+
+  it('keeps the review and chat destinations of the other notices', () => {
+    expect(notificationTargetPath({ kind: 'operation_submitted', operationId: 'op-1' })).toBe('/admin-occ/review?operationId=op-1');
+    expect(notificationTargetPath({ kind: 'agent_message', operationId: 'op-1' })).toBe('/admin-occ/chat?operationId=op-1');
   });
 });

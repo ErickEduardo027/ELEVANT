@@ -22,6 +22,9 @@ export const COVERAGE_REASON_MESSAGES = {
   agent_overlap: 'El agente ya cubre posiciones en ese horario.',
   mentor_required: 'El agente tiene menos de 3 meses: necesita un mentor experimentado.',
   mentor_not_eligible: 'El mentor debe tener 3 meses o más, estar activo y tener turno en ese horario.',
+  // 2-N23: a mentor on an approved absence or without a current airport permit accompanies nobody.
+  mentor_absent: 'El mentor tiene una ausencia aprobada ese día.',
+  mentor_permit_required: 'El mentor no tiene el carnet aeroportuario vigente.',
   stand_taken: 'Otra persona ya cubre alguna de esas posiciones. Márcalo como refuerzo si es intencional.',
   stand_cancelled: 'Esa posición está anulada por una posición combinada ocupada (por ejemplo 9A anula la 10).',
   stand_narrowbody_only: 'Esa posición solo admite aviones de fuselaje estrecho en este momento.',

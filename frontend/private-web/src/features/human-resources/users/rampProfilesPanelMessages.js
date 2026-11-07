@@ -46,6 +46,7 @@ export const rampProfilesPanelMessages = {
       noStation: 'Seleccione al menos una estación.',
       noTerminal: 'Seleccione al menos una terminal de las estaciones autorizadas.',
       save: 'No fue posible guardar el perfil. Comprueba la conexión y vuelve a intentarlo.',
+      operationInProgress: 'El agente tiene una operación en curso o devuelta para corrección: OCC debe cerrarla antes de desactivar el perfil.',
     },
   },
   en: {
@@ -95,6 +96,7 @@ export const rampProfilesPanelMessages = {
       noStation: 'Select at least one station.',
       noTerminal: 'Select at least one terminal from the authorized stations.',
       save: 'The profile could not be saved. Check your connection and try again.',
+      operationInProgress: 'The agent has an operation in progress or returned for correction: OCC must close it before the profile is deactivated.',
     },
   },
 };

@@ -1,15 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { checkIdentityDocument, DOMINICAN_PASSPORT_PREFIX, identityDocumentExample, normalizePhone } from '@elevant/api-client';
 import Drawer from '../../components/Drawer';
 import Modal from '../../components/Modal';
 import { DEPARTMENTS, DEPARTMENT_LABELS } from '../../services/departmentGovernanceService';
 import {
-  createEmployee, governanceMessage, IDENTIFICATION_LABELS, registerEmployee, terminateEmployee, transferEmployee,
-  updateEmployee,
+  createEmployee, EMPLOYEE_MESSAGES, governanceMessage, IDENTIFICATION_LABELS, registerEmployee, terminateEmployee,
+  transferEmployee, updateEmployee,
 } from '../../services/humanResourcesEmployeesService';
+import { businessToday } from '../../services/businessDay';
+import { createCommandKeyHolder } from '../../services/commandKeys';
+import { problemMessage } from '../../services/problemMessages';
 
 export const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
-const today = () => new Date().toISOString().slice(0, 10);
+// AVIAM's business day, never the UTC one: from 20:00 in the Dominican Republic it is already tomorrow (2-N31).
+const today = () => businessToday();
+// A transfer or a termination never shows the server's title: its rule, or a Spanish message by status.
+const commandMessage = failure => problemMessage(failure, EMPLOYEE_MESSAGES);
 
 const DOCUMENT_KINDS = { CEDULA: 'Cedula', RESIDENCIA: 'Residence', PASAPORTE: 'Passport' };
 
@@ -152,6 +158,7 @@ export function TransferModal({ employee, options, onClose, onDone }) {
   const [form, setForm] = useState({ department: '', positionId: '', stationIds: [], reason: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const intent = useRef(createCommandKeyHolder());
   useEffect(() => {
     if (employee) setForm({ department: '', positionId: '', stationIds: employee.summary.stations.map(station => station.id), reason: '' });
     setError('');
@@ -162,10 +169,13 @@ export function TransferModal({ employee, options, onClose, onDone }) {
     event.preventDefault();
     setBusy(true);
     try {
-      await transferEmployee(employee.summary.id, { ...form, reason: form.reason.trim(), expectedVersion: employee.summary.version });
+      const body = { ...form, reason: form.reason.trim(), expectedVersion: employee.summary.version };
+      // One intent per body: an uncertain answer repeats the same key (expand phase of 2-N06).
+      await intent.current.run('transfer', [employee.summary.id, body], key =>
+        transferEmployee(employee.summary.id, body, key));
       onDone('Empleado trasladado. Su cuenta quedó desactivada hasta que el nuevo departamento solicite el acceso.');
     } catch (failure) {
-      setError(governanceMessage(failure));
+      setError(commandMessage(failure));
     } finally {
       setBusy(false);
     }
@@ -177,6 +187,10 @@ export function TransferModal({ employee, options, onClose, onDone }) {
       <form id="transfer-form" onSubmit={submit} className="space-y-3">
         <ErrorLine text={error} />
         <p className="text-sm">El acceso actual termina: el departamento de destino deberá solicitarlo de nuevo.</p>
+        {employee.summary.position.isRampPosition && positions.some(position => position.id === form.positionId &&
+          !position.isRampPosition) && <p className="text-sm">Al salir de rampa se liberan sus coberturas de posición, las
+          operaciones que aún no empiezan y sus turnos futuros, y OCC recibe un aviso. Si tiene una operación en curso, el
+          traslado no se registra hasta que OCC la cierre.</p>}
         <label className="block text-xs font-semibold">Departamento de destino<select required value={form.department} onChange={event => setForm(current => ({ ...current, department: event.target.value, positionId: '' }))} className={fieldClass}>
           <option value="">Seleccione…</option>{Object.values(DEPARTMENTS).filter(key => key !== employee.summary.department).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>
         <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => setForm(current => ({ ...current, positionId: event.target.value }))} className={fieldClass}>
@@ -193,6 +207,7 @@ export function TerminateModal({ employee, onClose, onDone }) {
   const [form, setForm] = useState({ terminatedOn: today(), reason: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const intent = useRef(createCommandKeyHolder());
   useEffect(() => { setForm({ terminatedOn: today(), reason: '' }); setError(''); }, [employee]);
   if (!employee) return null;
   const account = employee.summary.account;
@@ -200,10 +215,14 @@ export function TerminateModal({ employee, onClose, onDone }) {
     event.preventDefault();
     setBusy(true);
     try {
-      await terminateEmployee(employee.summary.id, { ...form, reason: form.reason.trim(), expectedVersion: employee.summary.version });
-      onDone('Baja registrada. La cuenta quedó desactivada y sin alcances.');
+      const body = { ...form, reason: form.reason.trim(), expectedVersion: employee.summary.version };
+      await intent.current.run('terminate', [employee.summary.id, body], key =>
+        terminateEmployee(employee.summary.id, body, key));
+      onDone(employee.summary.position.isRampPosition
+        ? 'Baja registrada. La cuenta quedó desactivada y sin alcances; su trabajo en rampa se liberó y OCC recibió el aviso.'
+        : 'Baja registrada. La cuenta quedó desactivada y sin alcances.');
     } catch (failure) {
-      setError(governanceMessage(failure));
+      setError(commandMessage(failure));
     } finally {
       setBusy(false);
     }
@@ -217,8 +236,10 @@ export function TerminateModal({ employee, onClose, onDone }) {
         <ul className="list-disc space-y-1 pl-5 text-sm">
           <li>{account ? `Su cuenta (${account.status === 'Active' ? 'activa' : 'inactiva'}) se desactiva y pierde sus estaciones.` : 'No tiene cuenta en ELEVANT.'}</li>
           {employee.pendingAccessRequests > 0 && <li>Se cancelan {employee.pendingAccessRequests} solicitud(es) de acceso pendientes.</li>}
-          {employee.summary.position.isRampPosition && <li>Su perfil de agente de rampa queda inactivo.</li>}
-          {employee.futureShifts > 0 && <li>Tiene {employee.futureShifts} turno(s) futuros programados: reasígnelos.</li>}
+          {employee.summary.position.isRampPosition && <li>Su perfil de agente de rampa queda inactivo: se liberan sus
+            coberturas de posición y las operaciones que aún no empiezan, y OCC recibe un aviso. Si tiene una operación en
+            curso, la baja no se registra hasta que OCC la cierre.</li>}
+          {employee.futureShifts > 0 && <li>Se quitan sus turnos que aún no empiezan (tiene {employee.futureShifts} desde hoy).</li>}
           <li>La baja es definitiva: la cuenta no podrá reactivarse.</li>
         </ul>
         <label className="block text-xs font-semibold">Fecha de baja<input required type="date" max={today()} min={employee.summary.hireDate} value={form.terminatedOn} onChange={event => setForm(current => ({ ...current, terminatedOn: event.target.value }))} className={fieldClass} /></label>

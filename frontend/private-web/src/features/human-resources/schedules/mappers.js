@@ -1,6 +1,5 @@
-import { COVERAGE_STATUS_META, getCoverageStatusKey, getQualificationStatusKey, QUALIFICATION_EXPIRATION_THRESHOLD_DAYS } from './statusMeta';
+import { COVERAGE_STATUS_META, getCoverageStatusKey } from './statusMeta';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEKDAY_LABELS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
 function pad2(value) {
@@ -24,11 +23,6 @@ export function addDays(date, amount) {
   const next = new Date(date);
   next.setDate(next.getDate() + amount);
   return next;
-}
-
-function daysBetween(fromDate, toDate) {
-  const startOfDay = date => new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  return Math.round((startOfDay(toDate) - startOfDay(fromDate)) / DAY_MS);
 }
 
 // Semana de lunes a domingo (skill.md §"CALENDARIO DE TURNOS": "columnas =
@@ -70,10 +64,6 @@ export function formatDate(dateKey) {
   return parseDateKey(dateKey).toLocaleDateString('es-DO', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function formatTimeRange(startTime, endTime) {
-  return `${startTime}–${endTime}`;
-}
-
 // Índice agente+fecha -> turno, usado tanto para pintar la grilla como para
 // detectar solapamientos al validar una asignación nueva.
 export function indexShiftsByAgentAndDate(shifts) {
@@ -90,20 +80,6 @@ export function indexShiftsByDate(shifts) {
     const list = index.get(shift.date) ?? [];
     list.push(shift);
     index.set(shift.date, list);
-  }
-  return index;
-}
-
-// Solo las solicitudes APROBADAS de tipo "día libre"/"restricción" bloquean
-// una asignación (skill.md §"ASIGNACIÓN DE TURNO": "disponibilidad del
-// agente"). Un "cambio de turno" es informativo para quien planifica, no
-// una restricción dura.
-export function indexApprovedRestrictions(requests) {
-  const index = new Map();
-  for (const request of requests) {
-    if (request.status !== 'approved') continue;
-    if (request.type !== 'day_off' && request.type !== 'restriction') continue;
-    index.set(`${request.agentId}|${request.date}`, request);
   }
   return index;
 }
@@ -184,60 +160,4 @@ export function groupCoverageByBlock(entries, shiftBlocks) {
 
     return { block, byTerminal, combinedRisk, worstStatus };
   });
-}
-
-export function getAgentQualification(agentId, positionId, qualifications) {
-  return qualifications.find(item => item.agentId === agentId && item.positionId === positionId) ?? null;
-}
-
-// Reglas de validación de una asignación de turno (skill.md §"ASIGNACIÓN DE
-// TURNO"): disponibilidad del agente, conflictos de horario y habilitación
-// necesaria para la posición, cuando corresponda. Se agrupan aquí (y no en
-// el componente del modal) para poder reutilizarlas tal cual desde un
-// futuro validador de backend.
-export function validateShiftAssignment(input, context) {
-  const conflicts = [];
-  const { agentId, date, excludeShiftId, positionId } = input;
-  const { shiftsByAgentDate, approvedRestrictionsByAgentDate, qualifications, positions, now = new Date() } = context;
-
-  const existingShift = shiftsByAgentDate.get(`${agentId}|${date}`);
-  if (existingShift && existingShift.id !== excludeShiftId) {
-    conflicts.push({
-      severity: 'block',
-      message: `Este agente ya tiene un turno asignado ese día (${formatTimeRange(existingShift.startTime, existingShift.endTime)}, Terminal ${existingShift.terminal}).`,
-    });
-  }
-
-  const restriction = approvedRestrictionsByAgentDate.get(`${agentId}|${date}`);
-  if (restriction) {
-    conflicts.push({
-      severity: 'block',
-      message: `Hay una solicitud de disponibilidad aprobada para este día: "${restriction.reason}".`,
-    });
-  }
-
-  const position = positions.find(item => item.id === positionId);
-  if (position?.requiresQualification) {
-    const qualification = getAgentQualification(agentId, positionId, qualifications);
-    if (!qualification) {
-      conflicts.push({ severity: 'block', message: `El agente no cuenta con habilitación registrada para "${position.name}".` });
-    } else {
-      const daysRemaining = daysBetween(now, new Date(qualification.expiresAt));
-      const statusKey = getQualificationStatusKey(daysRemaining);
-      if (statusKey === 'expired') {
-        conflicts.push({ severity: 'block', message: `La habilitación del agente para "${position.name}" está vencida.` });
-      } else if (statusKey === 'expiringSoon') {
-        conflicts.push({
-          severity: 'warning',
-          message: `La habilitación del agente para "${position.name}" vence en ${daysRemaining} día${daysRemaining === 1 ? '' : 's'} (dentro de ${QUALIFICATION_EXPIRATION_THRESHOLD_DAYS} días).`,
-        });
-      }
-    }
-  }
-
-  return conflicts;
-}
-
-export function hasBlockingConflict(conflicts) {
-  return conflicts.some(conflict => conflict.severity === 'block');
 }

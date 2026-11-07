@@ -17,10 +17,11 @@ public sealed record SaveRampProfileInput(string FirstName, string LastName,
     IReadOnlyList<Guid>? TerminalIds = null,
     RampProfileSupervisorSelection? Supervisor = null);
 public enum RampProfileFailure { Forbidden, Invalid, NotFound, Conflict }
-public sealed record RampProfileResult(RampProfileData? Profile, RampProfileFailure? Failure)
+/// <summary>Outcome of a ramp profile save; <paramref name="Code"/> names the rule a failure broke.</summary>
+public sealed record RampProfileResult(RampProfileData? Profile, RampProfileFailure? Failure, string? Code = null)
 {
     public static RampProfileResult Success(RampProfileData profile) => new(profile, null);
-    public static RampProfileResult Failed(RampProfileFailure failure) => new(null, failure);
+    public static RampProfileResult Failed(RampProfileFailure failure, string? code = null) => new(null, failure, code);
 }
 public interface IRampProfileStore
 {

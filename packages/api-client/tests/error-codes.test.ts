@@ -33,6 +33,16 @@ describe("Problem Details codes", () => {
     expect(ELEVANT_RULE_REASONS).toContain("stand_in_use");
   });
 
+  it("keeps the human resources codes of phase 2 (block D)", () => {
+    for (const code of ["agent_has_operation_in_progress", "invalid_availability_request", "agent_unavailable",
+      "availability_overlap", "availability_request_closed", "absence_not_approved", "absence_started", "absence_ended",
+      "absence_end_invalid", "invalid_absence_amendment", "invalid_shift", "shift_scope_missing", "shift_day_taken",
+      "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A mentor on an approved absence or without a current airport permit is a rule of a rejected coverage (2-N23).
+    for (const reason of ["mentor_absent", "mentor_permit_required"]) expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
   it("keeps the airline permit codes of phase 2 (block B)", () => {
     for (const code of ["review_closed", "permit_not_verified", "review_note_required", "invalid_permit",
       "permit_dates_invalid", "permit_expired", "document_invalid", "document_expired"])

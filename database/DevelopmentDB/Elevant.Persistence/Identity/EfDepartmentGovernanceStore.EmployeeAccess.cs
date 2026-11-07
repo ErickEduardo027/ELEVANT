@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Workforce;
@@ -279,7 +280,7 @@ internal sealed partial class EfDepartmentGovernanceStore
         {
             var agent = await context.RampAgents.SingleAsync(item => item.PersonId == candidate.Person.Id, cancellationToken);
             agent.SupervisorAgentId = request.SupervisorRampAgentId;
-            var today = DateOnly.FromDateTime(now.UtcDateTime);
+            var today = BusinessCalendar.Today(now);
             var wanted = await context.UserAccessRequestTerminals.Where(item => item.UserAccessRequestId == request.Id)
                 .Join(context.Terminals.Where(terminal => terminal.IsActive && stations.Contains(terminal.StationId)),
                     item => item.TerminalId, terminal => terminal.Id, (item, terminal) => terminal.Id)

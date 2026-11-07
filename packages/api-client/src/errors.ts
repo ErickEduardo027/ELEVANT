@@ -105,17 +105,27 @@ const FLIGHT_FEED_CODES = ["invalid_flight_feed_query", "invalid_flight_import",
  * stand that is inactive, of another station or taken in the window (the rules it breaks come in `reasons`).
  */
 const PLANNING_CODES = ["aircraft_type_unavailable", "stand_unavailable"] as const;
+/**
+ * Gestión Humana (phase 2, block D): the one release path of a ramp agent, which an operation in progress or returned
+ * refuses (2-N06, 2-N08); the availability requests and the cancellation or shortening of an approved absence
+ * (2-N22); the shifts that are past, still worked or on an approved absence (2-N11, 2-N24); and the planning board's
+ * readiness query (2-N25).
+ */
+const HUMAN_RESOURCES_CODES = ["agent_has_operation_in_progress", "invalid_availability_request", "agent_unavailable",
+  "availability_overlap", "availability_request_closed", "absence_not_approved", "absence_started", "absence_ended",
+  "absence_end_invalid", "invalid_absence_amendment", "invalid_shift", "shift_scope_missing", "shift_day_taken",
+  "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
   (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number] |
   (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
-  (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number];
+  (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
-  ...PLANNING_CODES];
+  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",
@@ -128,7 +138,9 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   "cardholder_invalid", "card_number_invalid", "card_expired", "security_code_invalid", "amount_invalid",
   "amount_mismatch", "invoice_paid", "idempotency_conflict", "concurrent_payment",
   // A stand in use is not deactivated from the coverage configuration (phase 2, block C, 2-A).
-  "stand_in_use"] as const;
+  "stand_in_use",
+  // A mentor on an approved absence or without a current airport permit accompanies nobody (phase 2, block D, 2-N23).
+  "mentor_absent", "mentor_permit_required"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

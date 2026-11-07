@@ -1,5 +1,6 @@
 using System.Data;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Identity;
@@ -8,6 +9,7 @@ using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Commercial;
+using Elevant.Persistence.Operations;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
@@ -40,7 +42,7 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             .ToDictionaryAsync(item => item.Id, cancellationToken);
         var accounts = await context.Users.AsNoTracking().Where(item => personIds.Contains(item.PersonId))
             .ToDictionaryAsync(item => item.PersonId, item => item.Status, cancellationToken);
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var scopes = await context.Set<RampAgentStationScope>().AsNoTracking()
             .Where(item => item.ValidFrom <= today && (item.ValidTo == null || item.ValidTo >= today))
             .ToArrayAsync(cancellationToken);
@@ -138,7 +140,8 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             return RampProfileResult.Failed(RampProfileFailure.Conflict);
 
         var now = DateTimeOffset.UtcNow;
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        // Scopes follow AVIAM's business day, never the UTC one (2-N31).
+        var today = BusinessCalendar.Today(now);
         var actorDatabaseId = await context.Users.Where(item => item.PublicId == actorId)
             .Select(item => item.Id).SingleAsync(cancellationToken);
         var strategy = context.Database.CreateExecutionStrategy();
@@ -151,6 +154,12 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                 if (profile is not null && supervisor is not null && input.Supervisor is not null &&
                     await WouldCreateSupervisorCycleAsync(profile.Id, supervisor.Id, cancellationToken))
                     return RampProfileResult.Failed(RampProfileFailure.Invalid);
+                // Deactivating the profile ends the agent's ramp duty through the release path (2-N06); the
+                // scopes below follow this store's own rule.
+                if (profile is { IsActive: true } && !input.IsActive &&
+                    (await RampAgentRelease.EndRampDutyAsync(context, profile.Id, actorDatabaseId,
+                        RampAgentRelease.Cause.ProfileDeactivated, now, cancellationToken, closeScopes: false)).Blocked)
+                    return RampProfileResult.Failed(RampProfileFailure.Conflict, RampAgentRelease.OperationInProgressCode);
                 Person person;
                 if (profile is null)
                 {

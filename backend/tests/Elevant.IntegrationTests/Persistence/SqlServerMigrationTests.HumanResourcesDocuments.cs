@@ -24,7 +24,7 @@ public sealed partial class SqlServerMigrationTests
         await using var scope = provider.CreateAsyncScope();
         var reads = scope.ServiceProvider.GetRequiredService<IHumanResourcesQualificationReadStore>();
         var writes = scope.ServiceProvider.GetRequiredService<IHumanResourcesQualificationWriteStore>();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
 
         // Two renewals on top of the seeded cycle; the last one expires in ten days.
         var second = Guid.NewGuid();
@@ -96,7 +96,7 @@ public sealed partial class SqlServerMigrationTests
         var permits = scope.ServiceProvider.GetRequiredService<IHumanResourcesPermitReadStore>();
         var permitWrites = scope.ServiceProvider.GetRequiredService<IHumanResourcesPermitWriteStore>();
         var availability = scope.ServiceProvider.GetRequiredService<IHumanResourcesAvailabilityWriteStore>();
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
 
         var seeded = Assert.Single((await permits.ListCurrentAsync(HumanResourcesAccount, 1, 10,
             SeededRampAgentProfile, PermitDocumentType.AirportId, cancellationToken))!.Permits);
@@ -126,14 +126,14 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken)).Failure);
         var cancel = new ResolveHumanResourcesAvailabilityInput("Cancel", "Agent withdrew the request");
         Assert.Equal(HumanResourcesAvailabilityWriteFailure.Forbidden,
-            (await availability.ResolveAsync(OperationsAdministrator, requestId, cancel, cancellationToken)).Failure);
-        var cancelled = await availability.ResolveAsync(HumanResourcesAccount, requestId, cancel, cancellationToken);
+            (await availability.ResolveAsync(OperationsAdministrator, requestId, cancel, null, cancellationToken)).Failure);
+        var cancelled = await availability.ResolveAsync(HumanResourcesAccount, requestId, cancel, null, cancellationToken);
         Assert.Null(cancelled.Failure);
         Assert.Equal("Cancelled", cancelled.Request!.Status);
-        Assert.Null((await availability.ResolveAsync(HumanResourcesAccount, requestId, cancel, cancellationToken)).Failure);
+        Assert.Null((await availability.ResolveAsync(HumanResourcesAccount, requestId, cancel, null, cancellationToken)).Failure);
         Assert.Equal(HumanResourcesAvailabilityWriteFailure.Conflict,
             (await availability.ResolveAsync(HumanResourcesAccount, requestId,
-                new ResolveHumanResourcesAvailabilityInput("Approve", null), cancellationToken)).Failure);
+                new ResolveHumanResourcesAvailabilityInput("Approve", null), null, cancellationToken)).Failure);
         Assert.Equal(1, await context.AuditEntries.CountAsync(entry =>
             entry.Action == "hr.availability.cancelled" && entry.EntityPublicId == requestId, cancellationToken));
         Assert.Equal(AvailabilityRequestStatus.Cancelled, await context.AvailabilityRequests

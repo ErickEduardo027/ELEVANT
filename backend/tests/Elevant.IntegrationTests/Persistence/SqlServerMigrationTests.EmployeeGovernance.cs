@@ -131,10 +131,10 @@ public sealed partial class SqlServerMigrationTests
         var detail = (await hr.GetEmployeeAsync(HumanResourcesAccount, created.Id!.Value, cancellationToken))!;
         Assert.Equal(GovernanceFailure.Forbidden, (await hr.TransferEmployeeAsync(FinanceAccount, created.Id.Value,
             new TransferEmployeeInput("contracts", commercial.Id, [PujStation], "Reubicación", detail.Summary.Version),
-            cancellationToken)).Failure);
+            null, cancellationToken)).Failure);
         Assert.True((await hr.TransferEmployeeAsync(HumanResourcesAccount, created.Id.Value,
             new TransferEmployeeInput("contracts", commercial.Id, [PujStation], "Reubicación comercial", detail.Summary.Version),
-            cancellationToken)).IsSuccess);
+            null, cancellationToken)).IsSuccess);
         Assert.Equal(AccountLifecycleStatus.Disabled, (await context.Users.AsNoTracking()
             .SingleAsync(item => item.Id == account.Id, cancellationToken)).Status);
         Assert.Null(await verifier.VerifyAsync("lucia.prueba@dev.elevant.test", EmployeePassword, cancellationToken));
@@ -170,10 +170,10 @@ public sealed partial class SqlServerMigrationTests
         // Termination ends everything and nothing can bring the account back.
         var current = (await hr.GetEmployeeAsync(HumanResourcesAccount, created.Id.Value, cancellationToken))!;
         Assert.Equal("termination_before_hire", (await hr.TerminateEmployeeAsync(HumanResourcesAccount, created.Id.Value,
-            new TerminateEmployeeInput(new DateOnly(2026, 8, 1), "Renuncia", current.Summary.Version), cancellationToken)).Code);
+            new TerminateEmployeeInput(new DateOnly(2026, 8, 1), "Renuncia", current.Summary.Version), null, cancellationToken)).Code);
         Assert.True((await hr.TerminateEmployeeAsync(HumanResourcesAccount, created.Id.Value,
-            new TerminateEmployeeInput(DateOnly.FromDateTime(DateTime.UtcNow), "Renuncia voluntaria", current.Summary.Version),
-            cancellationToken)).IsSuccess);
+            new TerminateEmployeeInput(Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow), "Renuncia voluntaria", current.Summary.Version),
+            null, cancellationToken)).IsSuccess);
         var terminatedAccount = await context.Users.AsNoTracking().SingleAsync(item => item.Id == account.Id, cancellationToken);
         Assert.Equal(AccountLifecycleStatus.Disabled, terminatedAccount.Status);
         Assert.False(await context.AccountStationScopes.AnyAsync(scope => scope.AccountId == account.Id && scope.RevokedAt == null,
@@ -186,9 +186,9 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(GovernanceFailure.Protected, (await hr.TerminateEmployeeAsync(HumanResourcesAccount,
             (await context.Employees.AsNoTracking().Where(item => item.EmployeeNumber == "DEV-EMP-HR-001")
                 .Select(item => item.PublicId).SingleAsync(cancellationToken)),
-            new TerminateEmployeeInput(DateOnly.FromDateTime(DateTime.UtcNow), "Autobaja",
+            new TerminateEmployeeInput(Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow), "Autobaja",
                 (await hr.ListEmployeesAsync(HumanResourcesAccount, null, null, null, null, "DEV-EMP-HR-001", 1, 5,
-                    cancellationToken))!.Employees[0].Version), cancellationToken)).Failure);
+                    cancellationToken))!.Employees[0].Version), null, cancellationToken)).Failure);
     }
 
     [Fact]

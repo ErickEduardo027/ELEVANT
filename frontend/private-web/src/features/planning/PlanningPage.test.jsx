@@ -6,6 +6,7 @@ import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
 import { usePlanningOptions } from './usePlanningOptions';
 import { usePlanningAssignment } from './usePlanningAssignment';
+import { useAssignmentReadiness } from './useAssignmentReadiness';
 
 vi.mock('./components/ManualTurnaroundDialog', () => ({
   default: ({ onCreated, onClose }) => <div role="dialog" aria-label="Nuevo vuelo manual">
@@ -29,6 +30,7 @@ import {
 
 vi.mock('./usePlanningOptions', () => ({ usePlanningOptions: vi.fn() }));
 vi.mock('./usePlanningAssignment', () => ({ usePlanningAssignment: vi.fn() }));
+vi.mock('./useAssignmentReadiness', () => ({ useAssignmentReadiness: vi.fn() }));
 
 const assignmentHook = {
   status: 'idle',
@@ -92,6 +94,8 @@ beforeEach(() => {
   assignmentHook.assign.mockResolvedValue({ ok: true, data: { assignment: {} } });
   vi.mocked(usePlanningAssignment).mockReset();
   vi.mocked(usePlanningAssignment).mockReturnValue(assignmentHook);
+  vi.mocked(useAssignmentReadiness).mockReset();
+  vi.mocked(useAssignmentReadiness).mockReturnValue({ status: 'idle', marks: null });
 });
 
 describe('PlanningPage', () => {
@@ -358,5 +362,29 @@ describe('PlanningPage in English', () => {
 
     expect(screen.getByText('No scheduled flights')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'New flight' })).toBeEnabled();
+  });
+});
+describe('PlanningPage readiness marks (2-N25)', () => {
+  it('marks the flight and the drawer agent who cannot do the operation, and reads them for the board scope', async () => {
+    vi.mocked(useAssignmentReadiness).mockReturnValue({ status: 'success', marks: { stationId: STATION_ID,
+      date: SNAPSHOT.date, assignments: [{ assignmentId: 'assignment-agent-1', turnaroundId: ASSIGNED_FLIGHT.turnaroundId,
+        agentId: 'agent-1', reasons: ['airport_id_not_current', 'approved_absence'] }] } });
+    renderPage();
+    expect(vi.mocked(useAssignmentReadiness)).toHaveBeenLastCalledWith(expect.objectContaining({
+      stationId: SNAPSHOT.station.id, date: SNAPSHOT.date, enabled: true }));
+    expect(screen.getByText('Agente no apto')).toBeInTheDocument();
+    await userEvent.click(screen.getByText('DEV-TAT-0002'));
+    expect(screen.getByTestId('planning-drawer')).toBeInTheDocument();
+    expect(await screen.findByText('No apto: carnet aeroportuario no vigente, ausencia aprobada')).toBeInTheDocument();
+  });
+
+  it('keeps the flights and offers a retry when the marks cannot be read', async () => {
+    vi.mocked(useAssignmentReadiness).mockReturnValue({ status: 'error', marks: null });
+    renderPage();
+    expect(screen.getByText(/No pudimos comprobar si los agentes asignados pueden operar/)).toBeInTheDocument();
+    expect(screen.queryByText('Agente no apto')).not.toBeInTheDocument();
+    const before = vi.mocked(useAssignmentReadiness).mock.calls.at(-1)[0].refreshToken;
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar comprobación' }));
+    expect(vi.mocked(useAssignmentReadiness).mock.calls.at(-1)[0].refreshToken).toBe(before + 1);
   });
 });

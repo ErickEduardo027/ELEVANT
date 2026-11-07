@@ -48,6 +48,7 @@ internal sealed class EfHumanResourcesAvailabilityReadStore(
                 request.RequestedAt,
                 request.ResolvedAt,
                 request.ResolutionNote,
+                request.RowVersion,
             }).Skip((page - 1) * limit).Take(limit + 1)
             .ToArrayAsync(cancellationToken);
 
@@ -57,6 +58,6 @@ internal sealed class EfHumanResourcesAvailabilityReadStore(
                     $"{row.FirstName} {row.LastName}", row.EmployeeNumber,
                     row.StartsOn, row.EndsOn, row.Type.ToString(), row.Status.ToString(),
                     row.Reason, row.RequestedAt, row.ResolvedAt,
-                    row.ResolutionNote)).ToArray());
+                    row.ResolutionNote, GovernanceSupport.Version(row.RowVersion))).ToArray());
     }
 }

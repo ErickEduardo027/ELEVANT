@@ -86,6 +86,8 @@ public sealed class RampProfilesController(IRampProfileStore store,
         RampProfileFailure.Forbidden => Forbid(),
         RampProfileFailure.Invalid => Problem(statusCode: 400, title: "Invalid ramp profile."),
         RampProfileFailure.NotFound => Problem(statusCode: 404, title: "Ramp profile not found."),
+        // A deactivation the release path refused carries its rule (2-N06).
+        RampProfileFailure.Conflict when result.Code is { } code => HumanResourcesProblems.Failure(this, 409, code, code),
         RampProfileFailure.Conflict => Problem(statusCode: 409, title: "Ramp profile conflicts with current state."),
         _ => throw new InvalidOperationException(),
     };

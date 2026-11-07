@@ -22,8 +22,12 @@ public sealed record CoverageAgentFacts(
     bool HasApprovedAbsence,
     bool HasOverlappingCoverage);
 
-/// <summary>The mentor, when one is named.</summary>
-public sealed record CoverageMentorFacts(bool IsActive, DateOnly HireDate, bool ShiftCoversWindow);
+/// <summary>
+/// The mentor, when one is named. A mentor on an approved absence or without a current airport permit
+/// accompanies nobody (2-N23).
+/// </summary>
+public sealed record CoverageMentorFacts(bool IsActive, DateOnly HireDate, bool ShiftCoversWindow,
+    bool HasApprovedAbsence = false, bool HasAirportPermit = true);
 
 public sealed record PositionCoverageCandidate(
     DateTimeOffset StartsAt,
@@ -90,10 +94,13 @@ public static class PositionCoveragePolicy
         {
             if (junior) Add("mentor_required");
         }
-        else if (!candidate.Mentor.IsActive || IsJunior(candidate.Mentor.HireDate, candidate.WorkDate) ||
-                 !candidate.Mentor.ShiftCoversWindow)
+        else
         {
-            Add("mentor_not_eligible");
+            if (!candidate.Mentor.IsActive || IsJunior(candidate.Mentor.HireDate, candidate.WorkDate) ||
+                !candidate.Mentor.ShiftCoversWindow)
+                Add("mentor_not_eligible");
+            if (candidate.Mentor.HasApprovedAbsence) Add("mentor_absent");
+            if (!candidate.Mentor.HasAirportPermit) Add("mentor_permit_required");
         }
 
         // A stand already covered by someone else is only shared by a trainee with their mentor,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PlanningHeader from './components/PlanningHeader';
 import PlanningFilters from './components/PlanningFilters';
 import PlanningKPIs from './components/PlanningKPIs';
@@ -19,7 +19,9 @@ import {
   computeKpis,
   getFilterOptions,
   isInitialAssignmentCandidate,
+  withAssignmentReadiness,
 } from './planningMappers';
+import { useAssignmentReadiness } from './useAssignmentReadiness';
 import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import { useTranslation } from '../../i18n/LanguageScope';
@@ -73,6 +75,8 @@ function NoStationScope() {
   );
 }
 
+const NO_FLIGHTS = [];
+
 export default function PlanningPage({
   status,
   data,
@@ -92,6 +96,7 @@ export default function PlanningPage({
   const [selectedFlightId, setSelectedFlightId] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [optionsRetryToken, setOptionsRetryToken] = useState(0);
+  const [readinessRetry, setReadinessRetry] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const assignment = usePlanningAssignment();
@@ -107,7 +112,13 @@ export default function PlanningPage({
   const isError = (status === 'error' && forceState === 'default') || forceState === 'planningError';
   const isUnauthorized = status === 'unauthorized' && forceState === 'default';
   const isForbidden = status === 'forbidden' && forceState === 'default';
-  const flights = forceState === 'planningEmpty' ? [] : data?.flights ?? [];
+  const readiness = useAssignmentReadiness({
+    stationId: data?.station?.id, date: data?.date, refreshToken: dataRevision + readinessRetry,
+    enabled: status === 'success' && forceState === 'default',
+  });
+  const baseFlights = forceState === 'planningEmpty' ? NO_FLIGHTS : data?.flights ?? NO_FLIGHTS;
+  // 2-N25: the board marks an assigned agent who cannot do the operation on its date.
+  const flights = useMemo(() => withAssignmentReadiness(baseFlights, readiness.marks), [baseFlights, readiness.marks]);
   const stableFilterScopeKey = filterScopeKey ?? `${selectedStationId}|${selectedDate}`;
   const { filters, setFilter, quickFilter, setQuickFilter, resetFilters, filteredFlights } = usePlanningFilters(flights, stableFilterScopeKey);
   const displayedFlights = forceState === 'planningNoResults' ? [] : filteredFlights;
@@ -214,6 +225,13 @@ export default function PlanningPage({
           />
 
           <PlanningKPIs kpis={kpis} loading={isLoading} />
+          {readiness.status === 'error' && !isLoading && (
+            <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-status-warning/30 bg-status-warning/10 px-4 py-2 text-xs">
+              <span>{t('page.readinessUnavailable')}</span>
+              <button type="button" onClick={() => setReadinessRetry(value => value + 1)}
+                className="rounded-lg border border-status-warning/40 px-3 py-1 font-semibold">{t('page.readinessRetry')}</button>
+            </div>
+          )}
           <ViewSwitcher active={activeView} onChange={setActiveView} />
 
           {isLoading ? (

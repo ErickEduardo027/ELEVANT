@@ -1,5 +1,6 @@
 using System.Data;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Workforce;
@@ -359,7 +360,7 @@ internal sealed partial class EfDepartmentGovernanceStore
 
         var agent = await context.RampAgents.SingleOrDefaultAsync(item => item.PersonId == rampPersonId, cancellationToken);
         if (agent is null) return;
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = BusinessCalendar.Today(now);
         var agentScopes = await context.Set<RampAgentStationScope>()
             .Where(scope => scope.RampAgentId == agent.Id && scope.ValidTo == null).ToArrayAsync(cancellationToken);
         var removed = agentScopes.Where(scope => !stations.Contains(scope.StationId)).ToArray();

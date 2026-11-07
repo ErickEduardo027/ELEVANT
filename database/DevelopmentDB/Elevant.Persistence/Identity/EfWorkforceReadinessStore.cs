@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Workforce;
@@ -26,7 +27,7 @@ internal sealed class EfWorkforceReadinessStore(ElevantDbContext context, IActor
                 membership.OrganizationType == OrganizationType.AviamOperator))
             return null;
         var now = clock.GetUtcNow();
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = BusinessCalendar.Today(now);
 
         var agents = await (from agent in context.RampAgents.AsNoTracking()
                             join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
@@ -132,7 +133,7 @@ internal sealed class EfWorkforceReadinessStore(ElevantDbContext context, IActor
         if (agents.Length != 1) return null;
         var me = agents[0];
         var (first, last) = (from, to);
-        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+        var today = BusinessCalendar.Today(clock.GetUtcNow());
 
         var shifts = await (from shift in context.ShiftAssignments.AsNoTracking()
                             join station in context.Stations.AsNoTracking() on shift.StationId equals station.Id

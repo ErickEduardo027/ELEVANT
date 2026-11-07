@@ -12,6 +12,7 @@ export * from "./contractDocuments";
 export * from "./airlinePermits";
 export * from "./masterData";
 export * from "./flightFeedReview";
+export * from "./humanResourcesCommands";
 export {
   createElevantApiClient,
   type CreateSessionOptions,
@@ -216,6 +217,9 @@ export {
   type HumanResourcesAvailabilityWritten,
   type RecordHumanResourcesAvailabilityInput,
   type ResolveHumanResourcesAvailabilityInput,
+  type HumanResourcesAvailabilityAmended,
+  type OccAssignmentReadinessResponse,
+  type OccUnfitAssignmentResponse,
   type ListHumanResourcesAvailabilityRequestsParams,
   type HumanResourcesShiftPage,
   type HumanResourcesScheduleWarningPageResponse,

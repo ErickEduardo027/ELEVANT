@@ -59,6 +59,19 @@ public sealed class PositionCoveragePolicyTests
         Assert.Equal(["mentor_not_eligible"], PositionCoveragePolicy.Evaluate(juniorMentor));
     }
 
+    [Fact]
+    public void AMentorOnAnApprovedAbsenceOrWithoutAnAirportPermitAccompaniesNobody()
+    {
+        // 2-N23: the trainee never works alone because the mentor is off or has an expired permit.
+        var junior = Candidate() with { Agent = Candidate().Agent with { HireDate = WorkDate.AddMonths(-1) } };
+        var absent = junior with { Mentor = new CoverageMentorFacts(true, new DateOnly(2024, 5, 1), true, HasApprovedAbsence: true) };
+        Assert.Equal(["mentor_absent"], PositionCoveragePolicy.Evaluate(absent));
+        var withoutPermit = junior with { Mentor = new CoverageMentorFacts(true, new DateOnly(2024, 5, 1), true, HasAirportPermit: false) };
+        Assert.Equal(["mentor_permit_required"], PositionCoveragePolicy.Evaluate(withoutPermit));
+        var both = junior with { Mentor = new CoverageMentorFacts(false, new DateOnly(2024, 5, 1), true, true, false) };
+        Assert.Equal(["mentor_not_eligible", "mentor_absent", "mentor_permit_required"], PositionCoveragePolicy.Evaluate(both));
+    }
+
     [Theory]
     [InlineData(-3, false)]
     [InlineData(-2, true)]

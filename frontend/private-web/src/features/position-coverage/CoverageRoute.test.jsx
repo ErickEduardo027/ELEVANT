@@ -84,3 +84,25 @@ it('says where terminals are created when the station has none active', async ()
   render(<CoverageRoute />);
   expect(await screen.findByText(/La estación no tiene terminales activas. OCC las crea en «Datos maestros»./)).toBeInTheDocument();
 });
+
+it('marks absent or permitless mentors and explains the mentor rules of 2-N23', async () => {
+  const absentMentor = { ...agent, agentId: 'ag-2', name: 'Mateo Ramp', isJunior: false, isAbsent: true };
+  const permitless = { ...agent, agentId: 'ag-3', name: 'Lucía Ramp', isJunior: false, hasAirportPermit: false };
+  const fit = { ...agent, agentId: 'ag-4', name: 'Pedro Ramp', isJunior: false };
+  loadOccCoverage.mockResolvedValue({ ...board, agents: [agent, absentMentor, permitless, fit] });
+  createOccCoverage.mockRejectedValueOnce(Object.assign(new Error('La cobertura no cumple las reglas de asignación.'),
+    { status: 422, reasons: ['mentor_absent', 'mentor_permit_required'] }));
+  render(<CoverageRoute />);
+  const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
+  fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-1' } });
+  const mentor = within(form).getByLabelText('Mentor');
+  expect(within(mentor).getByRole('option', { name: 'Mateo Ramp · ausencia aprobada' })).toBeDisabled();
+  expect(within(mentor).getByRole('option', { name: 'Lucía Ramp · carnet vencido' })).toBeDisabled();
+  expect(within(mentor).getByRole('option', { name: 'Pedro Ramp' })).not.toBeDisabled();
+  fireEvent.change(mentor, { target: { value: 'ag-4' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'A01' }));
+  fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
+  // The server still decides: a mentor who became absent meanwhile is explained in Spanish.
+  expect(await screen.findByText('El mentor tiene una ausencia aprobada ese día.')).toBeInTheDocument();
+  expect(screen.getByText('El mentor no tiene el carnet aeroportuario vigente.')).toBeInTheDocument();
+});

@@ -13,6 +13,7 @@ import {
   changeRequisitionStatus, createEmployee, getEmployee, getEmployeeOptions, governanceMessage, listEmployees,
   listPositions, listRequisitions, savePosition, terminateEmployee,
 } from '../../services/humanResourcesEmployeesService';
+import { businessToday } from '../../services/businessDay';
 
 vi.mock('../../services/humanResourcesEmployeesService', async importOriginal => ({
   ...(await importOriginal()),
@@ -77,10 +78,41 @@ describe('EmployeesPage', () => {
     const modal = screen.getByRole('alertdialog');
     expect(within(modal).getByText(/Su cuenta \(activa\) se desactiva/)).toBeInTheDocument();
     expect(within(modal).getByText(/Se cancelan 1 solicitud/)).toBeInTheDocument();
-    expect(within(modal).getByText(/2 turno\(s\) futuros/)).toBeInTheDocument();
+    expect(within(modal).getByText(/Se quitan sus turnos que aún no empiezan \(tiene 2 desde hoy\)/)).toBeInTheDocument();
+    // 2-N31: the proposed date and its limit are AVIAM's day, never the UTC one.
+    const day = within(modal).getByLabelText('Fecha de baja');
+    expect(day).toHaveValue(businessToday());
+    expect(day).toHaveAttribute('max', businessToday());
     await userEvent.type(within(modal).getByRole('textbox', { name: 'Motivo' }), 'Renuncia');
     await userEvent.click(within(modal).getByRole('button', { name: 'Dar de baja' }));
-    expect(terminateEmployee).toHaveBeenCalledWith('emp-1', expect.objectContaining({ reason: 'Renuncia', expectedVersion: 'E1' }));
+    // The termination carries the intent's Idempotency-Key (2-N06).
+    expect(terminateEmployee).toHaveBeenCalledWith('emp-1', expect.objectContaining({ reason: 'Renuncia', expectedVersion: 'E1',
+      terminatedOn: businessToday() }), expect.stringMatching(/^[0-9a-f-]{36}$/));
+  });
+
+  it('explains that a ramp agent with an operation in progress keeps the record and never shows the server title', async () => {
+    const ramp = { ...summary, position: { id: 'pos-r', name: 'Agente de rampa', isRampPosition: true } };
+    listEmployees.mockResolvedValue({ employees: [ramp], total: 1 });
+    getEmployeeOptions.mockResolvedValue(options);
+    getEmployee.mockResolvedValue({ summary: ramp, identificationType: 'CEDULA', identificationNumber: '00100000011',
+      identificationIsPlaceholder: false, phoneNumber: null, terminatedOn: null, terminationReason: null, futureShifts: 0,
+      pendingAccessRequests: 0, assignments: [] });
+    terminateEmployee.mockRejectedValueOnce(Object.assign(new Error('Governance record conflicts with current state.'),
+      { status: 409, code: 'agent_has_operation_in_progress' }))
+      .mockRejectedValueOnce(Object.assign(new Error('Invalid governance data.'), { status: 400 }));
+    renderWith(<EmployeesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Lucía Prueba' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Dar de baja' }));
+    const modal = screen.getByRole('alertdialog');
+    expect(within(modal).getByText(/se liberan sus\s+coberturas de posición/)).toBeInTheDocument();
+    await userEvent.type(within(modal).getByRole('textbox', { name: 'Motivo' }), 'Renuncia');
+    await userEvent.click(within(modal).getByRole('button', { name: 'Dar de baja' }));
+    expect(await within(modal).findByText(/tiene una operación en curso o devuelta/)).toBeInTheDocument();
+    await userEvent.click(within(modal).getByRole('button', { name: 'Dar de baja' }));
+    expect(await within(modal).findByText('Revise los datos e intente de nuevo.')).toBeInTheDocument();
+    expect(within(modal).queryByText(/Invalid governance data/)).not.toBeInTheDocument();
+    // Each 4xx settled its intent: the second attempt is a new one.
+    expect(terminateEmployee.mock.calls[1][2]).not.toBe(terminateEmployee.mock.calls[0][2]);
   });
 
   it('hides HR writes from read-only accounts', async () => {

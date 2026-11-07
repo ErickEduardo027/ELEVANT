@@ -25,6 +25,10 @@ internal static class SafeAuditChanges
         "aircraft_type.icao", "aircraft_type.iata", "aircraft_type.manufacturer", "aircraft_type.model",
         "aircraft_type.size", "aircraft_type.active",
         "flight_proposal.status",
+        // Ramp staff (phase 2, block D): what the release path took off an agent (2-N06, 2-N08) and an approved
+        // absence Gestión Humana cancelled or shortened (2-N22).
+        "coverage.status", "assignment.status", "operation.status", "shift.status",
+        "availability.status", "availability.ends_on",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

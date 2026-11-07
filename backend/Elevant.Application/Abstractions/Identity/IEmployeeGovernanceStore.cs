@@ -170,10 +170,19 @@ public interface IEmployeeGovernanceStore
     Task<GovernanceResult> CreateEmployeeAsync(Guid actorId, SaveEmployeeInput input, CancellationToken cancellationToken = default);
     Task<GovernanceResult> UpdateEmployeeAsync(Guid actorId, Guid employeeId, SaveEmployeeInput input,
         CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Moves the employee to another department. Leaving the ramp ends their ramp duty through the release path
+    /// (2-N06): coverages, unstarted operations and shifts are released, or <c>agent_has_operation_in_progress</c>.
+    /// The Idempotency-Key is optional while older clients exist (expand).
+    /// </summary>
     Task<GovernanceResult> TransferEmployeeAsync(Guid actorId, Guid employeeId, TransferEmployeeInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Terminates the employee on a date up to today in AVIAM's calendar (2-N31), ending their ramp duty through
+    /// the release path (2-N06). The Idempotency-Key is optional while older clients exist (expand).
+    /// </summary>
     Task<GovernanceResult> TerminateEmployeeAsync(Guid actorId, Guid employeeId, TerminateEmployeeInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<UnregisteredPersonData>?> ListUnregisteredAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<GovernanceResult> RegisterEmployeeAsync(Guid actorId, RegisterEmployeeInput input,
         CancellationToken cancellationToken = default);

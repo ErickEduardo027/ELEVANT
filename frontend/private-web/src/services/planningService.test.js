@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   getManualTurnaroundOptions: vi.fn(),
   createManualTurnaround: vi.fn(),
   programOccShift: vi.fn(),
+  getOccAssignmentReadiness: vi.fn(),
   handleUnauthorizedResponse: vi.fn(),
   readSession: vi.fn(),
 }));
@@ -377,5 +378,18 @@ describe('planningService', () => {
       message:
         'No fue posible confirmar la asignación. La planificación se actualizará antes de volver a intentar.',
     });
+  });
+});
+describe('assignment readiness (2-N25)', () => {
+  it('reads the marks of a station and date and hides the failure details', async () => {
+    const marks = { stationId, date: '2026-08-19', assignments: [] };
+    mocks.getOccAssignmentReadiness.mockResolvedValueOnce(marks).mockRejectedValueOnce(new Error('SQL timeout at 10.0.0.4'));
+    mocks.createPrivateWebApiClient.mockReturnValue({ getOccAssignmentReadiness: mocks.getOccAssignmentReadiness });
+    const signal = new AbortController().signal;
+    await expect(planningService.getAssignmentReadiness({ stationId, date: '2026-08-19', signal })).resolves.toEqual(marks);
+    expect(mocks.getOccAssignmentReadiness).toHaveBeenCalledWith({ stationId, date: '2026-08-19' }, { signal });
+    const failure = await planningService.getAssignmentReadiness({ stationId, date: '2026-08-19' }).catch(error => error);
+    expect(failure.message).toBe('No fue posible comprobar si los agentes asignados pueden operar.');
+    expect(failure.message).not.toMatch(/SQL/);
   });
 });

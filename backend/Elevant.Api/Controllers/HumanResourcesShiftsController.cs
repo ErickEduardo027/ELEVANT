@@ -73,32 +73,38 @@ public sealed class HumanResourcesShiftsController(
         {
             null => Ok(result.Shift),
             HumanResourcesShiftWriteFailure.Forbidden => Forbid(),
-            HumanResourcesShiftWriteFailure.Invalid => Problem(statusCode: 400,
-                title: "Invalid shift record."),
-            HumanResourcesShiftWriteFailure.Conflict => Problem(statusCode: 409,
-                title: "Shift conflicts with current state."),
+            HumanResourcesShiftWriteFailure.Invalid => HumanResourcesProblems.Failure(this, 400, result.Code, "invalid_shift"),
+            HumanResourcesShiftWriteFailure.Conflict => HumanResourcesProblems.Failure(this, 409, result.Code, "shift_day_taken"),
             _ => throw new InvalidOperationException(),
         };
     }
 
-    /// <summary>Removes a shift of today or later (ADR-0026); past shifts are history.</summary>
+    /// <summary>
+    /// Removes a shift of today or later in its station's calendar (ADR-0026, 2-N31); past shifts are history
+    /// (<c>shift_in_past</c>) and a shift whose agent already covers stands or carries operations in it stays
+    /// (<c>shift_in_use</c>, 2-N11). The expected version travels as <c>?version=</c>; it and the
+    /// Idempotency-Key are optional while older clients exist (expand), and a key needs the version.
+    /// </summary>
     [HttpDelete("{id:guid}", Name = "RemoveHumanResourcesShift")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
-    public async Task<IActionResult> Remove(Guid id, CancellationToken cancellationToken)
+    public async Task<IActionResult> Remove(Guid id, [FromQuery] string? version,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var actorId) ||
             actorId == Guid.Empty) return Unauthorized();
-        var result = await writeStore.RemoveAsync(actorId, id, cancellationToken);
+        var result = await writeStore.RemoveAsync(actorId, id,
+            new RemoveHumanResourcesShiftInput(version, idempotencyKey), cancellationToken);
         return result.Failure switch
         {
             null => NoContent(),
             HumanResourcesShiftWriteFailure.Forbidden => Forbid(),
-            HumanResourcesShiftWriteFailure.Invalid => Problem(statusCode: 400, title: "Invalid shift identifier."),
-            _ => Problem(statusCode: 409, title: "Past or referenced shifts cannot be removed."),
+            HumanResourcesShiftWriteFailure.Invalid => HumanResourcesProblems.Failure(this, 400, result.Code, "invalid_shift"),
+            _ => HumanResourcesProblems.Failure(this, 409, result.Code, "shift_in_use"),
         };
     }
 }

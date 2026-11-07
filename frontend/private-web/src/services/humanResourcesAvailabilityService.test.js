@@ -1,7 +1,7 @@
 import { expect, it, vi } from 'vitest';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { readSession, handleUnauthorizedResponse } from '../features/auth/authService';
-import { getHumanResourcesAvailabilityRequests,
+import { amendHumanResourcesAvailabilityRequest, getApprovedAbsences, getHumanResourcesAvailabilityRequests,
   recordHumanResourcesAvailabilityRequest,
   resolveHumanResourcesAvailabilityRequest } from './humanResourcesAvailabilityService';
 
@@ -38,8 +38,37 @@ it('passes stable write intentions and invalidates an expired session', async ()
     .resolves.toEqual({ id, status: 'Pending' });
   expect(record).toHaveBeenCalledWith(id, input, {});
   await expect(resolveHumanResourcesAvailabilityRequest(id,
-    { decision: 'Approve', note: null })).rejects.toMatchObject({ status: 401 });
+    { decision: 'Approve', note: null, expectedVersion: 'AAAAAAAAB9E=' }, 'key-1')).rejects.toMatchObject({ status: 401 });
   expect(resolve).toHaveBeenCalledWith(id,
-    { decision: 'Approve', note: null }, {});
+    { decision: 'Approve', note: null, expectedVersion: 'AAAAAAAAB9E=' }, 'key-1');
   expect(handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
+});
+
+it('amends an approved absence with its key (2-N22)', async () => {
+  readSession.mockReturnValue({ token: 'hr-token' });
+  const id = '50000000-0000-7000-8000-000000000081';
+  const amended = { id, status: 'Approved', endsOn: '2026-10-05', version: 'AAAAAAAAB9I=' };
+  const amend = vi.fn().mockResolvedValue(amended);
+  createPrivateWebApiClient.mockReturnValue({ amendHumanResourcesAvailabilityRequest: amend });
+  const command = { action: 'Shorten', endsOn: '2026-10-05', reason: 'Alta médica anticipada',
+    expectedVersion: 'AAAAAAAAB9E=' };
+  await expect(amendHumanResourcesAvailabilityRequest(id, command, 'key-2')).resolves.toEqual(amended);
+  expect(amend).toHaveBeenCalledWith(id, command, 'key-2');
+});
+
+it('collects the approved days off and restrictions of a range across pages (2-N24)', async () => {
+  readSession.mockReturnValue({ token: 'hr-token' });
+  const item = (id, type, status) => ({ id, type, status, rampProfileId: 'p-1', startsOn: '2026-10-05',
+    endsOn: '2026-10-06' });
+  const get = vi.fn()
+    .mockResolvedValueOnce({ hasMore: true, requests: [item('a', 'DayOff', 'Approved'), item('b', 'DayOff', 'Pending')] })
+    .mockResolvedValueOnce({ hasMore: false, requests: [item('c', 'ShiftChange', 'Approved'),
+      item('d', 'Restriction', 'Approved')] });
+  createPrivateWebApiClient.mockReturnValue({ getHumanResourcesAvailabilityRequests: get });
+  const absences = await getApprovedAbsences('2026-10-05', '2026-10-11');
+  expect(absences.map(absence => absence.id)).toEqual(['a', 'd']);
+  expect(get.mock.calls.map(call => call[0])).toEqual([
+    { from: '2026-10-05', to: '2026-10-11', page: 1, limit: 100 },
+    { from: '2026-10-05', to: '2026-10-11', page: 2, limit: 100 },
+  ]);
 });

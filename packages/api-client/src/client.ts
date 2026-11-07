@@ -118,6 +118,17 @@ import {
   type OccFlightFeedView,
 } from "./flightFeedReview";
 import {
+  SCHEDULE_READINESS_WARNING_KINDS,
+  SCHEDULE_WARNING_KINDS,
+  isHumanResourcesAvailabilityAmended,
+  isOccAssignmentReadiness,
+  isRecordVersion,
+  normalizedAvailabilityAmendment,
+  validatedOccAssignmentReadinessQuery,
+  type AmendHumanResourcesAvailabilityCommand,
+  type OccAssignmentReadinessQuery,
+} from "./humanResourcesCommands";
+import {
   isCommercialAccountResponse,
   isEmailOutboxPage,
   isInvoiceEmailStatus,
@@ -325,6 +336,8 @@ import {
   getWithdrawContractVersionUrl,
   getGetContractPricingTermsUrl,
   getRemoveHumanResourcesShiftUrl,
+  getAmendHumanResourcesAvailabilityRequestUrl,
+  getGetOccAssignmentReadinessUrl,
   getListRampAgentReadinessUrl,
   getGetOwnRampScheduleUrl,
   getGetOccReportUrl,
@@ -428,6 +441,8 @@ import {
   type HumanResourcesAvailabilityWritten,
   type RecordHumanResourcesAvailabilityInput,
   type ResolveHumanResourcesAvailabilityInput,
+  type HumanResourcesAvailabilityAmended,
+  type OccAssignmentReadinessResponse,
   type ListHumanResourcesAvailabilityRequestsParams,
   type HumanResourcesShiftAssignmentOptions,
   type GetHumanResourcesShiftAssignmentOptionsParams,
@@ -651,10 +666,14 @@ export type HumanResourcesReportPage =
   HumanResourcesAccountMovementResponseHumanResourcesReportPageResponse |
   HumanResourcesStaffDistributionResponseHumanResourcesReportPageResponse |
   HumanResourcesQualificationCoverageResponseHumanResourcesReportPageResponse;
+/**
+ * The station and range of a schedule warning read. `includeReadiness` also asks for the shifts on an approved
+ * absence and outside a current airport document (`ApprovedAbsence`, `DocumentExpired`, 2-N24).
+ */
 export type HumanResourcesScheduleWarningsQuery =
   Required<Pick<ListHumanResourcesScheduleWarningsParams,
     "stationId" | "from" | "to">> &
-  Pick<ListHumanResourcesScheduleWarningsParams, "page" | "limit">;
+  Pick<ListHumanResourcesScheduleWarningsParams, "page" | "limit" | "includeReadiness">;
 export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -963,11 +982,28 @@ export interface ElevantApiClient {
     request: RecordHumanResourcesAvailabilityInput,
     options?: RecordHumanResourcesAvailabilityOptions,
   ): Promise<HumanResourcesAvailabilityWritten>;
+  /**
+   * Approves, rejects or cancels a pending request with the `version` on screen and the intent's Idempotency-Key
+   * (both optional while older clients exist; a key needs the version). Approving a day off or a restriction releases
+   * the agent's coverages, unstarted operations and shifts of those days, or fails with
+   * `agent_has_operation_in_progress` (2-N08).
+   */
   resolveHumanResourcesAvailabilityRequest(
     id: string,
     request: ResolveHumanResourcesAvailabilityInput,
+    idempotencyKey?: string | null,
     options?: ResolveHumanResourcesAvailabilityOptions,
   ): Promise<HumanResourcesAvailabilityWritten>;
+  /**
+   * Cancels an approved absence that has not started, or shortens one that has not ended (2-N22), with a reason, the
+   * `version` on screen and an Idempotency-Key. Answers the request's status, last day and new version.
+   */
+  amendHumanResourcesAvailabilityRequest(
+    id: string,
+    command: AmendHumanResourcesAvailabilityCommand,
+    idempotencyKey: string,
+    options?: ResolveHumanResourcesAvailabilityOptions,
+  ): Promise<HumanResourcesAvailabilityAmended>;
   getHumanResourcesShiftAssignmentOptions(
     query: HumanResourcesShiftAssignmentQuery,
     options?: GetHumanResourcesShiftAssignmentOptionsOptions,
@@ -977,8 +1013,20 @@ export interface ElevantApiClient {
     request: RecordHumanResourcesShiftInput,
     options?: RecordHumanResourcesShiftOptions,
   ): Promise<HumanResourcesShiftRecorded>;
-  /** Removes a shift of today or later (ADR-0026); removing twice answers the same. */
-  removeHumanResourcesShift(id: string, options?: GetHumanResourcesReportOptions): Promise<void>;
+  /**
+   * Removes a shift of today or later in its station's calendar (ADR-0026, 2-N31); removing twice answers the same.
+   * With the shift's `version` and the intent's Idempotency-Key (optional while older clients exist; a key needs the
+   * version). A past shift is `shift_in_past`; one whose agent covers stands or carries operations in it,
+   * `shift_in_use` (2-N11).
+   */
+  removeHumanResourcesShift(id: string, expectedVersion?: string | null, idempotencyKey?: string | null,
+    options?: GetHumanResourcesReportOptions): Promise<void>;
+  /**
+   * The planning board's marks (2-N25): the assignments of the station's operations on the date whose agent is
+   * inactive, on an approved absence or without a current airport permit or ramp licence. Nothing is released.
+   */
+  getOccAssignmentReadiness(query: OccAssignmentReadinessQuery,
+    options?: GetHumanResourcesReportOptions): Promise<OccAssignmentReadinessResponse>;
   /** «¿Puede operar?» of every active ramp agent, for Gestión Humana (ADR-0026). */
   listRampAgentReadiness(options?: GetHumanResourcesReportOptions): Promise<RampAgentReadinessData[]>;
   /** The signed-in ramp agent's shifts (up to 31 days) and current documents. */
@@ -4264,10 +4312,11 @@ function isHumanResourcesAvailabilityRequestPage(
   const from = value.from;
   const to = value.to;
   return value.requests.every(item => {
+    // `version` is the expected version of a decision or an amendment (2-N22).
     if (!isRecord(item) || !hasOnlyKeys(item,
       ["id", "rampProfileId", "agentName", "employeeNumber", "startsOn",
         "endsOn", "type", "status", "reason", "requestedAt", "resolvedAt",
-        "resolutionNote"]) ||
+        "resolutionNote", "version"]) || !isRecordVersion(item.version) ||
         !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
         !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
         !isDateOnly(item.startsOn) || !isDateOnly(item.endsOn) ||
@@ -4304,13 +4353,15 @@ function validatedHumanResourcesAvailabilityInput(
 function validatedHumanResourcesAvailabilityResolution(
   input: ResolveHumanResourcesAvailabilityInput,
 ): ResolveHumanResourcesAvailabilityInput {
-  if (!isRecord(input) || !hasOnlyKeys(input, ["decision", "note"]) ||
+  if (!isRecord(input) || !hasOnlyKeys(input, ["decision", "note", "expectedVersion"]) ||
       !["Approve", "Reject", "Cancel"].includes(input.decision) ||
       (input.note != null && (typeof input.note !== "string" ||
-        input.note.trim().length > 1000)))
+        input.note.trim().length > 1000)) ||
+      (input.expectedVersion != null && !isRecordVersion(input.expectedVersion)))
     throw new TypeError("Human Resources availability resolution is invalid.");
   return { decision: input.decision,
-    ...(input.note == null ? {} : { note: input.note.trim() || null }) };
+    ...(input.note == null ? {} : { note: input.note.trim() || null }),
+    ...(input.expectedVersion == null ? {} : { expectedVersion: input.expectedVersion }) };
 }
 
 function isHumanResourcesAvailabilityWritten(
@@ -4335,10 +4386,11 @@ function isHumanResourcesShiftPage(value: unknown): value is HumanResourcesShift
   const from = value.from;
   const to = value.to;
   return value.shifts.every(item => {
+    // `version` is the expected version of the shift's removal (2-N11).
     if (!isRecord(item) || !hasOnlyKeys(item,
       ["id", "rampProfileId", "agentName", "employeeNumber", "stationId",
         "stationCode", "terminalId", "terminalCode", "positionId", "positionCode",
-        "workDate", "startsAtLocal", "endsAtLocal", "block"]) ||
+        "workDate", "startsAtLocal", "endsAtLocal", "block", "version"]) || !isRecordVersion(item.version) ||
         !isUuid(item.id) || ids.has(item.id) || !isUuid(item.rampProfileId) ||
         !isNonEmptyString(item.agentName) || !isNonEmptyString(item.employeeNumber) ||
         !isUuid(item.stationId) || !isNonEmptyString(item.stationCode) ||
@@ -5261,16 +5313,19 @@ function validatedHumanResourcesScheduleWarningsQuery(
   query: HumanResourcesScheduleWarningsQuery,
 ): HumanResourcesScheduleWarningsQuery {
   if (!isRecord(query) || !hasOnlyKeys(query,
-      ["stationId", "from", "to", "page", "limit"]) ||
+      ["stationId", "from", "to", "page", "limit", "includeReadiness"]) ||
       !isUuid(query.stationId) || !isDateOnly(query.from) ||
       !isDateOnly(query.to) || query.from > query.to ||
       (Date.parse(`${query.to}T00:00:00Z`) -
         Date.parse(`${query.from}T00:00:00Z`)) / 86_400_000 >= 30 ||
       (query.page !== undefined && (!isInt32(query.page) || query.page < 1)) ||
       (query.limit !== undefined && (!isInt32(query.limit) ||
-        query.limit < 1 || query.limit > 100)))
+        query.limit < 1 || query.limit > 100)) ||
+      (query.includeReadiness !== undefined && typeof query.includeReadiness !== "boolean"))
     throw new TypeError("Human Resources schedule warning query is invalid.");
-  return query;
+  // Without readiness the parameter stays out of the URL, like older clients send it.
+  const { includeReadiness, ...scope } = query;
+  return includeReadiness ? { ...scope, includeReadiness: true } : scope;
 }
 
 function isHumanResourcesScheduleWarningPage(value: unknown,
@@ -5288,6 +5343,9 @@ function isHumanResourcesScheduleWarningPage(value: unknown,
       !Array.isArray(value.warnings) || value.warnings.length > value.limit ||
       (value.hasMore && value.warnings.length !== value.limit)) return false;
   const keys = new Set<string>();
+  // The readiness kinds (2-N24) only answer a read that asked for them.
+  const kinds: readonly string[] = query.includeReadiness
+    ? [...SCHEDULE_WARNING_KINDS, ...SCHEDULE_READINESS_WARNING_KINDS] : SCHEDULE_WARNING_KINDS;
   return value.warnings.every(warning => {
     if (!isRecord(warning) || !hasOnlyKeys(warning, [
       "anchorShiftId", "rampProfileId", "agentName", "employeeNumber",
@@ -5300,8 +5358,8 @@ function isHumanResourcesScheduleWarningPage(value: unknown,
       !isNonEmptyString(warning.employeeNumber) ||
       !isDateOnly(warning.workDate) || warning.workDate < query.from ||
       warning.workDate > query.to ||
-      !["Overlap", "ShortRest", "SevenDayLoad", "Unevaluable"]
-        .includes(String(warning.kind)) ||
+      !kinds.includes(String(warning.kind)) ||
+      (warning.kind === "DocumentExpired" && !isNonEmptyString(warning.reason)) ||
       !Array.isArray(warning.evidence) ||
       typeof warning.hasRestrictedEvidence !== "boolean" ||
       (warning.measuredMinutes != null &&
@@ -6348,12 +6406,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     async resolveHumanResourcesAvailabilityRequest(
       id: string,
       request: ResolveHumanResourcesAvailabilityInput,
+      idempotencyKey?: string | null,
       options?: ResolveHumanResourcesAvailabilityOptions,
     ) {
       const requestId = validatedUuid(id, "Availability request ID");
       const body = validatedHumanResourcesAvailabilityResolution(request);
+      // A key needs the version on screen, like the server asks (expected_version_required).
+      if (idempotencyKey != null && body.expectedVersion == null)
+        throw new TypeError("A keyed availability decision needs the version on screen.");
       const headers = headersFrom(options?.headers, "Request headers");
       headers.set("content-type", "application/json");
+      if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
       const result = await execute(getResolveHumanResourcesAvailabilityRequestUrl(requestId),
         { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
       if (result.status !== 200 || !isHumanResourcesAvailabilityWritten(result.data,
@@ -6361,6 +6424,18 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
           body.decision as "Approve" | "Reject" | "Cancel"]]))
         throw malformedResponse(result.status);
       return result.data;
+    },
+    async amendHumanResourcesAvailabilityRequest(
+      id: string,
+      command: AmendHumanResourcesAvailabilityCommand,
+      idempotencyKey: string,
+      options?: ResolveHumanResourcesAvailabilityOptions,
+    ) {
+      const requestId = validatedUuid(id, "Availability request ID");
+      const body = normalizedAvailabilityAmendment(command);
+      return catalogCommand("POST", getAmendHumanResourcesAvailabilityRequestUrl(requestId), body, idempotencyKey,
+        options, (value): value is HumanResourcesAvailabilityAmended =>
+          isHumanResourcesAvailabilityAmended(value, requestId, body));
     },
     async getHumanResourcesShiftAssignmentOptions(
       query: HumanResourcesShiftAssignmentQuery,
@@ -6390,10 +6465,25 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw malformedResponse(result.status);
       return result.data as unknown as HumanResourcesShiftRecorded;
     },
-    async removeHumanResourcesShift(id: string, options?: GetHumanResourcesReportOptions) {
+    async removeHumanResourcesShift(id: string, expectedVersion?: string | null, idempotencyKey?: string | null,
+      options?: GetHumanResourcesReportOptions) {
       const shiftId = validatedUuid(id, "Shift ID");
-      const result = await execute(getRemoveHumanResourcesShiftUrl(shiftId), { ...options, method: "DELETE" }, true);
+      if (expectedVersion != null && !isRecordVersion(expectedVersion))
+        throw new TypeError("The shift version is invalid.");
+      // A key needs the version on screen, like the server asks (expected_version_required).
+      if (idempotencyKey != null && expectedVersion == null)
+        throw new TypeError("A keyed shift removal needs the version on screen.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getRemoveHumanResourcesShiftUrl(shiftId,
+        expectedVersion == null ? undefined : { version: expectedVersion }), { ...options, method: "DELETE", headers }, true);
       if (result.status !== 204) throw malformedResponse(result.status);
+    },
+    async getOccAssignmentReadiness(query: OccAssignmentReadinessQuery, options?: GetHumanResourcesReportOptions) {
+      const scope = validatedOccAssignmentReadinessQuery(query);
+      const result = await execute(getGetOccAssignmentReadinessUrl(scope), { ...options, method: "GET" }, true);
+      if (!isOccAssignmentReadiness(result.data, scope)) throw malformedResponse(result.status);
+      return result.data;
     },
     async listRampAgentReadiness(options?: GetHumanResourcesReportOptions) {
       const result = await execute(getListRampAgentReadinessUrl(), { ...options, method: "GET" }, true);

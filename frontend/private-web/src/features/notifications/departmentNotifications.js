@@ -8,6 +8,9 @@ const KINDS = {
   access_request: { title: 'Nueva solicitud de acceso', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/access-requests` } },
   requisition: { title: 'Nueva requisición de personal', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/requisitions` } },
   availability_request: { title: 'Solicitud de disponibilidad por decidir', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/schedules` } },
+  // 2-N25 (phase 2, block D): the daily sweep warns HumanResources:DocumentExpiryNoticeDays before a current document ends.
+  agent_document_expiring: { title: 'Un carnet o una licencia de rampa está por vencer', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/permits` } },
+  agent_qualification_expiring: { title: 'Una habilitación de un agente está por vencer', target: { path: `${HUMAN_RESOURCES_BASE_PATH}/certifications` } },
   commercial_request: { title: 'Nueva solicitud comercial', target: { moduleId: CONTRACT_MODULE_IDS.REQUESTS } },
   draft_comment: { title: 'La aerolínea comentó un borrador', target: { moduleId: CONTRACT_MODULE_IDS.DRAFTS } },
   // 1-N14: Contratos learns when it can move a draft forward.

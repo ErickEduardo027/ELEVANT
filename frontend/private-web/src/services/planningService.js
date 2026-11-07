@@ -165,6 +165,19 @@ export async function getPlanningSnapshot({ stationId, date, signal } = {}) {
   );
 }
 
+const READINESS_LOAD_ERROR = 'No fue posible comprobar si los agentes asignados pueden operar.';
+
+/**
+ * The planning board's marks (2-N25): the assignments of the station's operations on the date whose agent is
+ * inactive, on an approved absence or without a current airport permit or ramp licence. Nothing is released.
+ */
+export async function getAssignmentReadiness({ stationId, date, signal } = {}) {
+  return executeSafely(
+    () => createPlanningClient().getOccAssignmentReadiness({ stationId, date }, { signal }),
+    READINESS_LOAD_ERROR
+  );
+}
+
 export async function getPlanningOptions(turnaroundId, { signal } = {}) {
   return executeSafely(
     () => createPlanningClient().getOccPlanningOptionsWithMetadata(turnaroundId, { signal }),

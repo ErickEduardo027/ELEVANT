@@ -32,13 +32,23 @@ internal static class CoverageReassignment
             .ToArrayAsync(cancellationToken);
         if (current.Length != 1) return new(null, null);
 
-        // The coverage at block time: a primary one first, a reinforcement only if nothing else.
+        // The coverage at block time: a primary one first, a reinforcement only if nothing else. An agent who no
+        // longer works the ramp or is on an approved absence that day never receives the flight (2-N06, 2-N08).
         var at = operation.PlannedStartAt ?? now;
+        var operationDate = await context.Turnarounds.AsNoTracking().Where(item => item.Id == turnaroundId)
+            .Select(item => item.OperationDate).SingleAsync(cancellationToken);
         var covering = await (from coverage in context.Set<PositionCoverage>().AsNoTracking()
                               join item in context.Set<PositionCoverageStand>().AsNoTracking()
                                   on coverage.Id equals item.PositionCoverageId
+                              join agent in context.RampAgents.AsNoTracking() on coverage.RampAgentId equals agent.Id
                               where item.StandId == standId && coverage.StationId == stationId &&
-                                    coverage.ReleasedAt == null && coverage.StartsAt <= at && at < coverage.EndsAt
+                                    coverage.ReleasedAt == null && coverage.StartsAt <= at && at < coverage.EndsAt &&
+                                    agent.IsActive &&
+                                    !context.AvailabilityRequests.Any(request => request.RampAgentId == agent.Id &&
+                                        request.Status == AvailabilityRequestStatus.Approved &&
+                                        (request.Type == AvailabilityRequestType.DayOff ||
+                                         request.Type == AvailabilityRequestType.Restriction) &&
+                                        request.StartsOn <= operationDate && request.EndsOn >= operationDate)
                               orderby coverage.IsReinforcement, coverage.CreatedAt
                               select coverage.RampAgentId)
             .FirstOrDefaultAsync(cancellationToken);

@@ -51,8 +51,13 @@ async function authenticated(call) {
   }
 }
 
-/** Removes a shift of today or later (ADR-0026). */
-export const removeHumanResourcesShift = id => authenticated(client => client.removeHumanResourcesShift(id));
+/**
+ * Removes a shift of today or later in its station's calendar (ADR-0026, 2-N31) with the shift's `version` and the
+ * intent's Idempotency-Key. A shift whose agent covers stands or carries operations in it stays (`shift_in_use`,
+ * 2-N11); a past one is history (`shift_in_past`).
+ */
+export const removeHumanResourcesShift = (id, version, idempotencyKey) =>
+  authenticated(client => client.removeHumanResourcesShift(id, version, idempotencyKey));
 
 /** «¿Puede operar?» of every active ramp agent (ADR-0026). */
 export const listRampAgentReadiness = () => authenticated(client => client.listRampAgentReadiness());

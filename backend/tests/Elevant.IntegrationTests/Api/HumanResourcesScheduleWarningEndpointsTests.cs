@@ -52,6 +52,12 @@ public sealed class HumanResourcesScheduleWarningEndpointsTests(ElevantApiFactor
         Assert.DoesNotContain("JFK", serialized, StringComparison.Ordinal);
         Assert.DoesNotContain("2026-10-04T23:00", serialized, StringComparison.Ordinal);
         Assert.Equal(1, state.ReadCount);
+        // Without asking for them, a client never receives the readiness kinds (2-N24).
+        Assert.False(state.IncludeReadiness);
+        using var readiness = await client.GetAsync($"{Query()}&includeReadiness=true",
+            TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, readiness.StatusCode);
+        Assert.True(state.IncludeReadiness);
     }
 
     [Theory]
@@ -137,12 +143,14 @@ public sealed class HumanResourcesScheduleWarningEndpointsTests(ElevantApiFactor
     {
         public ScheduleWarningFailure? Failure { get; set; }
         public int ReadCount { get; private set; }
+        public bool? IncludeReadiness { get; private set; }
 
         public Task<ScheduleWarningReadResult> ListAsync(Guid actorId,
             Guid stationId, DateOnly startDate, DateOnly endDate,
-            int page, int limit, CancellationToken cancellationToken = default)
+            int page, int limit, bool includeReadiness, CancellationToken cancellationToken = default)
         {
             ReadCount++;
+            IncludeReadiness = includeReadiness;
             Assert.Equal(AccountId, actorId);
             Assert.Equal(StationId, stationId);
             if (Failure is { } failure)

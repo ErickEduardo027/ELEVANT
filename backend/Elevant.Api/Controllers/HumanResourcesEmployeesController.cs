@@ -54,17 +54,35 @@ public sealed class HumanResourcesEmployeesController(IEmployeeGovernanceStore s
     public Task<IActionResult> Update(Guid id, [FromBody] SaveEmployeeInput input, CancellationToken cancellationToken) =>
         MutateAsync(actorId => store.UpdateEmployeeAsync(actorId, id, input, cancellationToken));
 
+    /// <summary>
+    /// Transfers the employee; leaving the ramp releases the agent's coverages, unstarted operations and shifts
+    /// (2-N06). The Idempotency-Key is optional while older clients exist (expand).
+    /// </summary>
     [HttpPost("employees/{id:guid}/transfer", Name = "TransferEmployee")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(8192)]
-    public Task<IActionResult> Transfer(Guid id, [FromBody] TransferEmployeeInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.TransferEmployeeAsync(actorId, id, input, cancellationToken));
+    public Task<IActionResult> Transfer(Guid id, [FromBody] TransferEmployeeInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.TransferEmployeeAsync(actorId, id, input, idempotencyKey, cancellationToken));
 
+    /// <summary>
+    /// Terminates the employee on a date up to AVIAM's today (2-N31) and releases their ramp work (2-N06). The
+    /// Idempotency-Key is optional while older clients exist (expand).
+    /// </summary>
     [HttpPost("employees/{id:guid}/termination", Name = "TerminateEmployee")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(8192)]
-    public Task<IActionResult> Terminate(Guid id, [FromBody] TerminateEmployeeInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.TerminateEmployeeAsync(actorId, id, input, cancellationToken));
+    public Task<IActionResult> Terminate(Guid id, [FromBody] TerminateEmployeeInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.TerminateEmployeeAsync(actorId, id, input, idempotencyKey, cancellationToken));
 
     [HttpPost("employees/registrations", Name = "RegisterEmployee")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status201Created, "application/json")]

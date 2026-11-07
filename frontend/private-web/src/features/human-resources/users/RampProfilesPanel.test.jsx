@@ -178,6 +178,21 @@ it('keeps an unsaved edit without exposing a server exception', async () => {
   expect(screen.getByRole('checkbox', { name: 'Perfil activo' })).not.toBeChecked();
 });
 
+it('explains that an operation in progress keeps the agent active (2-N06)', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [
+    { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },
+  ] });
+  saveRampProfile.mockRejectedValue(Object.assign(new Error('Ramp profile conflicts with current state.'),
+    { status: 409, code: 'agent_has_operation_in_progress' }));
+  render(<RampProfilesPanel canEdit />);
+  await screen.findByText('Lucia Ramos');
+  await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/OCC debe cerrarla antes de desactivar el perfil/);
+  expect(screen.queryByText(/conflicts with current state/)).not.toBeInTheDocument();
+});
+
 it('follows the English choice inside a language scope', async () => {
   getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [
     { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },

@@ -104,7 +104,10 @@ function CoverageForm({ board, terminal, date, onDone }) {
       {(agent?.isJunior || mentorId) && <label className="block space-y-1 text-sm font-medium">Mentor
         <select className={input} value={mentorId} onChange={event => setMentorId(event.target.value)}>
           <option value="">Sin mentor</option>
-          {mentors.map(item => <option key={item.agentId} value={item.agentId}>{item.name}</option>)}
+          {/* 2-N23: a mentor who is absent or without a current airport permit cannot accompany anyone. */}
+          {mentors.map(item => <option key={item.agentId} value={item.agentId}
+            disabled={item.isAbsent || !item.hasAirportPermit}>
+            {item.name}{item.isAbsent ? ' · ausencia aprobada' : ''}{!item.hasAirportPermit ? ' · carnet vencido' : ''}</option>)}
         </select>
       </label>}
       {selected.length > 2 && <label className="block space-y-1 text-sm font-medium">Vehículo asignado

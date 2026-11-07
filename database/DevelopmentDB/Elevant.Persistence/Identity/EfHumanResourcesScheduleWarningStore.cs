@@ -15,7 +15,7 @@ internal sealed class EfHumanResourcesScheduleWarningStore(
         TimeSpan.FromHours(12), TimeSpan.FromHours(48));
 
     public async Task<ScheduleWarningReadResult> ListAsync(Guid actorId,
-        Guid stationId, DateOnly from, DateOnly to, int page, int limit,
+        Guid stationId, DateOnly from, DateOnly to, int page, int limit, bool includeReadiness,
         CancellationToken cancellationToken = default)
     {
         if (actorId == Guid.Empty || stationId == Guid.Empty ||
@@ -92,13 +92,42 @@ internal sealed class EfHumanResourcesScheduleWarningStore(
             row.StationId, row.StationCode, row.IanaTimeZone,
             row.WorkDate, row.StartsAtLocal, row.EndsAtLocal,
             visibleStationIds.Contains(row.StationId))).ToArray();
+        var readiness = includeReadiness
+            ? await ReadinessAsync(candidateIds, from, to, cancellationToken) : null;
         var warnings = ScheduleWarningEvaluator.Evaluate(shifts, stationId,
-            requestedZone, from, to, Rule);
+            requestedZone, from, to, Rule, readiness);
         var offset = (page - 1) * limit;
         var pageRows = warnings.Skip(offset).Take(limit + 1).ToArray();
         return new ScheduleWarningReadResult(new ScheduleWarningPage(
             stationId, from, to, page, limit, pageRows.Length > limit,
             clock.GetUtcNow(), Rule.Version, Rule.EffectiveOn,
             pageRows.Take(limit).ToArray()), null);
+    }
+
+    /// <summary>
+    /// 2-N24: the approved days off and restrictions of the agents in the range and their current airport
+    /// documents, so the evaluator also warns about shifts on an absence or outside a document.
+    /// </summary>
+    private async Task<ScheduleReadinessFacts> ReadinessAsync(long[] agentIds, DateOnly firstDay, DateOnly lastDay,
+        CancellationToken cancellationToken)
+    {
+        var absences = await (
+            from request in context.AvailabilityRequests.AsNoTracking()
+            join agent in context.RampAgents.AsNoTracking() on request.RampAgentId equals agent.Id
+            where agentIds.Contains(request.RampAgentId) &&
+                request.Status == AvailabilityRequestStatus.Approved &&
+                (request.Type == AvailabilityRequestType.DayOff ||
+                 request.Type == AvailabilityRequestType.Restriction) &&
+                request.StartsOn <= lastDay && request.EndsOn >= firstDay
+            select new ScheduleAgentAbsence(agent.PublicId, request.StartsOn, request.EndsOn))
+            .ToArrayAsync(cancellationToken);
+        var documents = await (
+            from cycle in context.AirportPermitCycles.AsNoTracking()
+            join agent in context.RampAgents.AsNoTracking() on cycle.RampAgentId equals agent.Id
+            where agentIds.Contains(cycle.RampAgentId) && cycle.IsCurrent
+            select new { agent.PublicId, cycle.DocumentType, cycle.IssuedOn, cycle.ExpiresOn })
+            .ToArrayAsync(cancellationToken);
+        return new ScheduleReadinessFacts(absences, documents.Select(document => new ScheduleAgentDocument(
+            document.PublicId, document.DocumentType.ToString(), document.IssuedOn, document.ExpiresOn)).ToArray());
     }
 }

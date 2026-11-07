@@ -1,8 +1,8 @@
 import { expect, it, vi } from 'vitest';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { readSession, handleUnauthorizedResponse } from '../features/auth/authService';
-import { getHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions, recordHumanResourcesShift } from
-  './humanResourcesShiftsReadService';
+import { getHumanResourcesShifts, getHumanResourcesShiftAssignmentOptions, recordHumanResourcesShift,
+  removeHumanResourcesShift } from './humanResourcesShiftsReadService';
 
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: vi.fn() }));
 vi.mock('../features/auth/authService', () => ({
@@ -61,4 +61,12 @@ it('records a stable shift intention and clears an expired session', async () =>
     .rejects.toMatchObject({ status: 401 });
   expect(record).toHaveBeenCalledWith(id, request, {});
   expect(handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
+});
+
+it('removes a shift with its version and the intent key (2-N11)', async () => {
+  readSession.mockReturnValue({ token: 'hr-token' });
+  const remove = vi.fn().mockResolvedValue(undefined);
+  createPrivateWebApiClient.mockReturnValue({ removeHumanResourcesShift: remove });
+  await expect(removeHumanResourcesShift('sh-1', 'AAAAAAAAB9E=', 'key-1')).resolves.toBeUndefined();
+  expect(remove).toHaveBeenCalledWith('sh-1', 'AAAAAAAAB9E=', 'key-1');
 });

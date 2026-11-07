@@ -84,16 +84,20 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
             var mentorShift = mentor is null ? null : await ShiftWindowAsync(mentor.Id, scope.StationId, input.Date, zone,
                 cancellationToken);
 
-            var facts = await AgentFactsAsync([agent.Id], input.Date, cancellationToken);
+            // 2-N23: the mentor's absence and airport permit count as much as the agent's.
+            var facts = await AgentFactsAsync(mentor is null ? [agent.Id] : [agent.Id, mentor.Id], input.Date,
+                cancellationToken);
             var standKeys = stands.Select(item => item.Id).ToArray();
             var active = context.Set<PositionCoverage>().AsNoTracking()
                 .Where(item => item.ReleasedAt == null && item.StartsAt < endsAt && startsAt < item.EndsAt);
             var agentOverlap = await active.AnyAsync(item => item.RampAgentId == agent.Id, cancellationToken);
+            // A coverage left open by an agent who no longer works the ramp takes no stand (2-N06, legacy rows).
             var overlaps = await (from other in active
                                   join item in context.Set<PositionCoverageStand>().AsNoTracking()
                                       on other.Id equals item.PositionCoverageId
                                   join stand in context.Stands.AsNoTracking() on item.StandId equals stand.Id
-                                  where standKeys.Contains(item.StandId) && other.RampAgentId != agent.Id
+                                  join holder in context.RampAgents.AsNoTracking() on other.RampAgentId equals holder.Id
+                                  where standKeys.Contains(item.StandId) && other.RampAgentId != agent.Id && holder.IsActive
                                   select new { stand.PublicId, stand.Code, other.RampAgentId, other.MentorRampAgentId })
                 .ToArrayAsync(cancellationToken);
 
@@ -107,7 +111,8 @@ internal sealed class EfPositionCoverageStore(ElevantDbContext context, IActorCo
                     shift is not null && shift.StartsAt <= startsAt && endsAt <= shift.EndsAt,
                     facts.Absent.Contains(agent.Id), agentOverlap),
                 mentor is null ? null : new CoverageMentorFacts(mentor.IsActive, mentor.HireDate,
-                    mentorShift is not null && mentorShift.StartsAt <= startsAt && endsAt <= mentorShift.EndsAt),
+                    mentorShift is not null && mentorShift.StartsAt <= startsAt && endsAt <= mentorShift.EndsAt,
+                    facts.Absent.Contains(mentor.Id), facts.AirportPermit.Contains(mentor.Id)),
                 string.IsNullOrEmpty(vehicle) ? null : vehicle, input.IsReinforcement,
                 overlaps.Select(item => new CoverageStandOverlap(item.PublicId, item.Code,
                     item.RampAgentId == mentor?.Id || item.MentorRampAgentId == agent.Id)).ToArray());
