@@ -13,7 +13,7 @@ import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { listBillingUnits } from '../../../services/financeBookService';
 import { serviceImageFallback } from './serviceImages';
 import ServiceClosurePanel from './ServiceClosurePanel';
-import { catalogProblemMessage } from './catalogErrorMessages';
+import { catalogProblemMessage, serviceProblemMessage } from './catalogErrorMessages';
 import { billingUnitChoice, billingUnitOptions, buildServiceCatalog, buildServicePayload, nextDisplayOrder,
   sortServicesByOrder, validateServiceForm } from './serviceCatalogForm';
 import { billingUnitLabel } from '../../../services/billingUnits';
@@ -40,9 +40,12 @@ const payloadOf = service => ({ code: service.code, name: service.name, descript
   billingUnit: service.billingUnit, imageUrl: service.imageUrl ?? null, videoUrl: service.videoUrl ?? null,
   displayOrder: service.displayOrder, isPublic: service.isPublic, isActive: service.isActive, version: service.version });
 
-/** A command the browser refused to send (incomplete service data) is explained without a request. */
-const actionMessage = failure => (failure instanceof TypeError
-  ? 'Revise los datos del servicio en «Editar» e intente de nuevo.' : catalogProblemMessage(failure));
+/**
+ * A command the browser refused to send (incomplete service data) is explained without a request; a refusal of the
+ * API is explained for the service as it was sent (a hidden one is not asked to be hidden).
+ */
+const actionMessage = (failure, service) => (failure instanceof TypeError
+  ? 'Revise los datos del servicio en «Editar» e intente de nuevo.' : serviceProblemMessage(failure, service));
 
 export default function CommercialCatalogPage({ canCreate = true, canEdit = true,
   canRetire = true, canSeeClosures = true }) {
@@ -69,6 +72,9 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
   const [units, setUnits] = useState(null);
   // The intent the user is sending; a retry after an uncertain answer keeps its Idempotency-Key.
   const commands = useRef(createCommandKeyHolder());
+  // The photo and video already uploaded for the open form, by file: a retry sends the same URL, so its body and
+  // Idempotency-Key stay the same, and only a file the user changed is uploaded again.
+  const uploads = useRef({});
   const dirty = image !== null || video !== null || JSON.stringify(form) !== JSON.stringify(initial);
 
   const reload = useCallback(async (focusId = null) => {
@@ -118,7 +124,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
       isPublic: service.isPublic, isActive: service.isActive, version: service.version }
       : { ...empty, displayOrder: nextDisplayOrder(services) };
     setEditing(service?.id ?? null);
-    setForm(values); setInitial(values); setImage(null); setVideo(null);
+    setForm(values); setInitial(values); setImage(null); setVideo(null); uploads.current = {};
     setErrors({}); setError(''); setDrawerOpen(true); setNotice('');
   }
   function close() {
@@ -126,7 +132,18 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
     if (dirty) { setPendingClose(true); return; }
     setDrawerOpen(false);
   }
-  function discard() { setPendingClose(false); setDrawerOpen(false); setImage(null); setVideo(null); commands.current.reset(); }
+  function discard() {
+    setPendingClose(false); setDrawerOpen(false); setImage(null); setVideo(null);
+    uploads.current = {}; commands.current.reset();
+  }
+  /** URL of the selected `file`, uploaded once for the open form. */
+  async function uploadedUrl(purpose, file) {
+    const previous = uploads.current[purpose];
+    if (previous?.file === file) return previous.url;
+    const { url } = await uploadCommercialMedia(purpose, file);
+    uploads.current[purpose] = { file, url };
+    return url;
+  }
   async function save(event) {
     event.preventDefault(); setError('');
     const found = validateServiceForm(form, { catalog, editingId: editing, hasNewImage: Boolean(image) });
@@ -141,17 +158,20 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
     try {
       // A retired service is never published by the form (1-N03); a legacy row may still say «visible».
       const values = buildServicePayload(editedRetired ? { ...form, isPublic: false } : form);
-      if (image) values.imageUrl = (await uploadCommercialMedia('service-image', image)).url;
-      if (video) values.videoUrl = (await uploadCommercialMedia('service-video', video)).url;
+      if (image) values.imageUrl = await uploadedUrl('service-image', image);
+      if (video) values.videoUrl = await uploadedUrl('service-video', video);
       const saved = editing
         ? await commands.current.run(`update:${editing}`, values, key => updateManagedService(editing, values, key))
         : await createManagedService(values);
       setNotice(editing ? 'Servicio actualizado. El catálogo público se refrescará.'
         : values.isPublic && values.isActive ? 'Servicio publicado en el catálogo.'
           : 'Servicio guardado como oculto. Publíquelo cuando tenga foto y descripción.');
-      setDrawerOpen(false); setImage(null); setVideo(null); await reload(saved?.id ?? editing);
+      setDrawerOpen(false); setImage(null); setVideo(null); uploads.current = {};
+      await reload(saved?.id ?? editing);
     } catch (failure) {
       setError(actionMessage(failure));
+      // The API can no longer link an uploaded file: the next attempt uploads it again.
+      if (failure?.code === 'media_invalid') uploads.current = {};
       // The service changed while it was edited: the catalog is re-read before a new attempt.
       if (failure?.code === 'version_conflict') await reload(editing);
     } finally { setBusy(false); }
@@ -180,7 +200,7 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
       setPendingAction(null); setReason('');
       await reload(service.id);
     } catch (failure) {
-      setActionError({ message: actionMessage(failure), code: failure?.code });
+      setActionError({ message: actionMessage(failure, service), code: failure?.code });
       // A conflict re-reads the catalog, and the dialog keeps the service as it is now.
       if (failure?.status === 409) {
         const updated = await reload(service.id);
@@ -320,7 +340,9 @@ export default function CommercialCatalogPage({ canCreate = true, canEdit = true
       </>}>
       <div className="space-y-3 text-sm">
         <p>El servicio sale del catálogo público y ya no podrá agregarse a contratos nuevos ni planificarse en la operación. La baja queda registrada con su motivo.</p>
-        <p>No se permite mientras un contrato vigente o en aprobación lo incluya. Si solo quiere dejar de ofrecerlo a nuevas aerolíneas, use «Ocultar del catálogo».</p>
+        <p>No se permite mientras un contrato vigente o en aprobación lo incluya. {acting?.isPublic
+          ? 'Si solo quiere dejar de ofrecerlo a nuevas aerolíneas, use «Ocultar del catálogo».'
+          : 'Ya está oculto del catálogo público: las aerolíneas que solicitan acceso no lo ven.'}</p>
         <label className="block text-xs font-semibold">Motivo de la baja<textarea rows={3} maxLength={REASON_MAX} value={reason} onChange={event => setReason(event.target.value)} className="mt-1 block w-full rounded-lg border px-3 py-2 font-normal dark:bg-surface-dark" /></label>
         <p className="text-xs text-text-secondary-light">Entre {REASON_MIN} y {REASON_MAX} caracteres.</p>
         {actionError.message && <p role="alert" className="text-status-danger">{actionError.message}</p>}

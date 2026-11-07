@@ -128,6 +128,78 @@ public sealed class FinancePackageEndpointsTests(ElevantApiFactory factory) : IC
     }
 
     [Fact]
+    public async Task TariffBookCommandsForwardTheirOptionalIdempotencyKey()
+    {
+        var book = new TariffBookStub();
+        await using var application = Application(services => Replace<IFinanceTariffBookStore>(services, book));
+        using var client = Authorized(application);
+        var ct = TestContext.Current.CancellationToken;
+        var draft = new { validFrom = "2027-01-01", validTo = (string?)null, note = (string?)null, expectedVersion = Version,
+            rates = Array.Empty<object>() };
+        var rate = new { rateDate = "2026-11-02", fromCurrency = "USD", toCurrency = "DOP", rate = 59.1m, source = "Banco Central RD" };
+
+        // Expand: an older client without the header still works and the store sees no key.
+        using (var legacy = await client.PutAsJsonAsync($"/api/v1/finance/service-tariffs/{VersionId}", draft, ct))
+            Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
+        Assert.Equal(("save", (Guid?)null), book.Last);
+
+        foreach (var (method, path, body, command, status) in new (HttpMethod, string, object?, string, HttpStatusCode)[]
+        {
+            (HttpMethod.Put, $"/api/v1/finance/service-tariffs/{VersionId}", draft, "save", HttpStatusCode.OK),
+            (HttpMethod.Post, $"/api/v1/finance/service-tariffs/{VersionId}/publish", new { expectedVersion = Version },
+                $"publish:{Version}", HttpStatusCode.OK),
+            (HttpMethod.Delete, $"/api/v1/finance/service-tariffs/{VersionId}?expectedVersion={Uri.EscapeDataString(Version)}",
+                null, $"delete:{Version}", HttpStatusCode.OK),
+            (HttpMethod.Post, "/api/v1/finance/exchange-rates", rate, "rate", HttpStatusCode.Created),
+        })
+        {
+            var key = Guid.NewGuid();
+            using var request = new HttpRequestMessage(method, path) { Content = body is null ? null : JsonContent.Create(body) };
+            request.Headers.Add("Idempotency-Key", key.ToString("D"));
+            using var response = await client.SendAsync(request, ct);
+            Assert.Equal(status, response.StatusCode);
+            Assert.Equal((command, (Guid?)key), book.Last);
+        }
+
+        // The same key with another body is a conflict the screens explain by its code.
+        book.Result = FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict, "idempotency_conflict");
+        using var reused = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/finance/service-tariffs/{VersionId}")
+        { Content = JsonContent.Create(draft) };
+        reused.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString("D"));
+        using var conflict = await client.SendAsync(reused, ct);
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal("idempotency_conflict", await CodeAsync(conflict));
+    }
+
+    [Fact]
+    public async Task PublishesTheOptionalIdempotencyKeyOfTheTariffBookCommands()
+    {
+        using var client = factory.CreateClient();
+        using var response = await client.GetAsync("/swagger/v1/swagger.json", TestContext.Current.CancellationToken);
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+        var paths = document.RootElement.GetProperty("paths");
+        foreach (var (path, method) in new[]
+        {
+            ("/api/v1/finance/billing-units", "post"), ("/api/v1/finance/billing-units/{id}", "put"),
+            ("/api/v1/finance/service-tariffs", "post"), ("/api/v1/finance/service-tariffs/{id}", "put"),
+            ("/api/v1/finance/service-tariffs/{id}/publish", "post"), ("/api/v1/finance/service-tariffs/{id}", "delete"),
+            ("/api/v1/finance/charges", "post"), ("/api/v1/finance/charges/{id}", "put"),
+            ("/api/v1/finance/charge-tariffs", "post"), ("/api/v1/finance/charge-tariffs/{id}", "put"),
+            ("/api/v1/finance/charge-tariffs/{id}/publish", "post"), ("/api/v1/finance/charge-tariffs/{id}", "delete"),
+            ("/api/v1/finance/exchange-rates", "post"), ("/api/v1/finance/exchange-rates/{id}/correction", "post"),
+        })
+        {
+            var operation = paths.GetProperty(path).GetProperty(method);
+            // Optional while older clients exist (expand).
+            Assert.Contains(operation.GetProperty("parameters").EnumerateArray(), parameter =>
+                parameter.GetProperty("name").GetString() == "Idempotency-Key" &&
+                parameter.GetProperty("in").GetString() == "header" &&
+                !(parameter.TryGetProperty("required", out var required) && required.GetBoolean()));
+        }
+    }
+
+    [Fact]
     public async Task PublishesTheAmendmentAndPackageLifecycleOperations()
     {
         using var client = factory.CreateClient();
@@ -240,30 +312,42 @@ public sealed class FinancePackageEndpointsTests(ElevantApiFactory factory) : IC
     private sealed class TariffBookStub : IFinanceTariffBookStore
     {
         public FinanceCatalogResult Result { get; set; } = FinanceCatalogResult.Success(VersionId);
+        /// <summary>The command and the Idempotency-Key the controller forwarded last.</summary>
+        public (string Command, Guid? Key)? Last { get; private set; }
+
+        private Task<FinanceCatalogResult> Record(string command, Guid? key)
+        {
+            Last = (command, key);
+            return Task.FromResult(Result);
+        }
 
         public Task<FinanceCatalogResult> SaveServiceTariffDraftAsync(Guid actorId, Guid versionId,
-            SaveServiceTariffDraftInput input, CancellationToken cancellationToken = default) => Task.FromResult(Result);
+            SaveServiceTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) =>
+            Record("save", idempotencyKey);
+        public Task<FinanceCatalogResult> PublishServiceTariffAsync(Guid actorId, Guid versionId, string expectedVersion,
+            Guid? idempotencyKey, CancellationToken cancellationToken = default) => Record($"publish:{expectedVersion}", idempotencyKey);
+        public Task<FinanceCatalogResult> DeleteServiceTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion,
+            Guid? idempotencyKey, CancellationToken cancellationToken = default) => Record($"delete:{expectedVersion}", idempotencyKey);
+        public Task<FinanceCatalogResult> RecordExchangeRateAsync(Guid actorId, RecordExchangeRateInput input,
+            Guid? idempotencyKey, CancellationToken cancellationToken = default) => Record("rate", idempotencyKey);
 
         public Task<FinanceCatalogResult> DecideContractApprovalAsync(Guid actorId, Guid versionId, DecideContractApprovalInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<FinanceServiceOptionData>?> ListServicesAsync(Guid actorId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<BillingUnitData>?> ListBillingUnitsAsync(Guid actorId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> SaveBillingUnitAsync(Guid actorId, Guid? unitId, SaveBillingUnitInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> SaveBillingUnitAsync(Guid actorId, Guid? unitId, SaveBillingUnitInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<TariffVersionSummaryData>?> ListServiceTariffsAsync(Guid actorId, string? currencyCode, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ServiceTariffVersionData?> GetServiceTariffAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> CreateServiceTariffDraftAsync(Guid actorId, CreateTariffDraftInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> PublishServiceTariffAsync(Guid actorId, Guid versionId, string expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> DeleteServiceTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> CreateServiceTariffDraftAsync(Guid actorId, CreateTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ChargeDefinitionData>?> ListChargesAsync(Guid actorId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> SaveChargeAsync(Guid actorId, Guid? chargeId, SaveChargeDefinitionInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> SaveChargeAsync(Guid actorId, Guid? chargeId, SaveChargeDefinitionInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<TariffVersionSummaryData>?> ListChargeTariffsAsync(Guid actorId, string? currencyCode, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ChargeTariffVersionData?> GetChargeTariffAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> CreateChargeTariffDraftAsync(Guid actorId, CreateTariffDraftInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> SaveChargeTariffDraftAsync(Guid actorId, Guid versionId, SaveChargeTariffDraftInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> PublishChargeTariffAsync(Guid actorId, Guid versionId, string expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> DeleteChargeTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> CreateChargeTariffDraftAsync(Guid actorId, CreateTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> SaveChargeTariffDraftAsync(Guid actorId, Guid versionId, SaveChargeTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> PublishChargeTariffAsync(Guid actorId, Guid versionId, string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> DeleteChargeTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ExchangeRateData>?> ListExchangeRatesAsync(Guid actorId, DateOnly from, DateOnly to, bool includeHistory, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> RecordExchangeRateAsync(Guid actorId, RecordExchangeRateInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FinanceCatalogResult> CorrectExchangeRateAsync(Guid actorId, Guid rateId, CorrectExchangeRateInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FinanceCatalogResult> CorrectExchangeRateAsync(Guid actorId, Guid rateId, CorrectExchangeRateInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<ContractApprovalSummaryData>?> ListContractApprovalsAsync(Guid actorId, bool pendingOnly, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<ContractApprovalDetailData?> GetContractApprovalAsync(Guid actorId, Guid versionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }

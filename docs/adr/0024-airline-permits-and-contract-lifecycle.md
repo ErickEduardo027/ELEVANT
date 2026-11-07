@@ -64,6 +64,12 @@ motivo y el estado que el usuario vio. Si el estado cambió entre tanto, respond
 | Terminar | Activo, suspendido o vencido | Terminado | Fija `TerminatedOn`; es definitivo |
 | Renovar | Activo, suspendido o vencido | (sin cambio) | Copia la última versión aprobada en un borrador con la nueva vigencia; sigue el flujo normal de Finanzas y firmas |
 
+> **Actualización (6 de noviembre de 2026).** «Terminar» también vale para un contrato `Draft`
+> que nunca se activó («Descartar contrato»), y toda terminación cierra como `Rejected` sus
+> versiones abiertas. La línea de tiempo que lee la aerolínea omite el motivo interno de una
+> devolución de Finanzas. Ver
+> [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).
+
 ### Barrido periódico (`ContractLifecycleWorker`, cada hora e idempotente)
 
 - Activa los contratos que ya cumplen las tres condiciones.

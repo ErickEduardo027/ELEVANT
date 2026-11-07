@@ -254,9 +254,10 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
     /// «Vigente desde» after its start and not after its end, which it inherits. Not while another
     /// approved version waits for its signatures (version_awaiting_signatures), nor on a terminated
     /// contract or on or after a scheduled termination (2-N15). Rates are copied unconfirmed (units as codes, 1-E), with the
-    /// stations, the negotiated charges and the packages. The status the user saw is the token
-    /// (the same one the contract lifecycle uses); the serializable transaction re-checks that no
-    /// other draft is in progress.
+    /// stations, the negotiated charges and the packages; the actor's station scope covers both the
+    /// version in the route and the approved version copied, otherwise the contract is not found. The
+    /// status the user saw is the token (the same one the contract lifecycle uses); the serializable
+    /// transaction re-checks that no other draft is in progress.
     /// </summary>
     public async Task<PackageWriteResult> CreateAmendmentAsync(Guid actorId, Guid versionId, Guid idempotencyKey,
         CreateAmendmentInput input, CancellationToken cancellationToken = default)
@@ -273,6 +274,15 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             var route = await context.ContractVersions.AsNoTracking().SingleOrDefaultAsync(x => x.PublicId == versionId, cancellationToken);
             if (route is null || !await ContractInScopeAsync(actorId, route.Id, cancellationToken)) return PackageWriteResult.Fail("not_found");
             var contract = await context.Contracts.SingleAsync(x => x.Id == route.ContractId, cancellationToken);
+            // The amendment starts from the version that governs (2-C), never from one nobody signed.
+            var source = await GoverningContractVersions.Of(context).AsNoTracking()
+                .Where(x => x.ContractId == contract.Id && x.Status == ContractVersionStatus.Approved)
+                .OrderByDescending(x => x.ValidFrom).ThenByDescending(x => x.VersionNumber).FirstOrDefaultAsync(cancellationToken);
+            // The amendment copies the stations, rates, charges and packages of that approved version, which may
+            // cover stations the route version does not (a renewal or a draft scope can add them): the actor's
+            // station scope must cover the version copied, before anything about the contract is answered.
+            if (source is not null && !await ContractInScopeAsync(actorId, source.Id, cancellationToken))
+                return PackageWriteResult.Fail("not_found");
             if (contract.Status != expected) return PackageWriteResult.Fail("version_conflict");
             // 2-N15: a terminated contract is not amended, and nothing starts on or after a scheduled termination.
             if (ContractLifecycle.ClosedFor(contract.Status, contract.TerminatedOn, input.ValidFrom) is { } closed)
@@ -284,10 +294,6 @@ internal sealed class EfFinancePackageStore(ElevantDbContext context, IActorCont
             // 2-N01: an approved version still waiting for both signatures is finished or withdrawn first.
             if (await GoverningContractVersions.AwaitingSignatures(context).AnyAsync(x => x.ContractId == contract.Id, cancellationToken))
                 return PackageWriteResult.Fail(ContractLifecycleIssues.VersionAwaitingSignatures);
-            // The amendment starts from the version that governs (2-C), never from one nobody signed.
-            var source = await GoverningContractVersions.Of(context).AsNoTracking()
-                .Where(x => x.ContractId == contract.Id && x.Status == ContractVersionStatus.Approved)
-                .OrderByDescending(x => x.ValidFrom).ThenByDescending(x => x.VersionNumber).FirstOrDefaultAsync(cancellationToken);
             if (source is null) return PackageWriteResult.Fail(ContractAmendmentIssues.NoApprovedVersion);
             if (ContractAmendment.StartIssue(input.ValidFrom, source.ValidFrom, source.ValidTo) is { } issue)
                 return PackageWriteResult.Fail(issue);

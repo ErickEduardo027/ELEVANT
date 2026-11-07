@@ -32,13 +32,35 @@ it('creates and edits units with optimistic concurrency', async () => {
   await user.type(within(dialog).getByRole('textbox', { name: /Nombre/ }), 'Galón');
   await user.type(within(dialog).getByRole('textbox', { name: /Código/ }), 'gallon');
   await user.click(screen.getByRole('button', { name: 'Guardar' }));
-  expect(saveBillingUnit).toHaveBeenCalledWith(null, { code: 'gallon', name: 'Galón', quantityScale: 0, isActive: true, expectedVersion: null });
+  expect(saveBillingUnit).toHaveBeenCalledWith(null, { code: 'gallon', name: 'Galón', quantityScale: 0, isActive: true, expectedVersion: null },
+    expect.any(String));
   expect(await screen.findByText('Unidad «Galón» creada.')).toBeInTheDocument();
 
   await user.click(screen.getAllByRole('button', { name: 'Editar' })[1]);
   await user.click(screen.getByRole('checkbox', { name: /Activa/ }));
   await user.click(screen.getByRole('button', { name: 'Guardar' }));
-  expect(saveBillingUnit).toHaveBeenLastCalledWith('u2', expect.objectContaining({ code: 'hour', isActive: true, expectedVersion: 'v2' }));
+  expect(saveBillingUnit).toHaveBeenLastCalledWith('u2', expect.objectContaining({ code: 'hour', isActive: true, expectedVersion: 'v2' }),
+    expect.any(String));
+  // Every save is its own intent with its own Idempotency-Key.
+  expect(saveBillingUnit.mock.calls[1][2]).not.toBe(saveBillingUnit.mock.calls[0][2]);
+});
+
+it('retries an uncertain save with the same Idempotency-Key instead of creating the unit twice (1-E)', async () => {
+  listBillingUnits.mockResolvedValue(units);
+  saveBillingUnit.mockRejectedValueOnce(new TypeError('Network down')).mockResolvedValueOnce({ id: 'u3' });
+  const user = userEvent.setup();
+  render(<BillingUnitsPage canCreate />);
+  await user.click(await screen.findByRole('button', { name: 'Nueva unidad' }));
+  const dialog = screen.getByRole('dialog', { name: 'Nueva unidad de cobro' });
+  await user.type(within(dialog).getByRole('textbox', { name: /Nombre/ }), 'Galón');
+  await user.type(within(dialog).getByRole('textbox', { name: /Código/ }), 'gallon');
+  await user.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('No se pudo guardar la unidad.');
+  await user.click(screen.getByRole('button', { name: 'Guardar' }));
+  expect(await screen.findByText('Unidad «Galón» creada.')).toBeInTheDocument();
+  const [first, second] = saveBillingUnit.mock.calls;
+  expect(second.slice(0, 2)).toEqual(first.slice(0, 2));
+  expect(second[2]).toBe(first[2]);
 });
 
 it('shows a recoverable error instead of an empty list and no retry without permission (1-E)', async () => {

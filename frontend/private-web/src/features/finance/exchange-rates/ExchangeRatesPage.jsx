@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import EmptyState from '../../../components/EmptyState';
 import Modal from '../../../components/Modal';
 import PageHeader from '../../../components/PageHeader';
@@ -6,6 +6,7 @@ import StackedTable from '../../../components/StackedTable';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { TariffIcon } from '../components/icons';
 import LoadFailure, { loadFailure } from '../components/LoadFailure';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { correctExchangeRate, listExchangeRates, recordExchangeRate } from '../../../services/financeBookService';
 import { financeTariffMessage } from '../../../services/financeErrors';
 
@@ -26,6 +27,8 @@ export default function ExchangeRatesPage() {
   // A period that failed to load shows a recoverable error, never «Sin tasas en el período».
   const [loadError, setLoadError] = useState(null);
   const [notice, setNotice] = useState('');
+  // One Idempotency-Key per intent (1-E): a retry of an uncertain result sends the same key with the same body.
+  const commandKeys = useRef({ record: createCommandKeyHolder(), correct: createCommandKeyHolder() });
 
   const load = useCallback(async () => {
     try { setRates(await listExchangeRates(range.from, range.to, history)); setLoadError(null); }
@@ -42,8 +45,14 @@ export default function ExchangeRatesPage() {
     event.preventDefault();
     setError('');
     try {
-      if (form.correcting) await correctExchangeRate(form.correcting.id, { rate: Number(form.rate), source: form.source, expectedVersion: form.correcting.version });
-      else await recordExchangeRate({ rateDate: form.rateDate, fromCurrency: 'USD', toCurrency: 'DOP', rate: Number(form.rate), source: form.source });
+      if (form.correcting) {
+        const { id } = form.correcting;
+        const values = { rate: Number(form.rate), source: form.source, expectedVersion: form.correcting.version };
+        await commandKeys.current.correct.run('correct', { id, ...values }, key => correctExchangeRate(id, values, key));
+      } else {
+        const values = { rateDate: form.rateDate, fromCurrency: 'USD', toCurrency: 'DOP', rate: Number(form.rate), source: form.source };
+        await commandKeys.current.record.run('record', values, key => recordExchangeRate(values, key));
+      }
       setNotice(form.correcting ? 'Tasa corregida; la anterior queda en el historial.' : 'Tasa registrada.');
       setForm(null);
       await load();

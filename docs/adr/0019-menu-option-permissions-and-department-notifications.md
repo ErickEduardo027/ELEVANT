@@ -99,6 +99,12 @@ En la revisión del proyecto del 19-oct-2026, el profesor observó lo siguiente:
 - Para publicar un servicio se exige una foto o ilustración, una descripción de
   al menos 20 caracteres y un nombre que no sea de prueba.
 
+> **Actualización (6 de noviembre de 2026).** «Retirar» se separó en dos
+> decisiones: ocultar del catálogo público y dar de baja. Dar de baja es un
+> comando propio con motivo (`contracts.catalog.delete`, rotulado «Dar de baja»)
+> y se rechaza mientras un contrato en vigor o en aprobación use el servicio. Ver
+> [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).
+
 ### Notificaciones por departamento
 
 - **Tabla.** `iam.department_notifications` guarda una alerta por cuenta, tipo
@@ -116,6 +122,13 @@ En la revisión del proyecto del 19-oct-2026, el profesor observó lo siguiente:
   | Finanzas | Contratos enviados a aprobación de precio, y prefacturas aceptadas o disputadas por la aerolínea. |
 
   El OCC conserva su feed operativo.
+
+  > **Actualización (6 de noviembre de 2026).** Contratos también recibe que la
+  > cuenta del portal de la aerolínea quedó lista y que Finanzas devolvió o
+  > aprobó los precios de un borrador. El aviso de un contrato por aprobar solo
+  > llega a quien cubre todas las estaciones de la versión. Ver
+  > [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).
+
 - **Lectura.** `GET department-notifications` y `PUT …/{id}/read` vuelven a
   comprobar el acceso actual. El feed de cambios de cuenta solo anuncia
   `notifications`; el cliente vuelve a leer la lista.

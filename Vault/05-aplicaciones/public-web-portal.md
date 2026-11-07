@@ -7,11 +7,17 @@ status: documented
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-11-05"
-verified_commit: "d6a65ac8a400f3f1f129d6978bcee0c8cf683e2b"
+last_verified: "2026-11-06"
+verified_commit: "8a79fe70a3c592ab3f5dc8af1e7c03f1314b526d"
 sources:
   - docs/adr/0035-direct-invoicing-simulated-ecf.md
   - docs/adr/0036-simulated-card-payment.md
+  - frontend/public-web/src/lib/environment-label.ts
+  - frontend/public-web/src/lib/billing-units.ts
+  - frontend/public-web/src/lib/airline-proposal.ts
+  - frontend/public-web/src/components/commercial/AccessRequestWizard.tsx
+  - frontend/public-web/playwright.cycle.config.ts
+  - backend/Elevant.Api/Controllers/ContractDraftsController.cs
   - AGENTS.md
   - frontend/AGENTS.md
   - frontend/public-web/AGENTS.md
@@ -66,17 +72,17 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Parte | Comportamiento verificado en el repositorio |
 | --- | --- |
 | Identidad | `POST /api/v1/auth/session` valida correo y contraseña y responde `202 code_required`; la sesión se emite en `POST /api/v1/auth/session/verify-code` con el código de 6 dígitos enviado al correo (10 minutos, 5 intentos, reenvío con `resend-code`; [ADR-0022](../../docs/adr/0022-portal-email-verification.md)). `GET /api/v1/auth/session` la revalida al recargar. El navegador comprueba el rol de aerolínea y la membresía correspondiente, pero la API sigue siendo la autoridad de autorización. |
-| Activación y recuperación | Las cuentas nuevas reciben un enlace a `/activar` (72 horas) para confirmar el correo y crear su contraseña. «¿Olvidaste tu contraseña?» lleva a `/recuperar`, que envía un enlace de 30 minutos y responde igual exista o no la cuenta. |
-| Remitente | Los correos salen por la cuenta Gmail no-reply, con contraseña de aplicación y envío real verificado en local. En el VPS se activa con las variables `ELEVANT_SMTP_*` del Environment API, según el checklist de [configuración de Dokploy](../../docs/deployment/dokploy-configuration.md). Superadministración → Configuración → «Correo del sistema» muestra si SMTP está configurado, los últimos envíos y un botón de prueba. |
+| Activación y recuperación | Las cuentas nuevas reciben un enlace a `/activar` (72 horas) para confirmar el correo y crear su contraseña. «¿Olvidaste tu contraseña?» lleva a `/recuperar`, que envía un enlace de 30 minutos y responde igual exista o no la cuenta. Un enlace o código que vence en la cola de correo, o que otro reemplaza, se descarta sin enviarse. Ni el inicio de sesión ni `/activar` ni `/recuperar` nombran un entorno: solo muestran una etiqueta si el build define `NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL`, y hoy ni la imagen ni la plantilla de Dokploy la pasan. Ninguna de esas pantallas afirma que un correo ya salió. |
+| Remitente | Los correos salen por la cuenta Gmail no-reply, con contraseña de aplicación y envío real verificado en local. En el VPS se activa con las variables `ELEVANT_SMTP_*` del Environment API, según el checklist de [configuración de Dokploy](../../docs/deployment/dokploy-configuration.md). Superadministración → Configuración → «Correo del sistema» muestra si SMTP está configurado, un botón de prueba y la bandeja de correos con el estado, el motivo y el documento o la cuenta de cada uno ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)). |
 | Contraseña temporal | Solo para cuentas creadas con la alternativa manual: el código `password_change_required` conduce a `POST /api/v1/auth/password-change`; tras el cambio se requiere un inicio de sesión nuevo. |
 | Tenant y estaciones | `GET /api/v1/airline/portal/bootstrap` deriva el tenant y la cobertura desde la sesión del servidor. El cliente no envía un ID de tenant elegido por el usuario. |
 | Inicio, vuelos y perfil | Inicio y perfil muestran el contexto del bootstrap sin mezclar rotaciones EV del prototipo. Vuelos consulta `GET /api/v1/airline/portal/operations`, paginado y filtrado por aerolínea/contrato histórico en SQL. El detalle relee por ID una operación propia aunque no figure en el bootstrap. Esta rama posterior añade una lectura de servicios y tiempos de la entrega aprobada por OCC, sin notas internas ni identidades de agentes; aún no está promocionada. |
-| Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. |
+| Contratos | `GET /api/v1/airline/portal/contracts` deriva el tenant de la sesión y devuelve páginas de versiones publicadas (`Approved` o `Superseded`), estaciones y tarifas. El historial vencido continúa visible para la misma aerolínea; los borradores se consultan por una ruta separada con comentarios autorizados. Otros tenants no se exponen. La aerolínea comenta su borrador también mientras Finanzas lo revisa, con `Idempotency-Key` y la versión en pantalla, y ve las respuestas como «Contratos AVIAM». El portal no recibe la tarifa base, los valores base de los cargos ni el motivo interno de una devolución de Finanzas, y muestra las unidades de cobro en español ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)). |
 | Firma del contrato | La aerolínea firma primero, con una firma dibujada en un canvas (PNG de hasta 256 KB), y solo después de que Contratos confirma la vigencia y la renovación; el portal muestra esos términos y que AVIAM contrafirma después. El PDF firmado llega por correo al activarse el contrato (ADR-0025). |
 | Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
 | Facturas | Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) lista las facturas propias del estado de cuenta (`GET airline/portal/treasury/statements`) con e-NCF, estado (Pendiente, Vencida o Pagada), vencimiento y saldo; el detalle muestra líneas, pagos y el PDF de la factura e-CF simulada (`GET airline/portal/invoices/{invoiceId}/document`). No hay prefacturas, aceptación ni disputa: los reclamos se resuelven fuera del sistema con nota de crédito. Desde [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) el detalle permite **pagar con tarjeta simulada** el saldo completo (Idempotency-Key estable ante un resultado incierto), muestra el historial de intentos y descarga el recibo PDF. Se revalida con el aviso `airline_treasury`. |
 | Documentos y reportes | Documentos lista los PDF de cada factura propia por id. Reportes muestra la primera página autorizada de operaciones y las facturas del estado de cuenta, sin métricas globales. Nada de este tramo está promocionado. |
-| Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. |
+| Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. Si la aerolínea no figura en el listado, «Mi aerolínea no aparece» la propone con nombre, país, ICAO, IATA solo si existe y sitio HTTPS opcional, y avisa cuando ese ICAO ya está en el listado. La confirmación final anuncia que Contratos responderá por correo; el solicitante recibe la aprobación, el rechazo o la cancelación con su motivo. Una aerolínea sin IATA entra al portal con su ICAO. |
 
 El JWT corto y su vencimiento se conservan en `sessionStorage` de la pestaña, no en `localStorage`. No existe opción «Recordarme». Al recargar, el cliente revalida identidad y bootstrap; al cerrar sesión, vencer el token o perder autorización, limpia el acceso. Un fallo transitorio permite reintentar sin presentar datos obsoletos como si fueran actuales. La comprobación del navegador no sustituye el enforcement del backend por tenant y estación.
 
@@ -190,6 +196,8 @@ de este cambio; CI no ejecuta e2e.
 ## Desarrollo y evidencia
 
 `NEXT_PUBLIC_ELEVANT_API_URL` configura el cliente compartido en el bundle y nunca puede contener secretos. Los orígenes locales deben estar admitidos por CORS en Development; Tailscale limita alcance de red pero no sustituye autenticación. El navegador no accede a SQL Server ni a proveedores externos directamente.
+
+Fuera de CI, `npm run test:e2e:cycle` recorre el ciclo operativo completo (fases 1 a 4) contra el stack local real, con su propia aerolínea sintética por corrida ([configuración](../../frontend/public-web/playwright.cycle.config.ts) y [guía local](../../docs/workflows/local-development.md)); ver [Pruebas, calidad y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md).
 
 Las pruebas del cliente API validan el código de error permitido sin exponer cuerpos crudos. Public Web prueba sesión, caducidad, roles, contrato consultable, historial de vuelos, vistas previas inactivas y 404 de `/dev-airline` con Vitest y Playwright en escritorio, tablet y móvil. Las pruebas SQL verifican paginación, contratos y operaciones propios tras vencimiento, exclusión de otra aerolínea y de borradores. La evidencia de navegador usa respuestas simuladas; por sí sola **no demuestra** promoción ni funcionamiento de las seis cuentas reales en el VPS. El historial descrito aquí pertenece a la rama de integración y requiere CI, merge y promoción antes de ser estado remoto.
 

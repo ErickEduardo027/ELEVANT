@@ -37,6 +37,13 @@ export function formatDocumentNumber(type: string, value: string): string {
   return value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 9);
 }
 const fieldId = (field: RepresentativeField) => `representative-${field}`;
+const proposalId = (field: AirlineProposalField) => `proposal-${field}`;
+// Help shown under a field of «Mi aerolínea no aparece»; its control is described by the help and the error.
+const PROPOSAL_HINTS: Partial<Record<AirlineProposalField, string>> = {
+  icaoCode: "Obligatorio: 3 letras, por ejemplo CMP.",
+  iataCode: "Déjelo vacío si la aerolínea no tiene código IATA.",
+  websiteUrl: "Ayuda a Contratos a confirmar la aerolínea y a su representante.",
+};
 const apiOrigin = process.env.NEXT_PUBLIC_ELEVANT_API_URL?.replace(/\/$/, "");
 const mediaUrl = (path: string | null | undefined) => path?.startsWith("/api/v1/media/") ? `${apiOrigin}${path}` : path ?? undefined;
 
@@ -88,6 +95,12 @@ export function AccessRequestWizard() {
   const airline = proposing ? undefined : catalog?.airlines.find((item) => item.id === airlineId);
   const proposalCheck = validateAirlineProposal(proposal);
   const proposalError = (field: AirlineProposalField) => showProposalErrors ? proposalCheck.errors[field] : undefined;
+  const proposalControl = (field: AirlineProposalField) => {
+    const message = proposalError(field);
+    const describedBy = [message && `${proposalId(field)}-error`, PROPOSAL_HINTS[field] && `${proposalId(field)}-hint`]
+      .filter(Boolean).join(" ");
+    return { id: proposalId(field), "aria-invalid": message ? true : undefined, "aria-describedby": describedBy || undefined };
+  };
   const airlineName = proposing ? proposal.name.trim() : airline?.name;
   // A proposed ICAO code that is already listed points to the existing profile.
   const listedMatch = proposing && /^[A-Z]{3}$/.test(proposal.icaoCode.trim().toUpperCase())
@@ -406,22 +419,22 @@ export function AccessRequestWizard() {
         </div>
         {proposing && <div className="access-representative access-proposal" role="group" aria-label="Aerolínea que no aparece en el listado">
           <ProposalField field="name" label="Nombre de la aerolínea" error={proposalError("name")} wide>
-            <input id="proposal-name" required maxLength={160} autoComplete="organization" value={proposal.name} aria-invalid={proposalError("name") ? true : undefined} onChange={(event) => changeProposal({ name: event.target.value })} />
+            <input {...proposalControl("name")} required maxLength={160} autoComplete="organization" value={proposal.name} onChange={(event) => changeProposal({ name: event.target.value })} />
           </ProposalField>
           <ProposalField field="countryCode" label="País de la aerolínea" error={proposalError("countryCode")}>
-            <select id="proposal-countryCode" className="access-select" required value={proposal.countryCode} aria-invalid={proposalError("countryCode") ? true : undefined} onChange={(event) => changeProposal({ countryCode: event.target.value })}>
+            <select {...proposalControl("countryCode")} className="access-select" required value={proposal.countryCode} onChange={(event) => changeProposal({ countryCode: event.target.value })}>
               <option value="">Seleccione el país</option>
               {countryCodes.map((code) => <option key={code} value={code}>{countryName(code)}</option>)}
             </select>
           </ProposalField>
-          <ProposalField field="icaoCode" label="Código ICAO" error={proposalError("icaoCode")} hint="Obligatorio: 3 letras, por ejemplo CMP.">
-            <input id="proposal-icaoCode" required maxLength={3} autoCapitalize="characters" value={proposal.icaoCode} aria-invalid={proposalError("icaoCode") ? true : undefined} onChange={(event) => changeProposal({ icaoCode: event.target.value.toUpperCase() })} />
+          <ProposalField field="icaoCode" label="Código ICAO" error={proposalError("icaoCode")}>
+            <input {...proposalControl("icaoCode")} required maxLength={3} autoCapitalize="characters" value={proposal.icaoCode} onChange={(event) => changeProposal({ icaoCode: event.target.value.toUpperCase() })} />
           </ProposalField>
-          <ProposalField field="iataCode" label="Código IATA (opcional)" error={proposalError("iataCode")} hint="Déjelo vacío si la aerolínea no tiene código IATA.">
-            <input id="proposal-iataCode" maxLength={2} autoCapitalize="characters" value={proposal.iataCode} aria-invalid={proposalError("iataCode") ? true : undefined} onChange={(event) => changeProposal({ iataCode: event.target.value.toUpperCase() })} />
+          <ProposalField field="iataCode" label="Código IATA (opcional)" error={proposalError("iataCode")}>
+            <input {...proposalControl("iataCode")} maxLength={2} autoCapitalize="characters" value={proposal.iataCode} onChange={(event) => changeProposal({ iataCode: event.target.value.toUpperCase() })} />
           </ProposalField>
-          <ProposalField field="websiteUrl" label="Sitio web oficial (opcional)" error={proposalError("websiteUrl")} hint="Ayuda a Contratos a confirmar la aerolínea y a su representante." wide>
-            <input id="proposal-websiteUrl" type="url" maxLength={512} inputMode="url" placeholder="https://" value={proposal.websiteUrl} aria-invalid={proposalError("websiteUrl") ? true : undefined} onChange={(event) => changeProposal({ websiteUrl: event.target.value })} />
+          <ProposalField field="websiteUrl" label="Sitio web oficial (opcional)" error={proposalError("websiteUrl")} wide>
+            <input {...proposalControl("websiteUrl")} type="url" maxLength={512} inputMode="url" placeholder="https://" value={proposal.websiteUrl} onChange={(event) => changeProposal({ websiteUrl: event.target.value })} />
           </ProposalField>
           {listedMatch && <p className="access-representative__note" role="note">El código {listedMatch.icaoCode} corresponde a {listedMatch.name}, que ya figura en el listado. <button type="button" className="access-inline-link" onClick={() => { setAirlineId(listedMatch.id); toggleProposal(false); }}>Elegir {listedMatch.name}</button></p>}
         </div>}
@@ -545,14 +558,15 @@ function FormField({ field, label, error, wide, children }: {
   </div>;
 }
 
-function ProposalField({ field, label, error, hint, wide, children }: {
-  field: AirlineProposalField; label: string; error?: string; hint?: string; wide?: boolean; children: ReactNode;
+function ProposalField({ field, label, error, wide, children }: {
+  field: AirlineProposalField; label: string; error?: string; wide?: boolean; children: ReactNode;
 }) {
+  const hint = PROPOSAL_HINTS[field];
   return <div className={wide ? "access-field access-representative__wide" : "access-field"}>
-    <label htmlFor={`proposal-${field}`}>{label}</label>
+    <label htmlFor={proposalId(field)}>{label}</label>
     {children}
-    {hint && <small className="access-field-hint">{hint}</small>}
-    {error && <p className="access-field-error">{error}</p>}
+    {hint && <small className="access-field-hint" id={`${proposalId(field)}-hint`}>{hint}</small>}
+    {error && <p className="access-field-error" id={`${proposalId(field)}-error`}>{error}</p>}
   </div>;
 }
 

@@ -31,6 +31,8 @@ Los clientes no acceden a SQL ni al proveedor fiscal. JWT identifica la cuenta; 
 - El complemento por mínimo es una línea trazable: `max(0, mínimo − ejecutado) × precio`. Se aplica a versiones contractuales modernas con `PricingPolicyVersion > 0`; las versiones heredadas conservan su semántica. La cobertura de paquete no recibe además el mínimo del servicio.
 - Una base porcentual sobre un servicio cubierto por paquete que no esté resuelta explícitamente bloquea con `package_percentage_basis_required`.
 
+> **Actualización (6 de noviembre de 2026).** Contratos crea las enmiendas con un comando propio, desde la última versión aprobada, y Finanzas puede descartar un borrador de paquete (`Discarded`) o retirar uno publicado (`Retired`). Los contratos aprobados conservan el paquete congelado. Ver [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).
+
 La prefactura permite ajustes justificados y recálculo explícito en borrador. La disputa bloquea la emisión. La factura congela las líneas aceptadas, jerarquía, razones, importes y snapshot comercial; una corrección posterior usa notas vinculadas, sin reescribir el original.
 
 ### 3. Tratamientos tributarios explícitos

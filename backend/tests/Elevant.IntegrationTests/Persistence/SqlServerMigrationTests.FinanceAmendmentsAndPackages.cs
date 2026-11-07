@@ -11,10 +11,87 @@ namespace Elevant.IntegrationTests.Persistence;
 
 /// <summary>
 /// Phase 1, block C: contract amendments (1-C), unit codes and the seeded base tariff (1-E), coded
-/// Finance failures and the discard and retirement of packages (1-N27), through the stores only.
+/// Finance failures with the Idempotency-Key of the tariff books and the discard and retirement of
+/// packages (1-N27), through the stores only.
 /// </summary>
 public sealed partial class SqlServerMigrationTests
 {
+    [Fact]
+    public async Task ContractAmendmentNeedsTheStationScopeOfTheApprovedVersionItCopies()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var packages = scope.ServiceProvider.GetRequiredService<IFinancePackageStore>();
+        var contract = await context.Contracts.AsNoTracking().SingleAsync(item => item.ContractCode == "DEV-CONTRACT-0001", ct);
+        var original = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.ContractId == contract.Id, ct);
+        var puj = await context.Stations.AsNoTracking().SingleAsync(item => item.Code == "PUJ", ct);
+        var second = await SecondStationAsync(context, ct);
+
+        // A renewal added a second station: v1 (PUJ only) was replaced by the approved and signed v2 (PUJ and MIA).
+        var renewalStart = new DateOnly(2026, 9, 1);
+        var now = DateTimeOffset.UtcNow;
+        var renewal = new ContractVersion
+        {
+            PublicId = Guid.CreateVersion7(), ContractId = contract.Id, VersionNumber = original.VersionNumber + 1,
+            Status = ContractVersionStatus.Approved, CurrencyCode = original.CurrencyCode, ValidFrom = renewalStart,
+            ValidTo = original.ValidTo, Terms = original.Terms, ApprovedAt = now, CreatedAt = now, UpdatedAt = now,
+        };
+        context.ContractVersions.Add(renewal);
+        await context.SaveChangesAsync(ct);
+        context.Set<ContractVersionStation>().AddRange(
+            new ContractVersionStation { ContractVersionId = renewal.Id, StationId = puj.Id },
+            new ContractVersionStation { ContractVersionId = renewal.Id, StationId = second.Id });
+        await context.SaveChangesAsync(ct);
+        // 2-C: the renewal governs because both parties signed it over the same content.
+        var signer = await context.Users.AsNoTracking().OrderBy(user => user.Id).Select(user => user.Id).FirstAsync(ct);
+        var content = new string('a', 64);
+        context.ContractSignatures.AddRange(
+            new ContractSignature
+            {
+                PublicId = Guid.CreateVersion7(), ContractVersionId = renewal.Id, Party = ContractSignatureParty.Airline,
+                SignerAccountId = signer, SignerName = "Casey Airline", SignerTitle = "Director", SignedAt = now,
+                DocumentSha256 = content, RequestId = Guid.NewGuid(), CreatedAt = now, UpdatedAt = now,
+            },
+            new ContractSignature
+            {
+                PublicId = Guid.CreateVersion7(), ContractVersionId = renewal.Id, Party = ContractSignatureParty.Aviam,
+                SignerAccountId = signer, SignerName = "AVIAM Contratos", SignerTitle = "Gerente", SignedAt = now,
+                DocumentSha256 = content, RequestId = Guid.NewGuid(), CreatedAt = now, UpdatedAt = now,
+            });
+        await context.SaveChangesAsync(ct);
+        await context.ContractVersions.Where(item => item.Id == original.Id).ExecuteUpdateAsync(update => update
+            .SetProperty(item => item.Status, ContractVersionStatus.Superseded)
+            .SetProperty(item => item.ValidTo, renewalStart.AddDays(-1)), ct);
+        context.ChangeTracker.Clear();
+        var amendment = new CreateAmendmentInput("Active", renewalStart.AddDays(30));
+
+        // Contratos covers PUJ only: the old version in the route is in its scope, the approved one copied is not.
+        Assert.Equal("not_found",
+            (await packages.CreateAmendmentAsync(ContractsAccount, original.PublicId, Guid.NewGuid(), amendment, ct)).Code);
+        Assert.Equal("not_found",
+            (await packages.CreateAmendmentAsync(ContractsAccount, renewal.PublicId, Guid.NewGuid(), amendment, ct)).Code);
+        // Not even the state of the contract is answered, and nothing was created or announced.
+        Assert.Equal("not_found", (await packages.CreateAmendmentAsync(ContractsAccount, original.PublicId, Guid.NewGuid(),
+            amendment with { ExpectedStatus = "Suspended" }, ct)).Code);
+        Assert.Equal(2, await context.ContractVersions.CountAsync(item => item.ContractId == contract.Id, ct));
+        Assert.False(await context.AuditEntries.AnyAsync(item => item.Action == "commercial.contract.amendment_created", ct));
+
+        // With both stations in scope the amendment starts from v2 and keeps its two stations.
+        await GrantStationAsync(context, ContractsAccount, second.Id, ct);
+        var created = await packages.CreateAmendmentAsync(ContractsAccount, original.PublicId, Guid.NewGuid(), amendment, ct);
+        Assert.True(created.IsSuccess, created.Code);
+        var copied = await (from link in context.Set<ContractVersionStation>().AsNoTracking()
+                            join version in context.ContractVersions.AsNoTracking() on link.ContractVersionId equals version.Id
+                            where version.PublicId == created.Id
+                            select link.StationId).ToArrayAsync(ct);
+        Assert.Equal(new[] { puj.Id, second.Id }.Order(), copied.Order());
+    }
+
     [Fact]
     public async Task ContractAmendmentStartsAfterTheApprovedVersionAndFinanceApprovesIt()
     {
@@ -85,6 +162,10 @@ public sealed partial class SqlServerMigrationTests
             Guid.NewGuid(), ct);
         Assert.True(submitted.IsSuccess, submitted.Code);
         var pending = (await book.GetContractApprovalAsync(FinanceAccount, draft.Id, ct))!;
+        // 1-F: Finance sees that the contract is already active, so approving replaces the version in force.
+        Assert.Equal(("PendingFinanceApproval", "Active"), (pending.Summary.Status, pending.Summary.ContractStatus));
+        Assert.Equal("Active", Assert.Single((await book.ListContractApprovalsAsync(FinanceAccount, true, ct))!,
+            item => item.VersionId == draft.Id).ContractStatus);
         var decided = await book.DecideContractApprovalAsync(FinanceAccount, draft.Id,
             new DecideContractApprovalInput("Approved", null, pending.Summary.Version), Guid.NewGuid(), ct);
         Assert.True(decided.IsSuccess, decided.Code);
@@ -298,44 +379,174 @@ public sealed partial class SqlServerMigrationTests
         // Finance tariffs: a unit name is saved as its code and every failure answers its own code.
         var usd = Assert.Single((await book.ListServiceTariffsAsync(FinanceAccount, "USD", ct))!);
         var created = await book.CreateServiceTariffDraftAsync(FinanceAccount,
-            new CreateTariffDraftInput("USD", new DateOnly(2027, 1, 1), null, usd.Id), ct);
+            new CreateTariffDraftInput("USD", new DateOnly(2027, 1, 1), null, usd.Id), null, ct);
         Assert.True(created.IsSuccess, created.Code);
         Assert.Equal("tariff_draft_exists", (await book.CreateServiceTariffDraftAsync(FinanceAccount,
-            new CreateTariffDraftInput("USD", new DateOnly(2027, 2, 1), null), ct)).Code);
+            new CreateTariffDraftInput("USD", new DateOnly(2027, 2, 1), null), null, ct)).Code);
         Assert.Equal("Invalid:tariff_not_found", Failure(await book.CreateServiceTariffDraftAsync(
-            FinanceAccount, new CreateTariffDraftInput("DOP", new DateOnly(2027, 1, 1), null, Guid.NewGuid()), ct)));
+            FinanceAccount, new CreateTariffDraftInput("DOP", new DateOnly(2027, 1, 1), null, Guid.NewGuid()), null, ct)));
         var copy = (await book.GetServiceTariffAsync(FinanceAccount, created.Id!.Value, ct))!;
         SaveServiceTariffDraftInput Rates(string unit, DateOnly from, Guid? service = null) => new(from, null, null,
             copy.Rates.Select(rate => new ServiceTariffRateInput(service ?? rate.ServiceId, null, unit, rate.UnitPrice, 1))
                 .Take(service is null ? copy.Rates.Count : 1).ToArray(), copy.Summary.Version);
         Assert.Equal("Invalid:billing_unit_unknown", Failure(await book.SaveServiceTariffDraftAsync(
-            FinanceAccount, copy.Summary.Id, Rates("free-text-unit", new DateOnly(2027, 1, 1)), ct)));
+            FinanceAccount, copy.Summary.Id, Rates("free-text-unit", new DateOnly(2027, 1, 1)), null, ct)));
         Assert.Equal("service_not_found", (await book.SaveServiceTariffDraftAsync(FinanceAccount, copy.Summary.Id,
-            Rates("operation", new DateOnly(2027, 1, 1), Guid.NewGuid()), ct)).Code);
+            Rates("operation", new DateOnly(2027, 1, 1), Guid.NewGuid()), null, ct)).Code);
         Assert.True((await book.SaveServiceTariffDraftAsync(FinanceAccount, copy.Summary.Id,
-            Rates("Operación", new DateOnly(2025, 12, 1)), ct)).IsSuccess);
+            Rates("Operación", new DateOnly(2025, 12, 1)), null, ct)).IsSuccess);
         var early = (await book.GetServiceTariffAsync(FinanceAccount, copy.Summary.Id, ct))!;
         Assert.All(early.Rates, rate => Assert.Equal("operation", rate.BillingUnit));
         Assert.Equal("Conflict:tariff_start_not_after_current", Failure(
-            await book.PublishServiceTariffAsync(FinanceAccount, early.Summary.Id, early.Summary.Version, ct)));
+            await book.PublishServiceTariffAsync(FinanceAccount, early.Summary.Id, early.Summary.Version, null, ct)));
         Assert.Equal("version_conflict",
-            (await book.PublishServiceTariffAsync(FinanceAccount, early.Summary.Id, copy.Summary.Version, ct)).Code);
+            (await book.PublishServiceTariffAsync(FinanceAccount, early.Summary.Id, copy.Summary.Version, null, ct)).Code);
 
         // Charges, units and exchange rates.
         var perUnit = new SaveChargeDefinitionInput("QA-PER-UNIT", "Cargo por unidad", null, "AdditionalCharge", "PerUnit",
             "One", 0, 0, true, null, true, true, true, null);
-        Assert.Equal("billing_unit_required", (await book.SaveChargeAsync(FinanceAccount, null, perUnit, ct)).Code);
+        Assert.Equal("billing_unit_required", (await book.SaveChargeAsync(FinanceAccount, null, perUnit, null, ct)).Code);
         Assert.Equal("billing_unit_unknown",
-            (await book.SaveChargeAsync(FinanceAccount, null, perUnit with { BillingUnit = "galón" }, ct)).Code);
-        var charge = await book.SaveChargeAsync(FinanceAccount, null, perUnit with { BillingUnit = "Hora" }, ct);
+            (await book.SaveChargeAsync(FinanceAccount, null, perUnit with { BillingUnit = "galón" }, null, ct)).Code);
+        var charge = await book.SaveChargeAsync(FinanceAccount, null, perUnit with { BillingUnit = "Hora" }, null, ct);
         Assert.True(charge.IsSuccess, charge.Code);
         Assert.Equal("hour", Assert.Single((await book.ListChargesAsync(FinanceAccount, ct))!, item => item.Id == charge.Id).BillingUnit);
         Assert.Equal("charge_code_exists",
-            (await book.SaveChargeAsync(FinanceAccount, null, perUnit with { BillingUnit = "hour" }, ct)).Code);
+            (await book.SaveChargeAsync(FinanceAccount, null, perUnit with { BillingUnit = "hour" }, null, ct)).Code);
         Assert.Equal("billing_unit_exists",
-            (await book.SaveBillingUnitAsync(FinanceAccount, null, new SaveBillingUnitInput("operation", "Operación", 0, true), ct)).Code);
+            (await book.SaveBillingUnitAsync(FinanceAccount, null, new SaveBillingUnitInput("operation", "Operación", 0, true), null, ct)).Code);
         Assert.Equal("exchange_rate_exists", (await book.RecordExchangeRateAsync(FinanceAccount,
-            new RecordExchangeRateInput(new DateOnly(2026, 8, 18), "USD", "DOP", 59m, "Duplicada"), ct)).Code);
+            new RecordExchangeRateInput(new DateOnly(2026, 8, 18), "USD", "DOP", 59m, "Duplicada"), null, ct)).Code);
+    }
+
+    [Fact]
+    public async Task TariffBookCommandsReplayTheirIdempotencyKeyAfterALostAnswer()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var book = scope.ServiceProvider.GetRequiredService<IFinanceTariffBookStore>();
+        Task<int> AuditsAsync(string action, Guid? id) =>
+            context.AuditEntries.CountAsync(item => item.Action == action && item.EntityPublicId == id, ct);
+        var keys = new List<Guid>();
+        Guid Key() { var key = Guid.NewGuid(); keys.Add(key); return key; }
+
+        // The service tariff: an empty key is refused; a retry with the same key and body replays the draft
+        // instead of tariff_draft_exists, and the same key with another body is a conflict.
+        var usd = Assert.Single((await book.ListServiceTariffsAsync(FinanceAccount, "USD", ct))!);
+        var create = new CreateTariffDraftInput("USD", new DateOnly(2027, 1, 1), "Tarifa 2027", usd.Id);
+        Assert.Equal("idempotency_key_required",
+            (await book.CreateServiceTariffDraftAsync(FinanceAccount, create, Guid.Empty, ct)).Code);
+        var createKey = Key();
+        var draft = await book.CreateServiceTariffDraftAsync(FinanceAccount, create, createKey, ct);
+        Assert.True(draft.IsSuccess, draft.Code);
+        Assert.Equal(draft.Id, (await book.CreateServiceTariffDraftAsync(FinanceAccount, create, createKey, ct)).Id);
+        Assert.Equal("idempotency_conflict", (await book.CreateServiceTariffDraftAsync(FinanceAccount,
+            create with { ValidFrom = new DateOnly(2027, 2, 1) }, createKey, ct)).Code);
+        Assert.Equal("tariff_draft_exists",
+            (await book.CreateServiceTariffDraftAsync(FinanceAccount, create, Guid.NewGuid(), ct)).Code);
+        Assert.Equal(1, await AuditsAsync("finance.service_tariff.draft_created", draft.Id));
+
+        // Save and publish committed but their answer was lost: the rowversion already changed, and the retry
+        // with the same key still replays; a new key with the stale version is the version conflict.
+        var copy = (await book.GetServiceTariffAsync(FinanceAccount, draft.Id!.Value, ct))!;
+        var save = new SaveServiceTariffDraftInput(new DateOnly(2027, 1, 1), null, "Tarifa 2027", copy.Rates.Select(rate =>
+            new ServiceTariffRateInput(rate.ServiceId, rate.StationId, rate.BillingUnit, rate.UnitPrice + 1m,
+                rate.MinimumBillableQuantity)).ToArray(), copy.Summary.Version);
+        var saveKey = Key();
+        Assert.True((await book.SaveServiceTariffDraftAsync(FinanceAccount, copy.Summary.Id, save, saveKey, ct)).IsSuccess);
+        Assert.Equal(copy.Summary.Id, (await book.SaveServiceTariffDraftAsync(FinanceAccount, copy.Summary.Id, save, saveKey, ct)).Id);
+        Assert.Equal("version_conflict",
+            (await book.SaveServiceTariffDraftAsync(FinanceAccount, copy.Summary.Id, save, Guid.NewGuid(), ct)).Code);
+        var saved = (await book.GetServiceTariffAsync(FinanceAccount, copy.Summary.Id, ct))!;
+        var publishKey = Key();
+        Assert.True((await book.PublishServiceTariffAsync(FinanceAccount, saved.Summary.Id, saved.Summary.Version, publishKey,
+            ct)).IsSuccess);
+        Assert.Equal(saved.Summary.Id, (await book.PublishServiceTariffAsync(FinanceAccount, saved.Summary.Id,
+            saved.Summary.Version, publishKey, ct)).Id);
+        Assert.Equal("version_conflict", (await book.PublishServiceTariffAsync(FinanceAccount, saved.Summary.Id,
+            saved.Summary.Version, Guid.NewGuid(), ct)).Code);
+        // A key belongs to one command: the key of the save does not publish.
+        Assert.Equal("idempotency_conflict", (await book.PublishServiceTariffAsync(FinanceAccount, saved.Summary.Id,
+            saved.Summary.Version, saveKey, ct)).Code);
+        Assert.Equal(1, await AuditsAsync("finance.service_tariff.published", saved.Summary.Id));
+        Assert.Equal("Published", (await book.GetServiceTariffAsync(FinanceAccount, saved.Summary.Id, ct))!.Summary.Status);
+
+        // A deleted draft: the replay answers the draft the first attempt deleted.
+        var dop = await book.CreateServiceTariffDraftAsync(FinanceAccount, new CreateTariffDraftInput("DOP",
+            new DateOnly(2027, 1, 1), null), null, ct);
+        var dopDraft = (await book.GetServiceTariffAsync(FinanceAccount, dop.Id!.Value, ct))!;
+        var deleteKey = Key();
+        Assert.True((await book.DeleteServiceTariffDraftAsync(FinanceAccount, dopDraft.Summary.Id, dopDraft.Summary.Version,
+            deleteKey, ct)).IsSuccess);
+        Assert.Equal(dopDraft.Summary.Id, (await book.DeleteServiceTariffDraftAsync(FinanceAccount, dopDraft.Summary.Id,
+            dopDraft.Summary.Version, deleteKey, ct)).Id);
+        Assert.Equal("not_found", (await book.DeleteServiceTariffDraftAsync(FinanceAccount, dopDraft.Summary.Id,
+            dopDraft.Summary.Version, Guid.NewGuid(), ct)).Code);
+
+        // A billing unit and a charge: the replay answers the created row instead of *_exists.
+        var unit = new SaveBillingUnitInput("gallon", "Galón", 2, true);
+        var unitKey = Key();
+        var unitCreated = await book.SaveBillingUnitAsync(FinanceAccount, null, unit, unitKey, ct);
+        Assert.True(unitCreated.IsSuccess, unitCreated.Code);
+        Assert.Equal(unitCreated.Id, (await book.SaveBillingUnitAsync(FinanceAccount, null, unit, unitKey, ct)).Id);
+        Assert.Equal("billing_unit_exists", (await book.SaveBillingUnitAsync(FinanceAccount, null, unit, Guid.NewGuid(), ct)).Code);
+        var charge = new SaveChargeDefinitionInput("qa-keyed", "Cargo con clave", null, "AdditionalCharge", "FixedAmount",
+            "One", 0, 0, true, null, false, true, true, null);
+        var chargeKey = Key();
+        var chargeCreated = await book.SaveChargeAsync(FinanceAccount, null, charge, chargeKey, ct);
+        Assert.True(chargeCreated.IsSuccess, chargeCreated.Code);
+        Assert.Equal(chargeCreated.Id, (await book.SaveChargeAsync(FinanceAccount, null, charge, chargeKey, ct)).Id);
+        Assert.Equal("charge_code_exists", (await book.SaveChargeAsync(FinanceAccount, null, charge, Guid.NewGuid(), ct)).Code);
+        Assert.Equal(1, await context.ChargeDefinitions.CountAsync(item => item.Code == "QA-KEYED", ct));
+        Assert.Equal(1, await AuditsAsync("finance.charge.created", chargeCreated.Id));
+
+        // The charge tariff: create, save and publish replay with their keys.
+        var chargeCreate = new CreateTariffDraftInput("USD", new DateOnly(2027, 1, 1), null);
+        var chargeDraftKey = Key();
+        var chargeDraft = await book.CreateChargeTariffDraftAsync(FinanceAccount, chargeCreate, chargeDraftKey, ct);
+        Assert.True(chargeDraft.IsSuccess, chargeDraft.Code);
+        Assert.Equal(chargeDraft.Id, (await book.CreateChargeTariffDraftAsync(FinanceAccount, chargeCreate, chargeDraftKey, ct)).Id);
+        var chargeVersion = (await book.GetChargeTariffAsync(FinanceAccount, chargeDraft.Id!.Value, ct))!;
+        var chargeSave = new SaveChargeTariffDraftInput(new DateOnly(2027, 1, 1), null, null,
+            [new ChargeRateInput(chargeCreated.Id!.Value, 25m, 0m)], chargeVersion.Summary.Version);
+        var chargeSaveKey = Key();
+        Assert.True((await book.SaveChargeTariffDraftAsync(FinanceAccount, chargeVersion.Summary.Id, chargeSave, chargeSaveKey,
+            ct)).IsSuccess);
+        Assert.Equal(chargeVersion.Summary.Id, (await book.SaveChargeTariffDraftAsync(FinanceAccount, chargeVersion.Summary.Id,
+            chargeSave, chargeSaveKey, ct)).Id);
+        var chargeSaved = (await book.GetChargeTariffAsync(FinanceAccount, chargeVersion.Summary.Id, ct))!;
+        var chargePublishKey = Key();
+        Assert.True((await book.PublishChargeTariffAsync(FinanceAccount, chargeSaved.Summary.Id, chargeSaved.Summary.Version,
+            chargePublishKey, ct)).IsSuccess);
+        Assert.Equal(chargeSaved.Summary.Id, (await book.PublishChargeTariffAsync(FinanceAccount, chargeSaved.Summary.Id,
+            chargeSaved.Summary.Version, chargePublishKey, ct)).Id);
+        Assert.Equal(1, await AuditsAsync("finance.charge_tariff.published", chargeSaved.Summary.Id));
+
+        // Exchange rates: the replay answers the recorded rate instead of exchange_rate_exists, and the correction
+        // is applied once.
+        var record = new RecordExchangeRateInput(new DateOnly(2026, 8, 19), "USD", "DOP", 59.3m, "Banco Central RD");
+        var rateKey = Key();
+        var recorded = await book.RecordExchangeRateAsync(FinanceAccount, record, rateKey, ct);
+        Assert.True(recorded.IsSuccess, recorded.Code);
+        Assert.Equal(recorded.Id, (await book.RecordExchangeRateAsync(FinanceAccount, record, rateKey, ct)).Id);
+        Assert.Equal("exchange_rate_exists", (await book.RecordExchangeRateAsync(FinanceAccount, record, Guid.NewGuid(), ct)).Code);
+        var current = Assert.Single((await book.ListExchangeRatesAsync(FinanceAccount, record.RateDate, record.RateDate, false,
+            ct))!);
+        var correction = new CorrectExchangeRateInput(59.4m, "Banco Central RD", current.Version);
+        var correctKey = Key();
+        var corrected = await book.CorrectExchangeRateAsync(FinanceAccount, current.Id, correction, correctKey, ct);
+        Assert.True(corrected.IsSuccess, corrected.Code);
+        Assert.Equal(corrected.Id, (await book.CorrectExchangeRateAsync(FinanceAccount, current.Id, correction, correctKey, ct)).Id);
+        Assert.Equal(2, (await book.ListExchangeRatesAsync(FinanceAccount, record.RateDate, record.RateDate, true, ct))!.Count);
+
+        // Each key kept one receipt, written with its command.
+        Assert.Equal(keys.Count, await context.Set<FinancePricingCommand>().AsNoTracking()
+            .CountAsync(item => keys.Contains(item.RequestId), ct));
     }
 
     private static string Failure(FinanceCatalogResult result) => $"{result.Failure}:{result.Code}";

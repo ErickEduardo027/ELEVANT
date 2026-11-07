@@ -409,6 +409,29 @@ it('retires a service with a reason and offers to hide it when a contract still 
     expect.objectContaining({ isPublic: false, isActive: true }), expect.stringMatching(UUID)));
 });
 
+it('does not ask to hide a service a contract keeps when it is already hidden', async () => {
+  const user = userEvent.setup();
+  const hidden = { ...makeService(1), name: 'Puente de abordaje', isPublic: false };
+  getManagedServices.mockResolvedValue([hidden]);
+  retireManagedService.mockRejectedValueOnce(problem(409, 'service_in_active_contract'));
+
+  render(<CommercialCatalogPage />);
+  const card = await screen.findByRole('article');
+  expect(within(card).getByText('Oculto')).toBeInTheDocument();
+  await user.click(within(card).getByRole('button', { name: 'Dar de baja' }));
+  const dialog = screen.getByRole('alertdialog', { name: 'Dar de baja Puente de abordaje' });
+  expect(dialog).toHaveTextContent('Ya está oculto del catálogo público: las aerolíneas que solicitan acceso no lo ven.');
+  expect(dialog).not.toHaveTextContent('use «Ocultar del catálogo»');
+  await fill(user, within(dialog).getByLabelText('Motivo de la baja'), 'AVIAM deja de operar el puente.');
+  await user.click(within(dialog).getByRole('button', { name: 'Dar de baja' }));
+
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('No se puede dar de baja: un contrato vigente o '
+    + 'en aprobación incluye este servicio, como tarifa o dentro de un paquete. Ya está oculto del catálogo público; '
+    + 'podrá darlo de baja cuando ningún contrato lo incluya.');
+  expect(within(dialog).queryByText(/ocúltelo/)).not.toBeInTheDocument();
+  expect(within(dialog).queryByRole('button', { name: 'Ocultar del catálogo' })).not.toBeInTheDocument();
+});
+
 it('retires a service that no contract uses', async () => {
   const user = userEvent.setup();
   const service = makeService(1);
@@ -463,6 +486,77 @@ it('keeps the key of an uncertain command and retries with it', async () => {
   await waitFor(() => expect(updateManagedService).toHaveBeenCalledTimes(2));
   const [first, second] = updateManagedService.mock.calls;
   expect(second[2]).toBe(first[2]);
+});
+
+const mediaUrl = number => `/api/v1/media/00000000-0000-0000-0000-${String(number).padStart(12, '0')}`;
+const cargoService = () => ({ ...makeService(1), code: 'RAMP-CARGO', name: 'Carga y descarga',
+  description: 'Atención de carga y descarga de aeronaves', imageUrl: '/assets/services/cargo-loading.webp' });
+
+/** Every upload is a new asset with its own URL, as in the API. */
+function uploadsNewAssets() {
+  let uploads = 0;
+  uploadCommercialMedia.mockImplementation(async () => ({ url: mediaUrl(++uploads) }));
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
+}
+
+it('retries an uncertain save with the media it already uploaded and the same key', async () => {
+  const user = userEvent.setup();
+  const service = cargoService();
+  getManagedServices.mockResolvedValue([service]);
+  uploadsNewAssets();
+  updateManagedService.mockRejectedValueOnce(problem(503)).mockResolvedValue({ id: service.id });
+
+  render(<CommercialCatalogPage />);
+  await user.click(await screen.findByRole('button', { name: 'Editar' }));
+  const dialog = screen.getByRole('dialog', { name: 'Editar servicio' });
+  const image = new File(['image'], 'cargo.png', { type: 'image/png' });
+  const video = new File(['video'], 'cargo.mp4', { type: 'video/mp4' });
+  fireEvent.change(screen.getByLabelText('Foto del servicio'), { target: { files: [image] } });
+  fireEvent.change(screen.getByLabelText('Video del servicio (opcional)'), { target: { files: [video] } });
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+  // The PUT may have been applied while its answer was lost.
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('Revise la conexión e intente de nuevo.');
+  await user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+
+  expect(await screen.findByText('Servicio actualizado. El catálogo público se refrescará.')).toBeInTheDocument();
+  expect(uploadCommercialMedia.mock.calls).toEqual([['service-image', image], ['service-video', video]]);
+  const [attempt, retry] = updateManagedService.mock.calls;
+  expect(attempt[1]).toMatchObject({ imageUrl: mediaUrl(1), videoUrl: mediaUrl(2), version: 'version-1' });
+  expect(attempt[2]).toMatch(UUID);
+  // The same body travels with the same Idempotency-Key: the API replays the first result.
+  expect(retry).toEqual(attempt);
+});
+
+it('uploads a photo again only for another file or one the API can no longer link', async () => {
+  const user = userEvent.setup();
+  const service = cargoService();
+  getManagedServices.mockResolvedValue([service]);
+  uploadsNewAssets();
+  updateManagedService.mockRejectedValueOnce(problem(503)).mockRejectedValueOnce(problem(400, 'media_invalid'))
+    .mockResolvedValue({ id: service.id });
+
+  render(<CommercialCatalogPage />);
+  await user.click(await screen.findByRole('button', { name: 'Editar' }));
+  const dialog = screen.getByRole('dialog', { name: 'Editar servicio' });
+  const save = () => user.click(screen.getByRole('button', { name: 'Guardar servicio' }));
+  const first = new File(['image'], 'cargo.png', { type: 'image/png' });
+  const second = new File(['other image'], 'cargo-2.png', { type: 'image/png' });
+  fireEvent.change(screen.getByLabelText('Foto del servicio'), { target: { files: [first] } });
+  await save();
+  expect(await within(dialog).findByRole('alert')).toHaveTextContent('Revise la conexión e intente de nuevo.');
+  // Another photo is another upload and another intent.
+  fireEvent.change(screen.getByLabelText('Foto del servicio'), { target: { files: [second] } });
+  await save();
+  expect(await within(dialog).findByText(/La foto o el video ya no se pueden vincular/)).toBeInTheDocument();
+  // The API refused the uploaded photo: the next attempt uploads the same file again.
+  await save();
+
+  expect(await screen.findByText('Servicio actualizado. El catálogo público se refrescará.')).toBeInTheDocument();
+  expect(uploadCommercialMedia.mock.calls).toEqual([['service-image', first], ['service-image', second],
+    ['service-image', second]]);
+  const sent = updateManagedService.mock.calls;
+  expect(sent.map(([, values]) => values.imageUrl)).toEqual([mediaUrl(1), mediaUrl(2), mediaUrl(3)]);
+  expect(sent[1][2]).not.toBe(sent[0][2]);
 });
 
 it('never offers to deactivate from the form and explains a closure that keeps the service hidden', async () => {

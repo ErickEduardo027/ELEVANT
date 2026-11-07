@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { problemMessage, isConflict, isForbidden } from './problemMessages';
-import { commercialGovernanceMessage, commercialRequestMessage } from './commercialProblems';
+import { commercialGovernanceMessage, commercialRequestMessage, provisioningMessage } from './commercialProblems';
 import { createCommandKeyHolder } from './commandKeys';
 import { representativeDomainCheck } from '../features/contracts/requests/representativeDomain';
 import { countryName, documentLabel, requestStatusLabel } from '../features/contracts/requests/requestLabels';
@@ -42,7 +42,13 @@ describe('commercial messages', () => {
     expect(commercialRequestMessage(failure(409, 'airline_code_in_use'))).toMatch(/IATA o ICAO/);
     expect(commercialRequestMessage(failure(409, 'representative_unconfirmed'))).toMatch(/confirmación del representante/);
     expect(commercialRequestMessage(failure(400, 'invalid_airline'))).toMatch(/ICAO obligatorio/);
-    expect(commercialGovernanceMessage(failure(409, 'email_in_use'))).toMatch(/no es una cuenta del portal/);
+    // Clientes answers email_in_use for any registered email, a portal account included; only provisioning knows
+    // that the email is not a portal account.
+    expect(commercialGovernanceMessage(failure(409, 'email_in_use')))
+      .toBe('Ese correo ya está registrado en ELEVANT. Use otro correo o revise los usuarios existentes.');
+    expect(provisioningMessage(failure(409, 'email_in_use'))).toMatch(/no es una cuenta del portal/);
+    expect(provisioningMessage(failure(409, 'email_has_account'))).toMatch(/Puede vincularla/);
+    expect(provisioningMessage(failure(409, 'version_conflict'))).toMatch(/cambió mientras lo editaba/);
     // 1-N13: whether the existing account can be linked and, if not, why.
     expect(commercialGovernanceMessage(failure(409, 'email_has_account'))).toMatch(/Puede vincularla/);
     expect(commercialGovernanceMessage(failure(409, 'email_in_use_other_airline'))).toMatch(/otra aerolínea/);
@@ -67,6 +73,29 @@ describe('createCommandKeyHolder', () => {
     // Another body is another intent.
     expect(holder.keyFor('cancel', { id: 1 })).not.toBe(holder.keyFor('cancel', { id: 2 }));
     holder.reset();
+  });
+
+  it('resends the command of the first attempt on every retry of the same intent', async () => {
+    let next = 0;
+    const holder = createCommandKeyHolder(() => `key-${++next}`);
+    const sent = [];
+    let version = 'v1';
+    const send = outcome => (key, command) => {
+      sent.push([key, command]);
+      return outcome ? Promise.reject(outcome) : Promise.resolve('ok');
+    };
+    const build = () => ({ expectedVersion: version, body: 'Hola' });
+    await expect(holder.run('reply', { id: 1, body: 'Hola' }, send(new TypeError('offline')), build)).rejects.toThrow('offline');
+    // The record moved on while the result was uncertain: the retry is still the first command, with its key.
+    version = 'v2';
+    await expect(holder.run('reply', { id: 1, body: 'Hola' }, send(null), build)).resolves.toBe('ok');
+    // A settled intent builds the next command with the version on screen.
+    await holder.run('reply', { id: 1, body: 'Hola' }, send(null), build);
+    expect(sent).toEqual([
+      ['key-1', { expectedVersion: 'v1', body: 'Hola' }],
+      ['key-1', { expectedVersion: 'v1', body: 'Hola' }],
+      ['key-2', { expectedVersion: 'v2', body: 'Hola' }],
+    ]);
   });
 
   it('uses random UUIDs by default', () => {

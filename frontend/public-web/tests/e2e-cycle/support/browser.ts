@@ -70,6 +70,11 @@ export async function snap(page: Page, name: string) {
 export async function loginPrivate(page: Page, role: Role) {
   await login(role);
   await forwardApi(page);
+  if (page.url().startsWith(PRIVATE_WEB)) {
+    // The test switches roles: drop the previous session, or /login sends it back to that role's shell.
+    await page.evaluate(() => { window.localStorage.clear(); window.sessionStorage.clear(); });
+    await page.context().clearCookies();
+  }
   await page.goto(`${PRIVATE_WEB}/login`);
   await page.fill("#elv-email", emailOf(role));
   await page.fill("#elv-pass", passwordOf(emailOf(role)));

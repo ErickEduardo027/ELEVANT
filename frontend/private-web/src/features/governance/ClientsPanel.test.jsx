@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import ClientsPanel from './ClientsPanel';
 import {
-  listClientAirlines, listClientUsers, resetClientUserPassword,
+  createClientUser, listClientAirlines, listClientUsers, resetClientUserPassword,
 } from '../../services/departmentGovernanceService';
 import { resendAirlineInvitation } from '../../services/commercialGovernanceApi';
 
@@ -30,6 +30,16 @@ async function openAirline() {
   return screen.findByText('ana@demo-air.test');
 }
 
+/** Opens «Añadir usuario» and fills an invitation for a new user; returns the drawer. */
+async function fillNewUser() {
+  await userEvent.click(screen.getByRole('button', { name: 'Añadir usuario' }));
+  const drawer = screen.getByRole('dialog', { name: 'Añadir usuario a Demo Air' });
+  await userEvent.type(within(drawer).getByLabelText('Nombre'), 'Luis');
+  await userEvent.type(within(drawer).getByLabelText('Apellido'), 'Linares');
+  await userEvent.type(within(drawer).getByLabelText('Correo de acceso'), 'luis@demo-air.test');
+  return drawer;
+}
+
 describe('Superadministrador Clientes', () => {
   it('closes a pending invitation with a temporary password and says so (1-N12)', async () => {
     resetClientUserPassword.mockResolvedValue({ id: 'user-1' });
@@ -54,16 +64,66 @@ describe('Superadministrador Clientes', () => {
     expect(notice).not.toHaveTextContent(/Enviamos/);
   });
 
-  it('explains a refusal by its code and re-reads the users after a conflict', async () => {
-    resetClientUserPassword.mockRejectedValue(problem(409, 'version_conflict'));
+  it('explains a conflict inside the reset dialog and retries with the version it re-read', async () => {
+    const reread = { ...invited, version: 'AAAAAAAAB+E=' };
+    listClientUsers.mockResolvedValueOnce([invited]).mockResolvedValue([reread]);
+    resetClientUserPassword.mockRejectedValueOnce(problem(409, 'version_conflict')).mockResolvedValue({ id: 'user-1' });
     await openAirline();
     await userEvent.click(screen.getByRole('button', { name: 'Asignar contraseña temporal' }));
-    fireEvent.change(screen.getByLabelText('Nueva contraseña temporal'), { target: { value: 'Synthetic-Temporary!2026' } });
-    await userEvent.click(screen.getByRole('button', { name: 'Asignar contraseña' }));
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('El registro cambió mientras lo editaba.');
+    fireEvent.change(within(screen.getByRole('dialog')).getByLabelText('Nueva contraseña temporal'),
+      { target: { value: 'Synthetic-Temporary!2026' } });
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Asignar contraseña' }));
+    // The reason is in the open dialog, not on the page behind it, and never the server title.
+    const alert = await within(screen.getByRole('dialog')).findByRole('alert');
+    expect(alert).toHaveTextContent('La cuenta cambió mientras la editaba');
     expect(alert).not.toHaveTextContent('Raw server title');
-    expect(listClientUsers).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    await waitFor(() => expect(listClientUsers).toHaveBeenCalledTimes(2));
+
+    // The next attempt carries the re-read version with a new key, and closes the dialog.
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Asignar contraseña' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('La invitación quedó cerrada');
+    const [first, second] = resetClientUserPassword.mock.calls;
+    expect(first.slice(0, 4)).toEqual(['org-1', 'user-1', 'Synthetic-Temporary!2026', 'AAAAAAAAB9E=']);
+    expect(second.slice(0, 4)).toEqual(['org-1', 'user-1', 'Synthetic-Temporary!2026', 'AAAAAAAAB+E=']);
+    expect(second[4]).not.toBe(first[4]);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('shows why «Añadir usuario» failed inside the drawer and creates the user once while it runs', async () => {
+    let finish;
+    createClientUser.mockRejectedValueOnce(problem(400, 'invitations_unavailable'))
+      .mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await openAirline();
+    const drawer = await fillNewUser();
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Crear usuario' }));
+    const alert = await within(drawer).findByRole('alert');
+    expect(alert).toHaveTextContent('Las invitaciones por correo no están configuradas. Entregue una contraseña temporal.');
+    expect(alert).not.toHaveTextContent('Raw server title');
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+
+    // A double click sends one request: the button stays disabled until the answer arrives.
+    await userEvent.dblClick(within(drawer).getByRole('button', { name: 'Crear usuario' }));
+    expect(within(drawer).getByRole('button', { name: 'Creando…' })).toBeDisabled();
+    expect(within(drawer).queryByRole('alert')).not.toBeInTheDocument();
+    expect(createClientUser).toHaveBeenCalledTimes(2);
+    expect(createClientUser).toHaveBeenLastCalledWith('org-1',
+      { firstName: 'Luis', lastName: 'Linares', email: 'luis@demo-air.test' });
+    await act(async () => { finish({ id: 'user-2' }); });
+    expect(await screen.findByRole('status')).toHaveTextContent('La invitación quedó en cola para luis@demo-air.test');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('says an email in use is already registered, without claiming it is not a portal account', async () => {
+    createClientUser.mockRejectedValue(problem(409, 'email_in_use'));
+    await openAirline();
+    const drawer = await fillNewUser();
+    await userEvent.click(within(drawer).getByRole('button', { name: 'Crear usuario' }));
+    const alert = await within(drawer).findByRole('alert');
+    expect(alert).toHaveTextContent('Ese correo ya está registrado en ELEVANT. Use otro correo o revise los usuarios existentes.');
+    expect(alert).not.toHaveTextContent('no es una cuenta del portal');
+    // A conflict re-reads the users, which may already list that account.
+    await waitFor(() => expect(listClientUsers).toHaveBeenCalledTimes(2));
   });
 
   it('shows the unauthorized state and a retry instead of an empty list', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import Drawer from '../../../components/Drawer';
 import EmptyState from '../../../components/EmptyState';
@@ -9,7 +9,8 @@ import Tabs from '../../../components/Tabs';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { TariffIcon } from '../components/icons';
 import LoadFailure, { loadFailure } from '../components/LoadFailure';
-import { latestPublishedStart, VersionList } from '../tariffs/ServiceTariffsPage';
+import { latestPublishedStart, tariffCommandKeys, VersionList } from '../tariffs/ServiceTariffsPage';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { financeTariffMessage } from '../../../services/financeErrors';
 import {
   createChargeTariffDraft, deleteChargeTariffDraft, FINANCE_CURRENCIES, formatMoney, getChargeTariff, listBillingUnits,
@@ -42,6 +43,7 @@ function ChargeDrawer({ open, charge, services, units, onClose, onSaved }) {
   const [form, setForm] = useState(blankCharge);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const saveKeys = useRef(createCommandKeyHolder());
   useEffect(() => {
     if (!open) return;
     setForm(charge ? { ...blankCharge(), ...charge, description: charge.description ?? '', billingUnit: charge.billingUnit ?? '' }
@@ -55,12 +57,15 @@ function ChargeDrawer({ open, charge, services, units, onClose, onSaved }) {
     event.preventDefault();
     setBusy(true);
     setError('');
+    const id = charge?.id;
+    const values = {
+      ...form, description: form.description || null, billingUnit: form.billingUnit || null,
+      graceMinutes: Number(form.graceMinutes), roundingIncrement: Number(form.roundingIncrement),
+      serviceIds: form.appliesToAllServices ? null : form.serviceIds, expectedVersion: charge?.version ?? null,
+    };
     try {
-      await saveCharge(charge?.id, {
-        ...form, description: form.description || null, billingUnit: form.billingUnit || null,
-        graceMinutes: Number(form.graceMinutes), roundingIncrement: Number(form.roundingIncrement),
-        serviceIds: form.appliesToAllServices ? null : form.serviceIds, expectedVersion: charge?.version ?? null,
-      });
+      // The same key goes with a retry of the same charge after an uncertain result (1-E).
+      await saveKeys.current.run('save', { id: id ?? null, ...values }, key => saveCharge(id, values, key));
       onSaved(charge ? 'Cargo actualizado.' : 'Cargo creado. Asígnele un importe en el tarifario de cargos.');
     } catch (failure) {
       setError(financeTariffMessage(failure, { fallback: 'No se pudo guardar el cargo. Intente de nuevo.' }));
@@ -193,6 +198,7 @@ function ChargeTariff({ perms }) {
   const [loadError, setLoadError] = useState(null);
   /** Bumped on every list read so the selected detail and its version are re-read after a save. */
   const [reloads, setReloads] = useState(0);
+  const commandKeys = useRef(tariffCommandKeys());
 
   const load = useCallback(async keep => {
     try {
@@ -226,12 +232,16 @@ function ChargeTariff({ perms }) {
 
   const editable = perms.update && detail?.summary.status === 'Draft';
   const draftActions = (perms.update || perms.delete || perms.publish) && detail?.summary.status === 'Draft';
-  /** A failure is explained by its code (1-E); the versions are read again either way. */
-  async function run(action, success) {
+  /**
+   * Runs a command with the Idempotency-Key of its intent (`create`, `save`, `publish`, `delete`): a retry after an
+   * uncertain result sends the same key with the same body. A failure is explained by its code (1-E); the versions
+   * are read again either way.
+   */
+  async function run(intent, body, send, success) {
     setBusy(true);
     setMessage({ tone: '', text: '' });
     try {
-      const result = await action();
+      const result = await commandKeys.current[intent].run(intent, body, send);
       setMessage({ tone: 'success', text: success });
       await load(result?.id ?? selectedId);
     } catch (failure) {
@@ -249,15 +259,37 @@ function ChargeTariff({ perms }) {
     if (!existing) return [...current, { chargeId: charge.id, chargeCode: charge.code, chargeName: charge.name, method: charge.method, value: 0, minimumAmount: 0, ...patch }];
     return current.map(item => (item.chargeId === charge.id ? { ...item, ...patch } : item));
   });
+  function createDraft() {
+    const values = { currencyCode: currency, validFrom: new Date().toISOString().slice(0, 10), note: null,
+      copyFromVersionId: versions?.find(version => version.status === 'Published')?.id ?? null };
+    return run('create', values, key => createChargeTariffDraft(values, key), 'Borrador creado.');
+  }
+  function save() {
+    const { id } = detail.summary;
+    const values = {
+      validFrom, validTo: null, note: detail.summary.note, expectedVersion: detail.summary.version,
+      rates: rates.filter(rate => rate.value !== '' && rate.value !== null).map(rate => ({ chargeId: rate.chargeId,
+        value: Number(rate.value), minimumAmount: Number(rate.minimumAmount || 0) })),
+    };
+    return run('save', { id, ...values }, key => saveChargeTariffDraft(id, values, key), 'Borrador guardado.');
+  }
+  function publish() {
+    const { id, version } = detail.summary;
+    return run('publish', { id, expectedVersion: version }, key => publishChargeTariff(id, version, key),
+      'Tarifario publicado.');
+  }
+  function discardDraft() {
+    const { id, version } = detail.summary;
+    return run('delete', { id, expectedVersion: version }, key => deleteChargeTariffDraft(id, version, key),
+      'Borrador descartado.');
+  }
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs font-semibold">Moneda<select value={currency} onChange={event => setCurrency(event.target.value)} className={fieldClass}>{FINANCE_CURRENCIES.map(code => <option key={code}>{code}</option>)}</select></label>
         {perms.create && !versions?.some(version => version.status === 'Draft') && (
-          <button type="button" disabled={busy} onClick={() => run(() => createChargeTariffDraft({ currencyCode: currency,
-            validFrom: new Date().toISOString().slice(0, 10), note: null,
-            copyFromVersionId: versions?.find(version => version.status === 'Published')?.id ?? null }), 'Borrador creado.')}
+          <button type="button" disabled={busy} onClick={() => void createDraft()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Nueva versión</button>
         )}
       </div>
@@ -289,11 +321,7 @@ function ChargeTariff({ perms }) {
               {draftActions && (
                 <div className="flex flex-wrap justify-end gap-2">
                   {perms.delete && <button type="button" disabled={busy} onClick={() => setConfirm('delete')} className="rounded-lg border border-status-danger/40 px-4 py-2 text-sm font-semibold text-status-danger">Descartar borrador</button>}
-                  {perms.update && <button type="button" disabled={busy} onClick={() => run(() => saveChargeTariffDraft(detail.summary.id, {
-                    validFrom, validTo: null, note: detail.summary.note, expectedVersion: detail.summary.version,
-                    rates: rates.filter(rate => rate.value !== '' && rate.value !== null).map(rate => ({ chargeId: rate.chargeId,
-                      value: Number(rate.value), minimumAmount: Number(rate.minimumAmount || 0) })),
-                  }), 'Borrador guardado.')} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Guardar</button>}
+                  {perms.update && <button type="button" disabled={busy} onClick={() => void save()} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Guardar</button>}
                   {perms.publish && <button type="button" disabled={busy} onClick={() => setConfirm('publish')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Publicar</button>}
                 </div>
               )}
@@ -310,11 +338,11 @@ function ChargeTariff({ perms }) {
             setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
             return;
           }
-          await run(() => publishChargeTariff(detail.summary.id, detail.summary.version), 'Tarifario publicado.');
+          await publish();
         }} />
       <ConfirmDialog open={confirm === 'delete'} title="Descartar borrador" description="El borrador se eliminará." confirmLabel="Descartar"
         onClose={() => setConfirm(null)}
-        onConfirm={async () => { setConfirm(null); await run(() => deleteChargeTariffDraft(detail.summary.id, detail.summary.version), 'Borrador descartado.'); }} />
+        onConfirm={async () => { setConfirm(null); await discardDraft(); }} />
     </div>
   );
 }

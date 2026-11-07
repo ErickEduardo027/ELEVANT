@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "a44a50ec8ea07eff7dce5a314807e4d4023d42cbdaeee792938c6b95a1b4d118",
+        "sha256": "fe634a0de364c170eb38ed2ce3a1a63e3250a667613ea094e48ee206321268da",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "1de07aafb46b07b6074c74e162ace754fe2a6b0be4a41c8c0bc69875a66fa3a0",
+        "sha256": "238eb19a2b93c515eb95e5f968ada35cd5038c646eebfe5bb05d90207aee781c",
         "title": null,
         "version": null
       }
@@ -1484,6 +1484,12 @@
         "name": "AddSimulatedCardPayments",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261105164624_AddSimulatedCardPayments.cs",
         "sha256": "28a609047f0846e1cc0ed026807fe62a9579765f2bf57733651834ba83f6332e"
+      },
+      {
+        "id": "20261106020045",
+        "name": "AddCommercialRequestReviewAndIcaoOnlyAirlines",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261106020045_AddCommercialRequestReviewAndIcaoOnlyAirlines.cs",
+        "sha256": "3c3deeccfdd8f8b3c4b9ce5cf60c59ca6d60abc054592a79968976b303db6239"
       }
     ],
     "manifestContracts": [

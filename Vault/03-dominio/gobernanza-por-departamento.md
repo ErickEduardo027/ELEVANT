@@ -75,6 +75,20 @@ flowchart TD
 | Administrador | Todos los módulos de su departamento; pedir personal; solicitar acceso para sus empleados; elegir la plantilla sugerida de sus puestos; editar permisos y estaciones; desactivar, reactivar y restablecer claves de sus miembros; leer la actividad del departamento. | Crear administradores, personas o puestos; editar nombre o correo (son del expediente); gestionarse a sí mismo u otros administradores; conceder estaciones que no tiene el empleado o él mismo. |
 | Miembro | Lo que su plantilla o sus permisos explícitos conceden. | Nada fuera de su departamento. |
 
+> **Defecto abierto (6 de noviembre de 2026, posterior al commit verificado de
+> esta nota; código de `8a79fe70`).** Restablecer la clave de un miembro
+> (`POST governance/departments/{department}/users/{id}/password-reset`, que
+> usan el administrador del departamento y el superadministrador) falla hoy con
+> un error de servidor, igual que la ruta anterior del superadministrador
+> (`POST governance/users/{id}/password-reset`): ambas piden un token a Identity
+> ([`GeneratePasswordResetTokenAsync`](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfDepartmentGovernanceStore.Users.cs)),
+> y la API [registra Identity](../../database/DevelopmentDB/Elevant.Persistence/DependencyInjection.cs)
+> sin proveedores de tokens. Ninguna prueba cubre esas rutas. Se cierra cuando
+> la API registre los proveedores o la ruta deje de depender de ellos, como ya
+> se hizo con la contraseña temporal de Clientes
+> ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md));
+> ver [Pendientes transversales](../12-backlog/pendientes-transversales.md).
+
 ## Permisos
 
 Gestión Humana no programa turnos. `human_resources.schedules` solo concede
@@ -102,6 +116,21 @@ El catálogo vive en código (`DepartmentPermissionCatalog`) con el formato
   así que las plantillas guardadas siguen funcionando. Las plantillas (`iam.access_profiles`) se aplican en vivo: editar o
 desactivar una plantilla cambia el acceso de sus miembros y rota su sello de
 seguridad.
+
+**Altas de la fase 1 del ciclo**, posteriores al commit verificado de esta
+nota (código de `8a79fe70`;
+[ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)):
+
+- `contracts.requests.cancel` cancela solicitudes comerciales;
+- `contracts.drafts.delete` descarta borradores de contrato;
+- `finance.packages.delete` descarta borradores de paquete y
+  `finance.packages.retire` retira paquetes publicados.
+
+En la misma fase, `contracts.catalog.delete` se rotula «Dar de baja» y la
+verificación de solicitudes, «Verificar aerolínea y representante». Los grants
+heredados `commercial.requests.full` y `commercial.requests.write` incluyen las
+dos acciones nuevas de Contratos, y el alias `finance.packages.manage`, las dos
+de paquetes. No hacen falta migraciones: el catálogo vive en código.
 
 El acceso efectivo se calcula en el servidor para cada petición. Private Web
 sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/access`).
@@ -147,10 +176,25 @@ de lo que debe atender:
   clausuras, permisos enviados o por vencer, y cambios del ciclo del contrato
   (activación, suspensión, vencimiento y aviso a 30 días;
   [ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
-- **Finanzas:** contratos por aprobar, y prefacturas aceptadas o disputadas.
+- **Finanzas:** contratos por aprobar.
 
 Solo las recibe quien también puede abrir la fuente; ver
 [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md).
+
+Posterior al commit verificado de esta nota (código de `8a79fe70`):
+
+- Contratos también recibe que la cuenta del portal quedó lista para enviar un
+  borrador y que Finanzas devolvió o aprobó sus precios
+  ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+- El aviso de un contrato por aprobar solo llega a quien, además de abrir la
+  aprobación (`finance.contract_approvals.read`), cubre todas las estaciones de
+  la versión
+  ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+- Finanzas también recibe las facturas pagadas con tarjeta
+  ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Las alertas de
+  prefacturas aceptadas o disputadas siguen en el código, pero el portal ya no
+  ofrece esas acciones
+  ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)).
 
 **Pruebas.** Cada tipo tiene una prueba SQL que comprueba quién la recibe y quién
 no, el filtro por estación, la marca de leída, la reaparición como no leída de

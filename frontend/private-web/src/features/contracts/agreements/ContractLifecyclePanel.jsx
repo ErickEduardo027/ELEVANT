@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import Modal from '../../../components/Modal';
+import ReasonField, { validReason } from '../../../components/ReasonField';
 import StatusBadge from '../../../components/StatusBadge';
 import { applyContractLifecycle, createContractAmendment, getContractTimeline } from '../../../services/commercialGovernanceApi';
 import { addDays, businessToday } from '../../../services/businessDay';
@@ -34,6 +35,13 @@ const AMENDABLE = ['Active', 'Suspended'];
 const EMPTY_FORM = { reason: '', validFrom: '', validTo: '', mode: 'notice', effectiveOn: '', cause: '' };
 /** Codes after which the timeline is read again: the state or the earliest termination date moved. */
 const RELOAD_CODES = ['termination_notice_not_met', 'termination_scheduled', 'termination_not_scheduled'];
+/** «Crear enmienda» refusals the user fixes by changing «Vigente desde»: the message stays next to the field. */
+const AMENDMENT_DATE_CODES = new Set(['valid_from_not_after_current', 'valid_from_after_current_end', 'invalid_amendment']);
+/** No answer or a server failure: the same intent is retried from its dialog, with the same key. */
+const uncertain = failure => typeof failure?.status !== 'number' || failure.status >= 500;
+/** A panel message: a success is announced as a status, a refused action as an alert. */
+const succeeded = text => ({ tone: 'success', text });
+const refused = text => ({ tone: 'error', text });
 
 /**
  * Chronological history of a contract (request → verification → approval → draft → Finance →
@@ -49,16 +57,32 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
   const [action, setAction] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState('');
+  // { tone: 'success' | 'error', text } of the last action, or null.
+  const [message, setMessage] = useState(null);
+  // Why the action of the open dialog was refused, shown inside it rather than behind it.
+  const [dialogError, setDialogError] = useState('');
   const keys = useRef(createCommandKeyHolder());
   const [amending, setAmending] = useState(false);
   const [amendFrom, setAmendFrom] = useState('');
   const [amended, setAmended] = useState(false);
+  // { text, onDate }: why «Crear enmienda» failed, inside its dialog (next to «Vigente desde» when the date is wrong).
+  const [amendError, setAmendError] = useState(null);
   const amendKeys = useRef(createCommandKeyHolder());
+  const amendDateErrorId = useId();
 
+  /**
+   * Reads the history again; answers the timeline read, or null when it could not be read (a 403 shows the
+   * unauthorized state instead of «Reintentar»).
+   */
   const load = useCallback(async () => {
-    try { setState({ status: 'ready', timeline: await getContractTimeline(versionId) }); }
-    catch (failure) { setState({ status: failure?.status === 403 ? 'forbidden' : 'error', timeline: null }); }
+    try {
+      const timeline = await getContractTimeline(versionId);
+      setState({ status: 'ready', timeline });
+      return timeline;
+    } catch (failure) {
+      setState({ status: failure?.status === 403 ? 'forbidden' : 'error', timeline: null });
+      return null;
+    }
   }, [versionId]);
   useEffect(() => { void load(); }, [load]);
 
@@ -70,10 +94,14 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
   const mode = scheduledOn ? 'immediate' : form.mode;
   const earliest = timeline?.earliestTerminationOn ?? businessToday();
 
-  function open(key) {
-    setAction(key); setMessage(''); setAmended(false);
+  /** Opens an action's dialog with an empty form; a termination starts on the earliest date the notice allows. */
+  function openAction(key) {
+    setAction(key); setMessage(null); setAmended(false); setDialogError('');
     setForm({ ...EMPTY_FORM, effectiveOn: key === 'Terminate' ? timeline?.earliestTerminationOn ?? '' : '' });
   }
+  function closeAction() { setAction(null); setDialogError(''); }
+  function openAmendment() { setAmending(true); setMessage(null); setAmended(false); setAmendError(null); }
+  function closeAmendment() { setAmending(false); setAmendError(null); }
 
   function values() {
     const base = { action, reason: form.reason.trim(), expectedStatus: timeline.status };
@@ -94,38 +122,47 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
   }
 
   async function submit() {
-    setBusy(true); setMessage('');
+    setBusy(true); setMessage(null); setDialogError('');
     const sent = values();
     try {
       // The same key goes with a retry of the same intent after an uncertain result.
       const result = await keys.current.run('lifecycle', { versionId, ...sent },
         key => applyContractLifecycle(versionId, sent, key));
-      setMessage(success(result, sent));
+      setMessage(succeeded(success(result, sent)));
       setAction(null); setForm(EMPTY_FORM);
       await load();
       onChanged?.();
     } catch (failure) {
-      setMessage(contractLifecycleMessage(failure));
-      if (isConflict(failure) || RELOAD_CODES.includes(failure?.code)) await load();
+      const text = contractLifecycleMessage(failure);
+      const reloaded = isConflict(failure) || RELOAD_CODES.includes(failure?.code) ? await load() : undefined;
+      // The contract moved on (or could not be read again): the dialog's intent is stale, so it closes and the
+      // panel explains why. Otherwise the cause shows inside the dialog, next to the reason.
+      if (reloaded === null || (reloaded && reloaded.status !== sent.expectedStatus)) {
+        closeAction(); setMessage(refused(text));
+      } else setDialogError(text);
     } finally { setBusy(false); }
   }
 
   /**
    * Creates the amendment with the status on screen; the same key goes with a retry of the same intent.
    * The approved version and the contract status do not change, so the drawer is not reloaded: the
-   * notice and the link to Borradores stay on screen.
+   * notice and the link to Borradores stay on screen. A wrong «Vigente desde» is explained next to the
+   * field and an uncertain result inside the dialog, to correct or retry there; any other refusal (a draft
+   * in progress, a contract that changed or is not amendable) closes the dialog and the panel explains it.
    */
   async function amend() {
-    setBusy(true); setMessage(''); setAmended(false);
+    setBusy(true); setMessage(null); setAmended(false); setAmendError(null);
     const command = { expectedStatus: timeline.status, validFrom: amendFrom };
     try {
       await amendKeys.current.run('amend', { versionId, ...command }, key => createContractAmendment(versionId, command, key));
       setAmending(false); setAmendFrom(''); setAmended(true);
-      setMessage('Se creó la enmienda como borrador, con las tarifas sin confirmar. Revísela en Borradores y envíela a Finanzas.');
+      setMessage(succeeded('Se creó la enmienda como borrador, con las tarifas sin confirmar. Revísela en Borradores y envíela a Finanzas.'));
       await load();
     } catch (failure) {
-      setMessage(amendmentProblemMessage(failure));
-      setAmending(false);
+      const text = amendmentProblemMessage(failure);
+      if (AMENDMENT_DATE_CODES.has(failure?.code)) setAmendError({ text, onDate: true });
+      else if (uncertain(failure)) setAmendError({ text, onDate: false });
+      else { closeAmendment(); setMessage(refused(text)); }
       if (isConflict(failure)) await load();
     } finally { setBusy(false); }
   }
@@ -138,7 +175,8 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
   const amendable = canAmend && AMENDABLE.includes(timeline.status);
   const earliestAmendment = currentVersion?.validFrom ? addDays(currentVersion.validFrom, 1) : undefined;
   const latestAmendment = currentVersion?.validTo ?? undefined;
-  const ready = form.reason.trim().length >= 5 && (action !== 'Renew' || form.validFrom) &&
+  // The reason within the bounds the server accepts (5 to 500 characters), plus what the action needs.
+  const ready = validReason(form.reason) && (action !== 'Renew' || form.validFrom) &&
     (!withNotice || (mode === 'immediate' ? form.cause : form.effectiveOn));
 
   return (
@@ -153,15 +191,17 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
       {((canManage && available.length > 0) || amendable) && (
         <div className="flex flex-wrap gap-2">
           {canManage && available.map(([key, meta]) => (
-            <button key={key} type="button" onClick={() => open(key)}
+            <button key={key} type="button" onClick={() => openAction(key)}
               className={`min-h-[36px] rounded-lg border px-3 text-xs font-semibold ${meta.danger ? 'border-status-danger text-status-danger' : 'border-accent-600 text-accent-600'}`}>{actionLabel(key, timeline.status)}</button>
           ))}
-          {amendable && <button type="button" onClick={() => { setAmending(true); setMessage(''); setAmended(false); }}
+          {amendable && <button type="button" onClick={openAmendment}
             className="min-h-[36px] rounded-lg border border-accent-600 px-3 text-xs font-semibold text-accent-600">Crear enmienda</button>}
         </div>
       )}
-      {message && <p role="status" className="rounded-lg bg-accent-600/10 p-2 text-xs">{message}
-        {amended && onOpenDrafts && <button type="button" onClick={onOpenDrafts} className="ml-2 font-semibold text-accent-600 underline">Abrir Borradores</button>}</p>}
+      {message && (message.tone === 'error'
+        ? <p role="alert" className="rounded-lg bg-status-danger/10 p-2 text-xs text-status-danger">{message.text}</p>
+        : <p role="status" className="rounded-lg bg-accent-600/10 p-2 text-xs">{message.text}
+          {amended && onOpenDrafts && <button type="button" onClick={onOpenDrafts} className="ml-2 font-semibold text-accent-600 underline">Abrir Borradores</button>}</p>)}
       <ol className="relative ml-2 border-l border-black/10 dark:border-white/10">
         {timeline.entries.map((entry, index) => (
           <li key={`${entry.at}-${index}`} className="mb-3 ml-4">
@@ -173,14 +213,15 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
           </li>
         ))}
       </ol>
-      <Modal open={Boolean(action)} onClose={() => setAction(null)} title={action === 'Terminate' && timeline.status === 'Draft'
+      <Modal open={Boolean(action)} onClose={closeAction} title={action === 'Terminate' && timeline.status === 'Draft'
         ? `Descartar el contrato ${timeline.contractCode}`
         : action === 'CancelTermination' ? `Cancelar la terminación del contrato ${timeline.contractCode}`
           : `${ACTIONS[action]?.label ?? ''} contrato ${timeline.contractCode}`}
-        footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setAction(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+        footer={<div className="flex justify-end gap-2"><button type="button" onClick={closeAction} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy || !ready} onClick={() => void submit()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Aplicando…' : 'Confirmar'}</button></div>}>
         <div className="space-y-3 text-sm">
+          {dialogError && <p role="alert" className="rounded-lg bg-status-danger/10 p-2 text-xs text-status-danger">{dialogError}</p>}
           {action === 'Renew' && <div className="grid grid-cols-2 gap-3">
             <label className="text-xs font-semibold">Nueva vigencia desde<input type="date" value={form.validFrom} onChange={event => setForm(current => ({ ...current, validFrom: event.target.value }))} className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
             <label className="text-xs font-semibold">Hasta (opcional)<input type="date" value={form.validTo} onChange={event => setForm(current => ({ ...current, validTo: event.target.value }))} className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
@@ -205,9 +246,8 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
                 {IMMEDIATE_CAUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </select></label>}
           </fieldset>}
-          <label className="block text-xs font-semibold">{withNotice && mode === 'immediate' ? 'Motivo (nota de la causa)' : 'Motivo'}
-            <textarea rows={3} maxLength={500} value={form.reason} onChange={event => setForm(current => ({ ...current, reason: event.target.value }))}
-              className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
+          <ReasonField label={withNotice && mode === 'immediate' ? 'Motivo (nota de la causa)' : 'Motivo'} value={form.reason}
+            onChange={reason => setForm(current => ({ ...current, reason }))} />
           {action === 'Terminate' && (timeline.status === 'Draft'
             ? <p className="text-xs text-status-danger">El contrato nunca se activó. Descartarlo es definitivo: se cierra sin firmas, sus versiones abiertas salen de Borradores y de Finanzas, y nada se borra del historial.</p>
             : withNotice && mode === 'notice'
@@ -216,16 +256,20 @@ export default function ContractLifecyclePanel({ versionId, canManage = false, c
           {action === 'CancelTermination' && <p className="text-xs">El contrato seguirá vigente después de la fecha programada. Los borradores y versiones que se cerraron al programarla no se restauran.</p>}
         </div>
       </Modal>
-      <Modal open={amending} onClose={() => setAmending(false)} title={`Crear enmienda del contrato ${timeline.contractCode}`}
-        footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setAmending(false)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
+      <Modal open={amending} onClose={closeAmendment} title={`Crear enmienda del contrato ${timeline.contractCode}`}
+        footer={<div className="flex justify-end gap-2"><button type="button" onClick={closeAmendment} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="button" disabled={busy || !amendFrom} onClick={() => void amend()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy ? 'Creando…' : 'Crear enmienda'}</button></div>}>
         <div className="space-y-3 text-sm">
+          {amendError && !amendError.onDate && <p role="alert" className="rounded-lg bg-status-danger/10 p-2 text-xs text-status-danger">{amendError.text}</p>}
           <p className="text-xs">La enmienda cambia precios a mitad de la vigencia. Parte de la última versión aprobada{currentVersion
             ? ` (versión ${currentVersion.versionNumber}, del ${day(currentVersion.validFrom)} ${currentVersion.validTo ? `al ${day(currentVersion.validTo)}` : 'sin vencimiento'})` : ''}, conserva su fin, sus estaciones, cargos y paquetes, y copia las tarifas sin confirmar para que Contratos las revise antes de enviarla a Finanzas.</p>
           <label className="block text-xs font-semibold">Vigente desde
-            <input type="date" min={earliestAmendment} max={latestAmendment} value={amendFrom} onChange={event => setAmendFrom(event.target.value)}
-              className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark" /></label>
+            <input type="date" min={earliestAmendment} max={latestAmendment} value={amendFrom}
+              onChange={event => { setAmendFrom(event.target.value); if (amendError?.onDate) setAmendError(null); }}
+              aria-invalid={amendError?.onDate ? true : undefined} aria-describedby={amendError?.onDate ? amendDateErrorId : undefined}
+              className={`mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-surface-dark ${amendError?.onDate ? 'border-status-danger' : ''}`} /></label>
+          {amendError?.onDate && <p id={amendDateErrorId} role="alert" className="text-xs font-semibold text-status-danger">{amendError.text}</p>}
           <p className="text-xs text-text-secondary-light">Debe ser posterior al inicio de la versión aprobada vigente y no posterior a su fin. Los precios nuevos rigen desde esa fecha cuando ambas partes firmen la enmienda; la aprobación de Finanzas sola no cambia lo que se factura.</p>
         </div>
       </Modal>

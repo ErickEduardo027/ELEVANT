@@ -1,15 +1,18 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { AirlineContractPageResponse, AirlinePortalBootstrapResponse,
   SessionResponse } from "@elevant/api-client";
 import { AIRLINE_SESSION_STORAGE_KEY,
   AirlineSessionProvider } from "@/components/auth/AirlineSessionProvider";
 import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
 
+// The change feed of the portal; a test announces a change through it.
+const changes = vi.hoisted(() => ({ announce: null as ((resources: string[]) => void) | null }));
 vi.mock("@/lib/airline-change-observer", () => ({
-  createPublicAirlineChangeObserver: () => ({
-    start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined),
-  }),
+  createPublicAirlineChangeObserver: (options: { onChanges: (resources: string[]) => void }) => {
+    changes.announce = options.onChanges;
+    return { start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) };
+  },
 }));
 
 const actor: SessionResponse["actor"] = {
@@ -208,4 +211,50 @@ it("lets the airline comment while Finance reviews, shows Contratos' answers and
   expect(posts[0]!.key).toMatch(/^[0-9a-f-]{36}$/);
   // The refused attempt was answered: the next one is a new intent with a new key.
   expect(posts[1]!.key).not.toBe(posts[0]!.key);
+});
+
+it("retries an uncertain observation with its first key and version even if the draft changed meanwhile", async () => {
+  const draftId = "62000000-0000-7000-8000-000000000004";
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({ accessToken: "synthetic-token", expiresAt: "2099-01-01T00:00:00Z" }));
+  const posts: Array<{ key: string | null; body: unknown }> = [];
+  let version = "AAAAAAAAB9E=";
+  let draftReads = 0;
+  const answers = [
+    () => { throw new TypeError("Network down"); },
+    () => new Response(JSON.stringify({ id: "62000000-0000-7000-8000-000000000005" }),
+      { status: 201, headers: { "content-type": "application/json" } }),
+  ];
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    if (path.endsWith("/comments")) {
+      posts.push({ key: new Headers(init?.headers).get("idempotency-key"), body: JSON.parse(String(init?.body)) });
+      return answers.shift()!();
+    }
+    if (path.endsWith("/contract-drafts")) {
+      draftReads += 1;
+      return json([{ id: draftId, contractId: "contract-2", contractCode: "DRAFT-2", airline: "Demo Airlines", status: "Draft",
+        validFrom: "2026-12-01", validTo: null, currencyCode: "USD", terms: "Condiciones.", stations: ["PUJ · Punta Cana"],
+        rates: [], versionStatus: "Draft", financeDecision: null, version, comments: [] }]);
+    }
+    const body = path.endsWith("/bootstrap") ? bootstrap : path.endsWith("/contracts")
+      ? { page: 1, limit: 20, hasMore: false, contracts: [] } : path.endsWith("/airline/permits") ? [] : { actor };
+    return json(body);
+  }));
+  render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlinePortalPage view="contracts" /></AirlineSessionProvider>);
+
+  expect(await screen.findByText(/En revisión · DRAFT-2/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Enviar una observación a Contratos"), { target: { value: "¿Incluye la noche?" } });
+  fireEvent.click(screen.getByRole("button", { name: "Enviar observación" }));
+  expect(await screen.findByText(/No se pudo confirmar el envío/)).toBeInTheDocument();
+  // Contratos saved the draft meanwhile: the portal reads a newer version before the retry.
+  version = "AAAAAAAAB+A=";
+  act(() => { changes.announce?.(["airline_contracts"]); });
+  await waitFor(() => expect(draftReads).toBe(2));
+  fireEvent.click(screen.getByRole("button", { name: "Enviar observación" }));
+  expect(await screen.findByText("Observación enviada a Contratos.")).toBeInTheDocument();
+  // The retry is the same command: same key, same body, so the server replays it instead of refusing it.
+  expect(posts).toHaveLength(2);
+  expect(posts[0]!.body).toEqual({ expectedVersion: "AAAAAAAAB9E=", body: "¿Incluye la noche?" });
+  expect(posts[1]).toEqual(posts[0]);
 });

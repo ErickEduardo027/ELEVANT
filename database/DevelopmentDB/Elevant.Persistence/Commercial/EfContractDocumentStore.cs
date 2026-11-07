@@ -121,8 +121,11 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         }
         catch (DbUpdateConcurrencyException)
         {
+            // The contract changed after the checks; nothing was signed.
             context.ChangeTracker.Clear();
-            return Failed(ContractDocumentFailure.Conflict, ContractLifecycleIssues.ContentChanged);
+            return Failed(ContractDocumentFailure.Conflict,
+                await TerminatedAsync(row.Value.ContractId, cancellationToken)
+                    ? ContractLifecycleIssues.ContractTerminated : ContractLifecycleIssues.ContentChanged);
         }
         catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
         {
@@ -272,7 +275,9 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
         catch (DbUpdateConcurrencyException)
         {
             context.ChangeTracker.Clear();
-            return Failed(ContractDocumentFailure.Conflict, ContractLifecycleIssues.ContentChanged);
+            return Failed(ContractDocumentFailure.Conflict,
+                await TerminatedAsync(row.Value.ContractId, cancellationToken)
+                    ? ContractLifecycleIssues.ContractTerminated : ContractLifecycleIssues.ContentChanged);
         }
         catch (DbUpdateException exception) when (idempotencyKey is { } key &&
             CommercialCommandReceipts.IsDuplicateKey(exception))
@@ -535,6 +540,11 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
     private Task<long> AccountIdAsync(Guid actorId, CancellationToken cancellationToken) =>
         context.Users.AsNoTracking().Where(user => user.PublicId == actorId).Select(user => user.Id)
             .SingleAsync(cancellationToken);
+
+    /// <summary>Whether the contract is terminated now, read past the change tracker (after a conflict).</summary>
+    private Task<bool> TerminatedAsync(long contractId, CancellationToken cancellationToken) =>
+        context.Contracts.AsNoTracking()
+            .AnyAsync(item => item.Id == contractId && item.Status == ContractStatus.Terminated, cancellationToken);
 
     /// <summary>
     /// The party may sign now: validity confirmed, not signed yet, the contract open for this version and,

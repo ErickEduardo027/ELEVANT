@@ -8,6 +8,7 @@ import {
 import { commercialRequestMessage } from '../../../services/commercialProblems';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
+import { airlineIdentityErrors } from './airlineIdentity';
 import { countryName, documentLabel, requestStatusLabel } from './requestLabels';
 import { representativeDomainCheck } from './representativeDomain';
 import { billingUnitLabel } from '../../../services/billingUnits';
@@ -21,6 +22,15 @@ const COUNTERS = [['Pending', 'pending', 'Pendientes'], ['InReview', 'inReview',
 const LOAD_FAILED = 'No se pudieron cargar las solicitudes. Revise la conexión e intente de nuevo.';
 const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white p-2 text-sm dark:bg-surface-dark';
 const dateTime = value => new Date(value).toLocaleString('es-DO');
+// The identity form in its order; the constraints describe each field, airlineIdentity.js decides.
+const IDENTITY_INPUTS = [
+  { key: 'legalName', label: 'Razón social', required: true, maxLength: 200, wide: true },
+  { key: 'countryCode', label: 'País (2 letras)', required: true, minLength: 2, maxLength: 2, pattern: '[A-Z]{2}', upper: true },
+  { key: 'iataCode', label: 'IATA (opcional, 2 caracteres)', minLength: 2, maxLength: 2, pattern: '[A-Z0-9]{2}', upper: true },
+  { key: 'icaoCode', label: 'ICAO (3 letras)', required: true, minLength: 3, maxLength: 3, pattern: '[A-Z]{3}', upper: true },
+  { key: 'verificationSourceUrl', label: 'Fuente HTTPS', required: true, maxLength: 512, type: 'url', inputMode: 'url',
+    pattern: 'https://.+', placeholder: 'https://', wide: true },
+];
 
 /**
  * Contratos inbox of the public requests (phase 1, block A): server filter, search and paging, the
@@ -191,14 +201,26 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
   });
   const [catalog, setCatalog] = useState({ status: 'idle', airlines: [], error: '' });
   const [profileId, setProfileId] = useState('');
+  // After a refused submit the messages follow the typing; `attempt` moves the focus to the first one.
+  const [checked, setChecked] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const formRef = useRef(null);
   const chosen = catalog.airlines.find(item => item.id === profileId) ?? null;
   const linking = !linked && mode === 'link';
   const needsIdentity = !linking || (chosen !== null && !chosen.isVerified);
+  const catalogEmpty = catalog.status === 'ready' && catalog.airlines.length === 0;
+  const errors = checked && needsIdentity ? airlineIdentityErrors(identity) : {};
+  useEffect(() => {
+    if (attempt) formRef.current?.querySelector('[aria-invalid="true"]')?.focus();
+  }, [attempt]);
 
   async function loadCatalog() {
     setCatalog(current => ({ ...current, status: 'loading', error: '' }));
     try {
-      setCatalog({ status: 'ready', airlines: await getPublishedAirlineProfiles(), error: '' });
+      const airlines = await getPublishedAirlineProfiles();
+      setCatalog({ status: 'ready', airlines, error: '' });
+      // Nothing published to link to: the request gets its own verified profile (1-N25).
+      if (!airlines.length) setMode('create');
     } catch (failure) {
       setCatalog({ status: 'error', airlines: [], error: commercialRequestMessage(failure, {
         fallback: 'No se pudo cargar el catálogo de aerolíneas. Revise la conexión e intente de nuevo.' }) });
@@ -208,25 +230,40 @@ function AirlineSection({ request, canVerify, busy, onVerify }) {
     setMode(next);
     if (next === 'link' && catalog.status === 'idle') void loadCatalog();
   }
+  function close() {
+    setEditing(false);
+    setChecked(false);
+  }
   async function submit(event) {
     event.preventDefault();
+    // The identity is explained here, field by field: the api-client would refuse it without sending it.
+    if (needsIdentity && Object.keys(airlineIdentityErrors(identity)).length) {
+      setChecked(true);
+      setAttempt(current => current + 1);
+      return;
+    }
     const command = { expectedVersion: request.version, ...(linking ? { linkProfileId: profileId } : {}),
       ...(needsIdentity ? identity : {}) };
     const saved = await onVerify(command, linking
       ? 'Aerolínea verificada y vinculada a la ficha del catálogo. La solicitud está en revisión.'
       : 'Aerolínea verificada. La solicitud está en revisión.');
-    if (saved) setEditing(false);
+    if (saved) close();
   }
 
   return <div className="space-y-3">
     {proposal && <div className="rounded-lg border border-status-warning/40 bg-status-warning/[.06] p-4 text-sm"><strong>Aerolínea propuesta por el solicitante</strong><p className="mt-1 text-xs text-text-secondary-light">No figuraba en el catálogo público. {linked ? 'Contratos ya la vinculó a una ficha del catálogo.' : 'Verifíquela con una fuente oficial: cree su ficha o vincúlela a una existente.'}</p><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Nombre">{proposal.name}</Detail><Detail label="País">{countryName(proposal.countryCode) ?? 'Sin dato'}</Detail><Detail label="IATA">{proposal.iataCode ?? 'Sin IATA'}</Detail><Detail label="ICAO">{proposal.icaoCode}</Detail>{proposal.websiteUrl && <Detail label="Sitio web">{proposal.websiteUrl}</Detail>}</dl></div>}
     {linked && <div className="rounded-lg bg-black/[.03] p-4 text-sm dark:bg-white/[.04]"><strong>{request.airlineVerified ? 'Identidad verificada por Contratos' : 'Identidad legal pendiente de verificación'}</strong><dl className="mt-2 grid grid-cols-2 gap-2"><Detail label="Razón social">{request.legalName ?? 'Sin confirmar'}</Detail><Detail label="País">{countryName(request.countryCode) ?? 'Sin confirmar'}</Detail><Detail label="IATA">{request.iataCode ?? (request.airlineVerified ? 'No tiene' : 'Sin confirmar')}</Detail><Detail label="ICAO">{request.icaoCode ?? 'Sin confirmar'}</Detail>{request.verificationSourceUrl && <Detail label="Fuente">{request.verificationSourceUrl}</Detail>}</dl></div>}
     {canVerify && !editing && <button type="button" onClick={() => setEditing(true)} className="text-xs font-semibold text-accent-600 underline">Corregir la verificación</button>}
-    {canVerify && editing && <form onSubmit={submit} className="border-t border-black/10 pt-4 dark:border-white/10"><h3 className="font-bold">Verificar identidad de la aerolínea</h3><p className="mt-1 text-xs text-text-secondary-light">Complete los datos con una fuente oficial. La lista histórica de clientes por sí sola no acredita razón social ni códigos. El ICAO es obligatorio; el IATA, solo si la aerolínea lo tiene.</p>
-      {!linked && <fieldset className="mt-3 flex flex-wrap gap-4 text-sm"><legend className="sr-only">Cómo registrar la aerolínea</legend><label className="flex items-center gap-2"><input type="radio" name={`airline-mode-${request.id}`} checked={mode === 'create'} onChange={() => chooseMode('create')} />Crear ficha verificada</label><label className="flex items-center gap-2"><input type="radio" name={`airline-mode-${request.id}`} checked={mode === 'link'} onChange={() => chooseMode('link')} />Vincular a una ficha existente</label></fieldset>}
+    {canVerify && editing && <form ref={formRef} noValidate onSubmit={submit} className="border-t border-black/10 pt-4 dark:border-white/10"><h3 className="font-bold">Verificar identidad de la aerolínea</h3><p className="mt-1 text-xs text-text-secondary-light">Complete los datos con una fuente oficial. La lista histórica de clientes por sí sola no acredita razón social ni códigos. El ICAO es obligatorio; el IATA, solo si la aerolínea lo tiene.</p>
+      {!linked && <fieldset className="mt-3 flex flex-wrap gap-4 text-sm"><legend className="sr-only">Cómo registrar la aerolínea</legend><label className="flex items-center gap-2"><input type="radio" name={`airline-mode-${request.id}`} checked={mode === 'create'} onChange={() => chooseMode('create')} />Crear ficha verificada</label><label className="flex items-center gap-2"><input type="radio" name={`airline-mode-${request.id}`} checked={mode === 'link'} disabled={catalogEmpty} onChange={() => chooseMode('link')} />Vincular a una ficha existente</label></fieldset>}
+      {!linked && catalogEmpty && <p role="status" className="mt-2 text-xs text-text-secondary-light">No hay fichas publicadas en el catálogo para vincular. Cree una ficha verificada con los datos de la fuente oficial.</p>}
       {linking && <div className="mt-3">{catalog.status === 'loading' ? <p className="text-xs">Cargando aerolíneas…</p> : catalog.status === 'error' ? <p role="alert" className="text-xs text-status-danger">{catalog.error} <button type="button" onClick={() => { void loadCatalog(); }} className="font-semibold underline">Reintentar</button></p> : <label className="text-xs font-semibold">Ficha del catálogo<select required value={profileId} onChange={event => setProfileId(event.target.value)} className={field}><option value="">Seleccione la aerolínea</option>{catalog.airlines.map(item => <option key={item.id} value={item.id}>{item.name}{item.icaoCode ? ` · ${item.icaoCode}` : ''}{item.isVerified ? ' · verificada' : ''}</option>)}</select></label>}{chosen?.isVerified && <p className="mt-2 text-xs text-text-secondary-light">La ficha ya está verificada: se vinculará sin cambiar su identidad.</p>}</div>}
-      {needsIdentity && <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">{[['legalName', 'Razón social', 200, true], ['countryCode', 'País (2 letras)', 2, true], ['iataCode', 'IATA (opcional, 2 caracteres)', 2, false], ['icaoCode', 'ICAO (3 letras)', 3, true], ['verificationSourceUrl', 'Fuente HTTPS', 512, true]].map(([key, label, max, required]) => <label key={key} className={`text-xs font-semibold ${['verificationSourceUrl', 'legalName'].includes(key) ? 'sm:col-span-2' : ''}`}>{label}<input required={required} maxLength={max} value={identity[key]} onChange={event => setIdentity(current => ({ ...current, [key]: ['countryCode', 'iataCode', 'icaoCode'].includes(key) ? event.target.value.toUpperCase() : event.target.value }))} className={field} /></label>)}</div>}
-      <div className="mt-3 flex flex-wrap gap-2"><button disabled={busy || (linking && !profileId)} className="rounded-lg border border-accent-600 px-4 py-2 text-xs font-semibold text-accent-600 disabled:opacity-50">{linking ? 'Vincular y verificar' : 'Guardar verificación'}</button>{request.airlineVerified && <button type="button" onClick={() => setEditing(false)} className="rounded-lg px-4 py-2 text-xs">Descartar cambios</button>}</div>
+      {needsIdentity && <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">{IDENTITY_INPUTS.map(({ key, label, wide, upper, ...constraints }) => {
+        const id = `airline-${request.id}-${key}`;
+        const message = errors[key];
+        return <div key={key} className={wide ? 'sm:col-span-2' : undefined}><label htmlFor={id} className="text-xs font-semibold">{label}</label><input id={id} name={key} {...constraints} value={identity[key]} aria-invalid={message ? true : undefined} aria-describedby={message ? `${id}-error` : undefined} onChange={event => setIdentity(current => ({ ...current, [key]: upper ? event.target.value.toUpperCase() : event.target.value }))} className={field} />{message && <p id={`${id}-error`} className="mt-1 text-xs text-status-danger">{message}</p>}</div>;
+      })}</div>}
+      <div className="mt-3 flex flex-wrap gap-2"><button disabled={busy || (linking && !profileId)} className="rounded-lg border border-accent-600 px-4 py-2 text-xs font-semibold text-accent-600 disabled:opacity-50">{linking ? 'Vincular y verificar' : 'Guardar verificación'}</button>{request.airlineVerified && <button type="button" onClick={close} className="rounded-lg px-4 py-2 text-xs">Descartar cambios</button>}</div>
     </form>}
   </div>;
 }
@@ -271,10 +308,12 @@ function DecisionSection({ request, stations, canApprove, canReject, busy, onDec
     [confirmed, 'Representante confirmado por Contratos'],
     [request.authorityDeclared, 'Autorización declarada por el representante'],
     [!request.existingCustomer, 'La aerolínea no tiene un contrato vigente ni cuentas activas'],
+    [stationIds.length > 0, 'Al menos una estación elegida'],
   ];
   return <div className="border-t border-black/10 pt-4 dark:border-white/10"><h3 className="font-bold">Decisión contractual</h3><p className="mt-1 text-xs text-text-secondary-light">Al aprobar se crea un contrato y versión en borrador. La operación requiere activación posterior. El solicitante recibe un correo con la decisión.</p>
     {canApprove && <><ul className="mt-3 space-y-1 text-xs">{checklist.map(([met, label]) => <li key={label}>{met ? '✓' : '○'} {label}</li>)}</ul>
-      <fieldset className="mt-3"><legend className="text-xs font-semibold">Estaciones solicitadas para el borrador</legend>{stations.map(station => <label key={station.id} className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={stationIds.includes(station.id)} onChange={event => setStationIds(current => event.target.checked ? [...current, station.id] : current.filter(id => id !== station.id))} />{station.code} · {station.name}</label>)}</fieldset>
+      <fieldset className="mt-3"><legend className="text-xs font-semibold">Estaciones solicitadas para el borrador</legend>{stations.length ? stations.map(station => <label key={station.id} className="mt-2 flex items-center gap-2 text-sm"><input type="checkbox" checked={stationIds.includes(station.id)} onChange={event => setStationIds(current => event.target.checked ? [...current, station.id] : current.filter(id => id !== station.id))} />{station.code} · {station.name}</label>)
+        : <p className="mt-2 rounded-lg bg-status-warning/10 p-3 text-xs">No hay estaciones activas para el borrador. Pida a Operaciones que active una.</p>}</fieldset>
       <button type="button" disabled={busy || !ready || !stationIds.length} onClick={() => { void onDecide({ approve: true, stationIds, expectedVersion: request.version }); }} className="mt-4 rounded-lg bg-accent-600 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Aprobar y crear borrador</button></>}
     {canReject && <><label className="mt-4 block text-xs font-semibold">Motivo de rechazo<textarea value={reason} onChange={event => setReason(event.target.value)} rows={2} maxLength={1000} className={field} /></label><button type="button" disabled={busy || !reason.trim()} onClick={async () => { if (await onDecide({ approve: false, reason: reason.trim(), stationIds: [], expectedVersion: request.version })) setReason(''); }} className="mt-2 rounded-lg border border-status-danger px-4 py-2 text-xs font-semibold text-status-danger disabled:opacity-50">Rechazar solicitud</button></>}
   </div>;

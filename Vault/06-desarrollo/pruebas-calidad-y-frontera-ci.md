@@ -67,6 +67,35 @@ Los comandos copiables están en
 [Comandos locales por subárbol](comandos-locales-por-subarbol.md). Para un
 cambio transversal se usa la unión de sus filas, no solo la suite más rápida.
 
+## Recorrido E2E del ciclo completo
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 1 del ciclo (`8a79fe70`), que esa verificación no cubre.
+
+Además de las suites de cada subárbol, Public Web tiene un recorrido de
+Playwright que atraviesa el ciclo operativo completo contra el stack local real
+([configuración](../../frontend/public-web/playwright.cycle.config.ts),
+[pruebas de la fase 1](../../frontend/public-web/tests/e2e-cycle/fase1-comercial.spec.ts)
+y [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+
+- **Qué recorre.** Cuatro proyectos encadenados, uno por fase: comercial,
+  pre-operación, operación y facturación. Cada corrida crea su propia aerolínea
+  sintética, y cada fase continúa la corrida que dejó la anterior.
+- **Qué necesita.** El stack local de `database/DevelopmentDB` con el overlay
+  de Compose para E2E, que suma almacenamiento S3 local, el CORS de los puertos
+  del arnés y límites de uso altos. También Mailpit, de donde lee los enlaces y
+  códigos del portal, Google Chrome, y `E2E_CYCLE_ENV_FILE` apuntando al `.env`
+  del stack, del que toma las credenciales sembradas sin imprimirlas.
+- **Cómo corre.** `npm run test:e2e:cycle`, desde `frontend/public-web`, levanta
+  public-web y private-web en modo desarrollo y reenvía el nombre HTTPS de la
+  API a la API local. El estado de la corrida y las capturas quedan fuera del
+  repositorio, sin trazas ni reporte HTML. Los pasos exactos están en la
+  [guía de desarrollo local](../../docs/workflows/local-development.md#recorrido-e2e-del-ciclo-completo)
+  y en el [README de Public Web](../../frontend/public-web/README.md).
+- **Qué no es.** Ningún workflow de CI lo ejecuta, y los huecos todavía
+  abiertos figuran como `test.fixme("hueco …")`. Una corrida verde es evidencia
+  local: no reemplaza CI ni prueba un despliegue.
+
 ## Qué agrega cada workflow activo
 
 ### Backend CI
