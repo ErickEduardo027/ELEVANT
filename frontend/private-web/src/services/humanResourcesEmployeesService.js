@@ -18,8 +18,13 @@ export const listEmployees = (filters = {}) => commercialApi(`${hr}/employees${q
 export const getEmployee = id => commercialApi(`${hr}/employees/${id}`);
 export const getEmployeeOptions = () => commercialApi(`${hr}/employees/options`);
 export const createEmployee = values => commercialApi(`${hr}/employees`, json('POST', values));
-export const updateEmployee = (id, values) => commercialApi(`${hr}/employees/${id}`, json('PUT', values));
 const keyed = idempotencyKey => (idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {});
+/**
+ * Saves the record with the `expectedVersion` on screen and the intent's Idempotency-Key. Moving a ramp agent to an
+ * office position releases their ramp work (2-N06), or fails with `agent_has_operation_in_progress`.
+ */
+export const updateEmployee = (id, values, idempotencyKey) =>
+  commercialApi(`${hr}/employees/${id}`, { ...json('PUT', values), ...keyed(idempotencyKey) });
 /**
  * Transfers the employee with the `version` on screen and the intent's Idempotency-Key. Leaving the ramp releases the
  * agent's coverages, unstarted operations and shifts (2-N06), or fails with `agent_has_operation_in_progress`.
@@ -120,9 +125,10 @@ const MESSAGES = {
   permissions_required: 'Un sub-usuario necesita una plantilla o al menos un permiso.',
   ramp_agents_use_requests: 'Los agentes de rampa se solicitan desde Centro de Operaciones (requieren supervisor y terminales).',
   stations_outside_employee: 'Las estaciones de la cuenta deben ser estaciones del empleado.',
-  // Phase 2, block D: the release of a ramp agent's work on termination or transfer (2-N06, 2-N31).
+  // Phase 2, block D: the release of a ramp agent's work on termination, transfer or an office position (2-N06,
+  // 2-N31). Only the agent unblocks it by sending the operation from the tablet; OCC has no action that does.
   agent_has_operation_in_progress:
-    'El agente tiene una operación en curso o devuelta para corrección. Pida a OCC que la cierre antes de continuar.',
+    'El agente tiene una operación en curso o devuelta para corrección. Debe enviarla desde la tablet (si fue devuelta, corregirla y reenviarla) antes de continuar; mientras tanto no se registra el cambio y su perfil de rampa sigue activo.',
   termination_date_invalid: 'La fecha de baja no puede ser posterior a hoy.',
   invalid_transfer: 'Elija el departamento de destino y entre 1 y 20 estaciones.',
   protected_person: 'Nadie puede trasladarse o darse de baja a sí mismo ni al superadministrador.',

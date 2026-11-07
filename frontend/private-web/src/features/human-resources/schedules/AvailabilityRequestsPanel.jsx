@@ -18,7 +18,8 @@ const DECISION_NOTICES = { Approve: 'Solicitud aprobada.', Reject: 'Solicitud re
   Cancel: 'Solicitud cancelada.' };
 // A day off or a restriction takes the agent's work of those days (2-N08); a shift change does not.
 const ABSENCE_TYPES = new Set(['DayOff', 'Restriction']);
-const RELEASE_NOTICE = ' Si el agente tenía coberturas, operaciones sin iniciar o turnos en esos días, se liberaron y OCC recibió el aviso.';
+// The answer does not say what was released, and OCC is only notified of each released operation (2-N06).
+const RELEASE_NOTICE = ' Si el agente tenía coberturas, operaciones sin iniciar o turnos en esos días, se liberaron; OCC recibe un aviso por cada operación liberada.';
 const AMENDMENT_NOTICES = {
   Cancel: 'Ausencia cancelada. Lo que su aprobación liberó no vuelve: programe de nuevo lo que haga falta.',
   Shorten: 'Ausencia acortada. Lo que su aprobación liberó no vuelve: programe de nuevo lo que haga falta.',

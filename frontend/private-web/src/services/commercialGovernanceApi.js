@@ -37,8 +37,13 @@ export async function commercialApi(path, options = {}) {
 export const getGovernance = () => commercialApi('/governance');
 export const getGovernanceAudit = (page = 1) => commercialApi(`/governance/audit?page=${page}&limit=25`);
 export const getRampProfiles = () => commercialApi('/human-resources/ramp-profiles');
-export const saveRampProfile = (id, values) => commercialApi(id ? `/human-resources/ramp-profiles/${id}` : '/human-resources/ramp-profiles', {
+/**
+ * Creates (no id) or saves a ramp profile. An update carries the profile's `version` on screen as `expectedVersion`
+ * and the intent's Idempotency-Key: deactivating it releases the agent's work (2-N06), so a retry must never repeat it.
+ */
+export const saveRampProfile = (id, values, idempotencyKey) => commercialApi(id ? `/human-resources/ramp-profiles/${id}` : '/human-resources/ramp-profiles', {
   method: id ? 'PUT' : 'POST', body: JSON.stringify(values),
+  ...(id && idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
 });
 export const getManagedAirlines = () => commercialApi('/governance/airlines');
 export const enrichManagedAirlines = () => commercialApi('/governance/airlines/enrichment', { method: 'POST' });

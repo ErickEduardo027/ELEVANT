@@ -204,6 +204,16 @@ a 60 minutos y usa 15 por defecto.
   puede retirar alcances de una cuenta ya vinculada, pero no conceder nuevos
   grants de estación: la aprobación y vinculación siguen siendo exclusivas de
   Superadministración. No se envía correo de invitación desde este endpoint.
+  Cada perfil trae su `version` (rowversion). El `PUT` acepta como expand una
+  `Idempotency-Key` y un `expectedVersion` opcionales: con la clave la versión
+  es obligatoria, una versión vieja responde `version_conflict`, la misma clave
+  con otro cuerpo `idempotency_conflict` y el reintento devuelve el perfil sin
+  repetir la liberación. Desactivar el perfil termina su trabajo en rampa por la
+  ruta de liberación (2-N06) o responde `agent_has_operation_in_progress`, que
+  solo se levanta cuando el agente envía (o corrige y reenvía) la operación
+  desde la tablet. Todo rechazo lleva su `code` y un título en español; el
+  permiso denegado sigue siendo un 403 genérico sin `code`, que la web explica
+  por su estado.
 - `GET /api/v1/human-resources/ramp-profiles/access-requests` y
   `POST /api/v1/human-resources/ramp-profiles/{id}/access-requests` permiten a
   Gestión Humana consultar y solicitar acceso móvil con UUID de intención. La

@@ -47,7 +47,7 @@ it('lets Operations limit terminals to chosen stations and only offer its own st
   await userEvent.click(screen.getByRole('checkbox', { name: /Terminal A/ }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
   await waitFor(() => expect(saveRampProfile).toHaveBeenCalledWith('agent-1',
-    expect.objectContaining({ terminalIds: ['terminal-a'], stationIds: ['station-1'] })));
+    expect.objectContaining({ terminalIds: ['terminal-a'], stationIds: ['station-1'] }), expect.stringMatching(/^[0-9a-f-]{36}$/)));
   expect(screen.getByRole('status')).toHaveTextContent('Perfil operativo guardado.');
 });
 
@@ -91,7 +91,7 @@ it('loads persisted terminal and supervisor and clears both on deactivation', as
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Supervisor' }), '');
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
   await waitFor(() => expect(saveRampProfile).toHaveBeenCalledWith('agent-1',
-    expect.objectContaining({ isActive: false, terminalIds: [], supervisor: { id: null } })));
+    expect.objectContaining({ isActive: false, terminalIds: [], supervisor: { id: null } }), expect.stringMatching(/^[0-9a-f-]{36}$/)));
 });
 
 it('shows an inactive linked supervisor and keeps that relationship on an unrelated edit', async () => {
@@ -117,7 +117,7 @@ it('shows an inactive linked supervisor and keeps that relationship on an unrela
   await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
   await waitFor(() => expect(saveRampProfile).toHaveBeenCalledWith('agent-1',
-    expect.objectContaining({ category: 'Agente', isActive: false, supervisor: { id: 'supervisor-1' } })));
+    expect.objectContaining({ category: 'Agente', isActive: false, supervisor: { id: 'supervisor-1' } }), expect.stringMatching(/^[0-9a-f-]{36}$/)));
 });
 
 it('hides a previously visible profile after an authorized revalidation fails', async () => {
@@ -189,8 +189,77 @@ it('explains that an operation in progress keeps the agent active (2-N06)', asyn
   await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
   await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
   await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent(/OCC debe cerrarla antes de desactivar el perfil/);
+  // Only the agent unblocks it from the tablet; OCC has no action that closes an operation in progress.
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent(/Debe enviarla desde la tablet \(si fue devuelta, corregirla y reenviarla\)/);
+  expect(alert).not.toHaveTextContent(/OCC/);
   expect(screen.queryByText(/conflicts with current state/)).not.toBeInTheDocument();
+  // The form keeps the intent; nothing was released.
+  expect(screen.getByRole('checkbox', { name: 'Perfil activo' })).not.toBeChecked();
+});
+
+it('sends the version on screen with the intent key and repeats both after an uncertain answer (2-N06)', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [{ ...agent, version: 'AAAAAAAAB9E=' }], availableStations: [
+    { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },
+  ] });
+  saveRampProfile.mockRejectedValueOnce(new Error('network down')).mockResolvedValueOnce({ id: 'agent-1' });
+  render(<RampProfilesPanel canEdit />);
+  await screen.findByText('Lucia Ramos');
+  await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(/No fue posible guardar el perfil/);
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Perfil operativo guardado.');
+  expect(saveRampProfile).toHaveBeenCalledTimes(2);
+  const [id, body, key] = saveRampProfile.mock.calls[0];
+  expect(id).toBe('agent-1');
+  expect(body).toEqual(expect.objectContaining({ isActive: false, expectedVersion: 'AAAAAAAAB9E=' }));
+  expect(key).toMatch(/^[0-9a-f-]{36}$/);
+  // The same intent: same body and same key, so the server answers the first save instead of releasing again.
+  expect(saveRampProfile.mock.calls[1]).toEqual(saveRampProfile.mock.calls[0]);
+});
+
+it('re-reads a profile that changed meanwhile and saves it again with its new version (2-N06)', async () => {
+  const station = { id: 'station-1', code: 'PUJ', name: 'Punta Cana' };
+  getRampProfiles.mockResolvedValueOnce({ profiles: [{ ...agent, version: 'AAAAAAAAB9E=' }], availableStations: [station] })
+    .mockResolvedValue({ profiles: [{ ...agent, category: 'Agente líder', version: 'AAAAAAAAB9I=' }],
+      availableStations: [station] });
+  saveRampProfile.mockRejectedValueOnce(Object.assign(new Error('El registro cambió.'), { status: 409, code: 'version_conflict' }))
+    .mockResolvedValueOnce({ id: 'agent-1' });
+  render(<RampProfilesPanel canEdit />);
+  await screen.findByText('Lucia Ramos');
+  await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'El perfil cambió mientras lo editaba. Cargamos sus datos actuales: revíselos y guarde de nuevo.');
+  expect(screen.queryByText('El registro cambió.')).not.toBeInTheDocument();
+  // The form now shows the profile as it is, active again: the user decides on the current data.
+  expect(screen.getByRole('textbox', { name: 'Categoría' })).toHaveValue('Agente líder');
+  expect(screen.getByRole('checkbox', { name: 'Perfil activo' })).toBeChecked();
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Perfil operativo guardado.');
+  const [first, second] = saveRampProfile.mock.calls;
+  expect(second[1]).toEqual(expect.objectContaining({ category: 'Agente líder', expectedVersion: 'AAAAAAAAB9I=' }));
+  expect(second[2]).not.toBe(first[2]);
+});
+
+it('explains a refused supervisor by its code and keeps the edit', async () => {
+  getRampProfiles.mockResolvedValue({ profiles: [agent], availableStations: [
+    { id: 'station-1', code: 'PUJ', name: 'Punta Cana' },
+  ] });
+  saveRampProfile.mockRejectedValue(Object.assign(new Error('Los datos no son válidos.'),
+    { status: 400, code: 'supervisor_cycle' }));
+  render(<RampProfilesPanel canEdit />);
+  await screen.findByText('Lucia Ramos');
+  await userEvent.click(screen.getByRole('button', { name: 'Editar perfil operativo' }));
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Perfil activo' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar perfil' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('El supervisor elegido depende de este agente. Elija otro.');
+  expect(getRampProfiles).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('checkbox', { name: 'Perfil activo' })).not.toBeChecked();
 });
 
 it('follows the English choice inside a language scope', async () => {

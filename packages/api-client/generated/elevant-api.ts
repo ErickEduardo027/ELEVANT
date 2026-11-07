@@ -5531,6 +5531,8 @@ export interface RampProfileData {
   supervisorProfileId?: string | null;
   /** @nullable */
   accountStatus?: string | null;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface RampProfileCatalog {
@@ -5987,6 +5989,8 @@ export interface SaveRampProfileInput {
   /** @nullable */
   terminalIds?: string[] | null;
   supervisor?: RampProfileSupervisorSelection | null;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ServiceTariffRateInput {
@@ -16052,6 +16056,10 @@ export const getUpdateEmployeeUrl = (id: string,) => {
   return `/api/v1/human-resources/employees/${id}`
 }
 
+/**
+ * @summary Updates the record with the version on screen; moving a ramp agent to an office position ends their ramp duty
+through the release path (2-N06). The Idempotency-Key is optional while older clients exist (expand).
+ */
 export const updateEmployee = async (id: string,
     saveEmployeeInput?: SaveEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -20426,10 +20434,10 @@ const res = await fetch(getCreateRampProfileUrl(),
   }
 )
 
-
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: RampProfileData = body ? JSON.parse(body) : {}
+  const data: RampProfileData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -20443,6 +20451,11 @@ export const getUpdateRampProfileUrl = (id: string,) => {
   return `/api/v1/human-resources/ramp-profiles/${id}`
 }
 
+/**
+ * @summary Saves the operational profile with the `version` the editor read (`expectedVersion`) and the intent's
+Idempotency-Key, both optional while older screens exist (expand): with the key the version is required and a
+retry answers the first save. Deactivating it ends the agent's ramp duty through the release path (2-N06).
+ */
 export const updateRampProfile = async (id: string,
     saveRampProfileInput?: SaveRampProfileInput, options?: RequestInit): Promise<RampProfileData> => {
 
@@ -20461,10 +20474,10 @@ const res = await fetch(getUpdateRampProfileUrl(id),
   }
 )
 
-
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: RampProfileData = body ? JSON.parse(body) : {}
+  const data: RampProfileData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 

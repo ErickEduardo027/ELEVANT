@@ -168,8 +168,13 @@ public interface IEmployeeGovernanceStore
     Task<EmployeeDetailData?> GetEmployeeAsync(Guid actorId, Guid employeeId, CancellationToken cancellationToken = default);
     Task<EmployeeOptionsData?> GetEmployeeOptionsAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<GovernanceResult> CreateEmployeeAsync(Guid actorId, SaveEmployeeInput input, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Updates the record with its expected version. Moving a ramp agent to an office position ends their ramp duty
+    /// through the release path (2-N06), or fails with <c>agent_has_operation_in_progress</c>. The Idempotency-Key
+    /// is optional while older clients exist (expand): the same key and body answer the first result.
+    /// </summary>
     Task<GovernanceResult> UpdateEmployeeAsync(Guid actorId, Guid employeeId, SaveEmployeeInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     /// <summary>
     /// Moves the employee to another department. Leaving the ramp ends their ramp duty through the release path
     /// (2-N06): coverages, unstarted operations and shifts are released, or <c>agent_has_operation_in_progress</c>.

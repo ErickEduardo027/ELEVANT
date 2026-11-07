@@ -287,21 +287,28 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
     }
 
     public async Task<GovernanceResult> UpdateEmployeeAsync(Guid actorId, Guid employeeId, SaveEmployeeInput input,
-        CancellationToken cancellationToken = default)
+        Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await ActorAsync(actorId, cancellationToken);
         if (actor is null || !actor.Can(EmployeesUpdate)) return GovernanceResult.Failed(GovernanceFailure.Forbidden);
-        if (string.IsNullOrWhiteSpace(input?.ExpectedVersion)) return GovernanceResult.Failed(GovernanceFailure.Invalid);
+        // Expand phase: the key is optional; the expected version always comes in the body.
+        if (idempotencyKey == Guid.Empty) return GovernanceResult.Failed(GovernanceFailure.Invalid, "idempotency_key_required");
+        if (string.IsNullOrWhiteSpace(input?.ExpectedVersion))
+            return GovernanceResult.Failed(GovernanceFailure.Invalid, "expected_version_required");
+        // The same intent answers its first result before anything is re-checked: its own release and save already
+        // moved the version on.
+        var receipt = ReceiptOf(actor, idempotencyKey, "hr.employee.update", UpdatePayload(employeeId, input));
+        if (await ReplayAsync(receipt, cancellationToken) is { } replay) return replay;
         var (shape, failure) = await ShapeAsync(actor, input, cancellationToken);
         if (failure is not null) return failure;
 
         return await InSerializableTransactionAsync(async () =>
         {
             var facts = await FactsAsync(employeeId, tracked: true, cancellationToken);
-            if (facts is null) return GovernanceResult.Failed(GovernanceFailure.NotFound);
+            if (facts is null) return GovernanceResult.Failed(GovernanceFailure.NotFound, "not_found");
             var (employee, person) = (facts.Employee, facts.Person);
-            if (GovernanceSupport.Version(employee.RowVersion) != input!.ExpectedVersion)
-                return GovernanceResult.Failed(GovernanceFailure.Conflict);
+            if (GovernanceSupport.Version(employee.RowVersion) != input.ExpectedVersion)
+                return GovernanceResult.Failed(GovernanceFailure.Conflict, "version_conflict");
             if (employee.Status != EmployeeStatus.Active)
                 return GovernanceResult.Failed(GovernanceFailure.Conflict, "employee_terminated");
             // Changing department is a transfer, which revokes access; it has its own command.
@@ -366,8 +373,25 @@ internal sealed partial class EfDepartmentGovernanceStore : IEmployeeGovernanceS
             await NotifyEmployeesAsync(employee.Department, employee.PublicId, now, cancellationToken);
             await context.SaveChangesAsync(cancellationToken);
             return GovernanceResult.Success(employee.PublicId);
-        }, cancellationToken);
+        }, cancellationToken, receipt);
     }
+
+    /// <summary>
+    /// The route identifier and the normalized form of an update, before any lookup: the canonical identification,
+    /// employee number and phone, the ordered stations and the expected version.
+    /// </summary>
+    private static object UpdatePayload(Guid employeeId, SaveEmployeeInput input) => new
+    {
+        employeeId, firstName = input.FirstName?.Trim(), lastName = input.LastName?.Trim(), input.IdentificationType,
+        identification = IdentificationTypes.Normalize(input.IdentificationType, input.IdentificationNumber) ??
+            input.IdentificationNumber?.Trim(),
+        number = input.EmployeeNumber?.Trim().ToUpperInvariant(), input.Department, input.PositionId,
+        stations = input.StationIds?.Order().ToArray(), input.HireDate,
+        phone = string.IsNullOrWhiteSpace(input.PhoneNumber) ? null
+            : PhoneNumbers.Normalize(input.PhoneNumber) ?? input.PhoneNumber.Trim(),
+        email = string.IsNullOrWhiteSpace(input.CorporateEmail) ? null : input.CorporateEmail.Trim(),
+        input.RequisitionId, input.ExpectedVersion,
+    };
 
     public async Task<GovernanceResult> TransferEmployeeAsync(Guid actorId, Guid employeeId, TransferEmployeeInput input,
         Guid? idempotencyKey, CancellationToken cancellationToken = default)
