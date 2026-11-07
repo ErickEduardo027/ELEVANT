@@ -3,7 +3,7 @@ import StatusBadge from '../../components/StatusBadge';
 import { getEmailOutbox } from '../../services/commercialGovernanceApi';
 import { commercialGovernanceMessage } from '../../services/commercialProblems';
 import {
-  EMAIL_RECOVERY, purposeLabel, reasonLabel, referenceLabel, statusLabel,
+  purposeLabel, reasonLabel, recoveryHint, referenceLabel, statusLabel,
 } from '../../services/emailDeliveries';
 import { isForbidden } from '../../services/problemMessages';
 
@@ -59,13 +59,14 @@ export default function EmailOutboxPanel({ reloadKey = 0 }) {
             const status = statusLabel(item.status);
             const reason = reasonLabel(item.reason);
             const reference = referenceLabel(item.reference);
-            const pending = item.status === 'Failed' || item.status === 'Discarded';
+            // How to recover a failed or expired email, or that a replaced one needs nothing (1-N09, 1-N12).
+            const hint = recoveryHint(item);
             return <li key={item.id} className="flex flex-wrap items-start justify-between gap-2 py-2.5">
               <span className="min-w-0 flex-1 [overflow-wrap:anywhere]"><strong>{purposeLabel(item.purpose)}</strong> · {item.recipient}
                 {reference && <span className="block text-xs">{reference}</span>}
                 <span className="block text-xs text-text-secondary-light">{stamp(item.createdAt)} · {item.attempts} intento(s){item.sentAt ? ` · enviado ${stamp(item.sentAt)}` : ''}</span>
-                {reason && <span className="block text-xs text-status-danger">{reason}</span>}
-                {pending && EMAIL_RECOVERY[item.purpose] && <span className="block text-xs text-text-secondary-light">{EMAIL_RECOVERY[item.purpose]}</span>}
+                {reason && <span className={`block text-xs ${hint?.needsAction === false ? 'text-text-secondary-light' : 'text-status-danger'}`}>{reason}</span>}
+                {hint && <span className="block text-xs text-text-secondary-light">{hint.text}</span>}
               </span>
               <StatusBadge tone={status.tone} label={status.label} />
             </li>;

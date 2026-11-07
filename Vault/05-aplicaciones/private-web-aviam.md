@@ -420,13 +420,17 @@ Son las mismas reglas que OCC aplica al asignar. El menú ya no muestra contador
 fijos de ejemplo. Fuentes: [editor](../../frontend/private-web/src/features/human-resources/schedules/WeeklyShiftEditor.jsx),
 [panel](../../frontend/private-web/src/features/human-resources/users/RampReadinessPanel.jsx) y
 [ADR-0026](../../docs/adr/0026-ramp-staff-readiness-and-hr-shifts.md).
+La fase 2 del ciclo cambió quitar turnos, copiar la semana y las ausencias: ver
+[Pre-operación (fase 2)](#pre-operación-fase-2).
 
 ## OCC listo: contratos listos, posiciones ubicadas y mapa en Planificación
 
 Admin OCC suma «Contratos listos»: por fecha, las aerolíneas con contrato activo y
 firmado cuya versión aprobada cubre esa fecha en PUJ, con código, versión, vigencia,
 renovación, servicios (sin precios) y vuelos planificados ese día. Es la misma regla
-que usan Planificación, los vuelos manuales y la asignación de agentes.
+que usan Planificación, los vuelos manuales y la asignación de agentes. Desde la
+fase 2 esa versión debe estar firmada por ambas partes: ver
+[Pre-operación (fase 2)](#pre-operación-fase-2).
 
 En el Mapa de posiciones, OCC ubica cada posición con «Ubicar en el mapa» y un clic
 en el punto real, o la quita. Las coordenadas guardadas en `ref.stands` reemplazan a
@@ -451,6 +455,9 @@ lectura reciente y respeta el presupuesto. Abrir el diálogo nunca gasta unidade
 configurada, el diálogo lo dice y no hay llamadas. Fuentes:
 [diálogo](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx) y
 [ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md).
+La fase 2 sumó las vistas «Charter sin contrato» y «Descartadas», el tipo de
+avión, la posición y la restauración: ver
+[Pre-operación (fase 2)](#pre-operación-fase-2).
 
 ## Chat con presencia y cierre de sesión confirmado
 
@@ -477,6 +484,81 @@ presentación anterior, incluidos sus mapas. Del #156 se mantienen:
 La presencia vive en memoria de un solo proceso de la API: se pierde al
 reiniciar y no se comparte entre réplicas.
 
+## Ciclo comercial: Contratos, Finanzas y Superadministración (fase 1)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 1 del ciclo (`8a79fe70`), que esa verificación no cubre.
+
+La fase 1 del ciclo operativo ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md))
+rehízo las pantallas comerciales sobre una convención común:
+
+- **Errores.** [`problemMessages.js`](../../frontend/private-web/src/services/problemMessages.js)
+  traduce el `code` de Problem Details por área y nunca muestra el `title` del
+  servidor. Cada área publica su mapa: Solicitudes y Superadministración,
+  Borradores, Finanzas y Servicios.
+- **Claves.** [`commandKeys.js`](../../frontend/private-web/src/services/commandKeys.js)
+  conserva la `Idempotency-Key` de una intención mientras se reintenta el mismo
+  cuerpo tras un resultado incierto y la descarta tras cualquier `2xx` o `4xx`.
+  Las pantallas envían la versión que muestran y releen ante un `409`.
+- **Estados.** Las vistas tocadas separan cargando, vacío, error recuperable con
+  reintento y falta de permiso; un error no se presenta como lista vacía.
+
+| Pantalla | Comportamiento |
+| --- | --- |
+| Contratos → Solicitudes | Bandeja paginada con contadores, filtro por estado y búsqueda en el servidor. La revisión verifica la aerolínea (o vincula la propuesta a una ficha), registra la confirmación del representante, aprueba o rechaza, y cancela con motivo si la cuenta tiene el permiso. Avisa cuando la aerolínea ya es cliente y muestra documento, nacionalidad y distrito en español. Inicio toma sus indicadores de los contadores. |
+| Contratos → Borradores | Muestra la lista de requisitos que devuelve el servidor y el estado de la cuenta del portal, y solo habilita «Enviar a Finanzas» cuando no falta ninguno. Edita servicios y estaciones, marca los servicios dados de baja o cubiertos por un paquete, responde a la aerolínea y descarta con motivo. |
+| Contratos → Contratos | El detalle descarta un contrato que nunca se activó y crea una enmienda de un contrato activo o suspendido, con acceso directo a Borradores. |
+| Contratos → Servicios | Separa ocultar del catálogo, dar de baja con motivo y reactivar; si un contrato impide la baja, ofrece ocultar. Las clausuras solo ofrecen republicar un servicio activo y explican cada código en español y en inglés. |
+| Finanzas | La aprobación de contratos aprueba precios, explica lo que falta para la activación y avisa que la aerolínea no verá el motivo de una devolución. Paquetes descarta borradores y retira versiones publicadas con motivo. Tarifarios, cargos, unidades y tasas muestran errores por código y unidades en español. Una factura emitida muestra el estado de sus correos. |
+| Superadministración | El aprovisionamiento invita por correo por defecto y ofrece vincular una cuenta del portal que ya existe. Clientes asigna una contraseña temporal que cierra una invitación pendiente. Aerolíneas bloquea la identidad de una aerolínea que ya opera. Configuración muestra la bandeja de correos con estado, motivo y referencia. |
+
+Contratos recibe además notificaciones cuando la cuenta del portal queda lista
+y cuando Finanzas devuelve o aprueba un borrador. Fuentes:
+[Solicitudes](../../frontend/private-web/src/features/contracts/requests/CommercialIntakePage.jsx),
+[Borradores](../../frontend/private-web/src/features/contracts/drafts/ManagedDraftsPage.jsx),
+[ciclo de vida](../../frontend/private-web/src/features/contracts/agreements/ContractLifecyclePanel.jsx),
+[Servicios](../../frontend/private-web/src/features/contracts/catalog/CommercialCatalogPage.jsx),
+[Paquetes](../../frontend/private-web/src/features/finance/packages/PackagesPage.jsx),
+[bandeja de correos](../../frontend/private-web/src/features/governance/EmailOutboxPanel.jsx) y
+[adaptadores](../../frontend/private-web/src/services/README.md).
+
+## Pre-operación (fase 2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre.
+
+La fase 2 del ciclo operativo
+([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md))
+sigue la misma convención de errores, claves y estados de la fase 1. Las fechas
+se proponen y se limitan con `businessToday()`
+([día hábil](../../frontend/private-web/src/services/businessDay.js)), nunca con
+el día UTC del navegador.
+
+| Pantalla | Comportamiento |
+| --- | --- |
+| Contratos → Contratos | El ciclo de vida termina con la fecha que permite el preaviso firmado o con una causa inmediata, cancela una terminación programada y avisa cuando hay una. El detalle ofrece «Retirar versión» para una versión aprobada que no firmaron ambas partes. La vigencia se envía con su clave, y los estados del contrato salen de un mapa compartido ([estados](../../frontend/private-web/src/features/contracts/contractStatus.js)). El listado todavía muestra «Aprobada» para una versión que espera las firmas. |
+| Contratos → Permisos de aerolíneas | «Revocar verificación» con motivo, filtro «Revocados» y un aviso que se arma con los contratos que el servidor activó, reanudó o suspendió. |
+| Superadministración | «Estaciones» crea, renombra y desactiva estaciones, y cambia su zona horaria mientras no tienen historia ([panel](../../frontend/private-web/src/features/governance/StationsPanel.jsx)). «Clientes» designa representantes y firmantes de cada aerolínea. Las altas y ediciones de gobernanza envían una clave por intención y explican cada código. |
+| OCC → Datos maestros | `/admin-occ/master-data`, con `operations.master_data.read`: terminales y posiciones de la estación, y los tipos de avión compartidos por todas, con alta, edición y desactivación ([pantalla](../../frontend/private-web/src/features/master-data/MasterDataRoute.jsx)). |
+| OCC → Cobertura de posiciones | Explica `stand_in_use` cuando se intenta desactivar una posición en uso y enlaza a Datos maestros. El selector de mentor marca y deshabilita a quien tiene una ausencia aprobada o no tiene carnet vigente. |
+| OCC → Tablets | `/admin-occ/devices`, con `operations.devices.read`: quién tiene cada tablet compartida, y los botones para liberarla o revocar una perdida ([pantalla](../../frontend/private-web/src/features/devices/DevicesRoute.jsx)). |
+| OCC → Planificación | «Importar vuelos» tiene las vistas «Con contrato», «Charter sin contrato» y «Descartadas». Al importar se elige el tipo de avión (con el sugerido preseleccionado) y la posición, o se importa como charter; una propuesta descartada se restaura. El motivo de pausa del proveedor sale en español. «Nuevo vuelo» permite elegir el tipo de avión, que es opcional. El tablero marca «Agente no apto» con sus razones. |
+| OCC → Mapa de posiciones | En vivo, el resumen y la leyenda cuentan también «Planificada» y «Sin ocupación verificada». |
+| Gestión Humana → Horarios | El editor semanal envía la versión y una clave al quitar un turno, marca los días de ausencia y no ofrece «+» en ellos. «Copiar semana anterior» omite ausencias y agentes que ya salieron y cuenta cada causa. Las solicitudes aprobadas se cancelan o se acortan con motivo («Cancelar ausencia» y «Acortar ausencia»). Las alertas piden `includeReadiness` y explican la ausencia aprobada y el documento vencido. |
+| Gestión Humana → Empleados y perfiles de rampa | La baja y el traslado envían una clave y explican qué se libera; un agente con una operación en curso o devuelta no se da de baja ni sale de la rampa (`agent_has_operation_in_progress`). |
+
+La campana muestra los avisos nuevos con su título y destino: los del ciclo del
+contrato para Contratos, los vencimientos de documentos para Gestión Humana, y
+`agent_released` y `agent_document_not_current` para OCC, que abren
+Planificación. Fuentes:
+[ciclo de vida](../../frontend/private-web/src/features/contracts/agreements/ContractLifecyclePanel.jsx),
+[permisos](../../frontend/private-web/src/features/contracts/permits/AirlinePermitsPage.jsx),
+[feed](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx),
+[editor semanal](../../frontend/private-web/src/features/human-resources/schedules/WeeklyShiftEditor.jsx),
+[ausencias](../../frontend/private-web/src/features/human-resources/schedules/AvailabilityRequestsPanel.jsx),
+[avisos de departamento](../../frontend/private-web/src/features/notifications/departmentNotifications.js) y
+[avisos de OCC](../../frontend/private-web/src/features/notifications/notificationKinds.js).
+
 ## Estado de integración
 
 | Capa | Actual | Límite |
@@ -484,7 +566,7 @@ reiniciar y no se comparte entre réplicas.
 | UI | Las rutas, componentes, filtros, formularios y estados son ejecutables. | Ejecutable no equivale a flujo de negocio integrado. |
 | Autenticación | `authService.js` usa el cliente OpenAPI para crear y revalidar la sesión de Development; tests usan identidades sintéticas. | La sesión en el navegador no sustituye el enforcement del backend por rol y estación. |
 | Datos de negocio | Planificación, revisión, chat y notificaciones operativas OCC usan contratos canónicos. Otros servicios combinan snapshots/fixtures y rutas heredadas. | Las formas mock no son OpenAPI vigente. |
-| Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. | Contratos y Finanzas todavía no migraron sus módulos profundos de forma general. |
+| Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. Posterior al commit verificado (fase 1, `8a79fe70`): los comandos de Solicitudes, Borradores, la enmienda, Servicios, clausuras, Paquetes, Aprovisionamiento y Clientes, y la bandeja de correos, usan sus envoltorios validados. | El resto de Contratos y Finanzas no migró de forma general. |
 | API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Los módulos aún sintéticos no prueban endpoints financieros o contractuales; los adaptadores heredados pueden seguir fallando hasta su migración. |
 
 En la rama de integración posterior al commit histórico de esta nota,

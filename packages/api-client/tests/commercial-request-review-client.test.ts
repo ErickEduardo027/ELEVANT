@@ -100,6 +100,16 @@ describe("commercial request review client", () => {
     ]);
   });
 
+  it("accepts the version of a request linked to its airline profile and sends it back unchanged", async () => {
+    // The request's rowversion followed by its airline profile's: approving freezes the profile's identity (1-D).
+    const linked = "AAAAAAAAB9EAAAAAAAAH0g==";
+    const { api, calls } = client([Response.json({ ...inbox, requests: [{ ...request, version: linked }] }),
+      Response.json({ id: contractId })]);
+    await expect(api.getCommercialRequestInbox()).resolves.toMatchObject({ requests: [{ version: linked }] });
+    await api.decideCommercialRequest(requestId, { approve: true, stationIds: [stationId], expectedVersion: linked }, key);
+    expect(JSON.parse(calls[1]!.body)).toMatchObject({ expectedVersion: linked });
+  });
+
   it("links a proposed airline to a verified profile without an identity", async () => {
     const { api, calls } = client([Response.json({ id: requestId })]);
     await api.verifyCommercialRequestAirline(requestId, { expectedVersion: version, linkProfileId: profileId.toUpperCase() }, key);

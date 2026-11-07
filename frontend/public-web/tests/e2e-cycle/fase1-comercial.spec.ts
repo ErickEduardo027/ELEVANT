@@ -147,7 +147,8 @@ test("Contratos verifica la aerolínea y al representante y aprueba la solicitud
   await review.getByLabel("Cómo se confirmó").fill("Llamada a la central de la aerolínea: la gerencia comercial confirmó a la representante.");
   await review.getByRole("button", { name: "Registrar confirmación" }).click();
   await expect(page.getByRole("status")).toContainText("Confirmación del representante registrada");
-  await expect(review.getByText(/Representante confirmado por/)).toBeVisible();
+  // The record names who confirmed and when; the checklist below repeats «Representante confirmado por Contratos».
+  await expect(review.getByText(/Representante confirmado por .+ el \d/)).toBeVisible();
   await review.getByLabel(/PUJ/).check();
   const since = Date.now();
   await review.getByRole("button", { name: "Aprobar y crear borrador" }).click();
@@ -194,7 +195,7 @@ test("Contratos cancela con motivo una segunda solicitud de la aerolínea ya afi
   await snap(page, "fase1-contratos-solicitud-cancelada");
   const notice = await waitForEmail(email, /cancelada/i, since);
   expect(notice.text).toContain("Solicitud duplicada");
-  await page.getByLabel("Estado", { exact: true }).selectOption("Cancelled");
+  await page.getByRole("combobox", { name: "Estado", exact: true }).selectOption("Cancelled");
   await expect(page.getByRole("button", { name: new RegExp(airline.name) }).first()).toContainText("Cancelada");
 });
 

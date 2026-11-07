@@ -68,9 +68,33 @@ export const EMAIL_RECOVERY = Object.freeze({
   PortalUserChanged: 'Los representantes ven sus usuarios y roles en el portal; avíseles del cambio por otro canal si hace falta.',
 });
 
+/**
+ * Discards that need nothing (1-N09, 1-N12): a newer email replaced this one, or a temporary password closed the
+ * invitation. Resending would only replace the link the user may already have.
+ */
+export const EMAIL_NO_ACTION = Object.freeze({
+  superseded: 'No requiere acción: hay un envío más reciente.',
+  invitation_closed: 'No requiere acción: la cuenta ya tiene una contraseña temporal.',
+});
+
 export const purposeLabel = purpose => EMAIL_PURPOSES[purpose] ?? 'Correo del sistema';
 export const statusLabel = status => EMAIL_STATUSES[status] ?? { label: 'Desconocido', tone: 'neutral' };
 export const reasonLabel = reason => (reason ? EMAIL_REASONS[reason] ?? EMAIL_REASONS.send_failed : null);
+
+/**
+ * What the outbox says under an email that did not go out: how to recover it (it failed, or its link or code
+ * expired in the queue) or that nothing is needed. Null while the email is queued or once it was sent.
+ *
+ * @param {{ status?: string, reason?: string | null, purpose?: string }} item
+ * @returns {{ text: string, needsAction: boolean } | null}
+ */
+export function recoveryHint(item) {
+  if (item?.status !== 'Failed' && item?.status !== 'Discarded') return null;
+  if (item.status === 'Discarded' && typeof item.reason === 'string' && Object.hasOwn(EMAIL_NO_ACTION, item.reason))
+    return { text: EMAIL_NO_ACTION[item.reason], needsAction: false };
+  const text = EMAIL_RECOVERY[item.purpose];
+  return text ? { text, needsAction: true } : null;
+}
 
 /** «Contrato DEV-CONTRACT-0001 · Demo Airlines», «Cuenta de Ana Rivera · Demo Airlines»… */
 export function referenceLabel(reference) {

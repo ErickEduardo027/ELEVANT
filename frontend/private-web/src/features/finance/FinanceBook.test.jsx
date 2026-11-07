@@ -40,7 +40,7 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe('ContractApprovalsPage', () => {
   const summary = { versionId: 'v-1', contractId: 'c-1', contractCode: 'QA-1', airline: 'Demo Airlines', currencyCode: 'USD',
     validFrom: '2026-09-01', validTo: null, status: 'PendingFinanceApproval', submittedAt: '2026-10-08T10:00:00Z',
-    ratesBelowBase: 1, ratesWithoutBase: 0, version: 'AAA=' };
+    ratesBelowBase: 1, ratesWithoutBase: 0, version: 'AAA=', contractStatus: 'Draft' };
 
   it('compares each price with the base tariff and requires a reason to return', async () => {
     listContractApprovals.mockResolvedValue([summary]);
@@ -130,6 +130,64 @@ describe('ContractApprovalsPage', () => {
     expect(screen.queryByText(/activado/)).not.toBeInTheDocument();
   });
 
+  it.each([
+    ['Active', /El contrato ya está activo: al aprobar, estos precios todavía no rigen\. Contratos confirma la vigencia y firman la aerolínea y AVIAM; con la segunda firma rigen desde el 1 de septiembre de 2026 y la versión vigente termina el día anterior\./,
+      /^Precios aprobados\. Rigen desde el 1 de septiembre de 2026 cuando firmen la aerolínea y AVIAM; hasta entonces se factura con la versión vigente\.$/],
+    ['Suspended', /El contrato está suspendido: al aprobar, estos precios todavía no rigen\. .*reemplazan a la versión vigente desde el 1 de septiembre de 2026 .*se aplican cuando el contrato se reactive\./,
+      /^Precios aprobados\. Reemplazan a la versión vigente desde el 1 de septiembre de 2026 cuando firmen la aerolínea y AVIAM, y se aplican cuando el contrato se reactive\.$/],
+  ])('explains that approving an amendment of a %s contract replaces the version in force at its second signature (1-F, 2-C)', async (contractStatus, explained, done) => {
+    const amendment = { ...summary, contractStatus };
+    listContractApprovals.mockResolvedValue([amendment]);
+    getContractApproval.mockResolvedValue({ summary: amendment, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] });
+    decideContractApproval.mockResolvedValue({ id: 'v-1' });
+    renderWith(<ContractApprovalsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    // The validity is the date the new prices apply from once both parties sign.
+    expect(await screen.findByText(/desde esa fecha/)).toBeInTheDocument();
+    expect(screen.queryByText(/Contratos la confirma después de tu aprobación/)).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Aprobar precios' }));
+    const dialog = screen.getByRole('dialog', { name: 'Aprobar precios' });
+    expect(within(dialog).getByText(explained)).toBeInTheDocument();
+    expect(within(dialog).queryByText(/solo entonces el contrato se activa/)).not.toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Aprobar precios' }));
+    expect(await screen.findByText(done)).toBeInTheDocument();
+    expect(screen.queryByText(/el contrato se activa después/)).not.toBeInTheDocument();
+  });
+
+  it('never shows the previous contract while another one loads or fails, and retries it', async () => {
+    const other = { ...summary, versionId: 'v-2', contractId: 'c-2', contractCode: 'QA-2', airline: 'Otra Aerolínea' };
+    listContractApprovals.mockResolvedValue([summary, other]);
+    let failOther;
+    getContractApproval.mockImplementation(id => (id === 'v-1'
+      ? Promise.resolve({ summary, terms: null, stations: ['PUJ'], history: [], rates: [], charges: [] })
+      : new Promise((_, reject) => { failOther = reject; })));
+    renderWith(<ContractApprovalsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    expect(await screen.findByRole('heading', { name: 'Demo Airlines · QA-1' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Otra Aerolínea/ }));
+    // While the other contract loads, neither the first one nor its decisions stay on screen.
+    expect(screen.getByText('Cargando contrato…')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Demo Airlines · QA-1' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
+    failOther(new TypeError('offline'));
+    expect(await screen.findByText('No se pudo cargar el contrato. Revise la conexión e intente de nuevo.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
+    getContractApproval.mockResolvedValue({ summary: other, terms: null, stations: ['SDQ'], history: [], rates: [], charges: [] });
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByRole('heading', { name: 'Otra Aerolínea · QA-2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aprobar precios' })).toBeInTheDocument();
+  });
+
+  it('shows the unauthorized state of a contract the analyst cannot read, without its decisions', async () => {
+    listContractApprovals.mockResolvedValue([summary]);
+    getContractApproval.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
+    renderWith(<ContractApprovalsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /Demo Airlines/ }));
+    expect(await screen.findByText(/No tiene permiso para ver este contrato/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Aprobar precios' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+  });
+
   it('names package scopes, units and replaced versions in Spanish (1-N26)', async () => {
     const replaced = { ...summary, versionId: 'v-0', status: 'Superseded', airline: 'Old Airlines' };
     listContractApprovals.mockResolvedValue([replaced]);
@@ -188,7 +246,26 @@ describe('ChargesPage', () => {
     expect(rules).toEqual(RULES_BY_METHOD.PerHour);
     await userEvent.click(screen.getByRole('button', { name: 'Guardar cargo' }));
     expect(saveCharge).toHaveBeenCalledWith(undefined, expect.objectContaining({ code: 'OVERTIME', method: 'PerHour',
-      quantityRule: 'ServiceDuration', serviceIds: null }));
+      quantityRule: 'ServiceDuration', serviceIds: null }), expect.any(String));
+  });
+
+  it('retries an uncertain charge creation with the same Idempotency-Key (1-E)', async () => {
+    listCharges.mockResolvedValue([]);
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([]);
+    saveCharge.mockRejectedValueOnce(new TypeError('Network down')).mockResolvedValueOnce({ id: 'ch-1' });
+    renderWith(<ChargesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Nuevo cargo' }));
+    const drawer = screen.getByRole('dialog', { name: 'Nuevo cargo' });
+    await userEvent.type(within(drawer).getByRole('textbox', { name: 'Código' }), 'night');
+    await userEvent.type(within(drawer).getByRole('textbox', { name: 'Nombre' }), 'Nocturno');
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cargo' }));
+    expect(await within(drawer).findByRole('alert')).toHaveTextContent('No se pudo guardar el cargo. Intente de nuevo.');
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cargo' }));
+    expect(await screen.findByText(/^Cargo creado\./)).toBeInTheDocument();
+    const [first, second] = saveCharge.mock.calls;
+    expect(second[1]).toEqual(first[1]);
+    expect(second[2]).toBe(first[2]);
   });
 });
 
@@ -240,6 +317,24 @@ describe('Finance list errors (1-E)', () => {
     expect(await within(dialog).findByText('Ya hay una tasa vigente para esa fecha. Corríjala en lugar de registrar otra.'))
       .toBeInTheDocument();
     expect(screen.queryByText(/Finance record/)).not.toBeInTheDocument();
+  });
+
+  it('records an exchange rate again with the same Idempotency-Key after a lost answer (1-E)', async () => {
+    listExchangeRates.mockResolvedValue([]);
+    recordExchangeRate.mockRejectedValueOnce(new TypeError('Network down')).mockResolvedValueOnce({ id: 'x-2' });
+    renderWith(<ExchangeRatesPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Registrar tasa' }));
+    const dialog = screen.getByRole('dialog', { name: 'Registrar tasa USD → DOP' });
+    await userEvent.type(within(dialog).getByLabelText('DOP por 1 USD'), '59.2');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('No se pudo guardar la tasa. Intente de nuevo.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Guardar' }));
+    expect(await screen.findByText('Tasa registrada.')).toBeInTheDocument();
+    const [first, second] = recordExchangeRate.mock.calls;
+    expect(first[0]).toEqual({ rateDate: expect.any(String), fromCurrency: 'USD', toCurrency: 'DOP', rate: 59.2,
+      source: 'Banco Central RD' });
+    expect(second).toEqual(first);
+    expect(first[1]).toEqual(expect.any(String));
   });
 
   it('shows the unauthorized state of exchange rates without «Reintentar»', async () => {

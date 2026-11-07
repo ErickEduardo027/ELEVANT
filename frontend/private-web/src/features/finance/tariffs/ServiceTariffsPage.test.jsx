@@ -38,12 +38,36 @@ describe('ServiceTariffsPage', () => {
     await userEvent.clear(price);
     await userEvent.type(price, '140');
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-    expect(saveServiceTariffDraft).toHaveBeenCalledWith('tv-2', expect.objectContaining({ expectedVersion: 'v1' }));
+    expect(saveServiceTariffDraft).toHaveBeenCalledWith('tv-2', expect.objectContaining({ expectedVersion: 'v1' }), expect.any(String));
     await screen.findByText('Borrador guardado.');
     await vi.waitFor(() => expect(getServiceTariff).toHaveBeenCalledTimes(2));
     await userEvent.click(screen.getByRole('button', { name: 'Publicar' }));
     await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Publicar' }));
-    expect(publishServiceTariff).toHaveBeenCalledWith('tv-2', 'v2');
+    expect(publishServiceTariff).toHaveBeenCalledWith('tv-2', 'v2', expect.any(String));
+    // The save and the publication are two intents, each with its own Idempotency-Key.
+    expect(publishServiceTariff.mock.calls[0][2]).not.toBe(saveServiceTariffDraft.mock.calls[0][2]);
+  });
+
+  it('publishes again with the same Idempotency-Key after a lost answer, so the API replays it (1-E)', async () => {
+    listServiceTariffs.mockResolvedValue([summary('v1')]);
+    getServiceTariff.mockResolvedValue(detail('v1'));
+    listFinanceServices.mockResolvedValue([]);
+    listBillingUnits.mockResolvedValue([{ code: 'operation', name: 'Operación', isActive: true }]);
+    publishServiceTariff.mockRejectedValueOnce(new TypeError('Network down')).mockResolvedValueOnce({ id: 'tv-2' });
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', DepartmentPermissionCodes.finance)}>
+      <ServiceTariffsPage /></DepartmentAccessProvider>);
+    await screen.findByLabelText('Precio de BAGGAGE');
+    const publish = async () => {
+      await userEvent.click(screen.getByRole('button', { name: 'Publicar' }));
+      await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Publicar' }));
+    };
+    await publish();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/No se pudo completar la acción/);
+    await publish();
+    expect(await screen.findByText('Tarifa publicada.')).toBeInTheDocument();
+    const [first, second] = publishServiceTariff.mock.calls;
+    expect(second).toEqual(first);
+    expect(first).toEqual(['tv-2', 'v1', expect.any(String)]);
   });
 });
 
@@ -66,7 +90,8 @@ describe('ServiceTariffsPage units and errors (1-E)', () => {
     expect(within(screen.getByLabelText('Unidad de RAMP-CARGO')).queryByRole('option', { name: /no activa/ })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
     expect(saveServiceTariffDraft).toHaveBeenCalledWith('tv-2', expect.objectContaining({
-      rates: expect.arrayContaining([expect.objectContaining({ serviceId: 's-2', billingUnit: 'operation' })]) }));
+      rates: expect.arrayContaining([expect.objectContaining({ serviceId: 's-2', billingUnit: 'operation' })]) }),
+      expect.any(String));
   });
 
   it.each([

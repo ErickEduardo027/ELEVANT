@@ -69,6 +69,17 @@ una prueba unitaria que simula el día minuto a minuto.
 - **Lecturas posteriores:** actualizan las horas revisadas y reales del tramo confirmado (`EstimatedAt` y `ActualAt`) y anuncian `occ_planning`.
 - **Descartar:** el tramo descartado no vuelve a aparecer.
 
+> **Actualización (7 de noviembre de 2026).** La ingesta guarda también, sin coste extra, los
+> tramos de las aerolíneas activas registradas sin un contrato que cubra su fecha: OCC las revisa
+> aparte en la vista «Charter sin contrato». Las que solo tienen un contrato suspendido o vencido
+> en la estación no aparecen en ninguna vista. Importar acepta el tipo de avión, que se sugiere
+> desde el modelo que informa el proveedor, la posición y el modo charter sin contrato
+> ([ADR-0033](0033-charter-flights-without-contract.md)). Descartar ya no es definitivo: la vista
+> «Descartadas» restaura una propuesta mientras su vuelo no haya pasado. Para el ciclo local
+> existe un proveedor simulado, apagado por defecto y solo para Development o Test, que nunca
+> llama a AeroDataBox ni alimenta el registro de aerolíneas. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 ### Información aeronáutica gratis desde la misma respuesta
 
 - **Aerolíneas:** cada aerolínea que aparece, contratada o no, se guarda en `ref.airline_registry_entries` (códigos, nombre y última vez vista).
@@ -95,3 +106,10 @@ una prueba unitaria que simula el día minuto a minuto.
   - mostrar el consumo en Superadministración;
   - leer estaciones distintas de PUJ, que funcionaría igual pero aún no tiene contratos.
 - La clave se configura fuera del repositorio. En Development local el feed queda apagado por defecto.
+
+> **Actualización (7 de noviembre de 2026).** El overlay del arnés E2E
+> (`database/DevelopmentDB/compose.local.e2e.yml`) activa el proveedor simulado
+> (`SimulatedFlightFeed__Enabled`). La API se niega a arrancar si el simulado y AeroDataBox están
+> activos a la vez. La plantilla del VPS Development no lo define: allí el feed sigue siendo
+> AeroDataBox. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).

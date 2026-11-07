@@ -79,6 +79,18 @@ mezclaban bajo la palabra «rol»:
 7. **Superadministrador.** Nombra administradores directamente, pero siempre
    desde un empleado registrado. Ya no crea sub-usuarios.
 
+> **Actualización (7 de noviembre de 2026).** El traslado también retira los
+> roles del departamento de origen: ese departamento ya no reactiva ni edita al
+> empleado (`employee_transferred`), y solo la solicitud del nuevo departamento,
+> validada por Gestión Humana, le devuelve el acceso. La baja y el traslado fuera
+> de rampa liberan las coberturas, las operaciones no iniciadas, los turnos y las
+> tablets del agente, y se rechazan mientras tenga una operación en curso o devuelta para
+> corrección (`agent_has_operation_in_progress`). El traslado y la baja también cancelan
+> las solicitudes pendientes que había pedido esa persona, y no se valida una
+> solicitud cuyo solicitante ya no administra el departamento. Las estaciones de
+> un miembro salen de su expediente. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 ### Auditoría y actividad
 
 - Los inicios de sesión se auditan: `auth.session.created` y
@@ -125,6 +137,13 @@ administrador, como las solicitudes de alta.
 - Retirar la creación directa de miembros y los endpoints de alta móvil
   heredados.
 - Exigir `employee_id` en las solicitudes nuevas.
+
+> **Actualización (7 de noviembre de 2026).** Las escrituras de la gobernanza
+> heredada (`POST` y `PUT` en `governance/roles` y `governance/users`) ya
+> responden `410 legacy_governance_retired`, así que una solicitud móvil heredada
+> solo se puede rechazar. `POST departments/{d}/users` sigue obsoleto y los
+> demás puntos siguen pendientes. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
 ## Consecuencias
 

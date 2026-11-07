@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Messaging;
@@ -8,9 +9,14 @@ using Elevant.Domain.Entities.Identity;
 using Elevant.Domain.Entities.Infrastructure;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
+using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence;
+using Elevant.Persistence.Identity;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -330,6 +336,91 @@ public sealed partial class SqlServerMigrationTests
         Assert.Single(all.Entries);
         Assert.Null(await outbox.ListOutboxAsync(PortalAirlineAccount, new EmailOutboxQuery("All", 1, 25), ct));
         Assert.Null(await outbox.ListOutboxAsync(SuperAdministratorAccount, new EmailOutboxQuery("Lost", 1, 25), ct));
+    }
+
+    [Fact]
+    public async Task ANewLoginCodeNeverLeavesTheAccountWithoutAValidCode()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await PortalAccountsProviderAsync(database, ct);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var emails = scope.ServiceProvider.GetRequiredService<IAccountEmailStore>();
+        var outbox = scope.ServiceProvider.GetRequiredService<IEmailOutboxStore>();
+        EfAccountEmailStore StoreOn(ElevantDbContext other) => new(other,
+            scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>(),
+            scope.ServiceProvider.GetRequiredService<AccountEmailOptions>(), TimeProvider.System);
+        ElevantDbContext Intercepted(IInterceptor interceptor) => new(new DbContextOptionsBuilder<ElevantDbContext>()
+            .UseSqlServer(database.ConnectionString, ElevantSqlServerOptions.Configure).AddInterceptors(interceptor).Options);
+        Task<EmailOutboxMessage[]> CodesAsync() => context.Set<EmailOutboxMessage>().AsNoTracking()
+            .Where(item => item.Purpose == EmailPurpose.LoginCode).OrderBy(item => item.Id).ToArrayAsync(ct);
+        Task<int> UnusedCodesAsync(Guid challengeId) => context.Set<AccountEmailToken>().AsNoTracking()
+            .CountAsync(item => item.ChallengeId == challengeId && item.UsedAt == null, ct);
+        static string Code(string body) => Regex.Match(body, @"^(\d{6})\r?$", RegexOptions.Multiline).Groups[1].Value;
+
+        var challenge = (await emails.IssueLoginCodeAsync(PortalAirlineAccount, ct))!;
+        var queued = Assert.Single(await CodesAsync());
+
+        // 1-N09: retiring the earlier code, discarding its email and queuing the new one commit together. If the
+        // new code is not saved, the earlier one keeps working and its email stays in the queue.
+        await using (var failing = Intercepted(new FailingSave()))
+            await Assert.ThrowsAsync<InvalidOperationException>(() => StoreOn(failing)
+                .ResendLoginCodeAsync(challenge.ChallengeId, ct));
+        Assert.Equal(1, await UnusedCodesAsync(challenge.ChallengeId));
+        var kept = Assert.Single(await CodesAsync());
+        Assert.Equal((EmailDeliveryStatus.Pending, queued.TextBody), (kept.Status, kept.TextBody));
+
+        // The dispatcher claims the queued email while the resend is about to save: the discard does not race it
+        // for the row version, and the dispatcher waits for the new code instead of sending the replaced one.
+        var gate = new SavingChangesGate();
+        await using var gated = Intercepted(gate);
+        var resending = StoreOn(gated).ResendLoginCodeAsync(challenge.ChallengeId, ct);
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(15), ct);
+        await using var dispatcher = new SqlConnection(database.ConnectionString);
+        await dispatcher.OpenAsync(ct);
+        await using var claim = dispatcher.CreateCommand();
+        claim.CommandText = """
+            SET LOCK_TIMEOUT 1000;
+            UPDATE [infra].[email_outbox] SET [attempts] = [attempts] + 1, [updated_at] = SYSUTCDATETIME()
+            WHERE [id] = @id AND [status] = N'Pending';
+            """;
+        claim.Parameters.AddWithValue("@id", queued.Id);
+        Exception? claimFailure;
+        try
+        {
+            claimFailure = await Record.ExceptionAsync(async () => await claim.ExecuteNonQueryAsync(ct));
+        }
+        finally
+        {
+            gate.Release();
+        }
+        var resent = await resending;
+        Assert.Equal(challenge.ChallengeId, resent?.ChallengeId);
+        Assert.Equal(1222, Assert.IsType<SqlException>(claimFailure).Number);
+
+        var codes = await CodesAsync();
+        Assert.Equal(2, codes.Length);
+        Assert.Equal((EmailDeliveryStatus.Discarded, "superseded", 0), (codes[0].Status, codes[0].LastError, codes[0].Attempts));
+        Assert.Null(codes[0].TextBody);
+        Assert.Null(codes[0].HtmlBody);
+        Assert.Equal(EmailDeliveryStatus.Pending, codes[1].Status);
+        // The dispatcher sends the new code only, and the account signs in with it.
+        var claimed = await outbox.ClaimDueAsync(100, ct);
+        Assert.DoesNotContain(claimed, item => item.Id == codes[0].Id);
+        Assert.Contains(claimed, item => item.Id == codes[1].Id);
+        Assert.Equal(PortalAirlineAccount, (await emails.VerifyLoginCodeAsync(challenge.ChallengeId,
+            Code(codes[1].TextBody!), ct)).AccountId);
+    }
+
+    /// <summary>Fails every save of its context, after the command already changed rows in its transaction.</summary>
+    private sealed class FailingSave : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Synthetic save failure.");
     }
 
     [Fact]

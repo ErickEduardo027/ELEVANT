@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ConfirmDialog from '../../../components/ConfirmDialog';
 import EmptyState from '../../../components/EmptyState';
 import PageHeader from '../../../components/PageHeader';
@@ -10,6 +10,7 @@ import { TariffIcon } from '../components/icons';
 import LoadFailure, { loadFailure } from '../components/LoadFailure';
 import TariffsPage from './TariffsPage';
 import { billingUnitLabel, proposedBillingUnit } from '../../../services/billingUnits';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 import {
   createServiceTariffDraft, deleteServiceTariffDraft, FINANCE_CURRENCIES, formatMoney, getServiceTariff, listFinanceServices,
   listBillingUnits, listServiceTariffs, publishServiceTariff, saveServiceTariffDraft,
@@ -52,6 +53,13 @@ export function latestPublishedStart(versions) {
   return (versions ?? []).filter(item => item.status !== 'Draft').map(item => item.validFrom).sort().at(-1) ?? null;
 }
 
+/**
+ * One Idempotency-Key holder per command of a tariff book (1-E): a retry of an uncertain create, save, publish or
+ * discard sends the same key with the same body, and retrying one never takes the key of another.
+ */
+export const tariffCommandKeys = () => ({ create: createCommandKeyHolder(), save: createCommandKeyHolder(),
+  publish: createCommandKeyHolder(), delete: createCommandKeyHolder() });
+
 function BaseTariff() {
   const { access } = useDepartmentAccess();
   // «Crear» opens drafts, «Modificar» edits them, «Eliminar» discards them and «Publicar» makes them current.
@@ -72,6 +80,7 @@ function BaseTariff() {
   const [message, setMessage] = useState({ tone: '', text: '' });
   // A list that failed to load shows a recoverable error, never «Sin tarifa base».
   const [loadError, setLoadError] = useState(null);
+  const commandKeys = useRef(tariffCommandKeys());
 
   /** Bumped on every list read so the selected detail and its version are re-read after a save. */
   const [reloads, setReloads] = useState(0);
@@ -122,12 +131,16 @@ function BaseTariff() {
     `${rate.serviceCode} ${rate.serviceName}`.toLowerCase().includes(search.trim().toLowerCase())), [rates, search]);
   const missingServices = services.filter(service => !rates.some(rate => rate.serviceId === service.id && !rate.stationId));
 
-  /** Runs a command; a failure is explained by its code (1-E) and a conflict re-reads the versions. */
-  async function run(action, success) {
+  /**
+   * Runs a command with the Idempotency-Key of its intent (`create`, `save`, `publish`, `delete`): a retry after an
+   * uncertain result sends the same key with the same body. A failure is explained by its code (1-E) and a
+   * conflict re-reads the versions.
+   */
+  async function run(intent, body, send, success) {
     setBusy(true);
     setMessage({ tone: '', text: '' });
     try {
-      const result = await action();
+      const result = await commandKeys.current[intent].run(intent, body, send);
       setMessage({ tone: 'success', text: success });
       await load(result?.id ?? selectedId);
       return true;
@@ -140,11 +153,15 @@ function BaseTariff() {
     }
   }
 
-  const save = () => run(() => saveServiceTariffDraft(detail.summary.id, {
-    validFrom: meta.validFrom, validTo: meta.validTo || null, note: meta.note || null, expectedVersion: detail.summary.version,
-    rates: rates.map(rate => ({ serviceId: rate.serviceId, stationId: rate.stationId ?? null, billingUnit: rate.billingUnit,
-      unitPrice: Number(rate.unitPrice), minimumBillableQuantity: Number(rate.minimumBillableQuantity) })),
-  }), 'Borrador guardado.');
+  function save() {
+    const { id } = detail.summary;
+    const values = {
+      validFrom: meta.validFrom, validTo: meta.validTo || null, note: meta.note || null, expectedVersion: detail.summary.version,
+      rates: rates.map(rate => ({ serviceId: rate.serviceId, stationId: rate.stationId ?? null, billingUnit: rate.billingUnit,
+        unitPrice: Number(rate.unitPrice), minimumBillableQuantity: Number(rate.minimumBillableQuantity) })),
+    };
+    return run('save', { id, ...values }, key => saveServiceTariffDraft(id, values, key), 'Borrador guardado.');
+  }
 
   async function publish() {
     const latest = latestPublishedStart(versions);
@@ -152,7 +169,20 @@ function BaseTariff() {
       setMessage({ tone: 'error', text: `La vigencia debe empezar después del ${latest}, inicio de la última versión publicada. Cambie «Vigente desde» y guarde.` });
       return;
     }
-    await run(() => publishServiceTariff(detail.summary.id, detail.summary.version), 'Tarifa publicada.');
+    const { id, version } = detail.summary;
+    await run('publish', { id, expectedVersion: version }, key => publishServiceTariff(id, version, key), 'Tarifa publicada.');
+  }
+
+  function createDraft() {
+    const values = { currencyCode: currency, validFrom: new Date().toISOString().slice(0, 10), note: null,
+      copyFromVersionId: versions?.find(version => version.status === 'Published')?.id ?? null };
+    return run('create', values, key => createServiceTariffDraft(values, key), 'Borrador creado a partir de la tarifa vigente.');
+  }
+
+  function discardDraft() {
+    const { id, version } = detail.summary;
+    return run('delete', { id, expectedVersion: version }, key => deleteServiceTariffDraft(id, version, key),
+      'Borrador descartado.');
   }
 
   const update = (key, patch) => setRates(current => current.map(rate => (rate.key === key ? { ...rate, ...patch } : rate)));
@@ -166,10 +196,7 @@ function BaseTariff() {
           </select>
         </label>
         {perms.create && !versions?.some(version => version.status === 'Draft') && (
-          <button type="button" disabled={busy} onClick={() => run(() => createServiceTariffDraft({
-            currencyCode: currency, validFrom: new Date().toISOString().slice(0, 10), note: null,
-            copyFromVersionId: versions?.find(version => version.status === 'Published')?.id ?? null,
-          }), 'Borrador creado a partir de la tarifa vigente.')}
+          <button type="button" disabled={busy} onClick={() => void createDraft()}
             className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Nueva versión</button>
         )}
       </div>
@@ -226,7 +253,7 @@ function BaseTariff() {
               {draftActions && (
                 <div className="flex flex-wrap justify-end gap-2">
                   {perms.delete && <button type="button" disabled={busy} onClick={() => setConfirm('delete')} className="rounded-lg border border-status-danger/40 px-4 py-2 text-sm font-semibold text-status-danger">Descartar borrador</button>}
-                  {perms.update && <button type="button" disabled={busy} onClick={save} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Guardar</button>}
+                  {perms.update && <button type="button" disabled={busy} onClick={() => void save()} className="rounded-lg border border-accent-600 px-4 py-2 text-sm font-semibold text-accent-600">Guardar</button>}
                   {perms.publish && <button type="button" disabled={busy || rates.length === 0} onClick={() => setConfirm('publish')} className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">Publicar</button>}
                 </div>
               )}
@@ -240,7 +267,7 @@ function BaseTariff() {
         onConfirm={async () => { setConfirm(null); await publish(); }} />
       <ConfirmDialog open={confirm === 'delete'} title="Descartar borrador" description="El borrador y sus precios se eliminarán."
         confirmLabel="Descartar" onClose={() => setConfirm(null)}
-        onConfirm={async () => { setConfirm(null); await run(() => deleteServiceTariffDraft(detail.summary.id, detail.summary.version), 'Borrador descartado.'); }} />
+        onConfirm={async () => { setConfirm(null); await discardDraft(); }} />
     </div>
   );
 }

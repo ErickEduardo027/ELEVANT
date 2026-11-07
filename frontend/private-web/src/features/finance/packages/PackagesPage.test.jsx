@@ -222,6 +222,32 @@ describe('PackagesPage through the real package and catalog adapters', () => {
     await screen.findByText('Aún no hay paquetes definidos.');
   });
 
+  it.each([
+    ['packages', '/finance/packages'], ['billing units', '/finance/billing-units'], ['services', '/finance/services'],
+  ])('shows the unauthorized state without «Reintentar» when the %s answer 403 (1-N27)', async (_, refusedPath) => {
+    const base = commercialApi.getMockImplementation();
+    commercialApi.mockImplementation(async (path, options) => {
+      if (!options?.method && path === refusedPath) throw failure(403);
+      return base(path, options);
+    });
+    mount();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('No tiene permiso para consultar los paquetes o los servicios y unidades de cobro que usan.');
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Aún no hay paquetes definidos.')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Private server/)).not.toBeInTheDocument();
+  });
+
+  it('offers «Reintentar» for a recoverable loading error and recovers the list', async () => {
+    commercialApi.mockRejectedValueOnce(failure(500)); mount();
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('No se pudo completar la operación de paquetes. Intente de nuevo.');
+    expect(screen.queryByText(/Private server/)).not.toBeInTheDocument();
+    await userEvent.click(within(alert).getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByLabelText('Nombre')).toHaveValue('Rampa básica');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('allows reading without management access and does not fetch editable catalogs', async () => {
     mount(['finance.packages.read']); await screen.findByLabelText('Nombre');
     expect(screen.getByLabelText('Nombre')).toBeDisabled();

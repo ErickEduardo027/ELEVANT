@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import EmptyState from '../../../components/EmptyState';
 import Modal from '../../../components/Modal';
 import PageHeader from '../../../components/PageHeader';
 import StackedTable from '../../../components/StackedTable';
 import { TariffIcon } from '../components/icons';
 import LoadFailure, { loadFailure } from '../components/LoadFailure';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { listBillingUnits, saveBillingUnit } from '../../../services/financeBookService';
 import { financeTariffMessage } from '../../../services/financeErrors';
 
@@ -27,6 +28,7 @@ export default function BillingUnitsPage({ canCreate = false, canUpdate = false 
   const [notice, setNotice] = useState('');
   const [form, setForm] = useState(null);
   const [busy, setBusy] = useState(false);
+  const saveKeys = useRef(createCommandKeyHolder());
 
   const load = useCallback(async () => {
     try { setUnits(await listBillingUnits()); setLoadError(null); }
@@ -43,11 +45,14 @@ export default function BillingUnitsPage({ canCreate = false, canUpdate = false 
     event.preventDefault();
     setBusy(true);
     setError('');
+    const id = form.id ?? null;
+    const values = {
+      code: form.code.trim().toLowerCase(), name: form.name.trim(), quantityScale: Number(form.quantityScale),
+      isActive: form.isActive, expectedVersion: form.version ?? null,
+    };
     try {
-      await saveBillingUnit(form.id ?? null, {
-        code: form.code.trim().toLowerCase(), name: form.name.trim(), quantityScale: Number(form.quantityScale),
-        isActive: form.isActive, expectedVersion: form.version ?? null,
-      });
+      // The same key goes with a retry of the same unit after an uncertain result (1-E).
+      await saveKeys.current.run('save', { id, ...values }, key => saveBillingUnit(id, values, key));
       setNotice(form.id ? `Unidad «${form.name.trim()}» actualizada.` : `Unidad «${form.name.trim()}» creada.`);
       setForm(null);
       await load();

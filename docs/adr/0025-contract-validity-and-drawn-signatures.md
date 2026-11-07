@@ -40,6 +40,15 @@ las fechas (`packages_out_of_range`). Finanzas ve las fechas propuestas como lec
 **Huella del documento:** los términos de vigencia entran en el SHA-256 firmado solo cuando
 existen. Así, las versiones firmadas antes de este ADR conservan exactamente su huella.
 
+> **Actualización (7 de noviembre de 2026).** La aprobación de Finanzas ya no recorta la versión
+> que se reemplaza: esa versión conserva su fin hasta la segunda firma de la nueva. El recorte de
+> arriba solo sigue aplicando a una versión que una aprobación anterior a este cambio ya recortó.
+> Con la política de precios 2, que fija la aprobación de Finanzas, los recargos y los paquetes
+> también entran en la huella y en el PDF. La vigencia acepta una `Idempotency-Key` opcional, y al
+> fijarla la aerolínea recibe el correo «listo para firmar». «Hoy» es el día hábil de AVIAM
+> (`America/Santo_Domingo`), no el día UTC. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 ### Código definitivo
 
 Al confirmar la vigencia, un contrato con código `DRAFT-…` recibe `CTR-{año}-{n:0000}`: el
@@ -61,6 +70,12 @@ documento. Las firmas anteriores quedan sin imagen y el PDF muestra el nombre es
 - `SignableBy` refleja ambas reglas. El PDF dibuja cada firma sobre el nombre, el cargo, la
   fecha UTC y la comprobación de la huella; la sección 2 imprime la renovación y la terminación.
 
+> **Actualización (7 de noviembre de 2026).** La firma y la vigencia corren en transacciones
+> serializables, y quien pierde la carrera recibe `content_changed`. AVIAM solo contrafirma la
+> huella que firmó la aerolínea (`airline_signed_other_content`). Del lado de la aerolínea solo
+> firman sus representantes y firmantes (`signer_required`). Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 ### Renovación
 
 - **Automática:** el barrido diario (`ContractLifecycleWorker`) crea por sí solo la versión de
@@ -69,6 +84,11 @@ documento. Las firmas anteriores quedan sin imagen y el PDF muestra el nombre es
   versión vuelve a pasar por Finanzas, por la vigencia y por ambas firmas. **Nada se prorroga en
   silencio**: el contenido firmado y las tarifas son inmutables.
 - **Manual:** Contratos la inicia con la acción `Renew`, como hasta ahora.
+
+> **Actualización (7 de noviembre de 2026).** Una renovación automática que no puede iniciarse ya
+> no se marca como iniciada: el barrido la reintenta y avisa a Contratos como máximo una vez por
+> día hábil (`contract_renewal_blocked`). Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
 ### Correo con el PDF firmado
 
@@ -84,10 +104,17 @@ lo adjunta. El archivo nunca se almacena en la bandeja.
 El reemplazo de versiones anteriores sigue ocurriendo al aprobar Finanzas: las enmiendas de
 paquetes con fecha retroactiva (ADR-0018) y la valoración de prefacturas dependen de él.
 
+> **Actualización (7 de noviembre de 2026).** Esto cambió. Desde
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md),
+> una versión nueva rige solo cuando ambas partes la firmaron sobre la misma huella. El reemplazo
+> de la versión anterior ocurre en la segunda firma, y hasta entonces la versión en vigor sigue
+> facturándose. La valoración de paquetes de una enmienda retroactiva toma la segunda firma como
+> frontera.
+
 ## Consecuencias
 
 - Una versión aprobada antes de este ADR y todavía sin firmas necesita que Contratos confirme su
   vigencia antes de poder firmarse.
 - La migración `AddContractValidityAndDrawnSignatures` solo añade columnas y restricciones;
   no hay datos de negocio en ella.
-- `ContractVersionStatus.Rejected` sigue reservado: ningún flujo lo asigna.
+- `ContractVersionStatus.Rejected` sigue reservado: ningún flujo lo asigna. *Desde el 6 de noviembre de 2026 lo asignan el descarte de un borrador y la terminación de un contrato con versiones abiertas, y un contrato terminado ya no se firma ni recibe vigencia (`contract_terminated`): [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md).*

@@ -28,7 +28,8 @@ export const COMMERCIAL_REQUEST_MESSAGES = Object.freeze({
 
 export const COMMERCIAL_GOVERNANCE_MESSAGES = Object.freeze({
   request_unavailable: 'La solicitud ya no espera su cuenta del portal: ya tiene una o su contrato se descartó. Actualice la lista.',
-  email_in_use: 'Ese correo ya está registrado en ELEVANT y no es una cuenta del portal. Use otro correo.',
+  // Clientes answers it for any email already registered, a portal account included.
+  email_in_use: 'Ese correo ya está registrado en ELEVANT. Use otro correo o revise los usuarios existentes.',
   invalid_provisioning: 'Revise el correo de acceso.',
   invitations_unavailable: 'Las invitaciones por correo no están configuradas. Entregue una contraseña temporal.',
   invitation_already_accepted: 'La cuenta ya aceptó la invitación.',
@@ -150,6 +151,18 @@ export const contractValidityMessage = (error, options) =>
 export const commercialRequestMessage = (error, options) =>
   problemMessage(error, COMMERCIAL_REQUEST_MESSAGES, options);
 
+/**
+ * Provisioning and linking a request's account (1-N13) answer `email_in_use` only for an email that is not a portal
+ * account (a portal account answers `email_has_account` or why it cannot be linked), so they can say so.
+ */
+export const PROVISIONING_MESSAGES = Object.freeze({
+  ...COMMERCIAL_GOVERNANCE_MESSAGES,
+  email_in_use: 'Ese correo ya está registrado en ELEVANT y no es una cuenta del portal. Use otro correo.',
+});
+
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const commercialGovernanceMessage = (error, options) =>
   problemMessage(error, COMMERCIAL_GOVERNANCE_MESSAGES, options);
+
+/** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
+export const provisioningMessage = (error, options) => problemMessage(error, PROVISIONING_MESSAGES, options);

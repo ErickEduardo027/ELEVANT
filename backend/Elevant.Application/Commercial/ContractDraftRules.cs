@@ -1,3 +1,5 @@
+using Elevant.Domain.Enumerations;
+
 namespace Elevant.Application.Commercial;
 
 /// <summary>
@@ -84,6 +86,15 @@ public static class ContractDraftRules
         string currency, DateOnly validFrom, DateOnly? validTo) =>
         string.Equals(packageCurrency, currency, StringComparison.Ordinal) && packageValidFrom <= validFrom &&
         (packageValidTo is null || validTo is not null && packageValidTo >= validTo);
+
+    /// <summary>
+    /// Whether the treatment of a charge survives a change of the draft currency (1-N07): an exclusion,
+    /// or a negotiated percentage of the service without a minimum amount. Any other negotiated value is
+    /// money in the old currency, so the charge falls back to the Finance base of the new currency until
+    /// Contratos negotiates it again, as every rate is confirmed again.
+    /// </summary>
+    public static bool ChargeKeepsAcrossCurrencies(bool isExcluded, ChargeCalculationMethod method, decimal? minimumAmount) =>
+        isExcluded || (method == ChargeCalculationMethod.PercentOfService && minimumAmount is null or 0m);
 
     /// <summary>
     /// A renewal or an amendment starts after the start of the latest approved version

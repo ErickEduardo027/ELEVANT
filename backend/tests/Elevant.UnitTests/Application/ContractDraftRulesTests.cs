@@ -1,5 +1,6 @@
 using System.Globalization;
 using Elevant.Application.Commercial;
+using Elevant.Domain.Enumerations;
 
 namespace Elevant.UnitTests.Application;
 
@@ -84,6 +85,20 @@ public sealed class ContractDraftRulesTests
         Assert.Equal(expected, ContractDraftRules.PackageFits(packageCurrency, DateOnly.Parse(packageFrom, CultureInfo.InvariantCulture),
             packageTo is null ? null : DateOnly.Parse(packageTo, CultureInfo.InvariantCulture), currency, DateOnly.Parse(validFrom, CultureInfo.InvariantCulture),
             validTo is null ? null : DateOnly.Parse(validTo, CultureInfo.InvariantCulture)));
+
+    [Theory]
+    [InlineData(true, ChargeCalculationMethod.FixedAmount, null, true)]
+    [InlineData(true, ChargeCalculationMethod.PerHour, 25, true)]
+    [InlineData(false, ChargeCalculationMethod.PercentOfService, null, true)]
+    [InlineData(false, ChargeCalculationMethod.PercentOfService, 0, true)]
+    [InlineData(false, ChargeCalculationMethod.PercentOfService, 500, false)]
+    [InlineData(false, ChargeCalculationMethod.FixedAmount, null, false)]
+    [InlineData(false, ChargeCalculationMethod.PerHour, null, false)]
+    [InlineData(false, ChargeCalculationMethod.PerMinute, null, false)]
+    [InlineData(false, ChargeCalculationMethod.PerUnit, null, false)]
+    public void OnlyAnExclusionOrAPlainPercentageSurvivesACurrencyChange(bool excluded, ChargeCalculationMethod method,
+        int? minimumAmount, bool expected) =>
+        Assert.Equal(expected, ContractDraftRules.ChargeKeepsAcrossCurrencies(excluded, method, minimumAmount));
 
     [Fact]
     public void TheBasePriceUsesTheOnlyStationOrTheAllStationsTariff()

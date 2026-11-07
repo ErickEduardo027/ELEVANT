@@ -67,6 +67,49 @@ Los comandos copiables están en
 [Comandos locales por subárbol](comandos-locales-por-subarbol.md). Para un
 cambio transversal se usa la unión de sus filas, no solo la suite más rápida.
 
+## Recorrido E2E del ciclo completo
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 1 del ciclo (`8a79fe70`), que esa verificación no cubre.
+
+Además de las suites de cada subárbol, Public Web tiene un recorrido de
+Playwright que atraviesa el ciclo operativo completo contra el stack local real
+([configuración](../../frontend/public-web/playwright.cycle.config.ts),
+[pruebas de la fase 1](../../frontend/public-web/tests/e2e-cycle/fase1-comercial.spec.ts)
+y [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+
+- **Qué recorre.** Cuatro proyectos encadenados, uno por fase: comercial,
+  pre-operación, operación y facturación. Cada corrida crea su propia aerolínea
+  sintética, y cada fase continúa la corrida que dejó la anterior.
+- **Qué necesita.** El stack local de `database/DevelopmentDB` con el overlay
+  de Compose para E2E, que suma almacenamiento S3 local, el CORS de los puertos
+  del arnés y límites de uso altos. También Mailpit, de donde lee los enlaces y
+  códigos del portal, Google Chrome, y `E2E_CYCLE_ENV_FILE` apuntando al `.env`
+  del stack, del que toma las credenciales sembradas sin imprimirlas.
+- **Cómo corre.** `npm run test:e2e:cycle`, desde `frontend/public-web`, levanta
+  public-web y private-web en modo desarrollo y reenvía el nombre HTTPS de la
+  API a la API local. El estado de la corrida y las capturas quedan fuera del
+  repositorio, sin trazas ni reporte HTML. Los pasos exactos están en la
+  [guía de desarrollo local](../../docs/workflows/local-development.md#recorrido-e2e-del-ciclo-completo)
+  y en el [README de Public Web](../../frontend/public-web/README.md).
+- **Qué no es.** Ningún workflow de CI lo ejecuta, y los huecos todavía
+  abiertos figuran como `test.fixme("hueco …")`. Una corrida verde es evidencia
+  local: no reemplaza CI ni prueba un despliegue.
+
+Desde la fase 2 del ciclo (código de `50e7778f`, también posterior al commit
+verificado;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)):
+
+- **Feed simulado.** El mismo overlay activa el proveedor de vuelos simulado
+  (`SimulatedFlightFeed__Enabled`), que nunca llama a AeroDataBox ni a la red.
+  La API se niega a arrancar si el `.env` también activa AeroDataBox, y con
+  `ELEVANT_E2E_SIMULATED_FLIGHT_FEED=false` el overlay no lo activa.
+- **Pasos de la fase 2.** Los huecos de la fase 2 ya son pruebas reales
+  ([pruebas de la fase 2](../../frontend/public-web/tests/e2e-cycle/fase2-preoperacion.spec.ts)).
+  El paso que importa vuelos se salta si la API no usa el proveedor simulado,
+  para no gastar nunca unidades de pago. Las fases 3 y 4 todavía tienen pasos
+  `test.fixme`.
+
 ## Qué agrega cada workflow activo
 
 ### Backend CI

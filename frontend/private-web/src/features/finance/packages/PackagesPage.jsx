@@ -6,6 +6,7 @@ import Modal from '../../../components/Modal';
 import PageHeader from '../../../components/PageHeader';
 import StatusBadge from '../../../components/StatusBadge';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
+import LoadFailure, { loadFailure } from '../components/LoadFailure';
 import { billingUnitLabel, proposedBillingUnit } from '../../../services/billingUnits';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { FINANCE_CURRENCIES, formatMoney, listBillingUnits, listFinanceServices } from '../../../services/financeBookService';
@@ -19,6 +20,8 @@ import { PACKAGE_SCOPE_LABELS, PACKAGE_STATUS, statusMeta } from '../financeLabe
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const buttonClass = 'rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold disabled:opacity-50 dark:border-white/15';
 const REASON_MAX = 500;
+/** Without the permission to read the packages or the catalogs they use, «Reintentar» never helps (1-N27). */
+const LOAD_FORBIDDEN = 'No tiene permiso para consultar los paquetes o los servicios y unidades de cobro que usan.';
 
 /** What discarding or retiring a version does (1-N27); nothing is deleted. */
 const CLOSURE = {
@@ -60,7 +63,7 @@ export default function PackagesPage() {
   const [notice, setNotice] = useState({ tone: '', text: '' });
   const load = useCallback(async keep => {
     if (!canRead) return;
-    setData(current => ({ ...current, status: 'loading', error: '' }));
+    setData(current => ({ ...current, status: 'loading', error: null }));
     try {
       const [packages, services, units] = await Promise.all([
         listFinancePackages(), canManage ? listFinanceServices() : [], canManage ? listBillingUnits() : [],
@@ -68,7 +71,9 @@ export default function PackagesPage() {
       setData({ status: 'ready', packages, services: services.filter(item => item.isActive), units: units.filter(item => item.isActive) });
       setSelection({ item: packages.find(item => item.id === keep) ?? packages[0] ?? null });
     } catch (error) {
-      setData(current => ({ ...current, status: 'error', error: financePackageError(error) }));
+      // A 403 is the unauthorized state, without «Reintentar»; any other failure can be retried.
+      setData(current => ({ ...current, status: 'error',
+        error: loadFailure(error, financePackageError(error, { forbidden: LOAD_FORBIDDEN })) }));
     }
   }, [canRead, canManage]);
   useEffect(() => { void load(); }, [load]);
@@ -81,8 +86,7 @@ export default function PackagesPage() {
         {canCreate && <button type="button" disabled={busy || data.status !== 'ready'} onClick={() => { setNotice({ tone: '', text: '' }); setSelection({ item: newPackage() }); }} className={`${buttonClass} bg-accent-600 text-white`}>Nuevo paquete</button>}</>} />
     {notice.text && <p role={notice.tone === 'error' ? 'alert' : 'status'} className={`rounded-lg p-3 text-sm ${notice.tone === 'error' ? 'bg-status-danger/10 text-status-danger' : 'bg-status-success/10'}`}>{notice.text}</p>}
     {data.status === 'loading' ? <p role="status" className="text-sm">Cargando paquetes…</p>
-      : data.status === 'error' ? <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{data.error}</span>
-        <button type="button" onClick={() => void load(selection?.item?.id)} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>
+      : data.status === 'error' ? <LoadFailure failure={data.error} onRetry={() => void load(selection?.item?.id)} />
         : <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(14rem,19rem)_minmax(0,1fr)]">
           <section aria-label="Versiones de paquetes" className="space-y-2">
             {data.packages.length === 0 && <p className="rounded-xl border border-black/5 bg-white p-4 text-sm dark:bg-surface-dark-card">Aún no hay paquetes definidos.</p>}

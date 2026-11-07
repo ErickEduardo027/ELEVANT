@@ -107,6 +107,16 @@ describe('GovernanceShell', () => {
     expect(screen.queryByRole('button', { name: 'Vincular cuenta existente' })).not.toBeInTheDocument();
   });
 
+  it('says an email in use for provisioning is not a portal account, which only provisioning knows', async () => {
+    getProvisioning.mockResolvedValue([task]);
+    provisionAirline.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409, code: 'email_in_use' }));
+    renderShell();
+    await userEvent.click(await screen.findByRole('button', { name: 'Crear y enviar invitación' }));
+    expect(await screen.findByRole('alert'))
+      .toHaveTextContent('Ese correo ya está registrado en ELEVANT y no es una cuenta del portal. Use otro correo.');
+    expect(screen.queryByRole('button', { name: 'Vincular cuenta existente' })).not.toBeInTheDocument();
+  });
+
   it('offers to link the existing portal account of the email and keeps one key per intent (1-N13)', async () => {
     getProvisioning.mockResolvedValue([task]);
     provisionAirline.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409, code: 'email_has_account' }));

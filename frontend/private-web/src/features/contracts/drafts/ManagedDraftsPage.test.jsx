@@ -105,6 +105,28 @@ it('submits to Finance without promising an activation the approval does not do 
   expect(await screen.findByText(/Contrato enviado a Finanzas para aprobar los precios/)).toBeInTheDocument();
 });
 
+it.each([
+  ['Active', /con la segunda firma esta versión reemplaza a la vigente desde el 1 de octubre de 2026\. El contrato ya está activo, así que no se activa de nuevo; hasta esas firmas se factura con la versión vigente/],
+  ['Suspended', /con la segunda firma esta versión reemplaza a la vigente desde el 1 de octubre de 2026; el contrato sigue suspendido y los precios nuevos se aplican cuando se reactive/],
+])('explains that the amendment of a %s contract replaces the version in force at its second signature (1-F, 2-C)', async (status, text) => {
+  // An amendment (1-C) or a renewal of a contract in force: draft.status is the status of the contract.
+  getManagedDrafts.mockResolvedValue([draft({ status })]);
+  getContractDraftReadiness.mockResolvedValue(readiness());
+  await open();
+  const submit = screen.getByRole('button', { name: 'Enviar a Finanzas' });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await userEvent.click(submit);
+  const dialog = screen.getByRole('alertdialog');
+  expect(within(dialog).getByText(text)).toBeInTheDocument();
+  // Nothing «activates» again: the contract is already in force and the new version governs at its second signature.
+  expect(within(dialog).queryByText(/entonces el contrato se activa/)).not.toBeInTheDocument();
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Enviar' }));
+  const notice = await screen.findByText(/Contrato enviado a Finanzas para aprobar los precios/);
+  expect(notice).toHaveTextContent(text);
+  // No activation step is pending: the operating permit is not verified again.
+  expect(notice).not.toHaveTextContent(/permiso de operación/);
+});
+
 it('offers the active units Finance maintains, saves the unit code and lists a retired package (1-E, 1-N27)', async () => {
   commercialApi.mockImplementation(async path => (path === '/finance/billing-units'
     ? [{ code: 'operation', name: 'Operación', isActive: true }, { code: 'hour', name: 'Hora', isActive: true },
@@ -215,11 +237,95 @@ it('answers the airline and discards the draft with a reason', async () => {
   expect(within(dialog).getByText(/también quedará terminado/)).toBeInTheDocument();
   const confirm = within(dialog).getByRole('button', { name: 'Descartar' });
   expect(confirm).toBeDisabled();
-  await userEvent.type(within(dialog).getByLabelText('Motivo'), 'La aerolínea desistió.');
+  // The field says why «Descartar» waits: the bounds and the characters still missing.
+  const reason = within(dialog).getByLabelText('Motivo');
+  await userEvent.type(reason, 'Dup');
+  expect(confirm).toBeDisabled();
+  expect(reason).toHaveAccessibleDescription(/Entre 5 y 500 caracteres\..*Faltan 2 caracteres\./);
+  await userEvent.clear(reason);
+  await userEvent.type(reason, 'La aerolínea desistió.');
+  expect(reason).toHaveAccessibleDescription(/22 de 500\./);
   await userEvent.click(confirm);
   await waitFor(() => expect(discardContractDraft).toHaveBeenCalledWith('draft-1',
     { expectedVersion: 'v1', reason: 'La aerolínea desistió.' }, expect.any(String)));
   expect(await screen.findByRole('status')).toHaveTextContent('Borrador descartado');
+});
+
+it('keeps the edits and blocks the submission when a rule refuses the save', async () => {
+  getContractDraftReadiness.mockResolvedValue(readiness());
+  updateManagedDraft.mockRejectedValueOnce(failure(409, 'package_not_eligible'));
+  await open();
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Enviar a Finanzas' })).toBeEnabled());
+  await userEvent.selectOptions(screen.getByLabelText('Moneda'), 'DOP');
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
+  expect(await screen.findByText(/Un paquete vinculado no corresponde a la moneda/)).toBeInTheDocument();
+  await waitFor(() => expect(getManagedDrafts).toHaveBeenCalledTimes(2));
+  // The draft did not change: the unsaved currency stays on screen and the server version is not sent to Finance.
+  expect(screen.getByLabelText('Moneda')).toHaveValue('DOP');
+  expect(screen.getByText('Guarde los cambios del borrador antes de enviarlo a Finanzas.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Enviar a Finanzas' })).toBeDisabled();
+});
+
+it('drops the edits and re-reads the draft when it changed meanwhile', async () => {
+  updateManagedDraft.mockRejectedValueOnce(failure(409, 'version_conflict'));
+  await open();
+  await userEvent.type(screen.getByLabelText('Condiciones del contrato'), ' revisadas');
+  getManagedDrafts.mockResolvedValue([draft({ version: 'v2', terms: 'Terms de otro usuario' })]);
+  await userEvent.click(screen.getByRole('button', { name: 'Guardar borrador' }));
+  expect(await screen.findByText(/El borrador cambió mientras lo editaba/)).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByLabelText('Condiciones del contrato')).toHaveValue('Terms de otro usuario'));
+  expect(screen.queryByText('Guarde los cambios del borrador antes de enviarlo a Finanzas.')).not.toBeInTheDocument();
+});
+
+it('warns which negotiated charges go back to the Finance base when the currency changes (1-N07)', async () => {
+  getManagedDrafts.mockResolvedValue([draft({ charges: [
+    { chargeId: 'ch-fee', code: 'ADMIN-FEE', name: 'Cargo administrativo', method: 'FixedAmount', baseValue: 15, isExcluded: false, value: 50 },
+    { chargeId: 'ch-night', code: 'NIGHT', name: 'Recargo nocturno', method: 'PercentOfService', baseValue: 15, isExcluded: false, value: 20 },
+    { chargeId: 'ch-delay', code: 'DELAY', name: 'Espera', method: 'PerHour', baseValue: 40, isExcluded: true, value: null },
+  ] })]);
+  await open();
+  expect(screen.queryByRole('note')).not.toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText('Moneda'), 'DOP');
+  const note = screen.getByRole('note');
+  expect(note).toHaveTextContent('Los cargos con importe negociado (ADMIN-FEE) volverán a la tarifa base de Finanzas en DOP');
+  expect(note).toHaveTextContent('Las exclusiones y los porcentajes negociados se conservan.');
+  expect(screen.getAllByText('Vuelve a la tarifa base en DOP al guardar.')).toHaveLength(1);
+});
+
+it('shows why a discard failed inside its dialog and keeps the message once the draft left the list', async () => {
+  discardContractDraft.mockRejectedValueOnce(failure(409, 'version_conflict')).mockRejectedValueOnce(failure(409, 'draft_closed'));
+  await open({ canDiscard: true });
+  await userEvent.click(screen.getByRole('button', { name: 'Descartar borrador' }));
+  await userEvent.type(within(screen.getByRole('alertdialog')).getByLabelText('Motivo'), 'La aerolínea desistió.');
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Descartar' }));
+  expect(await within(screen.getByRole('alertdialog')).findByRole('alert'))
+    .toHaveTextContent('El borrador cambió mientras lo editaba');
+  // Someone else closed it meanwhile: the dialog closes with the draft and the page says why.
+  getManagedDrafts.mockResolvedValue([]);
+  await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Descartar' }));
+  await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  expect(screen.getByRole('alert')).toHaveTextContent('El borrador ya no está en curso');
+  expect(screen.getByText('Seleccione un borrador para revisarlo.')).toBeInTheDocument();
+  expect(discardContractDraft).toHaveBeenCalledTimes(2);
+});
+
+it('retries an uncertain answer with its first key and version even if the draft moved on', async () => {
+  replyContractDraft.mockRejectedValueOnce(new TypeError('Network down')).mockResolvedValueOnce({ id: 'comment-2' });
+  await open();
+  await userEvent.type(screen.getByLabelText('Responder a la aerolínea'), 'Sí, incluye la noche.');
+  await userEvent.click(screen.getByRole('button', { name: 'Enviar respuesta' }));
+  expect(await screen.findByText(/No se pudo completar la acción/)).toBeInTheDocument();
+  // A colleague saved the draft meanwhile: the list now carries a newer version.
+  getManagedDrafts.mockResolvedValue([draft({ version: 'v2' })]);
+  getContractDraftReadiness.mockResolvedValue(readiness([{ code: 'rates_unconfirmed', subjects: [] }], { version: 'v2' }));
+  getContractDraftScope.mockResolvedValue(scope({ version: 'v2' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
+  await waitFor(() => expect(getManagedDrafts).toHaveBeenCalledTimes(2));
+  await userEvent.click(screen.getByRole('button', { name: 'Enviar respuesta' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Respuesta enviada');
+  const [first, second] = replyContractDraft.mock.calls;
+  expect(first[1]).toEqual({ expectedVersion: 'v1', body: 'Sí, incluye la noche.' });
+  expect(second).toEqual(first);
 });
 
 it('hides the discard without its permission and the submission while Finance reviews', async () => {

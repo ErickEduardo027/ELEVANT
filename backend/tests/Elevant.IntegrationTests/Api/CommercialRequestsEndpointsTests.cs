@@ -146,6 +146,22 @@ public sealed class CommercialRequestsEndpointsTests(ElevantApiFactory factory)
             ("/api/v1/contracts/commercial-requests/{id}/decision", "post", "DecideCommercialRequest"),
         })
             Assert.Equal(operation, paths.GetProperty(path).GetProperty(method).GetProperty("operationId").GetString());
+        // The profile-level verification without Idempotency-Key or version is retired (contract step).
+        Assert.False(paths.TryGetProperty("/api/v1/contracts/commercial-requests/airlines/{profileId}/verification", out _));
+    }
+
+    [Fact]
+    public async Task TheRetiredProfileVerificationNoLongerWritesAnything()
+    {
+        var store = new StubStore();
+        await using var application = Application(store);
+        using var client = Authorized(application);
+        using var retired = await client.PutAsJsonAsync(
+            $"/api/v1/contracts/commercial-requests/airlines/{Guid.NewGuid()}/verification",
+            new { legalName = "Caribe Cargo S.R.L.", countryCode = "DO", icaoCode = "CCX",
+                verificationSourceUrl = "https://aoc.example.test/ccx" }, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, retired.StatusCode);
+        Assert.Null(store.LastVerification);
     }
 
     private static async Task<HttpResponseMessage> SendAsync(HttpClient client, string command, Guid key, object body)
@@ -226,9 +242,6 @@ public sealed class CommercialRequestsEndpointsTests(ElevantApiFactory factory)
         public Task<IReadOnlyList<CommercialStationData>?> ListStationsAsync(Guid actorId,
             CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<CommercialStationData>?>([]);
-
-        public Task<CommercialWorkflowResult> VerifyAirlineAsync(Guid actorId, Guid profileId, VerifyAirlineInput input,
-            CancellationToken cancellationToken = default) => Task.FromResult(Result);
 
         public Task<CommercialWorkflowResult> VerifyRequestAirlineAsync(Guid actorId, Guid requestId, Guid idempotencyKey,
             VerifyRequestAirlineInput input, CancellationToken cancellationToken = default)

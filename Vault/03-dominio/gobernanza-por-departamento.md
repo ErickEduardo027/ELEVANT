@@ -75,6 +75,20 @@ flowchart TD
 | Administrador | Todos los módulos de su departamento; pedir personal; solicitar acceso para sus empleados; elegir la plantilla sugerida de sus puestos; editar permisos y estaciones; desactivar, reactivar y restablecer claves de sus miembros; leer la actividad del departamento. | Crear administradores, personas o puestos; editar nombre o correo (son del expediente); gestionarse a sí mismo u otros administradores; conceder estaciones que no tiene el empleado o él mismo. |
 | Miembro | Lo que su plantilla o sus permisos explícitos conceden. | Nada fuera de su departamento. |
 
+> **Defecto abierto (6 de noviembre de 2026, posterior al commit verificado de
+> esta nota; código de `8a79fe70`).** Restablecer la clave de un miembro
+> (`POST governance/departments/{department}/users/{id}/password-reset`, que
+> usan el administrador del departamento y el superadministrador) falla hoy con
+> un error de servidor, igual que la ruta anterior del superadministrador
+> (`POST governance/users/{id}/password-reset`): ambas piden un token a Identity
+> ([`GeneratePasswordResetTokenAsync`](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfDepartmentGovernanceStore.Users.cs)),
+> y la API [registra Identity](../../database/DevelopmentDB/Elevant.Persistence/DependencyInjection.cs)
+> sin proveedores de tokens. Ninguna prueba cubre esas rutas. Se cierra cuando
+> la API registre los proveedores o la ruta deje de depender de ellos, como ya
+> se hizo con la contraseña temporal de Clientes
+> ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md));
+> ver [Pendientes transversales](../12-backlog/pendientes-transversales.md).
+
 ## Permisos
 
 Gestión Humana no programa turnos. `human_resources.schedules` solo concede
@@ -103,6 +117,35 @@ El catálogo vive en código (`DepartmentPermissionCatalog`) con el formato
 desactivar una plantilla cambia el acceso de sus miembros y rota su sello de
 seguridad.
 
+**Altas de la fase 1 del ciclo**, posteriores al commit verificado de esta
+nota (código de `8a79fe70`;
+[ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)):
+
+- `contracts.requests.cancel` cancela solicitudes comerciales;
+- `contracts.drafts.delete` descarta borradores de contrato;
+- `finance.packages.delete` descarta borradores de paquete y
+  `finance.packages.retire` retira paquetes publicados.
+
+En la misma fase, `contracts.catalog.delete` se rotula «Dar de baja» y la
+verificación de solicitudes, «Verificar aerolínea y representante». Los grants
+heredados `commercial.requests.full` y `commercial.requests.write` incluyen las
+dos acciones nuevas de Contratos, y el alias `finance.packages.manage`, las dos
+de paquetes. No hacen falta migraciones: el catálogo vive en código.
+
+**Altas de la fase 2 del ciclo**, posteriores al commit verificado de esta nota
+(código de `50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)):
+
+- `operations.master_data` («Datos maestros»): ver, crear y editar o desactivar
+  terminales, posiciones y tipos de avión;
+- `operations.devices` («Tablets»): ver, desvincular y revocar tablets.
+
+El administrador de OCC hereda ambos módulos. Las estaciones las gestiona solo
+el superadministrador. Los roles de representante y firmante del portal de una
+aerolínea (`airline_portal.representative` y `airline_portal.signer`) son grants
+de cuenta fuera del catálogo de departamentos, así que nunca entran en el acceso
+de un departamento.
+
 El acceso efectivo se calcula en el servidor para cada petición. Private Web
 sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/access`).
 
@@ -127,6 +170,27 @@ sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/acce
 6. Una baja hace lo mismo y desactiva el agente de rampa; ninguna ruta reactiva
    la cuenta de un empleado dado de baja.
 
+Posterior al commit verificado de esta nota (código de `50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)):
+
+- El traslado retira, con auditoría, los roles del departamento de origen y deja
+  inerte su asignación. Ese departamento ya no reactiva ni edita al empleado
+  (`employee_transferred`); solo la solicitud del nuevo departamento, validada
+  por Gestión Humana, le devuelve el acceso.
+- La baja, el traslado fuera de rampa, el paso a oficina y la desactivación del
+  perfil de rampa liberan las coberturas, las operaciones no iniciadas, los
+  turnos y las tablets del agente, y se rechazan si tiene una operación en
+  curso o devuelta (`agent_has_operation_in_progress`).
+- El traslado y la baja cancelan las solicitudes pendientes que había pedido
+  esa persona, y no se valida una solicitud cuyo solicitante ya no administra
+  el departamento (`requester_no_longer_administrator`).
+- Gestión Humana recibe el aviso de cada solicitud de acceso, y la foto de una
+  solicitud pendiente se conserva hasta resolverla.
+- Al editar a un miembro, sus estaciones deben salir de su expediente
+  (`stations_outside_employee`), también para el superadministrador.
+- Las altas y ediciones de gobernanza aceptan una `Idempotency-Key` opcional y
+  siempre responden con un código.
+
 Las cuentas creadas antes de los expedientes aparecen en **Expedientes
 pendientes**: Gestión Humana registra su identificación real y su puesto.
 
@@ -147,10 +211,37 @@ de lo que debe atender:
   clausuras, permisos enviados o por vencer, y cambios del ciclo del contrato
   (activación, suspensión, vencimiento y aviso a 30 días;
   [ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)).
-- **Finanzas:** contratos por aprobar, y prefacturas aceptadas o disputadas.
+- **Finanzas:** contratos por aprobar.
 
 Solo las recibe quien también puede abrir la fuente; ver
 [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md).
+
+Posterior al commit verificado de esta nota (código de `8a79fe70`):
+
+- Contratos también recibe que la cuenta del portal quedó lista para enviar un
+  borrador y que Finanzas devolvió o aprobó sus precios
+  ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+- El aviso de un contrato por aprobar solo llega a quien, además de abrir la
+  aprobación (`finance.contract_approvals.read`), cubre todas las estaciones de
+  la versión
+  ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+- Finanzas también recibe las facturas pagadas con tarjeta
+  ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Las alertas de
+  prefacturas aceptadas o disputadas siguen en el código, pero el portal ya no
+  ofrece esas acciones
+  ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)).
+- Desde la fase 2 (código de `50e7778f`;
+  [ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)),
+  Contratos recibe también que no pudo iniciarse una renovación automática,
+  que se programó, se canceló o se cumplió una terminación, y que se retiró una
+  versión. Los avisos que ya recibía al fijarse la vigencia de un contrato y al
+  empezar una renovación automática ganaron título y destino. El aviso de
+  vencimiento ya no es siempre a 30 días: usa los días de aviso que firmó la
+  versión.
+- Gestión Humana recibe un aviso antes del vencimiento de un carnet, una
+  licencia de rampa o una habilitación de un agente.
+- OCC recibe, en su feed operativo, que Gestión Humana liberó a un agente de una
+  operación y que el agente asignado ya no tiene un documento vigente.
 
 **Pruebas.** Cada tipo tiene una prueba SQL que comprueba quién la recibe y quién
 no, el filtro por estación, la marca de leída, la reaparición como no leída de
@@ -177,6 +268,13 @@ lee todo, por periodos de hasta 92 días.
 - La API acepta todavía la solicitud con persona escrita a mano y la creación
   directa de miembros (obsoleta); una entrega posterior las retirará
   (expand/contract, ADR-0017).
+
+Posterior al commit verificado de esta nota (código de `50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)):
+un miembro con un rol `CUSTOM_*` conserva su acceso y, al editarlo, pasa a
+`CONTRATOS`. `POST` y `PUT` en `governance/roles` y en `governance/users`
+responden `410 legacy_governance_retired`, así que una solicitud de
+`ramp-mobile-access-requests` ya solo se puede rechazar.
 
 ## Relacionados
 

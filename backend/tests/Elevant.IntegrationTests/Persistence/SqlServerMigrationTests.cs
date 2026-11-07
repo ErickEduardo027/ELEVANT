@@ -2427,9 +2427,9 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(CommercialWorkflowFailure.AirlineUnverified,
             (await workflow.DecideAsync(contractsAccountId, requestId, approval, null, cancellationToken)).Failure);
         var requestChangesBeforeVerification = await CountCommercialRequestChangesAsync();
-        Assert.True((await workflow.VerifyAirlineAsync(contractsAccountId,
-            catalog.Airlines[0].Id, new VerifyAirlineInput("Test Carrier LLC", "DO",
-                "ZX", "ZZX", "https://example.test/airline-record", null),
+        Assert.True((await workflow.VerifyRequestAirlineAsync(contractsAccountId, requestId, Guid.NewGuid(),
+            new VerifyRequestAirlineInput(await VersionOfAsync(requestId), null, "Test Carrier LLC", "DO",
+                "ZX", "ZZX", "https://example.test/airline-record"),
             cancellationToken)).IsSuccess);
         Assert.True(await CountCommercialRequestChangesAsync() > requestChangesBeforeVerification,
             "Verifying an airline must invalidate other Contracts sessions.");

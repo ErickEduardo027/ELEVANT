@@ -11,6 +11,9 @@ namespace Elevant.Api.Controllers;
 /// <summary>
 /// Finance reference data: billing units, the base service tariff, the charge
 /// catalog and tariff, exchange rates, and the Finance approval of contracts.
+/// Every command takes an Idempotency-Key, optional while older clients exist (expand):
+/// with it the same key and body replay the first result and the same key with another
+/// body is idempotency_conflict.
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
@@ -32,15 +35,17 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
     [HttpPost("billing-units", Name = "CreateFinanceBillingUnit")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status201Created, "application/json")]
     [RequestSizeLimit(8192)]
-    public Task<IActionResult> CreateBillingUnit([FromBody] SaveBillingUnitInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.SaveBillingUnitAsync(actor, null, input, cancellationToken), StatusCodes.Status201Created);
+    public Task<IActionResult> CreateBillingUnit([FromBody] SaveBillingUnitInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.SaveBillingUnitAsync(actor, null, input, idempotencyKey, cancellationToken),
+            StatusCodes.Status201Created);
 
     [HttpPut("billing-units/{id:guid}", Name = "UpdateFinanceBillingUnit")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     [RequestSizeLimit(8192)]
     public Task<IActionResult> UpdateBillingUnit(Guid id, [FromBody] SaveBillingUnitInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.SaveBillingUnitAsync(actor, id, input, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.SaveBillingUnitAsync(actor, id, input, idempotencyKey, cancellationToken));
 
     [HttpGet("service-tariffs", Name = "ListFinanceServiceTariffs")]
     [ProducesResponseType<TariffVersionSummaryData[]>(StatusCodes.Status200OK, "application/json")]
@@ -55,28 +60,32 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
     [HttpPost("service-tariffs", Name = "CreateFinanceServiceTariffDraft")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status201Created, "application/json")]
     [RequestSizeLimit(8192)]
-    public Task<IActionResult> CreateServiceTariff([FromBody] CreateTariffDraftInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.CreateServiceTariffDraftAsync(actor, input, cancellationToken), StatusCodes.Status201Created);
+    public Task<IActionResult> CreateServiceTariff([FromBody] CreateTariffDraftInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.CreateServiceTariffDraftAsync(actor, input, idempotencyKey, cancellationToken),
+            StatusCodes.Status201Created);
 
     [HttpPut("service-tariffs/{id:guid}", Name = "SaveFinanceServiceTariffDraft")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     [RequestSizeLimit(262144)]
     public Task<IActionResult> SaveServiceTariff(Guid id, [FromBody] SaveServiceTariffDraftInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.SaveServiceTariffDraftAsync(actor, id, input, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.SaveServiceTariffDraftAsync(actor, id, input, idempotencyKey, cancellationToken));
 
     [HttpPost("service-tariffs/{id:guid}/publish", Name = "PublishFinanceServiceTariff")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     [RequestSizeLimit(4096)]
     public Task<IActionResult> PublishServiceTariff(Guid id, [FromBody] FinanceExpectedVersionInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.PublishServiceTariffAsync(actor, id, input.ExpectedVersion, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.PublishServiceTariffAsync(actor, id, input.ExpectedVersion, idempotencyKey,
+            cancellationToken));
 
     [HttpDelete("service-tariffs/{id:guid}", Name = "DeleteFinanceServiceTariffDraft")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     public Task<IActionResult> DeleteServiceTariff(Guid id, [FromQuery] string expectedVersion,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.DeleteServiceTariffDraftAsync(actor, id, expectedVersion, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.DeleteServiceTariffDraftAsync(actor, id, expectedVersion, idempotencyKey,
+            cancellationToken));
 
     [HttpGet("charges", Name = "ListFinanceCharges")]
     [ProducesResponseType<ChargeDefinitionData[]>(StatusCodes.Status200OK, "application/json")]
@@ -86,15 +95,17 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
     [HttpPost("charges", Name = "CreateFinanceCharge")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status201Created, "application/json")]
     [RequestSizeLimit(16384)]
-    public Task<IActionResult> CreateCharge([FromBody] SaveChargeDefinitionInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.SaveChargeAsync(actor, null, input, cancellationToken), StatusCodes.Status201Created);
+    public Task<IActionResult> CreateCharge([FromBody] SaveChargeDefinitionInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.SaveChargeAsync(actor, null, input, idempotencyKey, cancellationToken),
+            StatusCodes.Status201Created);
 
     [HttpPut("charges/{id:guid}", Name = "UpdateFinanceCharge")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     [RequestSizeLimit(16384)]
     public Task<IActionResult> UpdateCharge(Guid id, [FromBody] SaveChargeDefinitionInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.SaveChargeAsync(actor, id, input, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.SaveChargeAsync(actor, id, input, idempotencyKey, cancellationToken));
 
     [HttpGet("charge-tariffs", Name = "ListFinanceChargeTariffs")]
     [ProducesResponseType<TariffVersionSummaryData[]>(StatusCodes.Status200OK, "application/json")]
@@ -109,28 +120,32 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
     [HttpPost("charge-tariffs", Name = "CreateFinanceChargeTariffDraft")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status201Created, "application/json")]
     [RequestSizeLimit(8192)]
-    public Task<IActionResult> CreateChargeTariff([FromBody] CreateTariffDraftInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.CreateChargeTariffDraftAsync(actor, input, cancellationToken), StatusCodes.Status201Created);
+    public Task<IActionResult> CreateChargeTariff([FromBody] CreateTariffDraftInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.CreateChargeTariffDraftAsync(actor, input, idempotencyKey, cancellationToken),
+            StatusCodes.Status201Created);
 
     [HttpPut("charge-tariffs/{id:guid}", Name = "SaveFinanceChargeTariffDraft")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     [RequestSizeLimit(131072)]
     public Task<IActionResult> SaveChargeTariff(Guid id, [FromBody] SaveChargeTariffDraftInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.SaveChargeTariffDraftAsync(actor, id, input, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.SaveChargeTariffDraftAsync(actor, id, input, idempotencyKey, cancellationToken));
 
     [HttpPost("charge-tariffs/{id:guid}/publish", Name = "PublishFinanceChargeTariff")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     [RequestSizeLimit(4096)]
     public Task<IActionResult> PublishChargeTariff(Guid id, [FromBody] FinanceExpectedVersionInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.PublishChargeTariffAsync(actor, id, input.ExpectedVersion, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.PublishChargeTariffAsync(actor, id, input.ExpectedVersion, idempotencyKey,
+            cancellationToken));
 
     [HttpDelete("charge-tariffs/{id:guid}", Name = "DeleteFinanceChargeTariffDraft")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     public Task<IActionResult> DeleteChargeTariff(Guid id, [FromQuery] string expectedVersion,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.DeleteChargeTariffDraftAsync(actor, id, expectedVersion, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.DeleteChargeTariffDraftAsync(actor, id, expectedVersion, idempotencyKey,
+            cancellationToken));
 
     [HttpGet("exchange-rates", Name = "ListFinanceExchangeRates")]
     [ProducesResponseType<ExchangeRateData[]>(StatusCodes.Status200OK, "application/json")]
@@ -141,15 +156,17 @@ public sealed class FinanceTariffBookController(IFinanceTariffBookStore store) :
     [HttpPost("exchange-rates", Name = "RecordFinanceExchangeRate")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status201Created, "application/json")]
     [RequestSizeLimit(4096)]
-    public Task<IActionResult> RecordExchangeRate([FromBody] RecordExchangeRateInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.RecordExchangeRateAsync(actor, input, cancellationToken), StatusCodes.Status201Created);
+    public Task<IActionResult> RecordExchangeRate([FromBody] RecordExchangeRateInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.RecordExchangeRateAsync(actor, input, idempotencyKey, cancellationToken),
+            StatusCodes.Status201Created);
 
     [HttpPost("exchange-rates/{id:guid}/correction", Name = "CorrectFinanceExchangeRate")]
     [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
     [RequestSizeLimit(4096)]
     public Task<IActionResult> CorrectExchangeRate(Guid id, [FromBody] CorrectExchangeRateInput input,
-        CancellationToken cancellationToken) =>
-        MutateAsync(actor => store.CorrectExchangeRateAsync(actor, id, input, cancellationToken));
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actor => store.CorrectExchangeRateAsync(actor, id, input, idempotencyKey, cancellationToken));
 
     [HttpGet("contract-approvals", Name = "ListFinanceContractApprovals")]
     [ProducesResponseType<ContractApprovalSummaryData[]>(StatusCodes.Status200OK, "application/json")]

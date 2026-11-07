@@ -204,3 +204,88 @@ it('keeps the open review on screen while a new search loads', async () => {
   await waitFor(() => expect(screen.queryByText('Cargando solicitudes…')).not.toBeInTheDocument());
   expect(screen.getByRole('heading', { level: 2, name: 'Copa Airlines' })).toBeInTheDocument();
 });
+
+it('explains an identity it cannot send field by field instead of blaming the connection (1-N16)', async () => {
+  const proposal = { ...base, airline: 'Caribe Cargo Express', airlineProfileId: null, legalName: null, countryCode: 'DO',
+    iataCode: null, icaoCode: 'CCX', airlineWebsiteUrl: null,
+    proposedAirline: { name: 'Caribe Cargo Express', countryCode: 'DO', iataCode: null, icaoCode: 'CCX', websiteUrl: null } };
+  verifyCommercialRequestAirline.mockResolvedValue({ id: 'req-1' });
+  const review = await open(proposal);
+  const source = within(review).getByRole('textbox', { name: 'Fuente HTTPS' });
+  const sourceMessage = 'Escriba la dirección completa de la fuente oficial, que empiece por https://.';
+  await userEvent.type(within(review).getByRole('textbox', { name: 'Razón social' }), 'Caribe Cargo Express S.R.L.');
+  await userEvent.type(source, 'www.caribecargo.example.com');
+  await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
+  expect(source).toHaveAttribute('aria-invalid', 'true');
+  expect(source).toHaveAccessibleDescription(sourceMessage);
+  expect(source).toHaveFocus();
+  expect(within(review).queryByText(/Revise la conexión/)).not.toBeInTheDocument();
+  expect(verifyCommercialRequestAirline).not.toHaveBeenCalled();
+
+  // A plain HTTP source and a one-letter country are explained too; the first one in the form gets the focus.
+  await userEvent.clear(source);
+  await userEvent.type(source, 'http://caribecargo.example.com');
+  const country = within(review).getByRole('textbox', { name: 'País (2 letras)' });
+  await userEvent.clear(country);
+  await userEvent.type(country, 'd');
+  expect(country).toHaveAccessibleDescription('Escriba el país con su código ISO de 2 letras, por ejemplo DO.');
+  await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
+  expect(country).toHaveFocus();
+  expect(source).toHaveAccessibleDescription(sourceMessage);
+  expect(verifyCommercialRequestAirline).not.toHaveBeenCalled();
+
+  // The messages follow the corrections; a valid identity is sent once.
+  await userEvent.type(country, 'o');
+  await userEvent.clear(source);
+  await userEvent.type(source, 'https://aoc.example.gob.do/ccx');
+  expect(within(review).queryByText(sourceMessage)).not.toBeInTheDocument();
+  expect(source).not.toHaveAttribute('aria-invalid');
+  await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
+  expect(await screen.findByRole('status')).toHaveTextContent('Aerolínea verificada');
+  expect(verifyCommercialRequestAirline).toHaveBeenCalledTimes(1);
+  expect(verifyCommercialRequestAirline.mock.calls[0][1]).toMatchObject({ countryCode: 'DO',
+    verificationSourceUrl: 'https://aoc.example.gob.do/ccx' });
+});
+
+it('explains a coded refusal of the identity, also when it never left the browser', async () => {
+  verifyCommercialRequestAirline.mockRejectedValueOnce(Object.assign(new Error('invalid_airline'), { code: 'invalid_airline' }));
+  const review = await open();
+  await userEvent.type(within(review).getByRole('textbox', { name: 'Fuente HTTPS' }), 'https://www.copaair.com/');
+  await userEvent.click(within(review).getByRole('button', { name: 'Guardar verificación' }));
+  expect(await within(review).findByRole('alert')).toHaveTextContent('Revise la razón social, el país, los códigos');
+  expect(within(review).getByRole('alert')).not.toHaveTextContent('Revise la conexión');
+});
+
+it('says when the catalog has nothing to link and goes back to creating the profile (1-N25)', async () => {
+  const proposal = { ...base, airline: 'Caribe Cargo Express', airlineProfileId: null, legalName: null,
+    proposedAirline: { name: 'Caribe Cargo Express', countryCode: 'DO', iataCode: null, icaoCode: 'CCX', websiteUrl: null } };
+  getPublishedAirlineProfiles.mockResolvedValue([]);
+  const review = await open(proposal);
+  await userEvent.click(within(review).getByRole('radio', { name: 'Vincular a una ficha existente' }));
+  expect(await within(review).findByRole('status')).toHaveTextContent(
+    'No hay fichas publicadas en el catálogo para vincular. Cree una ficha verificada');
+  expect(within(review).getByRole('radio', { name: 'Vincular a una ficha existente' })).toBeDisabled();
+  expect(within(review).getByRole('radio', { name: 'Crear ficha verificada' })).toBeChecked();
+  expect(within(review).queryByRole('combobox', { name: 'Ficha del catálogo' })).not.toBeInTheDocument();
+  expect(within(review).getByRole('button', { name: 'Guardar verificación' })).toBeEnabled();
+  expect(within(review).getByRole('textbox', { name: 'Razón social' })).toBeInTheDocument();
+});
+
+it('explains why the approval stays closed while no station is active or chosen', async () => {
+  const ready = { ...base, status: 'InReview', airlineVerified: true, verificationSourceUrl: 'https://registry.example.test',
+    representativeConfirmation: { confirmedAt: '2026-11-05T13:00:00Z', confirmedBy: 'Carla Contratos', note: 'Llamada.' } };
+  getCommercialStations.mockResolvedValue([]);
+  const review = await open(ready);
+  expect(within(review).getByText('No hay estaciones activas para el borrador. Pida a Operaciones que active una.'))
+    .toBeInTheDocument();
+  expect(within(review).getByText('○ Al menos una estación elegida')).toBeInTheDocument();
+  expect(within(review).getByRole('button', { name: 'Aprobar y crear borrador' })).toBeDisabled();
+  cleanup();
+
+  getCommercialStations.mockResolvedValue([station]);
+  const withStation = await open(ready);
+  expect(within(withStation).getByText('○ Al menos una estación elegida')).toBeInTheDocument();
+  await userEvent.click(within(withStation).getByRole('checkbox', { name: /PUJ/ }));
+  expect(within(withStation).getByText('✓ Al menos una estación elegida')).toBeInTheDocument();
+  expect(within(withStation).getByRole('button', { name: 'Aprobar y crear borrador' })).toBeEnabled();
+});

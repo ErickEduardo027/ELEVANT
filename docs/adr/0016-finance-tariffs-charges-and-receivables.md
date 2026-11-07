@@ -60,6 +60,14 @@ Finanzas necesita:
 - La revisión guarda la comparación con la base en ese momento.
 - OCC sigue planificando únicamente versiones aprobadas.
 
+> **Actualización (6 de noviembre de 2026).** Desde
+> [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md),
+> todo el ciclo comercial guarda la unidad como código de `ref.billing_units`
+> (los nombres heredados se traducen al leer y al guardar). El borrador toma la
+> tarifa base de la única estación de la versión, o la general si tiene varias.
+> La aerolínea solo ve que Finanzas devolvió la versión, no el motivo, y aprobar
+> se bloquea con un código por causa.
+
 ### Cargos aplicados en rampa
 
 - El agente marca solo el **tipo** de cargo en un servicio en curso, completado

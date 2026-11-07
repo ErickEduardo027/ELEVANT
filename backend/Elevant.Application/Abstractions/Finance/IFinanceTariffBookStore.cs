@@ -51,9 +51,15 @@ public sealed record RecordExchangeRateInput(DateOnly RateDate, string FromCurre
     string Source);
 public sealed record CorrectExchangeRateInput(decimal Rate, string Source, string ExpectedVersion);
 
+/// <summary>
+/// A version Finance reviews. <paramref name="Status"/> is the version status and <paramref name="ContractStatus"/>
+/// the status of its contract (1-F): once approved, an amendment or renewal of an Active or Suspended contract
+/// replaces the version in force from its start, while a new or expired contract still needs the validity, both
+/// signatures and the permit to activate.
+/// </summary>
 public sealed record ContractApprovalSummaryData(Guid VersionId, Guid ContractId, string ContractCode, string Airline,
     string CurrencyCode, DateOnly ValidFrom, DateOnly? ValidTo, string Status, DateTimeOffset SubmittedAt,
-    int RatesBelowBase, int RatesWithoutBase, string Version);
+    int RatesBelowBase, int RatesWithoutBase, string Version, string ContractStatus);
 public sealed record ContractRateComparisonData(Guid RateId, string ServiceCode, string ServiceName, string BillingUnit,
     decimal ContractPrice, decimal ContractMinimum, decimal? BasePrice, decimal? BaseMinimum, decimal? DifferencePercent);
 public sealed record ContractChargeComparisonData(Guid ChargeId, string ChargeCode, string ChargeName, string Method,
@@ -69,50 +75,52 @@ public sealed record DecideContractApprovalInput(string Decision, string? Reason
 /// Finance reference data: governed billing units, the base service tariff, the
 /// charge catalog and its tariff, manually recorded exchange rates, and the
 /// Finance approval that contract versions need before they become active.
-/// Read methods return null when the actor may not read the data.
+/// Read methods return null when the actor may not read the data. Every command takes an
+/// Idempotency-Key, optional while older clients exist (expand): with it, the same key and body
+/// replay the first result and the same key with another body is <c>idempotency_conflict</c>.
 /// </summary>
 public interface IFinanceTariffBookStore
 {
     Task<IReadOnlyList<FinanceServiceOptionData>?> ListServicesAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<BillingUnitData>?> ListBillingUnitsAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> SaveBillingUnitAsync(Guid actorId, Guid? unitId, SaveBillingUnitInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<TariffVersionSummaryData>?> ListServiceTariffsAsync(Guid actorId, string? currencyCode,
         CancellationToken cancellationToken = default);
     Task<ServiceTariffVersionData?> GetServiceTariffAsync(Guid actorId, Guid versionId,
         CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> CreateServiceTariffDraftAsync(Guid actorId, CreateTariffDraftInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> SaveServiceTariffDraftAsync(Guid actorId, Guid versionId,
-        SaveServiceTariffDraftInput input, CancellationToken cancellationToken = default);
+        SaveServiceTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> PublishServiceTariffAsync(Guid actorId, Guid versionId, string expectedVersion,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> DeleteServiceTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ChargeDefinitionData>?> ListChargesAsync(Guid actorId, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> SaveChargeAsync(Guid actorId, Guid? chargeId, SaveChargeDefinitionInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<TariffVersionSummaryData>?> ListChargeTariffsAsync(Guid actorId, string? currencyCode,
         CancellationToken cancellationToken = default);
     Task<ChargeTariffVersionData?> GetChargeTariffAsync(Guid actorId, Guid versionId,
         CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> CreateChargeTariffDraftAsync(Guid actorId, CreateTariffDraftInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> SaveChargeTariffDraftAsync(Guid actorId, Guid versionId,
-        SaveChargeTariffDraftInput input, CancellationToken cancellationToken = default);
+        SaveChargeTariffDraftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> PublishChargeTariffAsync(Guid actorId, Guid versionId, string expectedVersion,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> DeleteChargeTariffDraftAsync(Guid actorId, Guid versionId, string expectedVersion,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ExchangeRateData>?> ListExchangeRatesAsync(Guid actorId, DateOnly from, DateOnly to,
         bool includeHistory, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> RecordExchangeRateAsync(Guid actorId, RecordExchangeRateInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
     Task<FinanceCatalogResult> CorrectExchangeRateAsync(Guid actorId, Guid rateId, CorrectExchangeRateInput input,
-        CancellationToken cancellationToken = default);
+        Guid? idempotencyKey, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<ContractApprovalSummaryData>?> ListContractApprovalsAsync(Guid actorId, bool pendingOnly,
         CancellationToken cancellationToken = default);

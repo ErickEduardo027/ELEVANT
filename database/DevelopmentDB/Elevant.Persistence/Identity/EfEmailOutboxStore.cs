@@ -38,28 +38,27 @@ internal sealed class EfEmailOutboxStore(ElevantDbContext context, Application.A
         });
 
     /// <summary>
-    /// Discards the pending emails of <paramref name="purpose"/> to <paramref name="recipient"/>, inside
-    /// the caller's unit of work: a newer link or code replaced them, or the invitation closed (1-N09,
-    /// 1-N12). Call it before queuing the replacement; the caller's SaveChanges persists both.
+    /// Discards the pending emails of <paramref name="purpose"/> to <paramref name="recipient"/>: a newer
+    /// link or code replaced them, or the invitation closed (1-N09, 1-N12). It is one UPDATE filtered by
+    /// the pending status, like the dispatcher's own, never tracked rows: the dispatcher changes those rows
+    /// meanwhile, and a tracked row whose row version moved would fail the caller's save. It runs at once,
+    /// so call it inside the caller's transaction, before queuing the replacement.
     /// </summary>
-    internal static async Task<int> DiscardPendingAsync(ElevantDbContext context, string recipient, EmailPurpose purpose,
-        string reason, DateTimeOffset now, CancellationToken cancellationToken)
-    {
-        var pending = await context.Set<EmailOutboxMessage>()
+    internal static Task<int> DiscardPendingAsync(ElevantDbContext context, string recipient, EmailPurpose purpose,
+        string reason, DateTimeOffset now, CancellationToken cancellationToken) =>
+        context.Set<EmailOutboxMessage>()
             .Where(item => item.Recipient == recipient && item.Purpose == purpose &&
                 item.Status == EmailDeliveryStatus.Pending)
-            .ToListAsync(cancellationToken);
-        foreach (var message in pending)
-        {
-            message.Status = EmailDeliveryStatus.Discarded;
-            message.LastError = reason;
-            message.HtmlBody = null;
-            message.TextBody = null;
-            if (message.Purpose == EmailPurpose.LoginCode) message.Subject = AccountEmailTemplates.LoginCodeSubject;
-            message.UpdatedAt = now;
-        }
-        return pending.Count;
-    }
+            .ExecuteUpdateAsync(update =>
+            {
+                update.SetProperty(item => item.Status, EmailDeliveryStatus.Discarded)
+                    .SetProperty(item => item.LastError, reason)
+                    .SetProperty(item => item.HtmlBody, (string?)null)
+                    .SetProperty(item => item.TextBody, (string?)null)
+                    .SetProperty(item => item.UpdatedAt, now);
+                if (purpose == EmailPurpose.LoginCode)
+                    update.SetProperty(item => item.Subject, AccountEmailTemplates.LoginCodeSubject);
+            }, cancellationToken);
 
     public async Task<IReadOnlyList<OutboxEmail>> ClaimDueAsync(int maximum, CancellationToken cancellationToken = default)
     {

@@ -62,6 +62,36 @@ it('explains why an email did not go out and what it was about, without the serv
   expect(list).not.toHaveTextContent(/smtp_|SmtpException|ContractActivated/);
 });
 
+it('says how to recover a failed or expired email and that a replaced one needs nothing (1-N09, 1-N12)', async () => {
+  listEmailDeliveries.mockResolvedValue({ smtpConfigured: true, deliveries: [] });
+  getEmailOutbox.mockResolvedValue(page([
+    entry({ id: 'e-1', status: 'Discarded', reason: 'invitation_closed' }),
+    entry({ id: 'e-2', status: 'Discarded', reason: 'superseded' }),
+    entry({ id: 'e-3', status: 'Discarded', reason: 'expired' }),
+    entry({ id: 'e-4', status: 'Failed', attempts: 5, reason: 'smtp_rejected' }),
+    entry({ id: 'e-5', purpose: 'LoginCode', status: 'Discarded', reason: 'superseded' }),
+    entry({ id: 'e-6', purpose: 'LoginCode', status: 'Discarded', reason: 'expired' }),
+    entry({ id: 'e-7' }),
+  ]));
+  render(<EmailDeliveryPanel />);
+  const list = await screen.findByRole('list', { name: 'Correos de la bandeja' });
+  const [closed, replaced, expired, failed, replacedCode, expiredCode, queued] = within(list).getAllByRole('listitem');
+  const resend = /Reenviar invitación/;
+  expect(closed).toHaveTextContent('La invitación se cerró con una contraseña temporal.');
+  expect(closed).toHaveTextContent('No requiere acción: la cuenta ya tiene una contraseña temporal.');
+  expect(closed).not.toHaveTextContent(resend);
+  expect(replaced).toHaveTextContent('No requiere acción: hay un envío más reciente.');
+  expect(replaced).not.toHaveTextContent(resend);
+  expect(expired).toHaveTextContent(resend);
+  expect(expired).not.toHaveTextContent('No requiere acción');
+  expect(failed).toHaveTextContent(resend);
+  expect(replacedCode).toHaveTextContent('No requiere acción: hay un envío más reciente.');
+  expect(replacedCode).not.toHaveTextContent('código nuevo');
+  expect(expiredCode).toHaveTextContent('El usuario puede pedir un código nuevo al iniciar sesión.');
+  expect(queued).toHaveTextContent('En cola');
+  expect(queued).not.toHaveTextContent(/No requiere acción|Reenviar invitación/);
+});
+
 it('filters the outbox by status and pages it', async () => {
   listEmailDeliveries.mockResolvedValue({ smtpConfigured: true, deliveries: [] });
   getEmailOutbox.mockResolvedValue(page([entry()], { hasMore: true }));

@@ -1,3 +1,4 @@
+import { normalizedAirlineVerification } from '@elevant/api-client';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 
@@ -153,9 +154,19 @@ async function contractCall(request) {
  * counters per status. Commands carry an Idempotency-Key and the request `version` they saw.
  */
 export const getCommercialRequestInbox = query => contractCall(() => contractClient().getCommercialRequestInbox(query));
-/** Verifies the airline from the request; a proposed airline is linked or gets a verified profile. */
-export const verifyCommercialRequestAirline = (requestId, command, idempotencyKey) =>
-  contractCall(() => contractClient().verifyCommercialRequestAirline(requestId, command, idempotencyKey));
+/**
+ * Verifies the airline from the request; a proposed airline is linked or gets a verified profile. An
+ * identity the api-client refuses before sending it never reached the server: it fails with the server's
+ * `invalid_airline` code, so the screen asks to review the data instead of blaming the connection.
+ */
+export const verifyCommercialRequestAirline = (requestId, command, idempotencyKey) => {
+  try {
+    normalizedAirlineVerification(command);
+  } catch {
+    return Promise.reject(Object.assign(new Error('invalid_airline'), { code: 'invalid_airline' }));
+  }
+  return contractCall(() => contractClient().verifyCommercialRequestAirline(requestId, command, idempotencyKey));
+};
 /** Records who confirmed the representative, when and how (1-N18); approval requires it. */
 export const confirmCommercialRepresentative = (requestId, command, idempotencyKey) =>
   contractCall(() => contractClient().confirmCommercialRepresentative(requestId, command, idempotencyKey));

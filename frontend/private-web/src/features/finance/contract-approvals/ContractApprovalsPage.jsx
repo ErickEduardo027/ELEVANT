@@ -14,10 +14,13 @@ import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { financeContractApprovalMessage } from '../../../services/financeErrors';
 import { isConflict, isForbidden } from '../../../services/problemMessages';
 import { CONTRACT_APPROVAL_STATUS, packageScopeLabel, statusMeta } from '../financeLabels';
+import { financeApprovalEffect } from '../../contracts/approvalEffect';
 
 const LOAD_FAILED = 'No se pudieron cargar los contratos por aprobar. Revise la conexión e intente de nuevo.';
-/** 1-F: approving the prices does not activate the contract; validity, signatures and the permit follow. */
-const APPROVAL_EXPLAINED = 'Los precios quedarán aprobados. Después Contratos confirma la vigencia y la renovación, firman la aerolínea y AVIAM, y Contratos verifica el permiso de operación de la aerolínea: solo entonces el contrato se activa y el OCC puede planificar sus operaciones.';
+const DETAIL_FAILED = 'No se pudo cargar el contrato. Revise la conexión e intente de nuevo.';
+const DETAIL_FORBIDDEN = 'No tiene permiso para ver este contrato: alguna de sus estaciones no está en su alcance.';
+/** No contract read yet: the detail of a new selection starts here, so the previous one is never shown. */
+const NO_DETAIL = Object.freeze({ versionId: null, detail: null, error: null });
 
 function Difference({ value }) {
   if (value === null || value === undefined) return <span className="text-xs text-text-secondary-light">Sin tarifa base</span>;
@@ -26,8 +29,9 @@ function Difference({ value }) {
 }
 
 /**
- * Finance reviews the prices of each contract version against the base tariff. Approving them does not
- * activate the contract (ADR-0024): the validity, both signatures and a verified permit come after.
+ * Finance reviews the prices of each contract version against the base tariff. Approving a new or expired contract
+ * does not activate it (ADR-0024): the validity, both signatures and a verified permit come after. An amendment or a
+ * renewal of a contract in force replaces the version in force from its start once approved (1-F).
  */
 export default function ContractApprovalsPage() {
   const { access } = useDepartmentAccess();
@@ -38,7 +42,11 @@ export default function ContractApprovalsPage() {
   const [loadState, setLoadState] = useState({ status: 'loading', error: '' });
   const decideKeys = useRef(createCommandKeyHolder());
   const [selected, setSelected] = useState(null);
-  const [detail, setDetail] = useState(null);
+  // The last read of a contract's detail, with the contract it belongs to. A detail is shown only for the
+  // selected contract: while another one loads or fails, neither the previous contract nor its decision
+  // buttons stay on screen.
+  const [detailRead, setDetailRead] = useState(NO_DETAIL);
+  const [detailAttempt, setDetailAttempt] = useState(0);
   const [deciding, setDeciding] = useState(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -64,27 +72,46 @@ export default function ContractApprovalsPage() {
     return () => { void observer.stop(); };
   }, [load]);
   useEffect(() => {
-    if (!selected) { setDetail(null); return undefined; }
+    if (!selected) return undefined;
     let active = true;
-    getContractApproval(selected).then(result => active && setDetail(result))
-      .catch(failure => active && setMessage({ tone: 'error', text: financeContractApprovalMessage(failure, {
-        fallback: 'No se pudo cargar el contrato. Revise la conexión e intente de nuevo.' }) }));
+    // A refresh of the same contract keeps its detail on screen until the new read arrives, and after a
+    // connection failure; a refusal (no permission, no longer there) takes it and its buttons away.
+    getContractApproval(selected).then(
+      result => { if (active) setDetailRead({ versionId: selected, detail: result, error: null }); },
+      failure => {
+        if (!active) return;
+        const keeps = !isForbidden(failure) && failure?.status !== 404;
+        setDetailRead(current => ({ versionId: selected,
+          detail: keeps && current.versionId === selected ? current.detail : null, error: failure }));
+      });
     return () => { active = false; };
-  }, [selected, items]);
+  }, [selected, items, detailAttempt]);
+  const read = selected && detailRead.versionId === selected ? detailRead : null;
+  const detail = read?.detail ?? null;
+  // 1-F: what approving does depends on the status of the contract (in force, or still to activate).
+  const effect = detail ? financeApprovalEffect(detail.summary.contractStatus, detail.summary.validFrom) : null;
+  function select(versionId) {
+    if (versionId === selected) return;
+    setSelected(versionId);
+    setDetailRead(NO_DETAIL);
+  }
+  function retryDetail() {
+    setDetailRead(current => ({ ...current, error: null }));
+    setDetailAttempt(value => value + 1);
+  }
 
   async function decide(event) {
     event.preventDefault();
     setBusy(true);
     const values = { decision: deciding, reason: reason.trim() || null, expectedVersion: detail.summary.version };
+    const approved = effect.done;
     try {
       // The same key goes with a retry of the same decision after an uncertain result.
       await decideKeys.current.run('decide', { versionId: detail.summary.versionId, ...values },
         key => decideContractApproval(detail.summary.versionId, values, key));
-      setMessage({ tone: 'success', text: deciding === 'Approved'
-        ? 'Precios aprobados. Contratos continúa con la vigencia y las firmas; el contrato se activa después.'
-        : 'Contrato devuelto a Contratos con el motivo.' });
+      setMessage({ tone: 'success', text: deciding === 'Approved' ? approved : 'Contrato devuelto a Contratos con el motivo.' });
       setDeciding(null);
-      setSelected(null);
+      select(null);
       await load();
     } catch (failure) {
       // One message per blocking cause (1-N07); the server title is never shown.
@@ -114,7 +141,7 @@ export default function ContractApprovalsPage() {
               const status = statusMeta(CONTRACT_APPROVAL_STATUS, item.status);
               return (
                 <li key={item.versionId}>
-                  <button type="button" onClick={() => setSelected(item.versionId)}
+                  <button type="button" onClick={() => select(item.versionId)}
                     className={`w-full rounded-xl border p-3 text-left ${selected === item.versionId ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 bg-white dark:border-white/10 dark:bg-surface-dark-card'}`}>
                     <div className="flex items-center justify-between gap-2"><strong className="text-sm">{item.airline}</strong><StatusBadge tone={status.tone} label={status.label} /></div>
                     <p className="mt-1 text-xs text-text-secondary-light">{item.contractCode} · {item.currencyCode} · desde {item.validFrom}</p>
@@ -126,12 +153,20 @@ export default function ContractApprovalsPage() {
               );
             })}
           </ul>
+          {selected && !detail && (
+            <section aria-label="Contrato seleccionado" className="h-fit min-w-0 rounded-xl border border-black/5 bg-white p-4 text-sm dark:border-white/5 dark:bg-surface-dark-card">
+              {!read?.error ? <p role="status">Cargando contrato…</p>
+                : isForbidden(read.error) ? <p role="alert">{DETAIL_FORBIDDEN}</p>
+                  : <div role="alert" className="flex flex-wrap items-center justify-between gap-2 text-status-danger"><span>{financeContractApprovalMessage(read.error, { fallback: DETAIL_FAILED })}</span><button type="button" onClick={retryDetail} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
+            </section>
+          )}
           {detail && (
-            <section className="min-w-0 space-y-4 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
+            <section aria-label="Contrato seleccionado" className="min-w-0 space-y-4 rounded-xl border border-black/5 bg-white p-4 dark:border-white/5 dark:bg-surface-dark-card">
+              {read.error && <div role="alert" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><span>{financeContractApprovalMessage(read.error, { fallback: DETAIL_FAILED })}</span><button type="button" onClick={retryDetail} className="rounded-lg border border-status-danger px-3 py-1 text-xs font-semibold">Reintentar</button></div>}
               <div>
                 <h2 className="text-lg font-bold">{detail.summary.airline} · {detail.summary.contractCode}</h2>
                 <p className="text-xs text-text-secondary-light">{currency} · {detail.summary.validFrom}{detail.summary.validTo ? ` a ${detail.summary.validTo}` : ''} · Estaciones {detail.stations.join(', ') || '—'}</p>
-                <p className="text-xs text-text-secondary-light">Vigencia propuesta, solo lectura: Contratos la confirma después de tu aprobación, junto con la renovación, antes de las firmas.</p>
+                <p className="text-xs text-text-secondary-light">{effect.validity}</p>
               </div>
               <StackedTable>
                 <table className="table-stack w-full min-w-[640px] text-left text-sm">
@@ -179,7 +214,7 @@ export default function ContractApprovalsPage() {
         footer={<div className="flex justify-end gap-2"><button type="button" onClick={() => setDeciding(null)} className="rounded-lg border px-4 py-2 text-sm">Cancelar</button>
           <button type="submit" form="contract-decision-form" disabled={busy} className={`rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 ${deciding === 'Returned' ? 'bg-status-danger' : 'bg-accent-600'}`}>{deciding === 'Approved' ? 'Aprobar precios' : 'Devolver'}</button></div>}>
         <form id="contract-decision-form" onSubmit={decide} className="space-y-3">
-          <p className="text-sm">{deciding === 'Approved' ? APPROVAL_EXPLAINED : 'Contratos verá el motivo y podrá corregir el borrador. La aerolínea solo verá que la versión fue devuelta, sin el motivo.'}</p>
+          <p className="text-sm">{deciding === 'Approved' ? effect?.explained : 'Contratos verá el motivo y podrá corregir el borrador. La aerolínea solo verá que la versión fue devuelta, sin el motivo.'}</p>
           <label className="block text-sm font-semibold">{deciding === 'Approved' ? 'Comentario (opcional)' : 'Motivo'}
             <textarea required={deciding === 'Returned'} minLength={deciding === 'Returned' ? 3 : undefined} maxLength={1000} rows={3} value={reason}
               onChange={event => setReason(event.target.value)} className="mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark" />

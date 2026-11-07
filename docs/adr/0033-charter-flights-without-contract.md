@@ -42,6 +42,8 @@ Las páginas 2 y 3 son los términos del Acuerdo Estándar de Servicios en Tierr
 - Las opciones de planificación indican `isCharter`. OCC asigna sin contrato ni servicios previos.
 - El checklist se elige igual que para cualquier vuelo: el del puente si la posición tiene puente y, si no, el del Reporte de Vuelo.
 
+> **Actualización (7 de noviembre de 2026).** OCC también da de alta un charter desde el feed de vuelos: la vista «Charter sin contrato» muestra los vuelos de las aerolíneas activas registradas sin un contrato en vigor ese día en la estación, y la importación en modo charter crea la escala con su acuerdo y el prepago `Pending` (`charter_required`, `charter_has_contract`). Ver [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 **3. El agente agrega los servicios en la tablet.**
 - `GET ramp/operations/{id}/charter` devuelve el catálogo de definiciones activas con tarifa base, su precio y su mínimo.
 - `POST …/charter/services` agrega una línea de servicio. La línea guarda:

@@ -5015,73 +5015,6 @@
         ]
       }
     },
-    "/api/v1/contracts/commercial-requests/airlines/{profileId}/verification": {
-      "put": {
-        "tags": [
-          "CommercialRequestsManagement"
-        ],
-        "operationId": "VerifyCommercialAirline",
-        "parameters": [
-          {
-            "name": "profileId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/VerifyAirlineInput"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CommercialIdResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/contracts/commercial-requests/{id}/airline-verification": {
       "post": {
         "tags": [
@@ -15742,6 +15675,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "CreateFinanceBillingUnit",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -15803,6 +15746,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -15900,6 +15851,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "CreateFinanceServiceTariffDraft",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -15999,6 +15960,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
@@ -16071,6 +16040,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -16103,6 +16080,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -16191,6 +16176,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "CreateFinanceCharge",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16252,6 +16247,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -16349,6 +16352,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "CreateFinanceChargeTariffDraft",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16448,6 +16461,14 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
@@ -16520,6 +16541,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -16552,6 +16581,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -16666,6 +16703,16 @@
           "FinanceTariffBook"
         ],
         "operationId": "RecordFinanceExchangeRate",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -16727,6 +16774,14 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -37965,6 +38020,7 @@
           "airline",
           "contractCode",
           "contractId",
+          "contractStatus",
           "currencyCode",
           "ratesBelowBase",
           "ratesWithoutBase",
@@ -38018,6 +38074,9 @@
             "format": "int32"
           },
           "version": {
+            "type": "string"
+          },
+          "contractStatus": {
             "type": "string"
           }
         },
@@ -56764,38 +56823,6 @@
             "type": "string"
           },
           "reason": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "VerifyAirlineInput": {
-        "required": [
-          "countryCode",
-          "icaoCode",
-          "legalName",
-          "verificationSourceUrl"
-        ],
-        "type": "object",
-        "properties": {
-          "legalName": {
-            "type": "string"
-          },
-          "countryCode": {
-            "type": "string"
-          },
-          "iataCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "icaoCode": {
-            "type": "string"
-          },
-          "verificationSourceUrl": {
-            "type": "string"
-          },
-          "logoUrl": {
             "type": "string",
             "nullable": true
           }

@@ -158,6 +158,63 @@ la emisión. La aerolínea relee su propia factura mediante una ruta tenant-scop
 no se infiere un documento tributario ni un pago. La migración es aditiva,
 sin DML de negocio y aún no está desplegada.
 
+## Revisión comercial y aerolíneas sin IATA
+
+`20261106020045_AddCommercialRequestReviewAndIcaoOnlyAirlines`, posterior a
+`AddSimulatedCardPayments`, es la única migración de la fase 1 del ciclo
+([ADR-0037](../adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
+Es aditiva y no lleva DML de negocio.
+
+- `commercial.service_requests` gana siete columnas opcionales: la confirmación
+  del representante (fecha, cuenta con FK `NO ACTION` indexada y nota) y la
+  aerolínea que propuso el solicitante (país, IATA, ICAO y sitio). La propuesta
+  vive en la solicitud, no en el catálogo de aerolíneas.
+- `ref.airlines.iata_code` pasa a `char(2) NULL`: el ICAO identifica a un
+  operador sin designador IATA. El índice único de IATA se filtra por
+  `iata_code IS NOT NULL`, y `ck_airline_iata` no cambia.
+- El `Down` se detiene (`THROW 52370`) si ya hay confirmaciones, propuestas o
+  aerolíneas sin IATA, porque esa historia comercial no se descarta.
+
+Los estados que el ciclo comercial empieza a usar se guardan como texto en
+columnas que ya existían: la solicitud en revisión o cancelada, la versión de
+contrato descartada (`Rejected`), el paquete descartado o retirado y el correo
+descartado. Los recibos de idempotencia de esos comandos reutilizan
+`commercial.finance_pricing_commands`.
+
+## Pre-operación sin migración
+
+La fase 2 del ciclo
+([ADR-0038](../adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md))
+no añade migración: `has-pending-model-changes` no reporta cambios, y ningún
+bloque toca el seed ni `verify-development.sql`. Todo lo nuevo cabe en columnas,
+índices y tablas que ya existían:
+
+- El permiso de aerolínea gana el estado `Revoked`, que cabe en la columna de
+  revisión (hasta 16 caracteres). Los siete propósitos de correo nuevos caben en
+  la columna de propósito (hasta 24; el más largo, `ContractReadyToSign`, tiene
+  19).
+- Una versión de contrato retirada pasa a `Rejected` y conserva `approved_at`.
+  Una terminación programada guarda en `terminated_on` su primer día sin
+  cobertura, y `ck_contract_dates` se sigue cumpliendo con una fecha futura. La
+  política de precios firmada usa la columna `pricing_policy_version`, con el
+  valor 2.
+- Liberar una tablet cierra su vínculo con `unbound_at`, y revocarla marca la
+  instalación con `revoked_at`; ambas cumplen `ck_device_binding_dates` y
+  `ck_mobile_device_revoked`.
+- Los representantes y firmantes del portal son filas de
+  `iam.account_permission_grants` (`airline_portal.representative` y
+  `airline_portal.signer`); la tabla no tiene FK sobre el código.
+- Estaciones, terminales, posiciones y tipos de avión se crean y desactivan con
+  `is_active`, `row_version` y los índices únicos existentes; nada se borra.
+- Los recibos de idempotencia siguen en `commercial.finance_pricing_commands` y,
+  para los comandos móviles, en `integration.mobile_command_receipts`.
+
+Dos casos de datos heredados no se corrigen con una migración: las versiones
+que una aprobación anterior dejó `Superseded` y recortadas frente a una
+renovación sin firmar, y los agentes dados de baja antes del cambio que
+conservan coberturas, asignaciones o turnos abiertos. ADR-0038 explica cómo se
+tratan.
+
 ## Diferido explícitamente
 
 - emisión fiscal, documentos PDF, recibos y ledger de conciliación;
