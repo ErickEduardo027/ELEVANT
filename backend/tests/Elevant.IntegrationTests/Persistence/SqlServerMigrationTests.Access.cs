@@ -201,6 +201,182 @@ public sealed partial class SqlServerMigrationTests
         }
     }
 
+    /// <summary>
+    /// 2-N02: revoking a lost tablet ends the session its last agent may still hold on it, also when OCC had freed it
+    /// before; only the agent's own sign-out already took the session off the tablet.
+    /// </summary>
+    [Fact]
+    public async Task RevokingAFreedTabletEndsTheSessionLeftOnItUnlessItsAgentSignedOut()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        var freedTablet = Guid.Parse("81000000-0000-7000-8000-0000000000e3");
+        var signedOutTablet = Guid.Parse("81000000-0000-7000-8000-0000000000e4");
+
+        async Task<OccMobileDeviceData> OccDeviceAsync(string name)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var listed = await scope.ServiceProvider.GetRequiredService<IMobileDeviceAdministrationStore>()
+                .ListAsync(OperationsAdministrator, PujStation, ct);
+            Assert.Null(listed.Failure);
+            return Assert.Single(listed.Value!.Devices, item => item.DeviceName == name);
+        }
+        async Task<OccMobileDeviceData> RegisteredAsync(Guid installation, string name)
+        {
+            await using (var scope = provider.CreateAsyncScope())
+                Assert.True((await scope.ServiceProvider.GetRequiredService<IMobileDeviceCommandStore>().RegisterAsync(
+                    new MobileDeviceRegistrationWriteRequest(SeededRampAgentAccount, installation, MobilePlatform.Android,
+                        "1.2.3", name, "Android 16"), ct)).IsSuccess);
+            return await OccDeviceAsync(name);
+        }
+        async Task<MobileDeviceAdministrationResult<OccMobileDeviceData>> OccAsync(string command,
+            OccMobileDeviceData device, string reason)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var store = scope.ServiceProvider.GetRequiredService<IMobileDeviceAdministrationStore>();
+            return command == "unbind"
+                ? await store.UnbindAsync(OperationsAdministrator, device.Id,
+                    new UnbindMobileDeviceInput(device.Version, reason), Guid.NewGuid(), ct)
+                : await store.RevokeAsync(OperationsAdministrator, device.Id,
+                    new RevokeMobileDeviceInput(device.Version, reason), Guid.NewGuid(), ct);
+        }
+        async Task<string> StampAsync()
+        {
+            await using var check = CreateContext(database.ConnectionString);
+            return (await check.Users.AsNoTracking().SingleAsync(item => item.PublicId == SeededRampAgentAccount, ct))
+                .SecurityStamp!;
+        }
+
+        // OCC frees the tablet while Riley is still signed in on it: freeing it never signs anybody out.
+        var stamp = await StampAsync();
+        var bound = await RegisteredAsync(freedTablet, "Tablet T-09");
+        var freed = await OccAsync("unbind", bound, "Cambio de turno");
+        Assert.Equal("Unbound", freed.Value!.Status);
+        Assert.Equal(stamp, await StampAsync());
+        // The tablet goes missing afterwards: revoking it ends the session Riley still had on it.
+        Assert.Equal("Revoked", (await OccAsync("revoke", freed.Value, "Tablet extraviada en la rampa")).Value!.Status);
+        var rotated = await StampAsync();
+        Assert.NotEqual(stamp, rotated);
+
+        // Riley signs out of another tablet before it goes missing: the sign-out took the session off it, so revoking
+        // it keeps the sessions Riley has elsewhere.
+        var other = await RegisteredAsync(signedOutTablet, "Tablet T-10");
+        await using (var scope = provider.CreateAsyncScope())
+            Assert.True((await scope.ServiceProvider.GetRequiredService<IMobileDeviceCommandStore>().ReleaseAsync(
+                new MobileDeviceReleaseWriteRequest(SeededRampAgentAccount, signedOutTablet, Guid.NewGuid(),
+                    other.LastSeenAt), ct)).IsSuccess);
+        var signedOut = await OccDeviceAsync("Tablet T-10");
+        Assert.Equal("Unbound", signedOut.Status);
+        Assert.Equal("Revoked", (await OccAsync("revoke", signedOut, "Tablet extraviada en el muelle")).Value!.Status);
+        Assert.Equal(rotated, await StampAsync());
+    }
+
+    /// <summary>
+    /// 2-N02: each session of the agent holds its own binding, and a release names the newest registration of the
+    /// session that sends it. The session's own writes after that registration never refuse it. A release that arrives
+    /// after the agent signed in on the tablet again is refused with <c>version_conflict</c>, answers a retry the same
+    /// and frees nothing; the new session releases it with its own version. Without a version only the holder counts.
+    /// </summary>
+    [Fact]
+    public async Task ALateReleaseNeverFreesTheTabletItsAgentSignedInOnAgain()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        var tablet = Guid.Parse("81000000-0000-7000-8000-0000000000e5");
+        // A session begins when its token is issued: a JWT iat, in whole seconds.
+        static DateTimeOffset IssuedAfter(DateTimeOffset instant) =>
+            DateTimeOffset.FromUnixTimeSeconds(instant.ToUnixTimeSeconds() + 1);
+
+        async Task<MobileDeviceRegistrationData> RegisterAsync(DateTimeOffset sessionStartedAt)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            var registered = await scope.ServiceProvider.GetRequiredService<IMobileDeviceCommandStore>().RegisterAsync(
+                new MobileDeviceRegistrationWriteRequest(SeededRampAgentAccount, tablet, MobilePlatform.Android, "1.2.3",
+                    "Tablet T-11", "Android 16", sessionStartedAt), ct);
+            Assert.True(registered.IsSuccess, registered.Code);
+            return registered.Device!;
+        }
+        async Task<MobileDeviceReleaseWriteResult> ReleaseAsync(Guid key, DateTimeOffset? version)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IMobileDeviceCommandStore>().ReleaseAsync(
+                new MobileDeviceReleaseWriteRequest(SeededRampAgentAccount, tablet, key, version), ct);
+        }
+        async Task<long[]> OpenBindingsAsync()
+        {
+            await using var check = CreateContext(database.ConnectionString);
+            return await (from device in check.MobileDevices.AsNoTracking()
+                          join binding in check.Set<MobileDeviceAccountBinding>().AsNoTracking()
+                              on device.Id equals binding.MobileDeviceId
+                          where device.InstallationId == tablet && binding.UnboundAt == null
+                          select binding.Id).ToArrayAsync(ct);
+        }
+
+        // Riley signs in; a write registers the tablet first and then moves its lastSeenAt, as every ramp store does.
+        var firstSession = DateTimeOffset.FromUnixTimeSeconds(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 60);
+        await RegisterAsync(firstSession);
+        var firstBinding = Assert.Single(await OpenBindingsAsync());
+        var beforeWrite = await RegisterAsync(firstSession);
+        Assert.Equal([firstBinding], await OpenBindingsAsync());
+        await Task.Delay(TimeSpan.FromMilliseconds(20), ct);
+        var wroteAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        await using (var write = CreateContext(database.ConnectionString))
+            Assert.Equal(1, await write.MobileDevices.Where(item => item.InstallationId == tablet).ExecuteUpdateAsync(
+                setters => setters.SetProperty(item => item.LastSeenAt, wroteAt).SetProperty(item => item.UpdatedAt, wroteAt),
+                ct));
+        Assert.True(wroteAt > beforeWrite.LastSeenAt);
+        // The sign-out names the newest registration the session confirmed: its write after it never refuses it.
+        Assert.True((await ReleaseAsync(Guid.NewGuid(), beforeWrite.LastSeenAt)).IsSuccess);
+        Assert.Empty(await OpenBindingsAsync());
+
+        // Riley signs in again and signs out, and that release is still on its way when Riley signs in on the same
+        // tablet once more: the new session opens its own binding.
+        var second = await RegisterAsync(IssuedAfter(wroteAt));
+        var secondBinding = Assert.Single(await OpenBindingsAsync());
+        var late = Guid.NewGuid();
+        await Task.Delay(TimeSpan.FromMilliseconds(20), ct);
+        var third = await RegisterAsync(IssuedAfter(second.LastSeenAt));
+        var thirdBinding = Assert.Single(await OpenBindingsAsync());
+        Assert.NotEqual(secondBinding, thirdBinding);
+        await using (var check = CreateContext(database.ConnectionString))
+        {
+            Assert.Equal(third.LastSeenAt, (await check.Set<MobileDeviceAccountBinding>().AsNoTracking()
+                .SingleAsync(item => item.Id == secondBinding, ct)).UnboundAt);
+            // The renewal is audited like every closure of a binding; the first session's refresh renewed nothing.
+            var device = await check.MobileDevices.AsNoTracking().SingleAsync(item => item.InstallationId == tablet, ct);
+            Assert.Equal(1, await check.AuditEntries.CountAsync(item => item.EntityPublicId == device.PublicId &&
+                item.Action == "mobile_device.binding_renewed", ct));
+        }
+
+        // The late release names the earlier session's registration: the new session keeps the tablet.
+        var refused = await ReleaseAsync(late, second.LastSeenAt);
+        Assert.Equal((MobileDeviceReleaseWriteFailure.Conflict, MobileDeviceCodes.VersionConflict),
+            (refused.Failure, refused.Code));
+        Assert.Equal([thirdBinding], await OpenBindingsAsync());
+        // Its retry answers the same; the same key with another version is another intent.
+        var retried = await ReleaseAsync(late, second.LastSeenAt);
+        Assert.Equal((MobileDeviceReleaseWriteFailure.Conflict, MobileDeviceCodes.VersionConflict),
+            (retried.Failure, retried.Code));
+        Assert.Equal(MobileDeviceReleaseWriteFailure.IdempotencyKeyConflict,
+            (await ReleaseAsync(late, third.LastSeenAt)).Failure);
+        Assert.Equal([thirdBinding], await OpenBindingsAsync());
+
+        // The new session signs out with its own version.
+        Assert.True((await ReleaseAsync(Guid.NewGuid(), third.LastSeenAt)).IsSuccess);
+        Assert.Empty(await OpenBindingsAsync());
+
+        // A session that confirmed no registration since the app started sends no version: only the holder counts.
+        await RegisterAsync(IssuedAfter(third.LastSeenAt));
+        Assert.True((await ReleaseAsync(Guid.NewGuid(), null)).IsSuccess);
+        Assert.Empty(await OpenBindingsAsync());
+    }
+
     [Fact]
     public async Task TransfersRetireTheRolesOfTheDepartmentLeftAndItsAdministratorsRequestsEnd()
     {

@@ -260,8 +260,20 @@ public sealed partial class SqlServerMigrationTests
             cancellationToken))!, item => item.Id == requestId && item.Status == "Pending");
         Assert.Equal(MobileAccessRequestFailure.Forbidden, (await requests.RejectAsync(
             contractsId, requestId, "No procede", pending.Request.Version, cancellationToken)).Failure);
-        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RejectAsync(
-            superAdminId, requestId, "No procede", "stale-request-version", cancellationToken)).Failure);
+        // 2-N39: each refusal of the legacy rejection names its rule.
+        async Task<(MobileAccessRequestFailure?, string?)> RefusedAsync(Guid id, string reason, string version)
+        {
+            var refused = await requests.RejectAsync(superAdminId, id, reason, version, cancellationToken);
+            return (refused.Failure, refused.Code);
+        }
+        Assert.Equal((MobileAccessRequestFailure.Conflict, "version_conflict"),
+            await RefusedAsync(requestId, "No procede", "stale-request-version"));
+        Assert.Equal((MobileAccessRequestFailure.Invalid, "reason_required"),
+            await RefusedAsync(requestId, "   ", pending.Request.Version));
+        Assert.Equal((MobileAccessRequestFailure.Invalid, "expected_version_required"),
+            await RefusedAsync(requestId, "No procede", " "));
+        Assert.Equal((MobileAccessRequestFailure.NotFound, "not_found"),
+            await RefusedAsync(Guid.CreateVersion7(), "No procede", pending.Request.Version));
         var rejected = await requests.RejectAsync(superAdminId, requestId,
             "Datos por revisar", pending.Request.Version, cancellationToken);
         Assert.Equal("Rejected", rejected.Request!.Status);
@@ -328,9 +340,8 @@ public sealed partial class SqlServerMigrationTests
             approval, cancellationToken)).Id);
         Assert.Equal(GovernanceFailure.Conflict, (await governance.CreateUserAsync(superAdminId,
             approval with { TemporaryPassword = "Different-Ramp!5678" }, cancellationToken)).Failure);
-        Assert.Equal(MobileAccessRequestFailure.Conflict, (await requests.RejectAsync(
-            superAdminId, renewedId, "Too late", reviewedRequest.Version,
-            cancellationToken)).Failure);
+        Assert.Equal((MobileAccessRequestFailure.Conflict, "access_request_closed"),
+            await RefusedAsync(renewedId, "Too late", reviewedRequest.Version));
         Assert.Contains((await requests.ListForHumanResourcesAsync(humanResourcesId,
             cancellationToken))!, item => item.Id == renewedId &&
                 item.Status == "Fulfilled" && item.AccountId == created.Id);

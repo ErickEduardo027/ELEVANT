@@ -139,6 +139,33 @@ describe('DepartmentUsersPage', () => {
     expect(alert).toHaveTextContent('se trasladó a otro departamento');
     expect(alert).not.toHaveTextContent('Raw server title');
   });
+
+  it('leaves out of the edit a station an older edit kept outside the employee record and says so', async () => {
+    // 2-N21: SDQ came from an edit before the rule; the record only has PUJ, so any save without it would be refused.
+    const member = { id: 'acc-4', firstName: 'Ana', lastName: 'Heredada', email: 'ana@example.test', kind: 'Member',
+      status: 'Active', accessProfileId: null, accessProfileName: null, permissions: ['contracts.requests.read'],
+      stations: [{ id: 'st-1', code: 'PUJ' }, { id: 'st-2', code: 'SDQ' }], mustChangePassword: false, lastLoginAt: null,
+      avatarMediaUrl: null, version: 'v-acc-4', employeeStations: [{ id: 'st-1', code: 'PUJ' }] };
+    listDepartmentUsers.mockResolvedValue({ page: 1, limit: 25, total: 1, hasMore: false, users: [member] });
+    getDepartmentOptions.mockResolvedValue({ stations: [{ id: 'st-1', code: 'PUJ' }, { id: 'st-2', code: 'SDQ' }],
+      terminals: [], supervisors: [] });
+    updateDepartmentUser.mockResolvedValue({ id: 'acc-4' });
+    renderWith(admin, <DepartmentUsersPage department="contracts" />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    const form = screen.getByRole('dialog', { name: 'Editar acceso' });
+    expect(await within(form).findByRole('checkbox', { name: 'PUJ' })).toBeChecked();
+    expect(within(form).queryByRole('checkbox', { name: 'SDQ' })).not.toBeInTheDocument();
+    expect(within(form).getByText(
+      'La cuenta tiene estaciones que no están en el expediente del empleado (SDQ): al guardar se retiran.'))
+      .toBeInTheDocument();
+    // A change of permissions saves with the record's stations only.
+    await userEvent.click(within(form).getByRole('checkbox', { name: 'Solicitudes: Aprobar' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    expect(updateDepartmentUser).toHaveBeenCalledWith('contracts', 'acc-4', expect.objectContaining({
+      stationIds: ['st-1'], expectedVersion: 'v-acc-4',
+      permissionCodes: ['contracts.requests.approve', 'contracts.requests.read'],
+    }), expect.stringMatching(/^[0-9a-f-]{36}$/));
+  });
 });
 
 describe('DepartmentUsersPage language', () => {

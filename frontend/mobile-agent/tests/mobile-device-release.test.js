@@ -145,4 +145,32 @@ describe('release at sign-out', () => {
     await registerCurrentMobileDevice({ accessToken: 'token-a' }, { reuseForSession: true });
     expect(mockApi.registerMobileDevice).toHaveBeenCalledTimes(2);
   });
+
+  test('names the newest registration of the session, so a late release never frees a new sign-in', async () => {
+    const answers = ['2026-11-07T10:30:00.125+00:00', '2026-11-07T10:31:00.000+00:00', '2026-11-07T10:30:30.000+00:00'];
+    mockApi.registerMobileDevice.mockImplementation(async request => ({
+      installationId: request.installationId, platform: platform(), appVersion: '1.0.0', lastSeenAt: answers.shift(),
+    }));
+    mockApi.releaseMobileDevice.mockResolvedValue(undefined);
+    // A write and a periodic read registered at once: the older answer arrived last.
+    for (let index = 0; index < 3; index += 1) await registerCurrentMobileDevice({ accessToken: 'token-v' });
+    await expect(releaseCurrentMobileDevice({ accessToken: 'token-v' })).resolves.toBe(true);
+    expect(mockApi.releaseMobileDevice.mock.calls[0][0]).toEqual({
+      installationId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b', expectedVersion: '2026-11-07T10:31:00.000+00:00',
+    });
+    // The confirmation ends with the session: a second release has no registration to name.
+    await releaseCurrentMobileDevice({ accessToken: 'token-v' });
+    expect(mockApi.releaseMobileDevice.mock.calls[1][0]).toEqual({ installationId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b' });
+  });
+
+  test('never names the registration of another session and treats a refused late release as not released', async () => {
+    mockApi.registerMobileDevice.mockImplementation(async request => ({
+      installationId: request.installationId, platform: platform(), appVersion: '1.0.0',
+      lastSeenAt: '2026-11-07T10:35:00.000+00:00',
+    }));
+    mockApi.releaseMobileDevice.mockRejectedValue(new ElevantApiError({ status: 409, code: 'version_conflict' }));
+    await registerCurrentMobileDevice({ accessToken: 'token-x' });
+    await expect(releaseCurrentMobileDevice({ accessToken: 'token-y' })).resolves.toBe(false);
+    expect(mockApi.releaseMobileDevice.mock.calls[0][0]).toEqual({ installationId: '6f1c2a3b-4d5e-4f60-8a7b-9c0d1e2f3a4b' });
+  });
 });

@@ -5721,6 +5721,12 @@ export interface RejectRampMobileAccessInput {
 
 export interface ReleaseMobileDeviceRequest {
   installationId: string;
+  /**
+     * @minLength 1
+     * @maxLength 64
+     * @nullable
+     */
+  expectedVersion?: string | null;
 }
 
 export interface RemoveOccReviewChargeRequest {
@@ -15537,6 +15543,12 @@ export const getRejectRampMobileAccessRequestUrl = (id: string,) => {
   return `/api/v1/governance/ramp-mobile-access-requests/${id}/reject`
 }
 
+/**
+ * @summary Rejects a pending legacy mobile access request: since its approval was retired (2-N38) this is the only way
+out for those requests. Every refusal answers like a governance command, a code and a Spanish title (2-N39):
+`reason_required`, `expected_version_required`, `access_request_closed`,
+`version_conflict`, `not_found` or `forbidden`.
+ */
 export const rejectRampMobileAccessRequest = async (id: string,
     rejectRampMobileAccessInput?: RejectRampMobileAccessInput, options?: RequestInit): Promise<RampMobileAccessRequestData> => {
 
@@ -15555,10 +15567,10 @@ const res = await fetch(getRejectRampMobileAccessRequestUrl(id),
   }
 )
 
-  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  const data: RampMobileAccessRequestData = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -17108,7 +17120,9 @@ export const getRegisterMobileDeviceUrl = () => {
 }
 
 /**
- * @summary Creates or refreshes the current account's fail-closed device binding.
+ * @summary Creates or refreshes the current account's fail-closed device binding. The first registration of a session
+(its access token was issued after the binding began) opens a new binding, so a late release of the agent's
+earlier session never frees the tablet (2-N02); the response never changes.
  */
 export const registerMobileDevice = async (registerMobileDeviceRequest: RegisterMobileDeviceRequest, options?: RequestInit): Promise<RegisterMobileDeviceResponse> => {
 
@@ -17147,7 +17161,9 @@ export const getReleaseMobileDeviceUrl = () => {
 /**
  * @summary The agent signs out and frees the tablet it holds (2-N02). The Idempotency-Key is scoped to the installation:
 a retry with the same key and body answers the first result. Only the account holding the tablet releases
-it (`device_not_bound` otherwise).
+it (`device_not_bound` otherwise). Its optional expected version is the `lastSeenAt` of the newest
+registration the session confirmed: a release that arrives after the agent signed in on the tablet again (a new
+binding) answers `version_conflict` and frees nothing; the session's own writes never refuse it.
  */
 export const releaseMobileDevice = async (releaseMobileDeviceRequest: ReleaseMobileDeviceRequest, options?: RequestInit): Promise<void> => {
 
@@ -18048,7 +18064,7 @@ export const getRevokeOccMobileDeviceUrl = (deviceId: string,) => {
 
 /**
  * @summary Revokes a lost tablet with a reason: the installation never registers again and the sessions of the account
-that held it end.
+that held it last end, also when OCC had freed it, unless that agent signed out of it.
  */
 export const revokeOccMobileDevice = async (deviceId: string,
     revokeMobileDeviceInput: RevokeMobileDeviceInput, options?: RequestInit): Promise<OccMobileDeviceData> => {

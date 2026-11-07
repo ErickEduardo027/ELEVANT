@@ -62,7 +62,8 @@ public sealed class RegisterMobileDeviceHandler(
                 command.Platform,
                 appVersion,
                 deviceName,
-                operatingSystemVersion),
+                operatingSystemVersion,
+                command.SessionStartedAt),
             cancellationToken);
 
         return result.IsSuccess

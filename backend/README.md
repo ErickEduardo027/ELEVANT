@@ -220,7 +220,10 @@ a 60 minutos y usa 15 por defecto.
   API exige perfil activo, sin cuenta y con estación vigente; un reintento
   idéntico no duplica la solicitud. `GET /api/v1/governance/ramp-mobile-access-requests`
   y `POST /api/v1/governance/ramp-mobile-access-requests/{id}/reject` son de
-  Superadministración. El rechazo requiere `expectedVersion`; la creación de
+  Superadministración. El rechazo requiere `expectedVersion` y, como todo
+  comando de gobernanza, responde cada fallo con su `code` y un título en español
+  (`reason_required`, `expected_version_required`, `access_request_closed`,
+  `version_conflict`, `not_found`, `forbidden`); la creación de
   `RAMP_AGENT` acepta `accessRequestId`, `accessRequestVersion`,
   `expectedRampProfileVersion` y `expectedStationCodes`. Cuando se usa una
   solicitud, una versión o alcance obsoleto devuelve 409 y cuenta, grants,

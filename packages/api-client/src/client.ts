@@ -1431,7 +1431,8 @@ export interface ElevantApiClient {
   getAirlinePortalStanding(options?: GetHumanResourcesReportOptions): Promise<AirlinePortalStandingResponse>;
   /**
    * The tablet frees its binding when the agent signs out (2-N02). The Idempotency-Key is scoped to the installation;
-   * `device_not_bound` means another agent, OCC or the end of the agent's duty already freed it.
+   * `device_not_bound` means another agent, OCC or the end of the agent's duty already freed it, and
+   * `version_conflict` that the agent signed in on it again (a new binding) after the registration the release names.
    */
   releaseMobileDevice(command: ReleaseMobileDeviceCommand, idempotencyKey: string,
     options?: RegisterMobileDeviceOptions): Promise<void>;
@@ -1440,7 +1441,10 @@ export interface ElevantApiClient {
   /** OCC frees a tablet with the binding token on screen (`version`); answers the tablet as it is now. */
   unbindOccMobileDevice(deviceId: string, command: UnbindOccMobileDeviceCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<OccMobileDeviceData>;
-  /** OCC revokes a lost tablet with a reason: it never registers again and its holder's sessions end. */
+  /**
+   * OCC revokes a lost tablet with a reason: it never registers again and the sessions of its last agent end, also
+   * when OCC had freed it, unless that agent signed out of it.
+   */
   revokeOccMobileDevice(deviceId: string, command: RevokeOccMobileDeviceCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<OccMobileDeviceData>;
   /** The portal users of the session's airline and what the session may do with them (2-N20). */

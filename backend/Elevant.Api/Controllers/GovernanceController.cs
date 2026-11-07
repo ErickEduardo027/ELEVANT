@@ -79,10 +79,16 @@ public sealed class GovernanceController(IGovernanceStore store,
         return rows is null ? Forbid() : Ok(rows);
     }
 
+    /// <summary>
+    /// Rejects a pending legacy mobile access request: since its approval was retired (2-N38) this is the only way
+    /// out for those requests. Every refusal answers like a governance command, a code and a Spanish title (2-N39):
+    /// <c>reason_required</c>, <c>expected_version_required</c>, <c>access_request_closed</c>,
+    /// <c>version_conflict</c>, <c>not_found</c> or <c>forbidden</c>.
+    /// </summary>
     [HttpPost("ramp-mobile-access-requests/{id:guid}/reject", Name = "RejectRampMobileAccessRequest")]
     [RequestSizeLimit(16384)]
     [ProducesResponseType<RampMobileAccessRequestData>(StatusCodes.Status200OK, "application/json")]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
@@ -95,11 +101,14 @@ public sealed class GovernanceController(IGovernanceStore store,
         return result.Failure switch
         {
             null => Ok(result.Request),
-            MobileAccessRequestFailure.Forbidden => Forbid(),
-            MobileAccessRequestFailure.Invalid => Problem(statusCode: 400, title: "Invalid rejection reason."),
-            MobileAccessRequestFailure.NotFound => Problem(statusCode: 404, title: "Mobile access request not found."),
-            MobileAccessRequestFailure.Conflict => Problem(statusCode: 409, title: "Mobile access request is no longer pending."),
-            _ => throw new InvalidOperationException(),
+            { } failure => GovernanceResults.Failed(this, failure switch
+            {
+                MobileAccessRequestFailure.Forbidden => GovernanceFailure.Forbidden,
+                MobileAccessRequestFailure.Invalid => GovernanceFailure.Invalid,
+                MobileAccessRequestFailure.NotFound => GovernanceFailure.NotFound,
+                MobileAccessRequestFailure.Conflict => GovernanceFailure.Conflict,
+                _ => throw new InvalidOperationException(),
+            }, result.Code),
         };
     }
 

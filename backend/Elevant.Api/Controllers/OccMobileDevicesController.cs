@@ -50,7 +50,7 @@ public sealed class OccMobileDevicesController(IMobileDeviceAdministrationStore 
 
     /// <summary>
     /// Revokes a lost tablet with a reason: the installation never registers again and the sessions of the account
-    /// that held it end.
+    /// that held it last end, also when OCC had freed it, unless that agent signed out of it.
     /// </summary>
     [HttpPost("{deviceId:guid}/revocation", Name = "RevokeOccMobileDevice")]
     [RequestSizeLimit(4096)]

@@ -18,7 +18,9 @@ namespace Elevant.Persistence.Integration;
 /// <summary>
 /// Owns fail-closed registration of a mobile installation to one account. A shared tablet passes to the next
 /// agent who signs in on it unless the agent holding it has an operation in progress (2-N02); a revoked
-/// installation never registers again. Signing out releases the tablet.
+/// installation never registers again. Each session of the agent holds its own binding (<see cref="MobileDeviceSession"/>).
+/// Signing out releases the tablet, unless the release names a registration older than the binding a new sign-in of
+/// the agent opened on it meanwhile.
 /// </summary>
 internal sealed class EfMobileDeviceCommandStore(
     ElevantDbContext context,
@@ -213,11 +215,23 @@ internal sealed class EfMobileDeviceCommandStore(
                     request.ActorAccountId.ToString("D")));
             binding = null;
         }
+        else if (binding is not null &&
+                 MobileDeviceSession.HeldByEarlierSession(binding.BoundAt, request.SessionStartedAt))
+        {
+            // 2-N02: the agent signs in on the tablet it still holds from an earlier session (signed out offline, or
+            // its release is still on its way). Each session holds its own binding, so that release, named after the
+            // earlier one, frees nothing when it arrives. The filtered unique index wants the old one closed first.
+            MobileDeviceBindings.Close(binding, now);
+            await context.SaveChangesAsync(cancellationToken);
+            MobileDeviceBindings.Audit(context, accountInternalId.Value, MobileDeviceBindings.RenewedAction,
+                device.PublicId, null, AuditSource.MobileSync, now);
+            binding = null;
+        }
 
         var bound = binding is null;
         if (bound)
         {
-            // Released (sign-out, OCC, the end of the previous agent's ramp duty) or just taken over.
+            // Released (sign-out, OCC, the end of the previous agent's ramp duty), taken over or renewed.
             context.Set<MobileDeviceAccountBinding>().Add(new MobileDeviceAccountBinding
             {
                 MobileDeviceId = device.Id,
@@ -286,7 +300,8 @@ internal sealed class EfMobileDeviceCommandStore(
              exception.GetBaseException() is SqlException { Number: 1205 or 1222 or 3960 or 2601 or 2627 or 547 }))
         {
             context.ChangeTracker.Clear();
-            return MobileDeviceReleaseWriteResult.Failed(MobileDeviceReleaseWriteFailure.Conflict, "version_conflict");
+            return MobileDeviceReleaseWriteResult.Failed(MobileDeviceReleaseWriteFailure.Conflict,
+                MobileDeviceCodes.VersionConflict);
         }
     }
 
@@ -320,7 +335,14 @@ internal sealed class EfMobileDeviceCommandStore(
         }
 
         var key = request.IdempotencyKey.ToString("D");
-        var hash = RampReceiptRunner.Hash(new { installationId = request.InstallationId });
+        // The body is the installation and the version the release expects; a release without one hashes the
+        // installation alone, as before the version existed.
+        var hash = request.ExpectedVersion is { } expectedVersion
+            ? RampReceiptRunner.Hash(new
+            {
+                installationId = request.InstallationId, expectedVersion = expectedVersion.ToUniversalTime(),
+            })
+            : RampReceiptRunner.Hash(new { installationId = request.InstallationId });
         var existing = await context.MobileCommandReceipts.FromSqlInterpolated($"""
                 SELECT * FROM [integration].[mobile_command_receipts] WITH (UPDLOCK, HOLDLOCK)
                 WHERE [mobile_device_id] = {device.Id} AND [idempotency_key] = {key}
@@ -364,20 +386,21 @@ internal sealed class EfMobileDeviceCommandStore(
             .SingleOrDefaultAsync(cancellationToken);
         if (binding is null || binding.AccountId != accountId)
         {
-            // Another agent took the tablet, OCC freed it or this agent's duty ended: nothing to release. The
-            // refusal is kept, so a retry with the same key answers the same.
-            receipt.Status = MobileCommandStatus.Rejected;
-            receipt.ProcessedAt = now;
-            receipt.ErrorCode = MobileDeviceCodes.NotBound;
-            receipt.ErrorMessage = "The tablet is not bound to this account.";
-            await context.SaveChangesAsync(cancellationToken);
-            committed(receipt.PublicId);
-            return MobileDeviceReleaseWriteResult.Failed(MobileDeviceReleaseWriteFailure.Conflict,
-                MobileDeviceCodes.NotBound);
+            // Another agent took the tablet, OCC freed it or this agent's duty ended: nothing to release.
+            return await RejectAsync(MobileDeviceCodes.NotBound, "The tablet is not bound to this account.");
+        }
+
+        if (MobileDeviceReleaseVersion.Superseded(request.ExpectedVersion, binding.BoundAt))
+        {
+            // 2-N02: the agent signed in on the tablet again while this release was on its way; the binding belongs
+            // to that new session and stays. The session's own writes move lastSeenAt, never the binding.
+            return await RejectAsync(MobileDeviceCodes.VersionConflict,
+                "A later session of the agent holds the tablet.");
         }
 
         MobileDeviceBindings.Close(binding, now);
-        MobileDeviceBindings.Audit(context, accountId, "mobile_device.binding_released", device.PublicId, null,
+        // The audit marks the sign-out: revoking the tablet later knows its session already left it.
+        MobileDeviceBindings.Audit(context, accountId, MobileDeviceBindings.ReleasedAction, device.PublicId, null,
             AuditSource.MobileSync, now,
             new AuditFieldChangeData("binding.account", request.ActorAccountId.ToString("D"), null));
         await MobileDeviceBindings.AnnounceAsync(context, [device.PublicId], now, cancellationToken);
@@ -389,6 +412,18 @@ internal sealed class EfMobileDeviceCommandStore(
         await context.SaveChangesAsync(cancellationToken);
         committed(receipt.PublicId);
         return MobileDeviceReleaseWriteResult.Released();
+
+        // The refusal is kept, so a retry with the same key and body answers the same.
+        async Task<MobileDeviceReleaseWriteResult> RejectAsync(string code, string message)
+        {
+            receipt.Status = MobileCommandStatus.Rejected;
+            receipt.ProcessedAt = now;
+            receipt.ErrorCode = code;
+            receipt.ErrorMessage = message;
+            await context.SaveChangesAsync(cancellationToken);
+            committed(receipt.PublicId);
+            return MobileDeviceReleaseWriteResult.Failed(MobileDeviceReleaseWriteFailure.Conflict, code);
+        }
     }
 
     private static MobileDeviceRegistrationWriteResult Success(

@@ -19,10 +19,20 @@ import { newRequestId } from './useDepartmentGovernance';
 const inputClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const labelClass = 'block text-xs font-semibold text-ink-900 dark:text-text-primary-dark';
 
+/**
+ * Stations of the account outside its employee record (2-N21): an edit from before the rule left them there. The
+ * server only accepts the record's stations, so the edit leaves these out and says so.
+ */
+function stationsOutsideRecord(user) {
+  if (!user?.employeeStations) return [];
+  return (user.stations ?? []).filter(station => !user.employeeStations.some(item => item.id === station.id));
+}
+
 function blank(user) {
+  const outside = stationsOutsideRecord(user).map(station => station.id);
   return {
     temporaryPassword: '',
-    stationIds: user?.stations?.map(station => station.id) ?? [],
+    stationIds: (user?.stations ?? []).map(station => station.id).filter(id => !outside.includes(id)),
     grantMode: user && !user.accessProfileId ? 'custom' : 'profile',
     accessProfileId: user?.accessProfileId ?? '',
     permissionCodes: user && !user.accessProfileId ? user.permissions : [],
@@ -137,6 +147,7 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
   const grantableStations = isEdit && !employeeStations
     ? options?.stations ?? []
     : (options?.stations ?? []).filter(station => employeeStations?.some(item => item.id === station.id));
+  const droppedStations = isEdit ? stationsOutsideRecord(user) : [];
 
   async function submit(event) {
     event.preventDefault();
@@ -209,6 +220,11 @@ export default function AccountFormDrawer({ open, mode, department, user, profil
                 {isEdit ? (employeeStations ? t('account.stationsHintEditEmployee') : t('account.stationsHintEdit'))
                   : t('account.stationsHintRequest')}
               </p>
+              {droppedStations.length > 0 && (
+                <p role="status" className="mt-1 text-xs font-semibold text-status-warning">
+                  {t('account.stationsOutsideRecord', { codes: droppedStations.map(station => station.code).join(', ') })}
+                </p>
+              )}
               <div className="mt-2 flex flex-wrap gap-2">
                 {grantableStations.map(station => (
                   <label key={station.id} className={`flex min-h-[40px] items-center gap-2 rounded-lg border px-3 text-sm ${form.stationIds.includes(station.id) ? 'border-accent-600 bg-accent-600/5' : 'border-black/10 dark:border-white/10'}`}>

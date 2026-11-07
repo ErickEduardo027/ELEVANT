@@ -17,10 +17,17 @@ internal static class GovernanceResults
     public const string ProtectedCode = "protected_user";
 
     public static IActionResult ToAction(this ControllerBase controller, GovernanceResult result,
-        int successStatus = StatusCodes.Status200OK)
+        int successStatus = StatusCodes.Status200OK) =>
+        result.Failure is { } failure
+            ? Failed(controller, failure, result.Code)
+            : controller.StatusCode(successStatus, new CommercialIdResponse(result.Id!.Value));
+
+    /// <summary>
+    /// A refused governance command: the Spanish title of its kind and the store's code or the kind's default.
+    /// </summary>
+    public static ObjectResult Failed(ControllerBase controller, GovernanceFailure failure, string? code)
     {
-        if (result.Failure is null) return controller.StatusCode(successStatus, new CommercialIdResponse(result.Id!.Value));
-        var (status, title, fallback) = result.Failure switch
+        var (status, title, fallback) = failure switch
         {
             GovernanceFailure.Forbidden => (StatusCodes.Status403Forbidden, "No tiene permiso para esta acción.", ForbiddenCode),
             GovernanceFailure.NotFound => (StatusCodes.Status404NotFound,
@@ -32,7 +39,7 @@ internal static class GovernanceResults
                 "Este usuario o rol está protegido y no se puede cambiar.", ProtectedCode),
             _ => throw new InvalidOperationException(),
         };
-        return Coded(controller, status, title, result.Code ?? fallback);
+        return Coded(controller, status, title, code ?? fallback);
     }
 
     public static ObjectResult Coded(ControllerBase controller, int status, string title, string code)

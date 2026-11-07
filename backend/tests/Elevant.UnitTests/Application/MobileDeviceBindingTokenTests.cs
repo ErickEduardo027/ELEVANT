@@ -26,5 +26,6 @@ public sealed class MobileDeviceBindingTokenTests
         Assert.Equal("device_in_use_by_active_agent", MobileDeviceCodes.InUseByActiveAgent);
         Assert.Equal("device_platform_mismatch", MobileDeviceCodes.PlatformMismatch);
         Assert.Equal("device_not_bound", MobileDeviceCodes.NotBound);
+        Assert.Equal("version_conflict", MobileDeviceCodes.VersionConflict);
     }
 }

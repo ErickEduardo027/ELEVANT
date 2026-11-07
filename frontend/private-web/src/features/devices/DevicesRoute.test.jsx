@@ -72,6 +72,34 @@ it('revokes a lost tablet only with a reason and explains a tablet that changed 
   expect(loadOccDevices).toHaveBeenCalledTimes(2);
 });
 
+it('only promises the sessions that revoking ends: a free tablet keeps those of an agent who signed out (2-N02)', async () => {
+  signedIn();
+  loadOccDevices.mockResolvedValue(data());
+  revokeOccDevice.mockResolvedValue({ ...free, status: 'Revoked', revokedAt: '2026-11-06T14:00:00.000Z', version: 'tok-4' });
+  render(<DevicesRoute />);
+  const list = await screen.findByRole('region', { name: 'Tablets de la estación' });
+  const [held, released] = within(list).getAllByRole('button', { name: 'Revocar' });
+
+  // A tablet in an agent's hands: revoking it signs that agent out everywhere.
+  fireEvent.click(held);
+  expect(within(screen.getByRole('alertdialog')).getByText(/se cierran todas las sesiones de Riley Ramp\./))
+    .toBeInTheDocument();
+  fireEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancelar' }));
+
+  // A free one: OCC may have freed it with the session still open, or the agent signed out of it.
+  fireEvent.click(released);
+  const dialog = screen.getByRole('alertdialog');
+  expect(within(dialog).getByText(/Si Riley Ramp no cerró sesión en ella, se cierran todas sus sesiones\./))
+    .toBeInTheDocument();
+  fireEvent.change(within(dialog).getByLabelText('Motivo'), { target: { value: 'Tablet extraviada en la rampa' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Revocar tablet' }));
+  expect(await screen.findByText('Tablet T-08 quedó revocada; ya no queda ninguna sesión abierta en ella.'))
+    .toBeInTheDocument();
+  expect(screen.queryByText(/las sesiones de su último agente se cerraron/)).not.toBeInTheDocument();
+  expect(revokeOccDevice).toHaveBeenCalledWith('dev-2', { expectedVersion: 'tok-2', reason: 'Tablet extraviada en la rampa' },
+    expect.stringMatching(/^[0-9a-f-]{36}$/));
+});
+
 it('shows the empty, unauthorized, read-only and retry states', async () => {
   signedIn();
   loadOccDevices.mockResolvedValueOnce(data({ devices: [] }));

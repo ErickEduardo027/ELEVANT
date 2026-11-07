@@ -22,11 +22,18 @@ const PLATFORMS = Object.freeze({ Android: 'Android', Ios: 'iOS' });
 const formatLocalDateTime = value => (value
   ? new Date(value).toLocaleString('es-DO', { dateStyle: 'medium', timeStyle: 'short' }) : '—');
 
-/** What the dialog of a command explains, and whether its reason is required. */
+const nameOf = device => device.deviceName || `Tablet ${PLATFORMS[device.platform] ?? device.platform}`;
+const agentOf = device => device.agent?.name || 'su último agente';
+
+/**
+ * What the dialog of a command explains, and whether its reason is required. Revoking ends the sessions of the
+ * tablet's last agent, also when OCC had freed it, unless that agent signed out of it (2-N02): the copy only claims
+ * what the server does.
+ */
 const COMMANDS = Object.freeze({
   unbind: {
     title: tablet => `Liberar ${tablet}`,
-    description: 'La tablet queda libre: el próximo agente que inicie sesión en ella la tomará, aunque el anterior tenga una operación en curso. El agente anterior ya no podrá enviar desde ella.',
+    description: () => 'La tablet queda libre: el próximo agente que inicie sesión en ella la tomará, aunque el anterior tenga una operación en curso. El agente anterior ya no podrá enviar desde ella.',
     reasonLabel: 'Motivo (opcional)',
     submit: 'Liberar tablet',
     required: false,
@@ -34,15 +41,15 @@ const COMMANDS = Object.freeze({
   },
   revoke: {
     title: tablet => `Revocar ${tablet}`,
-    description: 'Úsalo solo con una tablet perdida o robada: nunca más podrá vincularse con ELEVANT y las sesiones de la cuenta que la tenía se cierran. No se puede deshacer.',
+    description: device => (device.status === 'Bound'
+      ? `Úsalo solo con una tablet perdida o robada: nunca más podrá vincularse con ELEVANT y se cierran todas las sesiones de ${agentOf(device)}. No se puede deshacer.`
+      : `Úsalo solo con una tablet perdida o robada: nunca más podrá vincularse con ELEVANT. Si ${agentOf(device)} no cerró sesión en ella, se cierran todas sus sesiones. No se puede deshacer.`),
     reasonLabel: 'Motivo',
     submit: 'Revocar tablet',
     required: true,
-    done: tablet => `${tablet} quedó revocada; las sesiones de su último agente se cerraron.`,
+    done: tablet => `${tablet} quedó revocada; ya no queda ninguna sesión abierta en ella.`,
   },
 });
-
-const nameOf = device => device.deviceName || `Tablet ${PLATFORMS[device.platform] ?? device.platform}`;
 
 function DeviceRow({ device, canUnbind, canRevoke, onCommand }) {
   const status = DEVICE_STATUSES[device.status] ?? { label: device.status, tone: 'neutral' };
@@ -195,7 +202,7 @@ export default function DevicesRoute() {
         {spec && (
           <form id="occ-device-command" onSubmit={submit} className="space-y-3">
             {error && <p role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
-            <p>{spec.description}</p>
+            <p>{spec.description(command.device)}</p>
             <label className="block text-sm font-semibold">{spec.reasonLabel}
               <textarea rows={3} maxLength={500} required={spec.required} value={reason}
                 onChange={event => setReason(event.target.value)} className={field} /></label>

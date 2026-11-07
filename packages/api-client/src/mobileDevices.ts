@@ -12,9 +12,15 @@ export const OCC_MOBILE_DEVICE_STATUSES = ["Bound", "Unbound", "Revoked"] as con
 export type OccMobileDeviceStatus = (typeof OCC_MOBILE_DEVICE_STATUSES)[number];
 export const MOBILE_PLATFORMS = ["Android", "Ios"] as const;
 
-/** The installation of this app; only the account that holds the tablet releases it (`device_not_bound`). */
+/**
+ * The installation of this app; only the account that holds the tablet releases it (`device_not_bound`). The expected
+ * version is the `lastSeenAt` of the newest registration the session confirmed. Each sign-in opens its own binding, so
+ * a release that arrives after the agent signed in on the tablet again answers `version_conflict` and frees nothing;
+ * the session's own writes never refuse it. Without a version only the holder is checked.
+ */
 export interface ReleaseMobileDeviceCommand {
   readonly installationId: string;
+  readonly expectedVersion?: string | null;
 }
 
 /** OCC frees a tablet with the binding token on screen; the reason (5 to 500 characters) is optional. */
@@ -23,7 +29,10 @@ export interface UnbindOccMobileDeviceCommand {
   readonly reason?: string | null;
 }
 
-/** OCC revokes a lost tablet with a reason (5 to 500 characters); the sessions of the account that held it end. */
+/**
+ * OCC revokes a lost tablet with a reason (5 to 500 characters); the sessions of the account that held it last end,
+ * also when OCC had freed it, unless that agent signed out of it.
+ */
 export interface RevokeOccMobileDeviceCommand {
   readonly expectedVersion: string;
   readonly reason: string;
@@ -59,11 +68,17 @@ function reasonOf(value: unknown, required: boolean) {
   return reason;
 }
 
-/** The body of a release: the installation of this app. */
+/**
+ * The body of a release: the installation of this app and, when the session confirmed a registration, its
+ * `lastSeenAt` as the expected version. Without one the body is the installation alone.
+ */
 export function normalizedReleaseMobileDevice(command: ReleaseMobileDeviceCommand): ReleaseMobileDeviceCommand {
-  if (!isRecord(command) || !hasOnlyKeys(command, ["installationId"]) || !isUuid(command.installationId))
+  if (!isRecord(command) || !hasOnlyKeys(command, ["installationId", "expectedVersion"]) ||
+      !isUuid(command.installationId) ||
+      !isOptional(command.expectedVersion, (version): version is string => isTimestamp(version) && isText(version, 64)))
     throw new TypeError("The tablet release is invalid.");
-  return { installationId: command.installationId.toLowerCase() };
+  const installationId = command.installationId.toLowerCase();
+  return command.expectedVersion == null ? { installationId } : { installationId, expectedVersion: command.expectedVersion };
 }
 
 /** The body OCC sends to free a tablet: the token and the trimmed reason, if any. */
