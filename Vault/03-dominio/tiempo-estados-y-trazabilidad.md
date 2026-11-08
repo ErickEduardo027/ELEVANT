@@ -111,7 +111,8 @@ texto o reutilizan columnas existentes:
   ([calendario](../../backend/Elevant.Application/Common/BusinessCalendar.cs)).
 
 La fase 3 del ciclo (código de `f2d5c52c` y de las correcciones de la revisión
-de sus bloques A, B y C, `34e90aad`, también posterior al commit verificado;
+de sus bloques A, B y C, `34e90aad`, y D, `3b749a94`, también posterior al
+commit verificado;
 [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md))
 empezó a usar estados que ya existían y sumó historia y reglas de tiempo con
 una sola migración aditiva:
@@ -121,7 +122,8 @@ una sola migración aditiva:
   auditoría.
 - **Incidente:** OCC mueve `Open`, `InReview`, `Resolved` y `Closed` con una
   nota, y cada paso queda en `ops.incident_status_events`; una incidencia
-  cerrada es definitiva.
+  cerrada es definitiva, y con la operación aprobada o cancelada OCC solo la
+  resuelve o la cierra: nunca la pasa a `InReview` (`operation_closed`).
 - **Envío:** reabrir una aprobación crea un envío `PendingReview` nuevo,
   enlazado al aprobado, con quién lo reabrió y por qué.
 - **Orden de Servicio y servicio:** una corrección de OCC después de la firma es

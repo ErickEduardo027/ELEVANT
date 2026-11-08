@@ -302,7 +302,7 @@ No se ha verificado en el VPS.
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
 la fase 3 del ciclo (`f2d5c52c`) y las correcciones de la revisión de sus
-bloques A, B y C (`34e90aad`), que esa verificación no cubre
+bloques A, B y C (`34e90aad`) y D (`3b749a94`), que esa verificación no cubre
 ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
 
 - **Cambios de una escala.** OCC reprograma, cancela o desvía una escala antes
@@ -359,7 +359,10 @@ bloques A, B y C (`34e90aad`), que esa verificación no cubre
   se facturó y gestiona las incidencias con nota e historial
   (`ops.incident_status_events`). Al aprobar, las incidencias abiertas o en
   revisión se resuelven con la nota fija de la aprobación; las que OCC ya
-  resolvió o cerró conservan su nota y su autor.
+  resolvió o cerró conservan su nota y su autor. Desde la aprobación o la
+  cancelación OCC solo resuelve o cierra las incidencias, sin pasarlas a
+  revisión, así que la resolución de la aprobación se mantiene hasta que OCC
+  reabra la revisión.
 - **Charter.** Un servicio no realizado no suma al prepago, y con el prepago
   confirmado no se agregan servicios hasta que Finanzas reabra la cotización.
   OCC da de alta la aerolínea mínima de un charter, que una aprobación
