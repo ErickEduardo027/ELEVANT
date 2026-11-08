@@ -103,4 +103,27 @@ internal static class StandAvailability
         if (occupied.Any(item => item.StandId == stand.Id)) reasons.Insert(0, "stand_taken");
         return new Placement(stand.Id, reasons);
     }
+
+    /// <summary>
+    /// The combined-stand rules a new aircraft size breaks on the stand the flight already holds (ADR-0030): a wide-body
+    /// never takes a narrow-body stand nor one an occupied neighbour limits, and the stand never limits a neighbour that
+    /// holds one. Only these size rules count, since the stand and the window stay as they are. The stand is locked first
+    /// (3-N10). Without a size, a window or an active assignment nothing is checked. The arrival recorded by OCC and the
+    /// feed's pair linked to a planned flight (3-N07) apply it before the turnaround takes the type.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> SizeReasonsAsync(ElevantDbContext context, long stationId,
+        long turnaroundId, DateTimeOffset? startsAt, DateTimeOffset? endsAt, AircraftSizeCategory? aircraftSize,
+        CancellationToken cancellationToken)
+    {
+        if (aircraftSize is null || startsAt is not { } start || endsAt is not { } end) return [];
+        var held = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
+                          join stand in context.Stands.AsNoTracking() on assignment.StandId equals stand.Id
+                          where assignment.TurnaroundId == turnaroundId && assignment.AssignedTo == null
+                          select (Guid?)stand.PublicId).SingleOrDefaultAsync(cancellationToken);
+        if (held is not { } standId) return [];
+        await LockAsync(context, standId, cancellationToken);
+        var placement = await CheckAsync(context, stationId, standId, start, end, aircraftSize, turnaroundId,
+            cancellationToken);
+        return placement.Reasons.Where(reason => reason is "stand_narrowbody_only" or "neighbour_widebody").ToArray();
+    }
 }
