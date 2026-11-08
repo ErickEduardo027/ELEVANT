@@ -884,11 +884,27 @@ test("hueco 3-F · OCC pasa una operación iniciada a otro agente (relevo)", asy
     await handover.getByLabel("Motivo del relevo").fill(reason);
     await handover.getByRole("button", { name: "Relevar agente" }).click();
     await expect(page.getByText(`Operación relevada a ${target.displayName}.`)).toBeVisible();
+    // The section reads its options again: the agent who took the operation is the current one now.
+    await expect(handover).toContainText(`Agente actual: ${target.displayName}`);
     const handed = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
     expect([handed.data.turnaround.operation?.status, handed.data.turnaround.agents.map(agent => agent.displayName)])
       .toEqual(["InProgress", [target.displayName]]);
     const queue = await device.get<{ operations: Array<{ turnaround: { id: string } }> }>("/ramp/operations");
     expect(queue.data.operations.some(item => item.turnaround.id === flight.turnaroundId)).toBe(false);
+    // OCC still records the attendance of the relieved agent, who worked until the handover: the board no longer lists
+    // him, the drawer does («(relevado)») and OCC saves its note on his assignment.
+    const attendance = (await expectCall<{ assignments: Array<{ assignmentId: string; releasedAt: string | null }> }>(
+      200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}/attendance-assignments`)).data;
+    expect(attendance.assignments.find(item => item.assignmentId === current.assignmentId)?.releasedAt,
+      "the relieved assignment is listed with its release").toBeTruthy();
+    const attendanceAgent = page.getByLabel("Agente para asistencia");
+    await expect(attendanceAgent.locator("option", { hasText: `${AGENT} (relevado)` })).toHaveCount(1);
+    await attendanceAgent.selectOption(current.assignmentId!);
+    await expect(page.getByRole("heading", { name: `Asistencia de ${AGENT} (relevado)` })).toBeVisible();
+    await page.getByLabel("Nota de OCC").fill("Trabajó hasta el relevo (ciclo E2E, hueco 3-F).");
+    await page.getByRole("button", { name: "Guardar observación OCC" }).click();
+    await expect(page.getByText("Versión guardada: 1")).toBeVisible();
+    await snap(page, "fase3-hueco-3f-asistencia-relevado");
     // Back to the run's agent, with the same key and body replaying the answer, so the run closes it from its tablet.
     const key = { "idempotency-key": crypto.randomUUID() };
     const giveBack = { agentId: options.currentAgentId, expectedAssignmentId: handed.data.turnaround.agents[0]!.assignmentId,

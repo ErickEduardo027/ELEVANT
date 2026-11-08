@@ -431,6 +431,8 @@ export {
   type AttendanceDraftContributionResponse,
   type AttendanceDraftSnapshotResponse,
   type AttendanceDraftWriteResponse,
+  type OccAttendanceAssignmentResponse,
+  type OccAttendanceAssignmentsResponse,
   type SaveAttendanceDraftRequest,
   type HumanResourcesAttendancePageResponse,
   type HumanResourcesAttendanceRowResponse,

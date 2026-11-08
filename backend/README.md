@@ -389,17 +389,23 @@ a 60 minutos y usa 15 por defecto.
   perfil activo y los scopes, filtra por agente y estación antes de proyectar
   y limita la respuesta a 100 operaciones ordenadas. La cola trae las
   operaciones asignadas, en curso, entregadas (pendientes o en revisión) y
-  devueltas, más las aprobadas de las últimas 48 horas, con las activas
+  devueltas, más las que OCC aprobó en las últimas 48 horas (contadas desde la
+  aprobación, no desde el fin de la operación), con las activas
   primero. Una operación ya iniciada sigue en el alcance de su agente aunque la
   posición se desactive o el vuelo pase a una terminal fuera de su alcance.
   Exige `RAMP_AGENT`, portal `RampMobileApp` y membresía interna AVIAM; una
   cuenta sin perfil compatible falla cerrada con `403` y una cola legítimamente
   vacía responde `200`. `POST /api/v1/ramp/operations/{operationId}/start`
   responde `409 contract_not_in_force` si la aerolínea ya no tiene un contrato
-  vigente en la fecha de la operación (salvo un charter); el recibo del
-  dispositivo repite el mismo rechazo y lo que ya está en curso termina con
-  normalidad. Cuando un contrato se suspende, termina o vence, OCC recibe
-  `contract_not_in_force` por cada operación que aún no inició.
+  vigente en la fecha de la operación (salvo un charter); ese rechazo no queda
+  en el recibo del dispositivo, así que la misma clave vuelve a evaluar el
+  contrato y, si Contratos lo reactiva, el mismo toque inicia la operación. Lo
+  que ya está en curso termina con normalidad. Cuando un contrato se suspende,
+  termina o vence, OCC recibe `contract_not_in_force` por cada operación que aún
+  no inició. `GET /api/v1/occ/planning/turnarounds/{turnaroundId}/attendance-assignments`
+  (solo web, `operations.attendance.read`) lista las asignaciones cuya
+  asistencia registra OCC: las abiertas y las que un relevo cerró después del
+  inicio, con `releasedAt`.
 - Horas de la evidencia de la tablet (fase 3, bloque C; regla única en
   `RampEvidenceTimePolicy`). `POST .../start` acepta un cuerpo opcional
   `{ "startedAt" }` (sin cuerpo sigue siendo válido, como lo envía la APK

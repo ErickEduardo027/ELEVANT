@@ -6,13 +6,13 @@ vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: vi.fn(
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse } from '../features/auth/authService';
 import {
-  createOccCoverage, describeReasons, handOverOccOperation, loadOccHandoverOptions, releaseOccCoverage,
-  releaseOccOperationAgent, translateCoverageError,
+  createOccCoverage, describeReasons, handOverOccOperation, loadOccAttendanceAssignments, loadOccHandoverOptions,
+  releaseOccCoverage, releaseOccOperationAgent, translateCoverageError,
 } from './occCoverageService';
 
 const api = {
   createOccCoverage: vi.fn(), releaseOccCoverage: vi.fn(), releaseOccOperationAgent: vi.fn(),
-  getOccHandoverOptions: vi.fn(), handOverOccOperation: vi.fn(),
+  getOccHandoverOptions: vi.fn(), handOverOccOperation: vi.fn(), getOccAttendanceAssignments: vi.fn(),
 };
 const key = '90000000-0000-4000-8000-000000000001';
 
@@ -84,5 +84,20 @@ describe('coverage and agent commands with the intent key (3-J, 3-F)', () => {
     expect(handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
     await expect(handOverOccOperation('ta-1', command, key)).rejects.toMatchObject({ status: 400, code: 'invalid_handover' });
     expect(api.handOverOccOperation).toHaveBeenCalledWith('ta-1', command, key);
+  });
+
+  it('reads the assignments whose attendance OCC records, the relieved ones too, keeping a refusal code (3-F)', async () => {
+    const listed = { turnaroundId: 'ta-1', operationId: 'op-1', assignments: [] };
+    api.getOccAttendanceAssignments.mockResolvedValueOnce(listed)
+      .mockRejectedValueOnce(Object.assign(new Error('HTTP 404'), { status: 404, code: 'not_found' }))
+      .mockRejectedValueOnce(Object.assign(new Error('HTTP 401'), { status: 401 }))
+      .mockRejectedValueOnce(new TypeError('turnaroundId'));
+    const controller = new AbortController();
+    await expect(loadOccAttendanceAssignments('ta-1', { signal: controller.signal })).resolves.toEqual(listed);
+    expect(api.getOccAttendanceAssignments).toHaveBeenCalledWith('ta-1', { signal: controller.signal });
+    await expect(loadOccAttendanceAssignments('ta-1')).rejects.toMatchObject({ status: 404, code: 'not_found' });
+    await expect(loadOccAttendanceAssignments('ta-1')).rejects.toMatchObject({ status: 401 });
+    expect(handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
+    await expect(loadOccAttendanceAssignments('ta-1')).rejects.toMatchObject({ status: 400, code: 'not_found' });
   });
 });

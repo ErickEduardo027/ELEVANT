@@ -26,7 +26,9 @@ internal sealed class EfRampOperationsCommandStore(
 
     /// <summary>
     /// 3-N04: the airline has no contract in force on the operation's date (suspended, terminated or expired), so the
-    /// operation does not start. What already started ends normally; a charter flight has no contract (ADR-0033).
+    /// operation does not start. What already started ends normally; a charter flight has no contract (ADR-0033). The
+    /// refusal is never kept in the device receipt: the contract may come back in force and the tablet repeats the
+    /// same key for the operation, so each tap evaluates the contract again.
     /// </summary>
     public const string ContractNotInForceCode = "contract_not_in_force";
     private static readonly TimeSpan ReceiptRetention = TimeSpan.FromDays(30);
@@ -182,7 +184,16 @@ internal sealed class EfRampOperationsCommandStore(
             .SingleOrDefaultAsync(cancellationToken);
         if (existingReceipt is not null)
         {
-            return Replay(existingReceipt, actor.AccountInternalId, payloadHash);
+            if (!IsContractRefusal(existingReceipt, actor.AccountInternalId, payloadHash))
+            {
+                return Replay(existingReceipt, actor.AccountInternalId, payloadHash);
+            }
+
+            // 3-N04: a refusal for a contract out of force is not the command's answer for good. A receipt an earlier
+            // server version kept for this same command is dropped and the key evaluates the contract again; another
+            // account or body still conflicts with the key in Replay.
+            context.MobileCommandReceipts.Remove(existingReceipt);
+            await context.SaveChangesAsync(cancellationToken);
         }
 
         var receipt = new MobileCommandReceipt
@@ -338,19 +349,18 @@ internal sealed class EfRampOperationsCommandStore(
         }
 
         // 3-N04: no new work for an airline whose contract stopped being in force; what already started ends normally
-        // (it never reaches this point). The receipt keeps the code, so a repeated tap answers the same refusal.
+        // (it never reaches this point). The refusal is not stored: Contratos may reactivate the contract and the tablet
+        // (the deployed APK too) keeps the same key for the operation, so the next tap evaluates the contract again.
         if (!await context.Set<CharterAgreement>().AsNoTracking()
                 .AnyAsync(item => item.TurnaroundId == operation.TurnaroundId, cancellationToken) &&
             !await ApplicableContracts.For(context, scope.AirlineInternalId, scope.StationInternalId, scope.OperationDate)
                 .AnyAsync(cancellationToken))
         {
-            return await RejectAsync(
-                receipt,
+            context.Entry(receipt).State = EntityState.Detached;
+            return RampOperationStartWriteResult.Failed(
                 RampOperationStartWriteFailure.Conflict,
-                ContractNotInForceCode,
-                "The airline has no contract in force on the operation's date.",
-                now,
-                cancellationToken);
+                null,
+                ContractNotInForceCode);
         }
 
         // 3-I: the moment the agent tapped «Iniciar», possibly sent later from the offline queue: not before the
@@ -500,10 +510,11 @@ internal sealed class EfRampOperationsCommandStore(
 
         if (receipt.Status == MobileCommandStatus.Rejected)
         {
+            // A contract refusal of this command never gets here (IsContractRefusal): it is evaluated again instead.
             var failure = receipt.ErrorCode switch
             {
                 "not_found" => RampOperationStartWriteFailure.NotFound,
-                "conflict" or ContractNotInForceCode or RampProblemCodes.TimeOutsideOperationWindow =>
+                "conflict" or RampProblemCodes.TimeOutsideOperationWindow =>
                     RampOperationStartWriteFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "The stored mobile command rejection is invalid."),
@@ -515,6 +526,17 @@ internal sealed class EfRampOperationsCommandStore(
         return RampOperationStartWriteResult.Failed(
             RampOperationStartWriteFailure.Conflict);
     }
+
+    /// <summary>
+    /// The same start (account and body) refused because the contract was out of force (3-N04): never replayed, the
+    /// contract is evaluated again.
+    /// </summary>
+    private static bool IsContractRefusal(MobileCommandReceipt receipt, long actorAccountId, string payloadHash) =>
+        receipt.Status == MobileCommandStatus.Rejected &&
+        receipt.AccountId == actorAccountId &&
+        string.Equals(receipt.CommandType, StartCommandType, StringComparison.Ordinal) &&
+        string.Equals(receipt.PayloadHash, payloadHash, StringComparison.Ordinal) &&
+        string.Equals(receipt.ErrorCode, ContractNotInForceCode, StringComparison.Ordinal);
 
     /// <summary>
     /// The receipt hash of «Iniciar». Without a tapped time the payload is byte for byte the one of the first version,

@@ -129,3 +129,10 @@ export const loadOccHandoverOptions = (turnaroundId, { signal } = {}) =>
 /** «Relevar agente» (3-F): the agent, the assignment OCC saw and the reason, with the intent's key. */
 export const handOverOccOperation = (turnaroundId, command, idempotencyKey) =>
   agentCommand(() => client().handOverOccOperation(turnaroundId, command, idempotencyKey), 'invalid_handover');
+
+/**
+ * 3-F: the assignments whose attendance OCC records, the current ones and the ones a handover released after the start
+ * (`releasedAt`), which the board no longer lists. A refusal keeps its status and Problem Details code for the drawer.
+ */
+export const loadOccAttendanceAssignments = (turnaroundId, { signal } = {}) =>
+  agentCommand(() => client().getOccAttendanceAssignments(turnaroundId, { signal }), 'not_found');

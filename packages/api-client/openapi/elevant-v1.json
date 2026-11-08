@@ -2544,6 +2544,73 @@
         ]
       }
     },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/attendance-assignments": {
+      "get": {
+        "tags": [
+          "AttendanceDraft"
+        ],
+        "summary": "3-F: the assignments of the turnaround's operation whose attendance OCC records, oldest first: the open ones and\nthe ones a handover released after the start (`releasedAt`), whose agent worked until then and which the\nplanning board no longer lists. AVIAM staff of the station with `operations.attendance.read`; a turnaround\nwithout operation or out of scope is 404 `not_found`. Web only: the tablet never reads it.",
+        "operationId": "GetOccAttendanceAssignments",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAttendanceAssignmentsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/operations/{operationId}/assignments/{assignmentId}/attendance-draft/occ": {
       "put": {
         "tags": [
@@ -50313,6 +50380,68 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/OccOperationServiceResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAttendanceAssignmentResponse": {
+        "required": [
+          "agentId",
+          "assignedAt",
+          "assignmentId",
+          "displayName",
+          "employeeNumber",
+          "releasedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "assignedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "releasedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAttendanceAssignmentsResponse": {
+        "required": [
+          "assignments",
+          "operationId",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAttendanceAssignmentResponse"
             }
           }
         },

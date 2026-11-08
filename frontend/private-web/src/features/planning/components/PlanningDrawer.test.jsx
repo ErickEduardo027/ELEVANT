@@ -23,11 +23,12 @@ vi.mock('../../incidents/OperationIncidentsPanel', () => ({
     <div data-testid="incidents-panel" data-operation={operationId} data-refresh={String(refreshToken)} />
   ),
 }));
-const agents = vi.hoisted(() => ({ release: vi.fn(), options: vi.fn(), handOver: vi.fn() }));
+const agents = vi.hoisted(() => ({ release: vi.fn(), options: vi.fn(), handOver: vi.fn(), attendance: vi.fn() }));
 vi.mock('../../../services/occCoverageService', () => ({
   releaseOccOperationAgent: agents.release,
   loadOccHandoverOptions: agents.options,
   handOverOccOperation: agents.handOver,
+  loadOccAttendanceAssignments: agents.attendance,
 }));
 
 const ASSIGNED_FLIGHT = createPlanningFlight();
@@ -44,7 +45,9 @@ const FLIGHT = createPlanningFlight({
 beforeEach(() => {
   attendance.read.mockReset();
   attendance.read.mockImplementation(() => new Promise(() => {}));
+  attendance.save.mockReset();
   for (const mock of Object.values(agents)) mock.mockReset();
+  agents.attendance.mockImplementation(() => new Promise(() => {}));
 });
 
 const STARTED = createPlanningFlight({ operationStatus: 'InProgress' });
@@ -59,6 +62,24 @@ const HANDOVER_OPTIONS = {
   ],
 };
 const conflict = code => Object.assign(new Error(`HTTP 409 ${code}`), { status: 409, code });
+// 3-F: Riley started the flight and OCC handed it to Ximena; the board lists Ximena's open assignment only.
+const XIMENA = { ...ASSIGNED_FLIGHT.assignedAgents[0], assignmentId: 'assignment-agent-2', agentId: 'agent-2',
+  displayName: 'Ximena Ramp', employeeNumber: 'QA-RA-302' };
+const HANDED_OVER = createPlanningFlight({
+  operationStatus: 'InProgress',
+  operation: { ...ASSIGNED_FLIGHT.operation, status: 'InProgress', actualStartAt: '2026-08-19T10:05:00-04:00' },
+  assignedAgents: [XIMENA],
+});
+const RELIEVED_RILEY = { assignmentId: 'assignment-agent-1', agentId: 'agent-1', displayName: 'Riley Ramp',
+  employeeNumber: 'DEV-RA-001', assignedAt: '2026-08-19T10:00:00-04:00', releasedAt: '2026-08-19T10:40:00-04:00' };
+const attendanceAssignments = (...assignments) => ({
+  turnaroundId: HANDED_OVER.turnaroundId, operationId: HANDED_OVER.operation.id,
+  assignments: [...assignments, { assignmentId: XIMENA.assignmentId, agentId: XIMENA.agentId,
+    displayName: XIMENA.displayName, employeeNumber: XIMENA.employeeNumber,
+    assignedAt: RELIEVED_RILEY.releasedAt, releasedAt: null }],
+});
+const attendanceOptions = () => within(screen.getByRole('combobox', { name: 'Agente para asistencia' }))
+  .getAllByRole('option').map(option => option.textContent);
 
 function renderDrawer(overrides = {}) {
   const props = {
@@ -115,6 +136,83 @@ describe('PlanningDrawer', () => {
     view.rerender(<PlanningDrawer flight={{ ...flight, operation: null }}
       onClose={() => {}} optionsState={OPTIONS_STATE_SUCCESS} onRetryOptions={() => {}} />);
     expect(screen.queryByRole('heading', { name: /Asistencia de/ })).not.toBeInTheDocument();
+  });
+
+  it('lists the agent relieved after the start and records their attendance (3-F)', async () => {
+    attendance.read.mockImplementation(async (operationId, assignmentId) => ({
+      operationId, assignmentId, stationId: STATION_ID, occ: null, rampAgent: null,
+    }));
+    attendance.save.mockResolvedValue({ contribution: { revision: 1, authorAccountId: 'occ-1',
+      recordedAt: '2026-08-19T15:00:00Z', observedStartAt: null, observedEndAt: null,
+      incidentNote: 'Trabajó hasta el relevo.' }, replayed: false });
+    let reread;
+    agents.attendance.mockResolvedValueOnce(attendanceAssignments(RELIEVED_RILEY))
+      .mockImplementationOnce(() => new Promise(resolve => { reread = resolve; }));
+    const { rerender, props } = renderDrawer({ flight: HANDED_OVER, dataRevision: 2 });
+
+    // The current agent first; the relieved one, whose assignment the board no longer lists, after it.
+    expect(await screen.findByRole('option', { name: 'Riley Ramp (relevado) · DEV-RA-001' })).toBeInTheDocument();
+    expect(attendanceOptions()).toEqual(['Ximena Ramp · QA-RA-302', 'Riley Ramp (relevado) · DEV-RA-001']);
+    expect(agents.attendance).toHaveBeenCalledWith(HANDED_OVER.turnaroundId, { signal: expect.any(AbortSignal) });
+    expect(screen.getByText('Incluye a los agentes relevados después del inicio: trabajaron hasta el relevo.'))
+      .toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Agente para asistencia' }),
+      RELIEVED_RILEY.assignmentId);
+    expect(await screen.findByRole('heading', { name: 'Asistencia de Riley Ramp (relevado)' })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Nota de OCC'), 'Trabajó hasta el relevo.');
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar observación OCC' }));
+    await waitFor(() => expect(attendance.save).toHaveBeenCalledWith(HANDED_OVER.operation.id,
+      RELIEVED_RILEY.assignmentId, { expectedRevision: 0, observedStartAt: null, observedEndAt: null,
+        incidentNote: 'Trabajó hasta el relevo.' }, expect.any(String)));
+
+    // The board's next read reads the list again; the one on screen (and the panel OCC is using) stays meanwhile.
+    rerender(<PlanningDrawer {...props} dataRevision={3} />);
+    await waitFor(() => expect(agents.attendance).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('heading', { name: 'Asistencia de Riley Ramp (relevado)' })).toBeInTheDocument();
+    expect(screen.queryByText('Buscando agentes relevados…')).not.toBeInTheDocument();
+    reread(attendanceAssignments(RELIEVED_RILEY));
+    expect(await screen.findByRole('option', { name: 'Riley Ramp (relevado) · DEV-RA-001' })).toBeInTheDocument();
+  });
+
+  it('shows the loading, empty, recoverable-error and unauthorized states of the relieved agents (3-F)', async () => {
+    // Before the start nobody was relieved: nothing is read.
+    const notStarted = renderDrawer({ flight: STARTED });
+    expect(agents.attendance).not.toHaveBeenCalled();
+    notStarted.unmount();
+
+    const loading = renderDrawer({ flight: HANDED_OVER });
+    expect(screen.getByText('Buscando agentes relevados…')).toBeInTheDocument();
+    // The current agent's attendance does not wait for the list.
+    expect(attendanceOptions()).toEqual(['Ximena Ramp · QA-RA-302']);
+    loading.unmount();
+
+    agents.attendance.mockResolvedValueOnce(attendanceAssignments());
+    const empty = renderDrawer({ flight: HANDED_OVER });
+    await waitFor(() => expect(screen.queryByText('Buscando agentes relevados…')).not.toBeInTheDocument());
+    expect(attendanceOptions()).toEqual(['Ximena Ramp · QA-RA-302']);
+    expect(screen.queryByText(/relevados después del inicio/)).not.toBeInTheDocument();
+    empty.unmount();
+
+    agents.attendance.mockRejectedValueOnce(Object.assign(new Error('network'), { status: 503 }))
+      .mockResolvedValueOnce(attendanceAssignments(RELIEVED_RILEY));
+    const failing = renderDrawer({ flight: HANDED_OVER });
+    expect(await screen.findByText('No fue posible consultar los agentes relevados.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByRole('option', { name: 'Riley Ramp (relevado) · DEV-RA-001' })).toBeInTheDocument();
+    expect(screen.queryByText('No fue posible consultar los agentes relevados.')).not.toBeInTheDocument();
+    failing.unmount();
+
+    agents.attendance.mockRejectedValueOnce(Object.assign(new Error('missing'), { status: 404, code: 'not_found' }));
+    const missing = renderDrawer({ flight: HANDED_OVER });
+    expect(await screen.findByText('El vuelo ya no existe o no está en su alcance. Actualice la planificación.'))
+      .toBeInTheDocument();
+    missing.unmount();
+
+    agents.attendance.mockRejectedValueOnce(Object.assign(new Error('forbidden'), { status: 403 }));
+    renderDrawer({ flight: HANDED_OVER });
+    expect(await screen.findByText('Su acceso no permite consultar la asistencia de los agentes relevados.'))
+      .toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
   });
 
   it("mounts the operation's live incidents, re-read with the board (3-G)", () => {
@@ -352,6 +450,35 @@ describe('PlanningDrawer', () => {
     expect(agents.handOver).toHaveBeenCalledWith(STARTED.turnaroundId, { agentId: 'agent-2',
       expectedAssignmentId: 'assignment-agent-1', reason: 'Riley terminó su turno.' }, expect.any(String));
     expect(agents.options).toHaveBeenCalledWith(STARTED.turnaroundId, { signal: expect.any(AbortSignal) });
+  });
+
+  it('reads the options again after a handover: the agent who took it is the current one (3-F)', async () => {
+    const after = { ...HANDOVER_OPTIONS, currentAssignmentId: 'assignment-agent-2', currentAgentId: 'agent-2',
+      currentAgentName: 'Ximena Ramp', agents: [{ id: 'agent-1', displayName: 'Riley Ramp', employeeNumber: 'DEV-RA-001',
+        eligible: true, eligibilityReasons: [] }] };
+    // The read after the second handover stays pending: this test ends with that command.
+    agents.options.mockResolvedValueOnce(HANDOVER_OPTIONS).mockResolvedValueOnce(after)
+      .mockImplementation(() => new Promise(() => {}));
+    agents.handOver.mockResolvedValue({ turnaroundId: STARTED.turnaroundId, assignmentId: 'assignment-agent-2',
+      agentId: 'agent-2', previousAgentId: 'agent-1', replayed: false });
+    const onAgentHandedOver = vi.fn();
+    renderDrawer({ flight: STARTED, onAgentHandedOver });
+    const form = await screen.findByRole('form', { name: 'Relevar agente' });
+    await userEvent.selectOptions(within(form).getByLabelText('Agente que recibe la operación'), 'agent-2');
+    await userEvent.type(within(form).getByLabelText('Motivo del relevo'), 'Riley terminó su turno.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Relevar agente' }));
+
+    await waitFor(() => expect(onAgentHandedOver).toHaveBeenCalledWith('Ximena Ramp'));
+    expect(await screen.findByText(/Agente actual: Ximena Ramp/)).toBeInTheDocument();
+    expect(agents.options).toHaveBeenCalledTimes(2);
+    const refreshed = screen.getByRole('form', { name: 'Relevar agente' });
+    // The agent who just took it is no longer offered; a second handover names the new assignment.
+    expect(within(refreshed).queryByRole('option', { name: /Ximena Ramp/ })).not.toBeInTheDocument();
+    await userEvent.selectOptions(within(refreshed).getByLabelText('Agente que recibe la operación'), 'agent-1');
+    await userEvent.type(within(refreshed).getByLabelText('Motivo del relevo'), 'Riley retoma la operación.');
+    await userEvent.click(within(refreshed).getByRole('button', { name: 'Relevar agente' }));
+    await waitFor(() => expect(agents.handOver).toHaveBeenLastCalledWith(STARTED.turnaroundId, { agentId: 'agent-1',
+      expectedAssignmentId: 'assignment-agent-2', reason: 'Riley retoma la operación.' }, expect.any(String)));
   });
 
   it('reads the options again when the agent or the eligibility changed, and explains the code (3-F)', async () => {

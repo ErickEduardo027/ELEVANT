@@ -125,6 +125,34 @@ describe("handover of a started operation (3-F)", () => {
       expect([failure.status, failure.code]).toEqual([409, code]);
     }
   });
+
+  it("lists the assignments whose attendance OCC records, the relieved one with its release, strictly", async () => {
+    const relieved = { assignmentId, agentId: riley, displayName: "Riley Ramp", employeeNumber: "DEV-RA-001",
+      assignedAt: "2026-11-09T14:00:00+00:00", releasedAt: "2026-11-09T14:40:00+00:00" };
+    const current = { assignmentId: newAssignmentId, agentId: ximena, displayName: "Ximena Ramp",
+      employeeNumber: "QA-RA-302", assignedAt: "2026-11-09T14:40:00+00:00", releasedAt: null };
+    const listed = { turnaroundId, operationId, assignments: [relieved, current] };
+    const sent: Sent[] = [];
+    await expect(client([Response.json(listed)], sent).getOccAttendanceAssignments(turnaroundId.toUpperCase()))
+      .resolves.toEqual(listed);
+    expect([sent[0]!.method, sent[0]!.url])
+      .toEqual(["GET", `/api/v1/occ/planning/turnarounds/${turnaroundId}/attendance-assignments`]);
+    await expect(client([Response.json({ ...listed, assignments: [] })]).getOccAttendanceAssignments(turnaroundId))
+      .resolves.toEqual({ ...listed, assignments: [] });
+    // Another turnaround, an extra key, a missing release, a release before the assignment or one listed twice.
+    const withoutRelease = Object.fromEntries(Object.entries(current).filter(([name]) => name !== "releasedAt"));
+    for (const wrong of [{ ...listed, turnaroundId: operationId }, { ...listed, extra: true },
+      { ...listed, assignments: [{ ...current, extra: 1 }] }, { ...listed, assignments: [withoutRelease] },
+      { ...listed, assignments: [{ ...relieved, releasedAt: "2026-11-09T13:59:00+00:00" }] },
+      { ...listed, assignments: [relieved, relieved] }, { ...listed, assignments: [{ ...current, displayName: "" }] }])
+      await expect(client([Response.json(wrong)]).getOccAttendanceAssignments(turnaroundId))
+        .rejects.toMatchObject({ kind: "malformed-response" });
+    await expect(client([]).getOccAttendanceAssignments("not-a-turnaround")).rejects.toThrow(TypeError);
+    const missing = await client([problem(404, "not_found")]).getOccAttendanceAssignments(turnaroundId)
+      .catch(error => error);
+    expect(missing).toBeInstanceOf(ElevantApiError);
+    expect([missing.status, missing.code]).toEqual([404, "not_found"]);
+  });
 });
 
 describe("the shift of the day OCC and Gestión Humana adjust (3-E)", () => {

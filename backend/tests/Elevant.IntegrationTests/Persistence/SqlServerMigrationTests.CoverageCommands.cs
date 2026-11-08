@@ -362,5 +362,37 @@ public sealed partial class SqlServerMigrationTests
             .SaveAsync(new AttendanceDraftWriteRequest(SeededOccAccount, operationId, rileyAssignment, AttendanceDraftLane.Occ, 0,
                 LocalAt(day, 10), LocalAt(day, 11), null, Guid.NewGuid(), null, "handover-attendance"), ct));
         Assert.True(attendance.IsSuccess, attendance.Failure?.ToString());
+
+        // The planning board no longer lists Riley; the list of OCC's attendance does, with his release, and leaves out an
+        // assignment released before the start (nobody worked it).
+        await using (var setup = CreateContext(connection))
+        {
+            var startedAt = (await setup.GroundOperations.AsNoTracking().SingleAsync(item => item.Id == operation, ct))
+                .ActualStartAt!.Value;
+            var mateoAgent = await setup.RampAgents.Where(item => item.PublicId == mateo).Select(item => item.Id)
+                .SingleAsync(ct);
+            setup.OperationAgentAssignments.Add(new OperationAgentAssignment
+            {
+                PublicId = Guid.CreateVersion7(), GroundOperationId = operation, RampAgentId = mateoAgent,
+                AssignmentRole = "RampAgent", AssignedAt = startedAt.AddMinutes(-30), ReleasedAt = startedAt.AddMinutes(-10),
+                CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            await setup.SaveChangesAsync(ct);
+        }
+        Task<OccAttendanceAssignmentsReadResult> ListAttendance(Guid actor, Guid turnaround) => RunScopedAsync(provider,
+            services => services.GetRequiredService<IAttendanceDraftStore>().ListOccAssignmentsAsync(actor, turnaround, ct));
+        var listed = await ListAttendance(SeededOccAccount, flight);
+        Assert.True(listed.IsSuccess, listed.Failure?.ToString());
+        Assert.Equal((flight, operationId), (listed.Assignments!.TurnaroundId, listed.Assignments.OperationId));
+        Assert.Equal([rileyAssignment, handed.Value.AssignmentId],
+            listed.Assignments.Assignments.Select(item => item.AssignmentId));
+        var relieved = listed.Assignments.Assignments[0];
+        Assert.Equal((RileyProfile, "DEV-RA-001"), (relieved.AgentId, relieved.EmployeeNumber));
+        Assert.NotNull(relieved.ReleasedAt);
+        Assert.Equal((xavier.Profile, (DateTimeOffset?)null),
+            (listed.Assignments.Assignments[1].AgentId, listed.Assignments.Assignments[1].ReleasedAt));
+        // OCC's lane only, in the flight's station: the tablet's account is refused and an unknown flight is not found.
+        Assert.Equal(AttendanceDraftFailure.Forbidden, (await ListAttendance(SeededRampAgentAccount, flight)).Failure);
+        Assert.Equal(AttendanceDraftFailure.NotFound, (await ListAttendance(SeededOccAccount, Guid.NewGuid())).Failure);
     }
 }

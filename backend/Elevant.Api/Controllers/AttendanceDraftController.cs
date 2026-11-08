@@ -46,6 +46,40 @@ public sealed class AttendanceDraftController(IAttendanceDraftStore store) : Con
             snapshot.RampAgent is null ? null : Map(snapshot.RampAgent)));
     }
 
+    /// <summary>
+    /// 3-F: the assignments of the turnaround's operation whose attendance OCC records, oldest first: the open ones and
+    /// the ones a handover released after the start (<c>releasedAt</c>), whose agent worked until then and which the
+    /// planning board no longer lists. AVIAM staff of the station with <c>operations.attendance.read</c>; a turnaround
+    /// without operation or out of scope is 404 <c>not_found</c>. Web only: the tablet never reads it.
+    /// </summary>
+    [HttpGet("~/api/v{version:apiVersion}/occ/planning/turnarounds/{turnaroundId:guid}/attendance-assignments",
+        Name = "GetOccAttendanceAssignments")]
+    [ProducesResponseType<OccAttendanceAssignmentsResponse>(200, "application/json")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    public async Task<ActionResult<OccAttendanceAssignmentsResponse>> ListOccAssignments(
+        [FromRoute] Guid turnaroundId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+            return UnauthorizedResult<OccAttendanceAssignmentsResponse>();
+        var result = await store.ListOccAssignmentsAsync(accountId, turnaroundId, cancellationToken);
+        if (!result.IsSuccess)
+            return result.Failure switch
+            {
+                AttendanceDraftFailure.Unauthorized => UnauthorizedResult<OccAttendanceAssignmentsResponse>(),
+                AttendanceDraftFailure.Forbidden => ProblemResult<OccAttendanceAssignmentsResponse>(403,
+                    "Attendance access is forbidden."),
+                _ => CodedResult<OccAttendanceAssignmentsResponse>(404,
+                    "The flight, its operation or its station was not found.", "not_found"),
+            };
+        var list = result.Assignments!;
+        return Ok(new OccAttendanceAssignmentsResponse(list.TurnaroundId, list.OperationId,
+            list.Assignments.Select(item => new OccAttendanceAssignmentResponse(item.AssignmentId, item.AgentId,
+                item.DisplayName, item.EmployeeNumber, item.AssignedAt, item.ReleasedAt)).ToArray()));
+    }
+
     /// <summary>Appends only the current OCC user's lane revision.</summary>
     [HttpPut("occ", Name = "SaveOccAttendanceDraft")]
     [Consumes("application/json")]
@@ -144,4 +178,12 @@ public sealed class AttendanceDraftController(IAttendanceDraftStore store) : Con
             Title = title,
             Instance = HttpContext.Request.Path,
         }) { StatusCode = statusCode };
+
+    /// <summary>A failure with the stable code the screens explain (3-F); the title is never shown.</summary>
+    private ActionResult<T> CodedResult<T>(int statusCode, string title, string code)
+    {
+        var problem = new ProblemDetails { Status = statusCode, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = statusCode };
+    }
 }

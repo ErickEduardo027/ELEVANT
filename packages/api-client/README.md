@@ -242,6 +242,9 @@ OCC ve (`expectedAssignmentId`) y la clave de la intención; una clave sin esa
 asignación se rechaza antes de enviar. `getOccHandoverOptions` y
 `handOverOccOperation` relevan una operación en curso o devuelta a otro agente
 elegible con motivo, asignación esperada y clave obligatoria.
+`getOccAttendanceAssignments` (solo web) lista las asignaciones cuya asistencia
+registra OCC: las abiertas y las que un relevo cerró después del inicio, con su
+`releasedAt`, que Planificación ya no muestra.
 la ejecución posterior de servicios corresponde exclusivamente al agente
 asignado y a su dispositivo registrado.
 Las respuestas OCC también rechazan propiedades no declaradas porque sus
