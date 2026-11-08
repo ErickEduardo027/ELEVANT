@@ -41,8 +41,10 @@ registrada y una clave estable por comando. El recibo del servidor repite el
 mismo resultado o el mismo código de rechazo. El inicio y los servicios llevan
 la hora del toque, corregida con el reloj de ELEVANT, y lo que ELEVANT no
 confirmó sobrevive a un `401`, un `403` o al cierre de sesión, ligado a su
-cuenta. Una API anterior rechaza con `400` los campos nuevos (`startedAt`,
-`occurredAt`), así que la API se despliega antes que la APK. El detalle está en
+cuenta. Una API anterior rechaza con `400` la transición de servicio que lleva
+`occurredAt` y acepta el inicio con `startedAt`, pero ignora ese campo: el
+inicio queda con la hora en que llegó al servidor, no con la del toque. Por eso
+la API se despliega antes que la APK. El detalle está en
 el [estado de Mobile Agent](../../Vault/05-aplicaciones/mobile-agent.md).
 
 Las claves de firma/tokens futuros deben permanecer fuera de Git. Una

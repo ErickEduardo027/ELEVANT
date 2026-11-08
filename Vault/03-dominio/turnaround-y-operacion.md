@@ -334,11 +334,14 @@ la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
 - **Contrato.** La tablet no inicia una operación si ningún contrato cubre ya su
   fecha, salvo un charter, y OCC recibe un aviso por cada operación sin iniciar
   cuando un contrato deja de estar en vigor.
-- **Evidencia.** Hitos, daños, incidencias y servicios caen en la ventana de la
-  operación, desde el inicio o la llegada registrada hasta su cierre, y el
-  bloqueo nunca va después del push-back. Mientras OCC revisa se acepta la
-  evidencia capturada antes de la entrega, que recalcula los recargos y obliga a
-  releer; el reenvío de una corrección se mide hasta la primera entrega.
+- **Evidencia.** Hitos, daños e incidencias caen en la ventana de la operación,
+  desde el inicio o la llegada registrada hasta su cierre, y el bloqueo nunca va
+  después del push-back. Una transición de servicio va de la apertura de esa
+  ventana a ahora más 2 minutos, sin el cierre, y nunca es anterior a la
+  transición previa del servicio (`service_time_out_of_order`). Mientras OCC
+  revisa se acepta la evidencia capturada antes de la entrega, que recalcula los
+  recargos y obliga a releer; el reenvío de una corrección se mide hasta la
+  primera entrega.
 - **Revisión.** Aprobar exige la Orden de Servicio firmada o corregida por OCC,
   y una corrección de OCC después de la firma queda como una versión corregida
   con su motivo. OCC excluye de la facturación un servicio en excepción con

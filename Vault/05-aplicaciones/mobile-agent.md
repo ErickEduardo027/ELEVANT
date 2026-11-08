@@ -186,9 +186,11 @@ la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
   minuto. Los comandos que reservó la versión anterior se importan una vez con
   su misma clave.
 - **La hora del toque.** El inicio y los servicios viajan con la hora en que el
-  agente tocó, y ELEVANT la conserva aunque el comando llegue horas después,
-  dentro de la ventana de la operación. Los hitos se ajustan dentro de esa
-  ventana; en una corrección, un hito vacío abre el ajuste en lugar de grabar
+  agente tocó, y ELEVANT la conserva aunque el comando llegue horas después: el
+  inicio, si no es anterior a la asignación ni de hace más de 24 horas; un
+  servicio, si no es anterior a la apertura de la ventana de la operación ni a
+  su transición previa. Los hitos se ajustan dentro de la ventana de la
+  operación; en una corrección, un hito vacío abre el ajuste en lugar de grabar
   «AHORA».
 - **El reloj de ELEVANT.** El
   [reloj del servidor](../../frontend/mobile-agent/src/synchronization/server-clock.ts)

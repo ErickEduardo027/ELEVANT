@@ -128,9 +128,12 @@ una sola migración aditiva:
   una versión nueva que apunta a la que corrige, y la exclusión de facturación
   guarda quién, cuándo y por qué.
 - **Horas de la tablet:** la tablet corrige su reloj con la cabecera `Date` de
-  ELEVANT y envía la hora del toque; el servidor la acepta dentro de la ventana
-  de la operación, con 2 minutos de tolerancia, y la guarda recortada a su
-  propio reloj, así que ninguna hora guardada queda en el futuro
+  ELEVANT y envía la hora del toque; el servidor la acepta si encaja en la
+  operación, con 2 minutos de tolerancia, y la guarda recortada a su propio
+  reloj, así que ninguna hora guardada queda en el futuro. Hitos, daños e
+  incidencias caen en la ventana de la operación, hasta su cierre; una
+  transición de servicio va desde la apertura de esa ventana hasta ahora, sin
+  el cierre, y el inicio, desde la asignación y no más de 24 horas atrás
   ([política](../../backend/Elevant.Application/Operations/RampEvidenceTimePolicy.cs)).
 - **Hora local:** los reportes de OCC y de Gestión Humana muestran sus horas en
   la zona de la estación, el portal muestra así las horas de la operación y de
