@@ -46,7 +46,6 @@ Esta matriz es un **índice de brechas verificables**, no una lista de tareas ya
 | Contract de los comandos de la operación (ADR-0039) | Private Web publicada con la versión que siempre envía `Idempotency-Key` y la versión esperada | La llegada, la posición y su liberación en el mapa, crear y liberar una cobertura, liberar al agente, y la decisión y los ajustes de la revisión rechazan llamadas sin clave; el mapa exige además `If-Match` y la liberación del agente, la asignación esperada | [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md) |
 | Zona horaria de cada estación en Private Web | Exponer la zona IANA de la estación en las respuestas solo web que la necesitan, con su validador, o en la sesión | Una estación fuera de República Dominicana muestra en su hora local «Generado» de los reportes, la consulta de los reportes de personal y las fechas que proponen los formularios, sin el calendario de `America/Santo_Domingo` | [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md) |
 | Perfil `OCC-` de una aerolínea charter ya vinculada | Decisión de producto: archivar el perfil comercial sin verificar que OCC creó, o conservarlo, en Superadministración | Tras la aprobación comercial que vincula la aerolínea, el perfil `OCC-…` deja de figurar como una aerolínea por verificar, con auditoría | [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md) |
-| Guía de consumo de la API tras la fase 3 | Un paso de documentación autorizado a editar `docs/api/` | La guía deja de dar por fuera del corte la creación de escala, la reasignación, la ejecución de servicios y las escrituras offline del flujo mobile, y describe los recibos de los comandos de la tablet, ligados a la instalación, como los define la sección 1 de ADR-0039 | [Guía de consumo](../../docs/api/consumer-guidelines.md) y [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md) |
 | Restablecer la clave de usuarios internos | Registrar en la API los proveedores de tokens de Identity, o asignar la contraseña temporal sin token, como ya hace Clientes | `POST governance/departments/{department}/users/{id}/password-reset` y `POST governance/users/{id}/password-reset` asignan la contraseña temporal, el primer ingreso exige cambiarla y una prueba de integración cubre ambas rutas | [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md) y [Gobernanza por departamento](../03-dominio/gobernanza-por-departamento.md) |
 | Correo de contratos (revisión docente) | Proveedor de correo, plantillas y consentimiento; hoy el PDF se descarga y se firma en la aplicación | Envío del PDF a la aerolínea al aprobar y al firmar, con reintento y auditoría | [Correcciones de la revisión](../05-aplicaciones/correcciones-revision-docente-2026-10.md) |
 | Posiciones combinadas (9-Alfa, 32-Bravo) | Definir en datos qué posiciones se bloquean entre sí | La API rechaza ocupar una posición bloqueada por su combinada y el mapa lo muestra | [Correcciones de la revisión](../05-aplicaciones/correcciones-revision-docente-2026-10.md) |
@@ -83,11 +82,14 @@ El 8 de noviembre de 2026, también después del commit verificado, la fase 3 de
 ciclo (código de `f2d5c52c`;
 [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md))
 añadió las filas «Contract de los comandos de la operación», «Zona horaria de
-cada estación en Private Web», «Perfil `OCC-` de una aerolínea charter ya
-vinculada» y «Guía de consumo de la API tras la fase 3». Ninguna fila anterior
-se cierra con ella: los avisos nuevos de la
+cada estación en Private Web» y «Perfil `OCC-` de una aerolínea charter ya
+vinculada». Ninguna fila anterior se cierra con ella: los avisos nuevos de la
 fase siguen solo en la aplicación, y los huecos de la fase 4 «Facturación»
-siguen abiertos.
+siguen abiertos. La fila «Guía de consumo de la API tras la fase 3», que la
+fase también había añadido, se cerró el mismo día: la
+[guía](../../docs/api/consumer-guidelines.md) ya no da por fuera del corte la
+creación de escalas, el relevo, la ejecución de servicios ni las escrituras
+offline de la tablet, y describe sus recibos ligados a la instalación.
 
 ## Cómo convertir una fila en trabajo
 

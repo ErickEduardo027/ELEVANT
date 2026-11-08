@@ -245,7 +245,7 @@ La [política](../../backend/Elevant.Application/Operations/AutomaticSurcharges.
 - Las incidencias quedan resueltas.
 - La escala pasa a `Completed` cuando todas sus operaciones están aprobadas.
 
-Desde la fase 3 del ciclo, aprobar exige la Orden de Servicio firmada y solo resuelve las incidencias que OCC no gestionó: ver [La operación](#la-operación-fase-3-del-ciclo).
+Desde la fase 3 del ciclo, aprobar exige la Orden de Servicio firmada, y las incidencias abiertas o en revisión se resuelven con la nota fija de la aprobación; las que OCC ya resolvió o cerró conservan su nota y su autor: ver [La operación](#la-operación-fase-3-del-ciclo).
 
 **Cierre operacional del día.** El reporte `daily-close` de OCC muestra, por vuelo:
 
@@ -318,11 +318,13 @@ la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
   mientras siga `Planned`.
 - **Ocupación.** Una sola regla
   ([`OperationOccupancyRules`](../../backend/Elevant.Application/Operations/OperationOccupancyRules.cs)):
-  un agente lleva hasta tres operaciones asignadas, en curso o devueltas, y una
-  posición queda tomada salvo que la operación esté aprobada o cancelada o la
-  escala cerrada. Al aprobar, el agente y la posición quedan libres por el
-  estado, sin cerrar las filas. El mapa de posiciones bloquea la posición dentro
-  de una transacción serializable, así que dos vuelos nunca toman la misma.
+  un agente lleva hasta tres operaciones simultáneas (con ventanas que se
+  solapan) asignadas, en curso o devueltas, y una posición queda tomada salvo
+  que la operación esté aprobada o cancelada o la escala cerrada. Desde la
+  entrega la operación ya no ocupa al agente, y al aprobar deja libre la
+  posición por el estado, sin cerrar las filas. Asignar una posición en el mapa
+  la bloquea dentro de una transacción serializable, así que dos vuelos nunca
+  toman la misma.
 - **El vuelo sigue a la posición solo con un agente elegible.** La
   reasignación aplica toda la elegibilidad. Si nadie la cumple, la operación se
   queda con el agente anterior si sigue siendo elegible; si no, vuelve a
@@ -347,8 +349,9 @@ la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
   con su motivo. OCC excluye de la facturación un servicio en excepción con
   cantidad ejecutada, reabre como revisión nueva una aprobación de la que nada
   se facturó y gestiona las incidencias con nota e historial
-  (`ops.incident_status_events`). Al aprobar, solo se resuelven las incidencias
-  que OCC no gestionó.
+  (`ops.incident_status_events`). Al aprobar, las incidencias abiertas o en
+  revisión se resuelven con la nota fija de la aprobación; las que OCC ya
+  resolvió o cerró conservan su nota y su autor.
 - **Charter.** Un servicio no realizado no suma al prepago, y con el prepago
   confirmado no se agregan servicios hasta que Finanzas reabra la cotización.
   OCC da de alta la aerolínea mínima de un charter, que una aprobación

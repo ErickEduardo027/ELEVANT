@@ -123,8 +123,11 @@ la fase 3 del ciclo (`f2d5c52c`;
   por la asignación abierta y el alcance de estación, sin exigir la posición
   activa ni el alcance de terminal, hasta que termina. Pasarla a otra persona es
   un relevo explícito de OCC.
-- **Recibos.** Todo rechazo de un comando de la tablet guarda su código en el
-  recibo, y un reintento con la misma clave devuelve ese mismo código.
+- **Recibos.** Todo rechazo de regla de un comando de rampa con clave guarda su
+  código en el recibo de la instalación, y un reintento con la misma clave y el
+  mismo cuerpo devuelve ese mismo código; la misma clave con otro cuerpo
+  responde `idempotency_conflict`. El chat y la observación de asistencia no
+  usan ese recibo: se deduplican por su propia clave.
 - **Evidencia en una tablet compartida.** Un `401`, un `403` o el cierre de
   sesión borran la credencial y las cachés, pero lo que ELEVANT no confirmó
   queda en el dispositivo, ligado a su cuenta: solo esa cuenta lo lee y lo envía

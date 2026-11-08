@@ -135,8 +135,13 @@ una sola migración aditiva:
   transición de servicio va desde la apertura de esa ventana hasta ahora, sin
   el cierre, y el inicio, desde la asignación y no más de 24 horas atrás
   ([política](../../backend/Elevant.Application/Operations/RampEvidenceTimePolicy.cs)).
-- **Hora local:** los reportes de OCC y de Gestión Humana muestran sus horas en
-  la zona de la estación, el portal muestra así las horas de la operación y de
+- **Hora local:** los reportes de OCC muestran sus filas en la zona de la
+  estación, y los exportes de OCC y de Gestión Humana también usan esa zona. En
+  Private Web, «Generado» de los reportes de OCC y las horas de los reportes de
+  Gestión Humana usan la zona de AVIAM (`America/Santo_Domingo`), porque la
+  sesión no lleva la zona de cada estación (abierto en
+  [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+  El portal muestra en la zona de la estación las horas de la operación y de
   las firmas, y Planificación abre en el día de hoy de la estación. Finanzas
   sigue contando el día UTC (hueco 4-N10 de la fase 4).
 

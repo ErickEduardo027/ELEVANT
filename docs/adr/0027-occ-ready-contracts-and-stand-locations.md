@@ -73,11 +73,12 @@ asignación.
 > hora que OCC escribe en la hora local de la estación y, si quiere, el tipo de avión; desde ese
 > registro el tramo pasa a `Manual` y el feed ya no reescribe su hora real. Corregirla exige
 > motivo y solo vale antes de la primera entrega (`arrival_locked`). La llegada, la asignación de
-> la posición y su liberación aceptan `Idempotency-Key` e `If-Match` opcionales y corren en una
-> transacción serializable que bloquea la posición, así que dos vuelos nunca toman la misma. Sin
-> fecha, Planificación abre el día de hoy de la estación, no la última fecha con vuelos. La regla
-> única de cobertura decide también si la tablet puede iniciar una operación
-> (`contract_not_in_force`). Ver
+> la posición y su liberación corren en una transacción serializable y aceptan una
+> `Idempotency-Key` y un `If-Match` opcionales (con la clave, el `If-Match` es obligatorio,
+> `expected_version_required`). La asignación bloquea primero la fila de la posición, así que dos
+> vuelos nunca toman la misma. Sin fecha, Planificación abre el día de hoy de la estación, no la
+> última fecha con vuelos. La regla única de cobertura decide también si la tablet puede iniciar
+> una operación (`contract_not_in_force`). Ver
 > [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
 
 ## Consecuencias

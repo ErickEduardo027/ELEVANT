@@ -247,7 +247,8 @@ Es aditiva, sin `HasData` ni DML de negocio, y todas sus claves foráneas son
 El `Down` se detiene (`THROW 52380` a `52383`) si ya hay incidencias de OCC o
 historial de incidencias, revisiones reabiertas, Órdenes corregidas o servicios
 excluidos: es historia operativa y de facturación que no se descarta. La
-migración está registrada en `scripts/diagnostics/verify-development.sql`, y
+migración está registrada en
+`database/DevelopmentDB/scripts/diagnostics/verify-development.sql`, y
 `has-pending-model-changes` no reporta cambios.
 
 El resto de la fase cabe en columnas que ya existían: `Cancelled` y `Diverted`
