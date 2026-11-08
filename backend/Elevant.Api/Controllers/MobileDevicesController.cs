@@ -26,7 +26,11 @@ namespace Elevant.Api.Controllers;
 public sealed class MobileDevicesController(RegisterMobileDeviceHandler handler, IMobileDeviceCommandStore store)
     : ControllerBase
 {
-    /// <summary>Creates or refreshes the current account's fail-closed device binding.</summary>
+    /// <summary>
+    /// Creates or refreshes the current account's fail-closed device binding. The first registration of a session
+    /// (its access token was issued after the binding began) opens a new binding, so a late release of the agent's
+    /// earlier session never frees the tablet (2-N02); the response never changes.
+    /// </summary>
     [RequestSizeLimit(ApiConfiguration.MobileDeviceRequestBodyLimitBytes)]
     [HttpPut(Name = "RegisterMobileDevice")]
     [Consumes("application/json")]
@@ -63,7 +67,8 @@ public sealed class MobileDevicesController(RegisterMobileDeviceHandler handler,
                 platform,
                 request.AppVersion,
                 request.DeviceName,
-                request.OperatingSystemVersion),
+                request.OperatingSystemVersion,
+                MobileDeviceSession.StartedAt(User.FindFirstValue(JwtRegisteredClaimNames.Iat))),
             cancellationToken);
 
         if (!result.IsSuccess)
@@ -82,7 +87,9 @@ public sealed class MobileDevicesController(RegisterMobileDeviceHandler handler,
     /// <summary>
     /// The agent signs out and frees the tablet it holds (2-N02). The Idempotency-Key is scoped to the installation:
     /// a retry with the same key and body answers the first result. Only the account holding the tablet releases
-    /// it (<c>device_not_bound</c> otherwise).
+    /// it (<c>device_not_bound</c> otherwise). Its optional expected version is the <c>lastSeenAt</c> of the newest
+    /// registration the session confirmed: a release that arrives after the agent signed in on the tablet again (a new
+    /// binding) answers <c>version_conflict</c> and frees nothing; the session's own writes never refuse it.
     /// </summary>
     [RequestSizeLimit(ApiConfiguration.MobileDeviceRequestBodyLimitBytes)]
     [HttpPost("release", Name = "ReleaseMobileDevice")]
@@ -110,14 +117,15 @@ public sealed class MobileDevicesController(RegisterMobileDeviceHandler handler,
                 "Falta la clave de idempotencia del envío.", "idempotency_key_required");
         }
 
-        if (request.InstallationId == Guid.Empty)
+        if (request.InstallationId == Guid.Empty ||
+            !MobileDeviceReleaseVersion.TryParse(request.ExpectedVersion, out var expectedVersion))
         {
             return Coded(StatusCodes.Status400BadRequest,
                 "El registro de la tablet no es válido.", "invalid_mobile_device");
         }
 
         var result = await store.ReleaseAsync(
-            new MobileDeviceReleaseWriteRequest(accountId, request.InstallationId, idempotencyKey),
+            new MobileDeviceReleaseWriteRequest(accountId, request.InstallationId, idempotencyKey, expectedVersion),
             cancellationToken);
         return result.Failure switch
         {
@@ -128,6 +136,8 @@ public sealed class MobileDevicesController(RegisterMobileDeviceHandler handler,
                 "La tablet no está registrada.", result.Code ?? "not_found"),
             MobileDeviceReleaseWriteFailure.IdempotencyKeyConflict => Coded(
                 StatusCodes.Status409Conflict, "Esa clave ya se usó con otro envío.", "idempotency_conflict"),
+            _ when result.Code == MobileDeviceCodes.VersionConflict => Coded(StatusCodes.Status409Conflict,
+                "La tablet cambió después de la versión enviada.", result.Code),
             _ => Coded(StatusCodes.Status409Conflict,
                 "La tablet no está vinculada a esta cuenta.", result.Code ?? MobileDeviceCodes.NotBound),
         };

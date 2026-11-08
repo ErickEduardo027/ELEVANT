@@ -109,20 +109,30 @@ public sealed class OccFlightFeedController(IOccFlightFeedStore store, FlightFee
             : Ok(new ImportOccFlightResponse(result.TurnaroundId!.Value, result.OperationCode!, result.Replayed, result.Linked));
     }
 
-    /// <summary>Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed.</summary>
+    /// <summary>
+    /// Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed. The
+    /// Idempotency-Key and the body with <c>expectedVersion</c> are optional while older screens exist (expand): with
+    /// the key the version is required and a retry replays the first result, so it never dismisses again a proposal
+    /// someone restored meanwhile.
+    /// </summary>
     [HttpPost("proposals/{proposalId:guid}/dismiss", Name = "DismissOccFlightProposal")]
+    [RequestSizeLimit(1024)]
     [ProducesResponseType(204)]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
-    public async Task<IActionResult> Dismiss([FromRoute] Guid proposalId, CancellationToken cancellationToken)
+    public async Task<IActionResult> Dismiss([FromRoute] Guid proposalId,
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] DismissOccFlightProposalRequest? request,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryAccount(out var actorId)) return Unauthorized<object>().Result!;
-        var failure = await store.DismissAsync(actorId, proposalId, cancellationToken);
-        return failure is null
-            ? NoContent()
-            : Failure<object>(failure.Value, failure == OccFlightFeedFailure.Conflict ? "flight_proposal_closed" : null, null).Result!;
+        var result = await store.DismissAsync(actorId, proposalId, request?.ExpectedVersion, idempotencyKey, cancellationToken);
+        return result.Failure is { } failure
+            ? Failure<object>(failure, result.Code ?? (failure == OccFlightFeedFailure.Conflict ? "flight_proposal_closed" : null),
+                null).Result!
+            : NoContent();
     }
 
     /// <summary>

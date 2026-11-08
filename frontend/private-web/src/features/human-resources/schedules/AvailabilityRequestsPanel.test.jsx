@@ -78,7 +78,10 @@ it('records and decides a request, then re-reads the authoritative page', async 
   await waitFor(() => expect(resolveHumanResourcesAvailabilityRequest)
     .toHaveBeenCalledWith(id, { decision: 'Approve', note: null, expectedVersion: 'AAAAAAAAB9E=' },
       expect.stringMatching(/^[0-9a-f-]{36}$/)));
-  expect(await screen.findByText(/Solicitud aprobada\. Si el agente tenía coberturas/)).toBeInTheDocument();
+  // The answer does not say what was released: OCC hears only of each released operation, never "the" notice.
+  const approved = await screen.findByText(/Solicitud aprobada\. Si el agente tenía coberturas/);
+  expect(approved).toHaveTextContent('se liberaron; OCC recibe un aviso por cada operación liberada.');
+  expect(approved).not.toHaveTextContent(/OCC recibió el aviso/);
   expect(await screen.findByText('Aprobada')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Aprobar' })).not.toBeInTheDocument();
 });
@@ -154,7 +157,10 @@ it('fails closed on role loss and rechecks a colliding resolution', async () => 
     revision={0} onDenied={onDenied} />);
   await screen.findByText('Synthetic planned leave');
   await user.click(screen.getByRole('button', { name: 'Aprobar' }));
-  expect(await screen.findByText(/tiene una operación en curso o devuelta/)).toBeInTheDocument();
+  // Only the agent unblocks it by sending the operation from the tablet; OCC has no action that closes it.
+  const refusal = await screen.findByText(/tiene una operación en curso o devuelta/);
+  expect(refusal).toHaveTextContent('Debe enviarla desde la tablet (si fue devuelta, corregirla y reenviarla)');
+  expect(refusal).not.toHaveTextContent(/OCC/);
   expect(screen.getByText('Aprobada')).toBeInTheDocument();
   rerender(<AvailabilityRequestsPanel from={from} to={to}
     revision={1} onDenied={onDenied} />);

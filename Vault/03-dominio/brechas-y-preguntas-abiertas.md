@@ -79,7 +79,6 @@ Esta lista evita que un vacío se convierta en una suposición. “Brecha” no 
 ### Comercial
 
 - Exigir que `OriginatingServiceRequestId`, cuando exista, apunte a una solicitud aprobada de la misma aerolínea del contrato.
-- Evitar solapamientos incompatibles entre versiones y resolver suspensión/terminación.
 - Al vincular `OperationService` con una tarifa, exigir precio/moneda all-or-none, enlace de tarifa cuando corresponda, la misma definición de servicio y aerolínea, cobertura de estación, versión aprobada y vigente, y copia consistente e histórica de unidad/precio/moneda.
 - Normalizar o gobernar strings todavía abiertos: categoría, estado de equipo, rol de asignación y tipo de incidente.
 - Unidad de cobro (acotada el 6 de noviembre de 2026, después del commit verificado de esta nota): el ciclo comercial guarda el código de `ref.billing_units`, pero las filas heredadas conservan el nombre («operación»), la valoración de paquetes de la emisión de facturas compara la unidad como texto y puede bloquear con `package_unit_mismatch` ([`FinancePackageValuation`](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs)), y OCC y Revisión muestran el código ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
@@ -87,6 +86,11 @@ Esta lista evita que un vacío se convierta en una suposición. “Brecha” no 
 - Prefacturas, disputas, factura no fiscal, pagos parciales, notas de crédito, tarifarios y cargos ya tienen modelo (ver [Finanzas: tarifarios, cargos y cobros](finanzas-tarifas-cargos-y-cobros.md)); siguen abiertos impuestos y documento fiscal (ITBIS, NCF), conciliación bancaria y obtención automática de tasas.
 
 Posterior al commit verificado de esta nota, el 6 de noviembre de 2026 salió de esta lista la definición de las transiciones entre solicitud aprobada, alta de aerolínea, cuenta del portal y contrato ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md) y [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)). De ese trabajo siguen abiertos la unidad de cobro, acotada arriba, y el paso «contract», que hará obligatoria la `Idempotency-Key` en los comandos comerciales que hoy la aceptan opcional, y también la versión esperada en los que todavía no la exigen.
+
+El 7 de noviembre de 2026, también después del commit verificado, la fase 2 «Pre-operación» sacó de esta lista los solapamientos entre versiones y la suspensión y terminación del contrato ([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)). Una versión nueva rige solo desde su segunda firma, y esa firma termina la anterior, a más tardar, la víspera de su inicio. La terminación respeta el preaviso firmado o pide una causa inmediata, y revocar el permiso de operación suspende los contratos que se quedan sin uno usable. Siguen abiertos:
+
+- el paso «contract» de los comandos que la fase 2 amplió con una `Idempotency-Key` opcional;
+- los datos heredados que ninguna migración corrige, como las versiones que una aprobación anterior ya recortó.
 
 ### Operación, evidencia y revisión
 
@@ -102,7 +106,7 @@ Posterior al commit verificado de esta nota, el 6 de noviembre de 2026 salió de
 ### Mobile e integraciones
 
 - Versionar payloads/comandos offline, respuesta repetible, expiración y resolución de conflictos.
-- Definir registro/revocación de dispositivos, almacenamiento seguro de tokens y pérdida de tablet.
+- Definir registro/revocación de dispositivos, almacenamiento seguro de tokens y pérdida de tablet. *Posterior al commit verificado: desde la fase 2 una tablet pasa al agente que inicia sesión y se libera al cerrarla, y OCC la desvincula o revoca una perdida ([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).*
 - Exigir al procesar cada comando un binding activo cuya cuenta coincida con el recibo, una cuenta habilitada y un dispositivo no revocado; de estas coherencias sólo está materializado el dedupe dispositivo-clave.
 - Alinear estado del recibo con `ProcessedAt`, resultado y error, y devolver exactamente el resultado persistido en un reintento sin duplicar trabajo.
 - Establecer reconciliación tras reconexión; SignalR sólo puede acelerar avisos, no ser fuente de verdad.

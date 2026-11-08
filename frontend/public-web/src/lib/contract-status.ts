@@ -1,4 +1,5 @@
 import type { AirlinePortalStandingResponse } from "@elevant/api-client";
+import { addDays } from "./business-day";
 
 /**
  * How the portal names a contract (2-N35): a contract that never activated is never a «Borrador» once Finance
@@ -25,6 +26,20 @@ export function standingContract(standing: AirlinePortalStandingResponse | null 
 export function contractStatusLabel(status: string, pendingReason?: string | null): string {
   if (status === "Draft") return pendingReason && PENDING[pendingReason] ? PENDING[pendingReason]! : "Pendiente de activación";
   return STATUS[status] ?? status;
+}
+
+/**
+ * What the contract card adds after its signing date (2-N14). `terminatedOn` is the first day without coverage: a
+ * terminated contract ended that day; in any other status the termination is only scheduled. An active contract still
+ * covers operations until the day before; a suspended or expired one covers none now, so only the day it ends is
+ * stated. Empty without a termination.
+ */
+export function terminationNote(status: string, terminatedOn: string | null | undefined): string {
+  if (!terminatedOn) return "";
+  if (status === "Terminated") return ` · Terminado: ${terminatedOn}`;
+  return status === "Active"
+    ? ` · Terminación programada: cubre operaciones hasta el ${addDays(terminatedOn, -1)}`
+    : ` · Terminación programada: termina el ${terminatedOn}`;
 }
 
 /** An approved version both parties have not signed yet: a renewal or an amendment shows «Pendiente de firmas». */

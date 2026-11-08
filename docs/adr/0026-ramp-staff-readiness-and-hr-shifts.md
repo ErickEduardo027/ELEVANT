@@ -29,6 +29,16 @@ tres piezas:
 - **Editor semanal** en Horarios: una fila por agente, una celda por día, las mismas plantillas
   horarias que OCC y «Copiar semana anterior», que solo llena días libres y futuros.
 
+> **Actualización (7 de noviembre de 2026).** Quitar un turno acepta la versión y una
+> `Idempotency-Key`, y se rechaza si su día ya pasó según el calendario de la estación
+> (`shift_in_past`) o si el agente tiene en él una cobertura o una operación asignada
+> (`shift_in_use`). No se registra un turno sobre una ausencia aprobada
+> (`shift_on_approved_absence`), y «Copiar semana anterior» omite las ausencias y a los agentes
+> que ya salieron. La baja, el traslado, la desactivación del perfil y una ausencia aprobada
+> liberan las coberturas, las operaciones no iniciadas y los turnos del agente. Una ausencia
+> aprobada se cancela o se acorta con motivo. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 ### «¿Puede operar?»
 
 `GET human-resources/ramp-profiles/readiness` (`human_resources.ramp_profiles.read`) evalúa por
@@ -40,6 +50,13 @@ agente, para hoy, las mismas condiciones que OCC usa por vuelo (`RampAgentReadin
 - informan: turnos de los próximos 14 días y ausencias aprobadas, que dependen del día.
 
 Se muestra en «Agentes de rampa» y como etiqueta en cada fila del editor de turnos.
+
+> **Actualización (7 de noviembre de 2026).** «¿Puede operar?» y los documentos usan el día hábil
+> de la estación, no el día UTC. Gestión Humana recibe un aviso
+> `HumanResources:DocumentExpiryNoticeDays` días antes de cada vencimiento (30 por defecto), y OCC
+> ve en Planificación qué agente asignado ya no está apto
+> (`GET occ/planning/assignment-readiness`). Nada se libera solo. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
 ### Turnos y documentos del agente
 

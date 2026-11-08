@@ -16,7 +16,8 @@ namespace Elevant.Persistence.Integration;
 /// <summary>
 /// OCC's tablet screen (2-N02) under <c>operations.devices.*</c>. A tablet is visible when the agent who holds it,
 /// or held it last, works or worked at one of the actor's stations. Freeing a tablet closes its binding; revoking a
-/// lost one also blocks the installation for good and ends the sessions of the account that held it. Every command
+/// lost one also blocks the installation for good and ends the sessions of the account that held it last, unless
+/// that agent signed out of it (the sign-out already took the session off the tablet). Every command
 /// runs serializable with an Idempotency-Key receipt (<see cref="CommercialCommandReceipts"/>) and the binding token
 /// on screen (<see cref="MobileDeviceBindingToken"/>); nothing is deleted and everything is audited.
 /// </summary>
@@ -118,15 +119,22 @@ internal sealed class EfMobileDeviceAdministrationStore(ElevantDbContext context
             device.RevokedAt = now < device.LastSeenAt ? device.LastSeenAt : now;
             device.UpdatedAt = now;
             var changes = new List<AuditFieldChangeData> { new("device.revoked", null, "true") };
-            if (target.Binding.UnboundAt is null)
+            var bound = target.Binding.UnboundAt is null;
+            // A lost tablet may still hold its last agent's session: a bound one, but also one OCC freed or whose
+            // agent's ramp duty ended, because neither signs the agent out. Only the agent's own sign-out already took
+            // the session off the tablet (2-N02). Every session of the account ends with its stamp.
+            if (bound || !await MobileDeviceBindings.EndedBySignOutAsync(context, device.PublicId, target.Binding,
+                    cancellationToken))
             {
                 var holder = await context.Users.SingleAsync(user => user.Id == target.Binding.AccountId, cancellationToken);
-                MobileDeviceBindings.Close(target.Binding, now);
-                // A lost tablet may still hold a valid session: every session of the account ends with its stamp.
+                if (bound)
+                {
+                    MobileDeviceBindings.Close(target.Binding, now);
+                    changes.Add(new("binding.account", holder.PublicId.ToString("D"), null));
+                }
                 holder.SecurityStamp = Guid.NewGuid().ToString("N");
                 holder.ConcurrencyStamp = Guid.NewGuid().ToString();
                 holder.UpdatedAt = now;
-                changes.Add(new("binding.account", holder.PublicId.ToString("D"), null));
                 changes.Add(new("account.sessions", "open", "closed"));
             }
             MobileDeviceBindings.Audit(context, accountId, "mobile_device.revoked", device.PublicId, reason, AuditSource.Api,

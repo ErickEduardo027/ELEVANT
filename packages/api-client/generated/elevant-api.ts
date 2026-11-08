@@ -2018,6 +2018,11 @@ export interface DiscardContractDraftInput {
   reason: string;
 }
 
+export interface DismissOccFlightProposalRequest {
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface DisputeAirlinePreinvoiceRequest {
   requestId: string;
   subject: string;
@@ -4357,6 +4362,7 @@ export interface OccCoverageStandResponse {
   /** @nullable */
   maxAircraftSize?: string | null;
   coveredBy: string[];
+  version: string;
 }
 
 export interface OccStandConstraintResponse {
@@ -5701,6 +5707,8 @@ export interface RampProfileData {
   supervisorProfileId?: string | null;
   /** @nullable */
   accountStatus?: string | null;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface RampProfileCatalog {
@@ -5893,6 +5901,12 @@ export interface RejectRampMobileAccessInput {
 
 export interface ReleaseMobileDeviceRequest {
   installationId: string;
+  /**
+     * @minLength 1
+     * @maxLength 64
+     * @nullable
+     */
+  expectedVersion?: string | null;
 }
 
 export interface RemoveOccReviewChargeRequest {
@@ -6211,6 +6225,8 @@ export interface SaveRampProfileInput {
   /** @nullable */
   terminalIds?: string[] | null;
   supervisor?: RampProfileSupervisorSelection | null;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface ServiceTariffRateInput {
@@ -6669,6 +6685,8 @@ export interface UpdateOccStandAttributesRequest {
   /** @nullable */
   maxAircraftSize?: string | null;
   isActive: boolean;
+  /** @nullable */
+  expectedVersion?: string | null;
 }
 
 export interface UpdateOccTerminalRulesRequest {
@@ -7466,8 +7484,8 @@ export const getGetAirlinePortalStandingUrl = () => {
 
 /**
  * @summary Where the airline stands with AVIAM (2-N32, 2-N35): overall status, read-only when no contract covers a
-station today, the stations of its approved contracts (the treasury scope) and why each contract that
-never activated is still waiting. The bootstrap keeps describing only what is in force today.
+station today, the stations a contract in force covered or covers (all within the treasury scope) and why
+each contract that never activated is still waiting. The bootstrap keeps describing only what is in force today.
  */
 export const getAirlinePortalStanding = async ( options?: RequestInit): Promise<AirlinePortalStandingResponse> => {
 
@@ -15772,6 +15790,12 @@ export const getRejectRampMobileAccessRequestUrl = (id: string,) => {
   return `/api/v1/governance/ramp-mobile-access-requests/${id}/reject`
 }
 
+/**
+ * @summary Rejects a pending legacy mobile access request: since its approval was retired (2-N38) this is the only way
+out for those requests. Every refusal answers like a governance command, a code and a Spanish title (2-N39):
+`reason_required`, `expected_version_required`, `access_request_closed`,
+`version_conflict`, `not_found` or `forbidden`.
+ */
 export const rejectRampMobileAccessRequest = async (id: string,
     rejectRampMobileAccessInput?: RejectRampMobileAccessInput, options?: RequestInit): Promise<RampMobileAccessRequestData> => {
 
@@ -15790,10 +15814,10 @@ const res = await fetch(getRejectRampMobileAccessRequestUrl(id),
   }
 )
 
-  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  const data: RampMobileAccessRequestData = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -16291,6 +16315,10 @@ export const getUpdateEmployeeUrl = (id: string,) => {
   return `/api/v1/human-resources/employees/${id}`
 }
 
+/**
+ * @summary Updates the record with the version on screen; moving a ramp agent to an office position ends their ramp duty
+through the release path (2-N06). The Idempotency-Key is optional while older clients exist (expand).
+ */
 export const updateEmployee = async (id: string,
     saveEmployeeInput?: SaveEmployeeInput, options?: RequestInit): Promise<CommercialIdResponse> => {
 
@@ -17380,7 +17408,9 @@ export const getRegisterMobileDeviceUrl = () => {
 }
 
 /**
- * @summary Creates or refreshes the current account's fail-closed device binding.
+ * @summary Creates or refreshes the current account's fail-closed device binding. The first registration of a session
+(its access token was issued after the binding began) opens a new binding, so a late release of the agent's
+earlier session never frees the tablet (2-N02); the response never changes.
  */
 export const registerMobileDevice = async (registerMobileDeviceRequest: RegisterMobileDeviceRequest, options?: RequestInit): Promise<RegisterMobileDeviceResponse> => {
 
@@ -17419,7 +17449,9 @@ export const getReleaseMobileDeviceUrl = () => {
 /**
  * @summary The agent signs out and frees the tablet it holds (2-N02). The Idempotency-Key is scoped to the installation:
 a retry with the same key and body answers the first result. Only the account holding the tablet releases
-it (`device_not_bound` otherwise).
+it (`device_not_bound` otherwise). Its optional expected version is the `lastSeenAt` of the newest
+registration the session confirmed: a release that arrives after the agent signed in on the tablet again (a new
+binding) answers `version_conflict` and frees nothing; the session's own writes never refuse it.
  */
 export const releaseMobileDevice = async (releaseMobileDeviceRequest: ReleaseMobileDeviceRequest, options?: RequestInit): Promise<void> => {
 
@@ -17604,6 +17636,12 @@ export const getUpdateOccStandAttributesUrl = (standId: string,) => {
   return `/api/v1/occ/stands/${standId}/attributes`
 }
 
+/**
+ * @summary The bridge, remote, size and active flags of a stand, under the master-data rules (2-A): a stand in use is not
+deactivated and one of an inactive terminal is not reactivated (422 with the rule in `reasons`). The
+Idempotency-Key and `expectedVersion` (the stand's version on the board) are optional while older screens
+exist (expand); with the key the version is required and a retry replays the first result.
+ */
 export const updateOccStandAttributes = async (standId: string,
     updateOccStandAttributesRequest: UpdateOccStandAttributesRequest, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
 
@@ -18010,16 +18048,26 @@ export const getDismissOccFlightProposalUrl = (proposalId: string,) => {
 }
 
 /**
- * @summary Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed.
+ * @summary Hides a proposal OCC will not operate; «Descartadas» keeps it while its flight has not passed. The
+Idempotency-Key and the body with `expectedVersion` are optional while older screens exist (expand): with
+the key the version is required and a retry replays the first result, so it never dismisses again a proposal
+someone restored meanwhile.
  */
-export const dismissOccFlightProposal = async (proposalId: string, options?: RequestInit): Promise<void> => {
+export const dismissOccFlightProposal = async (proposalId: string,
+    dismissOccFlightProposalRequest?: DismissOccFlightProposalRequest, options?: RequestInit): Promise<void> => {
 
-  const res = await fetch(getDismissOccFlightProposalUrl(proposalId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getDismissOccFlightProposalUrl(proposalId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(dismissOccFlightProposalRequest)
   }
 )
 
@@ -18503,7 +18551,7 @@ export const getRevokeOccMobileDeviceUrl = (deviceId: string,) => {
 
 /**
  * @summary Revokes a lost tablet with a reason: the installation never registers again and the sessions of the account
-that held it end.
+that held it last end, also when OCC had freed it, unless that agent signed out of it.
  */
 export const revokeOccMobileDevice = async (deviceId: string,
     revokeMobileDeviceInput: RevokeMobileDeviceInput, options?: RequestInit): Promise<OccMobileDeviceData> => {
@@ -21176,10 +21224,10 @@ const res = await fetch(getCreateRampProfileUrl(),
   }
 )
 
-
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: RampProfileData = body ? JSON.parse(body) : {}
+  const data: RampProfileData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 
@@ -21193,6 +21241,11 @@ export const getUpdateRampProfileUrl = (id: string,) => {
   return `/api/v1/human-resources/ramp-profiles/${id}`
 }
 
+/**
+ * @summary Saves the operational profile with the `version` the editor read (`expectedVersion`) and the intent's
+Idempotency-Key, both optional while older screens exist (expand): with the key the version is required and a
+retry answers the first save. Deactivating it ends the agent's ramp duty through the release path (2-N06).
+ */
 export const updateRampProfile = async (id: string,
     saveRampProfileInput?: SaveRampProfileInput, options?: RequestInit): Promise<RampProfileData> => {
 
@@ -21211,10 +21264,10 @@ const res = await fetch(getUpdateRampProfileUrl(id),
   }
 )
 
-
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: RampProfileData = body ? JSON.parse(body) : {}
+  const data: RampProfileData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
   return data
 }
 

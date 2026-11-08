@@ -1,24 +1,24 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const api = vi.hoisted(() => ({
+  updateOccStandAttributes: vi.fn(), createOccCoverage: vi.fn(), releaseOccCoverage: vi.fn(),
+  releaseOccOperationAgent: vi.fn(), getOccHandoverOptions: vi.fn(), handOverOccOperation: vi.fn(),
+}));
 vi.mock('../features/auth/authService', () => ({ handleUnauthorizedResponse: vi.fn(), readSession: () => null }));
-vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: vi.fn() }));
+vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: () => api }));
 
-import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse } from '../features/auth/authService';
 import {
   createOccCoverage, describeReasons, handOverOccOperation, loadOccHandoverOptions, releaseOccCoverage,
-  releaseOccOperationAgent, translateCoverageError,
+  releaseOccOperationAgent, STAND_PROBLEM_MESSAGES, translateCoverageError, updateOccStandAttributes,
 } from './occCoverageService';
 
-const api = {
-  createOccCoverage: vi.fn(), releaseOccCoverage: vi.fn(), releaseOccOperationAgent: vi.fn(),
-  getOccHandoverOptions: vi.fn(), handOverOccOperation: vi.fn(),
-};
 const key = '90000000-0000-4000-8000-000000000001';
+const attributes = { date: '2026-08-19', hasBoardingBridge: false, isRemote: true, maxAircraftSize: null, isActive: true,
+  expectedVersion: 'AAAAAAAAB9E=' };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  createPrivateWebApiClient.mockReturnValue(api);
 });
 
 describe('coverage errors (ADR-0030)', () => {
@@ -84,5 +84,41 @@ describe('coverage and agent commands with the intent key (3-J, 3-F)', () => {
     expect(handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
     await expect(handOverOccOperation('ta-1', command, key)).rejects.toMatchObject({ status: 400, code: 'invalid_handover' });
     expect(api.handOverOccOperation).toHaveBeenCalledWith('ta-1', command, key);
+  });
+
+  it('explains every code of a refused stand change in Spanish, never by the server title (2-A)', () => {
+    const inactive = translateCoverageError({ status: 422, code: 'terminal_inactive', reasons: ['terminal_inactive'],
+      title: 'The coverage breaks assignment rules.' });
+    expect(inactive.message).toBe('La terminal de esta posición está desactivada: reactívala primero en «Datos maestros».');
+    expect(describeReasons(inactive.reasons)).toEqual([inactive.message]);
+    expect(translateCoverageError({ status: 409, code: 'version_conflict' }, STAND_PROBLEM_MESSAGES).message)
+      .toMatch(/La posición cambió mientras la editabas, aquí o en «Datos maestros»/);
+    expect(translateCoverageError({ status: 409, code: 'idempotency_conflict' }, STAND_PROBLEM_MESSAGES).message)
+      .toMatch(/ya se usó con otros datos/);
+    expect(translateCoverageError({ status: 400, code: 'expected_version_required' }, STAND_PROBLEM_MESSAGES).message)
+      .toBe('Actualiza la vista antes de guardar los cambios de la posición.');
+    expect(translateCoverageError({ status: 409, code: 'version_conflict' }, STAND_PROBLEM_MESSAGES))
+      .toMatchObject({ status: 409, code: 'version_conflict' });
+    // A coverage command is no stand change: its changed version says nothing of «Datos maestros».
+    expect(translateCoverageError({ status: 409, code: 'version_conflict' }).message)
+      .toBe('Los datos cambiaron mientras trabajabas. Se actualizó la vista; inténtalo de nuevo.');
+  });
+
+  it('refuses invalid stand data before sending and keeps a network failure uncertain (2-A)', async () => {
+    await expect(updateOccStandAttributes('s-1', { ...attributes, expectedVersion: '' }, key))
+      .rejects.toMatchObject({ status: 400, message: 'Revisa los datos del formulario.' });
+    expect(api.updateOccStandAttributes).not.toHaveBeenCalled();
+    api.updateOccStandAttributes.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const uncertain = await updateOccStandAttributes('s-1', attributes, key).catch(error => error);
+    // No status: the intent keeps its key and the retry replays the first result.
+    expect(uncertain).toMatchObject({ status: null, message: 'No fue posible completar la acción. Intenta de nuevo.' });
+    // A stand that changed meanwhile says where it may have changed.
+    api.updateOccStandAttributes.mockRejectedValueOnce(Object.assign(new Error('HTTP 409'),
+      { status: 409, code: 'version_conflict' }));
+    await expect(updateOccStandAttributes('s-1', attributes, key)).rejects.toMatchObject({ status: 409,
+      code: 'version_conflict', message: expect.stringMatching(/aquí o en «Datos maestros»/) });
+    api.updateOccStandAttributes.mockResolvedValueOnce({ stationId: 'st' });
+    await expect(updateOccStandAttributes('s-1', attributes, key)).resolves.toEqual({ stationId: 'st' });
+    expect(api.updateOccStandAttributes).toHaveBeenLastCalledWith('s-1', attributes, key);
   });
 });

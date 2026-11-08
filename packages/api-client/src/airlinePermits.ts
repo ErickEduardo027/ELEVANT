@@ -123,8 +123,9 @@ const isStandingContract = (value: unknown) => isRecord(value) &&
   value.versionsAwaitingSignatures.every(isUuid);
 
 /**
- * Where the airline stands (2-N32): the overall status, read-only when no station is in force today, every station of
- * its approved contracts and its contracts with what they wait for. Read-only and «no station in force» go together.
+ * Where the airline stands (2-N32): the overall status, read-only when no station is in force today, the stations a
+ * contract in force covered or covers and its contracts with what they wait for. Read-only and «no station in force» go
+ * together.
  */
 export function isAirlinePortalStanding(value: unknown): value is AirlinePortalStandingResponse {
   return isRecord(value) && hasOnlyKeys(value, ["organizationId", "status", "readOnly", "stations", "contracts"]) &&

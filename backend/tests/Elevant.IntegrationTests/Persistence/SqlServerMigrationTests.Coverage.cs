@@ -79,10 +79,10 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(PositionCoverageFailure.Invalid, (await Coverage(store => store.UpdateTerminalAsync(occ,
             terminalB.TerminalId, new TerminalRulesInput(7, true), date, ct))).Failure);
         Assert.Equal("Narrowbody", (await Coverage(store => store.UpdateStandAsync(occ, Stand("B02"),
-            new StandAttributesInput(true, false, "Narrowbody", true), date, ct))).Board!.Stands
+            new StandAttributesInput(true, false, "Narrowbody", true), date, cancellationToken: ct))).Board!.Stands
             .Single(stand => stand.Code == "B02").MaxAircraftSize);
         Assert.Equal(PositionCoverageFailure.Invalid, (await Coverage(store => store.UpdateStandAsync(occ, Stand("B02"),
-            new StandAttributesInput(true, false, "Huge", true), date, ct))).Failure);
+            new StandAttributesInput(true, false, "Huge", true), date, cancellationToken: ct))).Failure);
         var rule = await Coverage(store => store.AddConstraintAsync(occ,
             new StandConstraintInput(Stand("A01"), Stand("A02"), "Cancels"), date, ct));
         var constraint = Assert.Single(rule.Board!.Constraints);

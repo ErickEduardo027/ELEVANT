@@ -379,11 +379,21 @@ internal sealed class EfContractDocumentStore(ElevantDbContext context, IActorCo
                 .Select(item => item.ContractCode).ToArrayAsync(cancellationToken);
             contract.ContractCode = ContractValidity.FinalCode(now.Year, ContractValidity.NextSequence(issued, now.Year));
         }
-        // 2-N12: the expiry notice restarts only when the coverage end changes: here for a version that already
-        // governs (the legacy exemption); a renewal or an amendment restarts it at its second signature
+        // 2-N12: the expiry notice restarts only when the coverage end changes: here when a version that already
+        // governs (the legacy exemption) gets another end; a renewal or an amendment at its second signature
         // (ContractVersionSupersession), so the airline is not told twice about the same end.
-        if (await GoverningContractVersions.Of(context).AnyAsync(item => item.Id == version.Id, cancellationToken))
-            contract.ExpiryNoticeSentAt = null;
+        var ends = await GoverningContractVersions.Of(context).AsNoTracking()
+            .Where(item => item.ContractId == contract.Id).Select(item => new { item.Id, item.ValidTo })
+            .ToDictionaryAsync(item => item.Id, item => item.ValidTo, cancellationToken);
+        if (ends.ContainsKey(version.Id))
+        {
+            var coveredUntil = ContractVersionGovernance.CoverageEnd(ends.Values);
+            // The ends this step gives them: the version's own, and that of a version a Finance approval ended
+            // before 2-C, which follows a moved start.
+            foreach (var changed in context.ContractVersions.Local.Where(item => ends.ContainsKey(item.Id)))
+                ends[changed.Id] = changed.ValidTo;
+            if (ContractVersionGovernance.CoverageEnd(ends.Values) != coveredUntil) contract.ExpiryNoticeSentAt = null;
+        }
         contract.UpdatedAt = now;
         CommercialAuditWriter.Add(context, accountId, "commercial.contract.validity_confirmed",
             "commercial.contract_versions", version.PublicId,

@@ -9,10 +9,11 @@ namespace Elevant.Persistence.Commercial;
 
 /// <summary>
 /// The airline's standing for its portal (2-N32, 2-N35), with the tenant applied in SQL. Historical
-/// stations come from every version Finance approved (the scope its treasury already keeps), current ones
-/// from the versions that govern today (2-C), and the pending reasons from the signatures and the permit
-/// dossier, so a suspended or expired contract never shows as «0 estaciones» and a contract waiting for
-/// its signatures never shows as «Borrador».
+/// stations come from the versions that governed or govern a contract that was in force (2-C), current
+/// ones from the versions that govern today, and the pending reasons from the signatures and the permit
+/// dossier, so a suspended or expired contract never shows as «0 estaciones», a station nobody signed for
+/// never shows as history and a contract waiting for its signatures never shows as «Borrador». The
+/// treasury keeps its own scope; every station listed here is part of it.
 /// </summary>
 internal sealed class EfAirlinePortalStandingStore(ElevantDbContext context) : IAirlinePortalStandingStore
 {
@@ -28,14 +29,19 @@ internal sealed class EfAirlinePortalStandingStore(ElevantDbContext context) : I
             .SingleOrDefaultAsync(cancellationToken);
         if (airline is null) return null;
 
+        // A station has history where a contract was in force: a version that governs or governed (2-C) and already
+        // started, of a contract that activated: active, suspended, expired, or terminated after the day it first
+        // activated (2-N05). An approved version waiting for its signatures, a signed one that starts later, a draft
+        // and a contract discarded before it ever activated add no station.
         var history = await (from contract in context.Contracts.AsNoTracking()
-                             join version in context.ContractVersions.AsNoTracking() on contract.Id equals version.ContractId
+                             join version in GoverningContractVersions.Of(context) on contract.Id equals version.ContractId
                              join link in context.Set<ContractVersionStation>().AsNoTracking()
                                  on version.Id equals link.ContractVersionId
                              join station in context.Stations.AsNoTracking() on link.StationId equals station.Id
-                             where contract.AirlineId == airline.Id && station.IsActive &&
-                                   (version.Status == ContractVersionStatus.Approved ||
-                                    version.Status == ContractVersionStatus.Superseded)
+                             where contract.AirlineId == airline.Id && station.IsActive && version.ValidFrom <= onDate &&
+                                   (contract.Status == ContractStatus.Active || contract.Status == ContractStatus.Suspended ||
+                                    contract.Status == ContractStatus.Expired ||
+                                    contract.Status == ContractStatus.Terminated && contract.SignedOn != null)
                              select new { station.Id, station.PublicId, station.Code, station.Name, station.IanaTimeZone })
             .Distinct().ToArrayAsync(cancellationToken);
         // The same rule as the bootstrap: an active contract with a version that governs today (2-C).

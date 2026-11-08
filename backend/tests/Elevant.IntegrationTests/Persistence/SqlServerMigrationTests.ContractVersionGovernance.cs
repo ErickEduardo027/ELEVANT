@@ -1,6 +1,8 @@
 using Elevant.Application.Abstractions.Commercial;
 using Elevant.Application.Abstractions.Finance;
+using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Common;
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
@@ -248,6 +250,116 @@ public sealed partial class SqlServerMigrationTests
         Assert.True(await context.EmailOutbox.AnyAsync(item => item.Purpose == EmailPurpose.ContractActivated &&
             item.AttachmentReference == "contract-version:" + draft.Id, ct));
         Assert.True((await documents.ReadPricingTermsAsync(PortalAirlineAccount, draft.Id, ct)).Terms!.Signed);
+    }
+
+    [Fact]
+    public async Task ARenewalThatAddsAServiceRebuildsThePlannedLinesOfTheFlightsItTakesOverAndOccStillPlansThem()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        var clock = new MovableTimeProvider(EveningInSantoDomingo);
+        await using var provider = await SeededFinanceProviderAsync(database, ct, clock);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
+        var documents = scope.ServiceProvider.GetRequiredService<IContractDocumentStore>();
+        var lifecycle = scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>();
+        var drafts = scope.ServiceProvider.GetRequiredService<IContractDraftStore>();
+        var book = scope.ServiceProvider.GetRequiredService<IFinanceTariffBookStore>();
+        var v1 = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == SeededContractVersion, ct);
+
+        // The seeded flight of 19 August, planned under the version in force: baggage on line 1 and the bridge on line 2,
+        // each with the event of its materialization.
+        var flightId = Guid.Parse("70000000-0000-7000-8000-000000000012");
+        var flight = await context.Turnarounds.AsNoTracking().SingleAsync(item => item.PublicId == flightId, ct);
+        await context.Turnarounds.Where(item => item.Id == flight.Id)
+            .ExecuteUpdateAsync(update => update.SetProperty(item => item.ContractVersionId, (long?)v1.Id), ct);
+        var operation = await context.GroundOperations.AsNoTracking().SingleAsync(item => item.TurnaroundId == flight.Id, ct);
+        Assert.Equal(GroundOperationStatus.Planned, operation.CurrentStatus);
+        async Task<OperationService[]> LinesAsync() => await context.OperationServices.AsNoTracking()
+            .Where(item => item.GroundOperationId == operation.Id).OrderBy(item => item.LineNumber).ToArrayAsync(ct);
+        var planned = await LinesAsync();
+        Assert.Equal(2, planned.Length);
+        context.Set<OperationServiceStatusEvent>().AddRange(planned.Select(line => new OperationServiceStatusEvent
+        {
+            OperationServiceId = line.Id, ToStatus = ServiceExecutionStatus.Planned, OccurredAt = clock.Now,
+            Note = "Materialized from the applicable contract during OCC assignment.",
+        }));
+        await context.SaveChangesAsync(ct);
+
+        // A renewal from 1 August adds cargo handling, which OCC lists between baggage and the bridge: the bridge
+        // moves to a position its old line no longer matches.
+        var renewal = await lifecycle.ApplyAsync(ContractsAdministrator, SeededContractVersion, new ContractLifecycleInput(
+            "Renew", "Renovación con carga y descarga", "Active", new DateOnly(2026, 8, 1), new DateOnly(2027, 7, 31)),
+            Guid.NewGuid(), ct);
+        Assert.Null(renewal.Code);
+        var draftId = renewal.DraftVersionId!.Value;
+        var scoped = (await drafts.GetScopeAsync(ContractsAdministrator, draftId, ct)).Data!;
+        var cargo = Assert.Single(scoped.Services, item => item.Code == "RAMP-CARGO");
+        Assert.True((await drafts.SetScopeAsync(ContractsAdministrator, draftId, Guid.NewGuid(), new SetContractDraftScopeInput(
+            scoped.Version, [.. scoped.Services.Where(item => item.Selected).Select(item => item.ServiceId), cargo.ServiceId],
+            [.. scoped.Stations.Where(item => item.Selected).Select(item => item.StationId)]), ct)).IsSuccess);
+        var draft = Assert.Single((await drafts.ListForContractsAsync(ContractsAdministrator, ct))!, item => item.Id == draftId);
+        Assert.True((await drafts.UpdateAsync(ContractsAdministrator, draftId, new UpdateContractDraftInput(draft.ValidFrom,
+            draft.ValidTo, draft.CurrencyCode, draft.Terms!, draft.Rates.Select(rate => new UpdateDraftRateInput(rate.Id,
+                rate.BillingUnit, rate.UnitPrice + 10m, rate.MinimumQuantity, true)).ToArray(), null, draft.Version),
+            Guid.NewGuid(), ct)).IsSuccess);
+        draft = Assert.Single((await drafts.ListForContractsAsync(ContractsAdministrator, ct))!, item => item.Id == draftId);
+        var submitted = await drafts.ActivateAsync(ContractsAdministrator, draftId, new SubmitContractDraftInput(draft.Version),
+            Guid.NewGuid(), ct);
+        Assert.True(submitted.IsSuccess, submitted.Code);
+        var pending = (await book.GetContractApprovalAsync(FinanceAccount, draftId, ct))!;
+        var approved = await book.DecideContractApprovalAsync(FinanceAccount, draftId,
+            new DecideContractApprovalInput("Approved", null, pending.Summary.Version), Guid.NewGuid(), ct);
+        Assert.True(approved.IsSuccess, approved.Code);
+        await SignByBothAsync(documents, draftId, ct);
+        context.ChangeTracker.Clear();
+
+        // 2-C: the flight moves to the renewal and its planned lines are the signed rates in the order OCC materializes
+        // them. Baggage keeps its line at the signed price; the bridge line goes with its event, and the two positions
+        // after baggage are new lines with theirs.
+        var next = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.PublicId == draftId, ct);
+        Assert.Equal(next.Id, (await context.Turnarounds.AsNoTracking().SingleAsync(item => item.Id == flight.Id, ct))
+            .ContractVersionId);
+        var signedRates = await (from rate in context.ContractServiceRates.AsNoTracking()
+                                 join definition in context.ServiceDefinitions.AsNoTracking()
+                                     on rate.ServiceDefinitionId equals definition.Id
+                                 where rate.ContractVersionId == next.Id && definition.IsActive
+                                 orderby definition.Name, definition.Code, definition.PublicId
+                                 select new { rate.Id, rate.ServiceDefinitionId, rate.UnitPrice, rate.MinimumQuantity,
+                                     definition.Code }).ToArrayAsync(ct);
+        Assert.Equal(["BAGGAGE", "RAMP-CARGO", "PASSENGER-BRIDGE"], signedRates.Select(rate => rate.Code));
+        var replanned = await LinesAsync();
+        Assert.Equal(signedRates.Select((rate, index) => (index + 1, rate.ServiceDefinitionId, (long?)rate.Id,
+                (decimal?)rate.UnitPrice, rate.MinimumQuantity, (string?)"USD", ServiceExecutionStatus.Planned, 0m)),
+            replanned.Select(line => (line.LineNumber, line.ServiceDefinitionId, line.ContractServiceRateId,
+                line.UnitPriceSnapshot, line.ContractedQuantity, line.CurrencyCodeSnapshot, line.CurrentStatus,
+                line.ExecutedQuantity)));
+        Assert.Equal(planned[0].Id, replanned[0].Id);
+        Assert.DoesNotContain(replanned, line => line.Id == planned[1].Id);
+        var lineIds = replanned.Select(line => line.Id).Append(planned[1].Id).ToArray();
+        Assert.Equal(replanned.Select(line => line.Id).Order(), (await context.Set<OperationServiceStatusEvent>()
+            .AsNoTracking().Where(item => lineIds.Contains(item.OperationServiceId)).Select(item => item.OperationServiceId)
+            .ToArrayAsync(ct)).Order());
+        var replan = await context.AuditEntries.AsNoTracking().SingleAsync(item =>
+            item.Action == "occ.operation.services_replanned" && item.EntityPublicId == operation.PublicId, ct);
+        Assert.Contains("\"withdrawn\":[\"PASSENGER-BRIDGE\"]", replan.MetadataJson);
+        Assert.Contains("\"added\":[\"RAMP-CARGO\",\"PASSENGER-BRIDGE\"]", replan.MetadataJson);
+
+        // OCC still plans the flight: the renewal covers its date and the lines are exactly the ones it materializes.
+        await using var occScope = provider.CreateAsyncScope();
+        var options = await occScope.ServiceProvider.GetRequiredService<IOccPlanningReadStore>()
+            .GetOptionsAsync([PujStation], flightId, ct);
+        Assert.True(options.IsSuccess, options.Failure?.ToString());
+        Assert.Equal(next.VersionNumber, options.Options!.Contract!.Version);
+        Assert.True(OccPlanningConcurrencyToken.TryDecode(options.Options.Turnaround.ConcurrencyToken, out var token));
+        var assigned = await occScope.ServiceProvider.GetRequiredService<IOccPlanningCommandStore>().AssignOperationAsync(
+            new OccAssignmentWriteRequest(OperationsAdministrator, [PujStation], flightId, SeededRampAgentProfile, token,
+                Guid.NewGuid(), "renewal-replanned-flight"), ct);
+        Assert.True(assigned.IsSuccess, assigned.Failure?.ToString());
+        Assert.Equal(["BAGGAGE", "RAMP-CARGO", "PASSENGER-BRIDGE"], assigned.Assignment!.Services.Select(item => item.Code));
+        Assert.Equal(replanned.Select(line => line.PublicId), assigned.Assignment.Services.Select(item => item.Id));
     }
 
     [Fact]

@@ -96,6 +96,20 @@ y [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and
   abiertos figuran como `test.fixme("hueco …")`. Una corrida verde es evidencia
   local: no reemplaza CI ni prueba un despliegue.
 
+Desde la fase 2 del ciclo (código de `50e7778f`, también posterior al commit
+verificado;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)):
+
+- **Feed simulado.** El mismo overlay activa el proveedor de vuelos simulado
+  (`SimulatedFlightFeed__Enabled`), que nunca llama a AeroDataBox ni a la red.
+  La API se niega a arrancar si el `.env` también activa AeroDataBox, y con
+  `ELEVANT_E2E_SIMULATED_FLIGHT_FEED=false` el overlay no lo activa.
+- **Pasos de la fase 2.** Los huecos de la fase 2 ya son pruebas reales
+  ([pruebas de la fase 2](../../frontend/public-web/tests/e2e-cycle/fase2-preoperacion.spec.ts)).
+  El paso que importa vuelos se salta si la API no usa el proveedor simulado,
+  para no gastar nunca unidades de pago. Las fases 3 y 4 todavía tienen pasos
+  `test.fixme`.
+
 ## Qué agrega cada workflow activo
 
 ### Backend CI

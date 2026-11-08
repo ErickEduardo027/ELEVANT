@@ -13,7 +13,8 @@ describe('station catalog service (2-A)', () => {
   it('explains each station refusal by its code', () => {
     expect(stationMessage(failure(409, 'station_code_taken'))).toBe('Ya existe una estación con ese código.');
     expect(stationMessage(failure(409, 'time_zone_locked'))).toMatch(/su zona horaria no cambia/);
-    expect(stationMessage(failure(409, 'station_in_use'))).toMatch(/no se puede desactivar/);
+    // A scheduled shift or an open coverage keeps a station in use as much as a contract or a flight.
+    expect(stationMessage(failure(409, 'station_in_use'))).toMatch(/turnos programados o coberturas abiertas: no se puede desactivar/);
     expect(stationMessage(failure(400, 'airport_required'))).toMatch(/código OACI/);
     expect(stationMessage(failure(403))).toBe(STATION_MESSAGES.forbidden);
     expect(stationMessage(new TypeError('Failed to fetch'))).toMatch(/Revise la conexión/);

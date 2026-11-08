@@ -35,8 +35,9 @@ describe("Problem Details codes", () => {
       "charter_has_contract", "charter_required", "airline_inactive", "flight_proposal_not_dismissed",
       "flight_proposal_passed", "aircraft_type_unavailable", "stand_unavailable"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
-    // A stand in use also comes back as the rule of a rejected coverage configuration (422).
-    expect(ELEVANT_RULE_REASONS).toContain("stand_in_use");
+    // A stand in use, or one of an inactive terminal, also comes back as the rule of a rejected coverage configuration
+    // (422).
+    for (const reason of ["stand_in_use", "terminal_inactive"]) expect(ELEVANT_RULE_REASONS).toContain(reason);
   });
 
   it("keeps the human resources codes of phase 2 (block D)", () => {

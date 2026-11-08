@@ -6,12 +6,13 @@ using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Commercial;
 
 /// <summary>
-/// What a renewal (and the draft that replaces a withdrawn first version) takes from the version it
-/// starts from (2-N03): the service rates, the stations, the negotiated surcharges and exemptions and
-/// the linked packages. A surcharge Finance only inherited from the base tariff at approval is not
-/// copied, so the new version takes the base tariff of its own start when Finance approves it, and a
-/// surcharge of a retired definition is not copied either. A package that no longer fits the new dates
-/// is copied as it is: the draft readiness reports it (package_not_eligible) until Contratos changes it.
+/// What a renewal, an amendment (1-C) and the draft that replaces a withdrawn first version take from the
+/// version they start from (2-N03): the service rates, the stations, the negotiated surcharges and
+/// exemptions and the linked packages. A surcharge Finance only inherited from the base tariff at approval
+/// is not copied, so the new version takes the base tariff of its own start when Finance approves it (and
+/// stays inherited for the next copy), and a surcharge of a retired definition is not copied either. A
+/// package that no longer fits the new dates is copied as it is: the draft readiness reports it
+/// (package_not_eligible) until Contratos changes it.
 /// </summary>
 internal static class ContractVersionCopy
 {

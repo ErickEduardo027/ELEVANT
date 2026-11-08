@@ -5,8 +5,10 @@
  * title is never shown.
  */
 export const HUMAN_RESOURCES_PROBLEMS = Object.freeze({
+  // Only the agent unblocks it: sending the operation from the tablet (or correcting and resending it) takes it out
+  // of InProgress or Returned; OCC has no action that does (2-N06, 2-N08).
   agent_has_operation_in_progress:
-    'El agente tiene una operación en curso o devuelta para corrección en esos días. Ciérrela en OCC antes de continuar.',
+    'El agente tiene una operación en curso o devuelta para corrección en esos días. Debe enviarla desde la tablet (si fue devuelta, corregirla y reenviarla); hasta entonces no se libera nada y la solicitud sigue pendiente.',
   invalid_availability_request: 'Revise las fechas, el tipo y el motivo de la solicitud.',
   agent_unavailable: 'El agente ya no está activo en rampa.',
   availability_overlap: 'Ya hay una solicitud pendiente o aprobada del mismo tipo en esas fechas.',

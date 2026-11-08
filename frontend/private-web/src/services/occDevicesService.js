@@ -40,7 +40,10 @@ export const unbindOccDevice = async (deviceId, command, idempotencyKey) => {
   return guarded(() => client().unbindOccMobileDevice(deviceId, command, idempotencyKey));
 };
 
-/** Revokes a lost tablet with a reason: it never registers again and its holder's sessions end. */
+/**
+ * Revokes a lost tablet with a reason: it never registers again and the sessions of its last agent end, also when
+ * OCC had freed it, unless that agent signed out of it.
+ */
 export const revokeOccDevice = async (deviceId, command, idempotencyKey) => {
   validated(normalizedRevokeOccMobileDevice, command, 'reason_required');
   return guarded(() => client().revokeOccMobileDevice(deviceId, command, idempotencyKey));

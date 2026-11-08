@@ -48,11 +48,20 @@ public sealed class HumanResourcesEmployeesController(IEmployeeGovernanceStore s
     public Task<IActionResult> Create([FromBody] SaveEmployeeInput input, CancellationToken cancellationToken) =>
         MutateAsync(actorId => store.CreateEmployeeAsync(actorId, input, cancellationToken), StatusCodes.Status201Created);
 
+    /// <summary>
+    /// Updates the record with the version on screen; moving a ramp agent to an office position ends their ramp duty
+    /// through the release path (2-N06). The Idempotency-Key is optional while older clients exist (expand).
+    /// </summary>
     [HttpPut("employees/{id:guid}", Name = "UpdateEmployee")]
     [ProducesResponseType<CommercialIdResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(16384)]
-    public Task<IActionResult> Update(Guid id, [FromBody] SaveEmployeeInput input, CancellationToken cancellationToken) =>
-        MutateAsync(actorId => store.UpdateEmployeeAsync(actorId, id, input, cancellationToken));
+    public Task<IActionResult> Update(Guid id, [FromBody] SaveEmployeeInput input,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        MutateAsync(actorId => store.UpdateEmployeeAsync(actorId, id, input, idempotencyKey, cancellationToken));
 
     /// <summary>
     /// Transfers the employee; leaving the ramp releases the agent's coverages, unstarted operations and shifts

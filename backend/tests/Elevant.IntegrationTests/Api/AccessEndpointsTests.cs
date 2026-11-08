@@ -55,6 +55,38 @@ public sealed class AccessEndpointsTests(ElevantApiFactory factory) : IClassFixt
         Assert.Equal(expected, await CodeAsync(response));
     }
 
+    /// <summary>
+    /// 2-N02: a registration tells the store when the agent's session began, its token's <c>iat</c>, so the first
+    /// registration of a new sign-in opens its own binding; the body the deployed APK validates keeps its keys.
+    /// </summary>
+    [Fact]
+    public async Task TheRegistrationNamesWhenTheAgentsSessionBegan()
+    {
+        var devices = new DeviceStub
+        {
+            Registration = MobileDeviceRegistrationWriteResult.Success(new MobileDeviceRegistrationData(InstallationId,
+                "Android", "1.2.3", new DateTimeOffset(2026, 11, 7, 10, 30, 0, 125, TimeSpan.Zero)), Guid.NewGuid()),
+        };
+        await using var application = WithServices(services =>
+        {
+            services.RemoveAll<IActorContextResolver>();
+            services.RemoveAll<IMobileDeviceCommandStore>();
+            services.AddScoped<IActorContextResolver>(_ => new RampActor());
+            services.AddSingleton<IMobileDeviceCommandStore>(devices);
+        });
+        using var client = Authorized(application);
+        var ct = TestContext.Current.CancellationToken;
+        var issuedAt = new JsonWebToken(client.DefaultRequestHeaders.Authorization!.Parameter!).IssuedAt;
+        using var response = await client.PutAsJsonAsync("/api/v1/mobile/device",
+            new { installationId = InstallationId, platform = "Android", appVersion = "1.2.3" }, ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(new DateTimeOffset(DateTime.SpecifyKind(issuedAt, DateTimeKind.Utc)),
+            devices.Registered!.SessionStartedAt);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        Assert.Equal(["installationId", "platform", "appVersion", "lastSeenAt"],
+            body.RootElement.EnumerateObject().Select(property => property.Name));
+    }
+
     [Fact]
     public async Task TheTabletReleasesItsBindingWithAnIdempotencyKey()
     {
@@ -85,6 +117,25 @@ public sealed class AccessEndpointsTests(ElevantApiFactory factory) : IClassFixt
             new { installationId = InstallationId }, Guid.NewGuid()), ct);
         Assert.Equal(HttpStatusCode.Conflict, notBound.StatusCode);
         Assert.Equal("device_not_bound", await CodeAsync(notBound));
+
+        // The expected version is the lastSeenAt of the session's newest registration, read as an instant.
+        var versioned = Guid.NewGuid();
+        devices.ReleaseResult = MobileDeviceReleaseWriteResult.Failed(MobileDeviceReleaseWriteFailure.Conflict,
+            MobileDeviceCodes.VersionConflict);
+        using var overtaken = await client.SendAsync(Keyed(HttpMethod.Post, "/api/v1/mobile/device/release",
+            new { installationId = InstallationId, expectedVersion = "2026-11-07T06:30:00.125-04:00" }, versioned), ct);
+        Assert.Equal(HttpStatusCode.Conflict, overtaken.StatusCode);
+        Assert.Equal("version_conflict", await CodeAsync(overtaken));
+        Assert.Equal(new MobileDeviceReleaseWriteRequest(AccountId, InstallationId, versioned,
+            new DateTimeOffset(2026, 11, 7, 10, 30, 0, 125, TimeSpan.Zero)), devices.Release);
+        Assert.Equal(TimeSpan.Zero, devices.Release!.ExpectedVersion!.Value.Offset);
+
+        // A malformed version never reaches the store.
+        using var malformed = await client.SendAsync(Keyed(HttpMethod.Post, "/api/v1/mobile/device/release",
+            new { installationId = InstallationId, expectedVersion = "ayer" }, Guid.NewGuid()), ct);
+        Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
+        Assert.Equal("invalid_mobile_device", await CodeAsync(malformed));
+        Assert.Equal(versioned, devices.Release.IdempotencyKey);
     }
 
     [Fact]
@@ -172,6 +223,50 @@ public sealed class AccessEndpointsTests(ElevantApiFactory factory) : IClassFixt
         Assert.Equal(expected, await CodeAsync(response));
         Assert.DoesNotContain("Governance record", await response.Content.ReadAsStringAsync(
             TestContext.Current.CancellationToken), StringComparison.Ordinal);
+    }
+
+    public static TheoryData<MobileAccessRequestFailure, string?, HttpStatusCode, string> LegacyMobileRejections =>
+        new()
+        {
+            { MobileAccessRequestFailure.Forbidden, null, HttpStatusCode.Forbidden, "forbidden" },
+            { MobileAccessRequestFailure.Invalid, "reason_required", HttpStatusCode.BadRequest, "reason_required" },
+            { MobileAccessRequestFailure.Invalid, null, HttpStatusCode.BadRequest, "invalid_governance_data" },
+            { MobileAccessRequestFailure.NotFound, "not_found", HttpStatusCode.NotFound, "not_found" },
+            { MobileAccessRequestFailure.Conflict, "access_request_closed", HttpStatusCode.Conflict,
+                "access_request_closed" },
+            { MobileAccessRequestFailure.Conflict, "version_conflict", HttpStatusCode.Conflict, "version_conflict" },
+        };
+
+    /// <summary>
+    /// The rejection of a legacy mobile access request, the only way out for those requests since their approval was
+    /// retired, answers like the governance commands: a code and a Spanish title, never a bare 403 (2-N39).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(LegacyMobileRejections))]
+    public async Task TheLegacyMobileAccessRejectionAnswersACode(MobileAccessRequestFailure failure, string? code,
+        HttpStatusCode status, string expected)
+    {
+        var requests = DispatchProxy.Create<IRampMobileAccessRequestStore, StoreProxy>();
+        ((StoreProxy)(object)requests).Handler = (called, _) =>
+            called.Name == nameof(IRampMobileAccessRequestStore.RejectAsync)
+                ? Task.FromResult(MobileAccessRequestResult.Failed(failure, code))
+                : throw new NotSupportedException(called.Name);
+        await using var application = WithServices(services =>
+        {
+            services.RemoveAll<IRampMobileAccessRequestStore>();
+            services.AddSingleton(requests);
+        });
+        using var client = Authorized(application);
+        var ct = TestContext.Current.CancellationToken;
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/governance/ramp-mobile-access-requests/{TargetId}/reject",
+            new { reason = "Datos por revisar", expectedVersion = "AAAAAAAAB9E=" }, ct);
+        Assert.Equal(status, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(expected, await CodeAsync(response));
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.DoesNotContain("Mobile access request", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Invalid rejection reason", body, StringComparison.Ordinal);
     }
 
     public static TheoryData<GovernanceFailure, string?, HttpStatusCode, string> GovernanceFailures => new()
@@ -326,8 +421,14 @@ public sealed class AccessEndpointsTests(ElevantApiFactory factory) : IClassFixt
 
         public MobileDeviceReleaseWriteRequest? Release { get; private set; }
 
+        public MobileDeviceRegistrationWriteRequest? Registered { get; private set; }
+
         public Task<MobileDeviceRegistrationWriteResult> RegisterAsync(MobileDeviceRegistrationWriteRequest request,
-            CancellationToken cancellationToken = default) => Task.FromResult(Registration);
+            CancellationToken cancellationToken = default)
+        {
+            Registered = request;
+            return Task.FromResult(Registration);
+        }
 
         public Task<MobileDeviceReleaseWriteResult> ReleaseAsync(MobileDeviceReleaseWriteRequest request,
             CancellationToken cancellationToken = default)

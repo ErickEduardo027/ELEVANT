@@ -69,6 +69,7 @@ export function EmployeeDrawer({ open, employee, requisition, options, onClose, 
   const [form, setForm] = useState(() => blank(requisition));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const intent = useRef(createCommandKeyHolder());
   useEffect(() => {
     if (!open) return;
     setError('');
@@ -98,8 +99,13 @@ export function EmployeeDrawer({ open, employee, requisition, options, onClose, 
       requisitionId: form.requisitionId || null,
     };
     try {
-      if (employee) await updateEmployee(employee.summary.id, { ...values, expectedVersion: employee.summary.version });
-      else await createEmployee(values);
+      if (employee) {
+        const body = { ...values, expectedVersion: employee.summary.version };
+        // One intent per body: an uncertain answer repeats the same key, so a release that moving to an office
+        // position already did is never repeated (2-N06).
+        await intent.current.run('update', [employee.summary.id, body], key =>
+          updateEmployee(employee.summary.id, body, key));
+      } else await createEmployee(values);
       onSaved(employee ? 'Expediente actualizado.' : 'Empleado registrado.');
     } catch (failure) {
       setError(governanceMessage(failure));
@@ -189,8 +195,9 @@ export function TransferModal({ employee, options, onClose, onDone }) {
         <p className="text-sm">El acceso actual termina: el departamento de destino deberá solicitarlo de nuevo.</p>
         {employee.summary.position.isRampPosition && positions.some(position => position.id === form.positionId &&
           !position.isRampPosition) && <p className="text-sm">Al salir de rampa se liberan sus coberturas de posición, las
-          operaciones que aún no empiezan y sus turnos futuros, y OCC recibe un aviso. Si tiene una operación en curso, el
-          traslado no se registra hasta que OCC la cierre.</p>}
+          operaciones que aún no empiezan y sus turnos futuros, y OCC recibe un aviso por cada operación liberada. Si tiene
+          una operación en curso o devuelta para corrección, el traslado no se registra hasta que el agente la envíe desde
+          la tablet.</p>}
         <label className="block text-xs font-semibold">Departamento de destino<select required value={form.department} onChange={event => setForm(current => ({ ...current, department: event.target.value, positionId: '' }))} className={fieldClass}>
           <option value="">Seleccione…</option>{Object.values(DEPARTMENTS).filter(key => key !== employee.summary.department).map(key => <option key={key} value={key}>{DEPARTMENT_LABELS[key]}</option>)}</select></label>
         <label className="block text-xs font-semibold">Puesto<select required value={form.positionId} onChange={event => setForm(current => ({ ...current, positionId: event.target.value }))} className={fieldClass}>
@@ -218,8 +225,10 @@ export function TerminateModal({ employee, onClose, onDone }) {
       const body = { ...form, reason: form.reason.trim(), expectedVersion: employee.summary.version };
       await intent.current.run('terminate', [employee.summary.id, body], key =>
         terminateEmployee(employee.summary.id, body, key));
+      // The answer does not say what was released: an agent without coverages, operations or shifts releases
+      // nothing, and OCC is only notified of each released operation. The copy never claims that OCC was told.
       onDone(employee.summary.position.isRampPosition
-        ? 'Baja registrada. La cuenta quedó desactivada y sin alcances; su trabajo en rampa se liberó y OCC recibió el aviso.'
+        ? 'Baja registrada. La cuenta quedó desactivada y sin alcances. Si tenía coberturas, operaciones sin iniciar o turnos futuros, se liberaron; OCC recibe un aviso por cada operación liberada.'
         : 'Baja registrada. La cuenta quedó desactivada y sin alcances.');
     } catch (failure) {
       setError(commandMessage(failure));
@@ -237,8 +246,9 @@ export function TerminateModal({ employee, onClose, onDone }) {
           <li>{account ? `Su cuenta (${account.status === 'Active' ? 'activa' : 'inactiva'}) se desactiva y pierde sus estaciones.` : 'No tiene cuenta en ELEVANT.'}</li>
           {employee.pendingAccessRequests > 0 && <li>Se cancelan {employee.pendingAccessRequests} solicitud(es) de acceso pendientes.</li>}
           {employee.summary.position.isRampPosition && <li>Su perfil de agente de rampa queda inactivo: se liberan sus
-            coberturas de posición y las operaciones que aún no empiezan, y OCC recibe un aviso. Si tiene una operación en
-            curso, la baja no se registra hasta que OCC la cierre.</li>}
+            coberturas de posición y las operaciones que aún no empiezan, y OCC recibe un aviso por cada operación
+            liberada. Si tiene una operación en curso o devuelta para corrección, la baja no se registra hasta que el
+            agente la envíe desde la tablet.</li>}
           {employee.futureShifts > 0 && <li>Se quitan sus turnos que aún no empiezan (tiene {employee.futureShifts} desde hoy).</li>}
           <li>La baja es definitiva: la cuenta no podrá reactivarse.</li>
         </ul>

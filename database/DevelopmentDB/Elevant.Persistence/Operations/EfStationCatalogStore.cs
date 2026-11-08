@@ -14,7 +14,8 @@ namespace Elevant.Persistence.Operations;
 /// <summary>
 /// Stations of the platform, kept by the superadministrator (2-A): a database that was never seeded, like
 /// Production, starts here. The code is the airport's IATA code and never changes; the time zone changes only
-/// while the station has no history; a station in use is never deactivated. Nothing is deleted.
+/// while the station has no history; a station in use (a live contract, an unfinished flight, an open coverage or
+/// a scheduled shift) is never deactivated. Nothing is deleted.
 /// </summary>
 internal sealed class EfStationCatalogStore(ElevantDbContext context, IActorContextResolver actors, TimeProvider timeProvider)
     : IStationCatalogStore
@@ -124,9 +125,10 @@ internal sealed class EfStationCatalogStore(ElevantDbContext context, IActorCont
                 if (zone != station.IanaTimeZone &&
                     (await MasterDataUsage.StationsWithHistoryAsync(context, cancellationToken)).Contains(station.Id))
                     return Step.Fail(MasterDataFailure.Conflict, "time_zone_locked");
+                // Contracts, unfinished flights, open coverages and scheduled shifts keep it active: OCC would lose them.
                 var today = BusinessCalendar.Today(now, station.IanaTimeZone);
                 if (station.IsActive && !input.IsActive &&
-                    await MasterDataUsage.StationInUseAsync(context, station.Id, MasterDataUsage.Since(today), cancellationToken))
+                    await MasterDataUsage.StationInUseAsync(context, station.Id, today, now, cancellationToken))
                     return Step.Fail(MasterDataFailure.Conflict, "station_in_use");
                 if (station.Name == name && station.IanaTimeZone == zone && station.IsActive == input.IsActive)
                     return Step.Done(station.PublicId);

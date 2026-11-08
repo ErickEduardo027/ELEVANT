@@ -100,6 +100,19 @@ it("shows the airline's real approved contract history and rates", async () => {
   expect(paths).toContain("/api/v1/airline/portal/contracts");
 });
 
+it("shows a scheduled termination of a contract in force with its last day of coverage, never as terminated (2-N14)", async () => {
+  const [contract] = contracts.contracts;
+  mount({ ...contracts, contracts: [{ ...contract!, status: "Active", terminatedOn: "2027-01-15" }] });
+  expect(await screen.findByText(/Firmado: 2026-01-01 · Terminación programada: cubre operaciones hasta el 2027-01-14/))
+    .toBeInTheDocument();
+  expect(screen.getByText("Activo")).toBeInTheDocument();
+  expect(screen.queryByText(/Terminado:/)).not.toBeInTheDocument();
+  cleanup();
+  mount({ ...contracts, contracts: [{ ...contract!, status: "Terminated", terminatedOn: "2026-11-01" }] });
+  expect(await screen.findByText(/Firmado: 2026-01-01 · Terminado: 2026-11-01/)).toBeInTheDocument();
+  expect(screen.queryByText(/Terminación programada/)).not.toBeInTheDocument();
+});
+
 it("shows an honest empty state with no fabricated contract", async () => {
   mount({ page: 1, limit: 20, hasMore: false, contracts: [] });
   expect(await screen.findByText(/No hay contratos aprobados/i)).toBeInTheDocument();

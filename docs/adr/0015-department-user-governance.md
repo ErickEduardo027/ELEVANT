@@ -59,6 +59,14 @@ módulo y acción, con Gestión Humana como control de altas.
 - Los endpoints `ramp-mobile-access-requests` quedan deprecados (expand/contract)
   y la interfaz deja de usarlos.
 
+> **Actualización (7 de noviembre de 2026).** Un miembro con un rol `CUSTOM_*`
+> conserva su acceso y, al editarlo, pasa a `CONTRATOS`. `POST` y `PUT` en
+> `governance/roles` y `governance/users` responden `410
+> legacy_governance_retired`, así que una solicitud móvil heredada ya solo se
+> rechaza. Las altas y ediciones de gobernanza aceptan una `Idempotency-Key`
+> opcional y siempre responden con un código. Ver
+> [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
 ## Consecuencias
 
 - Las comprobaciones de autorización de Finanzas, OCC, Gestión Humana y

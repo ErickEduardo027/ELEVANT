@@ -65,6 +65,13 @@ los intentos y `used_at`. Se comparan en tiempo constante.
   por defecto. La cuenta nace con `EmailConfirmed=false` e `InvitationStatus=Sent`, sin
   contraseña, y no puede iniciar sesión hasta activarla. La contraseña temporal queda como
   alternativa explícita.
+
+  > **Actualización (7 de noviembre de 2026).** El representante de la aerolínea también
+  > invita usuarios del portal desde «Perfil» (`POST airline/portal/users`), con la misma
+  > invitación por correo, y cada cambio de usuarios avisa por correo a los demás representantes
+  > (`PortalUserChanged`). La bandeja suma además los avisos a la aerolínea sobre sus contratos y
+  > permisos. Ver
+  > [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 - **Recuperación:** `POST auth/password-reset` responde siempre `202`, exista o no la cuenta.
   `POST auth/password-reset/confirm` aplica la política de contraseñas y rota el sello de
   seguridad.

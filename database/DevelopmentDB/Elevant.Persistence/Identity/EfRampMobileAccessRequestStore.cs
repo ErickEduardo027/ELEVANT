@@ -109,10 +109,13 @@ internal sealed class EfRampMobileAccessRequestStore(ElevantDbContext context,
     {
         if (!await HasRoleAsync(actorId, "SUPERADMIN", cancellationToken))
             return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Forbidden);
-        if (requestId == Guid.Empty || string.IsNullOrWhiteSpace(reason) ||
-            string.IsNullOrWhiteSpace(expectedVersion) ||
-            reason.Trim().Length > 500)
+        // 2-N39: every refusal names its rule, like the governance commands this legacy route lives with.
+        if (requestId == Guid.Empty)
             return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Invalid);
+        if (string.IsNullOrWhiteSpace(reason) || reason.Trim().Length > 500)
+            return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Invalid, "reason_required");
+        if (string.IsNullOrWhiteSpace(expectedVersion))
+            return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Invalid, "expected_version_required");
         var strategy = context.Database.CreateExecutionStrategy();
         try
         {
@@ -124,15 +127,16 @@ internal sealed class EfRampMobileAccessRequestStore(ElevantDbContext context,
                 var request = await context.RampMobileAccessRequests.SingleOrDefaultAsync(item =>
                     item.PublicId == requestId, cancellationToken);
                 if (request is null)
-                    return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.NotFound);
+                    return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.NotFound, "not_found");
                 if (request.Status == RampMobileAccessRequestStatus.Rejected &&
                     request.DecidedByAccountId == await ActorKeyAsync(actorId, cancellationToken) &&
                     request.DecisionReason == reason.Trim())
                     return MobileAccessRequestResult.Success(await MapAsync(request, cancellationToken));
                 if (request.Status != RampMobileAccessRequestStatus.Pending)
-                    return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Conflict);
+                    return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Conflict,
+                        "access_request_closed");
                 if (Convert.ToBase64String(request.RowVersion) != expectedVersion)
-                    return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Conflict);
+                    return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Conflict, "version_conflict");
                 var now = DateTimeOffset.UtcNow;
                 var actorKey = await ActorKeyAsync(actorId, cancellationToken);
                 request.Status = RampMobileAccessRequestStatus.Rejected;
@@ -151,7 +155,7 @@ internal sealed class EfRampMobileAccessRequestStore(ElevantDbContext context,
         catch (DbUpdateConcurrencyException)
         {
             context.ChangeTracker.Clear();
-            return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Conflict);
+            return MobileAccessRequestResult.Failed(MobileAccessRequestFailure.Conflict, "version_conflict");
         }
     }
 

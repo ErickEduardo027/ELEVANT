@@ -92,6 +92,27 @@ En persistencia, `MobileDevice`, `MobileDeviceAccountBinding`, `Account` y `Mobi
 
 Para Mobile Agent, la futura API debe derivar cuenta, binding de dispositivo, perfil de agente y scopes laborales. De esas coherencias de autorización, el esquema sólo materializa el dedupe dispositivo-clave: no prueba que el binding siga activo, que la cuenta del recibo sea la enlazada, que la cuenta esté activa ni que el dispositivo no esté revocado al ejecutar. Tampoco alinea estado del recibo con `ProcessedAt`, resultado y error, ni implementa que un reintento devuelva exactamente el resultado almacenado. Enviar otro `agentId`, `personId` o `stationId` no debe ampliar permisos. La caché/outbox local conserva trabajo pendiente, pero no decide tenant ni estado canónico.
 
+## Fase 2: roles dentro del portal y tablets compartidas
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 2 del ciclo (`50e7778f`;
+[ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+
+- **Representantes y firmantes.** Dentro del tenant de una aerolínea, el
+  representante y el firmante son grants de cuenta
+  (`airline_portal.representative` y `airline_portal.signer` en
+  `iam.account_permission_grants`), fuera del catálogo de departamentos, así que
+  nunca entran en el acceso de un departamento. Solo ellos firman contratos y
+  envían el permiso de operación; los demás usuarios del portal no pueden
+  hacerlo
+  ([roles](../../database/DevelopmentDB/Elevant.Persistence/Commercial/AirlinePortalRoles.cs)).
+- **Tablets compartidas.** Una instalación tiene a lo sumo un vínculo abierto,
+  como antes, pero ya no queda ligada a la primera cuenta: pasa al agente que
+  inicia sesión, salvo que quien la tiene trabaje una operación en curso, y se
+  libera al cerrar la sesión. OCC la desvincula o la revoca; una tablet
+  revocada no vuelve a registrarse y su cuenta pierde sus sesiones, porque la
+  revocación rota su sello de seguridad.
+
 ## Vocabulario de ciclo de vida
 
 | Tipo | Valores persistibles |

@@ -198,8 +198,9 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   // Simulated card payment (ADR-0036).
   "cardholder_invalid", "card_number_invalid", "card_expired", "security_code_invalid", "amount_invalid",
   "amount_mismatch", "invoice_paid", "idempotency_conflict", "concurrent_payment",
-  // A stand in use is not deactivated from the coverage configuration (phase 2, block C, 2-A).
-  "stand_in_use",
+  // A stand in use is not deactivated, nor one of an inactive terminal reactivated, from the coverage configuration
+  // (phase 2, block C, 2-A).
+  "stand_in_use", "terminal_inactive",
   // A mentor on an approved absence or without a current airport permit accompanies nobody (phase 2, block D, 2-N23).
   "mentor_absent", "mentor_permit_required",
   // A rescheduled flight's agent would carry a fourth simultaneous operation (phase 3, block A, 3-A).

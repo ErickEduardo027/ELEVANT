@@ -5,8 +5,12 @@ namespace Elevant.Contracts.Operations;
 public sealed record OccCoverageTerminalResponse(Guid TerminalId, string Code, string Name, int MaxStandsPerAgent,
     bool RequiresBridgeQualification);
 
+/// <summary>
+/// A stand of the board. <paramref name="Version"/> is its rowversion in base64, the same one «Datos maestros» shows:
+/// the expected version of the next change of its attributes (2-A).
+/// </summary>
 public sealed record OccCoverageStandResponse(Guid StandId, string Code, Guid? TerminalId, bool IsActive, bool HasBoardingBridge,
-    bool IsRemote, string? MaxAircraftSize, IReadOnlyList<string> CoveredBy);
+    bool IsRemote, string? MaxAircraftSize, IReadOnlyList<string> CoveredBy, string Version);
 
 public sealed record OccStandConstraintResponse(Guid Id, Guid StandId, string StandCode, Guid AffectedStandId,
     string AffectedStandCode, string Kind);
@@ -33,8 +37,12 @@ public sealed record CreateOccCoverageRequest(Guid StationId, DateOnly Date, Gui
     bool IsReinforcement);
 
 /// <param name="MaxAircraftSize">Narrowbody, Widebody or null for any size.</param>
+/// <param name="ExpectedVersion">
+/// The stand's version on the board; a stale one is <c>version_conflict</c>. Optional while older screens exist
+/// (expand); required with an Idempotency-Key.
+/// </param>
 public sealed record UpdateOccStandAttributesRequest(DateOnly Date, bool HasBoardingBridge, bool IsRemote,
-    string? MaxAircraftSize, bool IsActive);
+    string? MaxAircraftSize, bool IsActive, string? ExpectedVersion = null);
 
 /// <param name="MaxStandsPerAgent">1 to 6; null uses the default of 3.</param>
 public sealed record UpdateOccTerminalRulesRequest(DateOnly Date, int? MaxStandsPerAgent, bool RequiresBridgeQualification);

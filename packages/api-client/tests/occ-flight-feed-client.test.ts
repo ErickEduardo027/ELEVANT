@@ -46,7 +46,7 @@ describe("OCC flight feed client (ADR-0028)", () => {
     await expect(api.getOccFlightFeed(stationId, "2026-11-03")).resolves.toMatchObject({ budget: { unitsToday: 12 } });
     await expect(api.refreshOccFlightFeed(stationId)).resolves.toMatchObject({ status: "Throttled" });
     await expect(api.importOccFlight(arrivalId, departureId)).resolves.toMatchObject({ operationCode: "EXT-1" });
-    await api.dismissOccFlightProposal(arrivalId);
+    await api.dismissOccFlightProposal(arrivalId, "AAAAAAAAB9E=", key);
     expect(calls.map(item => [item.method, item.url])).toEqual([
       ["GET", `/api/v1/occ/flight-feed?stationId=${stationId}&date=2026-11-03`],
       ["POST", "/api/v1/occ/flight-feed/refresh"],
@@ -57,6 +57,26 @@ describe("OCC flight feed client (ADR-0028)", () => {
     // The older import keeps its body: no key, no versions.
     expect(JSON.parse(calls[2]!.body)).toEqual({ arrivalProposalId: arrivalId, departureProposalId: departureId });
     expect(calls[2]!.headers.get("idempotency-key")).toBeNull();
+    // The dismissal carries the version on screen and the intent's key (2-N36).
+    expect(JSON.parse(calls[3]!.body)).toEqual({ expectedVersion: "AAAAAAAAB9E=" });
+    expect(calls[3]!.headers.get("idempotency-key")).toBe(key);
+    expect(calls[3]!.headers.get("content-type")).toBe("application/json");
+  });
+
+  it("dismisses only with a version and a key, and keeps the codes of a refused dismissal (2-N36)", async () => {
+    const calls: Call[] = [];
+    const api = client([problem(409, "version_conflict"), problem(409, "flight_proposal_closed"),
+      Response.json({ dismissed: true })], calls);
+    await expect(api.dismissOccFlightProposal(arrivalId, " ", key)).rejects.toThrow(TypeError);
+    await expect(api.dismissOccFlightProposal(arrivalId, "AAAAAAAAB9E=", "not-a-key")).rejects.toThrow(TypeError);
+    expect(calls).toHaveLength(0);
+    await expect(api.dismissOccFlightProposal(arrivalId, "AAAAAAAAB9E=", key)).rejects.toMatchObject({
+      status: 409, code: "version_conflict" });
+    await expect(api.dismissOccFlightProposal(arrivalId, "AAAAAAAAB9E=", key)).rejects.toMatchObject({
+      status: 409, code: "flight_proposal_closed" });
+    // Only 204 is a dismissal.
+    await expect(api.dismissOccFlightProposal(arrivalId, "AAAAAAAAB9E=", key)).rejects.toMatchObject({
+      kind: "malformed-response" });
   });
 
   it("rejects unknown fields, statuses and an arrival paired with itself", async () => {

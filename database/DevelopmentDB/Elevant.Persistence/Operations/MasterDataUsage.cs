@@ -56,21 +56,32 @@ internal static class MasterDataUsage
              turnaround.CurrentStatus == TurnaroundStatus.Confirmed ||
              turnaround.CurrentStatus == TurnaroundStatus.InProgress), cancellationToken);
 
-    /// <summary>A station is in use while a live contract covers it or an unfinished flight is planned there.</summary>
-    public static async Task<bool> StationInUseAsync(ElevantDbContext context, long stationId, DateOnly since,
-        CancellationToken cancellationToken) =>
-        await (from contract in context.Contracts.AsNoTracking()
-               join version in context.ContractVersions.AsNoTracking() on contract.Id equals version.ContractId
-               where (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active ||
-                      contract.Status == ContractStatus.Suspended) &&
-                     context.Set<ContractVersionStation>().Any(link => link.ContractVersionId == version.Id &&
-                         link.StationId == stationId)
-               select contract.Id).AnyAsync(cancellationToken) ||
-        await context.Turnarounds.AsNoTracking().AnyAsync(turnaround => turnaround.StationId == stationId &&
-            turnaround.OperationDate >= since &&
-            (turnaround.CurrentStatus == TurnaroundStatus.Scheduled ||
-             turnaround.CurrentStatus == TurnaroundStatus.Confirmed ||
-             turnaround.CurrentStatus == TurnaroundStatus.InProgress), cancellationToken);
+    /// <summary>
+    /// A station is in use while a live contract covers it, an unfinished flight from the day before
+    /// <paramref name="today"/> on is planned there, a coverage there is open or a shift is scheduled there from
+    /// <paramref name="today"/> on: the same operational use that keeps one of its terminals active.
+    /// </summary>
+    public static async Task<bool> StationInUseAsync(ElevantDbContext context, long stationId, DateOnly today,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var since = Since(today);
+        return await (from contract in context.Contracts.AsNoTracking()
+                      join version in context.ContractVersions.AsNoTracking() on contract.Id equals version.ContractId
+                      where (contract.Status == ContractStatus.Draft || contract.Status == ContractStatus.Active ||
+                             contract.Status == ContractStatus.Suspended) &&
+                            context.Set<ContractVersionStation>().Any(link => link.ContractVersionId == version.Id &&
+                                link.StationId == stationId)
+                      select contract.Id).AnyAsync(cancellationToken) ||
+            await context.Turnarounds.AsNoTracking().AnyAsync(turnaround => turnaround.StationId == stationId &&
+                turnaround.OperationDate >= since &&
+                (turnaround.CurrentStatus == TurnaroundStatus.Scheduled ||
+                 turnaround.CurrentStatus == TurnaroundStatus.Confirmed ||
+                 turnaround.CurrentStatus == TurnaroundStatus.InProgress), cancellationToken) ||
+            await context.Set<PositionCoverage>().AsNoTracking().AnyAsync(coverage => coverage.StationId == stationId &&
+                coverage.ReleasedAt == null && coverage.EndsAt > now, cancellationToken) ||
+            await context.ShiftAssignments.AsNoTracking().AnyAsync(shift => shift.StationId == stationId &&
+                shift.WorkDate >= today, cancellationToken);
+    }
 
     /// <summary>Stations something ever pointed at: flights, shifts, coverages, contracts, requests, proposals.</summary>
     public static async Task<HashSet<long>> StationsWithHistoryAsync(ElevantDbContext context,

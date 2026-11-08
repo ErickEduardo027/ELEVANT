@@ -144,8 +144,25 @@ public sealed partial class SqlServerMigrationTests
         await context.Contracts.Where(item => item.Id == contractId)
             .ExecuteUpdateAsync(set => set.SetProperty(item => item.Status, ContractStatus.Active), ct);
 
+        // The dismissal takes the version on screen with its key (2-N36): the key needs the version, a stale version is
+        // a conflict, an imported proposal is closed and the same key replays the first result.
+        Assert.Equal("expected_version_required", (await occ.DismissAsync(SeededOccAccount, zz171.ProposalId, null,
+            Guid.NewGuid(), ct)).Code);
+        Assert.Equal("version_conflict", (await occ.DismissAsync(SeededOccAccount, zz171.ProposalId, "AAAAAAAAAAA=",
+            Guid.NewGuid(), ct)).Code);
+        Assert.Equal("flight_proposal_closed", (await occ.DismissAsync(SeededOccAccount, zz161.ProposalId, zz161.Version,
+            Guid.NewGuid(), ct)).Code);
+        Assert.Equal("forbidden", (await occ.DismissAsync(SeededRampAgentAccount, zz171.ProposalId, zz171.Version,
+            Guid.NewGuid(), ct)).Code);
+        var dismissKey = Guid.NewGuid();
+        var dismissal = await occ.DismissAsync(SeededOccAccount, zz171.ProposalId, zz171.Version, dismissKey, ct);
+        Assert.Null(dismissal.Failure);
+        Assert.False(dismissal.Replayed);
+        Assert.True((await occ.DismissAsync(SeededOccAccount, zz171.ProposalId, zz171.Version, dismissKey, ct)).Replayed);
+        Assert.Equal("idempotency_conflict", (await occ.DismissAsync(SeededOccAccount, zz171.ProposalId, "AAAAAAAAAAA=",
+            dismissKey, ct)).Code);
+
         // A dismissed proposal comes back while its flight has not passed (2-N36).
-        Assert.Null(await occ.DismissAsync(SeededOccAccount, zz171.ProposalId, ct));
         var dismissed = Assert.Single(await View(OccFlightFeedView.Dismissed));
         Assert.Equal(("ZZ171", "Dismissed"), (dismissed.FlightNumber, dismissed.Status));
         Assert.Equal("forbidden", (await occ.RestoreAsync(SeededRampAgentAccount, dismissed.ProposalId, dismissed.Version,
@@ -161,6 +178,11 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((restored.Version, true), (restoredAgain.Version, restoredAgain.Replayed));
         Assert.Equal("flight_proposal_not_dismissed", (await occ.RestoreAsync(SeededOccAccount, dismissed.ProposalId,
             restored.Version, Guid.NewGuid(), ct)).Code);
+        // Retrying the uncertain dismissal after the restore replays it instead of dismissing the proposal again, and a
+        // new dismissal with the version seen before the restore is stale.
+        Assert.True((await occ.DismissAsync(SeededOccAccount, zz171.ProposalId, zz171.Version, dismissKey, ct)).Replayed);
+        Assert.Equal("version_conflict", (await occ.DismissAsync(SeededOccAccount, zz171.ProposalId, zz171.Version,
+            Guid.NewGuid(), ct)).Code);
         Assert.Contains(await View(OccFlightFeedView.Contracted), item => item.ProposalId == dismissed.ProposalId &&
             item.Status == "Proposed" && item.Version == restored.Version);
         Assert.Equal(["occ.flight_proposal.dismissed", "occ.flight_proposal.restored"], await context.AuditEntries.AsNoTracking()
@@ -176,8 +198,12 @@ public sealed partial class SqlServerMigrationTests
         }, new AirportFeedResponse(ProviderCallOutcome.Succeeded, 2, 200, null,
             [Leg(FlightDirection.Arrival, "ZZ401", "Demo Airlines", "ZZ", At(yesterday, 10), "HI1003")]), ct);
         var past = Assert.Single(await View(OccFlightFeedView.Contracted, yesterday));
-        Assert.Null(await occ.DismissAsync(SeededOccAccount, past.ProposalId, ct));
+        Assert.Null((await occ.DismissAsync(SeededOccAccount, past.ProposalId, cancellationToken: ct)).Failure);
         var pastDismissed = Assert.Single(await View(OccFlightFeedView.Dismissed, yesterday));
+        // Dismissing it again with its current version leaves it as it is.
+        Assert.Null((await occ.DismissAsync(SeededOccAccount, pastDismissed.ProposalId, pastDismissed.Version, Guid.NewGuid(),
+            ct)).Failure);
+        Assert.Equal(pastDismissed.Version, Assert.Single(await View(OccFlightFeedView.Dismissed, yesterday)).Version);
         Assert.Equal("flight_proposal_passed", (await occ.RestoreAsync(SeededOccAccount, pastDismissed.ProposalId,
             pastDismissed.Version, Guid.NewGuid(), ct)).Code);
     }

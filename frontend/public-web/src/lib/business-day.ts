@@ -45,3 +45,11 @@ export function formatLocalDateTime(value: string, timeZone: string | null = nul
     minute: "2-digit", hourCycle: "h23",
   }).format(new Date(instant));
 }
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The ISO date `days` calendar days after `isoDate` (before it when negative), as private-web computes it. */
+export function addDays(isoDate: string, days: number): string {
+  if (!ISO_DATE.test(isoDate) || !Number.isInteger(days)) throw new TypeError("addDays needs an ISO date and whole days.");
+  return new Date(Date.parse(`${isoDate}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+}

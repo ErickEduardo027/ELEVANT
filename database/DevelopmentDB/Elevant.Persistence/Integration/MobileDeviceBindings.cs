@@ -12,8 +12,9 @@ namespace Elevant.Persistence.Integration;
 
 /// <summary>
 /// Who holds a shared tablet (2-N02). A binding is never deleted: it closes (<c>unbound_at</c>) when the agent signs
-/// out, another agent takes the tablet, OCC frees or revokes it, or the agent's ramp duty ends (termination, transfer,
-/// office position, deactivated profile). Each closure is audited and announced to OCC (<see cref="Resource"/>).
+/// out, another agent takes the tablet, the agent signs in on it again (each session holds its own binding), OCC frees
+/// or revokes it, or the agent's ramp duty ends (termination, transfer, office position, deactivated profile). Each
+/// closure is audited and announced to OCC (<see cref="Resource"/>).
 /// </summary>
 internal static class MobileDeviceBindings
 {
@@ -25,9 +26,31 @@ internal static class MobileDeviceBindings
     public const string RevokePermission = "operations.devices.revoke";
     public const string EntityType = "integration.mobile_devices";
 
+    /// <summary>Audit action of the agent's own sign-out (<c>POST mobile/device/release</c>).</summary>
+    public const string ReleasedAction = "mobile_device.binding_released";
+
+    /// <summary>
+    /// Audit action of a new sign-in of the agent on the tablet it still held from an earlier session: that binding
+    /// closes and the new session opens its own (<see cref="Elevant.Application.Integration.MobileDeviceSession"/>).
+    /// </summary>
+    public const string RenewedAction = "mobile_device.binding_renewed";
+
     /// <summary>Closes the binding now; a binding never ends before it began (ck_device_binding_dates).</summary>
     public static void Close(MobileDeviceAccountBinding binding, DateTimeOffset now) =>
         binding.UnboundAt = now < binding.BoundAt ? binding.BoundAt : now;
+
+    /// <summary>
+    /// The closed binding ended with its agent's own sign-out, audited at the instant it closed: the app removed the
+    /// session from the tablet then. OCC freeing it or the end of the agent's ramp duty left that session on it.
+    /// Anything that cannot be proven a sign-out counts as not one.
+    /// </summary>
+    public static Task<bool> EndedBySignOutAsync(ElevantDbContext context, Guid devicePublicId,
+        MobileDeviceAccountBinding binding, CancellationToken cancellationToken) =>
+        binding.UnboundAt is not { } unboundAt
+            ? Task.FromResult(false)
+            : context.AuditEntries.AsNoTracking().AnyAsync(entry => entry.EntityType == EntityType &&
+                entry.EntityPublicId == devicePublicId && entry.Action == ReleasedAction &&
+                entry.ActorAccountId == binding.AccountId && entry.OccurredAt == unboundAt, cancellationToken);
 
     /// <summary>
     /// Closes every tablet the account holds, inside the caller's transaction (the release path of a ramp agent,

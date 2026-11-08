@@ -108,6 +108,23 @@ public sealed partial class SqlServerMigrationTests
         var contract = await context.Contracts.AsNoTracking().SingleAsync(item => item.ContractCode == "DEV-CONTRACT-0001", ct);
         var original = await context.ContractVersions.AsNoTracking().SingleAsync(item => item.ContractId == contract.Id, ct);
         Assert.Equal((ContractStatus.Active, ContractVersionStatus.Approved), (contract.Status, original.Status));
+        // 2-N03: the version in force exempts the night surcharge, negotiated before Finance approved it, and carries the
+        // overtime value Finance only inherited from the base tariff at that approval. The package store clears the
+        // change tracker, so these rows are saved before the first command.
+        var night = await context.ChargeDefinitions.AsNoTracking().SingleAsync(item => item.Code == "NIGHT", ct);
+        var overtime = await context.ChargeDefinitions.AsNoTracking().SingleAsync(item => item.Code == "OVERTIME", ct);
+        var approvedAt = original.ApprovedAt!.Value;
+        context.ContractChargeRates.AddRange(
+            new ContractChargeRate { PublicId = Guid.NewGuid(), ContractVersionId = original.Id, ChargeDefinitionId = night.Id,
+                IsExcluded = true, CreatedAt = approvedAt.AddDays(-1), UpdatedAt = approvedAt.AddDays(-1) },
+            new ContractChargeRate { PublicId = Guid.NewGuid(), ContractVersionId = original.Id, ChargeDefinitionId = overtime.Id,
+                Value = 45m, MinimumAmount = 0m, CreatedAt = approvedAt, UpdatedAt = approvedAt });
+        await context.SaveChangesAsync(ct);
+        async Task<ContractChargeRate[]> ChargesAsync(Guid versionId) => await (
+            from rate in context.ContractChargeRates.AsNoTracking()
+            join version in context.ContractVersions.AsNoTracking() on rate.ContractVersionId equals version.Id
+            where version.PublicId == versionId
+            select rate).ToArrayAsync(ct);
         var start = new DateOnly(2026, 9, 1);
         var amendment = new CreateAmendmentInput("Active", start);
         Task<PackageWriteResult> AmendAsync(Guid actor, Guid key, CreateAmendmentInput input, Guid? versionId = null) =>
@@ -139,6 +156,10 @@ public sealed partial class SqlServerMigrationTests
             (await AmendAsync(ContractsAccount, Guid.NewGuid(), amendment with { ValidFrom = start.AddDays(1) })).Code);
         Assert.Equal(1, await context.AuditEntries.CountAsync(item =>
             item.Action == "commercial.contract.amendment_created" && item.EntityPublicId == created.Id, ct));
+        // 2-N03: the amendment copies the negotiated exemption, not the value Finance only inherited.
+        var copiedCharge = Assert.Single(await ChargesAsync(created.Id!.Value));
+        Assert.Equal((night.Id, true, (decimal?)null), (copiedCharge.ChargeDefinitionId, copiedCharge.IsExcluded,
+            copiedCharge.Value));
 
         // The draft inherits the end, the stations, the terms and the prices, unconfirmed and by unit code.
         var draft = Assert.Single((await drafts.ListForContractsAsync(ContractsAccount, ct))!, item => item.Id == created.Id);
@@ -190,6 +211,16 @@ public sealed partial class SqlServerMigrationTests
             .ExecuteUpdateAsync(update => update.SetProperty(item => item.Status, ContractStatus.Expired), ct);
         Assert.Equal("contract_not_amendable", (await AmendAsync(ContractsAccount, Guid.NewGuid(),
             new CreateAmendmentInput("Expired", start.AddDays(10)))).Code);
+
+        // 2-N03: approving the amendment froze the base overtime value of its own start, still as inherited, so a
+        // renewal from it copies the exemption and never takes that base value as negotiated.
+        Assert.Contains(await ChargesAsync(created.Id!.Value), rate => rate.ChargeDefinitionId == overtime.Id && !rate.IsExcluded);
+        var renewal = await scope.ServiceProvider.GetRequiredService<IContractLifecycleStore>().ApplyAsync(ContractsAccount,
+            created.Id!.Value, new ContractLifecycleInput("Renew", "Renovación después de la enmienda", "Expired",
+                new DateOnly(2027, 1, 1), new DateOnly(2027, 12, 31)), Guid.NewGuid(), ct);
+        Assert.Null(renewal.Code);
+        var renewed = Assert.Single(await ChargesAsync(renewal.DraftVersionId!.Value));
+        Assert.Equal((night.Id, true), (renewed.ChargeDefinitionId, renewed.IsExcluded));
     }
 
     [Fact]

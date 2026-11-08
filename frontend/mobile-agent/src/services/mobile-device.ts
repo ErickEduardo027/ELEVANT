@@ -51,6 +51,21 @@ function currentOperatingSystemVersion() {
   return version && version.length <= 64 ? version : undefined;
 }
 
+/**
+ * The newest registration the session confirmed. Registrations of the same session can answer out of order (a write
+ * and a periodic read at once), and the release at sign-out names the newest one (2-N02).
+ */
+function newestOfSession(accessToken: string, device: RegisteredMobileDevice): RegisteredMobileDevice {
+  const previous = confirmedForSession?.accessToken === accessToken &&
+    confirmedForSession.device.installationId === device.installationId
+    ? confirmedForSession.device
+    : null;
+  return previous &&
+    Date.parse(previous.registration.lastSeenAt) > Date.parse(device.registration.lastSeenAt)
+    ? previous
+    : device;
+}
+
 export async function registerCurrentMobileDevice(
   context: MobileDeviceRegistrationContext,
   options: RegisterCurrentMobileDeviceOptions = {},
@@ -81,7 +96,10 @@ export async function registerCurrentMobileDevice(
     }
 
     const device = { installationId, registration };
-    confirmedForSession = { accessToken: context.accessToken, device };
+    confirmedForSession = {
+      accessToken: context.accessToken,
+      device: newestOfSession(context.accessToken, device),
+    };
     return device;
   } catch (error) {
     const normalized = asMobileServiceError(error);
@@ -105,11 +123,16 @@ export function forgetConfirmedMobileDevice() {
 /**
  * Frees the tablet when the agent signs out (2-N02), so the next agent who signs in on it holds it. It is best
  * effort: it never blocks the sign-out, and a tablet another agent, OCC or the end of the agent's duty already freed
- * answers `device_not_bound`. Answers whether the server released it.
+ * answers `device_not_bound`. The release names the newest registration this session confirmed. Each sign-in opens its
+ * own binding, so a release that arrives after the agent signed in on the tablet again answers `version_conflict` and
+ * frees nothing, while the session's own writes never refuse it. Answers whether the server released it.
  */
 export async function releaseCurrentMobileDevice(
   context: MobileDeviceRegistrationContext,
 ): Promise<boolean> {
+  const confirmed = confirmedForSession?.accessToken === context.accessToken
+    ? confirmedForSession.device
+    : null;
   forgetConfirmedMobileDevice();
   let installationId: string | null;
   try {
@@ -118,13 +141,17 @@ export async function releaseCurrentMobileDevice(
     return false;
   }
   if (!installationId) return false;
+  // Without a registration confirmed in this run of the app the release sends no version, as before.
+  const expectedVersion = confirmed?.installationId === installationId
+    ? confirmed.registration.lastSeenAt
+    : undefined;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), MOBILE_RELEASE_TIMEOUT_MS);
   try {
     await createMobileAgentApiClient({
       getAccessToken: () => context.accessToken,
     }).releaseMobileDevice(
-      { installationId },
+      expectedVersion ? { installationId, expectedVersion } : { installationId },
       Crypto.randomUUID().toLowerCase(),
       { signal: controller.signal },
     );

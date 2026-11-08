@@ -20,6 +20,12 @@ namespace Elevant.Persistence.Identity;
 internal sealed class EfRampProfileStore(ElevantDbContext context,
     IActorContextResolver actors) : IRampProfileStore
 {
+    /// <summary>Receipt action of a profile save that carries an Idempotency-Key.</summary>
+    private const string SaveAction = "hr.ramp_profile.save";
+
+    /// <summary>Unique index of the employee number, the one a concurrent save can still hit.</summary>
+    private const string EmployeeNumberIndex = "IX_ramp_agents_employee_number";
+
     public async Task<RampProfileCatalog?> ListAsync(Guid actorId,
         CancellationToken cancellationToken = default)
     {
@@ -27,14 +33,7 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
         var stations = await context.Stations.AsNoTracking().Where(item => item.IsActive)
             .OrderBy(item => item.Code).Select(item => new RampProfileStation(
                 item.PublicId, item.Code, item.Name)).ToArrayAsync(cancellationToken);
-        var activeTerminals = await (from terminal in context.Terminals.AsNoTracking()
-            join station in context.Stations.AsNoTracking()
-                on terminal.StationId equals station.Id
-            where terminal.IsActive && station.IsActive
-            orderby station.Code, terminal.Code
-            select new { terminal.Id, Data = new RampProfileTerminal(terminal.PublicId,
-                station.PublicId, terminal.Code, terminal.Name) })
-            .ToArrayAsync(cancellationToken);
+        var activeTerminals = await ActiveTerminalsAsync(cancellationToken);
         var profiles = await context.RampAgents.AsNoTracking()
             .OrderBy(item => item.EmployeeNumber).ToArrayAsync(cancellationToken);
         var personIds = profiles.Select(item => item.PersonId).ToArray();
@@ -61,29 +60,45 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             .ToArray(), stations, activeTerminals.Select(item => item.Data).ToArray());
     }
 
+    public Task<RampProfileResult> SaveAsync(Guid actorId, Guid? profileId,
+        SaveRampProfileInput input, CancellationToken cancellationToken = default) =>
+        SaveAsync(actorId, profileId, input, null, cancellationToken);
+
     public async Task<RampProfileResult> SaveAsync(Guid actorId, Guid? profileId,
-        SaveRampProfileInput input, CancellationToken cancellationToken = default)
+        SaveRampProfileInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
     {
         var actor = await AuthorizedActorAsync(actorId, cancellationToken);
         if (actor is null)
             return RampProfileResult.Failed(RampProfileFailure.Forbidden);
+        // Expand phase (2-N06): the key and the expected version are optional; with the key the version is required.
+        if (idempotencyKey == Guid.Empty)
+            return RampProfileResult.Failed(RampProfileFailure.Invalid, "idempotency_key_required");
         if (input is null || !Valid(input))
-            return RampProfileResult.Failed(RampProfileFailure.Invalid);
+            return RampProfileResult.Failed(RampProfileFailure.Invalid, "invalid_ramp_profile");
+        if (idempotencyKey is not null && profileId is not null && string.IsNullOrWhiteSpace(input.ExpectedVersion))
+            return RampProfileResult.Failed(RampProfileFailure.Invalid, "expected_version_required");
         // Operations administrators maintain the operational profile of their agents but
         // only grant stations they hold; new agents are created through validated requests.
         var operations = actor.EffectiveAccess?.Administers(Department.Operations) == true &&
             !actor.HasPermission("human_resources.ramp_profiles.read");
-        if (operations && (profileId is null ||
-                input.StationIds.Any(id => actor.StationScopes.All(scope => scope.StationId != id))))
-            return RampProfileResult.Failed(profileId is null ? RampProfileFailure.Forbidden : RampProfileFailure.Invalid);
+        if (operations && profileId is null)
+            return RampProfileResult.Failed(RampProfileFailure.Forbidden);
+        if (operations && input.StationIds.Any(id => actor.StationScopes.All(scope => scope.StationId != id)))
+            return RampProfileResult.Failed(RampProfileFailure.Invalid, "stations_invalid");
         // Reading ramp profiles never authorised writing them.
         if (!operations && !actor.HasPermission("human_resources.ramp_profiles.update"))
             return RampProfileResult.Failed(RampProfileFailure.Forbidden);
+        var actorDatabaseId = await context.Users.Where(item => item.PublicId == actorId)
+            .Select(item => item.Id).SingleAsync(cancellationToken);
+        var hash = SaveHash(profileId, input);
+        // The same intent answers before anything is re-checked: its own save already moved the version on.
+        if (await ReplayAsync(idempotencyKey, actorDatabaseId, hash, cancellationToken) is { } replay)
+            return replay;
         var requestedStations = await context.Stations.Where(item =>
             input.StationIds.Contains(item.PublicId) && item.IsActive)
             .ToArrayAsync(cancellationToken);
         if (requestedStations.Length != input.StationIds.Count)
-            return RampProfileResult.Failed(RampProfileFailure.Invalid);
+            return RampProfileResult.Failed(RampProfileFailure.Invalid, "stations_invalid");
         var requestedStationKeys = requestedStations.Select(item => item.Id).ToHashSet();
         var requestedTerminals = input.TerminalIds is null ? null :
             await context.Terminals.AsNoTracking().Where(item =>
@@ -91,11 +106,11 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                 requestedStationKeys.Contains(item.StationId))
                 .ToArrayAsync(cancellationToken);
         if (requestedTerminals is not null && requestedTerminals.Length != input.TerminalIds!.Count)
-            return RampProfileResult.Failed(RampProfileFailure.Invalid);
+            return RampProfileResult.Failed(RampProfileFailure.Invalid, "terminals_invalid");
         var profile = profileId is null ? null : await context.RampAgents.SingleOrDefaultAsync(
             item => item.PublicId == profileId, cancellationToken);
         if (profileId is not null && profile is null)
-            return RampProfileResult.Failed(RampProfileFailure.NotFound);
+            return RampProfileResult.Failed(RampProfileFailure.NotFound, "not_found");
         // Agents with an employee record (ADR-0017): identity belongs to Human Resources and a terminated
         // employee's profile never comes back to life from here.
         var employee = profile is null ? null : await context.Employees.AsNoTracking()
@@ -104,28 +119,30 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
         {
             var linkedPerson = await context.Persons.AsNoTracking().SingleAsync(item => item.Id == employee.PersonId,
                 cancellationToken);
-            if (input.IsActive && employee.Status == EmployeeStatus.Terminated ||
-                linkedPerson.FirstName != input.FirstName.Trim() || linkedPerson.LastName != input.LastName.Trim() ||
+            if (input.IsActive && employee.Status == EmployeeStatus.Terminated)
+                return RampProfileResult.Failed(RampProfileFailure.Conflict, "employee_terminated");
+            // A form read before Human Resources changed the record is stale: the editor re-reads it.
+            if (linkedPerson.FirstName != input.FirstName.Trim() || linkedPerson.LastName != input.LastName.Trim() ||
                 employee.EmployeeNumber != input.EmployeeNumber.Trim() || employee.HireDate != input.HireDate)
-                return RampProfileResult.Failed(RampProfileFailure.Conflict);
+                return RampProfileResult.Failed(RampProfileFailure.Conflict, "employee_record_mismatch");
         }
         RampAgent? supervisor = null;
         if (input.Supervisor is { Id: Guid supervisorId })
         {
             if (supervisorId == profileId)
-                return RampProfileResult.Failed(RampProfileFailure.Invalid);
+                return RampProfileResult.Failed(RampProfileFailure.Invalid, "supervisor_cycle");
             var existingSupervisorId = profile?.SupervisorAgentId;
             supervisor = await context.RampAgents.AsNoTracking().SingleOrDefaultAsync(
                 item => item.PublicId == supervisorId &&
                     (item.IsActive || item.Id == existingSupervisorId), cancellationToken);
             if (supervisor is null)
-                return RampProfileResult.Failed(RampProfileFailure.Invalid);
+                return RampProfileResult.Failed(RampProfileFailure.Invalid, "supervisor_invalid");
         }
         if (input.AvatarMediaUrl is not null)
         {
             if (!input.AvatarMediaUrl.StartsWith("/api/v1/media/", StringComparison.Ordinal) ||
                 !Guid.TryParse(input.AvatarMediaUrl["/api/v1/media/".Length..], out var avatarId))
-                return RampProfileResult.Failed(RampProfileFailure.Invalid);
+                return RampProfileResult.Failed(RampProfileFailure.Invalid, "avatar_invalid");
             var currentAvatar = profile is null ? null : await context.Persons.AsNoTracking()
                 .Where(item => item.Id == profile.PersonId)
                 .Select(item => item.AvatarMediaUrl).SingleAsync(cancellationToken);
@@ -133,17 +150,15 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             if (!await context.MediaAssets.AnyAsync(asset => asset.PublicId == avatarId &&
                 asset.Purpose == "avatar" &&
                 (asset.CreatedAt >= cutoff || input.AvatarMediaUrl == currentAvatar), cancellationToken))
-                return RampProfileResult.Failed(RampProfileFailure.Invalid);
+                return RampProfileResult.Failed(RampProfileFailure.Invalid, "avatar_invalid");
         }
         if (await context.RampAgents.AnyAsync(item => item.EmployeeNumber == input.EmployeeNumber.Trim() &&
             (profile == null || item.Id != profile.Id), cancellationToken))
-            return RampProfileResult.Failed(RampProfileFailure.Conflict);
+            return RampProfileResult.Failed(RampProfileFailure.Conflict, "employee_number_in_use");
 
         var now = DateTimeOffset.UtcNow;
         // Scopes follow AVIAM's business day, never the UTC one (2-N31).
         var today = BusinessCalendar.Today(now);
-        var actorDatabaseId = await context.Users.Where(item => item.PublicId == actorId)
-            .Select(item => item.Id).SingleAsync(cancellationToken);
         var strategy = context.Database.CreateExecutionStrategy();
         try
         {
@@ -151,9 +166,17 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             {
                 await using var transaction = await context.Database.BeginTransactionAsync(
                     IsolationLevel.Serializable, cancellationToken);
+                // Under the transaction a concurrent attempt with the same key is seen, or waits for this one.
+                if (await ReplayAsync(idempotencyKey, actorDatabaseId, hash, cancellationToken) is { } concurrent)
+                    return concurrent;
+                // A form opened before another save would undo it, and a deactivation would release the agent's
+                // work on stale data: the editor re-reads the profile.
+                if (profile is not null && !string.IsNullOrWhiteSpace(input.ExpectedVersion) &&
+                    GovernanceSupport.Version(profile.RowVersion) != input.ExpectedVersion)
+                    return RampProfileResult.Failed(RampProfileFailure.Conflict, "version_conflict");
                 if (profile is not null && supervisor is not null && input.Supervisor is not null &&
                     await WouldCreateSupervisorCycleAsync(profile.Id, supervisor.Id, cancellationToken))
-                    return RampProfileResult.Failed(RampProfileFailure.Invalid);
+                    return RampProfileResult.Failed(RampProfileFailure.Invalid, "supervisor_cycle");
                 // Deactivating the profile ends the agent's ramp duty through the release path (2-N06); the
                 // scopes below follow this store's own rule.
                 if (profile is { IsActive: true } && !input.IsActive &&
@@ -273,6 +296,10 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                 foreach (var station in affectedStations)
                     await OccPlanningChangeWriter.AddForStationAsync(context, station.Id,
                         station.PublicId, now, cancellationToken);
+                // The receipt commits with the save: a replay repeats neither the release nor its notices.
+                if (idempotencyKey is { } key)
+                    CommercialCommandReceipts.Add(context, key, actorDatabaseId, SaveAction, hash,
+                        profile.PublicId, now);
                 await context.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return RampProfileResult.Success(new RampProfileData(profile.PublicId,
@@ -291,15 +318,103 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
                             .Select(item => (Guid?)item.PublicId)
                             .SingleOrDefaultAsync(cancellationToken)
                         : null,
-                    account?.Status.ToString()));
+                    account?.Status.ToString(), GovernanceSupport.Version(profile.RowVersion)));
             });
         }
-        catch (DbUpdateException exception) when (
-            exception.InnerException is SqlException { Number: 2601 or 2627 })
+        catch (DbUpdateConcurrencyException)
         {
-            return RampProfileResult.Failed(RampProfileFailure.Conflict);
+            // The profile changed after this save read it.
+            return RampProfileResult.Failed(RampProfileFailure.Conflict, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is not null &&
+            CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent attempt with the same key committed first: its result is the answer.
+            return await ReplayAsync(idempotencyKey, actorDatabaseId, hash, cancellationToken) ??
+                RampProfileResult.Failed(RampProfileFailure.Conflict, "idempotency_conflict");
+        }
+        catch (DbUpdateException exception) when (
+            exception.InnerException is SqlException { Number: 2601 or 2627 } duplicate)
+        {
+            return RampProfileResult.Failed(RampProfileFailure.Conflict,
+                duplicate.Message.Contains(EmployeeNumberIndex, StringComparison.Ordinal)
+                    ? "employee_number_in_use" : "ramp_profile_conflict");
         }
     }
+
+    /// <summary>The route identifier and the normalized form a key is bound to.</summary>
+    private static string SaveHash(Guid? profileId, SaveRampProfileInput input) => CommercialCommandReceipts.Hash(new
+    {
+        profileId, firstName = input.FirstName.Trim(), lastName = input.LastName.Trim(),
+        employeeNumber = input.EmployeeNumber.Trim(), category = input.Category.Trim(), input.HireDate, input.IsActive,
+        stations = input.StationIds.Order().ToArray(), input.AvatarMediaUrl,
+        terminals = input.TerminalIds?.Order().ToArray(),
+        // Without a supervisor selection the save keeps it and `{ id: null }` clears it: three different bodies.
+        supervisor = input.Supervisor is null ? "keep" : input.Supervisor.Id?.ToString("D") ?? "none",
+        input.ExpectedVersion,
+    });
+
+    /// <summary>
+    /// Null without a key or with a new one. The key of an earlier save with the same body answers the profile as
+    /// the directory shows it now; with another body it is a conflict.
+    /// </summary>
+    private async Task<RampProfileResult?> ReplayAsync(Guid? idempotencyKey, long actorAccountId, string hash,
+        CancellationToken cancellationToken)
+    {
+        if (idempotencyKey is not { } key) return null;
+        var prior = await CommercialCommandReceipts.FindAsync(context, key, actorAccountId, SaveAction, hash,
+            cancellationToken);
+        if (prior.Outcome == CommercialCommandReceipts.Outcome.None) return null;
+        if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+            return RampProfileResult.Failed(RampProfileFailure.Conflict, "idempotency_conflict");
+        return await ProfileAsync(prior.ResultId, cancellationToken) is { } profile
+            ? RampProfileResult.Success(profile)
+            : RampProfileResult.Failed(RampProfileFailure.NotFound, "not_found");
+    }
+
+    /// <summary>One profile as <see cref="ListAsync"/> shows it.</summary>
+    private async Task<RampProfileData?> ProfileAsync(Guid profileId, CancellationToken cancellationToken)
+    {
+        var profile = await context.RampAgents.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.PublicId == profileId, cancellationToken);
+        if (profile is null) return null;
+        var person = await context.Persons.AsNoTracking().SingleAsync(item => item.Id == profile.PersonId,
+            cancellationToken);
+        var account = await context.Users.AsNoTracking().Where(item => item.PersonId == profile.PersonId)
+            .Select(item => (AccountLifecycleStatus?)item.Status).SingleOrDefaultAsync(cancellationToken);
+        var today = BusinessCalendar.Today(DateTimeOffset.UtcNow);
+        var scopes = await context.Set<RampAgentStationScope>().AsNoTracking()
+            .Where(item => item.RampAgentId == profile.Id && item.ValidFrom <= today &&
+                (item.ValidTo == null || item.ValidTo >= today))
+            .ToArrayAsync(cancellationToken);
+        var terminalScopes = await context.Set<RampAgentTerminalScope>().AsNoTracking()
+            .Where(item => item.RampAgentId == profile.Id && item.ValidFrom <= today &&
+                (item.ValidTo == null || item.ValidTo >= today))
+            .ToArrayAsync(cancellationToken);
+        var stationIds = scopes.Select(item => item.StationId).ToArray();
+        var stations = await context.Stations.AsNoTracking().Where(item => stationIds.Contains(item.Id))
+            .ToDictionaryAsync(item => item.Id, cancellationToken);
+        var terminals = (await ActiveTerminalsAsync(cancellationToken))
+            .ToDictionary(item => item.Id, item => item.Data);
+        var supervisors = await context.RampAgents.AsNoTracking()
+            .Where(item => item.Id == profile.SupervisorAgentId)
+            .ToDictionaryAsync(item => item.Id, item => item.PublicId, cancellationToken);
+        return Map(profile, person, scopes, stations, terminalScopes, terminals, supervisors,
+            account is not null, account);
+    }
+
+    /// <summary>Active terminals of active stations, ordered by station and terminal code.</summary>
+    private async Task<(long Id, RampProfileTerminal Data)[]> ActiveTerminalsAsync(
+        CancellationToken cancellationToken) =>
+        (await (from terminal in context.Terminals.AsNoTracking()
+                join station in context.Stations.AsNoTracking()
+                    on terminal.StationId equals station.Id
+                where terminal.IsActive && station.IsActive
+                orderby station.Code, terminal.Code
+                select new { terminal.Id, Data = new RampProfileTerminal(terminal.PublicId,
+                    station.PublicId, terminal.Code, terminal.Name) })
+            .ToArrayAsync(cancellationToken))
+        .Select(item => (item.Id, item.Data)).ToArray();
 
     private async Task<bool> AuthorizedAsync(Guid actorId, CancellationToken cancellationToken) =>
         await AuthorizedActorAsync(actorId, cancellationToken) is not null;
@@ -365,5 +480,5 @@ internal sealed class EfRampProfileStore(ElevantDbContext context,
             profile.SupervisorAgentId is long supervisorId &&
                 profiles.TryGetValue(supervisorId, out var supervisorPublicId)
                 ? supervisorPublicId : null,
-            accountStatus?.ToString());
+            accountStatus?.ToString(), GovernanceSupport.Version(profile.RowVersion));
 }

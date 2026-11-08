@@ -189,8 +189,19 @@ it('never offers the withdrawal of a version both parties signed, and explains a
   await userEvent.type(within(screen.getByRole('dialog', { name: /^Retirar la versión/ })).getByLabelText('Motivo'), 'Motivo válido');
   await userEvent.click(within(screen.getByRole('dialog', { name: /^Retirar la versión/ })).getByRole('button', { name: 'Retirar versión' }));
   expect(await screen.findByText('La versión ya rige el contrato: no se puede retirar.')).toBeInTheDocument();
-  // A conflict re-reads the document.
+  // A conflict re-reads the document; a version the server says governs is not offered again.
   expect(getContractDocument.mock.calls.length).toBeGreaterThanOrEqual(3);
+  expect(screen.queryByRole('button', { name: 'Retirar versión' })).not.toBeInTheDocument();
+});
+
+it('never offers the withdrawal of the legacy first version that governs an active contract without signatures (2-C)', async () => {
+  getContractDocument.mockResolvedValueOnce({ ...document, contractStatus: 'Active', versionNumber: 1, signatures: [],
+    signableBy: null, signedOn: '2026-01-01' });
+  render(<ContractDetailDrawer versionId="v-1" canManageLifecycle onClose={vi.fn()} />);
+  await screen.findByRole('dialog', { name: 'Contrato CTR-2026-0001 · versión 1' });
+  expect(screen.queryByRole('region', { name: 'Retirar versión' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retirar versión' })).not.toBeInTheDocument();
+  expect(withdrawContractVersion).not.toHaveBeenCalled();
 });
 
 it('explains a countersignature over other content by its code (2-N28)', async () => {

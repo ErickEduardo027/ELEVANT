@@ -53,6 +53,25 @@ describe("shared tablets", () => {
     await expect(api.releaseMobileDevice({ installationId }, "not-a-key")).rejects.toThrow(TypeError);
   });
 
+  it("names the newest registration of the session as the expected version of a release", async () => {
+    const calls: Call[] = [];
+    const lastSeenAt = "2026-11-07T10:30:00.125+00:00";
+    const api = client([new Response(null, { status: 204 }), problem(409, "version_conflict"),
+      new Response(null, { status: 204 })], calls);
+    await expect(api.releaseMobileDevice({ installationId, expectedVersion: lastSeenAt }, key)).resolves.toBeUndefined();
+    expect(JSON.parse(calls[0]!.body)).toEqual({ installationId, expectedVersion: lastSeenAt });
+    // The agent signed in on the tablet again meanwhile: the late release frees nothing and says why.
+    await expect(api.releaseMobileDevice({ installationId, expectedVersion: lastSeenAt }, key)).rejects.toMatchObject({
+      status: 409, code: "version_conflict" });
+    // Without a version the body is the installation alone.
+    await api.releaseMobileDevice({ installationId, expectedVersion: null }, key);
+    expect(JSON.parse(calls[2]!.body)).toEqual({ installationId });
+    for (const expectedVersion of ["", "ayer", "2026-11-07T10:30:00.125+00:00".padEnd(65, "0")])
+      await expect(api.releaseMobileDevice({ installationId, expectedVersion }, key)).rejects.toThrow(TypeError);
+    await expect(api.releaseMobileDevice({ installationId, lastSeenAt } as never, key)).rejects.toThrow(TypeError);
+    expect(calls).toHaveLength(3);
+  });
+
   it("validates OCC's tablet list strictly, each tablet once and the state it claims", async () => {
     const others = [{ ...free, id: "81000000-0000-7000-8000-0000000000a3" }, { ...revoked, id: "81000000-0000-7000-8000-0000000000a4" }];
     const list = { stationId, stationCode: "PUJ", canUnbind: true, canRevoke: false, devices: [bound, ...others] };

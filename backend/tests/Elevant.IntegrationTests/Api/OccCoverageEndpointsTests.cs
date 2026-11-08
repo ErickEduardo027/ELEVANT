@@ -284,7 +284,7 @@ public sealed class OccCoverageEndpointsTests(ElevantApiFactory factory) : IClas
         }
 
         public Task<CoverageResult> UpdateStandAsync(Guid actorId, Guid standId, StandAttributesInput input, DateOnly date,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            Guid? idempotencyKey = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<CoverageResult> UpdateTerminalAsync(Guid actorId, Guid terminalId, TerminalRulesInput input,
             DateOnly date, CancellationToken cancellationToken = default) => throw new NotSupportedException();

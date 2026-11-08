@@ -48,6 +48,8 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
   - los rechazos del pipeline por tamaño del cuerpo (`413`) o por límite de uso (`429`).
 
   Las lecturas de correos del superadministrador (`GET governance/email/deliveries` y `GET governance/email/outbox`) también responden su `403` sin código.
+
+  > **Actualización (7 de noviembre de 2026).** Los comandos de gobernanza, entre ellos la contraseña temporal de clientes, responden ahora su `403` con el código `forbidden` y un título en español, como el resto de sus fallas. Ver [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 - **Clientes.**
   - Las pantallas traducen el `code` y nunca muestran el `title` (`frontend/private-web/src/services/problemMessages.js`). Sin `code`, explican el estado: sesión vencida (`401`), falta de permiso (`403`), registro inexistente (`404`), conflicto (`409`) o datos inválidos (`400`).
   - Una intención conserva su clave mientras se reintenta el mismo cuerpo tras un resultado incierto (sin respuesta o `5xx`) y la descarta tras cualquier `2xx` o `4xx` (`commandKeys.js`).
@@ -130,6 +132,8 @@ Este ADR recoge cómo se cerraron. Refina [ADR-0016](0016-finance-tariffs-charge
   - se rechaza si ya hay un borrador o una versión en revisión (`draft_in_progress`), si el contrato no admite enmiendas (`contract_not_amendable`) o si no tiene versión aprobada (`no_approved_version`);
   - exige la `Idempotency-Key` sin fase expand, porque no tenía consumidores. Su token es `expectedStatus`, el estado del contrato que vio el usuario, porque ninguna lectura expone la versión de la versión aprobada; la transacción serializable revalida que no haya otro borrador;
   - responde `201` con la versión nueva, que sigue el flujo normal: Borradores, Finanzas, vigencia y firmas.
+
+  > **Actualización (7 de noviembre de 2026).** La enmienda parte ahora de la versión que rige: la aprobada y firmada por ambas partes sobre la misma huella, o la versión heredada con la que el contrato se activó. Se rechaza con `version_awaiting_signatures` mientras otra versión aprobada espera las firmas. Aprobar sus precios no la pone en vigor: rige desde la segunda firma, y hasta entonces la versión en vigor se sigue facturando. La firma y la vigencia corren en transacciones serializables. Ver [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 - **Unidad de cobro como código.** Todo el ciclo comercial guarda el código de `ref.billing_units`: catálogo, solicitud, borrador, alcance, renovación, enmienda, tarifas, cargos y paquetes.
   - Un nombre heredado («operación») se traduce al leer y al guardar, sin reescribir filas (`BillingUnitNames`).
   - Una unidad desconocida responde `billing_unit_unknown`.
@@ -245,7 +249,7 @@ No necesitan migración:
 - Las pantallas bilingües de OCC y Revisión todavía muestran el código de la unidad (`operation`).
 - **Defecto abierto en la emisión de facturas.** La emisión directa ([ADR-0035](0035-direct-invoicing-simulated-ecf.md)) valora los paquetes con `FinancePackageValuation`, que compara como texto la unidad congelada del servicio ejecutado con la del componente del paquete. Un servicio cuya unidad congelada sigue siendo «operación» (contratos tarifados antes de esta fase), cubierto por un componente guardado como `operation`, bloquea la emisión con `package_unit_mismatch` hasta que la valoración normalice ambas con `BillingUnitNames`.
 - «Contratos listos» de OCC sigue omitiendo sin aviso una aerolínea con dos versiones aplicables el mismo día (ADR-0027). La aprobación ya impide crear contratos nuevos duplicados.
-- Una enmienda o renovación aprobada pero sin firmar ya cubre vuelos desde su inicio: es el hueco 2-C de la fase 2.
+- Una enmienda o renovación aprobada pero sin firmar ya cubre vuelos desde su inicio: es el hueco 2-C de la fase 2. *Cerrado el 7 de noviembre de 2026: una enmienda o una renovación rige solo cuando ambas partes la firmaron sobre la misma huella, y hasta entonces la versión en vigor se sigue facturando ([ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).*
 - La imagen de Public Web y su plantilla de Dokploy no pasan `NEXT_PUBLIC_ELEVANT_ENVIRONMENT_LABEL`, así que hoy el portal no muestra ninguna etiqueta de entorno.
 - La readiness calcula en cada lectura qué cuentas pueden decidir en Finanzas, y el estado de correo de una factura filtra la cola sin índice. Alcanza con el volumen actual; se revisará si crece.
 

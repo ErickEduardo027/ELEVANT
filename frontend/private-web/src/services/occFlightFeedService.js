@@ -101,8 +101,12 @@ export const importOccFlightProposals = async (command, idempotencyKey) => {
   return guarded(() => client().importOccFlightProposals(command, idempotencyKey));
 };
 
-export const dismissOccFlightProposal = proposalId =>
-  guarded(() => client().dismissOccFlightProposal(proposalId));
+/**
+ * «Descartar» with the version on screen and the intent's Idempotency-Key (2-N36): a retry after no answer replays the
+ * first result, so it never dismisses again a proposal someone restored meanwhile; a stale version is `version_conflict`.
+ */
+export const dismissOccFlightProposal = (proposalId, expectedVersion, idempotencyKey) =>
+  guarded(() => client().dismissOccFlightProposal(proposalId, expectedVersion, idempotencyKey));
 
 /** Brings a dismissed proposal back while its flight has not passed (2-N36). */
 export const restoreOccFlightProposal = (proposalId, expectedVersion, idempotencyKey) =>

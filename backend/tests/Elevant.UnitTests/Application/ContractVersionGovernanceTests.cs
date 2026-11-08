@@ -52,5 +52,32 @@ public sealed class ContractVersionGovernanceTests
         Assert.Equal(Day(expected), ContractVersionGovernance.SupersededEnd(
             end is null ? null : Day(end), Day(nextStart)));
 
+    [Fact]
+    public void TheCoverageEndsWithTheLatestGoverningVersionAndIsOpenWithoutAnEnd()
+    {
+        Assert.Null(ContractVersionGovernance.CoverageEnd([]));
+        Assert.Equal(Day("2026-12-31"), ContractVersionGovernance.CoverageEnd([Day("2026-12-31")]));
+        Assert.Equal(Day("2026-12-31"), ContractVersionGovernance.CoverageEnd([Day("2026-12-31"), Day("2026-11-14")]));
+        Assert.Equal(DateOnly.MaxValue, ContractVersionGovernance.CoverageEnd([Day("2026-12-31"), null]));
+        Assert.Equal(DateOnly.MaxValue, ContractVersionGovernance.CoverageEnd([null, Day("2026-12-31")]));
+    }
+
+    [Fact]
+    public void AnAmendmentThatKeepsTheEndKeepsTheCoverageEndAndARenewalMovesIt()
+    {
+        // 2-N12: v1 ends on 31 December; the amendment from 15 November copies that end and v1 ends the day before.
+        var before = ContractVersionGovernance.CoverageEnd([Day("2026-12-31")]);
+        var amended = ContractVersionGovernance.CoverageEnd([
+            ContractVersionGovernance.SupersededEnd(Day("2026-12-31"), Day("2026-11-15")), Day("2026-12-31")]);
+        var renewed = ContractVersionGovernance.CoverageEnd([
+            ContractVersionGovernance.SupersededEnd(Day("2026-12-31"), Day("2027-01-01")), Day("2027-12-31")]);
+        var shortened = ContractVersionGovernance.CoverageEnd([
+            ContractVersionGovernance.SupersededEnd(Day("2026-12-31"), Day("2026-11-15")), Day("2026-11-30")]);
+
+        Assert.Equal(before, amended);
+        Assert.Equal(Day("2027-12-31"), renewed);
+        Assert.Equal(Day("2026-11-30"), shortened);
+    }
+
     private static DateOnly Day(string value) => DateOnly.ParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture);
 }

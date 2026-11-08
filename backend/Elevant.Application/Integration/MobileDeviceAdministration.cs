@@ -36,7 +36,10 @@ public sealed record OccMobileDevicesData(
 /// <summary>OCC frees a tablet; <paramref name="ExpectedVersion"/> is the binding token on screen.</summary>
 public sealed record UnbindMobileDeviceInput(string? ExpectedVersion, string? Reason = null);
 
-/// <summary>OCC revokes a lost tablet with a reason; the sessions of the account that held it end too.</summary>
+/// <summary>
+/// OCC revokes a lost tablet with a reason; the sessions of the account that held it last end too, unless that agent
+/// signed out of it.
+/// </summary>
 public sealed record RevokeMobileDeviceInput(string? ExpectedVersion, string? Reason);
 
 public enum MobileDeviceAdministrationFailure

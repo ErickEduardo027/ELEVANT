@@ -15,7 +15,8 @@ namespace Elevant.IntegrationTests.Persistence;
 /// <summary>
 /// Phase 2, block D: the one release path of a ramp agent (2-N06, 2-N08), shifts guarded by their use and by
 /// approved absences (2-N11, 2-N24), approved absences that Gestión Humana cancels or shortens (2-N22), the mentor's
-/// absence and permit (2-N23) and the documents that stop covering an assigned operation (2-N25).
+/// absence and permit (2-N23), the documents that stop covering an assigned operation (2-N25), and the profile save
+/// and employee update that reach the release path with their Idempotency-Key and expected version.
 /// </summary>
 public sealed partial class SqlServerMigrationTests
 {
@@ -621,6 +622,186 @@ public sealed partial class SqlServerMigrationTests
             .ListAsync(HumanResourcesAccount, PujStation, shiftDay, shiftDay, 1, 100, true, ct))).Page!;
         Assert.Equal("AirportId,RampDriverLicense", Assert.Single(readiness.Warnings,
             item => item.Kind == ScheduleWarningKind.DocumentExpired).Reason);
+    }
+
+    [Fact]
+    public async Task ARampProfileSaveComparesItsVersionReplaysItsKeyAndNamesEveryRefusal()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        var today = BusinessCalendar.Today(DateTimeOffset.UtcNow);
+        ReleaseFixture fixture;
+        long inProgress, assigned;
+        int updatesBefore;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            fixture = await ReleaseFixtureAsync(setup, ct);
+            inProgress = await AddAgentOperationAsync(setup, fixture, "HR-PROFILE-IN-PROGRESS", today, fixture.AgentKey,
+                GroundOperationStatus.InProgress, ct);
+            assigned = await AddAgentOperationAsync(setup, fixture, "HR-PROFILE-ASSIGNED", today.AddDays(2), fixture.AgentKey,
+                GroundOperationStatus.Assigned, ct);
+            updatesBefore = await setup.AuditEntries.CountAsync(entry => entry.Action == "hr.ramp_profile.updated" &&
+                entry.EntityPublicId == RileyProfile, ct);
+        }
+        async Task<RampProfileData> ReadAsync()
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return (await scope.ServiceProvider.GetRequiredService<IRampProfileStore>()
+                .ListAsync(HumanResourcesAccount, ct))!.Profiles.Single(item => item.Id == RileyProfile);
+        }
+        async Task<RampProfileResult> SaveAsync(Guid profileId, SaveRampProfileInput input, Guid? key)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IRampProfileStore>()
+                .SaveAsync(HumanResourcesAccount, profileId, input, key, ct);
+        }
+
+        var before = await ReadAsync();
+        Assert.False(string.IsNullOrEmpty(before.Version));
+        var deactivate = new SaveRampProfileInput(before.FirstName, before.LastName, before.EmployeeNumber,
+            before.Category, before.HireDate, false, before.Stations.Select(station => station.Id).ToArray(),
+            ExpectedVersion: before.Version);
+
+        // The key needs the version the editor read; a version the profile no longer has is a stale form.
+        Assert.Equal("idempotency_key_required", (await SaveAsync(RileyProfile, deactivate, Guid.Empty)).Code);
+        Assert.Equal("expected_version_required", (await SaveAsync(RileyProfile, deactivate with { ExpectedVersion = null },
+            Guid.NewGuid())).Code);
+        Assert.Equal("version_conflict", (await SaveAsync(RileyProfile, deactivate with { ExpectedVersion = "AAAAAAAAAAA=" },
+            Guid.NewGuid())).Code);
+        // Every other refusal names its rule too.
+        Assert.Equal("invalid_ramp_profile", (await SaveAsync(RileyProfile, deactivate with { FirstName = " " },
+            Guid.NewGuid())).Code);
+        Assert.Equal("not_found", (await SaveAsync(Guid.NewGuid(), deactivate, Guid.NewGuid())).Code);
+        Assert.Equal("stations_invalid", (await SaveAsync(RileyProfile, deactivate with { StationIds = [Guid.NewGuid()] },
+            Guid.NewGuid())).Code);
+        Assert.Equal("terminals_invalid", (await SaveAsync(RileyProfile, deactivate with { TerminalIds = [Guid.NewGuid()] },
+            Guid.NewGuid())).Code);
+        Assert.Equal("supervisor_cycle", (await SaveAsync(RileyProfile, deactivate with
+        {
+            Supervisor = new RampProfileSupervisorSelection(RileyProfile),
+        }, Guid.NewGuid())).Code);
+        Assert.Equal("supervisor_invalid", (await SaveAsync(RileyProfile, deactivate with
+        {
+            Supervisor = new RampProfileSupervisorSelection(Guid.NewGuid()),
+        }, Guid.NewGuid())).Code);
+        Assert.Equal("employee_record_mismatch", (await SaveAsync(RileyProfile, deactivate with { FirstName = "Otro" },
+            Guid.NewGuid())).Code);
+        // An operation in progress keeps the agent until they hand it in from the tablet (2-N06).
+        Assert.Equal("agent_has_operation_in_progress", (await SaveAsync(RileyProfile, deactivate, Guid.NewGuid())).Code);
+        await using (var check = CreateContext(database.ConnectionString))
+        {
+            Assert.True(await check.RampAgents.AnyAsync(item => item.Id == fixture.AgentKey && item.IsActive, ct));
+            Assert.True(await check.OperationAgentAssignments.AnyAsync(item => item.GroundOperationId == assigned &&
+                item.ReleasedAt == null, ct));
+            await check.GroundOperations.Where(item => item.Id == inProgress).ExecuteUpdateAsync(update =>
+                update.SetProperty(item => item.CurrentStatus, GroundOperationStatus.PendingReview), ct);
+        }
+
+        var key = Guid.NewGuid();
+        var saved = await SaveAsync(RileyProfile, deactivate, key);
+        Assert.Null(saved.Failure);
+        Assert.False(saved.Profile!.IsActive);
+        Assert.NotEqual(before.Version, saved.Profile.Version);
+        // The same intent answers the profile again without releasing twice; the key with another body is refused.
+        var replayed = await SaveAsync(RileyProfile, deactivate, key);
+        Assert.Null(replayed.Failure);
+        Assert.False(replayed.Profile!.IsActive);
+        Assert.Equal(saved.Profile.Version, replayed.Profile.Version);
+        Assert.Equal("idempotency_conflict", (await SaveAsync(RileyProfile, deactivate with { Category = "Supervisor" },
+            key)).Code);
+        // A form opened before the deactivation is stale and never reactivates the agent.
+        Assert.Equal("version_conflict", (await SaveAsync(RileyProfile, deactivate with { IsActive = true },
+            Guid.NewGuid())).Code);
+        Assert.Equal(saved.Profile.Version, (await ReadAsync()).Version);
+        await using (var check = CreateContext(database.ConnectionString))
+        {
+            Assert.False((await check.RampAgents.SingleAsync(item => item.Id == fixture.AgentKey, ct)).IsActive);
+            Assert.Equal(GroundOperationStatus.Planned, (await check.GroundOperations.SingleAsync(item =>
+                item.Id == assigned, ct)).CurrentStatus);
+            Assert.Equal(updatesBefore + 1, await check.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.ramp_profile.updated" && entry.EntityPublicId == RileyProfile, ct));
+            Assert.Equal(1, await check.OperationalNotifications.CountAsync(item => item.Kind == "agent_released" &&
+                item.GroundOperationId == assigned && item.RecipientAccountId == fixture.OccKey, ct));
+        }
+    }
+
+    [Fact]
+    public async Task MovingARampAgentToAnOfficePositionTakesTheKeyAndNamesEveryRefusal()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        var now = DateTimeOffset.UtcNow;
+        Guid employeeId, coverageId;
+        JobPositionData office;
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var hr = scope.ServiceProvider.GetRequiredService<IEmployeeGovernanceStore>();
+            var positions = (await hr.ListPositionsAsync(HumanResourcesAccount, null, ct))!;
+            var ramp = Assert.Single(positions, position => position.IsRampPosition);
+            office = Assert.Single(positions, position => position.Name == "Coordinador OCC");
+            var created = await hr.CreateEmployeeAsync(HumanResourcesAccount, NewEmployee("Rafael", "QA-RA-081",
+                "40234567895", "operations", ramp.Id, "rafael.oficina@dev.elevant.test"), ct);
+            Assert.True(created.IsSuccess, created.Code);
+            employeeId = created.Id!.Value;
+        }
+        long agentKey;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var fixture = await ReleaseFixtureAsync(setup, ct);
+            var person = await setup.Employees.Where(item => item.PublicId == employeeId).Select(item => item.PersonId)
+                .SingleAsync(ct);
+            agentKey = await setup.RampAgents.Where(item => item.PersonId == person).Select(item => item.Id).SingleAsync(ct);
+            var coverage = Coverage(fixture, agentKey, null, now.AddHours(2), now.AddHours(6));
+            setup.Add(coverage);
+            await setup.SaveChangesAsync(ct);
+            coverageId = coverage.PublicId;
+        }
+        async Task<GovernanceResult> UpdateAsync(Guid id, SaveEmployeeInput input, Guid? key)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await scope.ServiceProvider.GetRequiredService<IEmployeeGovernanceStore>()
+                .UpdateEmployeeAsync(HumanResourcesAccount, id, input, key, ct);
+        }
+        async Task<string> VersionAsync()
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return (await scope.ServiceProvider.GetRequiredService<IEmployeeGovernanceStore>()
+                .GetEmployeeAsync(HumanResourcesAccount, employeeId, ct))!.Summary.Version;
+        }
+
+        var move = NewEmployee("Rafael", "QA-RA-081", "40234567895", "operations", office.Id,
+            "rafael.oficina@dev.elevant.test") with { ExpectedVersion = await VersionAsync() };
+        Assert.Equal("idempotency_key_required", (await UpdateAsync(employeeId, move, Guid.Empty)).Code);
+        Assert.Equal("expected_version_required", (await UpdateAsync(employeeId, move with { ExpectedVersion = null },
+            Guid.NewGuid())).Code);
+        Assert.Equal("not_found", (await UpdateAsync(Guid.NewGuid(), move, Guid.NewGuid())).Code);
+        Assert.Equal("version_conflict", (await UpdateAsync(employeeId, move with { ExpectedVersion = "AAAAAAAAAAA=" },
+            Guid.NewGuid())).Code);
+
+        var key = Guid.NewGuid();
+        var moved = await UpdateAsync(employeeId, move, key);
+        Assert.True(moved.IsSuccess, moved.Code);
+        // The same intent answers its first result without releasing twice; the key with another body is refused.
+        Assert.Equal(employeeId, (await UpdateAsync(employeeId, move, key)).Id);
+        Assert.Equal("idempotency_conflict", (await UpdateAsync(employeeId, move with { PhoneNumber = "809-555-0199" },
+            key)).Code);
+        Assert.Equal("version_conflict", (await UpdateAsync(employeeId, move, Guid.NewGuid())).Code);
+        await using (var check = CreateContext(database.ConnectionString))
+        {
+            Assert.False((await check.RampAgents.SingleAsync(item => item.Id == agentKey, ct)).IsActive);
+            Assert.NotNull((await check.Set<PositionCoverage>().SingleAsync(item => item.PublicId == coverageId, ct))
+                .ReleasedAt);
+            Assert.Equal(1, await check.AuditEntries.CountAsync(entry => entry.Action == "hr.employee.updated" &&
+                entry.EntityPublicId == employeeId, ct));
+            Assert.Equal(1, await check.AuditEntries.CountAsync(entry =>
+                entry.Action == "hr.agent_release.coverage_released" && entry.EntityPublicId == coverageId, ct));
+        }
     }
 
     private static async Task<int> CountEmailsAsync(TemporaryDatabase database, CancellationToken ct)

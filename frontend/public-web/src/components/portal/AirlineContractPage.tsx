@@ -10,7 +10,7 @@ import { AirlineContractSignature } from "./AirlineContractSignature";
 import { ContractPdfActions } from "./ContractPdfActions";
 import { AirlinePermitsSection, ContractTimeline } from "./AirlinePermitsSection";
 import { billingUnitLabel } from "@/lib/billing-units";
-import { contractStatusLabel, standingContract, versionAwaitingSignatures } from "@/lib/contract-status";
+import { contractStatusLabel, standingContract, terminationNote, versionAwaitingSignatures } from "@/lib/contract-status";
 import styles from "./AirlinePortalPage.module.css";
 
 /** Why an observation was refused, by its Problem Details code; the server title is never shown. */
@@ -113,7 +113,7 @@ export function AirlineContractPage() {
           <span>{contractStatusLabel(contract.status, known?.pendingReason)}</span>
         </div>
         <p className={styles.note}>Firmado: {contract.signedOn ?? "Sin fecha registrada"}
-          {contract.terminatedOn ? ` · Terminado: ${contract.terminatedOn}` : ""}</p>
+          {terminationNote(contract.status, contract.terminatedOn)}</p>
         {contract.approvedVersions.map(version => <section key={version.id} className={styles.contractVersion}>
           <h3>Versión aprobada {version.versionNumber}</h3>
           {versionAwaitingSignatures(known, version.id) && <p><strong className={styles.draftBadge}>Pendiente de firmas</strong></p>}
