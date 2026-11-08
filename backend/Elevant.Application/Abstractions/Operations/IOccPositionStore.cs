@@ -24,8 +24,9 @@ public sealed record OccPositionBoardData(Guid StationId, string StationCode, Da
 
 /// <summary>
 /// The arrival OCC records on the map (3-N08): the registration, the actual on-block time (now when null) and,
-/// optionally, the aircraft type (3-B). Recording it again is a correction: it needs <paramref name="Reason"/> and is
-/// only allowed before the first submission (<c>arrival_locked</c>).
+/// optionally, the aircraft type (3-B). Replacing a time already on the leg (OCC's record, or another one than the
+/// flight feed reported) is a correction that needs <paramref name="Reason"/>; recording and correcting are only allowed
+/// before the first submission (<c>arrival_locked</c>).
 /// </summary>
 public sealed record RecordArrivalInput(string? AircraftRegistration, DateTimeOffset? ArrivedAt, Guid? AircraftTypeId = null,
     string? Reason = null);

@@ -52,12 +52,24 @@ public static class OccTurnaroundRules
         departureScheduledAt > arrivalScheduledAt && departureScheduledAt - arrivalScheduledAt <= MaxGroundTime;
 
     /// <summary>
-    /// A recorded arrival is corrected only before the first submission: the operation planned, assigned or in
-    /// progress and nothing handed to OCC yet (3-N08). After it the time is evidence (<c>arrival_locked</c>).
+    /// The arrival is recorded or corrected only before the first submission: the operation planned, assigned or in
+    /// progress and nothing handed to OCC yet (3-N08). After it the time is evidence whoever wrote it, OCC or the flight
+    /// feed, and even when the leg has none (<c>arrival_locked</c>).
     /// </summary>
     public static bool CanCorrectArrival(TurnaroundStatus turnaround, GroundOperationStatus? operation, bool hasSubmission) =>
         !IsClosed(turnaround) && !hasSubmission &&
         operation is null or GroundOperationStatus.Planned or GroundOperationStatus.Assigned or GroundOperationStatus.InProgress;
+
+    /// <summary>
+    /// Recording the arrival replaces a time already on the leg, so it needs its reason (3-N08): any new record of an
+    /// arrival OCC recorded, and a time other than the one the flight feed reported. The leg's first time, or OCC
+    /// keeping the feed's time, needs none.
+    /// </summary>
+    /// <param name="recorded">The leg's actual arrival now, OCC's or the feed's; null when it has none.</param>
+    /// <param name="recordedByOcc">That time is OCC's record (the leg is <c>Manual</c>).</param>
+    /// <param name="arrivedAt">The time OCC records now.</param>
+    public static bool ArrivalNeedsReason(DateTimeOffset? recorded, bool recordedByOcc, DateTimeOffset arrivedAt) =>
+        recorded is { } previous && (recordedByOcc || previous != arrivedAt);
 
     /// <summary>The aircraft type is frozen from the first submission (3-B): the evidence priced it.</summary>
     public static bool IsAircraftTypeLocked(GroundOperationStatus? operation, bool hasSubmission) =>

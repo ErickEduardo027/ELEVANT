@@ -818,7 +818,7 @@ export const TURNAROUND_PROBLEM_MESSAGES = Object.freeze({
   stand_unavailable: 'La posición no está disponible para ese horario.',
   aircraft_type_unavailable: 'El tipo de avión ya no está disponible. Elija otro.',
   aircraft_type_locked: 'El tipo de avión ya no se puede cambiar: la operación ya se entregó.',
-  arrival_locked: 'La llegada ya no se puede corregir: la operación ya se entregó.',
+  arrival_locked: 'La llegada ya no se puede registrar ni corregir: la operación ya se entregó.',
   contract_not_in_force: 'La aerolínea no tiene un contrato vigente en la nueva fecha.',
   contract_ambiguous: 'La aerolínea tiene más de un contrato vigente en la nueva fecha. Pida a Contratos que lo revise.',
   flight_already_planned: 'Ese vuelo ya está planificado ese día.',

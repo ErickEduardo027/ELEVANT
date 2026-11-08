@@ -181,7 +181,9 @@ a 60 minutos y usa 15 por defecto.
   exactamente un scope.
 - `GET /api/v1/occ/planning/turnarounds/{turnaroundId}` devuelve una escala con
   su versión (repetida como `ETag` fuerte) y las acciones que su estado permite
-  (`reschedule`, `cancel`, `divert`, `correctArrival`). `PUT .../schedule`
+  (`reschedule`, `cancel`, `divert`, `correctArrival`). Exige
+  `operations.planning.read` u `operations.positions_map.assign`: el mapa de
+  posiciones envía esa versión en cada comando. `PUT .../schedule`
   («Editar vuelo») y `POST .../status-changes` (`Cancelled` o `Diverted`, con
   motivo) exigen `operations.planning.update`, `Idempotency-Key` e `If-Match`:
   sin versión responden `428 expected_version_required` y con una vieja
@@ -189,9 +191,11 @@ a 60 minutos y usa 15 por defecto.
   (`operation_started`, `turnaround_closed`). Reprogramar revalida contrato,
   posición bloqueada y, si hay agente, su turno y el tope de tres operaciones
   simultáneas (`assigned_agent_unavailable` con `reasons`); no cambia la
-  aerolínea. Cancelar o desviar cierra la posición, libera a los agentes por la
-  ruta única de liberación (aviso `assignment_released`) y avisa a Finanzas si
-  el charter tenía prepago. Nada se borra.
+  aerolínea, y un número o día nuevo que ya vuela otra escala abierta de la
+  aerolínea responde `409 flight_already_planned`. Cancelar o desviar cierra la
+  posición, libera a los agentes por la ruta única de liberación (aviso
+  `assignment_released`) y avisa a Finanzas si el charter tenía prepago. Nada se
+  borra.
 - `POST /api/v1/occ/planning/charter-airlines` da de alta, con
   `Idempotency-Key` y `operations.planning.create`, la aerolínea mínima de un
   charter: organización `OCC-…`, OACI obligatorio e IATA opcional. Un código en
@@ -250,10 +254,13 @@ a 60 minutos y usa 15 por defecto.
   opcionales durante el expand; con clave, la versión es obligatoria. Los tres
   corren en una transacción serializable con la fila de la posición bloqueada
   (UPDLOCK, HOLDLOCK), así que dos vuelos nunca toman la misma posición, y
-  responden Problem Details con `code`. La llegada acepta `arrivedAt` explícito,
-  `aircraftTypeId` y, para corregir una llegada registrada, `reason`; la
-  corrección solo vale antes de la primera entrega (`arrival_locked`) y el tramo
-  pasa a `Manual`, de modo que el feed ya no lo pisa.
+  responden Problem Details con `code`. La llegada acepta `arrivedAt` explícito
+  (sin él, la hora del servidor), `aircraftTypeId` y `reason`: reemplazar una
+  hora que el tramo ya tiene, la que registró OCC o una distinta de la que
+  informó el feed, exige motivo (`reason_required`). Registrar o corregir la
+  llegada solo vale antes de la primera entrega, la haya escrito OCC o el feed y
+  aunque el tramo no tenga hora (`arrival_locked`), y el tramo pasa a `Manual`,
+  de modo que el feed ya no lo pisa.
 - `GET /api/v1/ramp/aircraft-types` entrega a la tablet los tipos de avión
   activos. `PUT /api/v1/ramp/operations/{operationId}/flight-data` acepta
   `aircraftTypeId` opcional: sin él conserva el tipo actual y el hash del recibo

@@ -165,7 +165,7 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
         "expected_version_required" => "Falta la versión de la escala que se vio en pantalla.",
         "idempotency_conflict" => "Ese envío ya se usó con otros datos.",
         "reason_required" => "Indique el motivo de la corrección.",
-        "arrival_locked" => "La llegada ya no se puede corregir: la operación ya se entregó.",
+        "arrival_locked" => "La llegada ya no se puede registrar ni corregir: la operación ya se entregó.",
         "aircraft_type_unavailable" => "El tipo de avión ya no está disponible.",
         "aircraft_type_locked" => "El tipo de avión ya no se puede cambiar: la operación ya se entregó.",
         "stand_unavailable" => "La posición no está disponible para esta escala.",

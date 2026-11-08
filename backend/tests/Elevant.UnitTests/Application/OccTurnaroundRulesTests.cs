@@ -82,6 +82,24 @@ public sealed class OccTurnaroundRulesTests
         Assert.False(OccTurnaroundRules.CanCorrectArrival(TurnaroundStatus.Cancelled, GroundOperationStatus.Cancelled, false));
 
     [Theory]
+    [InlineData(null, false, 0, false)]
+    [InlineData(null, true, 0, false)]
+    [InlineData(0, false, 0, false)]
+    [InlineData(0, false, 7, true)]
+    [InlineData(0, true, 0, true)]
+    [InlineData(0, true, -20, true)]
+    public void ReplacingATimeAlreadyOnTheLegNeedsItsReason(int? recordedMinute, bool recordedByOcc, int arrivedMinute,
+        bool expected)
+    {
+        // 3-N08: the leg's first time and the feed's time kept as it is need none; OCC's own record and another time than
+        // the feed's are corrections.
+        var landing = new DateTimeOffset(2026, 11, 5, 16, 0, 0, TimeSpan.Zero);
+        DateTimeOffset? recorded = recordedMinute is { } minute ? landing.AddMinutes(minute) : null;
+        Assert.Equal(expected,
+            OccTurnaroundRules.ArrivalNeedsReason(recorded, recordedByOcc, landing.AddMinutes(arrivedMinute)));
+    }
+
+    [Theory]
     [InlineData(GroundOperationStatus.Planned, false, false)]
     [InlineData(GroundOperationStatus.InProgress, false, false)]
     [InlineData(GroundOperationStatus.InProgress, true, true)]

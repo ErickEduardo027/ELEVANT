@@ -30,6 +30,9 @@ internal sealed class EfOccTurnaroundStore(ElevantDbContext context, IActorConte
     : IOccTurnaroundStore
 {
     private const string ReadPermission = "operations.planning.read";
+    // The positions map sends this detail's version with every arrival and stand command (3-N10): whoever may send
+    // them reads it, also without Planificación.
+    private const string PositionsAssignPermission = "operations.positions_map.assign";
     private const string CreatePermission = "operations.planning.create";
     private const string UpdatePermission = "operations.planning.update";
     private const string RescheduleAction = "occ.turnaround.reschedule";
@@ -44,7 +47,8 @@ internal sealed class EfOccTurnaroundStore(ElevantDbContext context, IActorConte
         CancellationToken cancellationToken = default)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
-        if (!Allowed(actor, ReadPermission)) return Failed<OccTurnaroundDetailData>(MasterDataFailure.Forbidden, "forbidden");
+        if (!Allowed(actor, ReadPermission) && !Allowed(actor, PositionsAssignPermission))
+            return Failed<OccTurnaroundDetailData>(MasterDataFailure.Forbidden, "forbidden");
         var scope = await ScopeAsync(actor!, actorId, turnaroundId, cancellationToken);
         var detail = scope is null ? null : await DetailAsync(turnaroundId);
         return detail is null
@@ -210,8 +214,17 @@ internal sealed class EfOccTurnaroundStore(ElevantDbContext context, IActorConte
         if (originId is null || destinationId is null) return Step.Fail(MasterDataFailure.Invalid, "invalid_turnaround_change");
         string? AirportCode(long id) => airports.FirstOrDefault(item => item.Id == id)?.IataCode;
 
-        // A new local day takes the contract of that day; a charter stays without one (ADR-0033).
         var operationDate = BusinessCalendar.Today(arrivalAt, scope.TimeZone);
+        // 3-N07: a new number or day never makes this flight a second plan of another open one of the airline. Without
+        // those changes the edit adds no duplicate, so it is not refused for one planned before the rule existed.
+        if ((arrivalNumber != FlightIdentity.NormalizeFlightNumber(arrival.FlightNumber) ||
+             departureNumber != FlightIdentity.NormalizeFlightNumber(departure.FlightNumber) ||
+             operationDate != turnaround.OperationDate) &&
+            await PlannedFlights.ExistsAsync(context, scope.StationId, turnaround.AirlineId, operationDate, arrivalNumber,
+                departureNumber, turnaround.Id, cancellationToken))
+            return Step.Fail(MasterDataFailure.Conflict, "flight_already_planned");
+
+        // A new local day takes the contract of that day; a charter stays without one (ADR-0033).
         var contractVersionId = turnaround.ContractVersionId;
         if (operationDate != turnaround.OperationDate &&
             !await context.Set<CharterAgreement>().AnyAsync(item => item.TurnaroundId == turnaround.Id, cancellationToken))
@@ -444,9 +457,9 @@ internal sealed class EfOccTurnaroundStore(ElevantDbContext context, IActorConte
             .Select(item => new { item.Id, item.CurrentStatus }).FirstOrDefaultAsync();
         var submitted = operation is not null &&
             await context.OperationSubmissions.AsNoTracking().AnyAsync(item => item.GroundOperationId == operation.Id);
-        // Only an arrival OCC recorded is corrected; a time the feed reported is not OCC's record (3-N08).
+        // Any time on the arrival leg, OCC's or the feed's, is corrected with its reason before the first submission (3-N08).
         var arrived = await context.FlightLegs.AsNoTracking().AnyAsync(leg => leg.TurnaroundId == row.Id &&
-            leg.Direction == FlightDirection.Arrival && leg.ActualAt != null && leg.Source == OperationalDataSource.Manual);
+            leg.Direction == FlightDirection.Arrival && leg.ActualAt != null);
         var charter = await context.Set<CharterAgreement>().AsNoTracking().AnyAsync(item => item.TurnaroundId == row.Id);
         return new OccTurnaroundDetailData(row.Station, projected[0], MasterDataCommand.Version(row.RowVersion), charter,
             OccTurnaroundRules.AllowedActions(row.CurrentStatus, operation?.CurrentStatus, arrived, submitted));

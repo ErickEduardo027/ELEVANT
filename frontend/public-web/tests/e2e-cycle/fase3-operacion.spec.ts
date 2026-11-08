@@ -391,9 +391,12 @@ test("El agente opera el vuelo en la tablet: inicio, hitos, datos, servicios y c
   const resumed = assigned.data.operations.find(item => item.operation.id === operationId)?.operation.status !== "Assigned";
   const again = resumed ? [200, 409] : 200;
   if (!resumed) {
+    // The arrival as the positions map sends it (hueco 3-N10): the intent's key with the flight's version.
     const occ = await login("occ");
+    const read = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
     await expectCall(200, occ, "POST", `/occ/turnarounds/${flight.turnaroundId}/arrival`,
-      { aircraftRegistration: "N123AA", arrivedAt: shifted(flight.arrivalAt, 8) });
+      { aircraftRegistration: "N123AA", arrivedAt: shifted(flight.arrivalAt, 8) },
+      { "idempotency-key": crypto.randomUUID(), "if-match": read.etag ?? "" });
     await device.send(200, "POST", `/ramp/operations/${operationId}/start`);
   }
   // Milestones at their times within the turnaround window, never in the future.
@@ -454,6 +457,18 @@ test("El agente entrega la operación a OCC", async () => {
     `/ramp/operations/${operationId}/charges`);
   saveRun({ automaticCharges: charges.data.services.flatMap(item => item.applied)
     .filter(mark => mark.source === "Automatic").map(mark => mark.code) });
+
+  // Hueco 3-N08: from the first submission the arrival is evidence; OCC neither records nor corrects it any more.
+  const flight = loadRun().flight as Flight;
+  const occ = await login("occ");
+  const read = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
+  expect(read.data.allowedActions).not.toContain("correctArrival");
+  const locked = await call<Problem>(occ, "POST", `/occ/turnarounds/${flight.turnaroundId}/arrival`,
+    { aircraftRegistration: "N123AA", arrivedAt: shifted(flight.arrivalAt, 6), reason: "Corrección tras la entrega (ciclo E2E)." },
+    { "idempotency-key": crypto.randomUUID(), "if-match": read.etag ?? "" });
+  // A resumed run may find the flight already approved and closed.
+  expect([locked.status, locked.data.code])
+    .toEqual([409, read.data.turnaround.status === "Completed" ? "turnaround_closed" : "arrival_locked"]);
 });
 
 test("OCC revisa el cierre y aprueba la operación", async ({ page }) => {
@@ -717,6 +732,16 @@ test("hueco 3-D · aprobar libera al agente y la posición; un agente opera hast
   const positions = flights.map(flight => queue.indexOf(flight.turnaroundId));
   expect(positions.every(position => position >= 0), "the assigned flights reach the tablet").toBe(true);
   expect(queue.indexOf(approved.turnaroundId)).toBeGreaterThan(Math.max(...positions));
+
+  // Hueco 3-N07: «Editar vuelo» never gives a flight the number of another open flight of the airline that day.
+  const before = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${fourth.turnaroundId}`);
+  const renumbered = await call<Problem>(occ, "PUT", `/occ/planning/turnarounds/${fourth.turnaroundId}/schedule`, {
+    arrivalFlightNumber: flights[0].body.arrivalFlightNumber, arrivalOriginIata: "MIA",
+    arrivalScheduledAt: fourth.body.arrivalScheduledAt, departureFlightNumber: fourth.body.departureFlightNumber,
+    departureDestinationIata: "MIA", departureScheduledAt: fourth.body.departureScheduledAt,
+    reason: "Número de otro vuelo abierto del día (ciclo E2E).",
+  }, { "idempotency-key": crypto.randomUUID(), "if-match": before.etag ?? "" });
+  expect([renumbered.status, renumbered.data.code]).toEqual([409, "flight_already_planned"]);
 
   for (const flight of [...flights, fourth])
     await changeStatus(occ, flight.turnaroundId, "Cancelled", "Vuelo de prueba del ciclo E2E (hueco 3-D): se cancela al terminar.");

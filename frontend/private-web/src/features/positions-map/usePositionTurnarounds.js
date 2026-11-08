@@ -4,10 +4,11 @@ import { loadOccMasterData } from '../../services/occMasterDataService';
 
 /**
  * The version of each flight the positions map changes (3-N10): its turnaround detail with the strong ETag the next
- * command sends in If-Match, the station's IANA zone and the changes its state allows (`correctArrival`). A flight the
- * account cannot read (403) or that failed to load keeps working without headers, as older screens did; the server
- * still serializes the stand. `reload` re-reads every flight, for example after a command or a 409/412. While a read
- * runs a flight is `loading` (first read) or `refreshing` (it keeps the version it had).
+ * command sends in If-Match, the station's IANA zone and the changes its state allows (`correctArrival`). Only a
+ * flight read now (`success`) takes commands: one being read is `loading` (first read) or `refreshing` (it keeps the
+ * version it had), and one that could not be read is `forbidden` (403) or `error` (with the `error` to explain). No
+ * command is sent without its version. `reload` re-reads every flight, for example after a command, a 409/412 or
+ * «Reintentar».
  *
  * @param {string[]} turnaroundIds
  */
@@ -32,7 +33,7 @@ export function usePositionTurnarounds(turnaroundIds) {
         .catch(error => {
           if (controller.signal.aborted || error?.name === 'AbortError') return;
           setAnswers(current => ({ ...current, [id]: { request: answering,
-            status: error?.status === 403 ? 'forbidden' : 'error', detail: null, etag: null } }));
+            status: error?.status === 403 ? 'forbidden' : 'error', detail: null, etag: null, error } }));
         });
     }
     return () => controller.abort();
