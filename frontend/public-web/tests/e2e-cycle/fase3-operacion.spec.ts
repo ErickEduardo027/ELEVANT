@@ -161,6 +161,7 @@ async function planFlight(occ: string, station: string, offset: number, window: 
   expect(airlineId, "the run's airline is contracted at PUJ that day").toBeTruthy();
   const stands = options.stands.filter(item => (place.standCode ? item.code === place.standCode
     : (place.terminals ?? ["A", "B"]).includes(item.terminal?.code ?? "")));
+  const refusals: string[] = [];
   for (const stand of stands) {
     const body = { turnaroundId: crypto.randomUUID(), stationId: station, airlineId, standId: stand.id, operationDate: day,
       arrivalFlightNumber: number, arrivalOriginIata: "MIA", arrivalScheduledAt: window.arrivalAt,
@@ -170,8 +171,9 @@ async function planFlight(occ: string, station: string, offset: number, window: 
     if (created.status === 201) return { ...created.data, body, standCode: stand.code };
     if (created.status !== 409 || created.data.code === "flight_already_planned")
       throw new Error(`POST /occ/planning/turnarounds → HTTP ${created.status} ${created.data.code ?? ""}`);
+    refusals.push(`${stand.code} ${created.data.code ?? "409"}${created.data.reasons?.length ? ` (${created.data.reasons.join(", ")})` : ""}`);
   }
-  throw new Error(`No stand is free for ${number} between ${window.arrivalAt} and ${window.departureAt}.`);
+  throw new Error(`No stand is free for ${number} between ${window.arrivalAt} and ${window.departureAt}: ${refusals.join("; ") || "no stand"}.`);
 }
 
 /** «Cancelar vuelo» or «Marcar desviado» through the API, with the intent's key and the ETag OCC just read. */
@@ -211,6 +213,21 @@ const HOLDS_AGENT = ["Assigned", "InProgress", "Returned"];
 async function holdingWindows(station: string) {
   return (await todaysTurnarounds(station))
     .filter(item => item.operation && HOLDS_AGENT.includes(item.operation.status) &&
+      item.agents.some(agent => agent.displayName === AGENT) && item.arrival && item.departure)
+    .map(item => [Date.parse(item.arrival!.scheduledAt), Date.parse(item.departure!.scheduledAt)] as [number, number]);
+}
+
+/** Handed over and not yet approved: the operation no longer holds its agent but still holds its stand (hueco 3-D). */
+const HOLDS_STAND = ["PendingReview", "InReview"];
+
+/**
+ * The windows a new flight of the run's agent must avoid: those of its flights that hold it and of those that, handed
+ * over, still hold their stand. Terminal A has three stands, so the steps that hand a flight over would otherwise all
+ * take the same window until no stand is left there.
+ */
+async function busyWindows(station: string) {
+  return (await todaysTurnarounds(station))
+    .filter(item => item.operation && [...HOLDS_AGENT, ...HOLDS_STAND].includes(item.operation.status) &&
       item.agents.some(agent => agent.displayName === AGENT) && item.arrival && item.departure)
     .map(item => [Date.parse(item.arrival!.scheduledAt), Date.parse(item.departure!.scheduledAt)] as [number, number]);
 }
@@ -603,9 +620,13 @@ test("hueco 3-B · el tipo de avión se captura y el recargo por tiempo extra se
   const close = review.data.close!;
   expect(close.timing.aircraftCategory, "the aircraft type gives the category").toBe("Narrowbody");
   expect(close.timing.allowedGroundMinutes, "Finance's allowance for the category").not.toBeNull();
+  // OVERTIME is automatic exactly when the ground time exceeds the allowance by more than the grace Finance gave the
+  // charge: 15 minutes in the Development tariff (ADR-0034). The ground time depends on the run, so it can land in the grace.
+  const overtimeGraceMinutes = 15;
   const overtime = close.charges.some(charge => charge.code === "OVERTIME" && charge.source === "Automatic");
-  expect(overtime, "OVERTIME is automatic exactly when the ground time exceeds the allowance")
-    .toBe((close.timing.groundMinutes ?? 0) > (close.timing.allowedGroundMinutes ?? Number.POSITIVE_INFINITY));
+  expect(overtime, "OVERTIME is automatic exactly when the ground time exceeds the allowance and its grace")
+    .toBe((close.timing.groundMinutes ?? 0) >
+      (close.timing.allowedGroundMinutes ?? Number.POSITIVE_INFINITY) + overtimeGraceMinutes);
   // From the first submission the type is evidence: the tablet no longer changes it.
   const other = catalog.data.aircraftTypes.find(item => item.id !== typed!.id);
   if (other) {
@@ -827,7 +848,7 @@ test("hueco 3-F · OCC pasa una operación iniciada a otro agente (relevo)", asy
   const { run, station } = runState();
   const occ = await login("occ");
   const offset = await freeOffset(station, [12, 14, 16, 18]);
-  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 45);
+  const window = agentWindow(run.shift as Shift, await busyWindows(station), 45);
   if (offset === null || !window) {
     test.skip(true, "No queda un número de vuelo libre o una ventana de 45 minutos en el turno del agente hoy.");
     return;
@@ -921,7 +942,7 @@ test("hueco 3-G · OCC gestiona las incidencias de la operación", async ({ page
   const { run, station } = runState();
   const occ = await login("occ");
   const offset = await freeOffset(station, [33, 35, 37]);
-  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 30);
+  const window = agentWindow(run.shift as Shift, await busyWindows(station), 30);
   if (offset === null || !window) {
     test.skip(true, "No queda un número de vuelo libre o una ventana de 30 minutos en el turno del agente hoy.");
     return;
@@ -1077,7 +1098,7 @@ test("hueco 3-I · la tablet sin conexión encola inicio, servicios, cargos, che
   const { run, station } = runState();
   const occ = await login("occ");
   const offset = await freeOffset(station, [27, 29, 31]);
-  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 30);
+  const window = agentWindow(run.shift as Shift, await busyWindows(station), 30);
   if (offset === null || !window) {
     test.skip(true, "No queda un número de vuelo libre o una ventana de 30 minutos en el turno del agente hoy.");
     return;
@@ -1230,7 +1251,7 @@ test("hueco 3-J · crear y liberar cobertura y liberar un agente son idempotente
 
   // «Liberar agente» names the assignment OCC saw: a key needs it, another one is refused, the same key repeats it.
   const offset = await freeOffset(station, [13, 15, 17]);
-  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 30);
+  const window = agentWindow(run.shift as Shift, await busyWindows(station), 30);
   if (offset === null || !window) {
     test.skip(true, "No queda un número de vuelo libre o una ventana de 30 minutos en el turno del agente hoy.");
     return;
@@ -1255,7 +1276,7 @@ test("hueco 3-K · OCC ve la foto de un daño del walk-around en la revisión", 
   const { run, station } = runState();
   const occ = await login("occ");
   const offset = await freeOffset(station, [21, 23, 25]);
-  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 30);
+  const window = agentWindow(run.shift as Shift, await busyWindows(station), 30);
   if (offset === null || !window) {
     test.skip(true, "No queda un número de vuelo libre o una ventana de 30 minutos en el turno del agente hoy.");
     return;
