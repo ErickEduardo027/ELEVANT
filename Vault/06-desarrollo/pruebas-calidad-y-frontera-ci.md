@@ -125,8 +125,12 @@ verificado;
   ventana libre en ese turno se saltan con su motivo cuando ya no queda, y el
   que reabre la aprobación se salta si la operación del ciclo ya está en una
   prefactura.
-- **Sin corrida registrada.** Esta nota no registra todavía una corrida de la
-  fase 3 contra el stack local.
+- **Corrida registrada.** El 8 de noviembre de 2026 las fases 1 a 3 pasaron
+  enteras contra el stack local recreado con la rama completa: 52 de 52
+  pasos (14, 18 y 20). Varias corridas el mismo día agotan las ventanas libres
+  del agente sintético. Para una corrida limpia se recrea el stack (`down -v`)
+  y se aparta `passwords.json` del estado del arnés, porque el seed vuelve a
+  las contraseñas iniciales.
 
 ## Qué agrega cada workflow activo
 

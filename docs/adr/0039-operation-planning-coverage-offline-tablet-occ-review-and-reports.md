@@ -154,7 +154,8 @@ Este ADR recoge cómo se cerraron, en cinco bloques: A (`28a43174`, planificaci�
 **7. Arnés E2E del ciclo completo.**
 - En `frontend/public-web/tests/e2e-cycle/fase3-operacion.spec.ts` ya no queda ningún `test.fixme`: los pasos `hueco 3-A` a `hueco 3-K` son pruebas reales, el paso final «huecos 3-N13 a 3-N26» comprueba los códigos de los reportes, los servicios facturables, la productividad y las horas locales de los CSV y PDF, y el paso del portal comprueba 3-N20. El spec de la fase 2 se adaptó al vínculo del feed (3-N07) y al código legible (3-N27).
 - Varios pasos se saltan, con su motivo, cuando ya no queda un número de vuelo libre o una ventana libre en el turno del agente sintético ese día; el de 3-D, cuando el agente ya lleva tres operaciones en la ventana del vuelo aprobado; el de 3-E, cuando su turno empieza demasiado temprano para un vuelo previo el mismo día, y el de 3-H, cuando la operación del ciclo ya está en una prefactura o no figura en «Por facturar».
-- El arnés no cambia: sigue necesitando el overlay `compose.local.e2e.yml`, Mailpit y la franja de 08:30 a 22:30 de la hora local (ADR-0038). Ningún workflow de CI lo ejecuta. Este ADR no registra todavía una corrida de la fase 3 contra el stack local.
+- Lo que el arnés necesita no cambia: el overlay `compose.local.e2e.yml`, Mailpit y la franja de 08:30 a 22:30 de la hora local (ADR-0038). Ningún workflow de CI lo ejecuta, y una corrida local no prueba un despliegue.
+- El 8 de noviembre de 2026 la corrida de las fases 1 a 3 contra el stack local recreado (`down -v`) con la rama completa (bloques, correcciones de la revisión e integración con Development) pasó entera: 52 de 52 pasos (14 de la fase 1, 18 de la fase 2 y 20 de la fase 3) en 6,3 minutos. Para llegar a esa corrida se corrigieron pruebas del arnés, no el producto: 3-B cuenta los 15 minutos de gracia del tiempo extra, 3-I reenvía el mismo cuerpo con la misma clave, 3-J elige al agente por su nombre accesible, los pasos de la terminal A evitan las ventanas en las que los vuelos ya entregados conservan su posición, y el inicio de sesión con código no reutiliza un código anterior.
 
 ### Migración
 
@@ -218,7 +219,6 @@ Ningún bloque toca el seed, la configuración (`appsettings*.json`), `backend/c
 - **`airlineId` de `airline_code_in_use`.** `ElevantApiError` no conserva esa extensión, así que «Nuevo vuelo» elige la aerolínea existente por nombre o IATA.
 - **La unidad en el panel de asignación.** El panel de asignación de Planificación (`frontend/private-web/src/features/planning/components/OccAssignmentPanel.jsx`) muestra la unidad de cada servicio del contrato tal como la guarda la tarifa, con su código (`operation`), porque no usa `unitLabel`. El detalle del vuelo y Revisión ya la muestran con su nombre.
 - **Fase 4 «Facturación».** Sus 32 huecos siguen abiertos, entre ellos el día UTC de Finanzas (4-N10) y el prepago de un charter confirmado después de facturar (4-N22). En el arnés quedan `test.fixme` los pasos 4-A y 4-B.
-- **Corrida E2E.** Falta registrar una corrida de la fase 3 contra el stack local.
 
 ## Trazabilidad de huecos
 
