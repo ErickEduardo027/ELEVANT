@@ -47,6 +47,12 @@ export function invoicingError(error) {
   if (reason === 'already_invoiced') return 'Alguna operación ya fue facturada. Actualizamos la lista.';
   if (reason === 'operation_not_approved') return 'Alguna operación aún no está aprobada por OCC.';
   if (reason === 'nothing_to_invoice') return 'Alguna operación no tiene servicios completados para facturar.';
+  if (reason === 'charge_excluded_by_contract') {
+    return 'Alguna operación lleva un cargo que su contrato excluye: pida a OCC reabrir la revisión y quitarlo.';
+  }
+  if (reason === 'excluded_in_review') {
+    return 'OCC excluyó de la facturación un servicio de alguna operación. Actualizamos la lista.';
+  }
   if (error?.status === 403) return 'No tiene permiso para emitir facturas en esta estación.';
   if (error?.status === 409) return 'La selección cambió mientras se emitía. Actualizamos la lista.';
   if (error?.status === 422) return 'Estas operaciones no pueden facturarse juntas.';

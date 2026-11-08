@@ -456,8 +456,9 @@ public sealed partial class SqlServerMigrationTests
     }
 
     /// <summary>
-    /// 3-N07, 3-N27, 3-A: the feed's pair of a flight OCC typed by hand joins that turnaround; a new pair gets a readable
-    /// code; when the provider cancels an imported flight OCC is told once and nothing is cancelled by the feed.
+    /// 3-N07, 3-N27, 3-A, 3-B: the feed's pair of a flight OCC typed by hand joins that turnaround, and the type it brings
+    /// follows the turnaround's stand; a new pair gets a readable code; when the provider cancels or diverts an imported
+    /// flight OCC is told once per flight, whichever legs it reports, and nothing is cancelled by the feed.
     /// </summary>
     [Fact]
     public async Task TheFeedLinksThePlannedFlightAndOnlyAlertsOccWhenTheProviderCancelsIt()
@@ -516,9 +517,23 @@ public sealed partial class SqlServerMigrationTests
         Guid Proposal(string number) => proposals.Single(item => item.FlightNumber == number).PublicId;
         string ProposalVersion(string number) => Convert.ToBase64String(proposals.Single(item => item.FlightNumber == number).RowVersion);
 
-        // The planned flight takes the pair: nothing new is created and the replay answers the same.
+        // 3-B: the type the pair brings follows the stand the planned flight holds (ADR-0030), as the arrival does: a
+        // wide-body never takes a narrow-body stand, and the refused link changes nothing.
+        var narrow = await AircraftTypeAsync(database.ConnectionString, "A320", ct);
+        var wide = await AircraftTypeAsync(database.ConnectionString, "A333", ct);
+        await using (var setup = CreateContext(database.ConnectionString))
+            await setup.Stands.Where(item => item.PublicId == stands["A02"])
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.MaxAircraftSize, AircraftSizeCategory.Narrowbody), ct);
+        var tooWide = await Run(services => services.GetRequiredService<IOccFlightFeedStore>().ImportAsync(SeededOccAccount,
+            new OccFlightImportInput(Proposal("ZZ 1234"), Proposal("ZZ 1235"), wide, null, false, ProposalVersion("ZZ 1234"),
+                ProposalVersion("ZZ 1235")), Guid.NewGuid(), ct));
+        Assert.Equal((OccFlightFeedFailure.Conflict, "stand_unavailable"), (tooWide.Failure, tooWide.Code));
+        Assert.Equal(["stand_narrowbody_only"], tooWide.Reasons!);
+
+        // The planned flight takes the pair and the narrow-body type it lacked: nothing new is created and the replay
+        // answers the same.
         var key = Guid.NewGuid();
-        var input = new OccFlightImportInput(Proposal("ZZ 1234"), Proposal("ZZ 1235"), null, null, false,
+        var input = new OccFlightImportInput(Proposal("ZZ 1234"), Proposal("ZZ 1235"), narrow, null, false,
             ProposalVersion("ZZ 1234"), ProposalVersion("ZZ 1235"));
         var linked = await Run(services => services.GetRequiredService<IOccFlightFeedStore>().ImportAsync(SeededOccAccount, input,
             key, ct));
@@ -537,6 +552,8 @@ public sealed partial class SqlServerMigrationTests
             Assert.Equal(2, await check.Turnarounds.CountAsync(item => item.StationId == turnaround.StationId &&
                 item.OperationDate == today, ct));
             Assert.Equal("HI2042", turnaround.AircraftRegistration);
+            Assert.Equal(await check.AircraftTypes.Where(item => item.PublicId == narrow).Select(item => (long?)item.Id).SingleAsync(ct),
+                turnaround.AircraftTypeId);
             Assert.All(await check.Set<ExternalFlightProposal>().AsNoTracking()
                     .Where(item => item.FlightNumber == "ZZ 1234" || item.FlightNumber == "ZZ 1235").ToArrayAsync(ct),
                 item => Assert.Equal((ExternalFlightProposalStatus.Confirmed, (long?)turnaround.Id), (item.Status, item.TurnaroundId)));
@@ -550,19 +567,32 @@ public sealed partial class SqlServerMigrationTests
                 "feed-link-test"), ct));
         Assert.Equal("flight_already_planned", again.Code);
 
-        // The provider cancels the imported flight: OCC hears it once, the turnaround stays as OCC left it.
-        for (var read = 1; read <= 2; read++)
-            await Run(services => services.GetRequiredService<IFlightFeedSyncStore>().RecordAsync(
-                call with { OccurredAt = now.AddMinutes(5 * read) },
+        // The provider cancels both legs of the imported flight in one read, and again in the next: OCC hears it once per
+        // account, the turnaround stays as OCC left it. A diversion reported leg by leg in two reads is heard once too.
+        Task ProviderReportsAsync(int minutes, string arrivalStatus, string departureStatus) =>
+            Run(services => services.GetRequiredService<IFlightFeedSyncStore>().RecordAsync(
+                call with { OccurredAt = now.AddMinutes(minutes) },
                 new AirportFeedResponse(ProviderCallOutcome.Succeeded, 2, 200, null,
-                    [Leg(FlightDirection.Arrival, "ZZ 1300", localNoon.AddHours(3), "Canceled")]), ct));
+                [
+                    Leg(FlightDirection.Arrival, "ZZ 1300", localNoon.AddHours(3), arrivalStatus),
+                    Leg(FlightDirection.Departure, "ZZ 1301", localNoon.AddHours(5), departureStatus),
+                ]), ct));
+        await ProviderReportsAsync(5, "Canceled", "Canceled");
+        await ProviderReportsAsync(10, "Canceled", "Canceled");
+        await ProviderReportsAsync(15, "Diverted", "Canceled");
+        await ProviderReportsAsync(20, "Diverted", "Diverted");
         await using (var check = CreateContext(database.ConnectionString))
         {
             var alerts = await check.OperationalNotifications.AsNoTracking()
-                .Where(item => item.Kind == "flight_cancelled_by_provider").ToArrayAsync(ct);
-            Assert.NotEmpty(alerts);
-            Assert.All(alerts, item => Assert.Equal(Proposal("ZZ 1300"), item.SourceId));
-            Assert.Equal(alerts.Length, alerts.Select(item => item.RecipientAccountId).Distinct().Count());
+                .Where(item => item.Kind == "flight_cancelled_by_provider" || item.Kind == "flight_diverted_by_provider")
+                .ToArrayAsync(ct);
+            var cancelled = alerts.Where(item => item.Kind == "flight_cancelled_by_provider")
+                .Select(item => item.RecipientAccountId).Order().ToArray();
+            Assert.NotEmpty(cancelled);
+            Assert.Equal(cancelled.Length, cancelled.Distinct().Count());
+            Assert.Equal(cancelled, alerts.Where(item => item.Kind == "flight_diverted_by_provider")
+                .Select(item => item.RecipientAccountId).Order().ToArray());
+            Assert.All(alerts, item => Assert.Equal(other.TurnaroundId!.Value, item.SourceId));
             Assert.Equal(TurnaroundStatus.Confirmed, (await check.Turnarounds.AsNoTracking()
                 .SingleAsync(item => item.PublicId == other.TurnaroundId, ct)).CurrentStatus);
         }

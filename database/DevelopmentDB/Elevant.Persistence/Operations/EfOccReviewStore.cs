@@ -480,8 +480,10 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
 
     /// <summary>
     /// 3-N11: excludes a service in exception with an executed quantity from billing (when, who and why), or includes
-    /// it again; the history stays in the audit. The review version moves and a signed Service Order records the
-    /// change as OCC's correction.
+    /// it again; the history stays in the audit. An automatic charge of the whole operation the excluded service
+    /// carried moves to the next billable service, so the operation still bills it
+    /// (<see cref="AutomaticSurchargeApplier.RelocateOperationSurchargesAsync"/>). The review version moves and a signed
+    /// Service Order records the change as OCC's correction.
     /// </summary>
     private async Task<ReviewStep> ExcludeInsideTransactionAsync(OccReviewBillingExclusionRequest request,
         CancellationToken cancellationToken)
@@ -509,6 +511,10 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         service.BillingExclusionReason = request.Excluded ? request.Reason : null;
         service.UpdatedAt = now;
         operation.UpdatedAt = now;
+        IReadOnlyList<string> relocatedSurcharges = request.Excluded
+            ? await AutomaticSurchargeApplier.RelocateOperationSurchargesAsync(context, operation.Id, service.Id,
+                scope.AccountId, now, cancellationToken)
+            : [];
         context.AuditEntries.Add(new AuditEntry
         {
             PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
@@ -520,7 +526,7 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             MetadataJson = JsonSerializer.Serialize(new
             {
                 operationId = operation.PublicId, serviceId = service.PublicId, submissionId = scope.Latest.PublicId,
-                excluded = request.Excluded, previousReason,
+                excluded = request.Excluded, previousReason, relocatedSurcharges,
             }),
         });
         await context.SaveChangesAsync(cancellationToken);
@@ -986,6 +992,11 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             row.Status.ToString(), row.Outcome.ToString(), row.DecidedAt, row.Reason);
     }
 
+    /// <summary>
+    /// What a reopening answers, the first time and when its key replays it: the revision it created, in the state it
+    /// created it (pending review, also once OCC decided that revision: the replay names the reopening, never a later
+    /// decision), and the review version as it stands now, the one the next command sends in If-Match.
+    /// </summary>
     private async Task<OccReviewReopenData?> ReopenDataAsync(Guid submissionId, CancellationToken cancellationToken)
     {
         var row = await (from submission in context.OperationSubmissions.AsNoTracking()
@@ -995,13 +1006,14 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                          select new
                          {
                              OperationId = operation.PublicId, operation.RowVersion, submission.PublicId,
-                             submission.RevisionNumber, submission.Status,
+                             submission.RevisionNumber,
                              Latest = context.OperationSubmissions.Where(item => item.GroundOperationId == operation.Id)
                                  .OrderByDescending(item => item.RevisionNumber)
                                  .Select(item => new { item.PublicId, item.Status }).FirstOrDefault(),
                          }).SingleOrDefaultAsync(cancellationToken);
         if (row?.Latest is null) return null;
-        return new OccReviewReopenData(row.OperationId, row.PublicId, row.RevisionNumber, row.Status.ToString(),
+        return new OccReviewReopenData(row.OperationId, row.PublicId, row.RevisionNumber,
+            nameof(SubmissionStatus.PendingReview),
             ConcurrencyToken(row.OperationId, row.RowVersion, row.Latest.PublicId, row.Latest.Status));
     }
 

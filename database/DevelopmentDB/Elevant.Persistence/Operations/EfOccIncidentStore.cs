@@ -19,7 +19,8 @@ namespace Elevant.Persistence.Operations;
 /// OCC manages the incidents of an operation of its stations (3-G): the live list (not the evidence frozen at the
 /// hand-off), its own reports and the state changes with their note. Every command runs in one serializable
 /// transaction with its Idempotency-Key receipt (<see cref="MasterDataCommand"/>); a state change checks the incident's
-/// version OCC saw. Each step is kept in <c>ops.incident_status_events</c>, audited and announced to OCC's review
+/// version OCC saw and, once the operation is approved or cancelled, only resolves or closes it
+/// (<see cref="OccIncidentPolicy"/>). Each step is kept in <c>ops.incident_status_events</c>, audited and announced to OCC's review
 /// (<c>occ_review</c>) and to the agent's tablet, which keeps reading the same keys.
 /// </summary>
 internal sealed class EfOccIncidentStore(ElevantDbContext context, IActorContextResolver actors, TimeProvider timeProvider)
@@ -173,6 +174,12 @@ internal sealed class EfOccIncidentStore(ElevantDbContext context, IActorContext
         IncidentStatus target, string note, string expectedVersion, DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // The operation first, under lock as a report and an approval take it: an approval running at the same time
+        // comes first or after, never in between.
+        var operation = await context.GroundOperations.FromSqlInterpolated($"""
+                SELECT * FROM [ops].[ground_operations] WITH (UPDLOCK, HOLDLOCK)
+                WHERE [id] = {scope.OperationId}
+                """).AsNoTracking().SingleAsync(cancellationToken);
         var incident = await context.Incidents.FromSqlInterpolated($"""
                 SELECT * FROM [ops].[incidents] WITH (UPDLOCK, HOLDLOCK)
                 WHERE [public_id] = {incidentId}
@@ -181,6 +188,9 @@ internal sealed class EfOccIncidentStore(ElevantDbContext context, IActorContext
             return Step.Fail(MasterDataFailure.Conflict, "version_conflict");
         if (!OccIncidentPolicy.CanTransition(incident.Status, target))
             return Step.Fail(MasterDataFailure.Conflict, OccIncidentCodes.TransitionInvalid);
+        // Approved or cancelled, the incidents are history: OCC only resolves or closes them.
+        if (!OccIncidentPolicy.CanTransition(incident.Status, target, operation.CurrentStatus))
+            return Step.Fail(MasterDataFailure.Conflict, OccIncidentCodes.OperationClosed);
         var from = incident.Status;
         incident.Status = target;
         if (target == IncidentStatus.Resolved)
@@ -238,6 +248,8 @@ internal sealed class EfOccIncidentStore(ElevantDbContext context, IActorContext
     {
         if (incidentIds.Length == 0) return [];
         var rows = await (from incident in context.Incidents.AsNoTracking()
+                          join operation in context.GroundOperations.AsNoTracking()
+                              on incident.GroundOperationId equals operation.Id
                           join agentRow in context.RampAgents.AsNoTracking()
                               on incident.ReportedByRampAgentId equals (long?)agentRow.Id into agents
                           from agent in agents.DefaultIfEmpty()
@@ -250,7 +262,7 @@ internal sealed class EfOccIncidentStore(ElevantDbContext context, IActorContext
                               incident.Id, incident.PublicId, incident.IncidentType, incident.Severity, incident.Status,
                               incident.Description, incident.OccurredAt, incident.ReportedAt, incident.DelayCode,
                               incident.ReportedByAccountId, incident.ResolutionNote, incident.ResolvedAt,
-                              incident.ResolvedByAccountId, incident.RowVersion,
+                              incident.ResolvedByAccountId, incident.RowVersion, OperationStatus = operation.CurrentStatus,
                               AgentName = person == null ? null : person.FirstName + " " + person.LastName,
                           }).ToArrayAsync(cancellationToken);
         var internalIds = rows.Select(row => row.Id).ToArray();
@@ -279,7 +291,8 @@ internal sealed class EfOccIncidentStore(ElevantDbContext context, IActorContext
                 fromAgent ? "Agent" : "Occ", row.ResolutionNote, row.ResolvedAt,
                 row.ResolvedByAccountId is null ? null : Name(row.ResolvedByAccountId),
                 MasterDataCommand.Version(row.RowVersion),
-                OccIncidentPolicy.NextStatuses(row.Status).Select(status => status.ToString()).ToArray(),
+                OccIncidentPolicy.NextStatuses(row.Status, row.OperationStatus).Select(status => status.ToString())
+                    .ToArray(),
                 events[row.Id].Select(item => new OccIncidentEventData(item.FromStatus?.ToString(), item.ToStatus.ToString(),
                     item.Note, item.OccurredAt, item.ActorAccountId is null ? "ELEVANT" : Name(item.ActorAccountId)))
                     .ToArray());

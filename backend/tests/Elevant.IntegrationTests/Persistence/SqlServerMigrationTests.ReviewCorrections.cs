@@ -383,7 +383,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(OccReviewFailure.NotFound,
             (await Reopen(detail.ConcurrencyToken, "Quitar el cargo que el contrato excluye", Guid.NewGuid(), TimingAgent)).Failure);
         var reopenKey = Guid.NewGuid();
-        var reopened = await Reopen(detail.ConcurrencyToken, "Quitar el cargo que el contrato excluye", reopenKey);
+        var reopenToken = detail.ConcurrencyToken;
+        var reopened = await Reopen(reopenToken, "Quitar el cargo que el contrato excluye", reopenKey);
         Assert.True(reopened.IsSuccess, reopened.Code);
         Assert.Equal((2, "PendingReview", false), (reopened.Data!.RevisionNumber, reopened.Data.Status, reopened.Replayed));
         var again = await Reopen(detail.ConcurrencyToken, "Quitar el cargo que el contrato excluye", reopenKey);
@@ -437,6 +438,13 @@ public sealed partial class SqlServerMigrationTests
         detail = await DetailAsync();
         Assert.Equal(ServiceOrderStates.Corrected, detail.ServiceOrderState);
         Assert.True((await Decide(reopened.Data.SubmissionId, detail.ConcurrencyToken, "Approved")).IsSuccess);
+        // The reopening's key still answers what it created once OCC approved that revision: the pending revision 2,
+        // with the review version as it stands now.
+        var replayedAfterApproval = await Reopen(reopenToken, "Quitar el cargo que el contrato excluye", reopenKey);
+        Assert.Equal((reopened.Data.SubmissionId, 2, "PendingReview", true),
+            (replayedAfterApproval.Data!.SubmissionId, replayedAfterApproval.Data.RevisionNumber,
+                replayedAfterApproval.Data.Status, replayedAfterApproval.Replayed));
+        Assert.Equal((await DetailAsync()).ConcurrencyToken, replayedAfterApproval.Data.ReviewVersion);
         var billable = await ToInvoiceAsync();
         Assert.Equal([(true, (string?)null), (false, "excluded_in_review")],
             billable.OrderBy(item => item.Id == state.ServicePublicIds[0] ? 0 : 1)
@@ -457,6 +465,202 @@ public sealed partial class SqlServerMigrationTests
         detail = await DetailAsync();
         Assert.Equal("already_invoiced", (await Reopen(detail.ConcurrencyToken, "Revisar otra vez la operación",
             Guid.NewGuid(), submission: reopened.Data.SubmissionId)).Code);
+    }
+
+    /// <summary>
+    /// 3-N02 with 3-N09: the Service Order the tablet signs in a correction round is measured as its resubmission
+    /// measures it (to the first hand-off, without the automatic surcharges the corrected times no longer justify), so
+    /// OCC approves the resubmission on the order the airline and AVIAM signed.
+    /// </summary>
+    [Fact]
+    public async Task ACorrectionRoundSignsTheServiceOrderItsResubmissionFreezes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await TimingProviderAsync(database, ct);
+        async Task<T> Run<T>(Func<IServiceProvider, Task<T>> action)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await action(scope.ServiceProvider);
+        }
+        var installation = await RegisterTimingTabletAsync(provider, "81000000-0000-7000-8000-0000000000d3", ct);
+        // A day operation pushed back 100 minutes after block-on: past the 75 minutes allowed and the 15 of grace, so
+        // the hand-off marks OVERTIME.
+        var blockOn = new DateTimeOffset(2026, 8, 18, 12, 10, 0, TimeSpan.FromHours(-4)).ToUniversalTime();
+        ReviewOperationState state;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            state = await PrepareReviewOperationAsync(setup, blockOn, 2m, ct);
+            var pushback = await setup.Set<OperationMilestone>().SingleAsync(item =>
+                item.GroundOperationId == state.OperationId && item.Code == "PUSHBACK", ct);
+            pushback.ActualAt = blockOn.AddMinutes(100);
+            await setup.SaveChangesAsync(ct);
+        }
+        Task<string[]> SurchargesAsync() => Run(async services =>
+            (await services.GetRequiredService<IOperationDocumentStore>()
+                .ReadForAgentAsync(TimingAgent, [TimingStation], TimingOperation, ct))!
+            .Documents.Single(item => item.Content.Kind == OperationDocumentKind.ServiceOrder)
+            .Content.Surcharges.Select(item => item.Code).ToArray());
+        Task<OccReviewDetailData> DetailAsync() => Run(async services =>
+            (await services.GetRequiredService<IOccReviewStore>().GetDetailAsync(TimingOperation, [TimingStation], ct))!);
+        async Task<OccReviewDecisionWriteResult> Decide(Guid submissionId, string outcome, string? reason)
+        {
+            var token = (await DetailAsync()).ConcurrencyToken;
+            return await Run(services => services.GetRequiredService<IOccReviewStore>().DecideAsync(
+                new OccReviewDecisionWriteRequest(TimingOcc, [TimingStation], TimingOperation, submissionId, token,
+                    outcome, reason, Guid.NewGuid(), "correction-decide", Guid.NewGuid()), ct));
+        }
+        Assert.Contains(AutomaticSurchargeCodes.Overtime, await SurchargesAsync());
+        var firstKey = Guid.NewGuid();
+        Assert.True((await Run(services => services.GetRequiredService<IRampOperationSubmissionStore>().SubmitAsync(
+            new RampOperationSubmissionWriteRequest(TimingAgent, [TimingStation], TimingOperation, installation, firstKey,
+                null, Guid.NewGuid(), "correction-handoff"), ct))).IsSuccess);
+
+        // OCC returns it and the agent opens the correction (the operation is in progress again): block-on was 30
+        // minutes later, so the 70 minutes on the ground no longer justify OVERTIME.
+        var returned = await Decide(firstKey, "Returned", "Corregir la hora de calzos");
+        Assert.True(returned.IsSuccess, returned.Code);
+        var opened = await Run(services => services.GetRequiredService<IRampOperationCorrectionStore>().ReopenAsync(
+            new RampOperationCorrectionWriteRequest(TimingAgent, [TimingStation], TimingOperation, installation,
+                Guid.NewGuid(), Guid.NewGuid(), "correction-open"), ct));
+        Assert.True(opened.IsSuccess, opened.Failure?.ToString());
+        var blockOnCorrected = await Run(services => services.GetRequiredService<IRampExecutionCommandStore>()
+            .RecordMilestoneAsync(new RampMilestoneWriteRequest(TimingAgent, [TimingStation], TimingOperation,
+                "BLOCK_ON", blockOn.AddMinutes(30), installation, Guid.NewGuid(), "correction-block-on"), ct));
+        Assert.True(blockOnCorrected.IsSuccess, blockOnCorrected.Code);
+
+        // The order of the correction, the one the tablet signs, already leaves out the OVERTIME the resubmission
+        // retires.
+        Assert.DoesNotContain(AutomaticSurchargeCodes.Overtime, await SurchargesAsync());
+        await SignServiceOrderAsync(provider, TimingAgent, TimingStation, TimingOperation, installation, ct);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var checklist = await setup.OperationChecklists.SingleAsync(item =>
+                item.GroundOperationId == state.OperationId && item.RevisionNumber == 2, ct);
+            checklist.Status = ChecklistStatus.Submitted;
+            checklist.StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
+            checklist.SubmittedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+            checklist.SubmittedByRampAgentId = state.AgentId;
+            await setup.SaveChangesAsync(ct);
+        }
+        var resubmissionKey = Guid.NewGuid();
+        var resubmitted = await Run(services => services.GetRequiredService<IRampOperationSubmissionStore>().SubmitAsync(
+            new RampOperationSubmissionWriteRequest(TimingAgent, [TimingStation], TimingOperation, installation,
+                resubmissionKey, "Calzos corregidos.", Guid.NewGuid(), "correction-resubmit"), ct));
+        Assert.True(resubmitted.IsSuccess, resubmitted.Failure?.ToString());
+
+        // The resubmission retired OVERTIME and froze what was signed: OCC approves it.
+        await using (var check = CreateContext(database.ConnectionString))
+            Assert.False(await check.OperationServiceCharges.AnyAsync(mark =>
+                state.ServiceIds.Contains(mark.OperationServiceId) && mark.RemovedAt == null &&
+                check.ChargeDefinitions.Any(charge => charge.Id == mark.ChargeDefinitionId &&
+                    charge.Code == AutomaticSurchargeCodes.Overtime), ct));
+        Assert.Equal(ServiceOrderStates.FullySigned, (await DetailAsync()).ServiceOrderState);
+        var approved = await Decide(resubmissionKey, "Approved", null);
+        Assert.True(approved.IsSuccess, approved.Code);
+    }
+
+    /// <summary>
+    /// 3-N11: a charge of the whole operation (the arrival delay) goes on a completed service before one in exception,
+    /// and leaves the service in exception OCC excludes from billing for the next billable one, so Finance still bills
+    /// it once.
+    /// </summary>
+    [Theory]
+    [InlineData(ServiceExecutionStatus.Completed)]
+    [InlineData(ServiceExecutionStatus.Exception)]
+    public async Task AChargeOfTheWholeOperationStaysBilledWhenOccExcludesTheServiceInException(
+        ServiceExecutionStatus secondLine)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await TimingProviderAsync(database, ct);
+        async Task<T> Run<T>(Func<IServiceProvider, Task<T>> action)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await action(scope.ServiceProvider);
+        }
+        var installation = await RegisterTimingTabletAsync(provider, secondLine == ServiceExecutionStatus.Completed
+            ? "81000000-0000-7000-8000-0000000000d4" : "81000000-0000-7000-8000-0000000000d5", ct);
+        // A day operation whose aircraft arrived 80 minutes late, past the 30 of grace: the hand-off marks DELAY once.
+        // The first line ended in exception with 2 units.
+        var blockOn = new DateTimeOffset(2026, 8, 18, 12, 10, 0, TimeSpan.FromHours(-4)).ToUniversalTime();
+        ReviewOperationState state;
+        long delay;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            state = await PrepareReviewOperationAsync(setup, blockOn, 2m, ct,
+                [ServiceExecutionStatus.Exception, secondLine]);
+            var arrival = await setup.FlightLegs.SingleAsync(leg => leg.TurnaroundId == state.TurnaroundId &&
+                leg.Direction == FlightDirection.Arrival, ct);
+            arrival.ScheduledAt = blockOn.AddMinutes(-90);
+            await setup.SaveChangesAsync(ct);
+            delay = await ChargeIdAsync(setup, AutomaticSurchargeCodes.Delay, ct);
+        }
+        async Task<(long ServiceId, bool Active, string? Reason)[]> DelayMarksAsync()
+        {
+            await using var check = CreateContext(database.ConnectionString);
+            return (await check.OperationServiceCharges.AsNoTracking()
+                    .Where(mark => state.ServiceIds.Contains(mark.OperationServiceId) && mark.ChargeDefinitionId == delay)
+                    .OrderBy(mark => mark.Id)
+                    .Select(mark => new { mark.OperationServiceId, mark.Source, mark.RemovedAt, mark.AdjustmentReason })
+                    .ToArrayAsync(ct))
+                .Select(mark =>
+                {
+                    Assert.Equal(ChargeMarkSource.Automatic, mark.Source);
+                    return (mark.OperationServiceId, mark.RemovedAt is null, mark.AdjustmentReason);
+                }).ToArray();
+        }
+        var handOffKey = Guid.NewGuid();
+        Assert.True((await Run(services => services.GetRequiredService<IRampOperationSubmissionStore>().SubmitAsync(
+            new RampOperationSubmissionWriteRequest(TimingAgent, [TimingStation], TimingOperation, installation, handOffKey,
+                null, Guid.NewGuid(), "relocation-handoff"), ct))).IsSuccess);
+        // Once: on the completed line when there is one, otherwise on the first line in exception.
+        Assert.Equal([(state.ServiceIds[secondLine == ServiceExecutionStatus.Completed ? 1 : 0], true, (string?)null)],
+            await DelayMarksAsync());
+
+        // OCC excludes the first line from billing: the delay is on the second line only.
+        await SignServiceOrderAsync(provider, TimingAgent, TimingStation, TimingOperation, installation, ct);
+        Task<OccReviewDetailData> DetailAsync() => Run(async services =>
+            (await services.GetRequiredService<IOccReviewStore>().GetDetailAsync(TimingOperation, [TimingStation], ct))!);
+        var detail = await DetailAsync();
+        var excluded = await Run(services => services.GetRequiredService<IOccReviewStore>().SetServiceBillingExclusionAsync(
+            new OccReviewBillingExclusionRequest(TimingOcc, [TimingStation], TimingOperation, state.ServicePublicIds[0],
+                handOffKey, detail.ConcurrencyToken, true, "La GPU falló y la aerolínea no la acepta", Guid.NewGuid(),
+                Guid.NewGuid(), "relocation-exclusion"), ct));
+        Assert.True(excluded.IsSuccess, excluded.Code);
+        (long, bool, string?)[] afterExclusion = secondLine == ServiceExecutionStatus.Completed
+            ? [(state.ServiceIds[1], true, null)]
+            : [(state.ServiceIds[0], false, AutomaticSurchargeApplier.RelocatedReason), (state.ServiceIds[1], true, null)];
+        Assert.Equal(afterExclusion, await DelayMarksAsync());
+        var order = (await Run(services => services.GetRequiredService<IOperationDocumentStore>()
+                .ReadForOccAsync([TimingStation], TimingOperation, ct)))!
+            .Documents.Single(item => item.Content.Kind == OperationDocumentKind.ServiceOrder).Content;
+        Assert.Single(order.Surcharges, item => item.Code == AutomaticSurchargeCodes.Delay);
+
+        // Approved, Finance bills the second line with the delay of the operation.
+        detail = await DetailAsync();
+        Assert.Equal(ServiceOrderStates.Corrected, detail.ServiceOrderState);
+        var approved = await Run(services => services.GetRequiredService<IOccReviewStore>().DecideAsync(
+            new OccReviewDecisionWriteRequest(TimingOcc, [TimingStation], TimingOperation, handOffKey,
+                detail.ConcurrencyToken, "Approved", null, Guid.NewGuid(), "relocation-decide", Guid.NewGuid()), ct));
+        Assert.True(approved.IsSuccess, approved.Code);
+        var toInvoice = (await Run(services => services.GetRequiredService<IFinanceApprovedServicesReadStore>().GetAsync(
+                FinanceAccount, TimingStation, new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 18), ct)))!
+            .Services.Where(item => item.OperationId == TimingOperation).ToArray();
+        var billable = Assert.Single(toInvoice, item => item.Ready);
+        Assert.Equal(state.ServicePublicIds[1], billable.Id);
+        Assert.Contains(billable.Charges!, charge => charge.Code == AutomaticSurchargeCodes.Delay);
+        var issued = await Run(services => Handler(services).HandleAsync(
+            new IssueInvoiceRequest(FinanceAccount, TimingStation, [TimingOperation], Guid.NewGuid()), ct));
+        Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+        await using (var check = CreateContext(database.ConnectionString))
+            Assert.Equal([state.ServiceIds[1]], await check.PreinvoiceLines.AsNoTracking()
+                .Where(line => line.Kind == PreinvoiceLineKind.Charge && line.ChargeDefinitionId == delay)
+                .Select(line => line.OperationServiceId!.Value).ToArrayAsync(ct));
     }
 
     /// <summary>
@@ -528,12 +732,15 @@ public sealed partial class SqlServerMigrationTests
     /// <summary>
     /// Riley's seeded operation at PUJ ready to hand off: started at <paramref name="blockOn"/> with block-on then and
     /// push-back an hour later, the arrival on time, both services priced from the base contract (BAGGAGE, 10 USD per
-    /// minute) and finished, the second one in exception with <paramref name="exceptionQuantity"/>, and its execution
-    /// checklist submitted.
+    /// minute) and finished as <paramref name="statuses"/> says (by default the first completed and the second in
+    /// exception), each one in exception with <paramref name="exceptionQuantity"/>, and its execution checklist
+    /// submitted.
     /// </summary>
     private static async Task<ReviewOperationState> PrepareReviewOperationAsync(ElevantDbContext setup,
-        DateTimeOffset blockOn, decimal exceptionQuantity, CancellationToken ct)
+        DateTimeOffset blockOn, decimal exceptionQuantity, CancellationToken ct,
+        IReadOnlyList<ServiceExecutionStatus>? statuses = null)
     {
+        statuses ??= [ServiceExecutionStatus.Completed, ServiceExecutionStatus.Exception];
         var operation = await setup.GroundOperations.SingleAsync(item => item.PublicId == TimingOperation, ct);
         operation.CurrentStatus = GroundOperationStatus.InProgress;
         operation.ActualStartAt = blockOn;
@@ -554,7 +761,7 @@ public sealed partial class SqlServerMigrationTests
         for (var index = 0; index < services.Length; index++)
         {
             var service = services[index];
-            var exception = index == 1;
+            var exception = statuses[index] == ServiceExecutionStatus.Exception;
             service.ServiceDefinitionId = definition.Id;
             service.ContractServiceRateId = rate.Id;
             service.CurrentStatus = exception ? ServiceExecutionStatus.Exception : ServiceExecutionStatus.Completed;

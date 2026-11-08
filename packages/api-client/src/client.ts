@@ -5035,8 +5035,9 @@ function isFinanceApprovedServicesResponse(value: unknown): value is FinanceAppr
         typeof value === "string" && /^[A-Z]{3}$/.test(value)) &&
       isOptionalNullable(service.preinvoiceId, isUuid) &&
       typeof service.ready === "boolean" &&
+      // 3-N11: a service in exception with an executed quantity is billed too (ServiceBillability).
       (service.ready
-        ? service.executionStatus === "Completed" && service.executedQuantity > 0 &&
+        ? ["Completed", "Exception"].includes(String(service.executionStatus)) && service.executedQuantity > 0 &&
           isNonEmptyString(service.billingUnit) && isFiniteNumber(service.frozenUnitPrice) &&
           typeof service.frozenCurrency === "string" &&
           /^[A-Z]{3}$/.test(service.frozenCurrency) &&

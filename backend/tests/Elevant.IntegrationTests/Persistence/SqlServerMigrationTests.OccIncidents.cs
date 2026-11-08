@@ -128,7 +128,10 @@ public sealed partial class SqlServerMigrationTests
             Assert.Equal((null, true), (row.ReportedByRampAgentId, row.ReportedByAccountId is not null));
         }
 
-        // 5. An approved operation's incidents are history: OCC no longer reports on it.
+        // 5. An approved operation's incidents are history: OCC no longer reports on it nor takes a resolved one back into
+        // review (its resolution stands); it still closes it.
+        var tabletResolved = await Change(fromTablet.Id, "Resolved", "Limpieza confirmada por la torre", fromTablet.Version);
+        Assert.Equal("Resolved", tabletResolved.Value!.Status);
         await using (var setup = CreateContext(database.ConnectionString))
         {
             var operation = await setup.GroundOperations.SingleAsync(item => item.Id == operationInternalId, ct);
@@ -137,6 +140,13 @@ public sealed partial class SqlServerMigrationTests
         }
         Assert.Equal(OccIncidentCodes.OperationClosed, (await Report(Guid.NewGuid(), "Operational", "Demora del equipaje",
             now.AddMinutes(-1))).Code);
-        Assert.False((await Run(services => Incidents(services).ListAsync(TimingOcc, TimingOperation, ct))).Value!.CanReport);
+        var approved = (await Run(services => Incidents(services).ListAsync(TimingOcc, TimingOperation, ct))).Value!;
+        Assert.False(approved.CanReport);
+        var history = Assert.Single(approved.Incidents, item => item.Id == fromTablet.Id);
+        Assert.Equal(["Closed"], history.AllowedStatuses);
+        var refused = await Change(fromTablet.Id, "InReview", "La aerolínea pidió revisarla", history.Version);
+        Assert.Equal((MasterDataFailure.Conflict, OccIncidentCodes.OperationClosed), (refused.Failure, refused.Code));
+        var kept = await Change(fromTablet.Id, "Closed", "Caso cerrado con la aerolínea", history.Version);
+        Assert.Equal(("Closed", "Limpieza confirmada por la torre"), (kept.Value!.Status, kept.Value.ResolutionNote));
     }
 }
