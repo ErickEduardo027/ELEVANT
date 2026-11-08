@@ -301,21 +301,26 @@ No se ha verificado en el VPS.
 ## La operación (fase 3 del ciclo)
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
-la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
+la fase 3 del ciclo (`f2d5c52c`) y las correcciones de la revisión de sus
+bloques A, B y C (`34e90aad`), que esa verificación no cubre
 ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
 
 - **Cambios de una escala.** OCC reprograma, cancela o desvía una escala antes
   de que su operación inicie, con motivo, la versión que vio y el permiso
   `operations.planning.update`. Cancelar o desviar cierra la posición, libera a
   los agentes y deja la operación `Cancelled`; nada se borra. El mismo vuelo de
-  la aerolínea se planifica una sola vez por día local: la importación del feed
-  se vincula a la escala que ya existe. Las escalas nuevas reciben el código
+  la aerolínea se planifica una sola vez por día local: el alta manual y
+  «Editar vuelo» rechazan un número que ya vuela otra escala abierta ese día
+  (`flight_already_planned`), y la importación del feed se vincula a la escala
+  que ya existe. Las escalas nuevas reciben el código
   `{ESTACIÓN}-{AAAAMMDD}-{NNN}`.
-- **Llegada.** OCC la registra con la hora local que escribe y, si quiere, el
-  tipo de avión; desde ese registro el tramo es `Manual` y el feed ya no
-  reescribe su hora real. Se corrige con motivo hasta la primera entrega. Con la
-  llegada registrada (escala `InProgress`), la operación todavía se asigna
-  mientras siga `Planned`.
+- **Llegada.** OCC la registra con la hora local que escribe (si no la toca y el
+  vuelo aún no tiene hora, la del servidor al guardar) y, si quiere, el tipo de
+  avión; desde ese registro el tramo es `Manual` y el feed ya no reescribe su
+  hora real. Reemplazar una hora que el tramo ya tiene pide motivo (la de OCC
+  siempre; la del feed, si se cambia). Registrar o corregir la llegada solo vale
+  hasta la primera entrega (`arrival_locked`). Con la llegada registrada (escala
+  `InProgress`), la operación todavía se asigna mientras siga `Planned`.
 - **Ocupación.** Una sola regla
   ([`OperationOccupancyRules`](../../backend/Elevant.Application/Operations/OperationOccupancyRules.cs)):
   un agente lleva hasta tres operaciones simultáneas (con ventanas que se
@@ -342,8 +347,11 @@ la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
   ventana a ahora más 2 minutos, sin el cierre, y nunca es anterior a la
   transición previa del servicio (`service_time_out_of_order`). Mientras OCC
   revisa se acepta la evidencia capturada antes de la entrega, que recalcula los
-  recargos y obliga a releer; el reenvío de una corrección se mide hasta la
-  primera entrega.
+  recargos y obliga a releer; el reenvío de una corrección mide el tiempo en
+  tierra hasta la primera entrega y los servicios con las transiciones
+  registradas hasta el reenvío, las de la corrección incluidas. En la ronda de
+  corrección los hitos cierran en la primera entrega, y los daños, las
+  incidencias y las desviaciones se aceptan con la hora actual.
 - **Revisión.** Aprobar exige la Orden de Servicio firmada o corregida por OCC,
   y una corrección de OCC después de la firma queda como una versión corregida
   con su motivo. OCC excluye de la facturación un servicio en excepción con

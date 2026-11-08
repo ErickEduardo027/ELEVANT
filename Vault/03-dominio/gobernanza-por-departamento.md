@@ -147,7 +147,8 @@ de cuenta fuera del catálogo de departamentos, así que nunca entran en el acce
 de un departamento.
 
 **Altas de la fase 3 del ciclo**, también posteriores al commit verificado
-(código de `f2d5c52c`;
+(código de `f2d5c52c` y de las correcciones de la revisión de sus bloques A, B
+y C, `34e90aad`;
 [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)):
 
 - `operations.planning.update` («Reprogramar, cancelar o desviar escalas»);
@@ -158,7 +159,9 @@ de un departamento.
 El administrador de OCC las hereda. El relevo de un agente usa
 `operations.planning.assign`, la exclusión de facturación usa
 `operations.review.decide` y la reapertura de la cotización de un charter usa
-`finance.charters.confirm`, que ya existían.
+`finance.charters.confirm`, que ya existían. El detalle de la escala, cuya
+versión envían los comandos del mapa de posiciones, lo lee también quien tiene
+`operations.positions_map.assign`, sin necesitar el «Ver» de Planificación.
 
 El acceso efectivo se calcula en el servidor para cada petición. Private Web
 sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/access`).

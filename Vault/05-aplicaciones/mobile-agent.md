@@ -174,24 +174,31 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
 ## Fase 3: una sola cola, el reloj de ELEVANT y la evidencia que se conserva
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
-la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
+la fase 3 del ciclo (`f2d5c52c`) y las correcciones de la revisión de sus
+bloques A, B y C (`34e90aad`), que esa verificación no cubre
 ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
 
 - **Una sola cola.** La [cola persistente](../../frontend/mobile-agent/src/synchronization/flight-report-outbox.ts)
   lleva también el inicio, las transiciones de servicio, los cargos, el envío
   del checklist y el chat, en orden FIFO por operación. Sin red o con la sesión
   revocada se detiene todo; una foto que ELEVANT no puede guardar ahora no
-  detiene nada; cualquier otro fallo temporal retiene solo su operación. Se
-  vacía al abrir la app, al recuperar la señal, al volver a primer plano y cada
-  minuto. Los comandos que reservó la versión anterior se importan una vez con
-  su misma clave.
+  detiene nada, se sigue reintentando y el agente puede descartarla en
+  «Sincronización» para entregar sin ella; cualquier otro fallo temporal retiene
+  solo su operación. Se vacía al abrir la app, al recuperar la señal, al volver a
+  primer plano y cada minuto. Una foto que la tablet no puede leer, o la de una
+  marca que ELEVANT rechazó, no se envía y queda como «No se puede enviar» hasta
+  que el agente la descarta, y al reintentar la marca su foto la sigue. Los
+  comandos que reservó la versión anterior se importan una vez con su misma
+  clave.
 - **La hora del toque.** El inicio y los servicios viajan con la hora en que el
   agente tocó, y ELEVANT la conserva aunque el comando llegue horas después: el
   inicio, si no es anterior a la asignación ni de hace más de 24 horas; un
   servicio, si no es anterior a la apertura de la ventana de la operación ni a
   su transición previa. Los hitos se ajustan dentro de la ventana de la
   operación; en una corrección, un hito vacío abre el ajuste en lugar de grabar
-  «AHORA».
+  «AHORA», y el ajuste indica que la hora vale hasta la primera entrega a OCC.
+  Los daños, las incidencias y las desviaciones de la corrección llevan la hora
+  actual y ELEVANT los acepta.
 - **El reloj de ELEVANT.** El
   [reloj del servidor](../../frontend/mobile-agent/src/synchronization/server-clock.ts)
   toma el desfase de la cabecera `Date` y lo guarda en el dispositivo. Toda hora
@@ -204,8 +211,9 @@ la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
 - **Entrega.** La APK nueva vacía la cola antes de entregar y no entrega con
   registros pendientes o rechazados de la operación, ni con la Orden de Servicio
   sin las firmas de la aerolínea y de AVIAM sobre su contenido actual.
-- **Lista y alcance.** La lista trae las operaciones activas y las aprobadas de
-  las últimas 48 horas, con las activas primero. Una operación iniciada sigue en
+- **Lista y alcance.** La lista trae las operaciones activas y las que OCC aprobó
+  en las últimas 48 horas, contadas desde la aprobación y no desde el fin de la
+  operación, con las activas primero. Una operación iniciada sigue en
   manos de su agente aunque cambien su posición o su terminal.
 - **Datos del vuelo y charter.** «Datos del vuelo» captura el tipo de avión de
   la lista de ELEVANT, fijo desde la primera entrega. En un charter con el
@@ -261,7 +269,7 @@ verificables de:
 
 - **Brecha actual:** endpoints de autenticación, asignaciones, sync y chat no existen en OpenAPI.
 - **Brecha actual:** token prototípico en AsyncStorage; falta almacenamiento seguro de credenciales.
-- **Brecha actual:** protocolo servidor de dispositivo/idempotencia/reconciliación no está implementado de extremo a extremo. *Posterior al commit verificado: desde la fase 3 del ciclo, el inicio, los hitos, los datos del vuelo, las firmas, el walk-around, el charter, los servicios, los cargos, el checklist y el chat viajan por la misma cola con la instalación registrada y, salvo la foto del walk-around, una clave estable. En esa cola el recibo repite el mismo resultado o el mismo código, salvo en el chat, que se deduplica por la clave del mensaje, y en la foto, un `PUT` por marca en el que los mismos bytes cuentan como reintento. Las incidencias, la entrega a OCC, la corrección y la observación de asistencia conservan su propia clave reservada fuera de esa cola ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*
+- **Brecha actual:** protocolo servidor de dispositivo/idempotencia/reconciliación no está implementado de extremo a extremo. *Posterior al commit verificado: desde la fase 3 del ciclo, el inicio, los hitos, los datos del vuelo, las firmas, el walk-around, el charter, los servicios, los cargos, el checklist y el chat viajan por la misma cola con la instalación registrada y, salvo la foto del walk-around, una clave estable. En esa cola el recibo repite el mismo resultado o el mismo código, salvo en tres casos: el `contract_not_in_force` del inicio, que no se guarda y la misma clave vuelve a evaluar; el chat, que se deduplica por la clave del mensaje, y la foto, un `PUT` por marca en el que los mismos bytes cuentan como reintento. Las incidencias, la entrega a OCC, la corrección y la observación de asistencia conservan su propia clave reservada fuera de esa cola ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*
 - **Brecha actual:** no hay configuración EAS ni comando para producir la APK firmada.
 - **Brecha actual:** uploads reales están deshabilitados hasta diseñar object storage.
 - **Desconocido:** tablets objetivo, versión mínima de OS, MDM/distribución interna, custodia de firma y política de actualización.

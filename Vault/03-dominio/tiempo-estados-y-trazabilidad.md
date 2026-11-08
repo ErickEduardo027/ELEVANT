@@ -110,8 +110,8 @@ texto o reutilizan columnas existentes:
   `America/Santo_Domingo`, nunca el día UTC
   ([calendario](../../backend/Elevant.Application/Common/BusinessCalendar.cs)).
 
-La fase 3 del ciclo (código de `f2d5c52c`, también posterior al commit
-verificado;
+La fase 3 del ciclo (código de `f2d5c52c` y de las correcciones de la revisión
+de sus bloques A, B y C, `34e90aad`, también posterior al commit verificado;
 [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md))
 empezó a usar estados que ya existían y sumó historia y reglas de tiempo con
 una sola migración aditiva:
@@ -131,7 +131,9 @@ una sola migración aditiva:
   ELEVANT y envía la hora del toque; el servidor la acepta si encaja en la
   operación, con 2 minutos de tolerancia, y la guarda recortada a su propio
   reloj, así que ninguna hora guardada queda en el futuro. Hitos, daños e
-  incidencias caen en la ventana de la operación, hasta su cierre; una
+  incidencias caen en la ventana de la operación, hasta su cierre. En una ronda
+  de corrección los hitos cierran en la primera entrega, y los daños y las
+  incidencias, que llevan la hora actual, se aceptan hasta ahora. Una
   transición de servicio va desde la apertura de esa ventana hasta ahora, sin
   el cierre, y el inicio, desde la asignación y no más de 24 horas atrás
   ([política](../../backend/Elevant.Application/Operations/RampEvidenceTimePolicy.cs)).
