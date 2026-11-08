@@ -25,9 +25,9 @@ public static class RampIncidentPolicy
         occurredAt.Year >= 2000;
 
     /// <summary>
-    /// Why an incident report is refused, or null: it belongs to a running operation and its time fits the same window
-    /// as the milestones and the damages (3-N25), with the clock tolerance on both ends; the store clamps it to the
-    /// server's clock.
+    /// Why an incident report is refused, or null: it belongs to a running operation and its time fits the window of
+    /// the damages (3-N25, <see cref="RampEvidenceKind.Report"/>: a correction round takes it until now), with the
+    /// clock tolerance on both ends; the store clamps it to the server's clock.
     /// </summary>
     public static string? ReportRejection(
         TurnaroundStatus turnaroundStatus,

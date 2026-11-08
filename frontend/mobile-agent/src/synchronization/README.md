@@ -10,6 +10,9 @@
 - `server-clock.ts`: el desfase del reloj de la tablet frente a ELEVANT, tomado de la cabecera `Date` (hueco 3-N18).
 
 El envío (`services/flight-report.ts`) es FIFO por operación: sin señal o con la sesión revocada se detiene todo; una
-foto que ELEVANT no puede guardar ahora no detiene nada; cualquier otro fallo temporal retiene solo el resto de su
-operación, y un inicio rechazado también. Un rechazo queda en «Sincronización» hasta que el agente lo revise.
+foto que ELEVANT no puede guardar ahora no detiene nada y el agente puede descartarla (`walkaround_photo_unavailable`),
+y una que la tablet no puede leer (`walkaround_photo_unreadable`) o cuya marca ELEVANT rechazó (`damage_mark_refused`)
+no se envía y queda bloqueada para descartarse (al reintentar la marca, su foto la sigue); cualquier otro fallo
+temporal retiene solo el resto de su operación, y un inicio rechazado también. Un rechazo queda en «Sincronización»
+hasta que el agente lo revise.
 SignalR no confirma la persistencia de un comando: solo la respuesta de ELEVANT lo hace.

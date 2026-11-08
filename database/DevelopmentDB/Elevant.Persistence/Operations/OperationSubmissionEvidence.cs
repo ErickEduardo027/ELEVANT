@@ -30,8 +30,16 @@ internal sealed record OperationSubmissionEvidence(
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// Freezes what OCC reviews. <paramref name="submittedAt"/> ends the operation (its close facts, ground time and
+    /// overrun; a correction round keeps the first hand-off, 3-N09), its recorded end by default.
+    /// <paramref name="transitionsUntil"/> ends the service transitions the timings measure, by default the same: a
+    /// revision passes its own hand-off, because the transitions of a correction round come after the first one and
+    /// are what the services' current status shows.
+    /// </summary>
     public static async Task<OperationSubmissionEvidence> CaptureAsync(
-        ElevantDbContext context, long operationId, CancellationToken cancellationToken, DateTimeOffset? submittedAt = null)
+        ElevantDbContext context, long operationId, CancellationToken cancellationToken, DateTimeOffset? submittedAt = null,
+        DateTimeOffset? transitionsUntil = null)
     {
         var services = await (
             from service in context.OperationServices.AsNoTracking()
@@ -58,9 +66,10 @@ internal sealed record OperationSubmissionEvidence(
         var facts = await OperationCloseFacts.LoadAsync(context, operationId, endAt, cancellationToken);
         // Package exceeded is measured against Finance's allowance when the aircraft category is known.
         var overrun = AutomaticSurchargePolicy.OverrunMinutes(facts.GroundMinutes, facts.AllowedGroundMinutes);
+        var eventsUntil = transitionsUntil ?? endAt;
         var events = await (from item in context.Set<Elevant.Domain.Entities.Operations.OperationServiceStatusEvent>().AsNoTracking()
             join service in context.OperationServices.AsNoTracking() on item.OperationServiceId equals service.Id
-            where service.GroundOperationId == operationId && (endAt == null || item.OccurredAt <= endAt)
+            where service.GroundOperationId == operationId && (eventsUntil == null || item.OccurredAt <= eventsUntil)
             orderby item.OccurredAt select new { service.PublicId, item.OccurredAt, item.ToStatus }).ToArrayAsync(cancellationToken);
         var arrivals = await context.FlightLegs.AsNoTracking().Where(leg => leg.TurnaroundId == operation.TurnaroundId && leg.Direction == Elevant.Domain.Enumerations.FlightDirection.Arrival).ToArrayAsync(cancellationToken);
         var arrival = arrivals.Length == 1 ? arrivals[0] : null;

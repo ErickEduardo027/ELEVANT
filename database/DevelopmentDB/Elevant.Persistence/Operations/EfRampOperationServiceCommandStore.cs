@@ -202,7 +202,8 @@ internal sealed class EfRampOperationServiceCommandStore(
         if (request.OccurredAt is { } tapped)
         {
             occurredAt = NormalizeToMilliseconds(tapped);
-            var window = await RampEvidenceWindowReader.ReadAsync(context, scope.Operation, now, cancellationToken);
+            var window = await RampEvidenceWindowReader.ReadAsync(context, scope.Operation, RampEvidenceKind.Report,
+                now, cancellationToken);
             var lastEventAt = await context.Set<OperationServiceStatusEvent>().AsNoTracking()
                 .Where(item => item.OperationServiceId == service.Id)
                 .MaxAsync(item => (DateTimeOffset?)item.OccurredAt, cancellationToken);

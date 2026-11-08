@@ -10,10 +10,13 @@ import type {
 } from '@elevant/api-client';
 import { createMobileAgentApiClient } from '../config/elevant-api';
 import {
+  DAMAGE_MARK_REFUSED,
   enqueueFlightReportCommand,
   pendingFor,
   readFlightReportOutbox,
   updateFlightReportItem,
+  WALKAROUND_PHOTO_UNAVAILABLE,
+  WALKAROUND_PHOTO_UNREADABLE,
   type FlightReportCommand,
   type FlightReportOutboxItem,
   type OperationQueue,
@@ -233,10 +236,20 @@ function isRefusal(issue: MobileServiceError) {
     status !== 429;
 }
 
-/** The text «Sincronización» shows for a command ELEVANT refused (3-I, 3-F: a released assignment). */
-function refusalMessage(issue: MobileServiceError) {
-  if (issue.code === 'not_found') return 'Se liberó tu asignación o la operación ya no está a tu cargo.';
-  return issue.message;
+/**
+ * The text «Sincronización» shows for a command ELEVANT refused (3-I, 3-F: a released assignment). A photo's «not
+ * found» may also be its mark, which ELEVANT does not have.
+ */
+function refusalMessage(command: FlightReportCommand, issue: MobileServiceError) {
+  if (issue.code !== 'not_found') return issue.message;
+  return command.kind === 'damagePhoto'
+    ? 'ELEVANT no tiene la marca de este daño o la operación ya no está a tu cargo: descarta la foto.'
+    : 'Se liberó tu asignación o la operación ya no está a tu cargo.';
+}
+
+/** A walk-around mark of an operation, as the key its photo shares. */
+function markOf(command: Extract<FlightReportCommand, { kind: 'damageMark' | 'damagePhoto' }>) {
+  return `${command.operationId.toLowerCase()}:${command.markId.toLowerCase()}`;
 }
 
 const bump = (operationId: string) => ({
@@ -276,19 +289,20 @@ async function send(item: FlightReportOutboxItem, { client, installationId, sess
       return { result: charter, change: { charters: { ...snapshot.charters, [command.operationId]: charter } } };
     }
     case 'signature':
-    case 'damageMark':
-    case 'damagePhoto': {
+    case 'damageMark': {
       const documents = command.kind === 'signature'
         ? await client.signRampOperationDocument(command.operationId, command.documentKind as OperationDocumentKind,
           command.role as OperationSignatureRole, { signerName: command.signerName, documentSha256: command.documentSha256,
             strokes: command.strokes, ...(command.signerIdentification ? { signerIdentification: command.signerIdentification } : {}) },
           installationId, key)
-        : command.kind === 'damageMark'
-          ? await client.recordRampDamageMark(command.operationId, command.markId, { x: command.x, y: command.y,
-            note: command.note, reportedAt: command.reportedAt }, installationId, key)
-          : await client.attachRampDamagePhoto(command.operationId, command.markId,
-            await readWalkaroundPhoto(command.fileUri), command.contentType, installationId);
-      if (command.kind === 'damagePhoto') forgetWalkaroundPhoto(command.fileUri);
+        : await client.recordRampDamageMark(command.operationId, command.markId, { x: command.x, y: command.y,
+          note: command.note, reportedAt: command.reportedAt }, installationId, key);
+      return { result: documents, change: { documents: { ...snapshot.documents, [command.operationId]: documents } } };
+    }
+    case 'damagePhoto': {
+      const documents = await client.attachRampDamagePhoto(command.operationId, command.markId,
+        await readKeptPhoto(command.fileUri), command.contentType, installationId);
+      forgetWalkaroundPhoto(command.fileUri);
       return { result: documents, change: { documents: { ...snapshot.documents, [command.operationId]: documents } } };
     }
     case 'start': {
@@ -335,11 +349,21 @@ async function send(item: FlightReportOutboxItem, { client, installationId, sess
   }
 }
 
+/** The photo kept on the device for its mark; a copy that cannot be read is not sent again and again (3-N06). */
+async function readKeptPhoto(fileUri: string) {
+  try {
+    return await readWalkaroundPhoto(fileUri);
+  } catch {
+    throw new MobileServiceError('request_failed', { problemCode: WALKAROUND_PHOTO_UNREADABLE, retryable: false });
+  }
+}
+
 /**
  * One pass over the queue, first in first out per operation (3-I): without signal or with a revoked session it stops;
- * a photo ELEVANT cannot store now does not hold anything back; any other failure holds only the rest of its
- * operation (a refused start too, since nothing of the operation can follow it); a refusal waits in
- * «Sincronización» for the agent. Answers why it stopped, if it did.
+ * a photo ELEVANT cannot store now does not hold anything back, and the agent may discard it (3-N06); any other
+ * failure holds only the rest of its operation (a refused start too, since nothing of the operation can follow it); a
+ * refusal, or a photo the device cannot read, waits in «Sincronización» for the agent. Answers why it stopped, if it
+ * did.
  */
 async function flushOnce(): Promise<MobileServiceError | undefined> {
   let context;
@@ -362,15 +386,27 @@ async function flushOnce(): Promise<MobileServiceError | undefined> {
     installationId, sessionId: context.sessionId, accountId,
   };
   const held = new Map<string, MobileServiceError | undefined>();
+  /** The walk-around marks ELEVANT refused (blocked in the queue or in this pass): their photos are not sent. */
+  const refusedMarks = new Set<string>();
   let lastIssue: MobileServiceError | undefined;
   for (const item of items) {
     const operationId = item.command.operationId.toLowerCase();
     if (item.state === 'blocked') {
       if (item.command.kind === 'start' && !held.has(operationId)) held.set(operationId, undefined);
+      if (item.command.kind === 'damageMark') refusedMarks.add(markOf(item.command));
       continue;
     }
     if (held.has(operationId)) {
       remember(item.idempotencyKey, { state: 'waiting', issue: held.get(operationId) });
+      continue;
+    }
+    if (item.command.kind === 'damagePhoto' && refusedMarks.has(markOf(item.command))) {
+      // ELEVANT would answer «not found»: the photo has no mark to attach to. It waits, explained, to be discarded.
+      const issue = new MobileServiceError('conflict', { problemCode: DAMAGE_MARK_REFUSED });
+      const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'block', issue.message,
+        issue.problemCode);
+      remember(item.idempotencyKey, { state: 'blocked', issue });
+      publish({ items: next, issue });
       continue;
     }
     try {
@@ -388,19 +424,24 @@ async function flushOnce(): Promise<MobileServiceError | undefined> {
         publish({ items: next, syncing: false, issue });
         return issue;
       }
-      if (isRefusal(issue)) {
-        const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'block', refusalMessage(issue),
-          issue.problemCode);
+      // A refusal, or a photo the device cannot read: sending it again cannot help, it waits for the agent.
+      if (isRefusal(issue) || issue.problemCode === WALKAROUND_PHOTO_UNREADABLE) {
+        const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'block',
+          refusalMessage(item.command, issue), issue.problemCode);
         remember(item.idempotencyKey, { state: 'blocked', issue });
         if (item.command.kind === 'start') held.set(operationId, issue);
+        if (item.command.kind === 'damageMark') refusedMarks.add(markOf(item.command));
         publish({ items: next, issue });
         continue;
       }
-      // ELEVANT could not take it now (5xx, 429, an unreadable answer): it is sent again later.
-      const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'attempt', issue.message,
-        issue.problemCode);
+      // ELEVANT could not take it now (5xx, 429, an unreadable answer): it is sent again later. A photo holds nothing
+      // back and says so: the agent may discard it in «Sincronización» to hand the operation off without it (3-N06).
+      const photo = item.command.kind === 'damagePhoto';
+      const waiting = photo ? new MobileServiceError(issue.code, { problemCode: WALKAROUND_PHOTO_UNAVAILABLE }) : issue;
+      const next = await updateFlightReportItem(accountId, item.idempotencyKey, 'attempt', waiting.message,
+        waiting.problemCode);
       remember(item.idempotencyKey, { state: 'waiting', issue });
-      if (item.command.kind !== 'damagePhoto') held.set(operationId, issue);
+      if (!photo) held.set(operationId, issue);
       publish({ items: next, issue });
     }
   }
@@ -505,9 +546,22 @@ export async function discardFlightReportItem(idempotencyKey: string) {
   publish({ items: await updateFlightReportItem(context.session.actor.accountId, idempotencyKey, 'remove') });
 }
 
+/**
+ * The agent sends a command again from «Sincronización». A refused walk-around mark takes along the photo the tablet
+ * held back for it: once ELEVANT takes the mark the photo follows it, and if ELEVANT refuses it again the photo waits
+ * again, so its card never keeps a refusal that no longer holds.
+ */
 export async function retryFlightReportItem(idempotencyKey: string) {
   const context = await getMobileSessionRequestContext();
-  publish({ items: await updateFlightReportItem(context.session.actor.accountId, idempotencyKey, 'retry') });
+  const accountId = context.session.actor.accountId;
+  let items = await updateFlightReportItem(accountId, idempotencyKey, 'retry');
+  const retried = items.find(item => item.idempotencyKey.toLowerCase() === idempotencyKey.toLowerCase())?.command;
+  const photos = retried?.kind === 'damageMark'
+    ? items.filter(item => item.state === 'blocked' && item.lastCode === DAMAGE_MARK_REFUSED &&
+      item.command.kind === 'damagePhoto' && markOf(item.command) === markOf(retried))
+    : [];
+  for (const photo of photos) items = await updateFlightReportItem(accountId, photo.idempotencyKey, 'retry');
+  publish({ items });
   await flushFlightReport();
 }
 

@@ -14,7 +14,12 @@ import {
   type FlightReportSnapshot,
 } from '../services/flight-report';
 import { readUnsentRecords } from '../services/mobile-auth';
-import type { FlightReportOutboxItem } from '../synchronization/flight-report-outbox';
+import {
+  DAMAGE_MARK_REFUSED,
+  isDiscardableWhileWaiting,
+  WALKAROUND_PHOTO_UNREADABLE,
+  type FlightReportOutboxItem,
+} from '../synchronization/flight-report-outbox';
 import { serviceStatusLabel } from '../features/assigned-operations/presentation';
 import { colors } from '../theme/colors';
 import { radius, space, syncTone, type } from '../theme/tokens';
@@ -64,8 +69,20 @@ function describe(item: FlightReportOutboxItem) {
 }
 
 /**
+ * What the item's card says it is. The tablet itself holds back a photo it cannot read or whose mark ELEVANT refused:
+ * the photo never reached ELEVANT, so ELEVANT did not refuse it.
+ */
+function stateLabel(item: FlightReportOutboxItem) {
+  if (item.state !== 'blocked') return 'Guardado en el dispositivo';
+  return item.lastCode === WALKAROUND_PHOTO_UNREADABLE || item.lastCode === DAMAGE_MARK_REFUSED
+    ? 'No se puede enviar' : 'Rechazado por ELEVANT';
+}
+
+/**
  * «Sincronización» (ADR-0031): what the tablet saved and has not reached ELEVANT yet. Nothing is
- * lost: pending items go out on their own with signal; rejected ones wait here for the agent.
+ * lost: pending items go out on their own with signal; rejected ones wait here for the agent. A
+ * walk-around photo ELEVANT could not store keeps going out on its own, and the agent may discard
+ * it to hand the operation off without it (3-N06).
  */
 export default function SyncScreen() {
   const [snapshot, setSnapshot] = useState<FlightReportSnapshot | null>(null);
@@ -105,13 +122,15 @@ export default function SyncScreen() {
             <View style={[styles.item, { borderColor: tone.fg }]}>
               <View style={styles.itemHead}>
                 <Ionicons name={tone.icon} size={20} color={tone.fg} />
-                <Text style={[styles.itemState, { color: tone.fg }]}>
-                  {item.state === 'blocked' ? 'Rechazado por ELEVANT' : 'Guardado en el dispositivo'}</Text>
+                <Text style={[styles.itemState, { color: tone.fg }]}>{stateLabel(item)}</Text>
               </View>
               <Text style={styles.itemText}>{describe(item)}</Text>
               {item.lastError ? <Text style={styles.itemError}>{item.lastError}</Text> : null}
               {item.state === 'blocked' && <View style={styles.actions}>
                 <PrimaryButton secondary icon="refresh" title="REINTENTAR" onPress={() => void retryFlightReportItem(item.idempotencyKey)} />
+                <PrimaryButton danger icon="trash-outline" title="DESCARTAR" onPress={() => void discardFlightReportItem(item.idempotencyKey)} />
+              </View>}
+              {isDiscardableWhileWaiting(item) && <View style={styles.actions}>
                 <PrimaryButton danger icon="trash-outline" title="DESCARTAR" onPress={() => void discardFlightReportItem(item.idempotencyKey)} />
               </View>}
             </View>

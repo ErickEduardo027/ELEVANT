@@ -40,7 +40,7 @@ public sealed class RampIncidentPolicyTests
         }
     }
 
-    // 3-N25: incidents share the window of the milestones, with the clock tolerance on both ends.
+    // 3-N25: incidents share the window of the damages, with the clock tolerance on both ends.
     [Fact]
     public void RequiresActiveOperationAndOccurrenceInsideTheOperationWindow()
     {

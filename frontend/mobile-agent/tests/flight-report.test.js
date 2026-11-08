@@ -45,9 +45,11 @@ jest.mock('../src/services/mobile-device', () => ({
 }));
 
 const { ElevantApiError } = require('@elevant/api-client');
-const { enqueueFlightReportCommand, readFlightReportOutbox, pendingFor } = require('../src/synchronization/flight-report-outbox');
-const { recordMilestone, saveFlightData, markDamage, flushFlightReport, subscribeFlightReport, resetFlightReportForTests } =
-  require('../src/services/flight-report');
+const { enqueueFlightReportCommand, readFlightReportOutbox, pendingFor, isDiscardableWhileWaiting } =
+  require('../src/synchronization/flight-report-outbox');
+const { recordMilestone, saveFlightData, markDamage, flushFlightReport, subscribeFlightReport, resetFlightReportForTests,
+  discardFlightReportItem, retryFlightReportItem } = require('../src/services/flight-report');
+const walkaroundPhotos = require('../src/storage/walkaround-photos');
 const { startAssignedRampOperation } = require('../src/services/ramp-operation-start');
 const { transitionRampOperationService } = require('../src/services/ramp-operation-service-execution');
 const serverClock = require('../src/synchronization/server-clock');
@@ -204,9 +206,66 @@ describe('one queue, first in first out per operation (3-I)', () => {
     await flushFlightReport();
     const [photo, ...rest] = await readFlightReportOutbox(accountId);
     expect(rest).toEqual([]);
-    expect(photo).toMatchObject({ idempotencyKey: key(2), state: 'pending', attempts: 1 });
+    expect(photo).toMatchObject({ idempotencyKey: key(2), state: 'pending', attempts: 1,
+      lastCode: 'walkaround_photo_unavailable',
+      lastError: 'ELEVANT no pudo guardar la foto; la tablet la reintenta sola. Para entregar la operación sin ella, descártala.' });
     expect(mockApi.recordRampMilestone).toHaveBeenCalledWith(operationId, 'BLOCK_ON', '2026-11-04T16:00:00.000Z',
       installationId, key(3));
+
+    // 3-N06: it keeps going out on its own, and the agent may discard it to hand the operation off without it.
+    await flushFlightReport();
+    expect(mockApi.attachRampDamagePhoto).toHaveBeenCalledTimes(2);
+    const [waiting] = await readFlightReportOutbox(accountId);
+    expect(waiting).toMatchObject({ state: 'pending', attempts: 2 });
+    expect(isDiscardableWhileWaiting(waiting)).toBe(true);
+    await discardFlightReportItem(key(2));
+    expect(walkaroundPhotos.forgetWalkaroundPhoto).toHaveBeenCalledWith('file:///mark.jpg');
+    expect(await readFlightReportOutbox(accountId)).toEqual([]);
+  });
+
+  test('a photo the tablet cannot read is not sent again: it waits in «Sincronización» to be discarded (3-N06)', async () => {
+    const markId = '76000000-0000-4000-8000-000000000002';
+    await enqueueFlightReportCommand(accountId, { kind: 'damagePhoto', operationId, markId, fileUri: 'file:///lost.jpg',
+      contentType: 'image/jpeg' }, key(1));
+    await enqueueFlightReportCommand(accountId, milestone('BLOCK_ON'), key(2));
+    walkaroundPhotos.readWalkaroundPhoto.mockRejectedValueOnce(new TypeError('Network request failed'));
+    mockApi.recordRampMilestone.mockResolvedValue(response());
+    await flushFlightReport();
+    const [photo, ...rest] = await readFlightReportOutbox(accountId);
+    expect(photo).toMatchObject({ idempotencyKey: key(1), state: 'blocked', lastCode: 'walkaround_photo_unreadable',
+      lastError: 'No se pudo leer la foto guardada en la tablet. Descártala: el daño queda marcado sin foto.' });
+    expect(mockApi.attachRampDamagePhoto).not.toHaveBeenCalled();
+    // It holds nothing back, and the next passes do not try it again.
+    expect(rest).toEqual([]);
+    await flushFlightReport();
+    expect(walkaroundPhotos.readWalkaroundPhoto).toHaveBeenCalledTimes(1);
+
+    const queue = pendingFor(await readFlightReportOutbox(accountId), operationId);
+    expect(queue.pending + queue.blocked).toBe(1);
+    await discardFlightReportItem(key(1));
+    expect(walkaroundPhotos.forgetWalkaroundPhoto).toHaveBeenCalledWith('file:///lost.jpg');
+    const freed = pendingFor(await readFlightReportOutbox(accountId), operationId);
+    expect(freed.pending + freed.blocked).toBe(0);
+  });
+
+  test('only a photo ELEVANT failed to store can be discarded while it waits', async () => {
+    await enqueueFlightReportCommand(accountId, { kind: 'damagePhoto', operationId, markId: '76000000-0000-4000-8000-000000000003',
+      fileUri: 'file:///mark-3.jpg', contentType: 'image/jpeg' }, key(1));
+    await enqueueFlightReportCommand(accountId, milestone('BLOCK_ON', otherOperationId), key(2));
+    // Without signal the photo did not fail at ELEVANT: it goes out on its own once the tablet reconnects.
+    mockApi.attachRampDamagePhoto.mockRejectedValueOnce(offline());
+    await flushFlightReport();
+    const [photo] = await readFlightReportOutbox(accountId);
+    expect(photo).toMatchObject({ idempotencyKey: key(1), state: 'pending', attempts: 1 });
+    expect(isDiscardableWhileWaiting(photo)).toBe(false);
+    // Nor is a milestone ELEVANT could not take now: it holds the rest of its operation until it goes out.
+    mockApi.attachRampDamagePhoto.mockResolvedValue({ operationId, documents: [], damageMarks: [] });
+    mockApi.recordRampMilestone.mockRejectedValue(new ElevantApiError({ status: 503 }));
+    await flushFlightReport();
+    const [waiting, ...rest] = await readFlightReportOutbox(accountId);
+    expect(rest).toEqual([]);
+    expect(waiting).toMatchObject({ idempotencyKey: key(2), state: 'pending', attempts: 1 });
+    expect(isDiscardableWhileWaiting(waiting)).toBe(false);
   });
 
   test('any other temporary failure holds only the rest of its operation; without signal everything waits', async () => {
@@ -360,5 +419,70 @@ describe('the operation’s window and the order of the milestones (3-N25)', () 
     expect(rest).toEqual([]);
     expect(mockApi.recordRampMilestone).toHaveBeenCalledWith(operationId, 'DNCD', '2026-11-04T16:00:00.000Z',
       installationId, key(3));
+  });
+});
+
+describe('a walk-around photo follows its mark', () => {
+  const markId = '76000000-0000-4000-8000-000000000004';
+  const mark = { kind: 'damageMark', operationId, markId, x: 0.4, y: 0.6, note: 'Golpe en la puerta 2L',
+    reportedAt: '2026-11-04T12:00:00.000Z' };
+  const photo = { kind: 'damagePhoto', operationId, markId, fileUri: 'file:///mark-4.jpg', contentType: 'image/jpeg' };
+
+  test('the photo of a damage ELEVANT refused is not sent and says why', async () => {
+    await enqueueFlightReportCommand(accountId, mark, key(1));
+    await enqueueFlightReportCommand(accountId, photo, key(2));
+    mockApi.recordRampDamageMark.mockRejectedValue(new ElevantApiError({ status: 409, code: 'time_outside_operation_window' }));
+    await flushFlightReport();
+    const [refused, held] = await readFlightReportOutbox(accountId);
+    expect(refused).toMatchObject({ idempotencyKey: key(1), state: 'blocked', lastCode: 'time_outside_operation_window' });
+    expect(held).toMatchObject({ idempotencyKey: key(2), state: 'blocked', lastCode: 'damage_mark_refused',
+      lastError: 'ELEVANT rechazó la marca de este daño: descarta la foto y, si hace falta, vuelve a marcar el daño con su foto.' });
+    expect(walkaroundPhotos.readWalkaroundPhoto).not.toHaveBeenCalled();
+    expect(mockApi.attachRampDamagePhoto).not.toHaveBeenCalled();
+
+    // Retried while its mark is still refused, it is held back again without reaching ELEVANT.
+    await retryFlightReportItem(key(2));
+    expect(mockApi.attachRampDamagePhoto).not.toHaveBeenCalled();
+    expect((await readFlightReportOutbox(accountId))[1]).toMatchObject({ state: 'blocked', lastCode: 'damage_mark_refused' });
+  });
+
+  test('retrying the refused mark takes its photo along: once ELEVANT takes the mark, the photo follows it', async () => {
+    await enqueueFlightReportCommand(accountId, mark, key(1));
+    await enqueueFlightReportCommand(accountId, photo, key(2));
+    const refusal = () => new ElevantApiError({ status: 409, code: 'ramp_operation_state_conflict' });
+    mockApi.recordRampDamageMark.mockRejectedValueOnce(refusal()).mockRejectedValueOnce(refusal());
+    await flushFlightReport();
+    expect(kinds(await readFlightReportOutbox(accountId))).toEqual(['damageMark:blocked', 'damagePhoto:blocked']);
+
+    // Refused again, the photo waits again for its mark without reaching ELEVANT.
+    await retryFlightReportItem(key(1));
+    const [, waiting] = await readFlightReportOutbox(accountId);
+    expect(waiting).toMatchObject({ idempotencyKey: key(2), state: 'blocked', lastCode: 'damage_mark_refused' });
+    expect(mockApi.attachRampDamagePhoto).not.toHaveBeenCalled();
+
+    // Taken, the photo follows it and leaves the device.
+    const documents = { operationId, documents: [], damageMarks: [] };
+    mockApi.recordRampDamageMark.mockResolvedValueOnce(documents);
+    mockApi.attachRampDamagePhoto.mockResolvedValueOnce(documents);
+    walkaroundPhotos.readWalkaroundPhoto.mockResolvedValueOnce('photo-bytes');
+    await retryFlightReportItem(key(1));
+    expect(await readFlightReportOutbox(accountId)).toEqual([]);
+    expect(mockApi.recordRampDamageMark).toHaveBeenCalledTimes(3);
+    expect(mockApi.attachRampDamagePhoto).toHaveBeenCalledWith(operationId, markId, 'photo-bytes', 'image/jpeg',
+      installationId);
+    expect(walkaroundPhotos.forgetWalkaroundPhoto).toHaveBeenCalledWith('file:///mark-4.jpg');
+  });
+
+  test('a photo whose mark ELEVANT does not have is explained as such, not as a released assignment', async () => {
+    await enqueueFlightReportCommand(accountId, photo, key(1));
+    await enqueueFlightReportCommand(accountId, milestone('BLOCK_ON'), key(2));
+    mockApi.attachRampDamagePhoto.mockRejectedValue(new ElevantApiError({ status: 404, code: 'not_found' }));
+    mockApi.recordRampMilestone.mockRejectedValue(new ElevantApiError({ status: 404, code: 'not_found' }));
+    await flushFlightReport();
+    const [orphan, released] = await readFlightReportOutbox(accountId);
+    expect(orphan).toMatchObject({ idempotencyKey: key(1), state: 'blocked',
+      lastError: 'ELEVANT no tiene la marca de este daño o la operación ya no está a tu cargo: descarta la foto.' });
+    expect(released).toMatchObject({ idempotencyKey: key(2), state: 'blocked',
+      lastError: 'Se liberó tu asignación o la operación ya no está a tu cargo.' });
   });
 });

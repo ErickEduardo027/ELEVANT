@@ -415,15 +415,20 @@ a 60 minutos y usa 15 por defecto.
   asignación ni de hace más de 24 h; una transición nunca es anterior a la
   última del servicio (`service_time_out_of_order`). Hitos, daños e
   incidencias caen entre el inicio o la llegada registrada, lo que ocurrió
-  primero, y el cierre (ahora; la entrega mientras OCC revisa; la primera
-  entrega en una ronda de corrección), con 2 minutos de tolerancia
-  (`time_outside_operation_window`), y el bloqueo nunca es posterior al
+  primero, y el cierre, con 2 minutos de tolerancia
+  (`time_outside_operation_window`): ahora mientras la operación corre; la
+  entrega mientras OCC revisa (el fin de la operación para un hito, la entrega
+  en revisión para un daño); en una ronda de corrección los hitos cierran en la
+  primera entrega, y los daños e incidencias, que la tablet registra con la
+  hora actual, siguen abiertos hasta ahora. El bloqueo nunca es posterior al
   push-back (`milestone_out_of_order`). Sin esas horas el hash del recibo es el
   de la versión anterior. Mientras OCC revisa se aceptan los hitos, daños y
   datos del vuelo capturados antes de la entrega: se recalculan los recargos
   automáticos y la evidencia congelada, y cambia el `ETag` de la revisión. El
-  reenvío de una corrección mide el tiempo en tierra hasta la primera entrega y
-  retira los recargos automáticos que ya no se detectan, nunca los de OCC.
+  reenvío de una corrección mide el tiempo en tierra hasta la primera entrega,
+  mide los servicios con las transiciones registradas hasta el reenvío (las de
+  la corrección incluidas) y retira los recargos automáticos que ya no se
+  detectan, nunca los de OCC.
   Los `400`, `404` y `409` del inicio, los servicios, los hitos y datos del
   vuelo, los documentos y las incidencias llevan `code` (`invalid_ramp_command`,
   `not_found`, `ramp_operation_state_conflict`, `idempotency_conflict` o el de

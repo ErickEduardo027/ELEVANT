@@ -201,9 +201,11 @@ internal sealed class EfRampIncidentStore(
             return await CompleteReceiptAsync(receipt, priorIncident, request.OperationId, now, device, cancellationToken);
         }
 
-        // 3-N25: the same window as the milestones and the damages, with the clock tolerance on both ends; the time
-        // is stored clamped to the server's clock (ck_incident_reported).
-        var window = await RampEvidenceWindowReader.ReadAsync(context, scope.Operation, now, cancellationToken);
+        // 3-N25: the same window as the damages, with the clock tolerance on both ends: a correction round takes until
+        // now the incident or deviation the agent reports in it. The time is stored clamped to the server's clock
+        // (ck_incident_reported).
+        var window = await RampEvidenceWindowReader.ReadAsync(context, scope.Operation, RampEvidenceKind.Report, now,
+            cancellationToken);
         if (RampIncidentPolicy.ReportRejection(
                 scope.TurnaroundStatus,
                 scope.Operation.CurrentStatus,

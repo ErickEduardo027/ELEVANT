@@ -60,6 +60,13 @@ const problemMessages: ReadonlyMap<string, string> = new Map([
   // 3-N06: the tablet's own reasons not to hand the operation off to OCC yet.
   ['pending_queue', 'Faltan registros por enviar a ELEVANT. Abre Sincronización y espera a que se envíen.'],
   ['service_order_unsigned', 'Falta firmar la Orden de Servicio (aerolínea y AVIAM) sobre su contenido actual.'],
+  // 3-N06: a walk-around photo that does not reach ELEVANT never holds the hand-off without a way out.
+  ['walkaround_photo_unavailable',
+    'ELEVANT no pudo guardar la foto; la tablet la reintenta sola. Para entregar la operación sin ella, descártala.'],
+  ['walkaround_photo_unreadable',
+    'No se pudo leer la foto guardada en la tablet. Descártala: el daño queda marcado sin foto.'],
+  ['damage_mark_refused',
+    'ELEVANT rechazó la marca de este daño: descarta la foto y, si hace falta, vuelve a marcar el daño con su foto.'],
   // 3-N24: Finance confirmed the charter's prepayment; a new service needs a new quotation first.
   ['charter_prepayment_confirmed',
     'El prepago del charter ya está confirmado: pide a Finanzas una nueva cotización para agregar servicios.'],

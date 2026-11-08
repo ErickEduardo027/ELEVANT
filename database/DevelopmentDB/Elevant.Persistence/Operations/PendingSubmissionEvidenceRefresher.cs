@@ -44,8 +44,10 @@ internal static class PendingSubmissionEvidenceRefresher
         var surcharges = await AutomaticSurchargeApplier.ReconcileAsync(context, operation.Id, handedOffAt, now,
             actor.RampAgentInternalId, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
+        // The operation ends at its hand-off (the first one in a correction round, 3-N09); the services keep the
+        // transitions this revision was handed off with, a correction round's included.
         submission.EvidenceJson = (await OperationSubmissionEvidence.CaptureAsync(context, operation.Id,
-            cancellationToken, handedOffAt)).ToJson();
+            cancellationToken, handedOffAt, submission.SubmittedAt)).ToJson();
         submission.UpdatedAt = now;
         // OCC's review token is built from the operation's row version: touching the row makes it stale.
         operation.UpdatedAt = now;
