@@ -1097,8 +1097,9 @@ test("hueco 3-I · la tablet sin conexión encola inicio, servicios, cargos, che
   // A start tapped before the assignment it starts does not fit the operation: refused with its code, and the
   // receipt repeats that refusal for the same key and body.
   const early = crypto.randomUUID();
+  const earlyBody = { startedAt: at(-30) };
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const refused = await queued(early, "POST", startRoute, { startedAt: at(-30) });
+    const refused = await queued(early, "POST", startRoute, earlyBody);
     expect([refused.status, refused.data.code]).toEqual([409, "time_outside_operation_window"]);
   }
   // «Iniciar» tapped right after the assignment reached the tablet, without signal, and sent seconds later from the
@@ -1216,7 +1217,8 @@ test("hueco 3-J · crear y liberar cobertura y liberar un agente son idempotente
   await page.getByRole("navigation", { name: "Terminal y vista" })
     .getByRole("button", { name: `Terminal ${terminal!.code}`, exact: true }).click();
   const form = page.getByRole("form", { name: "Asignar posiciones" });
-  const agents = form.getByLabel("Agente", { exact: true });
+  // The label wraps the select, so its text includes the options: select it by its accessible name.
+  const agents = form.getByRole("combobox", { name: "Agente", exact: true });
   await agents.selectOption((await agents.locator("option").filter({ hasText: AGENT }).getAttribute("value"))!);
   await form.getByRole("button", { name: stand!.code, exact: true }).click();
   await snap(page, "fase3-hueco-3j-cobertura");
