@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, BUSINESS_TIME_ZONE, businessToday, stationLocalToUtc, utcToStationLocalInput } from './businessDay';
+import { addDays, BUSINESS_TIME_ZONE, businessToday, formatBusinessDateTime, stationLocalToUtc,
+  utcToStationLocalInput } from './businessDay';
 
 describe('business day (2-F)', () => {
   it('is the day in Santo Domingo, not the UTC day', () => {
@@ -22,6 +23,22 @@ describe('business day (2-F)', () => {
     expect(addDays('2026-03-01', -1)).toBe('2026-02-28');
     expect(addDays('2026-11-05', 30)).toBe('2026-12-05');
     expect(() => addDays('05/11/2026', 1)).toThrow(TypeError);
+  });
+});
+
+describe('report date and time (phase 3, block E)', () => {
+  it('shows a UTC instant in the station local time with a 24-hour clock', () => {
+    expect(formatBusinessDateTime('2026-10-26T12:00:00Z')).toBe('26/10/2026, 08:00');
+    // 22:30 in Punta Cana is already the next day in UTC: the report keeps the local day.
+    expect(formatBusinessDateTime('2026-11-06T02:30:00Z')).toBe('05/11/2026, 22:30');
+    expect(formatBusinessDateTime(new Date('2026-11-06T02:30:00Z'), { timeZone: 'Europe/Madrid' })).toBe('06/11/2026, 03:30');
+    expect(formatBusinessDateTime('2026-10-26T12:00:00Z', { locale: 'en-US' })).toBe('10/26/2026, 08:00');
+  });
+
+  it('falls back on AVIAM calendar for an unknown zone and shows a dash for an invalid instant', () => {
+    expect(formatBusinessDateTime('2026-10-26T12:00:00Z', { timeZone: 'Mars/Olympus_Mons' })).toBe('26/10/2026, 08:00');
+    expect(formatBusinessDateTime('not a date')).toBe('—');
+    expect(formatBusinessDateTime(null)).toBe('—');
   });
 });
 

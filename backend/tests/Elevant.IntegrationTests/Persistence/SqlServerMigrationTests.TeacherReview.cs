@@ -218,6 +218,13 @@ public sealed partial class SqlServerMigrationTests
             turnaround.OperationDate >= from && turnaround.OperationDate <= to), ct), table.RowCount);
         var firstPage = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1, 1, ct);
         Assert.Equal(table.RowCount > 1, firstPage.Table!.HasMore);
+        // An export reads the whole period in one page (3-N13): up to the CSV and Excel limit, never beyond it.
+        var whole = await reports.ReadAsync(occ, OccReportKind.Operations, station.PublicId, from, to, 1,
+            OccReportCatalog.MaxExportRows, ct);
+        Assert.False(whole.Table!.HasMore);
+        Assert.Equal(table.RowCount, whole.Table.RowCount);
+        await Assert.ThrowsAsync<ArgumentException>(() => reports.ReadAsync(occ, OccReportKind.Operations,
+            station.PublicId, from, to, 1, OccReportCatalog.MaxExportRows + 1, ct));
         foreach (var kind in Enum.GetValues<OccReportKind>())
             Assert.Null((await reports.ReadAsync(occ, kind, station.PublicId, from, to, 1, 100, ct)).Failure);
 

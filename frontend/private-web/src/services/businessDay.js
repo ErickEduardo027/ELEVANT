@@ -96,6 +96,23 @@ export function stationLocalToUtc(localValue, timeZone = null) {
 }
 
 /**
+ * A UTC instant as a date and a 24-hour time in the station's local time (phase 3, block E): «26/10/2026, 08:00».
+ * Reports and their «Generado» use it instead of the browser's zone; an unknown zone falls back to AVIAM's calendar,
+ * like the server, and an invalid instant is «—».
+ *
+ * @param {string | Date | null | undefined} value an ISO instant (UTC) or a Date
+ * @param {{ timeZone?: string | null, locale?: string }} [options] the station's IANA zone and the screen's locale
+ */
+export function formatBusinessDateTime(value, { timeZone = null, locale = 'es-DO' } = {}) {
+  const instant = value instanceof Date ? value.getTime() : typeof value === 'string' ? Date.parse(value) : Number.NaN;
+  if (Number.isNaN(instant)) return '—';
+  return new Intl.DateTimeFormat(locale, {
+    timeZone: knownZone(timeZone), day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit',
+    minute: '2-digit', hourCycle: 'h23',
+  }).format(new Date(instant));
+}
+
+/**
  * The `datetime-local` value (`yyyy-mm-ddThh:mm`) of a UTC instant in the station's local time (3-N19), to prefill a
  * form; an empty string for an invalid instant.
  *

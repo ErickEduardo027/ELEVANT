@@ -11,11 +11,15 @@ using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Elevant.Api.Controllers;
 
-/// <summary>Station-scoped, current G.H. reports and complete private exports.</summary>
+/// <summary>
+/// Station-scoped, current G.H. reports and complete private exports. Failures carry a stable code
+/// (<see cref="ReportProblems"/>, 3-N13); a refused role stays a bare 403.
+/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[ReportProblemDetails]
 [Route("api/v{version:apiVersion}/human-resources/reports")]
 public sealed class HumanResourcesReportsController(
     IHumanResourcesReportStore store,
@@ -39,7 +43,7 @@ public sealed class HumanResourcesReportsController(
         if (!Valid(stationId, from, to, page, limit) ||
             !HumanResourcesReportPolicy.ValidExpirationFilters(
                 HumanResourcesReportKind.Expirations, documentKind, validity))
-            return ProblemPage<HumanResourcesExpirationResponse>(400, "The report query is invalid.");
+            return ReportProblems.InvalidQuery(this);
         var result = await store.ListExpirationsAsync(actorId, stationId, from, to,
             page, limit, documentKind, validity, cancellationToken);
         return Page(result, row => new HumanResourcesExpirationResponse(row.Id,
@@ -58,7 +62,7 @@ public sealed class HumanResourcesReportsController(
     {
         if (!TryAccount(out var actorId)) return UnauthorizedPage<HumanResourcesAccountMovementResponse>();
         if (!Valid(stationId, from, to, page, limit))
-            return ProblemPage<HumanResourcesAccountMovementResponse>(400, "The report query is invalid.");
+            return ReportProblems.InvalidQuery(this);
         var result = await store.ListAccountMovementsAsync(actorId, stationId, from, to,
             page, limit, cancellationToken);
         return Page(result, row => new HumanResourcesAccountMovementResponse(row.Id,
@@ -77,7 +81,7 @@ public sealed class HumanResourcesReportsController(
     {
         if (!TryAccount(out var actorId)) return UnauthorizedPage<HumanResourcesStaffDistributionResponse>();
         if (!Valid(stationId, from, to, page, limit))
-            return ProblemPage<HumanResourcesStaffDistributionResponse>(400, "The report query is invalid.");
+            return ReportProblems.InvalidQuery(this);
         var result = await store.ListStaffDistributionAsync(actorId, stationId, from, to,
             page, limit, cancellationToken);
         return Page(result, row => new HumanResourcesStaffDistributionResponse(row.Id,
@@ -97,7 +101,7 @@ public sealed class HumanResourcesReportsController(
     {
         if (!TryAccount(out var actorId)) return UnauthorizedPage<HumanResourcesQualificationCoverageResponse>();
         if (!Valid(stationId, from, to, page, limit))
-            return ProblemPage<HumanResourcesQualificationCoverageResponse>(400, "The report query is invalid.");
+            return ReportProblems.InvalidQuery(this);
         var result = await store.ListQualificationCoverageAsync(actorId, stationId,
             from, to, page, limit, cancellationToken);
         return Page(result, row => new HumanResourcesQualificationCoverageResponse(
@@ -109,6 +113,11 @@ public sealed class HumanResourcesReportsController(
     [Produces("application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
     [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK,
         "application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(422, "application/problem+json")]
     public async Task<IActionResult> Export([FromRoute] string kind,
         [FromQuery, BindRequired] Guid stationId,
         [FromQuery(Name = "from"), BindRequired] DateOnly from,
@@ -123,7 +132,7 @@ public sealed class HumanResourcesReportsController(
             format is not ("pdf" or "xlsx") || !TryKind(kind, out var reportKind) ||
             !HumanResourcesReportPolicy.ValidExpirationFilters(reportKind,
                 documentKind, validity))
-            return ProblemResult(400, "The report export query is invalid.");
+            return ReportProblems.InvalidQuery(this);
         var result = await store.ReadSnapshotAsync(actorId, stationId, reportKind,
             from, to, MaxExportRows, documentKind, validity, cancellationToken);
         if (result.Failure is { } failure) return FailureResult(failure);
@@ -148,8 +157,9 @@ public sealed class HumanResourcesReportsController(
         string? documentKind = null, string? validity = null)
     {
         if (result.Failure is { } failure)
-            return ProblemPage<TResponse>(failure == HumanResourcesReportFailure.ForbiddenRole
-                ? 403 : 404, "Human resources report access is forbidden.");
+            return failure == HumanResourcesReportFailure.ForbiddenRole
+                ? ProblemPage<TResponse>(403, "Human resources report access is forbidden.")
+                : ReportProblems.StationUnavailable(this);
         var page = result.Page!;
         return Ok(new HumanResourcesReportPageResponse<TResponse>(page.StationId,
             page.From, page.To, page.Page, page.Limit, page.HasMore, page.AsOf,
@@ -199,10 +209,8 @@ public sealed class HumanResourcesReportsController(
         {
             HumanResourcesReportFailure.ForbiddenRole =>
                 ProblemResult(403, "Human resources report access is forbidden."),
-            HumanResourcesReportFailure.ForbiddenStation =>
-                ProblemResult(404, "The station was not found."),
-            HumanResourcesReportFailure.TooLarge =>
-                ProblemResult(422, "Narrow the filters before exporting."),
+            HumanResourcesReportFailure.ForbiddenStation => ReportProblems.StationUnavailable(this),
+            HumanResourcesReportFailure.TooLarge => ReportProblems.TooLarge(this),
             _ => throw new ArgumentOutOfRangeException(nameof(failure)),
         };
 

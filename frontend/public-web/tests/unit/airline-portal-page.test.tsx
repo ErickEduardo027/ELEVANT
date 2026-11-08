@@ -216,6 +216,11 @@ it("shows only the approved service snapshot in the airline operation detail", a
   expect(screen.getByText(/1 incidencia registrada/)).toBeInTheDocument();
   expect(getApprovedEvidence).toHaveBeenCalledWith(approvedEvidence.operationId);
   expect(screen.queryByText(/nota interna/i)).not.toBeInTheDocument();
+  // 3-N20: the approval and the actual times at PUJ's local time (UTC−4), as OCC and the signed PDF show them.
+  expect(screen.getByText(/Aprobada por OCC .*12:00 \(hora local PUJ\)/)).toBeInTheDocument();
+  expect(screen.getByText(/09:00 \(hora local PUJ\)/)).toBeInTheDocument();
+  expect(screen.getByText(/11:45 \(hora local PUJ\)/)).toBeInTheDocument();
+  expect(screen.queryByText(/UTC/)).not.toBeInTheDocument();
 });
 
 it("keeps an authorized unapproved operation visible without inventing evidence", async () => {
@@ -247,6 +252,10 @@ it("shows the Service Order the representative signed and downloads its PDF (ADR
   render(<AirlinePortalPage view="flightDetail" operationId={emptyEvidence.operationId} />);
   expect(await screen.findByText("PUJ000000002")).toBeInTheDocument();
   expect(screen.getByText(/Ana Pérez/)).toBeInTheDocument();
+  // 3-N20: the representative signed at 11:50 in Punta Cana (15:50Z), the time the signed PDF prints.
+  expect(screen.getByText(/Ana Pérez · .*11:50 \(hora local PUJ\)/)).toBeInTheDocument();
+  expect(screen.getByText(/Riley Ramp · .*11:51 \(hora local PUJ\)/)).toBeInTheDocument();
+  expect(screen.queryByText(/UTC/)).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Descargar PDF firmado" }));
   await waitFor(() => expect(downloadServiceOrder).toHaveBeenCalledWith(emptyEvidence.operationId));
   expect(createObjectURL).toHaveBeenCalled();

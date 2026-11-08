@@ -21,3 +21,27 @@ export function businessToday(now: Date = new Date(), timeZone: string | null = 
   }
   return dayIn(now, BUSINESS_TIME_ZONE);
 }
+
+/** The zone itself when the runtime knows it, otherwise AVIAM's calendar (like the server). */
+function knownZone(timeZone: string | null | undefined): string {
+  if (timeZone) {
+    try {
+      new Intl.DateTimeFormat("es-DO", { timeZone });
+      return timeZone;
+    } catch { /* unknown zone: AVIAM's calendar */ }
+  }
+  return BUSINESS_TIME_ZONE;
+}
+
+/**
+ * A UTC instant at the station's local time with a 24-hour clock (3-N20), «25 sept 2026, 11:50»: the time the
+ * Service Order PDF and OCC show. An unknown or missing zone falls back to AVIAM's calendar; an invalid instant is «—».
+ */
+export function formatLocalDateTime(value: string, timeZone: string | null = null): string {
+  const instant = Date.parse(value);
+  if (Number.isNaN(instant)) return "—";
+  return new Intl.DateTimeFormat("es-DO", {
+    timeZone: knownZone(timeZone), year: "numeric", month: "short", day: "numeric", hour: "2-digit",
+    minute: "2-digit", hourCycle: "h23",
+  }).format(new Date(instant));
+}

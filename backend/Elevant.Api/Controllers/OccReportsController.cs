@@ -10,16 +10,19 @@ using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Elevant.Api.Controllers;
 
-/// <summary>Station-scoped OCC reports generated on the server, with CSV, Excel and PDF exports.</summary>
+/// <summary>
+/// Station-scoped OCC reports generated on the server, with CSV, Excel and PDF exports. An export carries the whole
+/// period or nothing (3-N13): over its row limit it answers 422 <c>report_too_large</c>, without a file or an audit.
+/// Failures carry a stable code (<see cref="ReportProblems"/>); a refused permission stays a bare 403.
+/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[ReportProblemDetails]
 [Route("api/v{version:apiVersion}/occ/reports")]
 public sealed class OccReportsController(IOccReportStore store, IOccReportRenderer renderer) : ControllerBase
 {
-    private const int MaxExportRows = 5000;
-
     [HttpGet(Name = "ListOccReports")]
     [ProducesResponseType<OccReportCatalogResponse>(200, "application/json")]
     [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
@@ -45,10 +48,10 @@ public sealed class OccReportsController(IOccReportStore store, IOccReportRender
     {
         if (!TryAccount(out var actorId)) return Unauthorized<OccReportPageResponse>();
         var definition = OccReportCatalog.Find(key);
-        if (definition is null) return Problem<OccReportPageResponse>(404, "The report does not exist.");
+        if (definition is null) return ReportProblems.NotFound(this);
         if (stationId == Guid.Empty || !OccReportCatalog.ValidRange(from, to) || page < 1 || limit is < 1 or > 100 ||
             (long)(page - 1) * limit > int.MaxValue)
-            return Problem<OccReportPageResponse>(400, "The report query is invalid.");
+            return ReportProblems.InvalidQuery(this);
         var result = await store.ReadAsync(actorId, definition.Kind, stationId, from, to, page, limit, cancellationToken);
         if (result.Failure is { } failure) return Failure<OccReportPageResponse>(failure);
         var table = result.Table!;
@@ -68,6 +71,7 @@ public sealed class OccReportsController(IOccReportStore store, IOccReportRender
     [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(422, "application/problem+json")]
     public async Task<IActionResult> Export([FromRoute] string key,
         [FromQuery, BindRequired] Guid stationId,
         [FromQuery(Name = "from"), BindRequired] DateOnly from,
@@ -76,12 +80,15 @@ public sealed class OccReportsController(IOccReportStore store, IOccReportRender
     {
         if (!TryAccount(out var actorId)) return Unauthorized<object>().Result!;
         var definition = OccReportCatalog.Find(key);
-        if (definition is null) return Problem<object>(404, "The report does not exist.").Result!;
+        if (definition is null) return ReportProblems.NotFound(this);
         if (stationId == Guid.Empty || !OccReportCatalog.ValidRange(from, to) || format is not ("csv" or "xlsx" or "pdf"))
-            return Problem<object>(400, "The report export query is invalid.").Result!;
-        var result = await store.ReadAsync(actorId, definition.Kind, stationId, from, to, 1, MaxExportRows, cancellationToken);
+            return ReportProblems.InvalidQuery(this);
+        // The whole period or nothing (3-N13): one page as large as the format allows, refused when rows follow it.
+        var limit = format == "pdf" ? OccReportCatalog.MaxPdfExportRows : OccReportCatalog.MaxExportRows;
+        var result = await store.ReadAsync(actorId, definition.Kind, stationId, from, to, 1, limit, cancellationToken);
         if (result.Failure is { } readFailure) return Failure<object>(readFailure).Result!;
         var table = result.Table!;
+        if (table.HasMore) return ReportProblems.TooLarge(this);
         // Exporting needs «Exportar»; nothing is rendered or returned without it.
         var denied = await store.RecordExportAsync(actorId, definition.Kind, stationId, from, to, format,
             table.RowCount, cancellationToken);
@@ -108,7 +115,7 @@ public sealed class OccReportsController(IOccReportStore store, IOccReportRender
     private ActionResult<T> Failure<T>(OccReportFailure failure) => failure switch
     {
         OccReportFailure.Forbidden => Problem<T>(403, "OCC report access is forbidden."),
-        _ => Problem<T>(404, "The station is not available."),
+        _ => ReportProblems.StationUnavailable(this),
     };
 
     private ActionResult<T> Problem<T>(int status, string title) =>

@@ -79,6 +79,18 @@ describe("G.H. verified reports API client", () => {
     expect(paths).toHaveLength(2);
   });
 
+  it("keeps the code of an oversized export and of an unavailable station (3-N13)", async () => {
+    const answers = [422, 404].map(status => new Response(JSON.stringify({ status, title: "Server title",
+      code: status === 422 ? "report_too_large" : "station_unavailable" }),
+    { status, headers: { "content-type": "application/problem+json" } }));
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async () => answers.shift()! });
+    const exportQuery = { stationId, from: query.from, to: query.to };
+    await expect(client.exportHumanResourcesReport("expirations", exportQuery, "pdf"))
+      .rejects.toMatchObject({ status: 422, code: "report_too_large" });
+    await expect(client.getHumanResourcesReport("account-movements", query))
+      .rejects.toMatchObject({ status: 404, code: "station_unavailable" });
+  });
+
   it("downloads a real PDF but rejects a JSON body on a success response", async () => {
     const bytes = new TextEncoder().encode("%PDF-1.7\nreport");
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",

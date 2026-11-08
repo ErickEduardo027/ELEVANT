@@ -168,6 +168,11 @@ const OCC_INCIDENT_CODES = ["incident_transition_invalid", "incident_report_inva
   "operation_closed"] as const;
 /** Charter (phase 3, block D, 3-N24): no service is added on a confirmed prepayment; only a confirmed one is reopened. */
 const CHARTER_CODES = ["charter_prepayment_confirmed", "charter_prepayment_not_confirmed"] as const;
+/**
+ * OCC and Gestión Humana reports (phase 3, block E, 3-N13): an export over its row limit is refused, never cut; a
+ * malformed or out-of-range query; an unknown report; a station outside the caller's scope or no longer active.
+ */
+const REPORT_CODES = ["report_too_large", "invalid_report_query", "report_not_found", "station_unavailable"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
@@ -175,13 +180,13 @@ export type ElevantApiErrorCode = "password_change_required" | "password_policy"
   (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
   (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
   (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number] | (typeof OCC_REVIEW_CODES)[number] |
-  (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number];
+  (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number] | (typeof REPORT_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
   ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES, ...OCC_REVIEW_CODES,
-  ...OCC_INCIDENT_CODES, ...CHARTER_CODES];
+  ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

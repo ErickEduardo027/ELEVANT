@@ -63,6 +63,34 @@ it('hides the export buttons without «Exportar» and shows server problems', as
   expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
 });
 
-it('defaults to the current month', () => {
-  expect(defaultPeriod(new Date(2026, 9, 26))).toEqual({ from: '2026-10-01', to: '2026-10-26' });
+it('explains an oversized export by its code: a PDF points to Excel or CSV (3-N13)', async () => {
+  render(<CanonicalReportsRoute />);
+  await screen.findByRole('option', { name: 'Operaciones del período' });
+  await userEvent.click(screen.getByRole('button', { name: 'Generar' }));
+  await screen.findByRole('table');
+  downloadOccReport.mockRejectedValueOnce(Object.assign(new Error('El reporte supera el máximo de filas exportables.'),
+    { status: 422, code: 'report_too_large' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'El PDF admite hasta 5 000 filas: exporte a Excel o CSV, o acote el período.');
+  downloadOccReport.mockRejectedValueOnce(Object.assign(new Error('El reporte supera el máximo de filas exportables.'),
+    { status: 422, code: 'report_too_large' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'No se pudo exportar: El reporte supera el máximo de filas exportables.');
+});
+
+it('defaults to the current month of the station calendar, not the browser UTC one', () => {
+  expect(defaultPeriod(new Date('2026-10-26T16:00:00Z'))).toEqual({ from: '2026-10-01', to: '2026-10-26' });
+  // 22:30 on 31 October in Punta Cana is already 1 November in UTC.
+  expect(defaultPeriod(new Date('2026-11-01T02:30:00Z'))).toEqual({ from: '2026-10-01', to: '2026-10-31' });
+});
+
+it('says when the report was generated in the station local time (3-N26)', async () => {
+  render(<CanonicalReportsRoute />);
+  await screen.findByRole('option', { name: 'Operaciones del período' });
+  await userEvent.click(screen.getByRole('button', { name: 'Generar' }));
+  await screen.findByRole('table');
+  // asOf is 2026-10-26T12:00:00Z: 08:00 in Punta Cana.
+  expect(screen.getByText(/Generado 26\/10\/2026, 08:00/)).toBeInTheDocument();
 });

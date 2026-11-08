@@ -66,7 +66,7 @@ invalidan la vista, pero la API REST sigue siendo la autoridad. No hay horas
 extra automáticas ni captura biométrica. Aún falta aceptación de tres sesiones
 contra Development después de promocionar DB, API y web.
 
-**Reportes de personal** en esta rama consulta cuatro informes de la API versionada por estación autorizada: vigencias, movimientos de cuenta con auditoría atribuible, distribución de turnos y cobertura de habilitaciones. Cada página muestra hasta 20 filas, `asOf` y filtros de hasta 30 fechas; no se presenta la página como un total global. La cobertura usa perfiles y ciclos activos actuales y comprueba sus fechas al día final seleccionado; no reconstruye altas o bajas históricas. PDF y XLSX provienen de una exportación completa del servidor (máximo 5 000 filas), no de la tabla visible. La API reautoriza la estación y el rol antes de servir el archivo y audita la exportación. La vista retira datos al perder acceso y reconsulta con pistas durables, foco, reconexión y sondeo visible de 25 segundos. Los movimientos históricos sin estación verificable no se atribuyen retrospectivamente; los comandos de gobierno nuevos asocian la estación verificada al evento de cuentas de rampa. Este cambio aún necesita CI, navegador y promoción antes de considerarse disponible en el VPS.
+**Reportes de personal** en esta rama consulta cuatro informes de la API versionada por estación autorizada: vigencias, movimientos de cuenta con auditoría atribuible, distribución de turnos y cobertura de habilitaciones. Cada página muestra hasta 20 filas, `asOf` y filtros de hasta 30 fechas; no se presenta la página como un total global. La cobertura usa perfiles y ciclos activos actuales y comprueba sus fechas al día final seleccionado; no reconstruye altas o bajas históricas. PDF y XLSX provienen de una exportación completa del servidor (máximo 5 000 filas; un conjunto mayor se rechaza con `report_too_large`, nunca se recorta), no de la tabla visible. La tabla y los archivos muestran clases, documentos y movimientos en español (`src/features/human-resources/reports/reportLabels.js`), fechas dd/mm/aaaa y la hora de cada movimiento y de la consulta en la hora local de la estación; los errores se explican por su `code` (`src/services/reportProblems.js`). La API reautoriza la estación y el rol antes de servir el archivo y audita la exportación. La vista retira datos al perder acceso y reconsulta con pistas durables, foco, reconexión y sondeo visible de 25 segundos. Los movimientos históricos sin estación verificable no se atribuyen retrospectivamente; los comandos de gobierno nuevos asocian la estación verificada al evento de cuentas de rampa. Este cambio aún necesita CI, navegador y promoción antes de considerarse disponible en el VPS.
 
 El informe de vigencias también filtra habilitaciones o permisos y estado de
 vigencia calculado con la fecha local de la estación. PDF y XLSX conservan
@@ -281,6 +281,15 @@ mientras la operación sigue en rampa. Los códigos de estados, servicios,
 checklist, incidencias, hitos y unidades se muestran en español
 (`src/features/operations/operationLabels.js`) y los errores, por su `code` de
 Problem Details.
+
+**Reportes operativos** (`/admin-occ/reports`) lee los seis reportes que calcula
+la API para PUJ y exporta el período completo a Excel, CSV o PDF con
+`operations.reports.export`. Una exportación que supera su límite (25 000 filas
+en Excel y CSV, 5 000 en PDF) se rechaza con `report_too_large` y la pantalla
+sugiere acotar el período o, desde el PDF, exportar a Excel o CSV; los errores se
+explican por su `code` (`src/services/reportProblems.js`). El período por defecto
+es el mes en curso del calendario de la estación y «Generado» se muestra en su
+hora local (`formatBusinessDateTime` de `src/services/businessDay.js`).
 
 La pantalla ofrece carga, cola vacía, error recuperable, sesión caducada,
 permiso denegado y ausencia de scopes. El backend sigue siendo quien impone

@@ -15,8 +15,13 @@ public enum OccReportCellType { Text, Number }
 
 public sealed record OccReportCell(string Value, OccReportCellType Type = OccReportCellType.Text)
 {
+    /// <summary>
+    /// A number with a dot and without the trailing zeros of its stored scale: a quantity of <c>decimal(18,4)</c> reads
+    /// «1», not «1.0000» (3-N26).
+    /// </summary>
     public static OccReportCell Number(decimal value) =>
-        new(value.ToString(System.Globalization.CultureInfo.InvariantCulture), OccReportCellType.Number);
+        new(value.ToString("0.############################", System.Globalization.CultureInfo.InvariantCulture),
+            OccReportCellType.Number);
 }
 
 public sealed record OccReportDefinition(OccReportKind Kind, string Key, string Title, string Description,
@@ -26,23 +31,35 @@ public static class OccReportCatalog
 {
     public const int MaxRangeDays = 366;
 
+    /// <summary>
+    /// Rows a CSV or Excel export carries at most (3-N13). An export is the whole period or nothing: over the limit
+    /// it is refused (422 <c>report_too_large</c>), never cut.
+    /// </summary>
+    public const int MaxExportRows = 25_000;
+
+    /// <summary>Rows a PDF export carries at most (3-N13); a longer period goes to Excel or CSV.</summary>
+    public const int MaxPdfExportRows = 5_000;
+
     public static IReadOnlyList<OccReportDefinition> All { get; } =
     [
         new(OccReportKind.Operations, "operations", "Operaciones del período",
-            "Cada operación de la estación con su estado, horarios planificados y reales y agentes asignados.",
+            "Cada operación de la estación con su estado, horarios planificados y reales y sus agentes: los asignados " +
+            "antes del inicio y, después, quienes la trabajaron.",
             ["Fecha", "Operación", "Aerolínea", "Matrícula", "Estado", "Inicio planificado", "Fin planificado",
                 "Inicio real", "Fin real", "Agentes"]),
         new(OccReportKind.TurnaroundTimes, "turnaround-times", "Tiempos de turnaround",
             "Duración planificada frente a la real de las operaciones terminadas, con su desviación en minutos.",
             ["Fecha", "Operación", "Aerolínea", "Minutos planificados", "Minutos reales", "Desviación (min)"]),
         new(OccReportKind.ServicesByAirline, "services-by-airline", "Servicios ejecutados por aerolínea",
-            "Cantidades contratadas y ejecutadas de cada servicio, agrupadas por aerolínea.",
+            "Servicios facturables de las operaciones aprobadas por OCC, con cantidades contratadas y ejecutadas, " +
+            "agrupados por aerolínea.",
             ["Aerolínea", "Servicio", "Unidad", "Operaciones", "Cantidad contratada", "Cantidad ejecutada"]),
         new(OccReportKind.Reviews, "reviews", "Revisiones, devoluciones e incidencias",
             "Decisiones de revisión OCC de cada envío, con el motivo de las devoluciones y las incidencias reportadas.",
             ["Fecha", "Operación", "Aerolínea", "Revisión", "Resultado", "Motivo", "Decidido", "Incidencias"]),
         new(OccReportKind.AgentProductivity, "agent-productivity", "Productividad por agente",
-            "Operaciones asignadas a cada agente, cuántas fueron aprobadas o devueltas y los minutos trabajados.",
+            "Operaciones que cada agente trabajó o tiene asignadas, cuántas fueron aprobadas o devueltas y los minutos " +
+            "de su tramo: quien fue liberado antes del inicio no cuenta y, en un relevo, cada agente suma su parte.",
             ["Agente", "N.º de empleado", "Operaciones", "Aprobadas", "Devueltas", "Minutos trabajados"]),
         new(OccReportKind.DailyClose, "daily-close", "Cierre operacional del día",
             "Por vuelo: horarios programados y reales, posición inicial y final, con cuántos minutos de antelación al " +
@@ -65,6 +82,12 @@ public sealed record OccReportTable(OccReportDefinition Definition, Guid Station
     int Page, int Limit, bool HasMore)
 {
     public int RowCount => Rows.Count;
+
+    /// <summary>
+    /// The station's IANA zone: the exports write «Generado» in its local time (3-N26). Null is AVIAM's calendar
+    /// (<c>BusinessCalendar</c>).
+    /// </summary>
+    public string? TimeZoneId { get; init; }
 }
 
 public enum OccReportFailure { Forbidden, StationNotFound }
@@ -73,7 +96,10 @@ public sealed record OccReportResult(OccReportTable? Table, OccReportFailure? Fa
 
 public interface IOccReportStore
 {
-    /// <summary>One page of a report; <paramref name="limit"/> rows starting at <paramref name="page"/>.</summary>
+    /// <summary>
+    /// One page of a report; <paramref name="limit"/> rows (at most <see cref="OccReportCatalog.MaxExportRows"/>)
+    /// starting at <paramref name="page"/>. <see cref="OccReportTable.HasMore"/> says whether rows follow it.
+    /// </summary>
     Task<OccReportResult> ReadAsync(Guid actorId, OccReportKind kind, Guid stationId, DateOnly from, DateOnly to,
         int page, int limit, CancellationToken cancellationToken = default);
 

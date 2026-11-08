@@ -2,9 +2,14 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Identity;
 
 namespace Elevant.Infrastructure.Identity;
 
+/// <summary>
+/// The Excel workbook of a Gestión Humana report (3-N16): the same Spanish title, period, filters and local «Generado»
+/// as the PDF, then the columns and every row of the snapshot as inert text or numbers.
+/// </summary>
 public sealed class HumanResourcesReportXlsxRenderer : IHumanResourcesReportXlsxRenderer
 {
     public byte[] Render(HumanResourcesReportSnapshot snapshot, string stationCode)
@@ -31,12 +36,13 @@ public sealed class HumanResourcesReportXlsxRenderer : IHumanResourcesReportXlsx
                 Name = "Reporte",
             });
             Append(data, ["ELEVANT · GESTIÓN HUMANA"]);
+            Append(data, [HumanResourcesReportLabels.Title(snapshot.Kind)]);
             Append(data, [$"Estación: {stationCode}"]);
-            Append(data, [$"Periodo: {snapshot.From:yyyy-MM-dd} – {snapshot.To:yyyy-MM-dd}"]);
+            Append(data, [$"Período: {HumanResourcesReportPdfRenderer.Period(snapshot)}"]);
             if (snapshot.Kind == HumanResourcesReportKind.Expirations)
-                Append(data, [$"Clase: {snapshot.DocumentKind ?? "Todas"}; Vigencia: {snapshot.Validity ?? "Todas"}"]);
-            Append(data, [$"Generado: {snapshot.AsOf.ToUniversalTime():O}"]);
-            Append(data, [$"Filas: {snapshot.RowCount}"]);
+                Append(data, [HumanResourcesReportPdfRenderer.Filters(snapshot)]);
+            Append(data, [$"Generado: {HumanResourcesReportPdfRenderer.Generated(snapshot)}"]);
+            Append(data, [$"Filas: {snapshot.RowCount.ToString(System.Globalization.CultureInfo.InvariantCulture)}"]);
             Append(data, snapshot.Columns);
             foreach (var row in snapshot.Rows)
                 Append(data, row);

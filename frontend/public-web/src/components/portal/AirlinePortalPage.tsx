@@ -11,6 +11,7 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import { AirlineContractPage } from "./AirlineContractPage";
 import { billingUnitLabel } from "@/lib/billing-units";
+import { BUSINESS_TIME_ZONE, formatLocalDateTime } from "@/lib/business-day";
 import { standingNotice } from "@/lib/contract-status";
 import { operationStatusLabel } from "@/lib/operation-status";
 import { AirlineFinancePage } from "./AirlineFinancePage";
@@ -27,10 +28,16 @@ const REQUEST_STATUS_LABELS: Record<string, string> = {
   Rejected: "Rechazada", Completed: "Completada", Cancelled: "Cancelada",
 };
 
-const operationTime = (value: string) => new Intl.DateTimeFormat("es-DO", {
-  year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-  timeZone: "UTC", timeZoneName: "short",
-}).format(new Date(value));
+/** A station the session knows, with the zone its times are shown in (3-N20). */
+type PortalStation = { id: string; code: string; ianaTimeZone: string };
+
+/**
+ * An instant of the operation at its station's local time, «25 sept 2026, 11:50 (hora local PUJ)»: the time OCC and
+ * the signed Service Order PDF show (3-N20). The API keeps sending UTC.
+ */
+function stationTime(value: string, timeZone: string, stationCode: string) {
+  return `${formatLocalDateTime(value, timeZone)} (hora local ${stationCode})`;
+}
 
 function Operation({ operation }: { operation: AirlinePortalBootstrapResponse["currentOperations"][number] }) {
   return <li className={styles.operation}>
@@ -118,7 +125,9 @@ const SIGNERS: Record<string, string> = { AirlineRepresentative: "Representante 
  * The Service Order signed on the ramp (ADR-0032): what the airline's representative accepted,
  * drawn from the stored, signed version with its SHA-256 fingerprint.
  */
-function ServiceOrderCard({ operationId, revision }: { operationId: string; revision: number }) {
+function ServiceOrderCard({ operationId, revision, timeZone, stationCode }: {
+  operationId: string; revision: number; timeZone: string; stationCode: string;
+}) {
   const { getServiceOrder, downloadServiceOrder } = useAirlineSession();
   const [retryKey, setRetryKey] = useState(0);
   const key = `${operationId}:${revision}:${retryKey}`;
@@ -171,7 +180,7 @@ function ServiceOrderCard({ operationId, revision }: { operationId: string; revi
         <div><dt>Número</dt><dd>{current.order.number}</dd></div>
         {current.order.totalAmount != null && <div><dt>Monto</dt><dd>{current.order.currencyCode ?? "USD"} {current.order.totalAmount.toLocaleString("es-DO", { minimumFractionDigits: 2 })}</dd></div>}
         {current.order.signatures.map(signature => <div key={signature.role}>
-          <dt>{SIGNERS[signature.role] ?? signature.role}</dt><dd>{signature.signerName} · {operationTime(signature.signedAt)}</dd></div>)}
+          <dt>{SIGNERS[signature.role] ?? signature.role}</dt><dd>{signature.signerName} · {stationTime(signature.signedAt, timeZone, stationCode)}</dd></div>)}
       </dl>
       <p className={styles.note}>Huella SHA-256 {current.order.contentSha256.slice(0, 16)}…</p>
       <button className={styles.loadMore} type="button" disabled={downloading} onClick={() => void download(current.order!.number)}>
@@ -181,7 +190,7 @@ function ServiceOrderCard({ operationId, revision }: { operationId: string; revi
   </div>;
 }
 
-function AirlineFlightDetail({ operationId }: { operationId: string }) {
+function AirlineFlightDetail({ operationId, stations }: { operationId: string; stations: readonly PortalStation[] }) {
   const { getOperation, getApprovedEvidence, operationRevision } = useAirlineSession();
   const [retryKey, setRetryKey] = useState(0);
   const [evidenceRetryKey, setEvidenceRetryKey] = useState(0);
@@ -198,6 +207,9 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
   const operation = detail?.operation;
   const evidenceResult = evidenceState?.key === evidenceKey ? evidenceState : null;
   const evidence = evidenceResult?.evidence;
+  // The station's zone: the session's stations, then those with history; AVIAM's calendar when neither has it.
+  const timeZone = stations.find(station => station.id === operation?.stationId)?.ianaTimeZone || BUSINESS_TIME_ZONE;
+  const at = (value: string) => stationTime(value, timeZone, operation?.stationCode ?? "");
 
   useEffect(() => {
     const request = ++detailGeneration.current;
@@ -245,10 +257,10 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
       {evidence?.available && operation.status === "Approved" ? <div>
         <h3>Ejecución aprobada</h3>
         <p className={styles.note}>Aprobada por OCC {evidence.approvedAt
-          ? operationTime(evidence.approvedAt) : ""}. {evidence.incidentCount} {evidence.incidentCount === 1 ? "incidencia registrada" : "incidencias registradas"}.</p>
+          ? at(evidence.approvedAt) : ""}. {evidence.incidentCount} {evidence.incidentCount === 1 ? "incidencia registrada" : "incidencias registradas"}.</p>
         <dl className={styles.details}>
-          {evidence.actualStartAt && <div><dt>Inicio real</dt><dd>{operationTime(evidence.actualStartAt)}</dd></div>}
-          {evidence.actualEndAt && <div><dt>Fin real</dt><dd>{operationTime(evidence.actualEndAt)}</dd></div>}
+          {evidence.actualStartAt && <div><dt>Inicio real</dt><dd>{at(evidence.actualStartAt)}</dd></div>}
+          {evidence.actualEndAt && <div><dt>Fin real</dt><dd>{at(evidence.actualEndAt)}</dd></div>}
         </dl>
         <h3>Servicios ejecutados</h3>
         <ul className={styles.operations}>{evidence.services.map(service => <li className={styles.operation} key={service.id}>
@@ -257,7 +269,8 @@ function AirlineFlightDetail({ operationId }: { operationId: string }) {
             <span>{service.executedQuantity} / {service.contractedQuantity} · por {billingUnitLabel(service.billingUnit)}</span></div>
         </li>)}</ul>
       </div> : evidenceResult?.status === "ready" && <p className={styles.note}>La evidencia aprobada aún no está disponible para esta operación.</p>}
-      <ServiceOrderCard operationId={operationId} revision={operationRevision} />
+      <ServiceOrderCard operationId={operationId} revision={operationRevision} timeZone={timeZone}
+        stationCode={operation.stationCode} />
     </section>}
     <Link href="/portal/vuelos">Volver a vuelos</Link>
   </div>;
@@ -385,7 +398,8 @@ export function AirlinePortalPage({ view, operationId }: { view: View; operation
     key={`${actor.accountId}:${bootstrap.organizationId}`} />;
 
   if (view === "flightDetail") return <AirlineFlightDetail
-    key={`${actor.accountId}:${operationId}`} operationId={operationId ?? ""} />;
+    key={`${actor.accountId}:${operationId}`} operationId={operationId ?? ""}
+    stations={[...stations, ...(standingData?.stations ?? [])]} />;
 
   if (view === "profile") return <div className={styles.page}>
     <header className={styles.pageHeader}><span className={styles.kicker}>Identidad verificada</span><h1>Perfil</h1><p>Alcance de la sesión confirmado por la API.</p></header>

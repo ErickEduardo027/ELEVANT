@@ -2,6 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 import { call, expectCall, login } from "./support/api";
 import { goPrivate, loginPortal, loginPrivate, snap } from "./support/browser";
 import { API, loadRun, saveRun } from "./support/env";
+import { pdfText } from "./support/pdf";
 
 // Fase 3 · La operación: OCC registers the run's flight and assigns it to the ramp agent from the
 // planning screen, the agent runs it on the tablet (through the API, as the APK does, with its
@@ -12,7 +13,9 @@ import { API, loadRun, saveRun } from "./support/env";
 // OCC adjusts the agent's shift of the day, hands a started operation over and repeats its coverage commands safely;
 // (huecos 3-G, 3-H) OCC manages the incidents of a flight still on the ramp and reopens the run's approval nothing was
 // invoiced from, then approves it again; (huecos 3-I, 3-K) the tablet's queue sends the start and the services with the
-// time they were tapped, and OCC opens the photo of a walk-around damage in the review.
+// time they were tapped, and OCC opens the photo of a walk-around damage in the review. Last (huecos 3-N13 to 3-N26),
+// the OCC and Gestión Humana reports count what each agent worked and what Finance bills, in Spanish and in the
+// station's local time, as the airline's portal shows its times.
 
 type RunContract = { airline: string; approvedVersions: Array<{ stations: Array<{ id: string; code: string }> }> };
 type Leg = { flightNumber: string; scheduledAt: string };
@@ -482,6 +485,9 @@ test("La aerolínea ve la operación aprobada y su Orden de Servicio en el porta
   await page.getByRole("link", { name: `Ver ${flight.operationCode}` }).click();
   await expect(page.getByRole("heading", { name: "Ejecución aprobada" })).toBeVisible();
   await expect(page.getByText("Orden de Servicio").first()).toBeVisible();
+  // Hueco 3-N20: the approval, the actual times and the signatures at PUJ's local time, as the signed PDF prints them.
+  await expect(page.getByText(/\(hora local PUJ\)/).first()).toBeVisible();
+  await expect(page.getByText(/\bUTC\b/)).toHaveCount(0);
   await snap(page, "fase3-portal-operacion");
 });
 
@@ -1246,4 +1252,54 @@ test("hueco 3-K · OCC ve la foto de un daño del walk-around en la revisión", 
     await expect(mark).toContainText("Sin foto");
   }
   await snap(page, "fase3-hueco-3k-foto-dano");
+});
+
+test("huecos 3-N13 a 3-N26 · los reportes de OCC y Gestión Humana cuentan lo trabajado y hablan español en hora local", async () => {
+  const { run, station, airline } = runState();
+  const flight = run.flight as Flight;
+  const day = stationDay(flight.arrivalAt);
+  const query = `stationId=${station}&from=${day}&to=${day}`;
+  type Report = { columns: string[]; rows: Array<Array<{ value: string; type: string }>> };
+  const occ = await login("occ");
+  const read = async (key: string) =>
+    (await expectCall<Report>(200, occ, "GET", `/occ/reports/${key}?${query}&limit=100`)).data;
+
+  // Hueco 3-N13: every failure carries its code; an export is the whole period or a 422 report_too_large.
+  const inverted = await call<Problem>(occ, "GET", `/occ/reports/operations?stationId=${station}&from=${day}&to=2000-01-01`);
+  expect([inverted.status, inverted.data.code]).toEqual([400, "invalid_report_query"]);
+  const unknown = await call<Problem>(occ, "GET", `/occ/reports/sla?${query}`);
+  expect([unknown.status, unknown.data.code]).toEqual([404, "report_not_found"]);
+
+  // Hueco 3-N15: the run's approved flight is billed by its completed services, and only billable services count;
+  // hueco 3-N26: the unit is the name Finance gives it, never the code of the rate.
+  const services = await read("services-by-airline");
+  const billed = services.rows.filter(row => row[0].value === airline.name);
+  expect(billed.length, "the run's approved services are in the report").toBeGreaterThan(0);
+  expect(billed.filter(row => /^[a-z_]+$/.test(row[2].value)), "every unit is Finance's name").toEqual([]);
+
+  // Hueco 3-N14: the agent who worked the run's flight has it, approved, with its minutes.
+  const productivity = await read("agent-productivity");
+  const agent = productivity.rows.find(row => row[0].value === AGENT);
+  expect(agent, "the agent who worked the run's flight").toBeTruthy();
+  expect(Number(agent![3].value), "approved operations of the agent").toBeGreaterThan(0);
+
+  // Hueco 3-N26: the review lists the run's deviation in Spanish and the CSV says when it was generated, locally.
+  const reviews = await read("reviews");
+  expect(reviews.rows.filter(row => row[1].value === flight.operationCode).map(row => row[7].value).join(" "))
+    .toContain("Desviación (media)");
+  const csv = await expectCall<string>(200, occ, "GET", `/occ/reports/reviews/export?${query}&format=csv`);
+  expect(csv.data).toContain("(hora local)");
+  expect(csv.data).not.toContain("UTC");
+
+  // Hueco 3-N16: Gestión Humana's PDF is titled and dated in Spanish, at the station's local time.
+  const hr = await login("hr");
+  const pdf = await expectCall<Buffer>(200, hr, "GET",
+    `/human-resources/reports/staff-distribution/export?${query}&format=pdf`);
+  const text = pdfText(pdf.data);
+  expect(text).toContain("Distribución de turnos · PUJ");
+  expect(text).toContain("(hora local)");
+  expect(text).not.toContain("StaffDistribution");
+  const movements = await call<Problem>(hr, "GET",
+    `/human-resources/reports/account-movements?stationId=${station}&from=${day}&to=2000-01-01`);
+  expect([movements.status, movements.data.code]).toEqual([400, "invalid_report_query"]);
 });

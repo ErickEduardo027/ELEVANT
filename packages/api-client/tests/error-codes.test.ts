@@ -87,6 +87,11 @@ describe("Problem Details codes", () => {
     expect(ELEVANT_RULE_REASONS).toContain("already_invoiced");
   });
 
+  it("knows the report codes of phase 3 (block E)", () => {
+    for (const code of ["report_too_large", "invalid_report_query", "report_not_found", "station_unavailable"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

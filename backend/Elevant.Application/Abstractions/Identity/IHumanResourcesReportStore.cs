@@ -26,6 +26,10 @@ public enum HumanResourcesReportCellType
 public sealed record HumanResourcesReportCell(
     string Value, HumanResourcesReportCellType Type);
 
+/// <summary>
+/// The complete rows of an export (3-N16): the cells are Spanish and the times local to the station, while
+/// <see cref="DocumentKind"/> and <see cref="Validity"/> keep the filter codes the audit records.
+/// </summary>
 public sealed record HumanResourcesReportSnapshot(
     HumanResourcesReportKind Kind, Guid StationId, DateOnly From, DateOnly To,
     DateTimeOffset AsOf, IReadOnlyList<string> Columns,
@@ -35,6 +39,9 @@ public sealed record HumanResourcesReportSnapshot(
     public string StationCode { get; init; } = string.Empty;
     public string? DocumentKind { get; init; }
     public string? Validity { get; init; }
+
+    /// <summary>The station's IANA zone: «Generado» is written in its local time. Null is AVIAM's calendar.</summary>
+    public string? TimeZone { get; init; }
 }
 
 public sealed record HumanResourcesReportSnapshotResult(

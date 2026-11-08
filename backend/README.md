@@ -28,8 +28,16 @@ estación y la página devuelve los filtros efectivos.
 `GET .../{kind}/export?format=pdf|xlsx` vuelve a autorizar, lee un snapshot
 coherente de hasta 5 000 filas, registra auditoría sin filas privadas y sirve
 un archivo con cabeceras `no-store` y `nosniff`. Un conjunto mayor devuelve
-422 sin archivo. Las filas de la página no son un total global ni la fuente
-de la exportación. No se atribuyen eventos de cuenta históricos sin estación
+422 `report_too_large` sin archivo ni auditoría; una consulta inválida (también
+la que falla en el binding) es 400 `invalid_report_query` y una estación fuera
+de alcance o inactiva, 404 `station_unavailable`. Un rol rechazado sigue siendo
+un 403 sin `code`. El PDF y el Excel titulan, filtran y fechan en español
+(`HumanResourcesReportLabels`): «Habilitación»/«Permiso», «Carnet
+aeroportuario», «Alta de cuenta», fechas `dd/MM/yyyy`, la hora de cada
+movimiento («Fecha y hora local») y «Generado» en la hora local de la
+estación; el PDF sin filas dice «No hay filas para estos filtros.». Las páginas
+JSON conservan sus códigos. Las filas de la página no son un total global ni la
+fuente de la exportación. No se atribuyen eventos de cuenta históricos sin estación
 verificable. Desde este cambio, los comandos de gobierno etiquetan altas,
 bajas y cambios de estado de cuentas de rampa con las estaciones verificadas
 en el momento del evento; los eventos anteriores no se atribuyen de forma
@@ -37,6 +45,34 @@ retroactiva ni se reconstruyen desde concesiones actuales.
 Para esa atribución, las fechas de vigencia del perfil de rampa se evalúan
 con la fecha UTC del evento, la misma convención usada al crearlas. Esto
 evita perder la estación entre la medianoche UTC y la local.
+Código local: no acredita despliegue al VPS.
+
+## Reportes OCC (rama local)
+
+`GET /api/v1/occ/reports` lista los seis reportes calculados en el servidor y
+`GET /api/v1/occ/reports/{key}` lee una página (1 a 100 filas) de hasta 366 días
+de una estación del alcance del actor (`operations.reports.read`).
+`GET .../{key}/export?format=csv|xlsx|pdf` exige además
+`operations.reports.export` y exporta el período completo o nada: hasta 25 000
+filas en CSV y Excel y 5 000 en PDF. Un período mayor responde 422
+`report_too_large`, sin archivo ni auditoría; el encabezado «Filas» es el total
+real. Los fallos llevan `code`: 400 `invalid_report_query` (también la estación
+que falta o la fecha ilegible), 404 `report_not_found` o `station_unavailable`;
+un permiso rechazado sigue siendo un 403 sin código.
+«Productividad por agente» y la columna «Agentes» atribuyen cada operación a
+quien trabajó cada tramo (`OperationWorkAttribution`): un agente liberado antes
+del inicio (cambio de posición, liberación) no cuenta, en un relevo cada agente
+suma los minutos de su parte y la aprobación no libera a nadie, así que la
+asignación abierta conserva los minutos hasta el fin. «Servicios ejecutados por
+aerolínea» cuenta solo los servicios facturables (`ServiceBillability`, con la
+exclusión de OCC) de las operaciones aprobadas: el mismo conjunto que «Por
+facturar». Estados, severidades y tipos de incidencia salen en español
+(`OperationLabels`, «Seguridad (alta)»), la unidad con el nombre de
+`ref.billing_units`, las cantidades sin ceros de escala y todas las horas,
+también «Generado», en la hora local de la estación (`BusinessCalendar`). Las
+cifras de productividad y de servicios cambian respecto de los reportes
+anteriores: ya no duplican al agente liberado ni cuentan lo planificado o no
+aprobado. El JSON conserva sus claves.
 Código local: no acredita despliegue al VPS.
 
 ## Revisión de asistencia (rama local)
