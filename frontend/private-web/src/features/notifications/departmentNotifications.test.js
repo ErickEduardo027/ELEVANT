@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { CONTRACT_MODULE_IDS } from '../contracts/shell/modules';
+import { FINANCE_MODULE_IDS } from '../finance/shell/modules';
 import { describeNotification } from './departmentNotifications';
 import { notificationKindLabel, notificationTargetPath } from './notificationKinds';
+
+describe('Finance alerts of phase 4 (block A)', () => {
+  it('opens «Por facturar» when OCC approves operations ready to invoice (4-N26)', () => {
+    const described = describeNotification({ kind: 'operation_ready_to_invoice', subject: 'Demo Airlines', stationCode: 'PUJ' });
+    expect(described.title).toBe('OCC aprobó operaciones listas para facturar');
+    expect(described.message).toBe('OCC aprobó operaciones listas para facturar: Demo Airlines · PUJ');
+    expect(described.target).toEqual({ moduleId: FINANCE_MODULE_IDS.TO_INVOICE });
+  });
+});
 
 describe('contract lifecycle notifications (phase 2, block A)', () => {
   it.each([

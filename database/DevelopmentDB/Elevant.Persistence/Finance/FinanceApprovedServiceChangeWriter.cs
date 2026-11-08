@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Realtime;
@@ -18,7 +19,8 @@ internal static class FinanceApprovedServiceChangeWriter
         ElevantDbContext context, long stationId, Guid resourceId,
         DateTimeOffset occurredAt, string resource, CancellationToken cancellationToken)
     {
-        var today = DateOnly.FromDateTime(occurredAt.UtcDateTime);
+        // A membership is valid by AVIAM's business day (4-N10).
+        var today = BusinessCalendar.Today(occurredAt);
         var recipients = await context.Users.AsNoTracking()
             .Where(account => account.Status == AccountLifecycleStatus.Active &&
                 account.InvitationStatus == InvitationStatus.Accepted && account.EmailConfirmed &&

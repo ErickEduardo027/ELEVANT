@@ -22,7 +22,7 @@ public sealed partial class SqlServerMigrationTests
         async Task<T> Run<T>(Func<IServiceProvider, Task<T>> action)
         { await using var scope = provider.CreateAsyncScope(); return await action(scope.ServiceProvider); }
         Task<FinanceTreasuryAdjustmentsData?> Limits() => Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>().AdjustmentsAsync(FinanceAccount, fixture.Invoice, ct));
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var debit = await Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>().IssueAdjustmentAsync(FinanceAccount,
             fixture.Invoice, new(Guid.NewGuid(), "0", today, "Synthetic debit", "Debit", [new(fixture.Line, 10, 1000)]), ct));
         Assert.True(debit.IsSuccess);
@@ -79,7 +79,7 @@ public sealed partial class SqlServerMigrationTests
             Assert.All(notices, p => { Assert.Equal(customerId, p.RecipientAccountId); Assert.Equal(fixture.Airline, p.ResourceId); });
             return notices.Length;
         }
-        var before = await Notices(); var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var before = await Notices(); var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var input = new FinanceTreasuryReceiptInput(Guid.NewGuid(), fixture.Airline, fixture.Station, "USD", 1000,
             "QA-NOTIFY-" + Guid.NewGuid().ToString("N"), "Transfer", today, "Synthetic notification test");
         var created = await Run(s => s.RecordAsync(FinanceAccount, input, ct)); Assert.True(created.IsSuccess);
@@ -112,7 +112,7 @@ public sealed partial class SqlServerMigrationTests
         var airline = await db.Airlines.SingleAsync(a => a.IataCode == "ZZ", ct);
         var station = await db.Stations.SingleAsync(s => s.Code == "PUJ", ct);
         var account = await db.Users.SingleAsync(a => a.PublicId == FinanceAccount, ct);
-        var now = DateTimeOffset.UtcNow; var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var now = DateTimeOffset.UtcNow; var today = Elevant.Application.Common.BusinessCalendar.Today(now);
         var pre = new Preinvoice { PublicId = Guid.NewGuid(), AirlineId = airline.Id, StationId = station.Id,
             CreatedByAccountId = account.Id, RequestId = Guid.NewGuid(), PayloadHash = new string('a',64), From = today, To = today,
             CurrencyCode = "USD", Total = 1000, Status = PreinvoiceStatus.Invoiced, CreatedAt = now, UpdatedAt = now };

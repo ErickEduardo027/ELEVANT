@@ -26,6 +26,14 @@ import {
   type ReopenCharterPrepaymentCommand,
 } from "./charters";
 import {
+  isFinancePendingOperationsResponse,
+  isNoChargeClosureResponse,
+  normalizedNoChargeClosure,
+  normalizedPendingOperationsQuery,
+  type CloseOperationsWithoutChargeCommand,
+  type FinancePendingOperationsQuery,
+} from "./financeInvoicing";
+import {
   AIRCRAFT_SIZE_CATEGORIES,
   CHARGE_MARK_SOURCES,
   isFinanceCloseRulesResponse,
@@ -273,6 +281,8 @@ import {
   getResolveFinancePreinvoiceDisputeUrl,
   getIssueFinanceInvoiceUrl,
   getIssueInvoiceFromOperationsUrl,
+  getGetFinancePendingOperationsUrl,
+  getCloseOperationsWithoutChargeUrl,
   getPayAirlineInvoiceByCardUrl,
   getGetAirlineInvoiceCardPaymentsUrl,
   getGetFinanceInvoiceCardPaymentsUrl,
@@ -475,6 +485,8 @@ import {
   type ResolvePreinvoiceDisputeResponse,
   type IssueFinanceInvoiceRequest,
   type IssueInvoiceFromOperationsRequest,
+  type FinancePendingOperationsResponse,
+  type NoChargeClosureResponse,
   type PayInvoiceByCardBody,
   type CardPaymentAttemptResponse,
   type CardPaymentListResponse,
@@ -717,6 +729,8 @@ export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "me
 export type ResolvePreinvoiceDisputeOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type IssueFinanceInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type IssueInvoiceFromOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinancePendingOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CloseOperationsWithoutChargeOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type PayInvoiceByCardOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -1198,11 +1212,32 @@ export interface ElevantApiClient {
     request: IssueFinanceInvoiceRequest,
     options?: IssueFinanceInvoiceOptions,
   ): Promise<IssueFinanceInvoiceResponse>;
-  /** ADR-0035: one simulated e-CF invoice for one or several approved operations of one airline. */
+  /**
+   * ADR-0035: one simulated e-CF invoice for approved operations of one airline. The request id is the idempotency
+   * key; 4-N29: `operationVersions` (optional while older clients exist) covers every operation with the version on
+   * screen, and the key with another account, station or operations is 409 `idempotency_conflict`.
+   */
   issueInvoiceFromOperations(
     request: IssueInvoiceFromOperationsRequest,
     options?: IssueInvoiceFromOperationsOptions,
   ): Promise<IssuedInvoiceResponse>;
+  /**
+   * «Por facturar» (4-N16): the station's pending operations from the oldest, with the limits of one invoice, the
+   * airline facet, each operation's version, estimated lines and blocking codes, and the next cursor.
+   */
+  getFinancePendingOperations(
+    query: FinancePendingOperationsQuery,
+    options?: GetFinancePendingOperationsOptions,
+  ): Promise<FinancePendingOperationsResponse>;
+  /**
+   * 4-N07: closes operations valued at zero without an invoice, with the versions on screen, a reason of 5 to 500
+   * characters and the intent's Idempotency-Key (201 created, 200 replayed).
+   */
+  closeOperationsWithoutCharge(
+    command: CloseOperationsWithoutChargeCommand,
+    idempotencyKey: string,
+    options?: CloseOperationsWithoutChargeOptions,
+  ): Promise<NoChargeClosureResponse>;
   getFinanceInvoiceDocumentById(
     invoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
@@ -4176,12 +4211,23 @@ function isResolvePreinvoiceDisputeResponse(value: unknown, preinvoiceId: string
 function validatedIssueInvoiceFromOperationsRequest(
   request: IssueInvoiceFromOperationsRequest,
 ): IssueInvoiceFromOperationsRequest {
-  if (!isRecord(request) || !hasOnlyKeys(request, ["stationId", "operationIds", "requestId"]) ||
+  if (!isRecord(request) || !hasOnlyKeys(request, ["stationId", "operationIds", "requestId", "operationVersions"]) ||
       !isUuid(request.stationId) || !isUuid(request.requestId) || !Array.isArray(request.operationIds) ||
       request.operationIds.length < 1 || request.operationIds.length > 100 ||
       !request.operationIds.every(isUuid) ||
       new Set(request.operationIds.map((id) => id.toLowerCase())).size !== request.operationIds.length)
     throw new TypeError("Invoice issuance request is invalid.");
+  // 4-N29: the versions on screen, when sent, cover every operation exactly once.
+  const versions = request.operationVersions;
+  if (versions !== undefined && versions !== null) {
+    const ids = new Set(request.operationIds.map((id) => id.toLowerCase()));
+    if (!Array.isArray(versions) || versions.length !== ids.size ||
+        !versions.every((item) => isRecord(item) && hasOnlyKeys(item, ["operationId", "version"]) &&
+          isUuid(item.operationId) && ids.has(item.operationId.toLowerCase()) && typeof item.version === "string" &&
+          item.version.trim().length > 0 && item.version.length <= 64) ||
+        new Set(versions.map((item) => item.operationId.toLowerCase())).size !== versions.length)
+      throw new TypeError("Invoice issuance request is invalid.");
+  }
   return request;
 }
 
@@ -7049,6 +7095,29 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getIssueInvoiceFromOperationsUrl(),
         { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
       if (!isIssuedInvoiceResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getFinancePendingOperations(query: FinancePendingOperationsQuery,
+      options?: GetFinancePendingOperationsOptions) {
+      const params = normalizedPendingOperationsQuery(query);
+      if (params === null) throw new TypeError("The pending operations query is invalid.");
+      const result = await execute(getGetFinancePendingOperationsUrl(params), { ...options, method: "GET" }, true);
+      if (!isFinancePendingOperationsResponse(result.data, params.stationId)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async closeOperationsWithoutCharge(command: CloseOperationsWithoutChargeCommand, idempotencyKey: string,
+      options?: CloseOperationsWithoutChargeOptions) {
+      const body = normalizedNoChargeClosure(command);
+      if (body === null) throw new TypeError("The no-charge closure is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getCloseOperationsWithoutChargeUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if ((result.status !== 201 && result.status !== 200) ||
+          !isNoChargeClosureResponse(result.data, body.operations.map((item) => item.operationId)) ||
+          result.data.replayed !== (result.status === 200))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async getFinanceInvoiceByPreinvoice(

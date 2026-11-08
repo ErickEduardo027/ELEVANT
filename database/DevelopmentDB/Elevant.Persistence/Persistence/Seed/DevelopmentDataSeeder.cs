@@ -1177,6 +1177,8 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
                      "finance.home.read", "finance.approved_services.read", "finance.approved_services.create",
                      "finance.preinvoices.read", "finance.preinvoices.update", "finance.preinvoices.issue",
                      "finance.reconciliation.read", "finance.invoicing.read", "finance.invoicing.issue",
+                     // 4-N26: the analyst hears when OCC approves operations ready to invoice.
+                     "finance.notifications.read",
                  })
         {
             await GetOrAddAsync(context.AccessProfileGrants,

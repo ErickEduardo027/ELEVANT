@@ -93,6 +93,21 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 
+  it("knows the invoicing and treasury codes of phase 4 (block A)", () => {
+    // 4-N01, 4-N06, 4-N07, 4-N18, 4-N29: every refusal of the issuance, «Por facturar» and the no-charge closure.
+    for (const code of ["invalid_invoice_request", "invalid_pending_query", "invoice_state_changed", "zero_total",
+      "operation_has_charge", "too_many_lines", "too_many_operations", "date_window_exceeded", "station_inactive",
+      "airline_inactive", "mixed_airline", "mixed_currency", "nothing_to_invoice", "operation_not_approved",
+      "already_invoiced", "pending_preinvoice", "exchange_rate_missing", "contract_charge_rate_missing",
+      "charge_definition_missing", "package_scope_has_unissued_preinvoice", "ambiguous_package_coverage",
+      "charge_excluded_by_contract", "invalid_amount", "idempotency_conflict", "version_conflict"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // 4-N10: the business day of the invoice or the receipt, and the defaults of treasury.
+    for (const code of ["effective_before_invoice", "effective_before_receipt", "treasury_conflict",
+      "invalid_treasury_request"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { formatMoney, getFinanceReport, listContractApprovals } from '../../../services/financeBookService';
+import { businessToday } from '../../../services/businessDay';
 
-const today = () => new Date().toISOString().slice(0, 10);
+// 4-N10: the business day of Santo Domingo, the one the receivables report cuts on.
+const today = () => businessToday();
 
 /**
  * Receivables, overdue balance and contracts awaiting Finance, read from the

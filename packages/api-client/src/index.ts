@@ -17,6 +17,7 @@ export * from "./occIncidents";
 export * from "./humanResourcesCommands";
 export * from "./mobileDevices";
 export * from "./airlinePortalUsers";
+export * from "./financeInvoicing";
 export {
   createElevantApiClient,
   normalizedStandAttributes,
@@ -40,6 +41,8 @@ export {
   type ResolvePreinvoiceDisputeOptions,
   type IssueFinanceInvoiceOptions,
   type IssueInvoiceFromOperationsOptions,
+  type GetFinancePendingOperationsOptions,
+  type CloseOperationsWithoutChargeOptions,
   type PayInvoiceByCardOptions,
   type GetNonFiscalInvoiceOptions,
   type RecordNonFiscalPaymentOptions,
@@ -163,6 +166,13 @@ export {
   type ResolvePreinvoiceDisputeResponse,
   type IssueFinanceInvoiceRequest,
   type IssueInvoiceFromOperationsRequest,
+  type FinanceOperationVersionRequest,
+  type FinancePendingOperationsResponse,
+  type FinancePendingOperationResponse,
+  type FinancePendingServiceResponse,
+  type FinancePendingAirlineResponse,
+  type FinanceInvoicingLimitsResponse,
+  type NoChargeClosureResponse,
   type PayInvoiceByCardBody,
   type CardPaymentAttemptResponse,
   type CardPaymentListResponse,

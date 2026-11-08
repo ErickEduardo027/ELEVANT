@@ -11,7 +11,7 @@ internal sealed partial class EfFinanceReportStore
         FiscalReportAsync(Scope scope, bool simulation, CancellationToken ct)
     {
         var end = EndOf(scope.Filter.To);
-        var start = new DateTimeOffset(scope.Filter.From.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        var start = StartOf(scope.Filter.From);
         var invoices = (await InvoicesAsync(scope, false, ct)).Where(i => i.IssuedAt < end).ToDictionary(i => i.Id);
         var invoiceIds = invoices.Keys.ToArray();
         var documents = await context.Set<FinanceFiscalDocument>().AsNoTracking().Where(d => invoiceIds.Contains(d.InvoiceId) &&

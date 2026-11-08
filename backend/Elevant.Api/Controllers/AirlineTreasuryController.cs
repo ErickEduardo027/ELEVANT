@@ -21,13 +21,15 @@ namespace Elevant.Api.Controllers;
 public sealed class AirlineTreasuryController(IFinanceTreasuryStore treasury) : ControllerBase
 {
     private bool Actor(out Guid id) => Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out id);
+    /// <summary>Phase 4, block A: every refusal but a 401 carries the default code of its status.</summary>
     private ActionResult<T> Error<T>(int status)
     {
         if (status == 401) Response.Headers.WWWAuthenticate = "Bearer";
-        return new ObjectResult(new ProblemDetails { Status = status, Instance = HttpContext.Request.Path,
+        var problem = new ProblemDetails { Status = status, Instance = HttpContext.Request.Path,
             Title = status switch { 401 => "Authentication failed.", 403 => "Airline access is forbidden.",
-                400 => "Invalid treasury query.", _ => "Document was not found." } })
-            { StatusCode = status, ContentTypes = { "application/problem+json" } };
+                400 => "Invalid treasury query.", _ => "Document was not found." } };
+        if (status != 401) problem.Extensions["code"] = FinanceTreasuryController.TreasuryCode(status);
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
     }
     private ActionResult<TResponse> Read<TData, TResponse>(AirlineTreasuryReadResult<TData> result, Func<TData, TResponse> map) where TData : class
     {

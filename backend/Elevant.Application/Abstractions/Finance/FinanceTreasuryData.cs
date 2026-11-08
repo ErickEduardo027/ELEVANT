@@ -1,9 +1,16 @@
 namespace Elevant.Application.Abstractions.Finance;
 public enum FinanceTreasuryFailure { Forbidden, NotFound, Invalid, Conflict }
-public sealed record FinanceTreasuryResult(Guid? Id, string? Version, bool Replayed, FinanceTreasuryFailure? Failure)
+/// <summary>
+/// The outcome of a treasury command. <see cref="Code"/> names the cause of a failure when the store knows it
+/// (<c>effective_before_invoice</c>, <c>effective_before_receipt</c>, <c>version_conflict</c>, phase 4); the API answers
+/// the failure's default code otherwise.
+/// </summary>
+public sealed record FinanceTreasuryResult(Guid? Id, string? Version, bool Replayed, FinanceTreasuryFailure? Failure,
+    string? Code = null)
 {
     public bool IsSuccess => Failure is null;
-    public static FinanceTreasuryResult Failed(FinanceTreasuryFailure failure) => new(null, null, false, failure);
+    public static FinanceTreasuryResult Failed(FinanceTreasuryFailure failure, string? code = null) =>
+        new(null, null, false, failure, code);
 }
 public sealed record FinanceTreasuryReceiptInput(Guid RequestId, Guid AirlineId, Guid StationId, string CurrencyCode,
     decimal Amount, string Reference, string Method, DateOnly ReceivedOn, string Reason);

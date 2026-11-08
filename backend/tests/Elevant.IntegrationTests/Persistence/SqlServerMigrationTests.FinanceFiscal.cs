@@ -223,7 +223,7 @@ public sealed partial class SqlServerMigrationTests
         var user = await setup.Users.SingleAsync(u => u.PublicId == FinanceAccount, ct);
         var airline = await setup.Airlines.FirstAsync(ct);
         var now = DateTimeOffset.UtcNow;
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(now);
         var policy = new FinanceTaxPolicy { PublicId = Guid.NewGuid(), AirlineId = airline.Id, StationId = station.Id,
             CurrencyCode = "USD", ConceptKind = PreinvoiceLineKind.Adjustment, ConceptCode = "SIM-SERVICE",
             Treatment = FinanceTaxTreatment.Taxable, Rate = taxRate, Basis = "Synthetic frozen tax basis",
@@ -252,7 +252,7 @@ public sealed partial class SqlServerMigrationTests
             CreatedAt = now, UpdatedAt = now };
         setup.Add(invoice); await setup.SaveChangesAsync(ct);
         setup.Add(new NonFiscalInvoiceLine { PublicId = Guid.NewGuid(), InvoiceId = invoice.Id, PreinvoiceLineId = line.Id,
-            LineNumber = 1, Kind = line.Kind, Reason = line.AdjustmentReason, OperationCode = "SIM-OP", OperationDate = DateOnly.FromDateTime(now.UtcDateTime),
+            LineNumber = 1, Kind = line.Kind, Reason = line.AdjustmentReason, OperationCode = "SIM-OP", OperationDate = Elevant.Application.Common.BusinessCalendar.Today(now),
             ServiceCode = "SIM-SERVICE", ServiceName = "Synthetic service", ExecutedQuantity = 1m, BillingUnit = "operation",
             UnitPrice = 100m, Amount = line.Amount, CurrencyCode = "USD", TaxTreatment = line.TaxTreatment,
             TaxPolicyPublicId = line.TaxPolicyPublicId, TaxRate = line.TaxRate, TaxBasis = line.TaxBasis,

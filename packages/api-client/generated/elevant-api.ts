@@ -1050,6 +1050,23 @@ export interface ClientUserData {
   signer: boolean;
 }
 
+export interface FinanceOperationVersionRequest {
+  operationId: string;
+  /** @maxLength 64 */
+  version: string;
+}
+
+export interface CloseOperationsWithoutChargeRequest {
+  stationId: string;
+  /**
+     * @minItems 1
+     * @maxItems 100
+     */
+  operations: FinanceOperationVersionRequest[];
+  /** @maxLength 500 */
+  reason: string;
+}
+
 export interface CommercialAccountResponse {
   accountId: string;
 }
@@ -2621,6 +2638,12 @@ export interface FinanceInvoicePageData {
   invoices: FinanceInvoiceSummaryData[];
 }
 
+export interface FinanceInvoicingLimitsResponse {
+  maxOperations: number;
+  maxLines: number;
+  maxDays: number;
+}
+
 export interface FinanceLineCalculationResponse {
   lineId: string;
   kind: string;
@@ -2802,6 +2825,54 @@ export interface FinancePayablesViewDto {
   lines: FinancePayablesLineViewDto[];
   attachments: FinancePayablesAttachmentViewDto[];
   reviews: FinancePayablesReviewViewDto[];
+}
+
+export interface FinancePendingAirlineResponse {
+  airlineId: string;
+  airlineName: string;
+  pendingCount: number;
+}
+
+export interface FinancePendingServiceResponse {
+  serviceId: string;
+  serviceCode: string;
+  serviceName: string;
+  ready: boolean;
+  /** @nullable */
+  blockingReason?: string | null;
+  /** @nullable */
+  amount?: number | null;
+  chargeCount: number;
+}
+
+export interface FinancePendingOperationResponse {
+  operationId: string;
+  version: string;
+  operationCode: string;
+  operationDate: string;
+  airlineId: string;
+  airlineName: string;
+  flightNumber: string;
+  /** @nullable */
+  contractCode?: string | null;
+  /** @nullable */
+  currencyCode?: string | null;
+  serviceCount: number;
+  lineEstimate: number;
+  estimatedNet: number;
+  ready: boolean;
+  blockingReasons: string[];
+  services: FinancePendingServiceResponse[];
+}
+
+export interface FinancePendingOperationsResponse {
+  stationId: string;
+  limits: FinanceInvoicingLimitsResponse;
+  airlines: FinancePendingAirlineResponse[];
+  operations: FinancePendingOperationResponse[];
+  /** @nullable */
+  nextCursor?: string | null;
+  totalPending: number;
 }
 
 export interface FinancePreinvoiceListItem {
@@ -3859,6 +3930,11 @@ export interface IssueInvoiceFromOperationsRequest {
      */
   operationIds: string[];
   requestId: string;
+  /**
+     * @maxItems 100
+     * @nullable
+     */
+  operationVersions?: FinanceOperationVersionRequest[] | null;
 }
 
 export interface IssuedInvoiceResponse {
@@ -4122,6 +4198,12 @@ export interface MyDepartmentAccessData {
   stations: GovernanceStationData[];
   canManageDepartmentUsers: boolean;
   canValidateAccessRequests: boolean;
+}
+
+export interface NoChargeClosureResponse {
+  closureId: string;
+  operationIds: string[];
+  replayed: boolean;
 }
 
 export interface NonFiscalInvoiceLineResponse {
@@ -6924,6 +7006,15 @@ stationId?: string;
 airlineId?: string;
 status?: string;
 page?: number;
+limit?: number;
+};
+
+export type GetFinancePendingOperationsParams = {
+stationId?: string;
+from?: string;
+to?: string;
+airlineId?: string;
+cursor?: string;
 limit?: number;
 };
 
@@ -13042,6 +13133,87 @@ export const getFinanceInvoiceByPreinvoice = async (preinvoiceId: string, option
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: NonFiscalInvoiceResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetFinancePendingOperationsUrl = (params?: GetFinancePendingOperationsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/finance/invoicing/pending-operations?${stringifiedParams}` : `/api/v1/finance/invoicing/pending-operations`
+}
+
+/**
+ * @summary The station's operations approved by OCC that are not invoiced nor closed without charge, from the oldest to the
+newest. `from`, `to` and `airlineId` are optional filters; `cursor` is the
+`nextCursor` of the previous page and `limit` takes 1 to 100 (50 by default). Each operation carries
+its version, its estimated invoice lines and every code that blocks it.
+ */
+export const getFinancePendingOperations = async (params?: GetFinancePendingOperationsParams, options?: RequestInit): Promise<FinancePendingOperationsResponse> => {
+
+  const res = await fetch(getGetFinancePendingOperationsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePendingOperationsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCloseOperationsWithoutChargeUrl = () => {
+
+
+
+
+  return `/api/v1/finance/invoicing/no-charge-closures`
+}
+
+/**
+ * @summary 4-N07: closes operations whose valuation is zero without an invoice (no e-NCF, no email), with a reason of 5 to
+500 characters and the version of each operation. The Idempotency-Key replays the first closure (200); another
+body with it is 409 `idempotency_conflict`. Operations with an amount are 422 `operation_has_charge`:
+they are invoiced. There is no reversal, like an issued invoice.
+ */
+export const closeOperationsWithoutCharge = async (closeOperationsWithoutChargeRequest: CloseOperationsWithoutChargeRequest, options?: RequestInit): Promise<NoChargeClosureResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCloseOperationsWithoutChargeUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(closeOperationsWithoutChargeRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: NoChargeClosureResponse = body ? JSON.parse(body) : {}
   return data
 }
 

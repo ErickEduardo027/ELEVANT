@@ -6,8 +6,10 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import { useAirlineStanding } from "@/components/auth/useAirlineStanding";
 import type { AirlineTreasuryStatement, AirlineTreasuryInvoiceDetail, AirlineTreasuryReceipt, AirlineTreasuryNote } from "@/lib/airline-treasury-service";
 import styles from "./AirlinePortalPage.module.css";
+import { businessToday } from "@/lib/business-day";
 
-const today = () => new Date().toISOString().slice(0, 10);
+// 4-N10: the cutoff is the business day of Santo Domingo, the one the server checks.
+const today = () => businessToday();
 const money = (value: number, currency: string) => currency + " " + new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(value);
 const kinds: Record<string, string> = { Receipt: "Cobro", Application: "Aplicación de cobro", ApplicationReversal: "Reverso de aplicación",
   ReceiptReversal: "Reverso de cobro", Refund: "Devolución", LegacyPayment: "Pago histórico", LegacyCredit: "Crédito histórico", Invoice: "Factura", Credit: "Crédito", Debit: "Débito" };
@@ -77,7 +79,7 @@ export function AirlineTreasuryPanel({ invoiceId }: { invoiceId?: string }) {
     {!live && <p role="status">Cargando estado financiero…</p>}
     {live?.error && <div role="alert"><p>{live.error}</p><button type="button" className={styles.loadMore} onClick={() => setRetry(value => value + 1)}>Reintentar</button></div>}
     {statement && <>
-      <p className={styles.note}>Corte: {statement.asOf} · Movimientos y registros hasta el cierre del día UTC.</p>
+      <p className={styles.note}>Corte: {statement.asOf} · Movimientos y registros hasta el cierre del día (hora de República Dominicana).</p>
       {!statement.aging.length && <p>No hay documentos financieros para este corte.</p>}
       {statement.aging.map(a => <section key={a.currencyCode} aria-label={"Antigüedad " + a.currencyCode}><h3>{a.currencyCode}</h3>
         <div className={styles.metrics}>{[["Saldo", a.balance], ["Vigente", a.current], ["1–30 días", a.days1To30], ["31–60 días", a.days31To60],

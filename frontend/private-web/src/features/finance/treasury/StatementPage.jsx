@@ -43,7 +43,7 @@ export default function StatementPage({ initialStationId, initialAirlineId = '',
     {error && <div role="alert" className="space-y-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><p>{error}</p><button type="button" onClick={() => { setLoading(true); setRevision(value => value + 1); }} className="font-semibold">Reintentar consulta</button></div>}
     {loading && <p role="status">Cargando estado de cuenta…</p>}
     {data && !loading && <>
-      <p className="text-sm font-semibold">Corte: {data.asOf} · Fechas de registro y movimiento hasta el cierre del día UTC.</p>
+      <p className="text-sm font-semibold">Corte: {data.asOf} · Fechas de registro y movimiento hasta el cierre del día (hora de República Dominicana).</p>
       {!data.aging.length ? <p className="rounded-xl border border-black/10 p-6 text-sm dark:border-white/10">No hay documentos ni movimientos para este corte.</p> : data.aging.map(group => <section key={group.currencyCode} className="space-y-2" aria-label={'Antigüedad ' + group.currencyCode}>
         <h2 className="text-base font-semibold">{group.currencyCode}</h2>
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card"><table className="table-stack w-full min-w-[760px] text-left text-sm"><thead><tr>{['Saldo', 'Vigente', '1–30 días', '31–60 días', '61–90 días', 'Más de 90 días', 'Remanente sin aplicar', 'Crédito a favor'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>

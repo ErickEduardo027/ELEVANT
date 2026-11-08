@@ -16,6 +16,7 @@ import {
 } from '../../../services/financePackagesService';
 import { isConflict } from '../../../services/problemMessages';
 import { PACKAGE_SCOPE_LABELS, PACKAGE_STATUS, statusMeta } from '../financeLabels';
+import { businessToday } from '../../../services/businessDay';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const buttonClass = 'rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold disabled:opacity-50 dark:border-white/15';
@@ -45,7 +46,7 @@ const CLOSED_NOTES = {
 };
 
 const newPackage = () => ({ code: '', name: '', currencyCode: 'USD', basePrice: '', scope: 'Turnaround',
-  flightDirection: null, periodDays: null, validFrom: new Date().toISOString().slice(0, 10), validTo: '',
+  flightDirection: null, periodDays: null, validFrom: businessToday(), validTo: '',
   status: 'Draft', components: [] });
 
 export default function PackagesPage() {

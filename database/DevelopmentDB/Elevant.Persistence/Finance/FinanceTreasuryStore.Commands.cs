@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
@@ -55,16 +56,21 @@ internal sealed partial class FinanceTreasuryStore
             var replay = await ReplayAsync(actorId, input.RequestId, receiptId, "receipt.applied", hash, ct);
             if (replay is not null) return replay;
             var moves = await ReceiptMovementsAsync(receipt.Id, ct);
-            if (Version(receipt) != input.ExpectedVersion || input.EffectiveOn < receipt.ReceivedOn ||
-                moves.Any(m => m.Kind == FinanceTreasuryMovementKind.ReceiptReversal)) return Fail(FinanceTreasuryFailure.Conflict);
+            if (Version(receipt) != input.ExpectedVersion) return Fail(FinanceTreasuryFailure.Conflict, "version_conflict");
+            // 4-N10: a date the receipt cannot have is explained, not a conflict a re-read cannot solve.
+            if (input.EffectiveOn < receipt.ReceivedOn) return Fail(FinanceTreasuryFailure.Invalid, "effective_before_receipt");
+            if (moves.Any(m => m.Kind == FinanceTreasuryMovementKind.ReceiptReversal)) return Fail(FinanceTreasuryFailure.Conflict);
             var available = Available(receipt, moves); Guid? firstId = null;
             foreach (var item in invoices)
             {
                 await LockInvoiceAsync(item.Invoice.Id, ct);
                 var account = await InvoiceAccountAsync(item.Invoice.Id, ct);
                 var allocation = input.Applications.Single(a => a.InvoiceId == item.Invoice.PublicId);
-                if (allocation.ExpectedInvoiceVersion != Version(account) || input.EffectiveOn < DateOnly.FromDateTime(item.Invoice.CreatedAt.UtcDateTime))
-                    return Fail(FinanceTreasuryFailure.Conflict);
+                if (allocation.ExpectedInvoiceVersion != Version(account))
+                    return Fail(FinanceTreasuryFailure.Conflict, "version_conflict");
+                // 4-N10: the invoice's business day of issue, not its UTC day.
+                if (input.EffectiveOn < BusinessCalendar.Today(item.Invoice.CreatedAt))
+                    return Fail(FinanceTreasuryFailure.Invalid, "effective_before_invoice");
                 var rate = await FinanceTariffLookup.ExchangeRateAsync(context, receipt.CurrencyCode, item.Invoice.CurrencyCode, input.EffectiveOn, ct);
                 if (rate is null or <= 0 || item.Invoice.CurrencyCode is not ("USD" or "DOP")) return Fail(FinanceTreasuryFailure.Conflict);
                 var invoiceAmount = FinanceTreasuryRules.Convert(allocation.ReceiptAmount, rate.Value);
@@ -105,8 +111,9 @@ internal sealed partial class FinanceTreasuryStore
             }
             var replay = await ReplayAsync(actorId, input.RequestId, receiptId, "receipt.reversed", hash, ct);
             if (replay is not null) return replay;
-            if (Version(receipt) != input.ExpectedVersion || input.EffectiveOn < receipt.ReceivedOn ||
-                moves.Any(m => m.Kind == FinanceTreasuryMovementKind.ReceiptReversal)) return Fail(FinanceTreasuryFailure.Conflict);
+            if (Version(receipt) != input.ExpectedVersion) return Fail(FinanceTreasuryFailure.Conflict, "version_conflict");
+            if (input.EffectiveOn < receipt.ReceivedOn) return Fail(FinanceTreasuryFailure.Invalid, "effective_before_receipt");
+            if (moves.Any(m => m.Kind == FinanceTreasuryMovementKind.ReceiptReversal)) return Fail(FinanceTreasuryFailure.Conflict);
             var movement = Movement(accountId, input.RequestId, receipt, original is null ? FinanceTreasuryMovementKind.ReceiptReversal :
                 FinanceTreasuryMovementKind.ApplicationReversal, input.EffectiveOn, original?.ReceiptAmount ?? receipt.Amount, input.Reason);
             if (original is null)
@@ -143,7 +150,9 @@ internal sealed partial class FinanceTreasuryStore
             var replay = await ReplayAsync(actorId, input.RequestId, receiptId, "receipt.refunded", hash, ct);
             if (replay is not null) return replay;
             var moves = await ReceiptMovementsAsync(receipt.Id, ct);
-            if (Version(receipt) != input.ExpectedVersion || input.EffectiveOn < receipt.ReceivedOn || input.Amount > Available(receipt, moves) ||
+            if (Version(receipt) != input.ExpectedVersion) return Fail(FinanceTreasuryFailure.Conflict, "version_conflict");
+            if (input.EffectiveOn < receipt.ReceivedOn) return Fail(FinanceTreasuryFailure.Invalid, "effective_before_receipt");
+            if (input.Amount > Available(receipt, moves) ||
                 moves.Any(m => m.Kind == FinanceTreasuryMovementKind.Refund && m.Reference == input.Reference.Trim()) ||
                 moves.Any(m => m.Kind == FinanceTreasuryMovementKind.ReceiptReversal)) return Fail(FinanceTreasuryFailure.Conflict);
             var movement = Movement(accountId, input.RequestId, receipt, FinanceTreasuryMovementKind.Refund, input.EffectiveOn, input.Amount, input.Reason);

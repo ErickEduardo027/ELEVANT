@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Data;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Finance;
@@ -175,7 +176,8 @@ internal sealed class EfFinanceInvoiceIssueStore(
             StationId = scope.StationId, IssuedByAccountId = accountId,
             RequestId = command.RequestId, Number = $"NF-{invoiceId:N}",
             CurrencyCode = scope.CurrencyCode, Total = scope.Total,
-            PaymentTermDays = terms, DueDate = DateOnly.FromDateTime(now.UtcDateTime).AddDays(terms),
+            // 4-N10: the terms run from the business day of issue in Santo Domingo.
+            PaymentTermDays = terms, DueDate = BusinessCalendar.Today(now).AddDays(terms),
             CreatedAt = now, UpdatedAt = now,
         };
         invoice.NetTotal = lines.Sum(l => l.NetAmount ?? l.Amount);

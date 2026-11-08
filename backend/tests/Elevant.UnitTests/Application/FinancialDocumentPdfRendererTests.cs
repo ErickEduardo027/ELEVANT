@@ -80,6 +80,27 @@ public sealed class FinancialDocumentPdfRendererTests
         Assert.Equal(expected, money.Invoke(null, [amount]));
     }
 
+    /// <summary>4-N10: EMISIÓN is the business day and the frame time is Santo Domingo's, marked «hora RD».</summary>
+    [Fact]
+    public void DocumentDatesAreTheBusinessDayAndTheLocalTimeOfSantoDomingo()
+    {
+        var evening = new DateTimeOffset(2026, 12, 1, 1, 30, 0, TimeSpan.Zero);
+        var date = typeof(FinancialDocumentPdfRenderer).GetMethod("Date", BindingFlags.NonPublic | BindingFlags.Static);
+        var stamp = typeof(FinancialDocumentPdfRenderer).GetMethod("Stamp", BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(date);
+        Assert.NotNull(stamp);
+        Assert.Equal("2026-11-30", date.Invoke(null, [evening]));
+        Assert.Equal("2026-11-30 21:30 hora RD", stamp.Invoke(null, [evening]));
+        // A late-evening invoice still renders.
+        var invoice = new NonFiscalInvoiceData(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(),
+            "DEV-NF-2026-00000000000000000000003", "USD", 118m, evening,
+            [new NonFiscalInvoiceLineData(Guid.NewGuid(), 1, "DEV-TAT-0001", new DateOnly(2026, 11, 30), "RAMP",
+                "Asistencia en rampa", 1m, "servicio", 100m, 118m, 100m, 18m)],
+            new NonFiscalInvoiceFiscalData("E310000000003", "ABC234", evening, new DateOnly(2026, 12, 30), 100m, 18m,
+                "AVIAM Ltd.", FinanceInvoicePolicy.SimulatedIssuerRnc, "Aerolínea Demo S.A.", "SDQ"));
+        Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(new FinancialDocumentPdfRenderer().RenderInvoice(invoice), 0, 5));
+    }
+
     [Fact]
     public void StoredPdfMustMatchBothLengthAndSha256BeforeDownload()
     {

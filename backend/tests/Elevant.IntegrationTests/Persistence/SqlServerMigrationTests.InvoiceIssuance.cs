@@ -101,7 +101,7 @@ public sealed partial class SqlServerMigrationTests
             var portal = new Elevant.Persistence.Finance.FinanceTreasuryStore(portalContext,
                 new Elevant.Persistence.Identity.EfActorContextResolver(portalContext, TimeProvider.System), TimeProvider.System);
             var airlineAccount = Guid.Parse("40000000-0000-7000-8000-000000000003");
-            var statement = await portal.PortalStatementAsync(airlineAccount, DateOnly.FromDateTime(DateTime.UtcNow), null, ct);
+            var statement = await portal.PortalStatementAsync(airlineAccount, Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow), null, ct);
             Assert.True(statement.IsSuccess);
             var own = Assert.Single(statement.Data!.Invoices, item => item.Id == invoice.PublicId);
             Assert.Equal("E310000000001", own.FiscalNumber);
@@ -154,13 +154,201 @@ public sealed partial class SqlServerMigrationTests
             .Where(item => item.InvoiceId == charterInvoice.Id).SumAsync(item => item.InvoiceAmount, ct));
     }
 
+    /// <summary>
+    /// 4-N01, 4-N06, 4-N07, 4-N29: a refusal writes nothing (the internal draft, its lines, the package consumption, the
+    /// e-NCF and the email included), the operation stays pending and the same key issues once it is fixed; a total of
+    /// zero is refused; the key with other operations is idempotency_conflict and a stale version is version_conflict.
+    /// </summary>
+    [Fact]
+    public async Task InvoiceIssuanceRollsBackRefusalsComparesReplaysAndChecksVersions()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var setup = CreateContext(database.ConnectionString);
+        var first = await ApproveForInvoicingAsync(setup, "DEV-TAT-0001", ct);
+        var second = await ApproveForInvoicingAsync(setup, "DEV-TAT-0002", ct);
+        var station = await setup.Stations.Where(item => item.Code == "PUJ").Select(item => item.PublicId).SingleAsync(ct);
+
+        async Task<IssueInvoiceResult> IssueAsync(Guid requestId, Guid[] operations,
+            IReadOnlyList<InvoiceOperationVersion>? versions = null)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await Handler(scope.ServiceProvider)
+                .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, operations, requestId, versions), ct);
+        }
+        async Task<(int Drafts, int Lines, int Invoices, int Emails, int Consumptions)> WrittenAsync()
+        {
+            setup.ChangeTracker.Clear();
+            return (await setup.Preinvoices.CountAsync(ct), await setup.PreinvoiceLines.CountAsync(ct),
+                await setup.NonFiscalInvoices.CountAsync(ct), await setup.Set<EmailOutboxMessage>().CountAsync(ct),
+                await setup.Set<PackageConsumption>().CountAsync(ct));
+        }
+
+        // An inactive customer organization is refused before anything is written; reactivated, the same key issues.
+        var organization = await (from operation in setup.GroundOperations
+                                  join turnaround in setup.Turnarounds on operation.TurnaroundId equals turnaround.Id
+                                  join airline in setup.Airlines on turnaround.AirlineId equals airline.Id
+                                  where operation.PublicId == first
+                                  select airline.OrganizationId).SingleAsync(ct);
+        await setup.Organizations.Where(item => item.Id == organization)
+            .ExecuteUpdateAsync(set => set.SetProperty(item => item.Status, OrganizationStatus.Inactive), ct);
+        var before = await WrittenAsync();
+        var key = Guid.NewGuid();
+        var inactive = await IssueAsync(key, [first]);
+        Assert.Equal((IssueInvoiceFailure.Unprocessable, "airline_inactive"), (inactive.Failure!.Value, inactive.Reason));
+        Assert.Equal(before, await WrittenAsync());
+        await setup.Organizations.Where(item => item.Id == organization)
+            .ExecuteUpdateAsync(set => set.SetProperty(item => item.Status, OrganizationStatus.Active), ct);
+        var issued = await IssueAsync(key, [first]);
+        Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+        Assert.Equal("E310000000001", issued.FiscalNumber);
+
+        // 4-N29: the key with other operations is a conflict, never the earlier invoice; the same body replays it.
+        var reused = await IssueAsync(key, [second]);
+        Assert.Equal((IssueInvoiceFailure.Conflict, "idempotency_conflict"), (reused.Failure!.Value, reused.Reason));
+        var widened = await IssueAsync(key, [first, second]);
+        Assert.Equal((IssueInvoiceFailure.Conflict, "idempotency_conflict"), (widened.Failure!.Value, widened.Reason));
+        var replay = await IssueAsync(key, [first]);
+        Assert.True(replay.Replayed);
+        Assert.Equal(issued.InvoiceId, replay.InvoiceId);
+
+        // A stale version is refused; the version on screen issues (expand: versions are optional).
+        setup.ChangeTracker.Clear();
+        var version = Convert.ToBase64String((await setup.GroundOperations.AsNoTracking()
+            .SingleAsync(item => item.PublicId == second, ct)).RowVersion);
+        var stale = await IssueAsync(Guid.NewGuid(), [second], [new(second, "AAAAAAAAAAE=")]);
+        Assert.Equal((IssueInvoiceFailure.Conflict, "version_conflict"), (stale.Failure!.Value, stale.Reason));
+
+        // 4-N07: a valuation of zero is refused after the draft was valued: nothing stays, no e-NCF is used.
+        var services = from service in setup.OperationServices
+                       join operation in setup.GroundOperations on service.GroundOperationId equals operation.Id
+                       where operation.PublicId == second
+                       select service;
+        await services.ExecuteUpdateAsync(set => set.SetProperty(item => item.UnitPriceSnapshot, 0m), ct);
+        before = await WrittenAsync();
+        var zero = await IssueAsync(Guid.NewGuid(), [second], [new(second, version)]);
+        Assert.Equal((IssueInvoiceFailure.Unprocessable, "zero_total"), (zero.Failure!.Value, zero.Reason));
+        Assert.Equal(before, await WrittenAsync());
+        await services.ExecuteUpdateAsync(set => set.SetProperty(item => item.UnitPriceSnapshot, 10m), ct);
+        var priced = await IssueAsync(Guid.NewGuid(), [second], [new(second, version)]);
+        Assert.True(priced.IsSuccess, $"{priced.Failure} {priced.Reason}");
+        Assert.Equal("E310000000002", priced.FiscalNumber);
+    }
+
+    /// <summary>
+    /// 4-N06: the issuance values up to 500 lines: a selection of 120 services (more than a standalone draft's 100) is
+    /// invoiced, and more than 500 billable services are refused with too_many_lines before anything is written.
+    /// </summary>
+    [Fact]
+    public async Task InvoiceIssuanceTakesUpToFiveHundredLines()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var setup = CreateContext(database.ConnectionString);
+        var station = await setup.Stations.Where(item => item.Code == "PUJ").Select(item => item.PublicId).SingleAsync(ct);
+        var large = await ApproveForInvoicingAsync(setup, "DEV-TAT-0001", ct, extraServices: 118);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var issued = await Handler(scope.ServiceProvider)
+                .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, [large], Guid.NewGuid()), ct);
+            Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+        }
+        setup.ChangeTracker.Clear();
+        Assert.Equal(120, await setup.NonFiscalInvoiceLines.CountAsync(ct));
+
+        var oversized = await ApproveForInvoicingAsync(setup, "DEV-TAT-0002", ct, extraServices: 499);
+        var drafts = await setup.Preinvoices.CountAsync(ct);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var refused = await Handler(scope.ServiceProvider)
+                .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, [oversized], Guid.NewGuid()), ct);
+            Assert.Equal((IssueInvoiceFailure.Unprocessable, "too_many_lines"), (refused.Failure!.Value, refused.Reason));
+        }
+        Assert.Equal(drafts, await setup.Preinvoices.CountAsync(ct));
+    }
+
+    /// <summary>
+    /// 4-N10: Finance's day is the business day of Santo Domingo. An invoice issued at 21:30 of 30/11 (01:30 UTC of 1/12)
+    /// is due from 30/11, falls in November's revenue, is not overdue that evening and takes a receipt effective that
+    /// day; an earlier date is effective_before_invoice and a receipt of 1/12 is still in the future.
+    /// </summary>
+    [Fact]
+    public async Task FinanceDaysAreTheBusinessDayOfSantoDomingo()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        var clock = new MovableTimeProvider(new DateTimeOffset(2026, 12, 1, 1, 30, 0, TimeSpan.Zero));
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct, clock);
+        await using var setup = CreateContext(database.ConnectionString);
+        var operation = await ApproveForInvoicingAsync(setup, "DEV-TAT-0001", ct);
+        var station = await setup.Stations.Where(item => item.Code == "PUJ").Select(item => item.PublicId).SingleAsync(ct);
+        await using var scope = provider.CreateAsyncScope();
+        var issued = await Handler(scope.ServiceProvider)
+            .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, [operation], Guid.NewGuid()), ct);
+        Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+        var evening = new DateOnly(2026, 11, 30);
+        var invoice = await setup.NonFiscalInvoices.AsNoTracking().SingleAsync(item => item.PublicId == issued.InvoiceId, ct);
+        Assert.Equal(evening.AddDays(invoice.PaymentTermDays), invoice.DueDate);
+
+        // November's revenue holds the invoice of 30/11 at 21:30.
+        var reports = scope.ServiceProvider.GetRequiredService<Elevant.Application.Abstractions.Finance.IFinanceReportStore>();
+        var revenue = (await reports.GetAsync(FinanceAccount, "revenue",
+            new Elevant.Application.Abstractions.Finance.FinanceReportFilter(new DateOnly(2026, 11, 1), evening, station, null, "USD"), ct))!;
+        Assert.Equal("2026-11", Assert.Single(revenue.Rows)[0]);
+
+        // An invoice due today is not overdue until the business day ends.
+        await setup.NonFiscalInvoices.Where(item => item.Id == invoice.Id)
+            .ExecuteUpdateAsync(set => set.SetProperty(item => item.DueDate, evening), ct);
+        var ledger = scope.ServiceProvider.GetRequiredService<Elevant.Application.Abstractions.Finance.IFinanceInvoiceLedgerStore>();
+        var tonight = (await ledger.GetAsync(FinanceAccount, invoice.PublicId, ct))!.Summary;
+        Assert.Equal(("Pending", 0), (tonight.Status, tonight.DaysOverdue));
+
+        // A receipt of 29/11 cannot be applied before the invoice's day; on 30/11 it is.
+        var treasury = scope.ServiceProvider.GetRequiredService<Elevant.Application.Abstractions.Finance.IFinanceTreasuryStore>();
+        var airline = await (from item in setup.Turnarounds
+                             join carrier in setup.Airlines on item.AirlineId equals carrier.Id
+                             where item.OperationCode == "DEV-TAT-0001"
+                             select carrier.PublicId).SingleAsync(ct);
+        var tomorrow = await treasury.RecordAsync(FinanceAccount, new(Guid.NewGuid(), airline, station, "USD", 10m,
+            "TRF-RD-FUTURE", "Transfer", evening.AddDays(1), "Cobro de prueba"), ct);
+        Assert.Equal(Elevant.Application.Abstractions.Finance.FinanceTreasuryFailure.Invalid, tomorrow.Failure);
+        var receipt = await treasury.RecordAsync(FinanceAccount, new(Guid.NewGuid(), airline, station, "USD", 10m,
+            "TRF-RD-2911", "Transfer", evening.AddDays(-1), "Cobro de prueba"), ct);
+        Assert.True(receipt.IsSuccess, $"{receipt.Failure} {receipt.Code}");
+        var early = await treasury.ApplyAsync(FinanceAccount, receipt.Id!.Value, new(Guid.NewGuid(), receipt.Version!,
+            evening.AddDays(-1), "Aplicación de prueba", [new(invoice.PublicId, "0", 10m)]), ct);
+        Assert.Equal((Elevant.Application.Abstractions.Finance.FinanceTreasuryFailure.Invalid, "effective_before_invoice"),
+            (early.Failure!.Value, early.Code));
+        var applied = await treasury.ApplyAsync(FinanceAccount, receipt.Id.Value, new(Guid.NewGuid(), receipt.Version!,
+            evening, "Aplicación de prueba", [new(invoice.PublicId, "0", 10m)]), ct);
+        Assert.True(applied.IsSuccess, $"{applied.Failure} {applied.Code}");
+
+        // At 00:30 of 1/12 in Santo Domingo the invoice is one day overdue.
+        clock.Now = new DateTimeOffset(2026, 12, 1, 4, 30, 0, TimeSpan.Zero);
+        await using var later = provider.CreateAsyncScope();
+        var overdue = (await later.ServiceProvider.GetRequiredService<Elevant.Application.Abstractions.Finance.IFinanceInvoiceLedgerStore>()
+            .GetAsync(FinanceAccount, invoice.PublicId, ct))!.Summary;
+        Assert.Equal(("Overdue", 1), (overdue.Status, overdue.DaysOverdue));
+    }
+
     private static IssueInvoiceHandler Handler(IServiceProvider services) =>
         new(services.GetRequiredService<Elevant.Application.Abstractions.Identity.IActorContextResolver>(),
             services.GetRequiredService<IInvoiceIssuanceStore>());
 
-    /// <summary>Completes the operation's services, records OCC-approved evidence and approves the operation.</summary>
+    /// <summary>
+    /// Completes the operation's services, records OCC-approved evidence and approves the operation. With
+    /// <paramref name="extraServices"/> the operation gets that many more completed services (4-N06).
+    /// </summary>
     private static async Task<Guid> ApproveForInvoicingAsync(ElevantDbContext db, string code, CancellationToken ct,
-        string? cloneAs = null, long? airlineId = null)
+        string? cloneAs = null, long? airlineId = null, int extraServices = 0)
     {
         db.ChangeTracker.Clear();
         var tat = await db.Turnarounds.SingleAsync(item => item.OperationCode == code, ct);
@@ -185,9 +373,25 @@ public sealed partial class SqlServerMigrationTests
             return op.PublicId;
         }
         op.CurrentStatus = GroundOperationStatus.Approved;
-        var services = await db.OperationServices.Where(item => item.GroundOperationId == op.Id).OrderBy(item => item.LineNumber)
-            .Take(2).ToArrayAsync(ct);
         var definition = await db.ServiceDefinitions.SingleAsync(item => item.Code == "BAGGAGE", ct);
+        if (extraServices > 0)
+        {
+            var template = await db.OperationServices.AsNoTracking().Where(item => item.GroundOperationId == op.Id)
+                .OrderBy(item => item.LineNumber).FirstAsync(ct);
+            var last = await db.OperationServices.Where(item => item.GroundOperationId == op.Id).MaxAsync(item => item.LineNumber, ct);
+            var stamp = DateTimeOffset.UtcNow;
+            for (var index = 1; index <= extraServices; index++)
+                db.OperationServices.Add(new OperationService
+                {
+                    PublicId = Guid.NewGuid(), GroundOperationId = op.Id, LineNumber = last + index,
+                    ServiceDefinitionId = definition.Id, ContractedQuantity = 1, ExecutedQuantity = 0,
+                    BillingUnitSnapshot = template.BillingUnitSnapshot, CurrentStatus = ServiceExecutionStatus.Planned,
+                    CreatedAt = stamp, UpdatedAt = stamp,
+                });
+            await db.SaveChangesAsync(ct);
+        }
+        var services = await db.OperationServices.Where(item => item.GroundOperationId == op.Id).OrderBy(item => item.LineNumber)
+            .Take(2 + extraServices).ToArrayAsync(ct);
         var contract = await db.Contracts.SingleAsync(item => item.ContractCode == "DEV-CONTRACT-0001", ct);
         var version = await db.ContractVersions.SingleAsync(item => item.ContractId == contract.Id, ct);
         var rate = await db.ContractServiceRates.SingleAsync(item => item.ContractVersionId == version.Id &&

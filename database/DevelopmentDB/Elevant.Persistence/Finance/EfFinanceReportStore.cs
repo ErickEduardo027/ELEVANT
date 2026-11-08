@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
@@ -69,7 +70,11 @@ internal sealed partial class EfFinanceReportStore(
 
     private static string Month(DateOnly date) => date.ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
-    private static DateOnly DateOf(DateTimeOffset value) => DateOnly.FromDateTime(value.UtcDateTime);
+    /// <summary>4-N10: the business day (America/Santo_Domingo) of an instant, for days and months of the reports.</summary>
+    private static DateOnly DateOf(DateTimeOffset value) => BusinessCalendar.Today(value);
+
+    /// <summary>First instant of a business day in Santo Domingo.</summary>
+    private static DateTimeOffset StartOf(DateOnly day) => BusinessCalendar.StartOfDay(day);
 
     private static FinanceReportColumn Col(string key, string label, string type = "text") => new(key, label, type);
 
@@ -90,8 +95,8 @@ internal sealed partial class EfFinanceReportStore(
 
     private async Task<InvoiceRow[]> InvoicesAsync(Scope scope, bool inPeriod, CancellationToken cancellationToken)
     {
-        var from = new DateTimeOffset(scope.Filter.From.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var to = new DateTimeOffset(scope.Filter.To.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var from = StartOf(scope.Filter.From);
+        var to = EndOf(scope.Filter.To);
         var rows = await (from invoice in context.NonFiscalInvoices.AsNoTracking()
                           join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
                           where scope.StationIds.Contains(invoice.StationId) &&
@@ -307,8 +312,8 @@ internal sealed partial class EfFinanceReportStore(
     private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
         DisputesAsync(Scope scope, CancellationToken cancellationToken)
     {
-        var from = new DateTimeOffset(scope.Filter.From.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var to = new DateTimeOffset(scope.Filter.To.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var from = StartOf(scope.Filter.From);
+        var to = EndOf(scope.Filter.To);
         var disputes = await (from dispute in context.PreinvoiceDisputes.AsNoTracking()
                               join preinvoice in context.Preinvoices.AsNoTracking() on dispute.PreinvoiceId equals preinvoice.Id
                               join airline in context.Airlines.AsNoTracking() on preinvoice.AirlineId equals airline.Id

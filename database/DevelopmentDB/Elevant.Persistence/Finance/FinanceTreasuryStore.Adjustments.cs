@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
@@ -55,8 +56,10 @@ internal sealed partial class FinanceTreasuryStore
             var replay = await ReplayAsync(actorId, input.RequestId, invoiceId, "adjustment.issued", hash, ct);
             if (replay is not null) return replay;
             var account = await InvoiceAccountAsync(scope.Invoice.Id, ct);
-            if (Version(account) != input.ExpectedVersion || input.EffectiveOn < DateOnly.FromDateTime(scope.Invoice.CreatedAt.UtcDateTime))
-                return Fail(FinanceTreasuryFailure.Conflict);
+            if (Version(account) != input.ExpectedVersion) return Fail(FinanceTreasuryFailure.Conflict, "version_conflict");
+            // 4-N10: the invoice's business day of issue, not its UTC day.
+            if (input.EffectiveOn < BusinessCalendar.Today(scope.Invoice.CreatedAt))
+                return Fail(FinanceTreasuryFailure.Invalid, "effective_before_invoice");
             var data = await AdjustmentDataAsync(scope.Invoice, ct);
             var amount = input.Lines.Sum(l => l.Amount);
             if (!FinanceTreasuryRules.Money(amount)) return Fail(FinanceTreasuryFailure.Invalid);

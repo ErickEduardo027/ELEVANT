@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Domain.Entities.Commercial;
@@ -8,7 +9,8 @@ namespace Elevant.Persistence.Finance;
 
 internal sealed partial class EfFinanceReportStore
 {
-    private static DateTimeOffset EndOf(DateOnly day) => new(day.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+    /// <summary>4-N10: exclusive end of a business day: the first instant of the next one in Santo Domingo.</summary>
+    private static DateTimeOffset EndOf(DateOnly day) => BusinessCalendar.StartOfDay(day.AddDays(1));
     private static string DateText(DateOnly day) => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
     private static string LineKind(PreinvoiceLineKind kind) => kind switch
     {
@@ -116,7 +118,7 @@ internal sealed partial class EfFinanceReportStore
         var rows = new List<IReadOnlyList<string?>>();
         if (!debit)
         {
-            var from = new DateTimeOffset(scope.Filter.From.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+            var from = StartOf(scope.Filter.From);
             var legacy = await context.NonFiscalCreditNotes.AsNoTracking().Where(n => ids.Contains(n.InvoiceId) && n.CreatedAt >= from && n.CreatedAt < end).OrderBy(n => n.CreatedAt).ToArrayAsync(ct);
             foreach (var n in legacy)
             {

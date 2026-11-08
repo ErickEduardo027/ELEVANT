@@ -13098,6 +13098,242 @@
         ]
       }
     },
+    "/api/v1/finance/invoicing/pending-operations": {
+      "get": {
+        "tags": [
+          "FinanceInvoicing"
+        ],
+        "summary": "The station's operations approved by OCC that are not invoiced nor closed without charge, from the oldest to the\nnewest. `from`, `to` and `airlineId` are optional filters; `cursor` is the\n`nextCursor` of the previous page and `limit` takes 1 to 100 (50 by default). Each operation carries\nits version, its estimated invoice lines and every code that blocks it.",
+        "operationId": "GetFinancePendingOperations",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "airlineId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePendingOperationsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/invoicing/no-charge-closures": {
+      "post": {
+        "tags": [
+          "FinanceInvoicing"
+        ],
+        "summary": "4-N07: closes operations whose valuation is zero without an invoice (no e-NCF, no email), with a reason of 5 to\n500 characters and the version of each operation. The Idempotency-Key replays the first closure (200); another\nbody with it is 409 `idempotency_conflict`. Operations with an amount are 422 `operation_has_charge`:\nthey are invoiced. There is no reversal, like an issued invoice.",
+        "operationId": "CloseOperationsWithoutCharge",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CloseOperationsWithoutChargeRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoChargeClosureResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoChargeClosureResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/packages": {
       "get": {
         "tags": [
@@ -39452,6 +39688,33 @@
         },
         "additionalProperties": false
       },
+      "CloseOperationsWithoutChargeRequest": {
+        "required": [
+          "operations",
+          "reason",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operations": {
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceOperationVersionRequest"
+            }
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CommercialAccountResponse": {
         "required": [
           "accountId"
@@ -44134,6 +44397,29 @@
         },
         "additionalProperties": false
       },
+      "FinanceInvoicingLimitsResponse": {
+        "required": [
+          "maxDays",
+          "maxLines",
+          "maxOperations"
+        ],
+        "type": "object",
+        "properties": {
+          "maxOperations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxLines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxDays": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "FinanceLineCalculationResponse": {
         "required": [
           "description",
@@ -44168,6 +44454,24 @@
             "items": {
               "$ref": "#/components/schemas/FinanceCalculationStepResponse"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceOperationVersionRequest": {
+        "required": [
+          "operationId",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "maxLength": 64,
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -45097,6 +45401,191 @@
           },
           "recordedBy": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePendingAirlineResponse": {
+        "required": [
+          "airlineId",
+          "airlineName",
+          "pendingCount"
+        ],
+        "type": "object",
+        "properties": {
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "pendingCount": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePendingOperationResponse": {
+        "required": [
+          "airlineId",
+          "airlineName",
+          "blockingReasons",
+          "estimatedNet",
+          "flightNumber",
+          "lineEstimate",
+          "operationCode",
+          "operationDate",
+          "operationId",
+          "ready",
+          "serviceCount",
+          "services",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "string"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "flightNumber": {
+            "type": "string"
+          },
+          "contractCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "currencyCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "serviceCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "lineEstimate": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "estimatedNet": {
+            "type": "number",
+            "format": "double"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "blockingReasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinancePendingServiceResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePendingOperationsResponse": {
+        "required": [
+          "airlines",
+          "limits",
+          "operations",
+          "stationId",
+          "totalPending"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "limits": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FinanceInvoicingLimitsResponse"
+              }
+            ]
+          },
+          "airlines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinancePendingAirlineResponse"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinancePendingOperationResponse"
+            }
+          },
+          "nextCursor": {
+            "type": "string",
+            "nullable": true
+          },
+          "totalPending": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePendingServiceResponse": {
+        "required": [
+          "chargeCount",
+          "ready",
+          "serviceCode",
+          "serviceId",
+          "serviceName"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "serviceCode": {
+            "type": "string"
+          },
+          "serviceName": {
+            "type": "string"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "blockingReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "amount": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "chargeCount": {
+            "type": "integer",
+            "format": "int32"
           }
         },
         "additionalProperties": false
@@ -49012,6 +49501,14 @@
           "requestId": {
             "type": "string",
             "format": "uuid"
+          },
+          "operationVersions": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceOperationVersionRequest"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -49994,6 +50491,31 @@
             "type": "boolean"
           },
           "canValidateAccessRequests": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "NoChargeClosureResponse": {
+        "required": [
+          "closureId",
+          "operationIds",
+          "replayed"
+        ],
+        "type": "object",
+        "properties": {
+          "closureId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "replayed": {
             "type": "boolean"
           }
         },
@@ -59788,6 +60310,9 @@
     },
     {
       "name": "FinanceInvoices"
+    },
+    {
+      "name": "FinanceInvoicing"
     },
     {
       "name": "FinancePackages"

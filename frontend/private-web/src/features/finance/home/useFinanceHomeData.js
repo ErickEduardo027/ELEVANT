@@ -3,12 +3,12 @@ import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { getFinanceHomeSnapshot } from '../../../services/financeHomeService';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
+import { addDays, businessToday } from '../../../services/businessDay';
 
+/** The last 30 business days of Santo Domingo, today included (4-N10). */
 function lastThirtyDays() {
-  const to = new Date();
-  const from = new Date(to);
-  from.setUTCDate(from.getUTCDate() - 29);
-  return { from: from.toISOString().slice(0, 10), to: to.toISOString().slice(0, 10) };
+  const to = businessToday();
+  return { from: addDays(to, -29), to };
 }
 
 export function useFinanceHomeData(enabled = true) {

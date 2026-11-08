@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -21,7 +22,8 @@ internal static class FinanceTreasuryPosting
     {
         ArgumentNullException.ThrowIfNull(invoice);
         if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        // 4-N10: a card payment or a prepayment of 21:30 in Santo Domingo is received that business day.
+        var today = BusinessCalendar.Today(now);
         var receipt = new FinanceTreasuryReceipt
         {
             PublicId = Guid.CreateVersion7(), AirlineId = invoice.AirlineId, StationId = invoice.StationId,

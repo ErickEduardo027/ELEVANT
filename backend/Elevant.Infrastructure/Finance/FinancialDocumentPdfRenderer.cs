@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Globalization;
 using PdfSharp;
 using PdfSharp.Drawing;
@@ -193,8 +194,14 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         }
     }
 
+    /// <summary>4-N10: EMISIÓN and the signature date are the business day in Santo Domingo, as the screens show.</summary>
     private static string Date(DateTimeOffset value) =>
-        value.ToUniversalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        BusinessCalendar.Today(value).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>The local time of the document in Santo Domingo, marked as such (4-N10).</summary>
+    private static string Stamp(DateTimeOffset value) =>
+        TimeZoneInfo.ConvertTime(value, BusinessCalendar.Zone()).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) +
+        " hora RD";
 
     public byte[] RenderReceipt(NonFiscalPaymentData payment, string invoiceNumber)
     {
@@ -342,8 +349,7 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
             XColors.White, Margin, 68, 360);
         DrawText(graphics, title, heading, Navy, Margin, 130, 350);
         DrawText(graphics, reference, caption, Muted, 383, 136, 166);
-        DrawText(graphics, timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'",
-            CultureInfo.InvariantCulture), caption, Muted, 383, 155, 166);
+        DrawText(graphics, Stamp(timestamp), caption, Muted, 383, 155, 166);
         graphics.DrawLine(new XPen(Muted, 0.4), Margin, page.Height.Point - 51,
             page.Width.Point - Margin, page.Height.Point - 51);
         DrawText(graphics, "Sin NCF, impuestos ni validez fiscal.", caption, Muted,

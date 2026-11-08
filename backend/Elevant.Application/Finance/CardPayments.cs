@@ -40,10 +40,13 @@ public static class CardPaymentPolicy
         _ => "Tarjeta",
     };
 
-    /// <summary>The card is valid through the last day of its expiry month.</summary>
+    /// <summary>
+    /// The card is valid through the last day of its expiry month, by AVIAM's business day in Santo Domingo (4-N10):
+    /// at 21:30 of the last day it is still valid although the UTC day is the next month.
+    /// </summary>
     public static bool IsNotExpired(int month, int year, DateTimeOffset now) =>
         month is >= 1 and <= 12 && year is >= 2000 and <= 2099 &&
-        new DateOnly(year, month, 1).AddMonths(1) > DateOnly.FromDateTime(now.UtcDateTime);
+        new DateOnly(year, month, 1).AddMonths(1) > Common.BusinessCalendar.Today(now);
 
     public static bool IsValidSecurityCode(string? code, string brand) =>
         code is not null && code.All(char.IsAsciiDigit) && code.Length == (brand == "Amex" ? 4 : 3);

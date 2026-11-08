@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Data;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Domain.Entities.Commercial;
@@ -45,7 +46,7 @@ internal sealed partial class FinanceTreasuryStore
         var query = context.Set<FinanceTreasuryMovement>().AsNoTracking().Where(m => m.ReceiptId == receipt.Id);
         if (asOf is { } day)
         {
-            var end = new DateTimeOffset(day.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+            var end = EndOfDay(day);
             query = query.Where(m => m.EffectiveOn <= day && m.CreatedAt < end);
         }
         var moves = await query.OrderBy(m => m.CreatedAt).ThenBy(m => m.Id).ToArrayAsync(ct);
@@ -80,7 +81,7 @@ internal sealed partial class FinanceTreasuryStore
     private async Task<FinanceTreasuryStatementData> StatementDataAsync(Elevant.Application.Identity.ActorContext actor,
         DateOnly asOf, Guid? stationId, Guid? airlineId, CancellationToken ct)
     {
-        var end = new DateTimeOffset(asOf.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        var end = EndOfDay(asOf);
         var rows = await Invoices(actor).AsNoTracking().Where(i => i.Invoice.CreatedAt < end &&
             (stationId == null || i.StationId == stationId) && (airlineId == null || i.AirlineId == airlineId)).OrderBy(i => i.Invoice.Id).ToArrayAsync(ct);
         var ids = rows.Select(i => i.Invoice.Id).ToArray();
@@ -113,11 +114,11 @@ internal sealed partial class FinanceTreasuryStore
         {
             var invoice = row.Invoice;
             movements.Add(new(invoice.PublicId, null, invoice.PublicId, "Invoice", invoice.CurrencyCode, invoice.Total,
-                DateOnly.FromDateTime(invoice.CreatedAt.UtcDateTime), invoice.CreatedAt, null, invoice.Number));
+                BusinessCalendar.Today(invoice.CreatedAt), invoice.CreatedAt, null, invoice.Number));
             movements.AddRange(payments.Where(p => p.InvoiceId == invoice.Id).Select(p => new FinanceTreasuryStatementMovementData(p.PublicId,
-                null, invoice.PublicId, "LegacyPayment", p.CurrencyCode, p.Amount, p.PaidOn ?? DateOnly.FromDateTime(p.CreatedAt.UtcDateTime), p.CreatedAt, null, p.Reference)));
+                null, invoice.PublicId, "LegacyPayment", p.CurrencyCode, p.Amount, p.PaidOn ?? BusinessCalendar.Today(p.CreatedAt), p.CreatedAt, null, p.Reference)));
             movements.AddRange(legacyNotes.Where(n => n.InvoiceId == invoice.Id).Select(n => new FinanceTreasuryStatementMovementData(n.PublicId,
-                null, invoice.PublicId, "LegacyCredit", n.CurrencyCode, n.Amount, DateOnly.FromDateTime(n.CreatedAt.UtcDateTime), n.CreatedAt, null, n.Number)));
+                null, invoice.PublicId, "LegacyCredit", n.CurrencyCode, n.Amount, BusinessCalendar.Today(n.CreatedAt), n.CreatedAt, null, n.Number)));
         }
         var notes = await context.Set<FinanceTreasuryAdjustmentNote>().AsNoTracking().Where(n => ids.Contains(n.InvoiceId) && n.EffectiveOn <= asOf && n.CreatedAt < end).ToArrayAsync(ct);
         movements.AddRange(notes.Select(n => new FinanceTreasuryStatementMovementData(n.PublicId, null, rows.Single(r => r.Invoice.Id == n.InvoiceId).Invoice.PublicId,

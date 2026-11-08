@@ -173,6 +173,30 @@ const CHARTER_CODES = ["charter_prepayment_confirmed", "charter_prepayment_not_c
  * malformed or out-of-range query; an unknown report; a station outside the caller's scope or no longer active.
  */
 const REPORT_CODES = ["report_too_large", "invalid_report_query", "report_not_found", "station_unavailable"] as const;
+/**
+ * Invoicing (phase 4, block A): the issuance from operations and «Por facturar». A refusal writes nothing (4-N01); an
+ * invoice is never issued for zero and such operations are closed without charge (4-N07); one set of limits of an
+ * invoice (4-N06); the reasons a valuation blocks, charges included (4-N18); the same request id with other operations
+ * is `idempotency_conflict` (4-N29). `airline_inactive`, `already_invoiced`, `ambiguous_package_coverage`,
+ * `charge_excluded_by_contract`, `invalid_billing_unit` and the common codes live in their own lists.
+ */
+const INVOICING_CODES = ["invalid_invoice_request", "invalid_pending_query", "invoice_state_changed", "zero_total",
+  "operation_has_charge", "too_many_lines", "too_many_operations", "date_window_exceeded", "station_inactive",
+  "mixed_airline", "mixed_currency", "nothing_to_invoice", "operation_not_approved", "pending_preinvoice",
+  "exchange_rate_missing", "contract_charge_rate_missing", "contract_charge_policy_missing",
+  "contract_charge_policy_invalid", "charge_definition_missing", "charge_rate_missing", "charge_measurement_missing",
+  "charge_method_unsupported", "package_percentage_basis_required", "package_contract_mismatch",
+  "package_flight_scope_ambiguous", "package_measurement_missing", "package_period_missing",
+  "package_scope_has_unissued_preinvoice", "package_unit_mismatch", "invalid_package_rule", "invalid_amount",
+  "invalid_tax_policy", "ambiguous_tax_policy", "approved_evidence_mismatch", "line_not_billable",
+  "excluded_in_review", "missing_frozen_rate", "service_not_completed", "no_executed_quantity", "invalid_currency",
+  "duplicate_service", "station_mismatch", "date_out_of_range"] as const;
+/**
+ * Treasury (phase 4, block A, 4-N10): a date before the invoice's or the receipt's business day is explained instead of
+ * a conflict a re-read cannot solve; every other refusal answers the default of its status.
+ */
+const TREASURY_CODES = ["effective_before_invoice", "effective_before_receipt", "treasury_conflict",
+  "invalid_treasury_request"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
@@ -180,13 +204,14 @@ export type ElevantApiErrorCode = "password_change_required" | "password_policy"
   (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
   (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
   (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number] | (typeof OCC_REVIEW_CODES)[number] |
-  (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number] | (typeof REPORT_CODES)[number];
+  (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number] | (typeof REPORT_CODES)[number] |
+  (typeof INVOICING_CODES)[number] | (typeof TREASURY_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
   ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES, ...OCC_REVIEW_CODES,
-  ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES];
+  ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES, ...INVOICING_CODES, ...TREASURY_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

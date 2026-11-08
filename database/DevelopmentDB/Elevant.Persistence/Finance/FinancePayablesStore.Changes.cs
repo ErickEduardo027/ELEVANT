@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Domain.Entities;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
@@ -19,7 +20,7 @@ internal sealed partial class FinancePayablesStore
             await FinanceApprovedServiceChangeWriter.AddAsync(context, claim.ScopeStationId, claim.PublicId, now, "finance_expenses", ct);
             if (operation == "expense.reimburse")
                 await FinanceApprovedServiceChangeWriter.AddAsync(context, claim.ScopeStationId, resultId, now, "finance_receipts", ct);
-            var today = DateOnly.FromDateTime(now.UtcDateTime);
+            var today = BusinessCalendar.Today(now);
             var candidates = await context.Users.AsNoTracking().Where(u => u.Status == AccountLifecycleStatus.Active && u.InvitationStatus == InvitationStatus.Accepted && u.EmailConfirmed &&
                 context.AccountStationScopes.Any(s => s.AccountId == u.Id && s.StationId == claim.ScopeStationId && s.GrantedAt <= now && s.RevokedAt == null) &&
                 context.OrganizationMemberships.Any(m => m.AccountId == u.Id && m.Kind == MembershipKind.InternalStaff && m.Status == MembershipStatus.Active &&

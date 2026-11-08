@@ -38,6 +38,14 @@ public sealed class CardPaymentPolicyTests
         Assert.False(CardPaymentPolicy.IsNotExpired(13, 2030, Now));
     }
 
+    /// <summary>4-N10: at 21:30 of 30/11 in Santo Domingo a card of 11/26 is still valid; the UTC day is already 1/12.</summary>
+    [Fact]
+    public void ACardExpiresWithTheBusinessDayInSantoDomingo()
+    {
+        Assert.True(CardPaymentPolicy.IsNotExpired(11, 2026, new DateTimeOffset(2026, 12, 1, 1, 30, 0, TimeSpan.Zero)));
+        Assert.False(CardPaymentPolicy.IsNotExpired(11, 2026, new DateTimeOffset(2026, 12, 1, 4, 30, 0, TimeSpan.Zero)));
+    }
+
     [Fact]
     public void ValidationReturnsEveryReasonWithoutTouchingTheGateway()
     {

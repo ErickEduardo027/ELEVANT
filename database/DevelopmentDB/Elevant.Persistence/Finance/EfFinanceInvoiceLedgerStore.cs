@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Data;
 using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
@@ -69,7 +70,8 @@ internal sealed class EfFinanceInvoiceLedgerStore(
             .GroupBy(item => item.InvoiceId).Select(group => new { group.Key, Sum = group.Sum(item => item.Amount) })
             .ToDictionaryAsync(item => item.Key, item => item.Sum, cancellationToken);
         var treasury = await FinanceTreasuryBalances.TotalsAsync(context, ids, cancellationToken);
-        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        // 4-N10: an invoice due today is not overdue until the business day in Santo Domingo ends.
+        var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
         return rows.Select(row =>
         {
             var movements = treasury[row.Id];

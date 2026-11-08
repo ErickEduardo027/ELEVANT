@@ -105,6 +105,31 @@ it("issues an e-CF invoice from approved operations and validates the e-NCF", as
   expect(calls).toHaveLength(2);
 });
 
+it("sends the versions on screen and keeps the code of a refusal (4-N29, 4-N07)", async () => {
+  const stationId = "10000000-0000-7000-8000-000000000008";
+  const operationIds = ["10000000-0000-7000-8000-000000000009", "10000000-0000-7000-8000-00000000000a"];
+  const operationVersions = [{ operationId: operationIds[1]!, version: "AAAAAAAAB9E=" },
+    { operationId: operationIds[0]!, version: "AAAAAAAAB9F=" }];
+  const bodies: unknown[] = [];
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ type: "about:blank", title: "The operations cannot be invoiced as they stand.",
+        status: 422, code: "zero_total", reasons: ["zero_total"] }),
+        { status: 422, headers: { "content-type": "application/problem+json" } });
+    } });
+  await expect(client.issueInvoiceFromOperations({ stationId, operationIds, requestId, operationVersions }))
+    .rejects.toMatchObject({ status: 422, code: "zero_total" });
+  expect(bodies).toEqual([{ stationId, operationIds, requestId, operationVersions }]);
+  // Versions cover every operation exactly once, or nothing is sent.
+  for (const versions of [[operationVersions[0]!], [operationVersions[0]!, operationVersions[0]!],
+    [operationVersions[0]!, { operationId: "10000000-0000-7000-8000-00000000000b", version: "AAAAAAAAB9E=" }],
+    [operationVersions[0]!, { operationId: operationIds[0]!, version: " " }]])
+    await expect(client.issueInvoiceFromOperations({ stationId, operationIds, requestId, operationVersions: versions }))
+      .rejects.toBeInstanceOf(TypeError);
+  expect(bodies).toHaveLength(1);
+});
+
 it("downloads the invoice PDF by invoice id for Finance and the airline portal", async () => {
   const urls: string[] = [];
   const client = createElevantApiClient({ baseUrl: "https://api.example.test",

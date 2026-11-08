@@ -26,7 +26,7 @@ public sealed partial class SqlServerMigrationTests
         var employee = await db.Employees.FirstAsync(ct);
         var now = DateTimeOffset.UtcNow;
         var early = now.AddDays(-2);
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(now);
         var firstDay = today.AddDays(-2);
         var pre = new Preinvoice { PublicId = Guid.NewGuid(), AirlineId = airline.Id, StationId = station.Id, CreatedByAccountId = user.Id,
             RequestId = Guid.NewGuid(), PayloadHash = new string('a', 64), From = firstDay, To = firstDay, CurrencyCode = "USD", Total = 1000m,
@@ -65,7 +65,7 @@ public sealed partial class SqlServerMigrationTests
             PublicId = Guid.NewGuid(), ReceiptId = kind == FinanceTreasuryMovementKind.ReceiptReversal ? reversedReceipt.Id : receipt.Id,
             InvoiceId = kind is FinanceTreasuryMovementKind.Application or FinanceTreasuryMovementKind.ApplicationReversal ? invoice.Id : null,
             ReversesMovementId = original, ActorAccountId = user.Id, RequestId = Guid.NewGuid(), Kind = kind,
-            EffectiveOn = DateOnly.FromDateTime(at.UtcDateTime), ReceiptAmount = amount,
+            EffectiveOn = Elevant.Application.Common.BusinessCalendar.Today(at), ReceiptAmount = amount,
             InvoiceAmount = kind is FinanceTreasuryMovementKind.Application or FinanceTreasuryMovementKind.ApplicationReversal ? amount : 0m,
             ReceiptCurrency = "USD", InvoiceCurrency = kind is FinanceTreasuryMovementKind.Application or FinanceTreasuryMovementKind.ApplicationReversal ? "USD" : null,
             ExchangeRate = 1m, ExchangeRateOn = firstDay, Reference = "QA-MOVE", Reason = "QA", CreatedAt = at, UpdatedAt = at,

@@ -7,6 +7,7 @@ import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { ReportIcon } from '../components/icons';
 import { downloadFinanceReport, formatMoney, getFinanceReport } from '../../../services/financeBookService';
+import { businessToday } from '../../../services/businessDay';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
@@ -29,7 +30,8 @@ export const FINANCE_REPORTS = [
   { key: 'fiscal-simulation', label: 'Simulación fiscal' },
 ];
 
-const isoDate = date => date.toISOString().slice(0, 10);
+// 4-N10: the period starts on the first business day of the month in Santo Domingo.
+const monthStart = isoDay => `${isoDay.slice(0, 8)}01`;
 
 /** Formats an invariant report cell by its column type; money uses the row's currency column when present. */
 export function formatCell(value, column, row, columns) {
@@ -48,10 +50,10 @@ export default function FinanceReportsPage({ initialStationId }) {
   const { access } = useDepartmentAccess();
   const canExport = Boolean(access?.can('finance.reports.export'));
   const stations = (readSession()?.stationScopes ?? []).filter(scope => scope?.stationId);
-  const today = new Date();
+  const today = businessToday();
   const [reportKey, setReportKey] = useState('revenue');
   const [filters, setFilters] = useState({
-    from: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), to: isoDate(today),
+    from: monthStart(today), to: today,
     stationId: initialStationId ?? '', currency: '',
   });
   const [state, setState] = useState({ status: 'loading', report: null, error: '' });

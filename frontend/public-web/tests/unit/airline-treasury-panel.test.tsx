@@ -44,6 +44,19 @@ it("shows tenant-only cutoff statements and separates currencies without mutatio
   expect(requests.some(path => path.includes("organizationId") || path.includes("airlineId="))).toBe(false);
   expect(screen.queryByRole("button", { name: /Aplicar|Devolver|Emitir nota|Registrar cobro/ })).not.toBeInTheDocument();
 });
+it("cuts the statement on the business day of Santo Domingo, not the UTC day (4-N10)", async () => {
+  // 23:30 in Santo Domingo on 5/11 is already 6/11 in UTC.
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-06T03:30:00Z") });
+  try {
+    const requests = mount();
+    await waitFor(() => expect(requests).toContain("/api/v1/airline/portal/treasury/statements?asOf=2026-11-05"));
+    expect(await screen.findByText(/hora de República Dominicana/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Fecha de corte")).toHaveAttribute("max", "2026-11-05");
+    expect(screen.queryByText(/día UTC/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 it("shows combined balance, partial applications, historical payment and new adjustment note", async () => {
   mount("invoice-own");
   expect(await screen.findByText(/TC-OWN/)).toBeInTheDocument();

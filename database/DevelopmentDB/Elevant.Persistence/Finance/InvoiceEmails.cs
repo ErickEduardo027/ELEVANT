@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Messaging;
 using Elevant.Application.Identity.AccountEmails;
@@ -22,7 +23,7 @@ internal static class InvoiceEmails
     {
         var airline = await context.Airlines.AsNoTracking().Where(item => item.Id == invoice.AirlineId)
             .Select(item => new { item.Name, item.OrganizationId }).SingleAsync(cancellationToken);
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = BusinessCalendar.Today(now);
         var portalAccounts = context.OrganizationMemberships.AsNoTracking()
             .Where(item => item.OrganizationId == airline.OrganizationId && item.Kind == MembershipKind.AirlineClient &&
                 item.Status == MembershipStatus.Active && (item.ValidFrom == null || item.ValidFrom <= today))

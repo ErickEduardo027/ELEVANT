@@ -44,6 +44,8 @@ const KINDS = {
   invoice_paid: { title: 'La aerolínea pagó una factura con tarjeta', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
   // 3-A (phase 3, block A): OCC cancelled a charter with a prepayment; the refund follows Cobros, never automatic.
   charter_cancelled: { title: 'OCC canceló un charter con prepago: revise la devolución', target: { moduleId: FINANCE_MODULE_IDS.CHARTERS } },
+  // 4-N26 (phase 4, block A): one alert per airline, station and business day when OCC approves billable operations.
+  operation_ready_to_invoice: { title: 'OCC aprobó operaciones listas para facturar', target: { moduleId: FINANCE_MODULE_IDS.TO_INVOICE } },
 };
 
 export function describeNotification(item) {

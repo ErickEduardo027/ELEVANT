@@ -25,7 +25,7 @@ public sealed partial class SqlServerMigrationTests
         var station = await setup.Stations.SingleAsync(s => s.Code == "PUJ", ct);
         var account = await setup.Users.SingleAsync(u => u.PublicId == FinanceAccount, ct);
         var now = DateTimeOffset.UtcNow;
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(now);
         async Task<NonFiscalInvoice> InvoiceAsync(string currency = "USD")
         {
             var pre = new Preinvoice { PublicId = Guid.NewGuid(), AirlineId = airline.Id, StationId = station.Id,

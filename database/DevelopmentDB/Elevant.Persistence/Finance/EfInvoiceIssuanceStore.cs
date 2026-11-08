@@ -1,11 +1,13 @@
 using System.Data;
 using System.Text.Json;
+using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Finance;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Operations;
 using Microsoft.Data.SqlClient;
@@ -18,40 +20,45 @@ namespace Elevant.Persistence.Finance;
 /// Issues one simulated e-CF invoice from completed operations in a single transaction (ADR-0035):
 /// it values the approved services through the internal draft (packages, minimums, charges),
 /// applies ITBIS 18 %, issues the invoice with its e-NCF, settles a charter with its confirmed
-/// prepayment and queues the invoice email. No preinvoice is ever left visible or pending.
+/// prepayment and queues the invoice email. No preinvoice is ever left visible or pending: any
+/// failure rolls the whole transaction back, so the operations stay in «Por facturar» (4-N01).
 /// </summary>
 internal sealed class EfInvoiceIssuanceStore(
     ElevantDbContext context, TimeProvider timeProvider,
     EfPreinvoiceDraftStore drafts, EfFinanceInvoiceIssueStore issues) : IInvoiceIssuanceStore
 {
+    /// <summary>Receipt action of the no-charge closure (4-N07) in <see cref="CommercialCommandReceipts"/>.</summary>
+    internal const string NoChargeAction = "finance.invoicing.no_charge";
+
     public async Task<IssueInvoiceResult> IssueAsync(IssueInvoiceRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         var strategy = context.Database.CreateExecutionStrategy();
-        IssueInvoiceResult? attempt = null;
         try
         {
-            return await strategy.ExecuteInTransactionAsync(
-                async token =>
+            return await strategy.ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+                    cancellationToken);
+                var attempt = await IssueInsideTransactionAsync(request, cancellationToken);
+                if (!attempt.IsSuccess)
                 {
+                    // 4-N01: a refusal writes nothing, the internal draft and its reserved lines included.
+                    await transaction.RollbackAsync(cancellationToken);
                     context.ChangeTracker.Clear();
-                    attempt = await IssueInsideTransactionAsync(request, token);
-                    if (!attempt.IsSuccess) context.ChangeTracker.Clear();
                     return attempt;
-                },
-                async token =>
-                {
-                    context.ChangeTracker.Clear();
-                    return attempt is not { IsSuccess: true } || await context.NonFiscalInvoices.AsNoTracking()
-                        .AnyAsync(item => item.PublicId == attempt.InvoiceId, token);
-                },
-                IsolationLevel.Serializable, cancellationToken);
+                }
+                await transaction.CommitAsync(cancellationToken);
+                return attempt;
+            });
         }
         catch (Exception exception) when (exception is DbUpdateException or RetryLimitExceededException or SqlException &&
             exception.GetBaseException() is SqlException { Number: 2601 or 2627 or 1205 or 1222 or 3960 })
         {
             context.ChangeTracker.Clear();
-            return await ReplayAsync(request, cancellationToken) ?? IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict);
+            return await ReplayAsync(request, cancellationToken) ??
+                IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.StateChanged);
         }
     }
 
@@ -63,49 +70,23 @@ internal sealed class EfInvoiceIssuanceStore(
             !actor.Memberships.Any(membership => membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff) ||
             !actor.StationScopes.Any(scope => scope.StationId == request.StationId))
-            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Forbidden);
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Forbidden, InvoicingCodes.Forbidden);
         if (await ReplayAsync(request, cancellationToken) is { } replay) return replay;
+        // 4-N29: a key a no-charge closure or an older draft without invoice already used is not this request.
+        if (await context.Preinvoices.AsNoTracking().AnyAsync(item => item.RequestId == request.RequestId, cancellationToken))
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.IdempotencyConflict);
 
         var now = timeProvider.GetUtcNow();
-        var operations = await (from operation in context.GroundOperations.AsNoTracking()
-                                join turnaround in context.Turnarounds.AsNoTracking() on operation.TurnaroundId equals turnaround.Id
-                                join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
-                                where request.OperationIds.Contains(operation.PublicId) && station.PublicId == request.StationId
-                                select new { operation.Id, operation.PublicId, operation.CurrentStatus, turnaround.OperationDate,
-                                    TurnaroundId = turnaround.Id, turnaround.AirlineId })
-            .ToArrayAsync(cancellationToken);
-        if (operations.Length != request.OperationIds.Count) return IssueInvoiceResult.Failed(IssueInvoiceFailure.NotFound);
-        if (operations.Any(item => item.CurrentStatus != GroundOperationStatus.Approved))
-            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, "operation_not_approved");
-        if (operations.Select(item => item.AirlineId).Distinct().Count() != 1)
-            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Unprocessable, "mixed_airline");
-        var operationIds = operations.Select(item => item.Id).ToArray();
-        // ServiceBillability (3-N11): a completed service or one in exception with its executed quantity is invoiced;
-        // one not performed, or excluded by OCC in the review, is not.
-        var services = await context.OperationServices.AsNoTracking()
-            .Where(service => operationIds.Contains(service.GroundOperationId))
-            .Where(ServiceBillability.Billable)
-            .Select(service => new { service.PublicId, service.GroundOperationId }).ToArrayAsync(cancellationToken);
-        if (operations.Any(item => services.All(service => service.GroundOperationId != item.Id)))
-            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Unprocessable, "nothing_to_invoice");
-
-        var draft = await drafts.DraftForInvoiceAsync(new CreatePreinvoiceDraftCommand(request.AccountId, request.StationId,
-            operations.Min(item => item.OperationDate), operations.Max(item => item.OperationDate), request.RequestId,
-            services.Select(service => service.PublicId).ToArray()), cancellationToken);
-        if (!draft.IsSuccess)
-            return IssueInvoiceResult.Failed(draft.Failure switch
-            {
-                PreinvoiceDraftFailure.NotFound => IssueInvoiceFailure.NotFound,
-                PreinvoiceDraftFailure.Conflict => IssueInvoiceFailure.Conflict,
-                PreinvoiceDraftFailure.Forbidden => IssueInvoiceFailure.Forbidden,
-                _ => IssueInvoiceFailure.Unprocessable,
-            }, draft.Reason ?? (draft.Failure == PreinvoiceDraftFailure.Conflict ? "already_invoiced" : null));
-
-        // The draft is internal: ITBIS 18 % on every line, then accepted on the spot.
-        var preinvoice = await context.Preinvoices.SingleAsync(item => item.PublicId == draft.DraftId, cancellationToken);
-        var lines = await context.PreinvoiceLines.Where(line => line.PreinvoiceId == preinvoice.Id).ToListAsync(cancellationToken);
-        foreach (var line in lines) FinanceInvoicePolicy.ApplyItbis(line, now);
-        preinvoice.Total = lines.Where(line => !line.IsExcluded).Sum(line => line.Amount);
+        var prepared = await PrepareAsync(request.AccountId, request.StationId, request.OperationIds,
+            request.OperationVersions, request.RequestId, now, cancellationToken);
+        if (prepared.Failure is { } failure) return IssueInvoiceResult.Failed(failure, prepared.Code);
+        var preinvoice = prepared.Draft!;
+        // 4-N07: an invoice of zero is never issued: no e-NCF is used and no email is queued.
+        if (preinvoice.Total == 0m)
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Unprocessable, InvoicingCodes.ZeroTotal);
+        if (prepared.Lines!.Count(line => !line.IsExcluded) > FinanceInvoicePolicy.MaxLines)
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Unprocessable, InvoicingCodes.TooManyLines);
+        // The draft is internal: accepted on the spot and issued in the same transaction.
         preinvoice.Status = PreinvoiceStatus.Accepted;
         preinvoice.UpdatedAt = now;
         await context.SaveChangesAsync(cancellationToken);
@@ -113,13 +94,14 @@ internal sealed class EfInvoiceIssuanceStore(
         var issued = await issues.IssueForInvoicingAsync(
             new IssueFinanceInvoiceCommand(request.AccountId, preinvoice.PublicId, request.RequestId), cancellationToken);
         if (!issued.IsSuccess)
-            return IssueInvoiceResult.Failed(issued.Failure == IssueFinanceInvoiceFailure.Forbidden
-                ? IssueInvoiceFailure.Forbidden : IssueInvoiceFailure.Conflict);
+            return issued.Failure == IssueFinanceInvoiceFailure.Forbidden
+                ? IssueInvoiceResult.Failed(IssueInvoiceFailure.Forbidden, InvoicingCodes.Forbidden)
+                : IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.StateChanged);
         var invoice = await context.NonFiscalInvoices.SingleAsync(item => item.PublicId == issued.InvoiceId, cancellationToken);
         var accountId = invoice.IssuedByAccountId;
 
         // A charter is prepaid: its confirmed prepayment settles the invoice up to its total.
-        var turnaroundIds = operations.Select(item => item.TurnaroundId).Distinct().ToArray();
+        var turnaroundIds = prepared.Operations.Select(item => item.TurnaroundId).Distinct().ToArray();
         var charters = await context.Set<CharterAgreement>().AsNoTracking()
             .Where(item => turnaroundIds.Contains(item.TurnaroundId) && item.PrepaymentStatus == CharterPrepaymentStatus.Confirmed &&
                 item.PrepaymentAmount > 0)
@@ -162,18 +144,230 @@ internal sealed class EfInvoiceIssuanceStore(
             invoice.CurrencyCode, false);
     }
 
-    /// <summary>The same request again returns the invoice it issued, for the same account only.</summary>
+    /// <summary>
+    /// 4-N07: closes operations whose valuation is zero without an invoice. It runs the same preparation as an
+    /// issuance (versions, active station and airline, the internal draft with packages, minimums, charges and ITBIS)
+    /// and keeps the draft as <see cref="PreinvoiceStatus.NoCharge"/>, so the services leave «Por facturar» and the
+    /// package consumption stays recorded for the next invoice. The Idempotency-Key replays the first closure; another
+    /// body with the key is <c>idempotency_conflict</c>.
+    /// </summary>
+    public async Task<NoChargeClosureResult> CloseWithoutChargeAsync(NoChargeClosureCommand request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var actor = await new EfActorContextResolver(context, timeProvider).ResolveAsync(request.AccountId, cancellationToken);
+        if (actor is null || !actor.HasPermission(IssueInvoiceHandler.IssuePermission) ||
+            !actor.Memberships.Any(membership => membership.OrganizationType == OrganizationType.AviamOperator &&
+                membership.Kind == MembershipKind.InternalStaff) ||
+            !actor.StationScopes.Any(scope => scope.StationId == request.StationId))
+            return NoChargeClosureResult.Failed(IssueInvoiceFailure.Forbidden, InvoicingCodes.Forbidden);
+        var accountId = await context.Users.AsNoTracking().Where(item => item.PublicId == request.AccountId)
+            .Select(item => (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
+        if (accountId is null) return NoChargeClosureResult.Failed(IssueInvoiceFailure.Forbidden, InvoicingCodes.Forbidden);
+
+        var operations = request.Operations.OrderBy(item => item.OperationId).ToArray();
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            route = NoChargeAction, stationId = request.StationId,
+            operations = operations.Select(item => new { item.OperationId, item.Version }).ToArray(),
+            reason = request.Reason,
+        });
+        var now = timeProvider.GetUtcNow();
+        var result = await MasterDataCommand.RunAsync(context, request.IdempotencyKey, accountId.Value, NoChargeAction, hash,
+            InvoicingCodes.VersionConflict, now, async () =>
+            {
+                // A key an issuance or an older draft already used is not this closure.
+                if (await context.Preinvoices.AsNoTracking().AnyAsync(item => item.RequestId == request.IdempotencyKey,
+                        cancellationToken) ||
+                    await context.NonFiscalInvoices.AsNoTracking().AnyAsync(item => item.RequestId == request.IdempotencyKey,
+                        cancellationToken))
+                    return MasterDataCommand.Step.Fail(MasterDataFailure.Conflict, InvoicingCodes.IdempotencyConflict);
+                var prepared = await PrepareAsync(request.AccountId, request.StationId,
+                    operations.Select(item => item.OperationId).ToArray(), operations, request.IdempotencyKey, now,
+                    cancellationToken);
+                if (prepared.Failure is { } failure) return MasterDataCommand.Step.Fail(failure switch
+                {
+                    IssueInvoiceFailure.Forbidden => MasterDataFailure.Forbidden,
+                    IssueInvoiceFailure.NotFound => MasterDataFailure.NotFound,
+                    IssueInvoiceFailure.Conflict => MasterDataFailure.Conflict,
+                    _ => MasterDataFailure.Invalid,
+                }, prepared.Code!);
+                var draft = prepared.Draft!;
+                if (draft.Total != 0m)
+                    return MasterDataCommand.Step.Fail(MasterDataFailure.Invalid, InvoicingCodes.OperationHasCharge);
+                draft.Status = PreinvoiceStatus.NoCharge;
+                draft.UpdatedAt = now;
+                var operationIds = prepared.Operations.Select(item => item.PublicId).Order().ToArray();
+                context.AuditEntries.Add(new AuditEntry
+                {
+                    PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+                    ActorAccountId = accountId.Value, ActorDisplay = actor.DisplayName,
+                    Action = "finance.invoicing.closed_no_charge", EntityType = nameof(Preinvoice),
+                    EntityPublicId = draft.PublicId, StationId = draft.StationId, Source = AuditSource.Api,
+                    CorrelationId = request.IdempotencyKey, RequestId = request.IdempotencyKey.ToString("D"),
+                    Reason = request.Reason,
+                    MetadataJson = JsonSerializer.Serialize(new { stationId = request.StationId, operations = operationIds }),
+                });
+                foreach (var operationId in operationIds)
+                    await FinanceApprovedServiceChangeWriter.AddAsync(context, draft.StationId, operationId, now,
+                        "finance_approved_services", cancellationToken);
+                await context.SaveChangesAsync(cancellationToken);
+                return MasterDataCommand.Step.Done(draft.PublicId);
+            }, closureId => ClosureAsync(closureId, cancellationToken), cancellationToken);
+        if (result.Value is { } closure) return NoChargeClosureResult.Success(closure, result.Replayed);
+        return NoChargeClosureResult.Failed(result.Failure switch
+        {
+            MasterDataFailure.Forbidden => IssueInvoiceFailure.Forbidden,
+            MasterDataFailure.NotFound => IssueInvoiceFailure.NotFound,
+            MasterDataFailure.Conflict => IssueInvoiceFailure.Conflict,
+            _ => IssueInvoiceFailure.Unprocessable,
+        }, result.Code ?? InvoicingCodes.StateChanged);
+    }
+
+    private async Task<NoChargeClosureData?> ClosureAsync(Guid closureId, CancellationToken cancellationToken)
+    {
+        var draftId = await context.Preinvoices.AsNoTracking()
+            .Where(item => item.PublicId == closureId && item.Status == PreinvoiceStatus.NoCharge)
+            .Select(item => (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
+        if (draftId is null) return null;
+        return new NoChargeClosureData(closureId, await OperationsOfDraftAsync(draftId.Value, cancellationToken));
+    }
+
+    /// <summary>The operations whose services an internal draft holds, read from its service lines.</summary>
+    private async Task<Guid[]> OperationsOfDraftAsync(long draftId, CancellationToken cancellationToken) =>
+        (await (from line in context.PreinvoiceLines.AsNoTracking()
+                join service in context.OperationServices.AsNoTracking() on line.OperationServiceId equals (long?)service.Id
+                join operation in context.GroundOperations.AsNoTracking() on service.GroundOperationId equals operation.Id
+                where line.PreinvoiceId == draftId && line.Kind == PreinvoiceLineKind.Service
+                select operation.PublicId).Distinct().ToArrayAsync(cancellationToken)).Order().ToArray();
+
+    private sealed record OperationRow(long Id, Guid PublicId, GroundOperationStatus Status, byte[] RowVersion,
+        DateOnly OperationDate, long TurnaroundId, long AirlineId, bool StationActive, bool AirlineActive);
+
+    private sealed record Prepared(IssueInvoiceFailure? Failure, string? Code, Preinvoice? Draft, List<PreinvoiceLine>? Lines,
+        OperationRow[] Operations)
+    {
+        public static Prepared Fail(IssueInvoiceFailure failure, string code) => new(failure, code, null, null, []);
+    }
+
+    /// <summary>
+    /// What an issuance and a no-charge closure share, before anything they write is kept: the operations of the
+    /// station with the versions the caller saw, the active station, airline and customer organization, the approval,
+    /// one airline within <see cref="FinanceInvoicePolicy.MaxDays"/> days, the billable services free of other drafts,
+    /// and the internal draft valued with ITBIS 18 % (tracked, not saved).
+    /// </summary>
+    private async Task<Prepared> PrepareAsync(Guid accountId, Guid stationId, IReadOnlyList<Guid> operationIds,
+        IReadOnlyList<InvoiceOperationVersion>? versions, Guid requestId, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var requested = operationIds.ToArray();
+        var operations = await (from operation in context.GroundOperations.AsNoTracking()
+                                join turnaround in context.Turnarounds.AsNoTracking() on operation.TurnaroundId equals turnaround.Id
+                                join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+                                join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
+                                join organization in context.Organizations.AsNoTracking() on airline.OrganizationId equals organization.Id
+                                where requested.Contains(operation.PublicId) && station.PublicId == stationId
+                                select new OperationRow(operation.Id, operation.PublicId, operation.CurrentStatus,
+                                    operation.RowVersion, turnaround.OperationDate, turnaround.Id, turnaround.AirlineId,
+                                    station.IsActive, airline.IsActive && organization.Type == OrganizationType.AirlineCustomer &&
+                                        organization.Status == OrganizationStatus.Active))
+            .ToArrayAsync(cancellationToken);
+        if (operations.Length != requested.Length) return Prepared.Fail(IssueInvoiceFailure.NotFound, InvoicingCodes.NotFound);
+        if (versions is not null)
+        {
+            var seen = versions.ToDictionary(item => item.OperationId, item => item.Version);
+            if (operations.Any(item => !seen.TryGetValue(item.PublicId, out var version) ||
+                    version != MasterDataCommand.Version(item.RowVersion)))
+                return Prepared.Fail(IssueInvoiceFailure.Conflict, InvoicingCodes.VersionConflict);
+        }
+        // 4-N01: what the issuance would refuse after writing is refused before.
+        if (operations.Any(item => !item.StationActive))
+            return Prepared.Fail(IssueInvoiceFailure.Unprocessable, InvoicingCodes.StationInactive);
+        if (operations.Any(item => !item.AirlineActive))
+            return Prepared.Fail(IssueInvoiceFailure.Unprocessable, InvoicingCodes.AirlineInactive);
+        if (operations.Any(item => item.Status != GroundOperationStatus.Approved))
+            return Prepared.Fail(IssueInvoiceFailure.Conflict, InvoicingCodes.OperationNotApproved);
+        if (operations.Select(item => item.AirlineId).Distinct().Count() != 1)
+            return Prepared.Fail(IssueInvoiceFailure.Unprocessable, InvoicingCodes.MixedAirline);
+        var from = operations.Min(item => item.OperationDate);
+        var to = operations.Max(item => item.OperationDate);
+        if (!FinanceInvoicePolicy.FitsWindow(from, to))
+            return Prepared.Fail(IssueInvoiceFailure.Unprocessable, InvoicingCodes.DateWindowExceeded);
+
+        var internalIds = operations.Select(item => item.Id).ToArray();
+        // ServiceBillability (3-N11): a completed service or one in exception with its executed quantity is invoiced;
+        // one not performed, or excluded by OCC in the review, is not.
+        var services = await context.OperationServices.AsNoTracking()
+            .Where(service => internalIds.Contains(service.GroundOperationId))
+            .Where(ServiceBillability.Billable)
+            .Select(service => new { service.Id, service.PublicId, service.GroundOperationId }).ToArrayAsync(cancellationToken);
+        if (operations.Any(item => services.All(service => service.GroundOperationId != item.Id)))
+            return Prepared.Fail(IssueInvoiceFailure.Unprocessable, InvoicingCodes.NothingToInvoice);
+        if (services.Length > FinanceInvoicePolicy.MaxLines)
+            return Prepared.Fail(IssueInvoiceFailure.Unprocessable, InvoicingCodes.TooManyLines);
+        // A service held by an invoice or a closure was invoiced; one held by an older draft without invoice waits for it.
+        var serviceIds = services.Select(service => service.Id).ToArray();
+        var holders = await (from line in context.PreinvoiceLines.AsNoTracking()
+                             join draft in context.Preinvoices.AsNoTracking() on line.PreinvoiceId equals draft.Id
+                             where line.Kind == PreinvoiceLineKind.Service && line.OperationServiceId != null &&
+                                   serviceIds.Contains(line.OperationServiceId.Value) && line.ReleasedAt == null
+                             select draft.Status).Distinct().ToArrayAsync(cancellationToken);
+        if (holders.Any(status => status is PreinvoiceStatus.Invoiced or PreinvoiceStatus.NoCharge))
+            return Prepared.Fail(IssueInvoiceFailure.Conflict, InvoicingCodes.AlreadyInvoiced);
+        if (holders.Length > 0) return Prepared.Fail(IssueInvoiceFailure.Conflict, InvoicingCodes.PendingPreinvoice);
+
+        var valued = await drafts.DraftForInvoiceAsync(new CreatePreinvoiceDraftCommand(accountId, stationId, from, to,
+            requestId, services.Select(service => service.PublicId).ToArray()), cancellationToken);
+        if (!valued.IsSuccess)
+            return Prepared.Fail(valued.Failure switch
+            {
+                PreinvoiceDraftFailure.NotFound => IssueInvoiceFailure.NotFound,
+                PreinvoiceDraftFailure.Conflict => IssueInvoiceFailure.Conflict,
+                PreinvoiceDraftFailure.Forbidden => IssueInvoiceFailure.Forbidden,
+                _ => IssueInvoiceFailure.Unprocessable,
+            }, valued.Reason switch
+            {
+                // 4-N06: the draft's own window and size limits are the invoice's.
+                "invalid_range" => InvoicingCodes.DateWindowExceeded,
+                "invalid_selection" => InvoicingCodes.TooManyLines,
+                { } reason => reason,
+                null => valued.Failure switch
+                {
+                    PreinvoiceDraftFailure.Conflict => InvoicingCodes.AlreadyInvoiced,
+                    PreinvoiceDraftFailure.NotFound => InvoicingCodes.NotFound,
+                    PreinvoiceDraftFailure.Forbidden => InvoicingCodes.Forbidden,
+                    _ => InvoicingCodes.InvalidRequest,
+                },
+            });
+
+        // The draft is internal: ITBIS 18 % on every line.
+        var preinvoice = await context.Preinvoices.SingleAsync(item => item.PublicId == valued.DraftId, cancellationToken);
+        var lines = await context.PreinvoiceLines.Where(line => line.PreinvoiceId == preinvoice.Id).ToListAsync(cancellationToken);
+        foreach (var line in lines) FinanceInvoicePolicy.ApplyItbis(line, now);
+        preinvoice.Total = lines.Where(line => !line.IsExcluded).Sum(line => line.Amount);
+        return new Prepared(null, null, preinvoice, lines, operations);
+    }
+
+    /// <summary>
+    /// The same request again returns the invoice it issued (ADR-0035). 4-N29: only for the same account, station and
+    /// operations, read from the invoice's lines; anything else with the key is <c>idempotency_conflict</c>.
+    /// </summary>
     private async Task<IssueInvoiceResult?> ReplayAsync(IssueInvoiceRequest request, CancellationToken cancellationToken)
     {
         var prior = await (from invoice in context.NonFiscalInvoices.AsNoTracking()
                            join account in context.Users.AsNoTracking() on invoice.IssuedByAccountId equals account.Id
+                           join station in context.Stations.AsNoTracking() on invoice.StationId equals station.Id
                            where invoice.RequestId == request.RequestId
                            select new { invoice.PublicId, invoice.Number, invoice.FiscalNumber, invoice.Total,
-                               invoice.CurrencyCode, AccountId = account.PublicId })
+                               invoice.CurrencyCode, invoice.PreinvoiceId, AccountId = account.PublicId,
+                               StationId = station.PublicId })
             .SingleOrDefaultAsync(cancellationToken);
         if (prior is null) return null;
-        return prior.AccountId == request.AccountId && prior.FiscalNumber is not null
+        if (prior.AccountId != request.AccountId || prior.StationId != request.StationId || prior.FiscalNumber is null)
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.IdempotencyConflict);
+        var invoiced = await OperationsOfDraftAsync(prior.PreinvoiceId, cancellationToken);
+        return invoiced.SequenceEqual(request.OperationIds.Distinct().Order())
             ? IssueInvoiceResult.Success(prior.PublicId, prior.Number, prior.FiscalNumber, prior.Total, prior.CurrencyCode, true)
-            : IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict);
+            : IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.IdempotencyConflict);
     }
 }

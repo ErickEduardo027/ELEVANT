@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
@@ -65,8 +66,8 @@ internal sealed class EfFinanceReconciliationReadStore(
                 invoice.Number, invoice.Total, invoice.CreatedAt })
             .ToArrayAsync(cancellationToken);
         var invoiceIds = invoices.Select(invoice => invoice.Id).ToArray();
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
-        var end = new DateTimeOffset(today.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+        var today = BusinessCalendar.Today(now);
+        var end = BusinessCalendar.StartOfDay(today.AddDays(1));
         var payments = await context.NonFiscalPayments.AsNoTracking()
             .Where(payment => invoiceIds.Contains(payment.InvoiceId) && payment.CreatedAt < end && (payment.PaidOn == null || payment.PaidOn <= today))
             .Select(payment => new PaymentFact(payment.PublicId, payment.InvoiceId,

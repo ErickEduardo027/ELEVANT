@@ -21,19 +21,28 @@ namespace Elevant.Api.Controllers;
 public sealed class FinanceTreasuryController(IFinanceTreasuryStore treasury) : ControllerBase
 {
     private bool Actor(out Guid actorId) => Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out actorId);
-    private ActionResult<T> Error<T>(int status, string title)
+    /// <summary>
+    /// Phase 4, block A: every refusal carries a code, the store's or the default of its status
+    /// (<c>invalid_treasury_request</c>, <c>forbidden</c>, <c>not_found</c>, <c>treasury_conflict</c>); a 401 carries none.
+    /// </summary>
+    private ActionResult<T> Error<T>(int status, string title, string? code = null)
     {
         if (status == 401) Response.Headers.WWWAuthenticate = "Bearer";
-        return new ObjectResult(new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path })
-            { StatusCode = status, ContentTypes = { "application/problem+json" } };
+        var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
+        if (status != 401) problem.Extensions["code"] = code ?? TreasuryCode(status);
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
     }
+    internal static string TreasuryCode(int status) => status switch
+    {
+        400 => "invalid_treasury_request", 403 => "forbidden", 404 => "not_found", _ => "treasury_conflict",
+    };
     private ActionResult<FinanceTreasuryMutationResponse> Result(FinanceTreasuryResult result)
     {
         if (result.Failure is { } failure)
         {
             var status = failure switch { FinanceTreasuryFailure.Invalid => 400, FinanceTreasuryFailure.Forbidden => 403,
                 FinanceTreasuryFailure.NotFound => 404, _ => 409 };
-            return Error<FinanceTreasuryMutationResponse>(status, failure.ToString());
+            return Error<FinanceTreasuryMutationResponse>(status, failure.ToString(), result.Code);
         }
         return StatusCode(result.Replayed ? 200 : 201, new FinanceTreasuryMutationResponse(result.Id!.Value, result.Version!, result.Replayed));
     }

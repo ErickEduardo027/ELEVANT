@@ -44,6 +44,9 @@ public sealed class AirlineTreasuryEndpointsTests(ElevantApiFactory factory) : I
         Assert.False(json.RootElement.TryGetProperty("actorId", out _)); Assert.False(json.RootElement.TryGetProperty("version", out _));
         using var missing = await client.GetAsync("/api/v1/airline/portal/treasury/invoices/" + Guid.NewGuid(), ct);
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        // Phase 4, block A: the refusal carries its code.
+        using var problem = JsonDocument.Parse(await missing.Content.ReadAsStringAsync(ct));
+        Assert.Equal("not_found", problem.RootElement.GetProperty("code").GetString());
     }
     private WebApplicationFactory<Program> App(Stub stub) => factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         { services.RemoveAll<IFinanceTreasuryStore>(); services.AddSingleton<IFinanceTreasuryStore>(stub); }));

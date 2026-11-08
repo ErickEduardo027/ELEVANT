@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Application.Finance;
 using Elevant.Domain.Entities;
 using Elevant.Domain.Entities.Commercial;
@@ -72,7 +73,7 @@ internal sealed partial class FinancePayablesStore
             var services = await context.Set<ServiceDefinition>().Where(x => x.IsActive).OrderBy(x => x.Code).Select(x => new FinancePayablesOption(x.PublicId, x.Code, x.Name)).ToArrayAsync(ct);
             var turns = await context.Set<Turnaround>().Where(x => a.Stations.Contains(x.StationId) && (station == null || x.StationId == station))
                 .OrderByDescending(x => x.OperationDate).ThenByDescending(x => x.Id).Take(200).Select(x => new FinancePayablesOption(x.PublicId, x.OperationCode, x.OperationCode)).ToArrayAsync(ct);
-            var own = OwnExpenseAccess(a); var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+            var own = OwnExpenseAccess(a); var today = BusinessCalendar.Today(clock.GetUtcNow());
             var canCreateOwn = own && await context.EmployeeStations.AnyAsync(s => s.EmployeeId == a.Employee!.Id &&
                 a.Stations.Contains(s.StationId) && (station == null || s.StationId == station) && s.ValidFrom <= today && (s.ValidTo == null || s.ValidTo >= today), ct);
             return new FinancePayablesOptions(stations, suppliers, airlines, services, turns, ["USD", "DOP"], a.Employee?.PublicId, a.Employee?.Department.ToString(),

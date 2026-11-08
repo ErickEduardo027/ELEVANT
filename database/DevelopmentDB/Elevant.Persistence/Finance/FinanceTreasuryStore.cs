@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
@@ -21,11 +22,15 @@ internal sealed partial class FinanceTreasuryStore(ElevantDbContext context, IAc
 {
     private sealed class ReceiptScope { public FinanceTreasuryReceipt Receipt { get; init; } = null!; public Guid AirlineId { get; init; } public Guid StationId { get; init; } public long OrganizationId { get; init; } }
     private sealed class InvoiceScope { public NonFiscalInvoice Invoice { get; init; } = null!; public Guid AirlineId { get; init; } public Guid StationId { get; init; } public long OrganizationId { get; init; } }
-    private DateOnly Today => DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+    /// <summary>4-N10: Finance's day is AVIAM's business day (America/Santo_Domingo), never the UTC day.</summary>
+    private DateOnly Today => BusinessCalendar.Today(timeProvider.GetUtcNow());
     private static string Version(AuditableEntity? entity) => entity is null ? "0" : Convert.ToBase64String(entity.RowVersion);
     private static bool Reason(string? value) => value?.Trim().Length is >= 3 and <= 1000;
     private bool DateValid(DateOnly value) => value != default && value <= Today;
-    private static FinanceTreasuryResult Fail(FinanceTreasuryFailure value) => FinanceTreasuryResult.Failed(value);
+    private static FinanceTreasuryResult Fail(FinanceTreasuryFailure value, string? code = null) =>
+        FinanceTreasuryResult.Failed(value, code);
+    /// <summary>Exclusive end of a business day: the first instant of the next one in Santo Domingo.</summary>
+    private static DateTimeOffset EndOfDay(DateOnly day) => BusinessCalendar.StartOfDay(day.AddDays(1));
     private static string Hash<T>(T input) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(input))));
 
     private async Task<ActorContext?> ActorAsync(Guid id, string permission, CancellationToken ct)

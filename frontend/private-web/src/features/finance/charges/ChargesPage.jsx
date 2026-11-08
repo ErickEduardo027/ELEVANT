@@ -16,6 +16,7 @@ import {
   createChargeTariffDraft, deleteChargeTariffDraft, FINANCE_CURRENCIES, formatMoney, getChargeTariff, listBillingUnits,
   listCharges, listChargeTariffs, listFinanceServices, publishChargeTariff, saveCharge, saveChargeTariffDraft,
 } from '../../../services/financeBookService';
+import { businessToday } from '../../../services/businessDay';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
@@ -260,7 +261,7 @@ function ChargeTariff({ perms }) {
     return current.map(item => (item.chargeId === charge.id ? { ...item, ...patch } : item));
   });
   function createDraft() {
-    const values = { currencyCode: currency, validFrom: new Date().toISOString().slice(0, 10), note: null,
+    const values = { currencyCode: currency, validFrom: businessToday(), note: null,
       copyFromVersionId: versions?.find(version => version.status === 'Published')?.id ?? null };
     return run('create', values, key => createChargeTariffDraft(values, key), 'Borrador creado.');
   }

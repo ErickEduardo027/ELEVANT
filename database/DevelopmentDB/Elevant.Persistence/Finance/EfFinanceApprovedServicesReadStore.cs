@@ -116,47 +116,15 @@ internal sealed class EfFinanceApprovedServicesReadStore(
             .Take(PageLimit + 1)
             .ToArrayAsync(cancellationToken);
 
-        var internalIds = rows.Take(PageLimit).Select(row => row.ServiceInternalId).ToArray();
-        var liveMarks = (await context.OperationServiceCharges.AsNoTracking()
-                .Where(mark => internalIds.Contains(mark.OperationServiceId) && mark.RemovedAt == null)
-                .Select(mark => new { mark.OperationServiceId, mark.PublicId }).ToArrayAsync(cancellationToken))
-            .ToLookup(mark => mark.OperationServiceId, mark => mark.PublicId);
-        var page = rows.Take(PageLimit).Select(row =>
+        var page = rows.Take(PageLimit).ToArray();
+        // 4-N16: the valuation «Por facturar» shares (ApprovedServiceValuation); this response does not change.
+        var valued = await ApprovedServiceValuation.ValueAsync(context, page.Select(row => new ApprovedServiceValuation.Source(
+            row.ServiceInternalId, row.ServiceId, row.EvidenceJson, row.CurrentStatus, row.ContractedQuantity,
+            row.ExecutedQuantity, row.BillingUnitSnapshot, row.UnitPriceSnapshot, row.CurrencyCodeSnapshot,
+            row.BillingExcludedAt is not null)).ToArray(), cancellationToken);
+        var services = page.Select((row, index) =>
         {
-            OccReviewServiceData? evidence = null;
-            IReadOnlyList<ServiceChargeEvidence> frozenCharges = [];
-            if (row.EvidenceJson is not null)
-            {
-                try
-                {
-                    var snapshot = OperationSubmissionEvidence.Parse(row.EvidenceJson);
-                    evidence = snapshot.Services.SingleOrDefault(item => item.Id == row.ServiceId);
-                    frozenCharges = snapshot.ChargesOf(row.ServiceId);
-                }
-                catch (System.Text.Json.JsonException) { }
-                catch (InvalidOperationException) { }
-            }
-            return (Row: row, Evidence: evidence, Charges: frozenCharges);
-        }).ToArray();
-        // 3-N29: a charge its contract excludes blocks the service instead of being valued at zero.
-        var carryingExcluded = await ContractChargeExclusions.ServicesCarryingExcludedAsync(context,
-            page.SelectMany(item => item.Charges.Select(charge => (item.Row.ServiceInternalId, charge.ChargeId))).ToArray(),
-            cancellationToken);
-        var services = page.Select(item =>
-        {
-            var (row, evidence, frozenCharges) = item;
-            var evidenceMatches = evidence is not null &&
-                liveMarks[row.ServiceInternalId].Order().SequenceEqual(frozenCharges.Select(charge => charge.MarkId).Order()) &&
-                evidence.Status == row.CurrentStatus.ToString() &&
-                evidence.ExecutedQuantity == row.ExecutedQuantity &&
-                evidence.ContractedQuantity == row.ContractedQuantity &&
-                evidence.Unit == row.BillingUnitSnapshot;
-            var valuation = evidenceMatches
-                ? FinanceApprovedServicePolicy.Evaluate(
-                    row.CurrentStatus, row.ExecutedQuantity, row.UnitPriceSnapshot,
-                    row.CurrencyCodeSnapshot, row.BillingUnitSnapshot, row.BillingExcludedAt is not null,
-                    carryingExcluded.Contains(row.ServiceInternalId))
-                : new FinanceServiceValuation(false, "approved_evidence_mismatch", null);
+            var (_, evidence, frozenCharges, _, valuation) = valued[index];
             return new FinanceApprovedServiceData(
                 row.ServiceId, row.OperationId, row.TurnaroundId, row.SubmissionId,
                 row.OperationCode, row.OperationDate, row.AirlineId, row.AirlineName,

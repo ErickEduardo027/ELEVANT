@@ -1,5 +1,8 @@
+import { businessToday } from './businessDay';
 import { commercialApi } from './commercialGovernanceApi';
 import { newRequestId } from './financeBookService';
+import { TREASURY_PROBLEM_MESSAGES } from './financeErrors';
+import { problemMessage } from './problemMessages';
 
 const query = values => {
   const search = new URLSearchParams();
@@ -44,16 +47,22 @@ export function treasuryIntent(previous, payload) {
   const signature = JSON.stringify(payload);
   return previous?.signature === signature ? previous : { signature, body: { requestId: newRequestId(), ...payload } };
 }
-export const treasuryToday = () => new Date().toISOString().slice(0, 10);
+/** 4-N10: the day of Finance is the business day of AVIAM in Santo Domingo, the one the server checks. */
+export const treasuryToday = (now = new Date()) => businessToday(now);
 export function formatTreasuryMoney(value, currency) {
   if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—';
   return `${currency ? `${currency} ` : ''}${Number(value).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 }
+/** The default code of a treasury refusal by its status, for an answer that carries none. */
+const TREASURY_DEFAULT_CODES = Object.freeze({ 400: 'invalid_treasury_request', 404: 'not_found', 409: 'treasury_conflict' });
+
+/**
+ * Spanish text of a treasury failure (phase 4, block A): the code names the cause (4-N10: a date before the day of the
+ * invoice or the receipt); an answer without a code takes the default of its status. Never the server's text.
+ */
 export function treasuryError(error) {
-  if (error?.status === 401) return 'La sesión expiró. Vuelva a iniciar sesión.';
-  if (error?.status === 403) return 'No tiene permiso para esta acción.';
-  if (error?.status === 404) return 'El documento no está disponible en su estación o aerolínea.';
-  if (error?.status === 409) return 'El saldo, la versión o la referencia cambió. Recargue el documento antes de preparar otra solicitud.';
-  if (error?.status === 400) return 'Revise importes, fechas y motivos de la solicitud.';
-  return error?.status ? 'No se pudo completar la acción. Intente de nuevo.' : error?.message || 'No hay conexión con ELEVANT. Intente de nuevo.';
+  const code = typeof error?.code === 'string' ? error.code : TREASURY_DEFAULT_CODES[error?.status];
+  return problemMessage(code ? { status: error.status, code } : error, TREASURY_PROBLEM_MESSAGES, {
+    fallback: 'No se pudo completar la acción. Revise la conexión e intente de nuevo.',
+  });
 }

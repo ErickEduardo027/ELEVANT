@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
@@ -29,10 +30,11 @@ internal sealed partial class FinancePayablesStore(ElevantDbContext context, IAc
     private static bool OptionalText(string? value, int max) => value is null || value.Trim().Length <= max;
     private static bool Finance(Actor a, string permission) => a.Context.EffectiveAccess?.Department == Department.Finance && a.Context.HasPermission(permission);
     private static void Scope(Actor a, long station) => Require(a.Stations.Contains(station), "not_found");
-    private DateOnly SettlementToday => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
-    private DateTimeOffset SettlementCutoff => new(SettlementToday.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+    // 4-N10: payables settle by AVIAM's business day in Santo Domingo, like receivables.
+    private DateOnly SettlementToday => BusinessCalendar.Today(clock.GetUtcNow());
+    private DateTimeOffset SettlementCutoff => BusinessCalendar.StartOfDay(SettlementToday.AddDays(1));
     private void RequireSettlementDate(DateOnly date) => Require(date != default && date <= SettlementToday);
-    // Current projections use the same inclusive UTC day as the as-of AP/expense reports.
+    // Current projections use the same inclusive business day as the as-of AP/expense reports.
     private IQueryable<FinancePayablesApplication> CurrentApplications()
     {
         var today = SettlementToday; var end = SettlementCutoff;

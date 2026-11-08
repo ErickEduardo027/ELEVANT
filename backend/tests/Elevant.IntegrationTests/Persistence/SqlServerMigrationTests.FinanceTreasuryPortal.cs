@@ -23,7 +23,7 @@ public sealed partial class SqlServerMigrationTests
             where o.PublicId == organizationId select a).SingleAsync(ct);
         var station = await setup.Stations.SingleAsync(s => s.Code == "PUJ", ct);
         var account = await setup.Users.SingleAsync(u => u.PublicId == FinanceAccount, ct);
-        var now = DateTimeOffset.UtcNow; var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var now = DateTimeOffset.UtcNow; var today = Elevant.Application.Common.BusinessCalendar.Today(now);
         var foreignOrganization = new Organization { PublicId = Guid.NewGuid(), Code = "QA-TREASURY-OTHER", LegalName = "Other synthetic airline", DisplayName = "Other synthetic airline",
             Type = OrganizationType.AirlineCustomer, Status = OrganizationStatus.Active };
         setup.Organizations.Add(foreignOrganization); await setup.SaveChangesAsync(ct);

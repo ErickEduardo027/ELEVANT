@@ -23,7 +23,20 @@ public static class FinanceInvoicePolicy
     /// <summary>Marks the tax snapshot as the fixed ITBIS rule, not a configurable policy.</summary>
     public static readonly Guid ItbisPolicyId = Guid.Parse("0f5c2e31-0018-4e31-9e31-000000000018");
 
+    /// <summary>
+    /// 4-N06: the one set of limits of an invoice, checked by the server and published by «Por facturar»: up to 100
+    /// operations, 500 invoice lines (every billable service is at least one line) and operations of at most 31
+    /// calendar days, so a week or a month of one airline fits.
+    /// </summary>
     public const int MaxOperations = 100;
+
+    public const int MaxLines = 500;
+
+    public const int MaxDays = 31;
+
+    /// <summary>Whether operations from <paramref name="from"/> to <paramref name="to"/> fit one invoice (4-N06).</summary>
+    public static bool FitsWindow(DateOnly from, DateOnly to) =>
+        to >= from && to.DayNumber - from.DayNumber < MaxDays;
 
     public static string FormatFiscalNumber(long sequence)
     {
@@ -73,7 +86,17 @@ public static class FinanceInvoicePolicy
     }
 }
 
-public sealed record IssueInvoiceRequest(Guid AccountId, Guid StationId, IReadOnlyList<Guid> OperationIds, Guid RequestId);
+/// <summary>
+/// The version (base64 rowversion) of an operation as the caller saw it: a stale one is <c>version_conflict</c>.
+/// </summary>
+public sealed record InvoiceOperationVersion(Guid OperationId, string Version);
+
+/// <summary>
+/// The request id is the idempotency key (ADR-0035). <see cref="OperationVersions"/> is optional while older
+/// clients exist (expand, 4-N29); when sent it covers every operation exactly once.
+/// </summary>
+public sealed record IssueInvoiceRequest(Guid AccountId, Guid StationId, IReadOnlyList<Guid> OperationIds, Guid RequestId,
+    IReadOnlyList<InvoiceOperationVersion>? OperationVersions = null);
 
 public enum IssueInvoiceFailure
 {
@@ -100,6 +123,10 @@ public sealed record IssueInvoiceResult(Guid? InvoiceId, string? Number, string?
 public interface IInvoiceIssuanceStore
 {
     Task<IssueInvoiceResult> IssueAsync(IssueInvoiceRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>4-N07: closes operations whose valuation is zero without an invoice, with a reason.</summary>
+    Task<NoChargeClosureResult> CloseWithoutChargeAsync(NoChargeClosureCommand request,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>Finance issues one invoice for one operation or for several of the same airline (ADR-0035).</summary>
@@ -113,16 +140,27 @@ public sealed class IssueInvoiceHandler(
         ArgumentNullException.ThrowIfNull(request);
         if (request.AccountId == Guid.Empty) return IssueInvoiceResult.Failed(IssueInvoiceFailure.Unauthorized);
         if (request.StationId == Guid.Empty || request.RequestId == Guid.Empty || request.OperationIds is null ||
-            request.OperationIds.Count is < 1 or > FinanceInvoicePolicy.MaxOperations ||
-            request.OperationIds.Any(id => id == Guid.Empty) ||
-            request.OperationIds.Distinct().Count() != request.OperationIds.Count)
-            return IssueInvoiceResult.Failed(IssueInvoiceFailure.InvalidRequest);
+            request.OperationIds.Count < 1 || request.OperationIds.Any(id => id == Guid.Empty) ||
+            request.OperationIds.Distinct().Count() != request.OperationIds.Count ||
+            !CoversEveryOperation(request.OperationIds, request.OperationVersions))
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.InvalidRequest, InvoicingCodes.InvalidRequest);
+        if (request.OperationIds.Count > FinanceInvoicePolicy.MaxOperations)
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.InvalidRequest, InvoicingCodes.TooManyOperations);
         var actor = await actors.ResolveAsync(request.AccountId, cancellationToken);
         if (!Identity.ActorContextValidator.IsValid(actor, request.AccountId))
             return IssueInvoiceResult.Failed(IssueInvoiceFailure.Unauthorized);
         if (!actor!.HasPermission(IssuePermission) ||
             !actor.StationScopes.Any(scope => scope.StationId == request.StationId))
-            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Forbidden);
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Forbidden, InvoicingCodes.Forbidden);
         return await store.IssueAsync(request, cancellationToken);
     }
+
+    /// <summary>No versions (an older client), or one non-empty version per requested operation and nothing else.</summary>
+    internal static bool CoversEveryOperation(IReadOnlyList<Guid> operationIds,
+        IReadOnlyList<InvoiceOperationVersion>? versions) =>
+        versions is null ||
+        versions.Count == operationIds.Count && versions.All(item => item is not null &&
+            !string.IsNullOrWhiteSpace(item.Version) && item.Version.Length <= 64) &&
+        versions.Select(item => item.OperationId).Distinct().Count() == versions.Count &&
+        versions.All(item => operationIds.Contains(item.OperationId));
 }

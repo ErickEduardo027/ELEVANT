@@ -169,11 +169,13 @@ internal sealed class EfPreinvoiceDraftStore(
     /// </summary>
     internal Task<PreinvoiceDraftResult> DraftForInvoiceAsync(CreatePreinvoiceDraftCommand request,
         CancellationToken cancellationToken) =>
-        CreateInsideTransactionAsync(request, HashRequest(request), cancellationToken, requirePermission: false);
+        CreateInsideTransactionAsync(request, HashRequest(request), cancellationToken, requirePermission: false,
+            maxServices: FinanceInvoicePolicy.MaxLines);
 
     private async Task<PreinvoiceDraftResult> CreateInsideTransactionAsync(
         CreatePreinvoiceDraftCommand request, string payloadHash,
-        CancellationToken cancellationToken, bool requirePermission = true)
+        CancellationToken cancellationToken, bool requirePermission = true,
+        int maxServices = PreinvoiceDraftPolicy.DefaultMaxServices)
     {
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(request.AccountId, cancellationToken);
@@ -315,7 +317,7 @@ internal sealed class EfPreinvoiceDraftStore(
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, blocked.BlockingReason);
         var evaluated = PreinvoiceDraftPolicy.Evaluate(
             request.StationId, request.From, request.To,
-            approvedRows.Select(item => item.Candidate).ToArray());
+            approvedRows.Select(item => item.Candidate).ToArray(), maxServices);
         if (!evaluated.Ready)
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable,
                 evaluated.Failure);

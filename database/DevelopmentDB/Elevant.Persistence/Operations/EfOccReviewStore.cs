@@ -649,10 +649,38 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, true, cancellationToken,
             latest.SubmittedByRampAgentId);
         if (outcome == ReviewOutcome.Approved)
+        {
             await FinanceApprovedServiceChangeWriter.AddAsync(context,
                 scope.StationId, operation.PublicId, now, cancellationToken);
+            await NotifyReadyToInvoiceAsync(operation, scope.StationId, now, cancellationToken);
+        }
         await context.SaveChangesAsync(cancellationToken);
         return ReviewStep.Done(reviewDecision.PublicId);
+    }
+
+    /// <summary>
+    /// 4-N26: an approved operation with a billable service reaches «Por facturar», so Finance gets an alert. It is one
+    /// per airline, station and business day: each approval marks it unread again. Only accounts of Finance with
+    /// «Notificaciones», «Facturación» and a live scope on the station receive it.
+    /// </summary>
+    private async Task NotifyReadyToInvoiceAsync(GroundOperation operation, long stationId, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!await context.OperationServices.AsNoTracking().Where(ServiceBillability.Billable)
+                .AnyAsync(service => service.GroundOperationId == operation.Id, cancellationToken))
+            return;
+        var target = await (from turnaround in context.Turnarounds.AsNoTracking()
+                            join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
+                            join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+                            where turnaround.Id == operation.TurnaroundId
+                            select new { Airline = airline.PublicId, airline.Name, Station = station.PublicId })
+            .SingleAsync(cancellationToken);
+        var day = Elevant.Application.Common.BusinessCalendar.Today(now);
+        var sourceId = new Guid(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"operation_ready_to_invoice|{target.Airline:D}|{target.Station:D}|{day:yyyy-MM-dd}")).AsSpan(0, 16));
+        await DepartmentNotificationWriter.NotifyAsync(context, Department.Finance,
+            GetFinancePendingOperationsHandler.ReadPermission, "operation_ready_to_invoice", sourceId, target.Name, now,
+            cancellationToken, stationId);
     }
 
     /// <summary>

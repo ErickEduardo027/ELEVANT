@@ -57,6 +57,16 @@ public sealed class FinanceTreasuryEndpointsTests(ElevantApiFactory factory) : I
         stub.Failure = FinanceTreasuryFailure.Conflict;
         using var conflict = await client.PostAsJsonAsync($"/api/v1/finance/receipts/{receipt.Id}/applications", allocation, ct);
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        // Phase 4, block A: every refusal carries a code, the store's when it names the cause (4-N10).
+        Assert.Equal("treasury_conflict", await CodeAsync(conflict, ct));
+        (stub.Failure, stub.Code) = (FinanceTreasuryFailure.Invalid, "effective_before_invoice");
+        using var early = await client.PostAsJsonAsync($"/api/v1/finance/receipts/{receipt.Id}/applications", allocation, ct);
+        Assert.Equal((HttpStatusCode.BadRequest, "effective_before_invoice"), (early.StatusCode, await CodeAsync(early, ct)));
+    }
+    private static async Task<string?> CodeAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return json.RootElement.TryGetProperty("code", out var code) ? code.GetString() : null;
     }
     [Fact]
     public async Task MissingReadScopeDoesNotRevealReceiptAndForbiddenMutationsReturn403()
@@ -87,9 +97,9 @@ public sealed class FinanceTreasuryEndpointsTests(ElevantApiFactory factory) : I
     {
         public Guid Actor { get; private set; } public Guid Resource { get; private set; }
         public FinanceTreasuryReceiptInput? Receipt { get; private set; } public FinanceTreasuryApplyInput? Allocation { get; private set; }
-        public bool Replayed { get; set; } public FinanceTreasuryFailure? Failure { get; set; }
+        public bool Replayed { get; set; } public FinanceTreasuryFailure? Failure { get; set; } public string? Code { get; set; }
         private readonly Guid _id = Guid.NewGuid();
-        private Task<FinanceTreasuryResult> Result() => Task.FromResult(Failure is { } failure ? FinanceTreasuryResult.Failed(failure) : new(_id, "v1", Replayed, null));
+        private Task<FinanceTreasuryResult> Result() => Task.FromResult(Failure is { } failure ? FinanceTreasuryResult.Failed(failure, Code) : new(_id, "v1", Replayed, null));
         public Task<FinanceTreasuryResult> RecordAsync(Guid actorId, FinanceTreasuryReceiptInput input, CancellationToken cancellationToken = default)
         { Actor = actorId; Receipt = input; return Result(); }
         public Task<FinanceTreasuryResult> ApplyAsync(Guid actorId, Guid receiptId, FinanceTreasuryApplyInput input, CancellationToken cancellationToken = default)

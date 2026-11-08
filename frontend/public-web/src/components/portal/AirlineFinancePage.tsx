@@ -7,8 +7,10 @@ import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import type { AirlineTreasuryInvoice, AirlineTreasuryInvoiceDetail, AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
 import styles from "./AirlinePortalPage.module.css";
 import { CardPaymentPanel } from "./CardPaymentPanel";
+import { businessToday } from "@/lib/business-day";
 
-const today = () => new Date().toISOString().slice(0, 10);
+// 4-N10: the cutoff is the business day of Santo Domingo, the one the server checks.
+const today = () => businessToday();
 
 export function amount(currency: string, total: number) {
   return `${currency} ${new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }).format(total)}`;

@@ -103,6 +103,86 @@ public sealed class FinanceInvoicePolicyTests
         Assert.Equal(valid, store.Request);
     }
 
+    /// <summary>4-N06 and 4-N29: the refusals name their code; versions, when sent, cover every operation once.</summary>
+    [Fact]
+    public async Task HandlerNamesItsCodesAndRequiresVersionsForEveryOperation()
+    {
+        var accountId = Guid.NewGuid();
+        var station = Guid.NewGuid();
+        var store = new Store();
+        var handler = new IssueInvoiceHandler(new Resolver(Actor(accountId, "FINANZAS", station)), store);
+        var ct = TestContext.Current.CancellationToken;
+        var (first, second) = (Guid.NewGuid(), Guid.NewGuid());
+        IssueInvoiceRequest Request(IReadOnlyList<InvoiceOperationVersion>? versions, params Guid[] operations) =>
+            new(accountId, station, operations, Guid.NewGuid(), versions);
+
+        var tooMany = await handler.HandleAsync(Request(null, Enumerable.Range(0, 101).Select(_ => Guid.NewGuid()).ToArray()), ct);
+        Assert.Equal((IssueInvoiceFailure.InvalidRequest, "too_many_operations"), (tooMany.Failure!.Value, tooMany.Reason));
+        Assert.Equal("invalid_invoice_request", (await handler.HandleAsync(Request(null), ct)).Reason);
+        foreach (var versions in new IReadOnlyList<InvoiceOperationVersion>[]
+                 {
+                     [new(first, "AAAAAAAAB9E=")],
+                     [new(first, "AAAAAAAAB9E="), new(second, " ")],
+                     [new(first, "AAAAAAAAB9E="), new(first, "AAAAAAAAB9E=")],
+                     [new(first, "AAAAAAAAB9E="), new(Guid.NewGuid(), "AAAAAAAAB9E=")],
+                     [new(first, "AAAAAAAAB9E="), new(second, new string('A', 65))],
+                 })
+        {
+            var refused = await handler.HandleAsync(Request(versions, first, second), ct);
+            Assert.Equal((IssueInvoiceFailure.InvalidRequest, "invalid_invoice_request"), (refused.Failure!.Value, refused.Reason));
+        }
+        Assert.Null(store.Request);
+        var forbidden = await new IssueInvoiceHandler(new Resolver(Actor(accountId, "OCC", station)), store)
+            .HandleAsync(Request(null, first), ct);
+        Assert.Equal((IssueInvoiceFailure.Forbidden, "forbidden"), (forbidden.Failure!.Value, forbidden.Reason));
+
+        var versioned = Request([new(second, "AAAAAAAAB9E="), new(first, "AAAAAAAAB9F=")], first, second);
+        Assert.True((await handler.HandleAsync(versioned, ct)).IsSuccess);
+        Assert.Equal(versioned.OperationVersions, store.Request!.OperationVersions);
+    }
+
+    [Theory]
+    [InlineData("2026-11-01", "2026-11-01", true)]
+    [InlineData("2026-11-01", "2026-12-01", true)]
+    [InlineData("2026-11-01", "2026-12-02", false)]
+    [InlineData("2026-11-02", "2026-11-01", false)]
+    public void AnInvoiceSpansAtMostThirtyOneDays(string from, string to, bool fits) =>
+        Assert.Equal(fits, FinanceInvoicePolicy.FitsWindow(
+            DateOnly.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateOnly.Parse(to, System.Globalization.CultureInfo.InvariantCulture)));
+
+    /// <summary>4-N07: the closure needs its key, the versions and a reason of 5 to 500 characters.</summary>
+    [Fact]
+    public async Task NoChargeClosureValidatesKeyVersionsAndReason()
+    {
+        var accountId = Guid.NewGuid();
+        var station = Guid.NewGuid();
+        var store = new Store();
+        var handler = new CloseOperationsWithoutChargeHandler(new Resolver(Actor(accountId, "FINANZAS", station)), store);
+        var ct = TestContext.Current.CancellationToken;
+        var operation = Guid.NewGuid();
+        NoChargeClosureCommand Command(string reason = "Tarifa cero acordada", Guid? key = null,
+            params InvoiceOperationVersion[] operations) =>
+            new(accountId, station, operations.Length == 0 ? [new(operation, "AAAAAAAAB9E=")] : operations, reason,
+                key ?? Guid.NewGuid());
+
+        Assert.Equal("idempotency_key_required", (await handler.HandleAsync(Command(key: Guid.Empty), ct)).Code);
+        Assert.Equal("expected_version_required",
+            (await handler.HandleAsync(Command(operations: new InvoiceOperationVersion(operation, "")), ct)).Code);
+        Assert.Equal("invalid_invoice_request", (await handler.HandleAsync(Command(operations:
+            [new InvoiceOperationVersion(operation, "AAAAAAAAB9E="), new InvoiceOperationVersion(operation, "AAAAAAAAB9E=")]), ct)).Code);
+        Assert.Equal("too_many_operations", (await handler.HandleAsync(Command(operations: Enumerable.Range(0, 101)
+            .Select(_ => new InvoiceOperationVersion(Guid.NewGuid(), "AAAAAAAAB9E=")).ToArray()), ct)).Code);
+        foreach (var reason in new[] { "", "   ", "Cero", new string('x', 501) })
+            Assert.Equal("reason_required", (await handler.HandleAsync(Command(reason), ct)).Code);
+        Assert.Null(store.Closure);
+        Assert.Equal("forbidden", (await new CloseOperationsWithoutChargeHandler(
+            new Resolver(Actor(accountId, "OCC", station)), store).HandleAsync(Command(), ct)).Code);
+
+        Assert.True((await handler.HandleAsync(Command("  Paquete ya cobrado  "), ct)).IsSuccess);
+        Assert.Equal("Paquete ya cobrado", store.Closure!.Reason);
+    }
+
     private static ActorContext Actor(Guid accountId, string role, Guid station) =>
         new(accountId, "finance@dev.elevant.test", "Finance",
             [new ActorRole(Guid.NewGuid(), role, role, PortalKind.BackOffice, "staff")],
@@ -120,10 +200,20 @@ public sealed class FinanceInvoicePolicyTests
     {
         public IssueInvoiceRequest? Request { get; private set; }
 
+        public NoChargeClosureCommand? Closure { get; private set; }
+
         public Task<IssueInvoiceResult> IssueAsync(IssueInvoiceRequest request, CancellationToken cancellationToken = default)
         {
             Request = request;
             return Task.FromResult(IssueInvoiceResult.Success(Guid.NewGuid(), "DEV-NF-TEST", "E310000000001", 118m, "USD", false));
+        }
+
+        public Task<NoChargeClosureResult> CloseWithoutChargeAsync(NoChargeClosureCommand request,
+            CancellationToken cancellationToken = default)
+        {
+            Closure = request;
+            return Task.FromResult(NoChargeClosureResult.Success(
+                new NoChargeClosureData(Guid.NewGuid(), request.Operations.Select(item => item.OperationId).ToArray()), false));
         }
     }
 }

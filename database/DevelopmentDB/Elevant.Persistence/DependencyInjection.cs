@@ -150,6 +150,7 @@ public static class DependencyInjection
         services.AddScoped<IAirlinePortalUserStore, EfAirlinePortalUserStore>();
         services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
         services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
+        services.AddScoped<Elevant.Application.Finance.IFinancePendingOperationsReadStore, EfFinancePendingOperationsReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
         services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();
         services.AddScoped<IFinancePackageStore, EfFinancePackageStore>();

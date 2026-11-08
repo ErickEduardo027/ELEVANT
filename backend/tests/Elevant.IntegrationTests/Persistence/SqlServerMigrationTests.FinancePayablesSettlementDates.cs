@@ -23,7 +23,7 @@ public sealed partial class SqlServerMigrationTests
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
         var clock = new PayablesSettlementClock(DateTimeOffset.UtcNow);
-        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(clock.GetUtcNow());
         var store = new FinancePayablesStore(db, scope.ServiceProvider.GetRequiredService<IActorContextResolver>(), new PayablesObjects(), clock);
         var station = await db.Stations.FirstAsync(ct);
         var supplier = await CreateSettlementSupplierAsync(store, station.PublicId, ct);
@@ -71,7 +71,7 @@ public sealed partial class SqlServerMigrationTests
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
         var clock = new PayablesSettlementClock(DateTimeOffset.UtcNow);
-        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(clock.GetUtcNow());
         var store = new FinancePayablesStore(db, scope.ServiceProvider.GetRequiredService<IActorContextResolver>(), new PayablesObjects(), clock);
         var station = await db.Stations.FirstAsync(ct);
         var supplierId = await CreateSettlementSupplierAsync(store, station.PublicId, ct);
@@ -146,7 +146,7 @@ public sealed partial class SqlServerMigrationTests
         var departmentReviewer = await AddPayablesExpenseActorAsync(db, "settlement-department", ct);
         var financeReviewer = await AddPayablesExpenseActorAsync(db, "settlement-finance", ct);
         var clock = new PayablesSettlementClock(DateTimeOffset.UtcNow);
-        var today = DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(clock.GetUtcNow());
         var store = new FinancePayablesStore(db, scope.ServiceProvider.GetRequiredService<IActorContextResolver>(), new PayablesObjects(), clock);
         var station = await db.Stations.FirstAsync(ct);
         var saved = await store.SaveExpenseAsync(FinanceAccount, null,
