@@ -17,6 +17,12 @@ vi.mock('../../../services/attendanceDraftService', () => ({
 vi.mock('../../../services/accountChangeObserver', () => ({
   createPrivateWebAccountChangeObserver: () => ({ start: async () => {}, stop: async () => {} }),
 }));
+// 3-G: the live incidents panel has its own tests; here it shows which operation it reads and its re-read token.
+vi.mock('../../incidents/OperationIncidentsPanel', () => ({
+  default: ({ operationId, refreshToken }) => (
+    <div data-testid="incidents-panel" data-operation={operationId} data-refresh={String(refreshToken)} />
+  ),
+}));
 const agents = vi.hoisted(() => ({ release: vi.fn(), options: vi.fn(), handOver: vi.fn() }));
 vi.mock('../../../services/occCoverageService', () => ({
   releaseOccOperationAgent: agents.release,
@@ -111,6 +117,14 @@ describe('PlanningDrawer', () => {
     expect(screen.queryByRole('heading', { name: /Asistencia de/ })).not.toBeInTheDocument();
   });
 
+  it("mounts the operation's live incidents, re-read with the board (3-G)", () => {
+    const { rerender, props } = renderDrawer({ flight: ASSIGNED_FLIGHT, dataRevision: 4 });
+    expect(screen.getByTestId('incidents-panel')).toHaveAttribute('data-operation', 'operation-1');
+    expect(screen.getByTestId('incidents-panel')).toHaveAttribute('data-refresh', '4');
+    rerender(<PlanningDrawer {...props} flight={{ ...ASSIGNED_FLIGHT, operation: null }} />);
+    expect(screen.queryByTestId('incidents-panel')).not.toBeInTheDocument();
+  });
+
   it('renders nothing when no turnaround is selected', () => {
     const { container } = render(<PlanningDrawer flight={null} onClose={() => {}} />);
 
@@ -132,6 +146,15 @@ describe('PlanningDrawer', () => {
     expect(screen.getAllByText(/Riley Ramp/).length).toBeGreaterThan(0);
     expect(screen.getByText(/GPU-DEV-01 · Ground power unit/)).toBeInTheDocument();
     expect(screen.getAllByText(/BAGGAGE · Baggage handling/).length).toBeGreaterThan(0);
+  });
+
+  it('shows the operation, equipment and unit codes in Spanish (3-N22)', () => {
+    renderDrawer({ flight: createPlanningFlight({ operationStatus: 'PendingReview' }) });
+
+    expect(screen.getByText('Pendiente de revisión')).toBeInTheDocument();
+    expect(screen.getByText('(Disponible)')).toBeInTheDocument();
+    expect(screen.getByText('0/1 por operación')).toBeInTheDocument();
+    expect(screen.queryByText(/PendingReview|Available/)).not.toBeInTheDocument();
   });
 
   it('renders contract, service, and agent eligibility returned by the options endpoint', () => {

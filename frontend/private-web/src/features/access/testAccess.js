@@ -7,8 +7,9 @@ export const DepartmentPermissionCodes = {
   operations: codes('operations', {
     dashboard: ['read'], flight_monitoring: ['read'], positions_map: ['read', 'assign'], coverage: ['read', 'assign', 'update'],
     master_data: ['read', 'create', 'update'], devices: ['read', 'unbind', 'revoke'],
-    planning: ['read', 'create', 'update', 'assign'], attendance: ['read', 'create'], review: ['read', 'decide'],
-    service_closures: ['read', 'create'], reports: ['read', 'export'], notifications: ['read'], chat: ['read', 'create'],
+    planning: ['read', 'create', 'update', 'assign'], attendance: ['read', 'create'], review: ['read', 'decide', 'reopen'],
+    incidents: ['read', 'update'], service_closures: ['read', 'create'], reports: ['read', 'export'],
+    notifications: ['read'], chat: ['read', 'create'],
   }),
   humanResources: codes('human_resources', {
     dashboard: ['read'], employees: ['read', 'create', 'update', 'delete'], positions: ['read', 'create', 'update'],

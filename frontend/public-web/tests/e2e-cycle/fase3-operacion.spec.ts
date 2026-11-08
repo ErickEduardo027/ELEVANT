@@ -10,8 +10,9 @@ import { API, loadRun, saveRun } from "./support/env";
 // cancel and divert flights, read the aircraft type the tablet typed and assign an agent after the arrival; then
 // (huecos 3-D, 3-E, 3-F, 3-J) the approval frees the agent and the stand, the agent carries up to three flights at once,
 // OCC adjusts the agent's shift of the day, hands a started operation over and repeats its coverage commands safely;
-// (huecos 3-I, 3-K) the tablet's queue sends the start and the services with the time they were tapped, and OCC opens
-// the photo of a walk-around damage in the review.
+// (huecos 3-G, 3-H) OCC manages the incidents of a flight still on the ramp and reopens the run's approval nothing was
+// invoiced from, then approves it again; (huecos 3-I, 3-K) the tablet's queue sends the start and the services with the
+// time they were tapped, and OCC opens the photo of a walk-around damage in the review.
 
 type RunContract = { airline: string; approvedVersions: Array<{ stations: Array<{ id: string; code: string }> }> };
 type Leg = { flightNumber: string; scheduledAt: string };
@@ -869,8 +870,162 @@ test("hueco 3-F · OCC pasa una operación iniciada a otro agente (relevo)", asy
   // The agent closes the test flight from the tablet: it no longer holds the agent nor waits on the ramp.
   await handOffUnperformed(device, flight.turnaroundId);
 });
-test.fixme("hueco 3-G · OCC gestiona las incidencias de la operación", async () => {});
-test.fixme("hueco 3-H · OCC reabre una operación aprobada que aún no se facturó", async () => {});
+test("hueco 3-G · OCC gestiona las incidencias de la operación", async ({ page }) => {
+  const { run, station } = runState();
+  const occ = await login("occ");
+  const offset = await freeOffset(station, [33, 35, 37]);
+  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 30);
+  if (offset === null || !window) {
+    test.skip(true, "No queda un número de vuelo libre o una ventana de 30 minutos en el turno del agente hoy.");
+    return;
+  }
+  const flight = await planFlight(occ, station, offset, window, { terminals: ["A"] });
+  expect((await assignAgent(occ, flight.turnaroundId)).status).toBe(200);
+  const device = await tablet();
+  const { operation } = await tabletOperation(device, flight.turnaroundId);
+  await device.send(200, "POST", `/ramp/operations/${operation.id}/start`);
+  // The agent reports from the tablet while the flight is on the ramp: OCC manages it live, before any hand-off.
+  const spill = `Derrame de combustible en la posición (ciclo E2E, hueco 3-G, ${run.runId})`;
+  await device.send(200, "POST", `/ramp/operations/${operation.id}/incidents`,
+    { incidentType: "Safety", severity: "High", description: spill, occurredAt: at(0) });
+  type Incident = { id: string; status: string; description: string; reportedByKind: string; version: string;
+    resolutionNote: string | null; allowedStatuses: string[]; history: Array<{ toStatus: string }> };
+  type Incidents = { operationStatus: string; canReport: boolean; incidents: Incident[] };
+  const incidentsRoute = `/occ/operations/${operation.id}/incidents`;
+  const listed = (await expectCall<Incidents>(200, occ, "GET", incidentsRoute)).data;
+  expect([listed.operationStatus, listed.canReport]).toEqual(["InProgress", true]);
+  const fromTablet = listed.incidents.find(item => item.description === spill);
+  expect(fromTablet?.reportedByKind, "the live list carries the agent's report").toBe("Agent");
+
+  // The alert opens the review: no hand-off yet, the live incidents in Spanish; OCC takes the agent's into review
+  // with a note and reports its own in the station's local time.
+  await loginPrivate(page, "occ");
+  await goPrivate(page, `/admin-occ/review?operationId=${operation.id}`);
+  const detail = page.getByRole("region", { name: "Detalle de entrega" });
+  await expect(detail.getByText("La operación sigue en curso; aún no hay entrega.")).toBeVisible();
+  const panel = detail.getByRole("region", { name: "Incidencias de la operación" });
+  const row = panel.getByRole("listitem").filter({ hasText: spill });
+  await expect(row).toContainText("Seguridad · Alta");
+  await row.getByRole("button", { name: "Pasar a revisión" }).click();
+  const change = row.getByRole("form", { name: "Pasar a revisión" });
+  await change.getByLabel("Nota (8 a 2000 caracteres)").fill("OCC coordina la limpieza con los bomberos.");
+  await change.getByRole("button", { name: "Guardar" }).click();
+  await expect(panel.getByText("Incidencia actualizada.")).toBeVisible();
+  const delay = `Demora del equipaje informada por la aerolínea (ciclo E2E, ${run.runId})`;
+  await panel.getByRole("button", { name: "Reportar incidencia" }).click();
+  const report = panel.getByRole("form", { name: "Nueva incidencia de OCC" });
+  await report.getByLabel("Tipo").selectOption("Operational");
+  await report.getByLabel("Severidad").selectOption("Low");
+  await report.getByLabel("Descripción (8 a 2000 caracteres)").fill(delay);
+  await report.getByRole("button", { name: "Reportar" }).click();
+  await expect(panel.getByText("Incidencia reportada.")).toBeVisible();
+  await expect(panel.getByRole("listitem").filter({ hasText: delay })).toContainText("Reportada por");
+  await snap(page, "fase3-hueco-3g-incidencias");
+
+  // The change kept its note in the history; OCC's report is its own.
+  const after = (await expectCall<Incidents>(200, occ, "GET", incidentsRoute)).data;
+  const taken = after.incidents.find(item => item.id === fromTablet!.id)!;
+  expect([taken.status, taken.history.map(step => step.toStatus)]).toEqual(["InReview", ["Open", "InReview"]]);
+  const own = after.incidents.find(item => item.description === delay);
+  expect([own?.reportedByKind, own?.status]).toEqual(["Occ", "Open"]);
+
+  // A change names the version OCC saw (missing: 428; old: 412); the same key and body repeat it.
+  const statusRoute = `/occ/incidents/${taken.id}/status`;
+  const resolve = { status: "Resolved", note: "Limpieza terminada; la posición quedó habilitada." };
+  const unversioned = await call<Problem>(occ, "POST", statusRoute, resolve, { "idempotency-key": crypto.randomUUID() });
+  expect([unversioned.status, unversioned.data.code]).toEqual([428, "expected_version_required"]);
+  const stale = await call<Problem>(occ, "POST", statusRoute, resolve,
+    { "idempotency-key": crypto.randomUUID(), "if-match": `"${fromTablet!.version}"` });
+  expect([stale.status, stale.data.code]).toEqual([412, "version_conflict"]);
+  const intent = { "idempotency-key": crypto.randomUUID(), "if-match": `"${taken.version}"` };
+  const resolved = await expectCall<Incident>(200, occ, "POST", statusRoute, resolve, intent);
+  expect([resolved.data.status, resolved.data.resolutionNote]).toEqual(["Resolved", resolve.note]);
+  const repeated = await expectCall<Incident>(200, occ, "POST", statusRoute, resolve, intent);
+  expect(repeated.data.version).toBe(resolved.data.version);
+  const reused = await call<Problem>(occ, "POST", statusRoute, { ...resolve, note: "Otra nota con la misma clave." }, intent);
+  expect([reused.status, reused.data.code]).toEqual([409, "idempotency_conflict"]);
+  // A closed incident is final.
+  const closed = await expectCall<Incident>(200, occ, "POST", statusRoute,
+    { status: "Closed", note: "Cierre confirmado con la aerolínea." },
+    { "idempotency-key": crypto.randomUUID(), "if-match": `"${resolved.data.version}"` });
+  expect(closed.data.allowedStatuses).toEqual([]);
+
+  // The tablet keeps reading the same keys and sees OCC's report too; then it hands the flight to OCC.
+  const center = await device.get<{ incidents: Array<{ id: string; status: string }> }>(
+    `/ramp/operations/${operation.id}/incidents`);
+  expect(center.data.incidents.map(item => item.id)).toEqual(expect.arrayContaining([taken.id, own!.id]));
+  await handOffUnperformed(device, flight.turnaroundId);
+});
+test("hueco 3-H · OCC reabre una operación aprobada que aún no se facturó", async ({ page }) => {
+  const { run, station } = runState();
+  const flight = run.flight as Flight;
+  const operationId = String(run.operationId);
+  const occ = await login("occ");
+  type Review = { submissionId: string; revisionNumber: number; status: string; reviewVersion: string;
+    serviceOrderState?: string | null; reopening?: { fromRevisionNumber: number; reason: string } | null;
+    close?: { canAdjustCharges: boolean } };
+  const reviewRoute = `/occ/review/operations/${operationId}`;
+  const read = async () => (await expectCall<Review>(200, occ, "GET", reviewRoute)).data;
+  const finance = await login("finance");
+  const day = stationDay(flight.arrivalAt);
+  /** The run's services in «Por facturar», with the preinvoice that holds them, if any. */
+  const toInvoice = async () => (await expectCall<{ services: Array<{ operationId: string; preinvoiceId?: string | null }> }>(
+    200, finance, "GET", `/finance/approved-services?stationId=${station}&from=${day}&to=${day}`))
+    .data.services.filter(item => item.operationId === operationId);
+  let review = await read();
+  if (review.status === "Approved") {
+    const listed = await toInvoice();
+    if (listed.length === 0 || listed.some(item => item.preinvoiceId)) {
+      test.skip(true, "La operación del ciclo ya está en una prefactura: su corrección es una nota de crédito.");
+      return;
+    }
+  }
+  await loginPrivate(page, "occ");
+  const detail = page.getByRole("region", { name: "Detalle de entrega" });
+  // A resumed run may find the revision reopened already: it goes straight to the checks and the new approval.
+  if (review.status === "Approved") {
+    expect(review.serviceOrderState, "the run's approval stands on its signed Service Order").toMatch(/^(Signed|Corrected)$/);
+    await goPrivate(page, `/admin-occ/review?operationId=${operationId}`);
+    await detail.getByRole("button", { name: "Reabrir revisión" }).click();
+    await detail.getByLabel("Motivo de la reapertura (8 a 2000 caracteres)")
+      .fill("La aerolínea pidió revisar los recargos del vuelo (ciclo E2E, hueco 3-H).");
+    await detail.getByRole("button", { name: "Confirmar reapertura" }).click();
+    await expect(page.getByText(/^Revisión reabierta como revisión \d+: vuelve a Pendiente de revisión\.$/)).toBeVisible();
+    await expect(detail.getByText(/^Revisión reabierta por OCC:/)).toBeVisible();
+    await expect(detail.getByRole("button", { name: "Devolver con correcciones" })).toHaveCount(0);
+    await snap(page, "fase3-hueco-3h-reabierta");
+    review = await read();
+  }
+  expect([review.status, review.reopening?.fromRevisionNumber, review.close?.canAdjustCharges])
+    .toEqual(["PendingReview", review.revisionNumber - 1, true]);
+
+  // Reopened, nothing of the release is undone: the flight stays closed (hueco 3-D) and Finance stops seeing it.
+  const planned = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
+  expect(planned.data.turnaround.status).toBe("Completed");
+  expect(await toInvoice()).toEqual([]);
+  // A reopened revision is never returned to the ramp, and only an approval is reopened.
+  const decision = `${reviewRoute}/decision`;
+  const returned = await call<Problem>(occ, "POST", decision,
+    { submissionId: review.submissionId, outcome: "Returned", reason: "Corregir los recargos del vuelo." },
+    { "if-match": review.reviewVersion, "idempotency-key": crypto.randomUUID() });
+  expect([returned.status, returned.data.code]).toEqual([409, "reopened_review_cannot_return"]);
+  const reopening = `${reviewRoute}/reopening`;
+  const body = { submissionId: review.submissionId, reason: "Otra reapertura del ciclo E2E (hueco 3-H)." };
+  const unversioned = await call<Problem>(occ, "POST", reopening, body, { "idempotency-key": crypto.randomUUID() });
+  expect([unversioned.status, unversioned.data.code]).toEqual([428, "expected_version_required"]);
+  const pending = await call<Problem>(occ, "POST", reopening, body,
+    { "if-match": review.reviewVersion, "idempotency-key": crypto.randomUUID() });
+  expect([pending.status, pending.data.code]).toEqual([409, "review_not_approved"]);
+
+  // OCC approves the reopened revision again from the review screen: Finance sees it to invoice as before.
+  await goPrivate(page, `/admin-occ/review?operationId=${operationId}`);
+  await detail.getByRole("button", { name: "Aprobar", exact: true }).click();
+  await detail.getByRole("button", { name: "Confirmar decisión" }).click();
+  await expect(page.getByText("Entrega aprobada y registrada.")).toBeVisible();
+  const approved = await read();
+  expect([approved.status, approved.close?.canAdjustCharges]).toEqual(["Approved", false]);
+  expect((await toInvoice()).length).toBeGreaterThan(0);
+});
 test("hueco 3-I · la tablet sin conexión encola inicio, servicios, cargos, checklist y chat con su hora", async () => {
   const { run, station } = runState();
   const occ = await login("occ");

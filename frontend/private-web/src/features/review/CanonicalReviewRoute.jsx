@@ -3,22 +3,32 @@ import { useAppSearchParams as useSearchParams } from '../../hooks/useAppSearchP
 import { useAuth } from '../auth/AuthContext';
 import { OccStationBadge } from '../admin-occ/OccQueueState';
 import { selectOccStationScopes } from '../admin-occ/useOccStation';
+import { useOccReviewChangeVersion } from '../admin-occ/useOccReviewQueue';
 import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 import { useTranslation } from '../../i18n/LanguageScope';
+import { createCommandKeyHolder } from '../../services/commandKeys';
 import {
   decideOccReview, loadOccReviewDetail, loadOccReviewQueue,
   loadOccReviewSubmissionDetail, loadOccReviewSubmissionHistory,
 } from '../../services/occReviewService';
 import { reviewMessages } from './reviewMessages';
+import {
+  checklistAnswerLabel, checklistStatusLabel, incidentSeverityLabel, incidentStatusLabel, incidentTypeLabel,
+  serviceOrderStateLabel, serviceStatusLabel, submissionStatusLabel, unitLabel,
+} from '../operations/operationLabels';
+import OperationIncidentsPanel from '../incidents/OperationIncidentsPanel';
 import OperationDocumentsSection from './components/OperationDocumentsSection';
 import OperationCloseSection from './components/OperationCloseSection';
+import ReopenReviewSection from './components/ReopenReviewSection';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function useReviewText() {
   const { t, language, locale } = useTranslation(reviewMessages);
   const statuses = reviewMessages[language].status;
-  return { t, locale, statusLabel: value => statuses[value] ?? value };
+  // 3-N22: an unknown state is «Otro (código)», never the raw code.
+  return { t, locale, language,
+    statusLabel: value => (Object.hasOwn(statuses, value ?? '') ? statuses[value] : submissionStatusLabel(value, language)) };
 }
 
 function dateTime(value, timeZone, locale) {
@@ -44,7 +54,7 @@ function Notice({ title, children, onRetry }) {
 }
 
 function ReviewEvidence({ detail }) {
-  const { t, locale } = useTranslation(reviewMessages);
+  const { t, locale, language } = useTranslation(reviewMessages);
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <section aria-label={t('evidence.services')} className="rounded-xl border border-black/10 p-4 dark:border-white/10">
@@ -54,20 +64,20 @@ function ReviewEvidence({ detail }) {
             {detail.services.map(service => (
               <li key={service.id} className="flex justify-between gap-3 py-2">
                 <span>{service.name} <span className="text-text-secondary-light">({service.code})</span></span>
-                <span className="text-right">{service.executedQuantity} / {service.contractedQuantity} {service.unit}<br />{service.status}</span>
+                <span className="text-right">{t('evidence.quantity', { executed: service.executedQuantity, contracted: service.contractedQuantity, unit: unitLabel(service.unit) })}<br />{serviceStatusLabel(service.status, language)}</span>
               </li>
             ))}
           </ul>
         )}
       </section>
       <section aria-label={t('evidence.checklist')} className="rounded-xl border border-black/10 p-4 dark:border-white/10">
-        <h3 className="font-semibold">{t('evidence.checklistTitle', { status: detail.checklistStatus })}</h3>
+        <h3 className="font-semibold">{t('evidence.checklistTitle', { status: checklistStatusLabel(detail.checklistStatus, language) })}</h3>
         {detail.checklistAnswers.length === 0 ? <p className="mt-2 text-sm">{t('evidence.noAnswers')}</p> : (
           <dl className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
             {detail.checklistAnswers.map(answer => (
               <div key={`${answer.section}:${answer.code}`} className="py-2">
                 <dt className="font-medium">{answer.section} · {answer.label}</dt>
-                <dd>{answer.value}{answer.note ? ` — ${answer.note}` : ''}</dd>
+                <dd>{checklistAnswerLabel(answer.value, language)}{answer.note ? ` — ${answer.note}` : ''}</dd>
               </div>
             ))}
           </dl>
@@ -79,7 +89,7 @@ function ReviewEvidence({ detail }) {
           <ul className="mt-2 divide-y divide-black/10 text-sm dark:divide-white/10">
             {detail.incidents.map(incident => (
               <li key={incident.id} className="py-2">
-                <strong>{incident.type} · {incident.severity}</strong> · {incident.status}
+                <strong>{incidentTypeLabel(incident.type, language)} · {incidentSeverityLabel(incident.severity, language)}</strong> · {incidentStatusLabel(incident.status, language)}
                 {incident.delayCode && <span className="ml-2 rounded bg-status-warning/15 px-1.5 py-0.5 text-xs font-semibold">IATA {incident.delayCode}</span>}
                 <span className="ml-2 text-text-secondary-light">{dateTime(incident.occurredAt, detail.ianaTimeZone, locale)}</span>
                 <p>{incident.description}</p>
@@ -154,8 +164,14 @@ function HistoricalSubmissions({ operationId, currentSubmissionId, timeZone }) {
   </section>;
 }
 
+/**
+ * 3-N02: the Service Order OCC may approve, signed or corrected after the signature; a server before phase 3, block D
+ * sends no state, and its decision stays the server's.
+ */
+const isApprovableOrder = state => !state || state === 'Signed' || state === 'Corrected';
+
 function ReviewStation({ stationId, selectedId, onSelectOperation }) {
-  const { t, locale, statusLabel } = useReviewText();
+  const { t, locale, language, statusLabel } = useReviewText();
   const [refreshVersion, setRefreshVersion] = useState(0);
   const [queue, setQueue] = useState({ status: 'loading', data: null, error: null });
   const [detail, setDetail] = useState({ status: 'idle', data: null, error: null });
@@ -165,9 +181,43 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
   const [message, setMessage] = useState(null);
   const decisionInFlight = useRef(false);
   const decisionAbort = useRef(null);
+  // 3-H: the decision's Idempotency-Key, kept while OCC retries the same intent after an answer that never arrived.
+  const decisionKeys = useRef(createCommandKeyHolder());
   const detailRef = useRef(null);
+  const liveVersion = useOccReviewChangeVersion();
+  const shownVersion = useRef(null);
+  const preparedDecision = useRef(null);
 
   useEffect(() => () => decisionAbort.current?.abort(), []);
+  useEffect(() => { shownVersion.current = detail.status === 'success' ? detail.data.reviewVersion : null; }, [detail]);
+  useEffect(() => { preparedDecision.current = decision; }, [decision]);
+
+  // 3-N23: an `occ_review` announcement re-reads the queue and the open detail without showing «cargando»: the table
+  // keeps its rows until the new answer arrives. A decision prepared on a hand-off that changed is discarded, so OCC
+  // reviews the new version before confirming; one prepared on the same version keeps what OCC typed.
+  useEffect(() => {
+    if (liveVersion === 0 || decisionInFlight.current) return undefined;
+    const controller = new AbortController();
+    loadOccReviewQueue(stationId, { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setQueue({ status: 'success', data, error: null }); })
+      .catch(() => {});
+    if (selectedId) {
+      loadOccReviewDetail(selectedId, { signal: controller.signal })
+        .then(data => {
+          if (controller.signal.aborted) return;
+          if (preparedDecision.current && shownVersion.current !== null && shownVersion.current !== data.reviewVersion) {
+            setDecision(null);
+            setReason('');
+            setMessage({ kind: 'error', text: t('detail.changedLive') });
+          }
+          setDetail({ status: 'success', data, error: null });
+        })
+        .catch(() => {});
+    }
+    return () => abortForEffectCleanup(controller);
+  // A live re-read follows the announcements only; the scope and the selection have their own reads.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveVersion]);
 
   // El detalle se muestra debajo de la cola; al elegir una operación se lleva a
   // la vista para que en teléfono y tablet no quede fuera de pantalla.
@@ -211,6 +261,8 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
     const current = detail.data;
     if (decisionInFlight.current || !current || current.stationId !== stationId ||
         current.status !== 'PendingReview' || !decision) return;
+    if (decision === 'Approved' && !isApprovableOrder(current.serviceOrderState)) return;
+    if (decision === 'Returned' && current.reopening) return;
     const correction = reason.trim();
     if (decision === 'Returned' && (correction.length < 8 || correction.length > 2000)) return;
     decisionInFlight.current = true;
@@ -218,12 +270,16 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
     setMessage(null);
     const controller = new AbortController();
     decisionAbort.current = controller;
+    const command = {
+      submissionId: current.submissionId,
+      outcome: decision,
+      ...(decision === 'Returned' ? { reason: correction } : {}),
+    };
     try {
-      await decideOccReview(current.operationId, {
-        submissionId: current.submissionId,
-        outcome: decision,
-        ...(decision === 'Returned' ? { reason: correction } : {}),
-      }, current.reviewVersion, { signal: controller.signal });
+      await decisionKeys.current.run('decide',
+        { operationId: current.operationId, ...command, version: current.reviewVersion },
+        key => decideOccReview(current.operationId, command, current.reviewVersion,
+          { signal: controller.signal, idempotencyKey: key }));
       if (controller.signal.aborted) return;
       setMessage({ kind: 'success', text: decision === 'Approved'
         ? t('decision.approved') : t('decision.returned') });
@@ -246,6 +302,7 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
   const rows = queue.data?.operations ?? [];
   const pendingCount = rows.filter(row => row.status === 'PendingReview').length;
   const timeZone = queue.data?.ianaTimeZone ?? 'UTC';
+  const approvable = detail.status === 'success' && isApprovableOrder(detail.data.serviceOrderState);
 
   return (
     <div className="space-y-5">
@@ -279,24 +336,43 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
       {selectedId && <section ref={detailRef} aria-label={t('detail.title')} className="scroll-mt-4 space-y-4 rounded-2xl border border-accent-600/20 bg-white/90 p-4 dark:bg-surface-dark-card sm:p-5">
         <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{t('detail.title')}</h2><button type="button" onClick={() => onSelectOperation(null)} className="min-h-11 rounded-lg border px-4 py-2">{t('detail.close')}</button></div>
         {detail.status === 'loading' && <p role="status">{t('detail.loading')}</p>}
-        {detail.status === 'error' && <Notice title={t('detail.error')} onRetry={() => setRefreshVersion(value => value + 1)}>{detail.error?.message}</Notice>}
+        {/* 3-G: an operation still on the ramp has no hand-off yet (404); OCC manages its incidents meanwhile. */}
+        {detail.status === 'error' && detail.error?.status === 404 && <>
+          <Notice title={t('detail.noSubmission')} onRetry={() => setRefreshVersion(value => value + 1)}>{t('detail.noSubmissionHint')}</Notice>
+          <OperationIncidentsPanel operationId={selectedId} refreshToken={liveVersion} />
+        </>}
+        {detail.status === 'error' && detail.error?.status !== 404 && <Notice title={t('detail.error')} onRetry={() => setRefreshVersion(value => value + 1)}>{detail.error?.message}</Notice>}
         {detail.status === 'success' && detail.data.stationId !== stationId && (
           <Notice title={t('detail.otherStation')}>{t('detail.otherStationHint')}</Notice>
         )}
         {detail.status === 'success' && detail.data.stationId === stationId && <>
           <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-4"><p><strong>{detail.data.operationCode}</strong><br />{detail.data.airlineName}</p><p>{t('detail.agent')}<br /><strong>{detail.data.agentName}</strong></p><p>{t('detail.submitted')}<br /><strong>{dateTime(detail.data.submittedAt, detail.data.ianaTimeZone, locale)}</strong></p><p>{t('detail.status')}<br /><strong>{statusLabel(detail.data.status)}</strong></p></div>
           <div className="grid gap-2 text-sm sm:grid-cols-2"><p>{t('detail.plannedStart', { date: dateTime(detail.data.plannedStartAt, detail.data.ianaTimeZone, locale) })}<br />{t('detail.actualStart', { date: dateTime(detail.data.actualStartAt, detail.data.ianaTimeZone, locale) })}</p><p>{t('detail.plannedEnd', { date: dateTime(detail.data.plannedEndAt, detail.data.ianaTimeZone, locale) })}<br />{t('detail.actualEnd', { date: dateTime(detail.data.actualEndAt, detail.data.ianaTimeZone, locale) })}</p></div>
+          {detail.data.serviceOrderState && <p className="text-sm">{t('detail.serviceOrder')}: <strong>{serviceOrderStateLabel(detail.data.serviceOrderState, language)}</strong></p>}
+          {detail.data.reopening && <div role="note" className="rounded-xl border border-status-warning/40 bg-status-warning/10 p-3 text-sm">
+            <p className="font-semibold">{t('detail.reopened', { reason: detail.data.reopening.reason })}</p>
+            <p className="text-xs">{t('detail.reopenedBy', { by: detail.data.reopening.reopenedBy, number: detail.data.reopening.fromRevisionNumber,
+              date: dateTime(detail.data.reopening.reopenedAt, detail.data.ianaTimeZone, locale) })}</p>
+          </div>}
           {detail.data.agentNote && <p className="rounded-xl bg-accent-600/10 p-3 text-sm"><strong>{t('detail.agentNote')}</strong> {detail.data.agentNote}</p>}
           <ReviewEvidence detail={detail.data} />
+          <OperationIncidentsPanel operationId={detail.data.operationId} refreshToken={liveVersion} />
           {detail.data.close && <OperationCloseSection detail={detail.data} disabled={busy}
-            onChanged={text => { setMessage({ kind: 'success', text }); setRefreshVersion(value => value + 1); }} />}
+            onChanged={(text, kind = 'success') => { setMessage({ kind, text }); setRefreshVersion(value => value + 1); }} />}
           <OperationDocumentsSection key={detail.data.operationId} operationId={detail.data.operationId}
             timeZone={detail.data.ianaTimeZone} />
           <HistoricalSubmissions operationId={detail.data.operationId} currentSubmissionId={detail.data.submissionId} timeZone={detail.data.ianaTimeZone} />
           {detail.data.decision && <p className="rounded-xl bg-accent-600/10 p-3 text-sm">{t('detail.decision')}<strong>{statusLabel(detail.data.decision.outcome)}</strong> · {dateTime(detail.data.decision.decidedAt, detail.data.ianaTimeZone, locale)}{detail.data.decision.reason ? ` — ${detail.data.decision.reason}` : ''}</p>}
+          <ReopenReviewSection key={detail.data.submissionId} detail={detail.data} disabled={busy}
+            onReopened={text => { setMessage({ kind: 'success', text }); setRefreshVersion(value => value + 1); }}
+            onRefused={text => { setMessage({ kind: 'error', text }); setRefreshVersion(value => value + 1); }} />
           {detail.data.status === 'PendingReview' && <div className="space-y-3 border-t border-black/10 pt-4 dark:border-white/10">
             <p className="text-sm">{t('decision.intro')}</p>
-            <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => setDecision('Approved')} className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{t('decision.approve')}</button><button type="button" disabled={busy} onClick={() => setDecision('Returned')} className="min-h-11 rounded-lg border border-status-warning px-4 py-2 font-semibold disabled:opacity-50">{t('decision.return')}</button></div>
+            {/* 3-N02: OCC approves only the Service Order the airline and AVIAM signed, or its recorded correction. */}
+            {!approvable && <p role="note" className="text-sm font-semibold text-status-warning">{detail.data.serviceOrderState === 'Stale' ? t('decision.stale') : t('decision.unsigned')}</p>}
+            {/* 3-H: a reopened revision has nobody on the ramp to correct it: OCC corrects it here and approves it. */}
+            {detail.data.reopening && <p role="note" className="text-sm">{t('decision.reopenedNoReturn')}</p>}
+            <div className="flex flex-wrap gap-2"><button type="button" disabled={busy || !approvable} onClick={() => setDecision('Approved')} className="min-h-11 rounded-lg bg-accent-600 px-4 py-2 font-semibold text-white disabled:opacity-50">{t('decision.approve')}</button>{!detail.data.reopening && <button type="button" disabled={busy} onClick={() => setDecision('Returned')} className="min-h-11 rounded-lg border border-status-warning px-4 py-2 font-semibold disabled:opacity-50">{t('decision.return')}</button>}</div>
             {decision && <div className="space-y-3 rounded-xl border border-status-warning/40 p-4" aria-label={t('decision.confirmLabel')}>
               <p className="font-semibold">{decision === 'Approved' ? t('decision.confirmApprove') : t('decision.confirmReturn')}</p>
               {decision === 'Returned' && <label className="block text-sm">{t('decision.corrections')}<textarea value={reason} onChange={event => setReason(event.target.value)} minLength={8} maxLength={2000} required rows={4} className="mt-1 block w-full rounded-lg border border-black/20 bg-white p-3 text-ink-900" /></label>}

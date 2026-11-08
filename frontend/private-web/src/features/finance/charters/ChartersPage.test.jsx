@@ -1,0 +1,118 @@
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
+
+const mocks = vi.hoisted(() => ({ list: vi.fn(), confirm: vi.fn(), reopen: vi.fn() }));
+vi.mock('../../../services/financeChartersService', () => ({
+  listFinanceCharters: mocks.list,
+  confirmCharterPrepayment: mocks.confirm,
+  reopenCharterPrepayment: mocks.reopen,
+}));
+
+import ChartersPage from './ChartersPage';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const CONFIRMED = {
+  id: '74000000-0000-7000-8000-000000000001', operationId: '70000000-0000-7000-8000-000000000009',
+  operationCode: 'PUJ-20261108-004', operationDate: '2026-11-08', stationCode: 'PUJ', airlineName: 'Charter Express',
+  currencyCode: 'USD', servicesTotal: 150, requestSigned: true, prepaymentStatus: 'Confirmed', prepaymentAmount: 180,
+  prepaymentReference: 'TRF-001', prepaymentConfirmedAt: '2026-11-08T12:00:00Z', version: 'AAAAAAAAB9E=',
+};
+const PENDING = { ...CONFIRMED, id: '74000000-0000-7000-8000-000000000002', operationCode: 'PUJ-20261108-005',
+  prepaymentStatus: 'Pending', prepaymentAmount: null, prepaymentReference: null, prepaymentConfirmedAt: null };
+const finance = { kind: 'Member', permissions: ['finance.charters.read', 'finance.charters.confirm'] };
+
+function renderPage(access = finance) {
+  return render(<DepartmentAccessProvider initialAccess={access} observe={false}><ChartersPage /></DepartmentAccessProvider>);
+}
+
+const failure = (status, code, message) => Object.assign(new Error(message), { status, code });
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.list.mockResolvedValue([CONFIRMED, PENDING]);
+});
+
+describe('ChartersPage reopening of a confirmed prepayment (3-N24)', () => {
+  it('reopens a confirmed prepayment with a reason, the version and the intent key, then re-reads', async () => {
+    const user = userEvent.setup();
+    mocks.reopen.mockResolvedValue({ ...CONFIRMED, prepaymentStatus: 'Pending' });
+    renderPage();
+    const row = (await screen.findByText('PUJ-20261108-004')).closest('tr');
+    expect(within(screen.getByText('PUJ-20261108-005').closest('tr')).queryByRole('button', { name: 'Reabrir cotización' }))
+      .not.toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'Reabrir cotización' }));
+    const form = within(row).getByRole('form', { name: 'Reabrir cotización de PUJ-20261108-004' });
+    expect(form).toHaveTextContent(/Prepago anterior: .*180.* · TRF-001/);
+    const submit = within(form).getByRole('button', { name: 'Reabrir' });
+    expect(submit).toBeDisabled();
+    await user.type(within(form).getByLabelText('Motivo de la reapertura (8 a 500 caracteres)'), '  Pidió otro remolque ');
+    await user.click(submit);
+    await waitFor(() => expect(mocks.reopen).toHaveBeenCalledWith(CONFIRMED.id,
+      { reason: 'Pidió otro remolque', version: CONFIRMED.version }, expect.stringMatching(UUID)));
+    expect(await screen.findByText('Cotización reabierta para PUJ-20261108-004: el prepago vuelve a Pendiente.'))
+      .toBeInTheDocument();
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
+  });
+
+  it('explains a refusal by its message, closes the form on a conflict and re-reads', async () => {
+    const user = userEvent.setup();
+    mocks.reopen.mockRejectedValueOnce(failure(409, 'version_conflict',
+      'El charter cambió mientras lo revisaba. Se actualizó la lista; intente de nuevo.'));
+    renderPage();
+    const row = (await screen.findByText('PUJ-20261108-004')).closest('tr');
+    await user.click(within(row).getByRole('button', { name: 'Reabrir cotización' }));
+    await user.type(within(row).getByLabelText('Motivo de la reapertura (8 a 500 caracteres)'), 'Pidió otro remolque');
+    await user.click(within(row).getByRole('button', { name: 'Reabrir' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'El charter cambió mientras lo revisaba. Se actualizó la lista; intente de nuevo.');
+    expect(within(row).queryByRole('form')).not.toBeInTheDocument();
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
+  });
+
+  it('keeps the key of a reopening whose answer was lost', async () => {
+    const user = userEvent.setup();
+    mocks.reopen
+      .mockRejectedValueOnce(failure(null, null, 'No se pudo confirmar la reapertura. Actualice la lista antes de intentarlo de nuevo.'))
+      .mockResolvedValueOnce({ ...CONFIRMED, prepaymentStatus: 'Pending' });
+    renderPage();
+    const row = (await screen.findByText('PUJ-20261108-004')).closest('tr');
+    await user.click(within(row).getByRole('button', { name: 'Reabrir cotización' }));
+    await user.type(within(row).getByLabelText('Motivo de la reapertura (8 a 500 caracteres)'), 'Pidió otro remolque');
+    await user.click(within(row).getByRole('button', { name: 'Reabrir' }));
+    expect(await screen.findByText(/No se pudo confirmar la reapertura/)).toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'Reabrir' }));
+    await waitFor(() => expect(mocks.reopen).toHaveBeenCalledTimes(2));
+    expect(mocks.reopen.mock.calls[1][2]).toBe(mocks.reopen.mock.calls[0][2]);
+  });
+
+  it('offers no reopening without the confirm permission or without the version of an older server', async () => {
+    const { unmount } = renderPage({ kind: 'Member', permissions: ['finance.charters.read'] });
+    expect(await screen.findByText('PUJ-20261108-004')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reabrir cotización' })).not.toBeInTheDocument();
+    unmount();
+    mocks.list.mockResolvedValueOnce([{ ...CONFIRMED, version: null }]);
+    renderPage();
+    expect(await screen.findByText('PUJ-20261108-004')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reabrir cotización' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the empty, recoverable error and unauthorized states', async () => {
+    const user = userEvent.setup();
+    mocks.list.mockResolvedValueOnce([]);
+    const { unmount } = renderPage();
+    expect(await screen.findByText('Sin charters')).toBeInTheDocument();
+    unmount();
+    mocks.list.mockRejectedValueOnce(failure(500, null, 'No se pudieron cargar los charters. Intente nuevamente.'));
+    const second = renderPage();
+    expect(await screen.findByText('No se pudieron cargar los charters. Intente nuevamente.')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('PUJ-20261108-004')).toBeInTheDocument();
+    second.unmount();
+    mocks.list.mockRejectedValueOnce(failure(403, null, 'Su acceso no incluye los charters de Finanzas.'));
+    renderPage();
+    expect(await screen.findByText('Su acceso no incluye los charters de Finanzas.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+  });
+});

@@ -82,18 +82,44 @@ public sealed record OccReviewMilestoneData(string Code, DateTimeOffset ActualAt
 public sealed record OccReviewTimingData(decimal? GroundMinutes, int? AllowedGroundMinutes, decimal? ArrivalDelayMinutes,
     string? AircraftCategory);
 
-/// <summary>Everything OCC closes the operation with (ADR-0034).</summary>
+/// <summary>A service in exception OCC excluded from billing in the review, with its reason (3-N11).</summary>
+public sealed record OccReviewBillingExclusionData(Guid ServiceId, string Reason, DateTimeOffset ExcludedAt);
+
+/// <summary>
+/// Everything OCC closes the operation with (ADR-0034). The charge options leave out what each service's contract
+/// excludes (3-N29); the billing exclusions are the services in exception OCC excluded from billing (3-N11).
+/// </summary>
 public sealed record OccReviewCloseData(
     IReadOnlyList<OccReviewMilestoneData> Milestones,
     IReadOnlyList<OccReviewChargeData> Charges,
     IReadOnlyList<OccReviewChargeOptionData> ChargeOptions,
     OccReviewTimingData Timing,
     bool CanAdjustCharges,
-    int DamageCount);
+    int DamageCount,
+    IReadOnlyList<OccReviewBillingExclusionData>? BillingExclusions = null);
 
 public sealed record OccReviewDecisionData(
     string Outcome, string? Reason, DateTimeOffset DecidedAt);
 
+/// <summary>An approval OCC reopened as this revision (3-H): which revision, why, when and who.</summary>
+public sealed record OccReviewReopeningData(int FromRevisionNumber, string Reason, DateTimeOffset ReopenedAt,
+    string ReopenedBy);
+
+/// <summary>State of the Service Order OCC approves (3-N02).</summary>
+public static class ServiceOrderStates
+{
+    /// <summary>A version with the current content carries every required signature.</summary>
+    public const string FullySigned = "Signed";
+
+    /// <summary>OCC corrected a signed Service Order after the signature, with its reason.</summary>
+    public const string Corrected = "Corrected";
+
+    /// <summary>It was signed, but its content changed afterwards: it must be signed again.</summary>
+    public const string Stale = "Stale";
+
+    /// <summary>It was never fully signed.</summary>
+    public const string NeverSigned = "Unsigned";
+}
 public sealed record OccReviewDetailData(
     Guid OperationId,
     Guid SubmissionId,
@@ -118,7 +144,9 @@ public sealed record OccReviewDetailData(
     IReadOnlyList<OccReviewIncidentData> Incidents,
     OccReviewDecisionData? Decision,
     string ConcurrencyToken,
-    OccReviewCloseData? Close = null);
+    OccReviewCloseData? Close = null,
+    string? ServiceOrderState = null,
+    OccReviewReopeningData? Reopening = null);
 
 public sealed record OccReviewDetailResult(OccReviewDetailData? Detail, OccReviewFailure? Failure)
 {
@@ -127,6 +155,10 @@ public sealed record OccReviewDetailResult(OccReviewDetailData? Detail, OccRevie
     public static OccReviewDetailResult Failed(OccReviewFailure failure) => new(null, failure);
 }
 
+/// <summary>
+/// OCC's decision on the pending hand-off. <c>IdempotencyKey</c> is optional while older callers exist (expand): with
+/// one, a retry replays the first answer.
+/// </summary>
 public sealed record OccReviewDecisionWriteRequest(
     Guid ActorAccountId,
     IReadOnlyCollection<Guid> AllowedStationIds,
@@ -136,7 +168,8 @@ public sealed record OccReviewDecisionWriteRequest(
     string Outcome,
     string? Reason,
     Guid CorrelationId,
-    string? RequestId);
+    string? RequestId,
+    Guid? IdempotencyKey = null);
 
 /// <summary>OCC adds a charge to a service, or removes one, while reviewing; the reason is audited (ADR-0034).</summary>
 public sealed record OccReviewChargeAdjustRequest(
@@ -150,11 +183,60 @@ public sealed record OccReviewChargeAdjustRequest(
     Guid? MarkId,
     string Reason,
     Guid CorrelationId,
-    string? RequestId);
+    string? RequestId,
+    Guid? IdempotencyKey = null);
 
-public sealed record OccReviewChargeAdjustResult(string? ConcurrencyToken, OccReviewFailure? Failure)
+/// <summary>
+/// The new review version of an adjustment, or why it was refused; <c>Code</c> is the Problem Details code of a
+/// refusal (<c>charge_excluded_by_contract</c>, <c>review_closed</c>…).
+/// </summary>
+public sealed record OccReviewChargeAdjustResult(string? ConcurrencyToken, OccReviewFailure? Failure, string? Code = null)
 {
     public bool IsSuccess => ConcurrencyToken is not null && Failure is null;
+
+    public static OccReviewChargeAdjustResult Failed(OccReviewFailure failure, string? code = null) =>
+        new(null, failure, code);
+}
+
+/// <summary>
+/// OCC excludes a service in exception from billing in the review, or includes it again (3-N11), with a reason; the
+/// review version moves like with any adjustment.
+/// </summary>
+public sealed record OccReviewBillingExclusionRequest(
+    Guid ActorAccountId,
+    IReadOnlyCollection<Guid> AllowedStationIds,
+    Guid OperationId,
+    Guid ServiceId,
+    Guid SubmissionId,
+    string ConcurrencyToken,
+    bool Excluded,
+    string Reason,
+    Guid IdempotencyKey,
+    Guid CorrelationId,
+    string? RequestId);
+
+/// <summary>OCC reopens an approval nothing was invoiced from yet as a new pending revision (3-H).</summary>
+public sealed record OccReviewReopenRequest(
+    Guid ActorAccountId,
+    IReadOnlyCollection<Guid> AllowedStationIds,
+    Guid OperationId,
+    Guid SubmissionId,
+    string ConcurrencyToken,
+    string Reason,
+    Guid IdempotencyKey,
+    Guid CorrelationId,
+    string? RequestId);
+
+/// <summary>The revision a reopening created and the review version to decide it with.</summary>
+public sealed record OccReviewReopenData(Guid OperationId, Guid SubmissionId, int RevisionNumber, string Status,
+    string ReviewVersion);
+
+public sealed record OccReviewReopenResult(OccReviewReopenData? Data, OccReviewFailure? Failure, string? Code = null,
+    bool Replayed = false)
+{
+    public bool IsSuccess => Data is not null && Failure is null;
+
+    public static OccReviewReopenResult Failed(OccReviewFailure failure, string? code = null) => new(null, failure, code);
 }
 
 public sealed record OccReviewDecisionWriteData(
@@ -165,15 +247,21 @@ public sealed record OccReviewDecisionWriteData(
     DateTimeOffset DecidedAt,
     string? Reason);
 
+/// <summary>
+/// A recorded decision, or why it was refused; <c>Code</c> is the Problem Details code of a refusal
+/// (<c>service_order_unsigned</c>, <c>review_already_decided</c>…).
+/// </summary>
 public sealed record OccReviewDecisionWriteResult(
     OccReviewDecisionWriteData? Decision,
     OccReviewFailure? Failure,
-    Guid? CommitAuditId)
+    Guid? CommitAuditId,
+    string? Code = null)
 {
     public bool IsSuccess => Decision is not null && Failure is null;
 
     public static OccReviewDecisionWriteResult Success(
         OccReviewDecisionWriteData decision, Guid auditId) => new(decision, null, auditId);
 
-    public static OccReviewDecisionWriteResult Failed(OccReviewFailure failure) => new(null, failure, null);
+    public static OccReviewDecisionWriteResult Failed(OccReviewFailure failure, string? code = null) =>
+        new(null, failure, null, code);
 }

@@ -59,4 +59,38 @@ describe("Charter client (ADR-0033)", () => {
     }, { headers: { etag: `"${"a".repeat(64)}"` } }) });
     await expect(client.getOccPlanningOptions(operationId)).resolves.toMatchObject({ isCharter: true, contract: null });
   });
+
+  it("reopens a confirmed prepayment with its key, reason and version (3-N24)", async () => {
+    const financeCharter = {
+      id: "90000000-0000-7000-8000-000000000001", operationId, operationCode: "PUJ-20261108-001",
+      operationDate: "2026-11-08", stationCode: "PUJ", airlineName: "Charter Air", currencyCode: "USD", servicesTotal: 260,
+      requestSigned: true, prepaymentStatus: "Pending", prepaymentAmount: 260, prepaymentReference: "TRF-0001",
+      prepaymentConfirmedAt: null, version: "AAAAAAAAB9E=",
+    };
+    const requests: Array<{ url: string; headers: Headers; body: string }> = [];
+    let answer: unknown = financeCharter;
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async (input, init) => {
+      requests.push({ url: String(input).replace("https://api.example.test", ""), headers: new Headers(init?.headers),
+        body: String(init?.body ?? "") });
+      return Response.json(answer);
+    } });
+    await expect(client.reopenFinanceCharterPrepayment(financeCharter.id,
+      { reason: "  El transportista   pidió más servicios ", version: "AAAAAAAAB9A=" }, key))
+      .resolves.toEqual(financeCharter);
+    expect(requests[0]!.url).toBe(`/api/v1/finance/charters/${financeCharter.id}/prepayment/reopening`);
+    expect(JSON.parse(requests[0]!.body)).toEqual({ reason: "El transportista pidió más servicios", version: "AAAAAAAAB9A=" });
+    expect(requests[0]!.headers.get("idempotency-key")).toBe(key);
+    await expect(client.reopenFinanceCharterPrepayment(financeCharter.id, { reason: "corta", version: "AAAA" }, key))
+      .rejects.toBeInstanceOf(TypeError);
+    // An older server does not send the version; another charter in the answer is refused.
+    const { version: _version, ...older } = financeCharter;
+    answer = { charters: [older] };
+    await expect(client.getFinanceCharters()).resolves.toEqual({ charters: [older] });
+    answer = { ...financeCharter, id: "90000000-0000-7000-8000-000000000099" };
+    await expect(client.reopenFinanceCharterPrepayment(financeCharter.id,
+      { reason: "El transportista pidió más servicios", version: "AAAAAAAAB9A=" }, key))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+    answer = { charters: [{ ...financeCharter, version: 7 }] };
+    await expect(client.getFinanceCharters()).rejects.toMatchObject({ kind: "malformed-response" });
+  });
 });

@@ -7,6 +7,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
+import { incidentStatusLabel } from '../../features/assigned-operations/presentation';
 import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
 import {
@@ -263,7 +264,7 @@ export default function IncidentScreen() {
           {incidentsNewestFirst.map(incident => (
             <Card key={incident.id} style={styles.reportCard}>
               <View style={styles.reportTop}>
-                <StatusPill text={incident.status === 'Open' ? 'REGISTRADA' : incident.status.toUpperCase()} tone="green" />
+                <StatusPill text={incidentStatusLabel(incident.status).toUpperCase()} tone="green" />
                 <Text style={styles.time}>{displayTime(incident.reportedAt)}</Text>
               </View>
               <Text style={styles.reportTitle}>{labelFor(incident.incidentType)} · {labelFor(incident.severity)}</Text>

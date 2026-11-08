@@ -62,7 +62,12 @@ public static class DepartmentPermissionCatalog
                 // Shared ramp tablets (2-N02): who holds each one; OCC frees a tablet or revokes a lost one.
                 Module("operations", "devices", "Tablets", "Operación", null, Read(),
                     Other("unbind", "Desvincular tablets"), Other("revoke", "Revocar tablets perdidas")),
-                Module("operations", "review", "Revisión", "Operación", null, Read(), Other("decide", "Aprobar o devolver entregas")),
+                // 3-H: an approval nothing was invoiced from yet is reopened as a new review, with its reason.
+                Module("operations", "review", "Revisión", "Operación", null, Read(), Other("decide", "Aprobar o devolver entregas"),
+                    Other("reopen", "Reabrir operaciones aprobadas sin facturar")),
+                // 3-G: OCC follows, reports and manages the incidents of an operation inside Revisión and Planificación.
+                Module("operations", "incidents", "Incidencias", "Operación", "review", Read(),
+                    Update("Reportar y gestionar incidencias")),
                 Module("operations", "service_closures", "Clausura de servicios", "Operación", "review",
                     Read(), Create("Solicitar clausura")),
                 Module("operations", "reports", "Reportes", "Operación", null, Read(), Other("export", "Exportar")),

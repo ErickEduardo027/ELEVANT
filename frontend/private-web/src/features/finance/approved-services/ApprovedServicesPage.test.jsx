@@ -76,6 +76,19 @@ describe('ApprovedServicesPage', () => {
     expect(screen.queryByText('XX201')).not.toBeInTheDocument();
   });
 
+  it('names a service OCC excluded and one carrying a charge its contract excludes (3-N11, 3-N29)', async () => {
+    vi.mocked(getApprovedServices).mockResolvedValue({ hasMore: false, services: [
+      { ...SERVICES[1], id: '70000000-0000-7000-8000-000000000019', flightNumber: 'XX202', executedQuantity: 2,
+        blockingReason: 'excluded_in_review' },
+      { ...SERVICES[1], id: '70000000-0000-7000-8000-000000000020', flightNumber: 'XX203', executedQuantity: 2,
+        blockingReason: 'charge_excluded_by_contract' },
+    ] });
+    render(<ApprovedServicesPage />);
+    expect(await screen.findByText('Excluido por OCC en la revisión')).toBeInTheDocument();
+    expect(screen.getByText('Lleva un cargo que el contrato excluye: pida a OCC reabrir la revisión')).toBeInTheDocument();
+    expect(screen.queryByText(/excluded_in_review|charge_excluded_by_contract/)).not.toBeInTheDocument();
+  });
+
   it('rejects an oversized range before a request and recovers on retry', async () => {
     vi.mocked(getApprovedServices).mockRejectedValueOnce(new Error('network'));
     render(<ApprovedServicesPage />);

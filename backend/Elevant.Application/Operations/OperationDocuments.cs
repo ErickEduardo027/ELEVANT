@@ -71,9 +71,15 @@ public sealed record DamageMarkData(Guid Id, decimal X, decimal Y, string Note, 
 public sealed record OperationDocumentsView(Guid OperationId, IReadOnlyList<OperationDocumentData> Documents,
     IReadOnlyList<DamageMarkData> DamageMarks);
 
-/// <summary>A form drawn from a stored, signed snapshot (what the airline sees).</summary>
+/// <summary>A correction OCC made to a signed Service Order after the signature (3-N02): why, when and who.</summary>
+public sealed record OperationDocumentCorrectionData(string Reason, DateTimeOffset CorrectedAt, string CorrectedBy);
+
+/// <summary>
+/// A form drawn from a stored, signed snapshot (what the airline sees). A Service Order OCC corrected after the
+/// signature (3-N02) is the corrected content with the signatures of the version it corrects and its corrections.
+/// </summary>
 public sealed record SignedOperationDocument(OperationDocumentContent Content, string ContentSha256,
-    IReadOnlyList<OperationDocumentSignatureData> Signatures);
+    IReadOnlyList<OperationDocumentSignatureData> Signatures, IReadOnlyList<OperationDocumentCorrectionData>? Corrections = null);
 
 public sealed record DamagePhoto(byte[] Content, string ContentType);
 
@@ -132,17 +138,31 @@ public interface IOperationDocumentStore
     Task<DamagePhoto?> ReadDamagePhotoForOccAsync(IReadOnlyCollection<Guid> stations, Guid operationId, Guid markId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>The latest fully signed Service Order of an operation of the airline's organization.</summary>
+    /// <summary>
+    /// The Service Order of an operation of the airline's organization as it stands: the current one when it is
+    /// signed or corrected by OCC after the signature (3-N02), otherwise the latest fully signed one.
+    /// </summary>
     Task<SignedOperationDocument?> ReadSignedServiceOrderForAirlineAsync(Guid organizationId, Guid operationId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 3-N02: the current Service Order of an operation of OCC's stations when OCC corrected it after the signature,
+    /// with the signatures of the version it corrects and its corrections; null when it is not corrected.
+    /// </summary>
+    Task<SignedOperationDocument?> ReadCorrectedServiceOrderForOccAsync(IReadOnlyCollection<Guid> stations,
+        Guid operationId, CancellationToken cancellationToken = default);
 }
 
 public interface IOperationDocumentPdfRenderer
 {
-    /// <param name="signatures">Signatures valid for this exact content.</param>
+    /// <param name="content">The form's content, as stored or assembled.</param>
+    /// <param name="contentSha256">The SHA-256 of its canonical JSON, printed in the footer.</param>
+    /// <param name="signatures">Signatures valid for this exact content, or for the version a correction corrects.</param>
     /// <param name="damagePhotos">Photos to append, keyed by damage mark id (may be empty).</param>
+    /// <param name="corrections">OCC's corrections after the signature (3-N02); none for a form as signed.</param>
     byte[] Render(OperationDocumentContent content, string contentSha256,
-        IReadOnlyList<OperationDocumentSignatureData> signatures, IReadOnlyDictionary<Guid, DamagePhoto> damagePhotos);
+        IReadOnlyList<OperationDocumentSignatureData> signatures, IReadOnlyDictionary<Guid, DamagePhoto> damagePhotos,
+        IReadOnlyList<OperationDocumentCorrectionData>? corrections = null);
 }
 
 /// <summary>Which form exists for an operation, who signs it, and how its content is hashed (ADR-0032).</summary>
@@ -308,6 +328,11 @@ public sealed class OperationDocumentHandler(IActorContextResolver actors, IOper
         var view = await store.ReadForOccAsync(stations!, operationId, cancellationToken);
         var document = view?.Documents.SingleOrDefault(item => item.Content.Kind == kind);
         if (view is null || document is null) return (null, null, OccReviewFailure.NotFound);
+        // 3-N02: a Service Order OCC corrected after the signature prints the signatures and the correction.
+        if (kind == OperationDocumentKind.ServiceOrder &&
+            await store.ReadCorrectedServiceOrderForOccAsync(stations!, operationId, cancellationToken) is { } corrected)
+            return (renderer.Render(corrected.Content, corrected.ContentSha256, corrected.Signatures,
+                new Dictionary<Guid, DamagePhoto>(), corrected.Corrections), FileName(corrected.Content), null);
         var photos = new Dictionary<Guid, DamagePhoto>();
         if (kind == OperationDocumentKind.FlightReport)
             foreach (var mark in view.DamageMarks.Where(mark => mark.HasPhoto))

@@ -19,9 +19,11 @@ import {
   normalizedCharterDetails,
   normalizedCharterService,
   normalizedPrepayment,
+  normalizedPrepaymentReopening,
   type AddCharterServiceCommand,
   type CharterDetailsCommand,
   type ConfirmCharterPrepaymentCommand,
+  type ReopenCharterPrepaymentCommand,
 } from "./charters";
 import {
   AIRCRAFT_SIZE_CATEGORIES,
@@ -31,16 +33,30 @@ import {
   isGroundTimeAllowanceResponse,
   isOccReviewChargeAdjustResponse,
   isOccReviewClose,
+  isOccReviewReopenResponse,
   normalizedAddCharge,
   normalizedAllowance,
+  normalizedBillingExclusion,
   normalizedHoliday,
   normalizedRemoveCharge,
+  normalizedReopenReview,
+  SERVICE_ORDER_STATES,
   type AddFinanceHolidayCommand,
   type AddOccReviewChargeCommand,
   type AircraftSizeCategory,
   type RemoveOccReviewChargeCommand,
+  type ReopenOccReviewCommand,
   type SetGroundTimeAllowanceCommand,
+  type SetOccReviewServiceBillingExclusionCommand,
 } from "./operationalClose";
+import {
+  isOccIncident,
+  isOccIncidentList,
+  normalizedOccIncidentReport,
+  normalizedOccIncidentStatus,
+  type ChangeOccIncidentStatusCommand,
+  type ReportOccIncidentCommand,
+} from "./occIncidents";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
 import {
   isOccCharterAirline,
@@ -420,6 +436,12 @@ import {
   getGetRampCharterUrl,
   getAddOccReviewChargeUrl,
   getRemoveOccReviewChargeUrl,
+  getSetOccReviewServiceBillingExclusionUrl,
+  getReopenOccReviewUrl,
+  getGetOccOperationIncidentsUrl,
+  getReportOccIncidentUrl,
+  getChangeOccIncidentStatusUrl,
+  getReopenFinanceCharterPrepaymentUrl,
   getGetFinanceCloseRulesUrl,
   getSetGroundTimeAllowanceUrl,
   getAddFinanceHolidayUrl,
@@ -626,6 +648,9 @@ import {
   type AirlineServiceOrderResponse,
   type RampCharterResponse,
   type OccReviewChargeAdjustResponse,
+  type OccReviewReopenResponse,
+  type OccIncidentListResponse,
+  type OccIncidentResponse,
   type FinanceCloseRulesResponse,
   type GroundTimeAllowanceResponse,
   type FinanceHolidayResponse,
@@ -841,7 +866,11 @@ export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body"
 export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method"> & {
   installationId?: string;
 };
-export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
+/**
+ * The decision and the charge adjustments of the OCC review. The intent's Idempotency-Key is optional while older
+ * callers exist (phase 3, block D, expand); private-web always sends it.
+ */
+export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method"> & { readonly idempotencyKey?: string | null };
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -1275,6 +1304,21 @@ export interface ElevantApiClient {
     options?: DecideOccReviewOptions): Promise<OccReviewChargeAdjustResponse>;
   removeOccReviewCharge(operationId: string, markId: string, command: RemoveOccReviewChargeCommand, etag: string,
     options?: DecideOccReviewOptions): Promise<OccReviewChargeAdjustResponse>;
+  /** 3-N11: OCC excludes a service in exception from billing, or includes it again; returns the new review version. */
+  setOccReviewServiceBillingExclusion(operationId: string, serviceId: string,
+    command: SetOccReviewServiceBillingExclusionCommand, etag: string, idempotencyKey: string,
+    options?: GetOccReviewOptions): Promise<OccReviewChargeAdjustResponse>;
+  /** 3-H: OCC reopens an approval nothing was invoiced from yet as a new pending revision (its ETag is the answer's). */
+  reopenOccReview(operationId: string, command: ReopenOccReviewCommand, etag: string, idempotencyKey: string,
+    options?: GetOccReviewOptions): Promise<OccReviewReopenResponse>;
+  /** 3-G: the live incidents of an operation of OCC's stations, with their history. */
+  getOccOperationIncidents(operationId: string, options?: GetOccReviewOptions): Promise<OccIncidentListResponse>;
+  /** 3-G: OCC reports an incident of an operation still open; the same key replays it. */
+  reportOccIncident(operationId: string, command: ReportOccIncidentCommand, idempotencyKey: string,
+    options?: GetOccReviewOptions): Promise<OccIncidentResponse>;
+  /** 3-G: OCC moves an incident with a note, against the version it saw. */
+  changeOccIncidentStatus(incidentId: string, command: ChangeOccIncidentStatusCommand, version: string,
+    idempotencyKey: string, options?: GetOccReviewOptions): Promise<OccIncidentResponse>;
   /** Finance's ground time allowances and holiday calendar (ADR-0034). */
   getFinanceCloseRules(options?: GetHumanResourcesReportOptions): Promise<FinanceCloseRulesResponse>;
   setGroundTimeAllowance(category: AircraftSizeCategory, command: SetGroundTimeAllowanceCommand,
@@ -1726,6 +1770,9 @@ export interface ElevantApiClient {
   /** Finance: charters of its stations and their prepayment. */
   getFinanceCharters(options?: GetHumanResourcesReportOptions): Promise<FinanceCharterListResponse>;
   confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand,
+    options?: GetHumanResourcesReportOptions): Promise<FinanceCharterResponse>;
+  /** 3-N24: Finance reopens a confirmed prepayment as a new quotation, with its reason and the version it saw. */
+  reopenFinanceCharterPrepayment(charterId: string, command: ReopenCharterPrepaymentCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<FinanceCharterResponse>;
   /** Saves passengers, MTOW and the registration correction typed once on the ramp. */
   updateRampFlightData(
@@ -3629,8 +3676,17 @@ function isOccReviewDetailResponse(
       "operationCode", "operationDate", "stationId", "stationCode", "ianaTimeZone",
       "airlineName", "agentName", "plannedStartAt", "plannedEndAt", "actualStartAt",
       "actualEndAt", "submittedAt", "agentNote", "checklistStatus", "checklistAnswers",
-      "services", "incidents", "decision", "reviewVersion", "close"]) &&
+      "services", "incidents", "decision", "reviewVersion", "close", "serviceOrderState", "reopening"]) &&
     (value.close === undefined || value.close === null || isOccReviewClose(value.close)) &&
+    // Phase 3, block D: the state of the Service Order (3-N02) and the approval a revision reopens (3-H); both may be
+    // missing on servers before it.
+    isOptionalNullable(value.serviceOrderState, (state) => isOneOf(state, SERVICE_ORDER_STATES)) &&
+    isOptionalNullable(value.reopening, (reopening) => isRecord(reopening) &&
+      hasOnlyKeys(reopening, ["fromRevisionNumber", "reason", "reopenedAt", "reopenedBy"]) &&
+      isInt32(reopening.fromRevisionNumber) && reopening.fromRevisionNumber > 0 &&
+      isNonEmptyString(reopening.reason) && reopening.reason.length <= 2000 &&
+      isDateTimeOffset(reopening.reopenedAt) && isNonEmptyString(reopening.reopenedBy) &&
+      reopening.reopenedBy.length <= 200) &&
     isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
     isUuid(value.submissionId) && isInt32(value.revisionNumber) && value.revisionNumber > 0 &&
     isOneOf(value.status, occReviewStatuses) && isNonEmptyString(value.operationCode) &&
@@ -6069,10 +6125,12 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   };
 
   const reviewChargeWrite = async (path: string, body: unknown, etag: string, options?: DecideOccReviewOptions) => {
-    const headers = headersFrom(options?.headers, "Request headers");
+    const { idempotencyKey, ...init } = options ?? {};
+    const headers = headersFrom(init.headers, "Request headers");
     headers.set("content-type", "application/json");
     headers.set("if-match", validatedStrongEtag(etag));
-    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...init, method: "POST", headers, body: JSON.stringify(body) }, true);
     if (!isOccReviewChargeAdjustResponse(result.data)) throw malformedResponse(result.status);
     return result.data;
   };
@@ -7387,6 +7445,62 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (body === null) throw new TypeError("The charge adjustment is invalid.");
       return reviewChargeWrite(getRemoveOccReviewChargeUrl(operation, mark), body, etag, options);
     },
+    async setOccReviewServiceBillingExclusion(operationId: string, serviceId: string,
+      command: SetOccReviewServiceBillingExclusionCommand, etag: string, idempotencyKey: string,
+      options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const service = validatedUuid(serviceId, "serviceId");
+      const body = normalizedBillingExclusion(command);
+      if (body === null) throw new TypeError("The billing exclusion is invalid.");
+      return reviewChargeWrite(getSetOccReviewServiceBillingExclusionUrl(operation, service), body, etag,
+        { ...options, idempotencyKey: validatedUuid(idempotencyKey, "idempotencyKey") });
+    },
+    async reopenOccReview(operationId: string, command: ReopenOccReviewCommand, etag: string, idempotencyKey: string,
+      options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const body = normalizedReopenReview(command);
+      if (body === null) throw new TypeError("The reopening is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("if-match", validatedStrongEtag(etag));
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getReopenOccReviewUrl(operation),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isOccReviewReopenResponse(result.data, operation) || result.data.reviewVersion !== result.etag)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccOperationIncidents(operationId: string, options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(getGetOccOperationIncidentsUrl(operation), { ...options, method: "GET" }, true);
+      if (!isOccIncidentList(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async reportOccIncident(operationId: string, command: ReportOccIncidentCommand, idempotencyKey: string,
+      options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const body = normalizedOccIncidentReport(command);
+      if (body === null) throw new TypeError("The incident report is invalid.");
+      return masterDataCommand("POST", getReportOccIncidentUrl(operation), body, idempotencyKey, options,
+        (value): value is OccIncidentResponse => isOccIncident(value));
+    },
+    async changeOccIncidentStatus(incidentId: string, command: ChangeOccIncidentStatusCommand, version: string,
+      idempotencyKey: string, options?: GetOccReviewOptions) {
+      const incident = validatedUuid(incidentId, "incidentId");
+      const body = normalizedOccIncidentStatus(command);
+      if (body === null || typeof version !== "string" || version.length < 1 || version.length > 64 ||
+          version.includes("\""))
+        throw new TypeError("The incident change is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      headers.set("if-match", "\"" + version + "\"");
+      const result = await execute(getChangeOccIncidentStatusUrl(incident),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isOccIncident(result.data) || result.data.id.toLowerCase() !== incident)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async getFinanceCloseRules(options?: GetHumanResourcesReportOptions) {
       const result = await execute(getGetFinanceCloseRulesUrl(), { ...options, method: "GET" }, true);
       if (!isFinanceCloseRulesResponse(result.data)) throw malformedResponse(result.status);
@@ -7428,11 +7542,13 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     ) {
       const operation = validatedUuid(operationId, "operationId");
       const decision = validatedOccReviewDecisionRequest(request);
-      const headers = headersFrom(options?.headers, "Request headers");
+      const { idempotencyKey, ...init } = options ?? {};
+      const headers = headersFrom(init.headers, "Request headers");
       headers.set("content-type", "application/json");
       headers.set("if-match", validatedStrongEtag(etag));
+      if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
       const result = await execute(getDecideOccReviewUrl(operation),
-        { ...options, method: "POST", headers, body: JSON.stringify(decision) }, true);
+        { ...init, method: "POST", headers, body: JSON.stringify(decision) }, true);
       if (!isOccReviewDecisionResponse(result.data, operation, decision))
         throw malformedResponse(result.status);
       return result.data;
@@ -8466,6 +8582,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const result = await execute(getConfirmFinanceCharterPrepaymentUrl(charter),
         { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
       if (!isFinanceCharterResponse(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async reopenFinanceCharterPrepayment(charterId: string, command: ReopenCharterPrepaymentCommand,
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      const charter = validatedUuid(charterId, "charterId");
+      const body = normalizedPrepaymentReopening(command);
+      if (body === null) throw new TypeError("The prepayment reopening is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getReopenFinanceCharterPrepaymentUrl(charter),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isFinanceCharterResponse(result.data) || result.data.id.toLowerCase() !== charter)
+        throw malformedResponse(result.status);
       return result.data;
     },
     async updateRampFlightData(

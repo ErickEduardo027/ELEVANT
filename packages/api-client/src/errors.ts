@@ -149,18 +149,39 @@ const ACCESS_CODES = ["device_revoked", "device_in_use_by_active_agent", "device
  */
 const RAMP_EVIDENCE_CODES = ["time_outside_operation_window", "milestone_out_of_order", "service_time_out_of_order",
   "ramp_operation_state_conflict", "invalid_ramp_command"] as const;
+/**
+ * OCC review (phase 3, block D): a malformed review command; OCC approves only the Service Order the airline and AVIAM
+ * signed, or its recorded correction (3-N02); the hand-off was decided already; a reopening needs an approval nothing
+ * was invoiced from and a reopened revision is never returned to the ramp (3-H); only a service in exception with an
+ * executed quantity is excluded from billing (3-N11); a charge the contract excludes, that does not apply, already
+ * marked or already removed (3-N29). A closed review is `review_closed` (AIRLINE_PERMIT_CODES).
+ */
+const OCC_REVIEW_CODES = ["invalid_review_request", "service_order_unsigned", "service_order_stale",
+  "review_already_decided", "review_not_approved", "reopened_review_cannot_return", "already_invoiced",
+  "billing_exclusion_not_allowed", "charge_excluded_by_contract", "charge_not_applicable", "charge_already_marked",
+  "charge_already_removed"] as const;
+/**
+ * OCC's incidents (phase 3, block D, 3-G): a state change the incident does not take (a closed one is final), an
+ * incomplete report, a time in the future or before the operation's window, and an operation approved or cancelled.
+ */
+const OCC_INCIDENT_CODES = ["incident_transition_invalid", "incident_report_invalid", "incident_occurred_at_invalid",
+  "operation_closed"] as const;
+/** Charter (phase 3, block D, 3-N24): no service is added on a confirmed prepayment; only a confirmed one is reopened. */
+const CHARTER_CODES = ["charter_prepayment_confirmed", "charter_prepayment_not_confirmed"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
   (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number] |
   (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
   (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
-  (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number];
+  (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number] | (typeof OCC_REVIEW_CODES)[number] |
+  (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
-  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES];
+  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES, ...OCC_REVIEW_CODES,
+  ...OCC_INCIDENT_CODES, ...CHARTER_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

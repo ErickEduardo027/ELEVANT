@@ -1,25 +1,34 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import EmptyState from '../../../components/EmptyState';
 import PageHeader from '../../../components/PageHeader';
 import StackedTable from '../../../components/StackedTable';
 import StatusBadge from '../../../components/StatusBadge';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { formatMoney } from '../../../services/financeBookService';
-import { confirmCharterPrepayment, listFinanceCharters } from '../../../services/financeChartersService';
+import {
+  confirmCharterPrepayment, listFinanceCharters, reopenCharterPrepayment,
+} from '../../../services/financeChartersService';
 import { ApprovedServicesIcon } from '../components/icons';
+
+const validReason = value => value.trim().length >= 8 && value.trim().length <= 500;
 
 /**
  * «Charters sin contrato» (ADR-0033): flights served without a contract, priced at the base
  * tariff. The signed Service Request is the flight's agreement; Finance confirms the carrier's
- * prepayment here.
+ * prepayment here, and reopens a confirmed one as a new quotation with a reason (3-N24) so the agent can add services
+ * again. The reopening carries its intent's Idempotency-Key and the charter's version; a refusal re-reads the list.
  */
 export default function ChartersPage() {
   const { access } = useDepartmentAccess();
   const canConfirm = Boolean(access?.can('finance.charters.confirm'));
+  const keys = useRef(createCommandKeyHolder());
   const [state, setState] = useState({ status: 'loading', items: [] });
   const [editing, setEditing] = useState(null);
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
+  const [reopening, setReopening] = useState(null);
+  const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState({ tone: '', text: '' });
 
@@ -38,10 +47,38 @@ export default function ChartersPage() {
   }, [load]);
 
   function startConfirm(item) {
+    setReopening(null);
     setEditing(item.id);
     setAmount(item.servicesTotal != null ? String(item.servicesTotal) : '');
     setReference('');
     setMessage({ tone: '', text: '' });
+  }
+
+  function startReopen(item) {
+    setEditing(null);
+    setReopening(item.id);
+    setReason('');
+    setMessage({ tone: '', text: '' });
+  }
+
+  async function reopen(event, item) {
+    event.preventDefault();
+    if (busy || !validReason(reason)) return;
+    const command = { reason: reason.trim(), version: item.version };
+    setBusy(true);
+    try {
+      await keys.current.run('reopen', { charterId: item.id, ...command },
+        key => reopenCharterPrepayment(item.id, command, key));
+      setMessage({ tone: 'success', text: `Cotización reabierta para ${item.operationCode}: el prepago vuelve a Pendiente.` });
+      setReopening(null);
+    } catch (error) {
+      setMessage({ tone: 'error', text: error.message });
+      // A stale version or a state that moved: the form closes and the list is read again before a new intent.
+      if (error?.status === 409) setReopening(null);
+    } finally {
+      setBusy(false);
+      await load();
+    }
   }
 
   async function confirm(event, item) {
@@ -108,6 +145,27 @@ export default function ChartersPage() {
                     ) : (
                       <button type="button" onClick={() => startConfirm(item)}
                         className="min-h-10 rounded-lg border border-accent-600 px-3 py-2 text-xs font-semibold text-accent-600">Confirmar prepago</button>
+                    ))}
+                    {/* 3-N24: a server before phase 3, block D sends no version, and no reopening is offered. */}
+                    {canConfirm && item.prepaymentStatus === 'Confirmed' && item.version && (reopening === item.id ? (
+                      <form onSubmit={event => void reopen(event, item)} aria-label={`Reabrir cotización de ${item.operationCode}`}
+                        className="space-y-2">
+                        <p className="text-xs">Prepago anterior: {formatMoney(item.prepaymentAmount, item.currencyCode)} · {item.prepaymentReference}.
+                          Vuelve a Pendiente y el agente puede agregar servicios hasta la nueva confirmación.</p>
+                        <label className="block text-xs">Motivo de la reapertura (8 a 500 caracteres)
+                          <textarea required minLength={8} maxLength={500} rows={2} value={reason}
+                            onChange={event => setReason(event.target.value)}
+                            className="mt-1 block w-full rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/15 dark:bg-surface-dark-card" /></label>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="submit" disabled={busy || !validReason(reason)}
+                            className="min-h-10 rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Reabrir</button>
+                          <button type="button" disabled={busy} onClick={() => setReopening(null)}
+                            className="min-h-10 rounded-lg border border-black/15 px-3 py-2 text-xs dark:border-white/15">Cancelar</button>
+                        </div>
+                      </form>
+                    ) : (
+                      <button type="button" onClick={() => startReopen(item)}
+                        className="min-h-10 rounded-lg border border-status-warning px-3 py-2 text-xs font-semibold">Reabrir cotización</button>
                     ))}
                   </td>
                 </tr>

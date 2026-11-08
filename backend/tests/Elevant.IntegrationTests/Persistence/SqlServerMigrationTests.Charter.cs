@@ -195,7 +195,61 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(CharterPrepaymentFailure.Conflict, (await Confirm(300m, "TRF-0002")).Failure);
         Assert.Equal(CharterPrepaymentFailure.NotFound, (await Run(services => services.GetRequiredService<ICharterStore>()
             .ConfirmPrepaymentAsync(finance, [Guid.NewGuid()], charter.Id, 260m, "TRF-0001", "charter-test", ct))).Failure);
+
+        // 6. 3-N24: with the prepayment confirmed no service is added; the receipt keeps the code and replays it.
+        var extra = view.Catalog.First(item => item.Code != "BAGGAGE");
+        var lateKey = Guid.NewGuid();
+        var late = await Add(lateKey, extra.ServiceDefinitionId, 1);
+        Assert.Equal((RampExecutionWriteFailure.Conflict, CharterCodes.PrepaymentConfirmed), (late.Failure, late.Code));
+        Assert.Equal(CharterCodes.PrepaymentConfirmed, (await Add(lateKey, extra.ServiceDefinitionId, 1)).Code);
+        // Finance reopens the quotation with its key, its reason and the version it saw; amount and reference stay.
+        Task<MasterDataResult<CharterPrepaymentItem>> Reopen(string version, string reason, Guid key) => Run(services =>
+            services.GetRequiredService<ICharterStore>().ReopenPrepaymentAsync(finance, [station], charter.Id, reason,
+                version, key, "charter-reopen", ct));
+        var confirmed = Assert.Single(await Run(services => services.GetRequiredService<ICharterStore>()
+            .ListForFinanceAsync([station], ct)), item => item.OperationId == operationId);
+        Assert.Equal("version_conflict", (await Reopen("AAAAAAAAAAA=", "El transportista pidió más servicios",
+            Guid.NewGuid())).Code);
+        var reopenKey = Guid.NewGuid();
+        var reopened = await Reopen(confirmed.Version!, "El transportista pidió más servicios", reopenKey);
+        Assert.Equal(("Pending", (decimal?)260m, "TRF-0001"), (reopened.Value!.PrepaymentStatus,
+            reopened.Value.PrepaymentAmount, reopened.Value.PrepaymentReference));
+        Assert.True((await Reopen(confirmed.Version!, "El transportista pidió más servicios", reopenKey)).Replayed);
+        Assert.Equal("idempotency_conflict", (await Reopen(confirmed.Version!, "Otro motivo con la misma clave",
+            reopenKey)).Code);
+        Assert.Equal(CharterCodes.PrepaymentNotConfirmed, (await Reopen(reopened.Value.Version!,
+            "El transportista pidió más servicios", Guid.NewGuid())).Code);
+
+        // 7. Services are added again; one added by mistake is retired as not performed and no longer counts.
+        Assert.True((await Add(Guid.NewGuid(), extra.ServiceDefinitionId, 1)).IsSuccess);
+        Guid extraLine;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            extraLine = await (from line in setup.OperationServices
+                               join definition in setup.ServiceDefinitions on line.ServiceDefinitionId equals definition.Id
+                               where line.GroundOperationId == operationInternalId && definition.PublicId == extra.ServiceDefinitionId
+                               select line.PublicId).SingleAsync(ct);
+            await setup.Turnarounds.Where(item => item.PublicId == turnaroundId)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.CurrentStatus, TurnaroundStatus.InProgress), ct);
+        }
+        var retireKey = Guid.NewGuid();
+        var retired = await Run(services => services.GetRequiredService<IRampOperationServiceCommandStore>()
+            .TransitionServiceAsync(new RampOperationServiceTransitionWriteRequest(rampAccount, [station], operationId,
+                extraLine, ServiceExecutionStatus.NotPerformed, 0m, "Agregado por error", installation, retireKey, retireKey,
+                "charter-retire"), ct));
+        Assert.True(retired.IsSuccess, retired.Failure?.ToString());
+        Assert.Equal(260m, Assert.Single(await Run(services => services.GetRequiredService<ICharterStore>()
+            .ListForFinanceAsync([station], ct)), item => item.OperationId == operationId).ServicesTotal);
+        var requested = (await Run(services => services.GetRequiredService<IOperationDocumentStore>()
+            .ReadForAgentAsync(rampAccount, [station], operationId, ct)))!.Documents[0].Content;
+        var retiredLine = requested.Services.Single(line => line.Code == extra.Code);
+        Assert.Equal((0m, (decimal?)0m), (retiredLine.Quantity, retiredLine.Amount));
+        Assert.Equal(260m, requested.TotalAmount);
+        Assert.Equal("Confirmed", (await Confirm(260m, "TRF-0002")).Item!.PrepaymentStatus);
         await using var audit = CreateContext(database.ConnectionString);
+        Assert.Equal(1, await audit.AuditEntries.CountAsync(entry => entry.Action == "finance.charter.prepayment_reopened", ct));
+        Assert.Equal(CharterCodes.PrepaymentConfirmed, (await audit.MobileCommandReceipts.AsNoTracking()
+            .SingleAsync(item => item.IdempotencyKey == lateKey.ToString("D"), ct)).ErrorCode);
         Assert.True(await audit.AuditEntries.AnyAsync(entry => entry.Action == "finance.charter.prepayment_confirmed", ct));
         Assert.True(await audit.AuditEntries.AnyAsync(entry => entry.Action == "ramp.charter.service.added", ct));
     }

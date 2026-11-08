@@ -263,10 +263,24 @@ cola limitada por la estación del actor, detalle de la última entrega y decisi
 individual. Muestra checklist, servicios, incidencias y nota del agente sin
 convertir los fixtures históricos en datos reales. Aprobar o devolver requiere
 confirmación; devolver exige un motivo. Cada decisión usa `If-Match` con la
-versión fuerte del detalle. Ante `409`, `412` o un resultado de red ambiguo, la
-web refresca la cola y el detalle y no reenvía el comando automáticamente.
-No ofrece aprobación masiva ni simula firmas, adjuntos o envío a Finanzas. Las
-devoluciones aún no tienen un flujo de corrección y reentrega en Mobile Agent.
+versión fuerte del detalle y la `Idempotency-Key` de su intención. Ante `409`,
+`412` o un resultado de red ambiguo, la web refresca la cola y el detalle y no
+reenvía el comando automáticamente; un reintento de la misma intención reutiliza
+su clave. La cola y el detalle se releen solos con el aviso `occ_review`.
+No ofrece aprobación masiva ni simula firmas, adjuntos o envío a Finanzas.
+
+«Aprobar» solo se habilita con la Orden de Servicio firmada o corregida por OCC;
+un ajuste de cargos o una exclusión de facturación después de la firma queda
+como corrección de OCC. Un servicio en excepción con cantidad se factura salvo
+que OCC lo excluya con motivo. Con `operations.review.reopen`, OCC reabre una
+aprobación no facturada como una revisión nueva que solo se corrige y aprueba en
+OCC. El panel «Incidencias de la operación» (`operations.incidents.*`) lista las
+incidencias vivas, las cambia de estado con nota y reporta las de OCC en hora
+local de la estación, también desde el detalle del vuelo en Planificación y
+mientras la operación sigue en rampa. Los códigos de estados, servicios,
+checklist, incidencias, hitos y unidades se muestran en español
+(`src/features/operations/operationLabels.js`) y los errores, por su `code` de
+Problem Details.
 
 La pantalla ofrece carga, cola vacía, error recuperable, sesión caducada,
 permiso denegado y ausencia de scopes. El backend sigue siendo quien impone

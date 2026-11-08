@@ -404,17 +404,58 @@ a 60 minutos y usa 15 por defecto.
   de una estación autorizada, primero las pendientes, con límite de 100 y
   `hasMore` explícito. `GET /api/v1/occ/review/operations/{operationId}`
   devuelve el detalle canónico de la última entrega: checklist, servicios,
-  incidencias y decisión registrada. Su `ETag` fuerte se repite en
-  `reviewVersion` y representa la versión de operación y entrega observada.
+  incidencias y decisión registrada, el estado de la Orden de Servicio
+  (`serviceOrderState`: `Signed`, `Corrected`, `Stale` o `Unsigned`), la
+  reapertura que dio origen a la revisión (`reopening`) y, en el cierre, los
+  servicios excluidos de la facturación (`billingExclusions`). Su `ETag` fuerte
+  se repite en `reviewVersion` y representa la versión de operación y entrega
+  observada.
 - `POST /api/v1/occ/review/operations/{operationId}/decision` aprueba o
-  devuelve una sola entrega pendiente. Exige `If-Match` con ese ETag,
-  `submissionId` exacto y un motivo de 8 a 2000 caracteres al devolver.
-  Revalida rol OCC, membresía AVIAM y estación en SQL dentro de una
-  transacción serializable; cambia operación y entrega, crea una decisión,
-  evento y auditoría atómicos. `409`/`412` obligan a releer el detalle; el
-  cliente nunca reintenta automáticamente una decisión de resultado incierto.
-  Esta versión no implementa todavía la corrección y nueva entrega por parte
-  del agente tras una devolución, ni adjuntos de evidencia.
+  devuelve una sola entrega pendiente. Exige `If-Match` con ese ETag
+  (`428 expected_version_required`, `412 version_conflict`), `submissionId`
+  exacto y un motivo de 8 a 2000 caracteres al devolver; acepta
+  `Idempotency-Key` opcional mientras existan clientes anteriores. Revalida rol
+  OCC, membresía AVIAM y estación en SQL dentro de una transacción serializable;
+  cambia operación y entrega, crea una decisión, evento y auditoría atómicos.
+  Aprobar exige la Orden de Servicio firmada o corregida por OCC
+  (`409 service_order_unsigned` o `service_order_stale`); una revisión reabierta
+  no se devuelve a rampa (`409 reopened_review_cannot_return`). Los rechazos
+  llevan `code` (`review_closed`, `review_already_decided`…). `409`/`412`
+  obligan a releer el detalle; un reintento de resultado incierto reutiliza la
+  misma clave.
+- Los ajustes de cargos de la revisión (`POST .../charges` y
+  `POST .../charges/{markId}/removal`) aceptan la misma `Idempotency-Key`
+  opcional, no ofrecen ni aceptan un cargo que el contrato excluye
+  (`charge_excluded_by_contract`) y, con la Orden ya firmada, guardan la
+  versión corregida por OCC con su motivo. `POST
+  .../services/{serviceId}/billing-exclusion` excluye de la facturación, o
+  vuelve a incluir, un servicio en excepción con cantidad ejecutada
+  (`billing_exclusion_not_allowed` en otro caso), con `Idempotency-Key`,
+  `If-Match` y motivo de 8 a 500 caracteres.
+- `POST /api/v1/occ/review/operations/{operationId}/reopening` reabre, con
+  `operations.review.reopen`, `Idempotency-Key`, `If-Match` y motivo, una
+  aprobación de la que nada se facturó: crea la revisión siguiente
+  `PendingReview` con la misma evidencia, hora y agente. No toca la escala, los
+  agentes, la posición ni las incidencias. Una línea de prefactura sobre la
+  operación responde `409 already_invoiced` (la corrección es una nota de
+  crédito) y una Orden que ya no está firmada, `service_order_unsigned` o
+  `service_order_stale`.
+- `GET /api/v1/occ/operations/{operationId}/incidents` lista las incidencias
+  vivas de una operación de las estaciones del actor, con quién las reportó,
+  su versión e historial (`operations.incidents.read`). `POST` en la misma ruta
+  reporta una incidencia de OCC con `Idempotency-Key` (`201`, o `200` al
+  repetir) y `POST /api/v1/occ/incidents/{incidentId}/status` la pasa a
+  revisión, la resuelve, la cierra o la reabre con nota, `Idempotency-Key` e
+  `If-Match` (`operations.incidents.update`). Al aprobar, solo las incidencias
+  que OCC no gestionó se resuelven con la nota fija.
+- En un charter sin contrato, el total del prepago no cuenta los servicios no
+  realizados y la Orden los imprime en 0. Con el prepago confirmado, la tablet
+  no agrega servicios (`409 charter_prepayment_confirmed`, guardado en el
+  recibo) hasta que Finanzas reabra la cotización con
+  `POST /api/v1/finance/charters/{charterId}/prepayment/reopening`
+  (`finance.charters.confirm`, `Idempotency-Key`, motivo y la `version` leída;
+  una vieja responde `409 version_conflict` y un prepago no confirmado,
+  `charter_prepayment_not_confirmed`).
 - El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.

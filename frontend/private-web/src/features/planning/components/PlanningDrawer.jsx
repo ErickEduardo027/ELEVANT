@@ -15,6 +15,8 @@ import OccAttendancePanel from './OccAttendancePanel';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { AGENT_COMMAND_PROBLEM_MESSAGES, planningMessages } from '../planningMessages';
 import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
+import { equipmentStatusLabel, operationStatusLabel, unitLabel } from '../../operations/operationLabels';
+import OperationIncidentsPanel from '../../incidents/OperationIncidentsPanel';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -261,6 +263,8 @@ export default function PlanningDrawer({
   onAgentHandedOver,
   onStale,
   onChangeFlight,
+  // The board's read counter: the operation's incidents are read again with it (3-G).
+  dataRevision = 0,
 }) {
   const { t, language, locale } = useTranslation(planningMessages);
   const dialogRef = useRef(null);
@@ -377,7 +381,7 @@ export default function PlanningDrawer({
               <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.date')}</dt><dd>{formatPlanningDate(flight.operationDate, locale)}</dd></div>
               <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.station')}</dt><dd>{flight.station ? `${flight.station.code} · ${flight.station.name}` : t('drawer.noStation')}</dd></div>
               <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.airline')}</dt><dd>{flight.airline ? `${flight.airline.iataCode} · ${flight.airline.name}` : (flight.airlineName ?? t('drawer.noAirline'))}</dd></div>
-              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.operation')}</dt><dd>{flight.operationStatus ?? t('drawer.noOperation')}</dd></div>
+              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.operation')}</dt><dd>{flight.operationStatus ? operationStatusLabel(flight.operationStatus, language) : t('drawer.noOperation')}</dd></div>
             </dl>
           </Section>
 
@@ -428,15 +432,18 @@ export default function PlanningDrawer({
             </div>
           </Section>}
 
+          {/* 3-G: OCC follows and manages the operation's live incidents from the flight too. */}
+          {flight.operation?.id && <OperationIncidentsPanel operationId={flight.operation.id} refreshToken={dataRevision} />}
+
           <Section title={t('drawer.equipment')}>
             <ResourceList items={flight.assignedEquipment ?? []} emptyLabel={t('drawer.noEquipment')}>
-              {equipment => <li key={equipment.assignmentId}>{equipment.assetCode} · {equipment.equipmentTypeName} <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">({equipment.status})</span></li>}
+              {equipment => <li key={equipment.assignmentId}>{equipment.assetCode} · {equipment.equipmentTypeName} <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">({equipmentStatusLabel(equipment.status, language)})</span></li>}
             </ResourceList>
           </Section>
 
           <Section title={t('drawer.services')}>
             <ResourceList items={flight.assignedServices ?? []} emptyLabel={t('drawer.noServices')}>
-              {service => <li key={service.id}>{service.code} · {service.name} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{service.executedQuantity}/{service.contractedQuantity} {service.billingUnit}</span></li>}
+              {service => <li key={service.id}>{service.code} · {service.name} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.serviceQuantity', { executed: service.executedQuantity, contracted: service.contractedQuantity, unit: unitLabel(service.billingUnit) })}</span></li>}
             </ResourceList>
           </Section>
 

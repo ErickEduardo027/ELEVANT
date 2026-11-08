@@ -64,6 +64,7 @@ internal static class RampProblems
         "contract_not_in_force" => "El contrato de la aerolínea no está vigente: la operación no puede iniciar.",
         RampExecutionCodes.AircraftTypeUnavailable => "El tipo de avión ya no está disponible.",
         RampExecutionCodes.AircraftTypeLocked => "El tipo de avión ya no se puede cambiar: la operación ya se entregó.",
+        CharterCodes.PrepaymentConfirmed => "El prepago del charter está confirmado: Finanzas debe reabrir la cotización.",
         _ => "La operación cambió y no admite este registro en su estado actual.",
     };
 }

@@ -100,4 +100,38 @@ public sealed class OperationDocumentRulesTests
         Assert.Equal("%PDF"u8.ToArray(), pdf[..4]);
         Assert.True(pdf.Length > 2_000);
     }
+
+    /// <summary>
+    /// 3-N02: a Service Order OCC corrected after the signature prints «Corregida por OCC…» with its reasons and keeps
+    /// the signatures of the version they were drawn on; the other forms ignore corrections.
+    /// </summary>
+    [Fact]
+    public void ACorrectedServiceOrderPrintsTheCorrectionsWithTheSignatures()
+    {
+        var content = Content(OperationDocumentKind.ServiceOrder);
+        IReadOnlyList<OperationDocumentSignatureData> signatures =
+        [
+            new(OperationSignatureRole.AirlineRepresentative, "Ana Pérez", new DateTimeOffset(2026, 11, 4, 16, 0, 0,
+                TimeSpan.Zero), new string('b', 64), [[0.1m, 0.5m, 0.4m, 0.2m]]),
+            new(OperationSignatureRole.AviamAgent, "Riley Ramp", new DateTimeOffset(2026, 11, 4, 16, 1, 0, TimeSpan.Zero),
+                new string('b', 64), [[0.2m, 0.6m, 0.5m, 0.3m]]),
+        ];
+        var renderer = new OperationDocumentPdfRenderer(new FixedTime(new DateTimeOffset(2026, 11, 5, 12, 0, 0,
+            TimeSpan.Zero)));
+        var signed = renderer.Render(content, new string('a', 64), signatures, new Dictionary<Guid, DamagePhoto>());
+        var corrected = renderer.Render(content, new string('a', 64), signatures, new Dictionary<Guid, DamagePhoto>(),
+            [new OperationDocumentCorrectionData("Se quitó el recargo nocturno: la operación fue diurna.",
+                new DateTimeOffset(2026, 11, 5, 10, 0, 0, TimeSpan.Zero), "Alex Operations")]);
+        Assert.Equal("%PDF"u8.ToArray(), corrected[..4]);
+        Assert.True(corrected.Length > signed.Length);
+        var report = Content(OperationDocumentKind.FlightReport);
+        Assert.Equal(renderer.Render(report, new string('a', 64), [], new Dictionary<Guid, DamagePhoto>()).Length,
+            renderer.Render(report, new string('a', 64), [], new Dictionary<Guid, DamagePhoto>(),
+                [new OperationDocumentCorrectionData("No aplica a este formulario", DateTimeOffset.UtcNow, "OCC")]).Length);
+    }
+
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+    }
 }

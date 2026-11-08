@@ -46,17 +46,28 @@ public sealed record OccReviewMilestoneResponse(string Code, DateTimeOffset Actu
 public sealed record OccReviewTimingResponse(
     decimal? GroundMinutes, int? AllowedGroundMinutes, decimal? ArrivalDelayMinutes, string? AircraftCategory);
 
-/// <summary>What OCC closes the operation with (ADR-0034).</summary>
+/// <summary>A service in exception OCC excluded from billing in the review, with its reason (3-N11).</summary>
+public sealed record OccReviewBillingExclusionResponse(Guid ServiceId, string Reason, DateTimeOffset ExcludedAt);
+
+/// <summary>
+/// What OCC closes the operation with (ADR-0034). The charge options leave out what each service's contract excludes
+/// (3-N29); <c>BillingExclusions</c> lists the services in exception OCC excluded from billing (3-N11).
+/// </summary>
 public sealed record OccReviewCloseResponse(
     IReadOnlyList<OccReviewMilestoneResponse> Milestones,
     IReadOnlyList<OccReviewChargeResponse> Charges,
     IReadOnlyList<OccReviewChargeOptionResponse> ChargeOptions,
     OccReviewTimingResponse Timing,
     bool CanAdjustCharges,
-    int DamageCount);
+    int DamageCount,
+    IReadOnlyList<OccReviewBillingExclusionResponse>? BillingExclusions = null);
 
 public sealed record OccReviewDecisionResponse(
     string Outcome, string? Reason, DateTimeOffset DecidedAt);
+
+/// <summary>The approval OCC reopened as this revision (3-H): which one, why, when and who.</summary>
+public sealed record OccReviewReopeningResponse(int FromRevisionNumber, string Reason, DateTimeOffset ReopenedAt,
+    string ReopenedBy);
 
 public sealed record OccReviewDetailResponse(
     Guid OperationId, Guid SubmissionId, int RevisionNumber, string Status,
@@ -70,7 +81,9 @@ public sealed record OccReviewDetailResponse(
     IReadOnlyList<OccReviewIncidentResponse> Incidents,
     OccReviewDecisionResponse? Decision,
     string ReviewVersion,
-    OccReviewCloseResponse? Close = null);
+    OccReviewCloseResponse? Close = null,
+    string? ServiceOrderState = null,
+    OccReviewReopeningResponse? Reopening = null);
 
 /// <summary>OCC adds a charge to a service of the operation under review, with a reason.</summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
@@ -114,3 +127,29 @@ public sealed record DecideOccReviewRequest
 public sealed record DecideOccReviewResponse(
     Guid OperationId, Guid SubmissionId, string Status, string Outcome,
     DateTimeOffset DecidedAt, string? Reason);
+
+/// <summary>OCC excludes a service in exception from billing, or includes it again, with a reason (3-N11).</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record SetOccReviewServiceBillingExclusionRequest
+{
+    public Guid SubmissionId { get; init; }
+
+    public bool Excluded { get; init; }
+
+    [MaxLength(500)]
+    public string? Reason { get; init; }
+}
+
+/// <summary>OCC reopens an approval nothing was invoiced from yet, with its reason (3-H).</summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record ReopenOccReviewRequest
+{
+    public Guid SubmissionId { get; init; }
+
+    [MaxLength(2000)]
+    public string? Reason { get; init; }
+}
+
+/// <summary>The pending revision a reopening created; its review version is also the ETag.</summary>
+public sealed record OccReviewReopenResponse(Guid OperationId, Guid SubmissionId, int RevisionNumber, string Status,
+    string ReviewVersion);

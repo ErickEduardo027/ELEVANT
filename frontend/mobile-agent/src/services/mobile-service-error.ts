@@ -60,6 +60,9 @@ const problemMessages: ReadonlyMap<string, string> = new Map([
   // 3-N06: the tablet's own reasons not to hand the operation off to OCC yet.
   ['pending_queue', 'Faltan registros por enviar a ELEVANT. Abre Sincronización y espera a que se envíen.'],
   ['service_order_unsigned', 'Falta firmar la Orden de Servicio (aerolínea y AVIAM) sobre su contenido actual.'],
+  // 3-N24: Finance confirmed the charter's prepayment; a new service needs a new quotation first.
+  ['charter_prepayment_confirmed',
+    'El prepago del charter ya está confirmado: pide a Finanzas una nueva cotización para agregar servicios.'],
 ]);
 
 /** Whether the message of this failure names its cause from a Problem Details code (not only its status). */

@@ -23,4 +23,14 @@ public sealed class OperationService : AuditableEntity
     public string? CurrencyCodeSnapshot { get; set; }
 
     public ServiceExecutionStatus CurrentStatus { get; set; }
+
+    /// <summary>
+    /// When OCC excluded a service in exception from billing in the review (3-N11); the three exclusion fields are set
+    /// together and cleared together when OCC includes it again (the audit keeps both changes).
+    /// </summary>
+    public DateTimeOffset? BillingExcludedAt { get; set; }
+
+    public long? BillingExcludedByAccountId { get; set; }
+
+    public string? BillingExclusionReason { get; set; }
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Finance;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -207,7 +208,8 @@ internal sealed partial class EfFinanceReportStore(
                                        preinvoice.To >= scope.Filter.From && preinvoice.From <= scope.Filter.To
                                  select new { preinvoice.Status, preinvoice.CurrencyCode, preinvoice.Total, airline.Name })
             .ToArrayAsync(cancellationToken);
-        var unbilled = await (from service in context.OperationServices.AsNoTracking()
+        // «Aprobado sin prefacturar» counts the billable services only (ServiceBillability, 3-N11).
+        var unbilled = await (from service in context.OperationServices.AsNoTracking().Where(ServiceBillability.Billable)
                               join operation in context.GroundOperations.AsNoTracking() on service.GroundOperationId equals operation.Id
                               join turnaround in context.Turnarounds.AsNoTracking() on operation.TurnaroundId equals turnaround.Id
                               join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
@@ -215,7 +217,6 @@ internal sealed partial class EfFinanceReportStore(
                                     (scope.AirlineId == null || turnaround.AirlineId == scope.AirlineId) &&
                                     turnaround.OperationDate >= scope.Filter.From && turnaround.OperationDate <= scope.Filter.To &&
                                     operation.CurrentStatus == GroundOperationStatus.Approved &&
-                                    service.CurrentStatus == ServiceExecutionStatus.Completed &&
                                     service.CurrencyCodeSnapshot != null &&
                                     (scope.Filter.CurrencyCode == null || service.CurrencyCodeSnapshot == scope.Filter.CurrencyCode) &&
                                     !context.PreinvoiceLines.Any(line => line.OperationServiceId == service.Id &&

@@ -9,6 +9,9 @@ const BLOCKING_LABELS = {
   service_not_completed: 'Servicio no completado',
   no_executed_quantity: 'Sin cantidad ejecutada',
   missing_frozen_rate: 'Sin tarifa congelada',
+  // 3-N11 and 3-N29: OCC excluded the service in the review, or it carries a charge its contract excludes.
+  excluded_in_review: 'Excluido por OCC en la revisión',
+  charge_excluded_by_contract: 'Lleva un cargo que el contrato excluye: pida a OCC reabrir la revisión',
   invalid_currency: 'Moneda inválida',
   invalid_billing_unit: 'Unidad de cobro inválida',
   invalid_amount: 'Importe fuera de rango',

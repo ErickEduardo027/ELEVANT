@@ -7176,6 +7176,16 @@ public sealed partial class SqlServerMigrationTests
 
         if (reviewOutcome == "Approved")
         {
+            // 3-N02: OCC approves only the Service Order the airline and AVIAM signed on the ramp.
+            Assert.Equal(ServiceOrderStates.NeverSigned, reviewDetail.ServiceOrderState);
+            Assert.Equal("service_order_unsigned",
+                (await DecideAsync(occAccountId, reviewDetail.ConcurrencyToken, "Approved")).Code);
+            await SignServiceOrderAsync(provider, accountId, stationId, operationId, installationId, cancellationToken);
+            await using (var signedScope = provider.CreateAsyncScope())
+                reviewDetail = (await signedScope.ServiceProvider.GetRequiredService<IOccReviewStore>()
+                    .GetDetailAsync(operationId, [stationId], cancellationToken))!;
+            Assert.Equal(ServiceOrderStates.FullySigned, reviewDetail.ServiceOrderState);
+
             // ADR-0034: OCC adds a charge and takes it back, each with a reason; every change moves the
             // review version, so a decision prepared on the old charges is refused.
             async Task<OccReviewChargeAdjustResult> AdjustAsync(string token, Guid? serviceId, Guid? chargeId,
@@ -7201,6 +7211,8 @@ public sealed partial class SqlServerMigrationTests
                     .GetDetailAsync(operationId, [stationId], cancellationToken))!;
             var occMark = Assert.Single(reviewDetail.Close!.Charges, charge => charge.Source == "Occ");
             Assert.Equal("Cargo administrativo acordado", occMark.Reason);
+            // OCC's charge after the signature is its recorded correction of the signed order.
+            Assert.Equal(ServiceOrderStates.Corrected, reviewDetail.ServiceOrderState);
             var removed = await AdjustAsync(reviewDetail.ConcurrencyToken, null, null, occMark.MarkId,
                 "Se cobra en otra factura");
             Assert.True(removed.IsSuccess);
@@ -7210,6 +7222,7 @@ public sealed partial class SqlServerMigrationTests
                 reviewDetail = (await adjustedScope.ServiceProvider.GetRequiredService<IOccReviewStore>()
                     .GetDetailAsync(operationId, [stationId], cancellationToken))!;
             Assert.DoesNotContain(reviewDetail.Close!.Charges, charge => charge.Source == "Occ");
+            Assert.Equal(ServiceOrderStates.FullySigned, reviewDetail.ServiceOrderState);
             await using var adjustCheck = CreateContext(database.ConnectionString);
             Assert.Equal(2, await adjustCheck.AuditEntries.AsNoTracking().CountAsync(item =>
                 item.Action == "occ.operation.charge.added" || item.Action == "occ.operation.charge.removed",

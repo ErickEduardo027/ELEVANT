@@ -32,4 +32,32 @@ public sealed class OccReviewDecisionPolicyTests
         Assert.False(OccReviewDecisionPolicy.CanDecide("InProgress", "PendingReview"));
         Assert.False(OccReviewDecisionPolicy.CanDecide("PendingReview", "Approved"));
     }
+
+    /// <summary>3-H: only an approved operation with its approved hand-off is reopened.</summary>
+    [Theory]
+    [InlineData("Approved", "Approved", true)]
+    [InlineData("PendingReview", "PendingReview", false)]
+    [InlineData("Approved", "PendingReview", false)]
+    [InlineData("Returned", "Returned", false)]
+    [InlineData("Cancelled", "Approved", false)]
+    public void OnlyAnApprovalIsReopened(string operationStatus, string submissionStatus, bool expected) =>
+        Assert.Equal(expected, OccReviewDecisionPolicy.CanReopen(operationStatus, submissionStatus));
+
+    /// <summary>3-H: a reopened revision is approved again in OCC: its agent and stand are already free.</summary>
+    [Fact]
+    public void AReopenedRevisionIsNeverReturnedToTheRamp()
+    {
+        Assert.True(OccReviewDecisionPolicy.CanReturn(isReopened: false));
+        Assert.False(OccReviewDecisionPolicy.CanReturn(isReopened: true));
+    }
+
+    [Fact]
+    public void AReopeningNeedsAMeaningfulReason()
+    {
+        Assert.Equal("La aerolínea pidió revisar", OccReviewDecisionPolicy.ReopenReason("  La aerolínea pidió revisar "));
+        Assert.Null(OccReviewDecisionPolicy.ReopenReason("corta"));
+        Assert.Null(OccReviewDecisionPolicy.ReopenReason(null));
+        Assert.Null(OccReviewDecisionPolicy.ReopenReason("Texto\0con control"));
+        Assert.Null(OccReviewDecisionPolicy.ReopenReason(new string('x', 2001)));
+    }
 }

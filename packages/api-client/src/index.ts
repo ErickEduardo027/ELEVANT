@@ -13,6 +13,7 @@ export * from "./airlinePermits";
 export * from "./masterData";
 export * from "./flightFeedReview";
 export * from "./occTurnarounds";
+export * from "./occIncidents";
 export * from "./humanResourcesCommands";
 export * from "./mobileDevices";
 export * from "./airlinePortalUsers";

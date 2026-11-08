@@ -921,6 +921,13 @@ export interface CardPaymentResponse {
   replayed: boolean;
 }
 
+export interface ChangeOccIncidentStatusRequest {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  note?: string | null;
+}
+
 export interface ChangeOccTurnaroundStatusRequest {
   /** @nullable */
   outcome?: string | null;
@@ -2397,6 +2404,8 @@ export interface FinanceCharterResponse {
   prepaymentReference?: string | null;
   /** @nullable */
   prepaymentConfirmedAt?: string | null;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface FinanceCharterListResponse {
@@ -4483,6 +4492,47 @@ export interface OccHandoverOptionsResponse {
   agents: OccAgentOptionResponse[];
 }
 
+export interface OccIncidentEventResponse {
+  /** @nullable */
+  fromStatus?: string | null;
+  toStatus: string;
+  note: string;
+  occurredAt: string;
+  actor: string;
+}
+
+export interface OccIncidentResponse {
+  id: string;
+  type: string;
+  severity: string;
+  status: string;
+  description: string;
+  occurredAt: string;
+  reportedAt: string;
+  /** @nullable */
+  delayCode?: string | null;
+  reportedBy: string;
+  reportedByKind: string;
+  /** @nullable */
+  resolutionNote?: string | null;
+  /** @nullable */
+  resolvedAt?: string | null;
+  /** @nullable */
+  resolvedBy?: string | null;
+  version: string;
+  allowedStatuses: string[];
+  history: OccIncidentEventResponse[];
+}
+
+export interface OccIncidentListResponse {
+  operationId: string;
+  operationCode: string;
+  operationStatus: string;
+  ianaTimeZone: string;
+  canReport: boolean;
+  incidents: OccIncidentResponse[];
+}
+
 export interface OccMasterData {
   stationId: string;
   stationCode: string;
@@ -4706,6 +4756,12 @@ export interface OccReportPageResponse {
   hasMore: boolean;
 }
 
+export interface OccReviewBillingExclusionResponse {
+  serviceId: string;
+  reason: string;
+  excludedAt: string;
+}
+
 export interface OccReviewChargeAdjustResponse {
   reviewVersion: string;
 }
@@ -4763,6 +4819,8 @@ export interface OccReviewCloseResponse {
   timing: OccReviewTimingResponse;
   canAdjustCharges: boolean;
   damageCount: number;
+  /** @nullable */
+  billingExclusions?: OccReviewBillingExclusionResponse[] | null;
 }
 
 export interface OccReviewDecisionResponse {
@@ -4791,6 +4849,13 @@ export interface OccReviewIncidentResponse {
   occurredAt: string;
   /** @nullable */
   delayCode?: string | null;
+}
+
+export interface OccReviewReopeningResponse {
+  fromRevisionNumber: number;
+  reason: string;
+  reopenedAt: string;
+  reopenedBy: string;
 }
 
 export interface OccReviewDetailResponse {
@@ -4823,6 +4888,9 @@ export interface OccReviewDetailResponse {
   decision?: OccReviewDecisionResponse | null;
   reviewVersion: string;
   close?: OccReviewCloseResponse | null;
+  /** @nullable */
+  serviceOrderState?: string | null;
+  reopening?: OccReviewReopeningResponse | null;
 }
 
 export interface OccReviewQueueItemResponse {
@@ -4846,6 +4914,14 @@ export interface OccReviewQueueResponse {
   ianaTimeZone: string;
   operations: OccReviewQueueItemResponse[];
   hasMore: boolean;
+}
+
+export interface OccReviewReopenResponse {
+  operationId: string;
+  submissionId: string;
+  revisionNumber: number;
+  status: string;
+  reviewVersion: string;
 }
 
 export interface OccReviewSubmissionHistoryItemResponse {
@@ -5828,6 +5904,22 @@ export interface RemoveOccReviewChargeRequest {
   reason?: string | null;
 }
 
+export interface ReopenCharterPrepaymentRequest {
+  /** @nullable */
+  reason?: string | null;
+  /** @nullable */
+  version?: string | null;
+}
+
+export interface ReopenOccReviewRequest {
+  submissionId: string;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  reason?: string | null;
+}
+
 export interface ReopenServiceRequest {
   /** @nullable */
   reason?: string | null;
@@ -5838,6 +5930,19 @@ export interface ReopenServiceRequest {
 export interface ReplyContractDraftInput {
   expectedVersion: string;
   body: string;
+}
+
+export interface ReportOccIncidentRequest {
+  /** @nullable */
+  incidentType?: string | null;
+  /** @nullable */
+  severity?: string | null;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  occurredAt?: string | null;
+  /** @nullable */
+  delayCode?: string | null;
 }
 
 export interface ReportRampIncidentRequest {
@@ -6259,6 +6364,16 @@ export interface SetGroundTimeAllowanceRequest {
      * @nullable
      */
   version?: string | null;
+}
+
+export interface SetOccReviewServiceBillingExclusionRequest {
+  submissionId: string;
+  excluded: boolean;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  reason?: string | null;
 }
 
 export interface SetOperationalNotificationReadRequest {
@@ -12056,6 +12171,46 @@ const res = await fetch(getConfirmFinanceCharterPrepaymentUrl(charterId),
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(confirmCharterPrepaymentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceCharterResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReopenFinanceCharterPrepaymentUrl = (charterId: string,) => {
+
+
+
+
+  return `/api/v1/finance/charters/${charterId}/prepayment/reopening`
+}
+
+/**
+ * @summary 3-N24: reopens a confirmed prepayment as a new quotation, so the agent can add services again; the amount and the
+reference stay until Finance confirms it again. Takes an Idempotency-Key and the version Finance saw (a stale one
+is 409 `version_conflict`); a prepayment not confirmed is 409 `charter_prepayment_not_confirmed`.
+ */
+export const reopenFinanceCharterPrepayment = async (charterId: string,
+    reopenCharterPrepaymentRequest: ReopenCharterPrepaymentRequest, options?: RequestInit): Promise<FinanceCharterResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReopenFinanceCharterPrepaymentUrl(charterId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reopenCharterPrepaymentRequest)
   }
 )
 
@@ -17916,6 +18071,113 @@ const res = await fetch(getRestoreOccFlightProposalUrl(proposalId),
 
 
 
+export const getGetOccOperationIncidentsUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/operations/${operationId}/incidents`
+}
+
+/**
+ * @summary The live incidents of the operation, oldest first, with their history.
+ */
+export const getOccOperationIncidents = async (operationId: string, options?: RequestInit): Promise<OccIncidentListResponse> => {
+
+  const res = await fetch(getGetOccOperationIncidentsUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccIncidentListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReportOccIncidentUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/operations/${operationId}/incidents`
+}
+
+/**
+ * @summary OCC reports an incident of an operation still open: 201 the first time, 200 when the key replays it.
+ */
+export const reportOccIncident = async (operationId: string,
+    reportOccIncidentRequest: ReportOccIncidentRequest, options?: RequestInit): Promise<OccIncidentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReportOccIncidentUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reportOccIncidentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccIncidentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getChangeOccIncidentStatusUrl = (incidentId: string,) => {
+
+
+
+
+  return `/api/v1/occ/incidents/${incidentId}/status`
+}
+
+/**
+ * @summary Takes an incident into review, resolves it, closes it or takes a resolved one back, with a note.
+ */
+export const changeOccIncidentStatus = async (incidentId: string,
+    changeOccIncidentStatusRequest: ChangeOccIncidentStatusRequest, options?: RequestInit): Promise<OccIncidentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getChangeOccIncidentStatusUrl(incidentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changeOccIncidentStatusRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccIncidentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getGetOccMasterDataUrl = (params: GetOccMasterDataParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -19137,6 +19399,89 @@ const res = await fetch(getRemoveOccReviewChargeUrl(operationId,markId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccReviewChargeAdjustResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getSetOccReviewServiceBillingExclusionUrl = (operationId: string,
+    serviceId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/services/${serviceId}/billing-exclusion`
+}
+
+/**
+ * @summary 3-N11: OCC excludes a service in exception with an executed quantity from billing, or includes it again, with
+a reason. Only while the hand-off is pending; a signed Service Order records it as OCC's correction (3-N02).
+ */
+export const setOccReviewServiceBillingExclusion = async (operationId: string,
+    serviceId: string,
+    setOccReviewServiceBillingExclusionRequest: SetOccReviewServiceBillingExclusionRequest, options?: RequestInit): Promise<OccReviewChargeAdjustResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetOccReviewServiceBillingExclusionUrl(operationId,serviceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setOccReviewServiceBillingExclusionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewChargeAdjustResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReopenOccReviewUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/reopening`
+}
+
+/**
+ * @summary 3-H: OCC reopens an approval nothing was invoiced from yet as a new pending revision, with its reason; once
+anything is invoiced the correction is a credit note (409 `already_invoiced`). The agent and the stand the
+approval freed stay free, and the reopened revision is approved again in OCC, never returned to the ramp, so an
+approval whose Service Order is not signed as it stands is not reopened (409 `service_order_unsigned` or
+`service_order_stale`, 3-N02).
+ */
+export const reopenOccReview = async (operationId: string,
+    reopenOccReviewRequest: ReopenOccReviewRequest, options?: RequestInit): Promise<OccReviewReopenResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReopenOccReviewUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reopenOccReviewRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewReopenResponse = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -48,7 +48,7 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
             {
                 var operation = scope.Operation.Operation;
                 if (!OperationDocumentRules.CanSign(operation.CurrentStatus, operation.ActualStartAt)) return false;
-                var assembled = await new OperationDocumentAssembler(context).AssembleAsync(operation.Id, ct);
+                var assembled = await new OperationDocumentAssembler(context, timeProvider).AssembleAsync(operation.Id, ct);
                 var content = assembled?.Documents.SingleOrDefault(item => item.Kind == request.Kind);
                 if (content is null) return false;
                 var canonical = OperationDocumentRules.CanonicalJson(content);
@@ -214,6 +214,8 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
                       operation.PublicId == operationId
                 select (long?)operation.Id).SingleOrDefaultAsync(cancellationToken);
         if (operationInternalId is null) return null;
+        // 3-N02: the Service Order as it stands when it is signed or OCC corrected it after the signature.
+        if (await CurrentServiceOrderAsync(operationInternalId.Value, cancellationToken) is { } current) return current;
         var required = OperationDocumentRules.RolesFor(OperationDocumentKind.ServiceOrder);
         var versions = await context.Set<OperationDocumentVersion>().AsNoTracking()
             .Where(item => item.GroundOperationId == operationInternalId && item.Kind == OperationDocumentKind.ServiceOrder)
@@ -226,6 +228,39 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
                 return new SignedOperationDocument(OperationDocumentRules.Parse(version.ContentJson), version.ContentSha256, mine);
         }
         return null;
+    }
+
+    public async Task<SignedOperationDocument?> ReadCorrectedServiceOrderForOccAsync(IReadOnlyCollection<Guid> stations,
+        Guid operationId, CancellationToken cancellationToken = default)
+    {
+        var operation = await OccOperationAsync(stations, operationId, cancellationToken);
+        if (operation is null) return null;
+        var current = await CurrentServiceOrderAsync(operation.Value.Id, cancellationToken);
+        return current?.Corrections is { Count: > 0 } ? current : null;
+    }
+
+    /// <summary>
+    /// The current Service Order when it can be approved (3-N02): signed, with its own signatures, or corrected by OCC
+    /// after the signature, with the signatures of the version it corrects and the corrections, oldest first. Null
+    /// when it is not signed or its content changed since the signature.
+    /// </summary>
+    private async Task<SignedOperationDocument?> CurrentServiceOrderAsync(long operationId,
+        CancellationToken cancellationToken)
+    {
+        var evaluation = await ServiceOrderSignatures.EvaluateAsync(context, operationId, timeProvider, cancellationToken);
+        if (!evaluation.CanBeApproved || evaluation.CurrentVersionId is not long currentId ||
+            evaluation.SignedVersionId is not long signedId)
+            return null;
+        var version = await context.Set<OperationDocumentVersion>().AsNoTracking()
+            .Where(item => item.Id == currentId).Select(item => new { item.ContentJson, item.ContentSha256 })
+            .SingleAsync(cancellationToken);
+        var signatures = (await SignaturesAsync([signedId], cancellationToken)).GetValueOrDefault(signedId) ?? [];
+        var corrections = evaluation.State == ServiceOrderStates.Corrected
+            ? (await ServiceOrderSignatures.CorrectionsAsync(context, currentId, cancellationToken))
+                .Select(item => new OperationDocumentCorrectionData(item.Reason, item.CorrectedAt, item.CorrectedBy)).ToArray()
+            : [];
+        return new SignedOperationDocument(OperationDocumentRules.Parse(version.ContentJson), version.ContentSha256,
+            signatures, corrections);
     }
 
     private async Task<(long Id, Guid PublicId)?> OccOperationAsync(IReadOnlyCollection<Guid> stations, Guid operationId,
@@ -244,7 +279,7 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
     private async Task<OperationDocumentsView> ViewAsync(long operationId, Guid operationPublicId,
         CancellationToken cancellationToken)
     {
-        var assembled = await new OperationDocumentAssembler(context).AssembleAsync(operationId, cancellationToken)
+        var assembled = await new OperationDocumentAssembler(context, timeProvider).AssembleAsync(operationId, cancellationToken)
                         ?? throw new InvalidOperationException("The operation disappeared while reading its forms.");
         var versions = await context.Set<OperationDocumentVersion>().AsNoTracking()
             .Where(item => item.GroundOperationId == operationId)

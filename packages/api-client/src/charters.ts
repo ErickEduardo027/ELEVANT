@@ -27,6 +27,12 @@ export interface ConfirmCharterPrepaymentCommand {
   readonly reference: string;
 }
 
+/** Finance reopens a confirmed prepayment as a new quotation (3-N24), with its reason and the version it saw. */
+export interface ReopenCharterPrepaymentCommand {
+  readonly reason: string;
+  readonly version: string;
+}
+
 // Any well-formed UUID: the Development seed derives deterministic ids that carry no RFC version.
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -59,7 +65,10 @@ export const isFinanceCharterResponse = (value: unknown): value is FinanceCharte
   isOptionalMoney(value.servicesTotal) && typeof value.requestSigned === "boolean" && isStatus(value.prepaymentStatus) &&
   isOptionalMoney(value.prepaymentAmount) && isOptionalText(value.prepaymentReference, 80) &&
   (value.prepaymentConfirmedAt === null || value.prepaymentConfirmedAt === undefined ||
-    (typeof value.prepaymentConfirmedAt === "string" && !Number.isNaN(Date.parse(value.prepaymentConfirmedAt))));
+    (typeof value.prepaymentConfirmedAt === "string" && !Number.isNaN(Date.parse(value.prepaymentConfirmedAt)))) &&
+  // 3-N24: the agreement's version, the expected version of a reopening; missing on servers before phase 3, block D.
+  (value.version === null || value.version === undefined ||
+    (typeof value.version === "string" && value.version.length > 0 && value.version.length <= 64));
 
 export const isFinanceCharterListResponse = (value: unknown): value is FinanceCharterListResponse =>
   isRecord(value) && Array.isArray(value.charters) && value.charters.every(isFinanceCharterResponse);
@@ -90,4 +99,15 @@ export const normalizedPrepayment = (command: ConfirmCharterPrepaymentCommand): 
     return null;
   const reference = command.reference.trim();
   return /^[A-Za-z0-9 /#.-]{2,80}$/.test(reference) ? { amount: command.amount, reference } : null;
+};
+
+/** The reopening as the API takes it: a reason of 8 to 500 characters and the version Finance saw. */
+export const normalizedPrepaymentReopening = (
+  command: ReopenCharterPrepaymentCommand,
+): ReopenCharterPrepaymentCommand | null => {
+  if (!isRecord(command) || typeof command.reason !== "string" || typeof command.version !== "string") return null;
+  const reason = command.reason.trim().replace(/\s+/g, " ");
+  const version = command.version.trim();
+  return reason.length >= 8 && reason.length <= 500 && version.length > 0 && version.length <= 64
+    ? { reason, version } : null;
 };

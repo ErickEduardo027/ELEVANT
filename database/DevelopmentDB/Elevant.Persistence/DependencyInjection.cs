@@ -220,6 +220,7 @@ public static class DependencyInjection
         services.AddScoped<IRampOperationSubmissionStore, EfRampOperationSubmissionStore>();
         services.AddScoped<IRampOperationCorrectionStore, EfRampOperationCorrectionStore>();
         services.AddScoped<IOccReviewStore, EfOccReviewStore>();
+        services.AddScoped<Elevant.Application.Operations.IOccIncidentStore, EfOccIncidentStore>();
         services.AddScoped<IOperationalCommunicationStore, EfOperationalCommunicationStore>();
         services.AddScoped<IAccountChangeDispatcherStore, EfAccountChangeDispatcherStore>();
         services.AddScoped<IAccountChangeReadStore, EfAccountChangeReadStore>();

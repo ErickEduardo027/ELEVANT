@@ -13,10 +13,17 @@ namespace Elevant.Persistence.Operations;
 /// <summary>
 /// Builds every AVIAM form of an operation from its single record (ADR-0032): flight data typed
 /// once, milestones, checklist answers, services, surcharges, deviations and walk-around marks.
-/// The output is deterministic, so the same data always yields the same content hash.
+/// The output is deterministic, so the same data always yields the same content hash. Before the
+/// hand-off (in progress, or returned for correction) the Service Order and the charter request also
+/// show the automatic surcharges the hand-off will mark (3-N02): what is signed is what is frozen.
+/// A service OCC excluded from billing (3-N11) and a charter service not performed (3-N24) print at
+/// zero, out of the total.
 /// </summary>
-internal sealed class OperationDocumentAssembler(ElevantDbContext context)
+internal sealed class OperationDocumentAssembler(ElevantDbContext context, TimeProvider? timeProvider = null)
 {
+    /// <summary>What a line OCC excluded from billing in the review says on the forms (3-N11).</summary>
+    public const string ExcludedLineSuffix = " · Excluido de la facturación por OCC";
+
     public sealed record Assembled(IReadOnlyList<OperationDocumentContent> Documents, IReadOnlyList<DamageMarkData> DamageMarks);
 
     private static readonly string[] BridgeSections = ["PREUSE-", "ARRIVAL-", "DEPARTURE-", "POSTDEPARTURE-"];
@@ -32,6 +39,7 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
                           select new
                           {
                               operation.Id, operation.PassengersIn, operation.PassengersOut, operation.MtowKg,
+                              operation.CurrentStatus,
                               TurnaroundId = turnaround.Id, turnaround.OperationCode, turnaround.OperationDate,
                               turnaround.AircraftTypeId, turnaround.AircraftRegistration,
                               StationCode = station.Code, StationName = station.Name, StationTimeZone = station.IanaTimeZone,
@@ -92,24 +100,36 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
                               {
                                   service.Id, service.LineNumber, definition.Code, definition.Name, service.ExecutedQuantity,
                                   service.ContractedQuantity, service.BillingUnitSnapshot, service.UnitPriceSnapshot,
-                                  service.CurrencyCodeSnapshot,
+                                  service.CurrencyCodeSnapshot, service.CurrentStatus, service.BillingExcludedAt,
                               }).ToArrayAsync(cancellationToken);
         var lines = services.Select(item =>
         {
             // A charter is agreed and prepaid before the work (ADR-0033): until a quantity is executed,
-            // its forms show what the carrier requested, the same total Finance confirms.
-            var quantity = charter is not null && item.ExecutedQuantity == 0 ? item.ContractedQuantity : item.ExecutedQuantity;
+            // its forms show what the carrier requested, the same total Finance confirms. A charter
+            // service not performed (removed by mistake or not served) is no longer requested (3-N24).
+            var quantity = charter is null ? item.ExecutedQuantity
+                : item.CurrentStatus == ServiceExecutionStatus.NotPerformed ? 0m
+                : item.ExecutedQuantity == 0 ? item.ContractedQuantity : item.ExecutedQuantity;
+            var amount = item.UnitPriceSnapshot is decimal price ? decimal.Round(price * quantity, 2) : (decimal?)null;
+            // 3-N11: a service in exception OCC excluded from billing prints at zero and out of the total.
+            if (item.BillingExcludedAt is not null)
+                return new DocumentServiceLine(item.LineNumber, item.Code, item.Name + ExcludedLineSuffix, quantity,
+                    item.BillingUnitSnapshot, item.UnitPriceSnapshot, 0m);
             return new DocumentServiceLine(item.LineNumber, item.Code, item.Name, quantity, item.BillingUnitSnapshot,
-                item.UnitPriceSnapshot, item.UnitPriceSnapshot is decimal price ? decimal.Round(price * quantity, 2) : null);
+                item.UnitPriceSnapshot, amount);
         }).ToArray();
         var serviceCodes = services.ToDictionary(item => item.Id, item => item.Code);
-        var surcharges = (await (from charge in context.Set<OperationServiceCharge>().AsNoTracking()
-                                 join definition in context.Set<ChargeDefinition>().AsNoTracking()
-                                     on charge.ChargeDefinitionId equals definition.Id
-                                 where charge.RemovedAt == null && serviceCodes.Keys.Contains(charge.OperationServiceId)
-                                 select new { definition.Code, definition.Name, charge.OperationServiceId })
-                .ToArrayAsync(cancellationToken))
-            .Select(item => new DocumentSurcharge(item.Code, item.Name, serviceCodes[item.OperationServiceId]))
+        var excludedServices = services.Where(item => item.BillingExcludedAt is not null).Select(item => item.Id).ToHashSet();
+        var marked = await ChargesAsync(operationId, head.CurrentStatus, cancellationToken);
+        var markedIds = marked.Select(item => item.ChargeDefinitionId).Distinct().ToArray();
+        var chargeNames = await context.Set<ChargeDefinition>().AsNoTracking()
+            .Where(definition => markedIds.Contains(definition.Id))
+            .Select(definition => new { definition.Id, definition.Code, definition.Name })
+            .ToDictionaryAsync(definition => definition.Id, cancellationToken);
+        var surcharges = marked
+            .Where(item => serviceCodes.ContainsKey(item.ServiceId) && !excludedServices.Contains(item.ServiceId))
+            .Select(item => new DocumentSurcharge(chargeNames[item.ChargeDefinitionId].Code,
+                chargeNames[item.ChargeDefinitionId].Name, serviceCodes[item.ServiceId]))
             .OrderBy(item => item.ServiceCode, StringComparer.Ordinal).ThenBy(item => item.Code, StringComparer.Ordinal).ToArray();
         var currency = services.Select(item => item.CurrencyCodeSnapshot).FirstOrDefault(code => code is not null);
         decimal? total = lines.Length > 0 && lines.All(line => line.Amount is not null) ? lines.Sum(line => line.Amount!.Value) : null;
@@ -156,6 +176,33 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context)
                 "Waiver of Liability and Indemnity", number, flight, lines, surcharges, currency, total, billingType,
                 [], [], [], [], [], charter));
         return new Assembled(documents, marks);
+    }
+
+    /// <summary>
+    /// The charges the forms list, as (service, charge definition) pairs: the active marks, plus, before the hand-off,
+    /// the automatic surcharges it will mark (3-N02). In progress the operation ends now when push-back was not recorded,
+    /// as the first hand-off measures it; returned for correction it ends at the first hand-off and the automatic marks
+    /// the resubmission retires are left out, as the resubmission measures it (3-N09).
+    /// </summary>
+    private async Task<IReadOnlyList<(long ServiceId, long ChargeDefinitionId)>> ChargesAsync(long operationId,
+        GroundOperationStatus status, CancellationToken cancellationToken)
+    {
+        if (status == GroundOperationStatus.InProgress)
+            return await AutomaticSurchargeApplier.ProjectAsync(context, operationId,
+                (timeProvider ?? TimeProvider.System).GetUtcNow(), false, cancellationToken);
+        if (status == GroundOperationStatus.Returned)
+        {
+            var firstHandOff = await RampEvidenceWindowReader.FirstSubmittedAtAsync(context, operationId, cancellationToken)
+                               ?? (timeProvider ?? TimeProvider.System).GetUtcNow();
+            return await AutomaticSurchargeApplier.ProjectAsync(context, operationId, firstHandOff, true, cancellationToken);
+        }
+        return (await (from charge in context.Set<OperationServiceCharge>().AsNoTracking()
+                       join service in context.Set<OperationService>().AsNoTracking()
+                           on charge.OperationServiceId equals service.Id
+                       where service.GroundOperationId == operationId && charge.RemovedAt == null
+                       select new { charge.OperationServiceId, charge.ChargeDefinitionId })
+                .ToArrayAsync(cancellationToken))
+            .Select(item => (item.OperationServiceId, item.ChargeDefinitionId)).ToArray();
     }
 
     private async Task<DocumentChecklistAnswer[]> ChecklistAsync(long operationId, CancellationToken cancellationToken)

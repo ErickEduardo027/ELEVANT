@@ -20,4 +20,14 @@ public sealed class OperationSubmission : AuditableEntity
 
     /// <summary>Immutable service and incident evidence captured at handoff.</summary>
     public string? EvidenceJson { get; set; }
+
+    /// <summary>
+    /// The approved revision OCC reopened as this one (3-H); the three reopening fields are set together. A reopened
+    /// revision keeps the hand-off it reopens (evidence, time and agent) and is decided again in OCC only.
+    /// </summary>
+    public long? ReopenedFromSubmissionId { get; set; }
+
+    public long? ReopenedByAccountId { get; set; }
+
+    public string? ReopenReason { get; set; }
 }

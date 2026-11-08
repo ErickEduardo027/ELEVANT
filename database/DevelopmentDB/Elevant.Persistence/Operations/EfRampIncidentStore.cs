@@ -231,6 +231,17 @@ internal sealed class EfRampIncidentStore(
             UpdatedAt = now,
         };
         context.Incidents.Add(incident);
+        // 3-G: the report is the first step of the incident's history OCC follows; the tablet's answer is unchanged.
+        await context.SaveChangesAsync(cancellationToken);
+        context.Set<IncidentStatusEvent>().Add(new IncidentStatusEvent
+        {
+            IncidentId = incident.Id,
+            FromStatus = null,
+            ToStatus = IncidentStatus.Open,
+            Note = EfOccIncidentStore.RampReportedNote,
+            OccurredAt = now,
+            ActorAccountId = actor.AccountInternalId,
+        });
         context.AuditEntries.Add(new AuditEntry
         {
             PublicId = Guid.CreateVersion7(),

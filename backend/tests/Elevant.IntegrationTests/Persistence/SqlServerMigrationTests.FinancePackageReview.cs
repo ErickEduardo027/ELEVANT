@@ -13,12 +13,16 @@ namespace Elevant.IntegrationTests.Persistence;
 
 public sealed partial class SqlServerMigrationTests
 {
+    // 3-N29: a charge the contract excludes is never valued at zero in silence; the service it marks is refused with
+    // charge_excluded_by_contract until OCC reopens the review and removes the charge.
     [Theory]
-    [InlineData(ChargeCalculationMethod.FixedAmount, ChargeCalculationMethod.PercentOfService, false, true, 525)]
-    [InlineData(ChargeCalculationMethod.PercentOfService, ChargeCalculationMethod.FixedAmount, false, false, 0)]
-    [InlineData(ChargeCalculationMethod.PercentOfService, ChargeCalculationMethod.PercentOfService, true, true, 500)]
+    [InlineData(ChargeCalculationMethod.FixedAmount, ChargeCalculationMethod.PercentOfService, false, true, 525, null)]
+    [InlineData(ChargeCalculationMethod.PercentOfService, ChargeCalculationMethod.FixedAmount, false, false, 0,
+        "package_percentage_basis_required")]
+    [InlineData(ChargeCalculationMethod.PercentOfService, ChargeCalculationMethod.PercentOfService, true, false, 0,
+        "charge_excluded_by_contract")]
     public async Task FinancePackageReviewUsesFrozenChargeMethodAndExclusion(ChargeCalculationMethod frozenMethod,
-        ChargeCalculationMethod liveMethod, bool excluded, bool expectedSuccess, int expectedTotal)
+        ChargeCalculationMethod liveMethod, bool excluded, bool expectedSuccess, int expectedTotal, string? expectedReason)
     {
         var ct = TestContext.Current.CancellationToken;
         var master = ResolveMasterConnection(); if (master is null) return;
@@ -58,15 +62,16 @@ public sealed partial class SqlServerMigrationTests
             var detail = (await drafts.GetAsync(FinanceAccount, result.DraftId!.Value, ct))!;
             Assert.Equal(expectedTotal, detail.Total);
             var line = Assert.Single(detail.Lines, l => l.Kind == "Charge");
-            Assert.Equal(excluded ? 0m : 25m, line.Amount);
-            Assert.Equal(excluded, line.IsExcluded);
+            Assert.Equal(25m, line.Amount);
+            Assert.False(line.IsExcluded);
             Assert.True((await drafts.CreateAsync(command, ct)).Replayed);
             Assert.Equal(1, await db.Set<PackageConsumptionEntry>().CountAsync(ct));
         }
         else
         {
-            Assert.Equal("package_percentage_basis_required", result.Reason);
-            // Rejecting the frozen percentage basis must not leave a package or source reservation behind.
+            Assert.Equal(expectedReason, result.Reason);
+            // Rejecting the frozen percentage basis or an excluded charge must not leave a package or source
+            // reservation behind.
             Assert.Equal(0, await db.Preinvoices.CountAsync(ct));
             Assert.Equal(0, await db.Set<PackageConsumption>().CountAsync(ct));
             Assert.Equal(0, await db.Set<PackageConsumptionEntry>().CountAsync(ct));

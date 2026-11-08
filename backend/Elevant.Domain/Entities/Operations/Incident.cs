@@ -6,7 +6,11 @@ public sealed class Incident : AuditableEntity
 {
     public long GroundOperationId { get; set; }
 
-    public long ReportedByRampAgentId { get; set; }
+    /// <summary>The ramp agent who reported it from the tablet; null when OCC reported it (3-G).</summary>
+    public long? ReportedByRampAgentId { get; set; }
+
+    /// <summary>The OCC account that reported it (3-G); null when the ramp agent did. One of the two is always set.</summary>
+    public long? ReportedByAccountId { get; set; }
 
     public string IncidentType { get; set; } = string.Empty;
 

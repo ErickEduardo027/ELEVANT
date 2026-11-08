@@ -193,5 +193,8 @@ public sealed class OperationDocumentEndpointsTests(ElevantApiFactory factory) :
 
         public Task<SignedOperationDocument?> ReadSignedServiceOrderForAirlineAsync(Guid organizationId, Guid operationId,
             CancellationToken cancellationToken = default) => Task.FromResult<SignedOperationDocument?>(null);
+
+        public Task<SignedOperationDocument?> ReadCorrectedServiceOrderForOccAsync(IReadOnlyCollection<Guid> stations,
+            Guid operationId, CancellationToken cancellationToken = default) => Task.FromResult<SignedOperationDocument?>(null);
     }
 }

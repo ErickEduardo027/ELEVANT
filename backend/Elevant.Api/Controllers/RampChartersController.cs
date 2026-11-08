@@ -12,12 +12,15 @@ namespace Elevant.Api.Controllers;
 
 /// <summary>
 /// A charter on the tablet (ADR-0033): the agent records the carrier data and adds the services at
-/// Finance's base tariff. Idempotent per device like every ramp command.
+/// Finance's base tariff. Idempotent per device like every ramp command. Failures carry the ramp's stable codes
+/// (<see cref="RampProblems"/>); a service added with the prepayment confirmed is 409
+/// <c>charter_prepayment_confirmed</c> (3-N24), which the deployed tablet explains by its status.
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[RampProblemDetails]
 [Route("api/v{version:apiVersion}/ramp/operations")]
 public sealed class RampChartersController(CharterHandler handler) : ControllerBase
 {
@@ -54,9 +57,9 @@ public sealed class RampChartersController(CharterHandler handler) : ControllerB
         CancellationToken cancellationToken)
     {
         if (!TryGetAccountId(out var accountId)) return Failure(RampOperationsFailure.Unauthorized);
-        var (data, failure) = await handler.AddServiceAsync(accountId, operationId, request.ServiceDefinitionId,
+        var (data, failure, code) = await handler.AddServiceAsync(accountId, operationId, request.ServiceDefinitionId,
             request.Quantity, installationId, idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
-        return failure is { } error ? Failure(error) : Ok(Map(data!));
+        return failure is { } error ? Failure(error, code) : Ok(Map(data!));
     }
 
     /// <summary>Records the carrier's address and who pays, as the representative gives them.</summary>
@@ -90,18 +93,6 @@ public sealed class RampChartersController(CharterHandler handler) : ControllerB
     private bool TryGetAccountId(out Guid accountId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) && accountId != Guid.Empty;
 
-    private ActionResult<RampCharterResponse> Failure(RampOperationsFailure failure)
-    {
-        if (failure == RampOperationsFailure.Unauthorized) Response.Headers.WWWAuthenticate = "Bearer";
-        var (status, title) = failure switch
-        {
-            RampOperationsFailure.Unauthorized => (StatusCodes.Status401Unauthorized, "Authentication failed."),
-            RampOperationsFailure.Forbidden => (StatusCodes.Status403Forbidden, "Access to the ramp operation is forbidden."),
-            RampOperationsFailure.InvalidRequest => (StatusCodes.Status400BadRequest, "The charter entry is invalid."),
-            RampOperationsFailure.NotFound => (StatusCodes.Status404NotFound, "The operation is not a charter of yours."),
-            _ => (StatusCodes.Status409Conflict, "The charter entry conflicts with the operation's current state."),
-        };
-        return new ObjectResult(new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path })
-            { StatusCode = status };
-    }
+    private ActionResult<RampCharterResponse> Failure(RampOperationsFailure failure, string? code = null) =>
+        RampProblems.Failure(this, failure, code);
 }

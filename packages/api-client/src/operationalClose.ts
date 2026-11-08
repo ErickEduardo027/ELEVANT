@@ -8,6 +8,7 @@ import type {
   GroundTimeAllowanceResponse,
   OccReviewChargeAdjustResponse,
   OccReviewCloseResponse,
+  OccReviewReopenResponse,
 } from "../generated/elevant-api";
 
 export const CHARGE_MARK_SOURCES = ["Agent", "Automatic", "Occ"] as const;
@@ -23,6 +24,23 @@ export interface AddOccReviewChargeCommand {
 }
 
 export interface RemoveOccReviewChargeCommand {
+  readonly submissionId: string;
+  readonly reason: string;
+}
+
+/** The state of the Service Order OCC approves (3-N02). */
+export const SERVICE_ORDER_STATES = ["Signed", "Corrected", "Stale", "Unsigned"] as const;
+export type ServiceOrderState = (typeof SERVICE_ORDER_STATES)[number];
+
+/** OCC excludes a service in exception from billing, or includes it again, with a reason (3-N11). */
+export interface SetOccReviewServiceBillingExclusionCommand {
+  readonly submissionId: string;
+  readonly excluded: boolean;
+  readonly reason: string;
+}
+
+/** OCC reopens an approval nothing was invoiced from yet, with its reason (3-H). */
+export interface ReopenOccReviewCommand {
   readonly submissionId: string;
   readonly reason: string;
 }
@@ -59,10 +77,21 @@ const isCategory = (value: unknown): value is AircraftSizeCategory =>
 const isValidDate = (value: string) => DATE_ONLY.test(value) &&
   new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
-/** The close block of the OCC review detail; absent on servers before ADR-0034. */
+const isBillingExclusion = (value: unknown) => isRecord(value) &&
+  hasOnlyKeys(value, ["serviceId", "reason", "excludedAt"]) && isUuid(value.serviceId) && isText(value.reason, 500) &&
+  isInstant(value.excludedAt);
+
+/**
+ * The close block of the OCC review detail; absent on servers before ADR-0034. `billingExclusions` (3-N11) may be
+ * missing on servers before phase 3, block D.
+ */
 export const isOccReviewClose = (value: unknown): value is OccReviewCloseResponse =>
   isRecord(value) &&
-  hasOnlyKeys(value, ["milestones", "charges", "chargeOptions", "timing", "canAdjustCharges", "damageCount"]) &&
+  hasOnlyKeys(value, ["milestones", "charges", "chargeOptions", "timing", "canAdjustCharges", "damageCount",
+    "billingExclusions"]) &&
+  (value.billingExclusions === undefined || value.billingExclusions === null ||
+    (Array.isArray(value.billingExclusions) && value.billingExclusions.length <= 200 &&
+      value.billingExclusions.every(isBillingExclusion))) &&
   Array.isArray(value.milestones) && value.milestones.length <= 100 &&
   value.milestones.every(item => isRecord(item) && hasOnlyKeys(item, ["code", "actualAt"]) &&
     isText(item.code, 40) && isInstant(item.actualAt)) &&
@@ -89,6 +118,15 @@ export const isOccReviewClose = (value: unknown): value is OccReviewCloseRespons
 
 export const isOccReviewChargeAdjustResponse = (value: unknown): value is OccReviewChargeAdjustResponse =>
   isRecord(value) && hasOnlyKeys(value, ["reviewVersion"]) && typeof value.reviewVersion === "string" &&
+  /^"[0-9a-f]{64}"$/.test(value.reviewVersion);
+
+/** The pending revision a reopening created (3-H), of this operation. */
+export const isOccReviewReopenResponse = (value: unknown, operationId: string): value is OccReviewReopenResponse =>
+  isRecord(value) &&
+  hasOnlyKeys(value, ["operationId", "submissionId", "revisionNumber", "status", "reviewVersion"]) &&
+  isUuid(value.operationId) && value.operationId.toLowerCase() === operationId.toLowerCase() &&
+  isUuid(value.submissionId) && typeof value.revisionNumber === "number" && Number.isInteger(value.revisionNumber) &&
+  value.revisionNumber > 1 && value.status === "PendingReview" && typeof value.reviewVersion === "string" &&
   /^"[0-9a-f]{64}"$/.test(value.reviewVersion);
 
 const isAllowance = (value: unknown): value is GroundTimeAllowanceResponse =>
@@ -124,6 +162,23 @@ export function normalizedAddCharge(command: AddOccReviewChargeCommand): AddOccR
 export function normalizedRemoveCharge(command: RemoveOccReviewChargeCommand): RemoveOccReviewChargeCommand | null {
   const reason = reasonOf(command?.reason);
   return isRecord(command) && isUuid(command.submissionId) && reason ? { submissionId: command.submissionId, reason } : null;
+}
+
+/** The billing exclusion of a service (3-N11): its submission, whether it is excluded and a reason of 8 to 500. */
+export function normalizedBillingExclusion(
+  command: SetOccReviewServiceBillingExclusionCommand,
+): SetOccReviewServiceBillingExclusionCommand | null {
+  const reason = reasonOf(command?.reason);
+  return isRecord(command) && isUuid(command.submissionId) && typeof command.excluded === "boolean" && reason
+    ? { submissionId: command.submissionId, excluded: command.excluded, reason } : null;
+}
+
+/** The reopening of an approval (3-H): the approved submission and a reason of 8 to 2000, without control characters. */
+export function normalizedReopenReview(command: ReopenOccReviewCommand): ReopenOccReviewCommand | null {
+  if (!isRecord(command) || !isUuid(command.submissionId) || typeof command.reason !== "string") return null;
+  const reason = command.reason.trim();
+  return reason.length >= 8 && reason.length <= 2000 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(reason)
+    ? { submissionId: command.submissionId, reason } : null;
 }
 
 export function normalizedAllowance(command: SetGroundTimeAllowanceCommand): SetGroundTimeAllowanceCommand | null {

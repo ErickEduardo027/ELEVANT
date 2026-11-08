@@ -260,6 +260,7 @@ export default function PlanningPage({
 
       <PlanningDrawer
         flight={selectedFlight}
+        dataRevision={dataRevision}
         onClose={() => {
           assignment.reset();
           setSelectedFlightId(null);
