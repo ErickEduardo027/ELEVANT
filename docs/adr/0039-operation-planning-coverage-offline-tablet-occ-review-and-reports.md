@@ -1,0 +1,264 @@
+# ADR-0039: Fase 3 «La operación»: planificación de vuelos, cobertura, tablet sin conexión, revisión de OCC y reportes
+
+## Estado
+
+Accepted — 2026-11-08.
+
+## Contexto
+
+Fase 3 «La operación» del ciclo operativo: desde el vuelo que OCC planifica hasta la operación aprobada que Finanzas factura y la aerolínea ve en su portal. Abarca la planificación de vuelos y escalas, la cobertura y la asignación de agentes, la tablet sin conexión y la entrega a OCC, la revisión de OCC con la Orden de Servicio y las incidencias, y los reportes de OCC y de Gestión Humana. El 5 de noviembre de 2026 la evaluación del ciclo verificó 40 huecos de esta fase. Los más graves:
+- El tipo de avión nunca se capturaba, así que el recargo por tiempo extra no se aplicaba solo (3-B), y no se podía asignar un agente después de registrar la llegada (3-C).
+- Aprobar no liberaba al agente, y el tope de 3 operaciones simultáneas daba conflictos falsos (3-D). La reasignación automática por cambio de posición no aplicaba ninguna regla de elegibilidad (3-N05).
+- La tablet dejaba de mostrar vuelos nuevos cuando el agente acumulaba 100 asignaciones (3-N01), y mover el vuelo a otra terminal o desactivar su posición dejaba la operación en curso fuera del alcance del agente (3-N03).
+- Suspender, terminar o vencer un contrato no detenía las operaciones ya asignadas: la tablet las iniciaba y OCC no se enteraba (3-N04).
+- La tablet entregaba a OCC con hitos, datos del vuelo, daños y firmas aún en cola, y el servidor los rechazaba para siempre después de la entrega (3-N06). Sin red no reenviaba el inicio, los servicios, los cargos, el checklist ni el chat (3-I), y un `401` o un `403` borraba en silencio la evidencia sin enviar (3-N12).
+- La Orden de Servicio firmada en rampa no coincidía con lo que se aprobaba y se facturaba (3-N02).
+- Las escalas no se cancelaban, desviaban ni corregían (3-A), la misma escala podía existir dos veces (3-N07) y dos vuelos podían quedar en la misma posición (3-N10).
+- OCC no gestionaba las incidencias ni podía reabrir una aprobación (3-G, 3-H), y un servicio en «Excepción» con cantidad ejecutada nunca se facturaba (3-N11).
+- Los reportes se cortaban en silencio a 5 000 filas, atribuían trabajo a agentes liberados, contaban servicios que no se facturan y salían en inglés y en UTC (3-N13 a 3-N16).
+
+Este ADR recoge cómo se cerraron, en cinco bloques: A (`28a43174`, planificación de vuelos y escalas), B (`f5731a09`, cobertura, asignación y relevo de agentes), C (`d16e7666`, tablet sin conexión y entrega a OCC), D (`79f32872`, revisión de OCC, Orden de Servicio e incidencias, con la única migración de la fase) y E (`e3e9cb64`, reportes de OCC y de Gestión Humana y portal). Describe el código de `f2d5c52c`, que integra los cinco bloques con Development, ya con la fase 2 completa; las correcciones de la revisión de cada bloque llegan en commits posteriores. Refina [ADR-0019](0019-menu-option-permissions-and-department-notifications.md), [ADR-0024](0024-airline-permits-and-contract-lifecycle.md), [ADR-0026](0026-ramp-staff-readiness-and-hr-shifts.md), [ADR-0027](0027-occ-ready-contracts-and-stand-locations.md), [ADR-0028](0028-aerodatabox-flight-feed-with-unit-budget.md), [ADR-0029](0029-ramp-realtime-alerts-and-chat-read-state.md), [ADR-0030](0030-position-coverage-per-shift-and-combined-stands.md), [ADR-0031](0031-flight-report-capture-on-the-tablet.md), [ADR-0032](0032-aviam-forms-signatures-and-walkaround.md), [ADR-0033](0033-charter-flights-without-contract.md), [ADR-0034](0034-operational-close-occ-to-finance.md), [ADR-0035](0035-direct-invoicing-simulated-ecf.md), [ADR-0037](0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md) y [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md), y sigue la convención de comandos de ADR-0037 y ADR-0038 (sección 1 de cada uno).
+
+## Decisión
+
+**1. Convenciones comunes.**
+- **Comandos web.** Siguen el patrón de ADR-0037: cada comando corre en una transacción serializable, resuelve el replay antes que la versión y guarda en la misma transacción el cambio, la auditoría, los avisos y el recibo en `CommercialCommandReceipts` (tabla `commercial.finance_pricing_commands`). Cada uno tiene su acción: `occ.turnaround.reschedule`, `occ.operation.handover`, `hr.shift.adjust`, `occ.review.reopen`, `occ.incident.status_change`, `finance.charter.prepayment.reopen`…
+- **Comandos de la tablet.** Siguen en `integration.mobile_command_receipts`, ligados a la instalación. Todo rechazo de regla guarda su código en el recibo, y la repetición devuelve el mismo código. Si un campo opcional nuevo no llega, el hash del recibo es byte a byte el de la versión anterior: la APK desplegada y su cola no reciben `idempotency_conflict` al reenviar. Una prueba SQL repite un recibo sembrado con el hash anterior.
+- **Versión esperada, según dónde viaja.**
+  - En `If-Match`, con el `ETag` fuerte, como Planificación y Revisión: sin versión responde `428 expected_version_required` y con una vieja, `412 version_conflict`. La usan las escalas, el mapa de posiciones, el estado de las incidencias, la reapertura y la exclusión de facturación.
+  - En el cuerpo o en el query (`expectedVersion`, `version` o `expectedAssignmentId`): sin versión, `400 expected_version_required`; con una vieja, `409 version_conflict`, o `assignment_changed` cuando la versión es la asignación que OCC vio. La usan el ajuste de turno, el relevo, la liberación del agente y la reapertura de la cotización del charter.
+- **Clave.** Los comandos nuevos exigen `Idempotency-Key` (`400 idempotency_key_required`). Los que ya existían y la ganan la aceptan opcional mientras queden clientes antiguos (fase expand; lista en «Compatibilidad»). Donde la versión también era opcional (el mapa de posiciones y la liberación del agente), una clave la vuelve obligatoria.
+- **Problem Details.** Todo `400`, `404`, `409`, `412`, `422` y `428` de la fase lleva `extensions.code` y un título en español; las reglas que se rompen van en `reasons`. Un `403` por permiso sigue sin código. El cliente compartido registra los códigos en `packages/api-client/src/errors.ts`: amplía `PLANNING_CODES` y `HUMAN_RESOURCES_CODES`, suma los grupos `RAMP_EVIDENCE_CODES`, `OCC_REVIEW_CODES`, `OCC_INCIDENT_CODES`, `CHARTER_CODES` y `REPORT_CODES`, y las razones `simultaneous_limit` y `terminal_scope_missing`.
+- **Permisos.** Hay cuatro códigos nuevos en `DepartmentPermissionCatalog`, que el administrador de OCC hereda (`CodesOf`):
+  - `operations.planning.update` («Reprogramar, cancelar o desviar escalas»);
+  - `operations.review.reopen` («Reabrir operaciones aprobadas sin facturar»);
+  - el módulo `operations.incidents`, con `read` y `update` («Reportar y gestionar incidencias»), subventana de Revisión.
+
+  Lo demás reutiliza permisos existentes: `operations.planning.read`, `create` y `assign`, `operations.positions_map.assign`, `operations.coverage.assign`, `operations.review.read` y `decide`, `human_resources.schedules.write`, `finance.charters.confirm` y los de los reportes.
+- **Avisos.** Ningún bloque añade correos. A la tablet solo le llegan tipos que la APK desplegada ya conoce: `assignment_released`, `operation_assigned` y `flight_changed`. Los tipos nuevos van a OCC (cuentas `ADMIN_OCC` con la estación en alcance): `flight_cancelled_by_provider`, `flight_diverted_by_provider`, `stand_change_unassigned` y `contract_not_in_force`, que abren Planificación. Finanzas recibe un aviso de departamento nuevo, `charter_cancelled`.
+- **Hora local.** Las horas se guardan en UTC. El día y la hora local salen de `BusinessCalendar` (`backend/Elevant.Application/Common/BusinessCalendar.cs`) con la zona IANA de la estación, nunca de `TimeZoneInfo.FindSystemTimeZoneById`. private-web captura y muestra con `stationLocalToUtc`, `utcToStationLocalInput` y `formatBusinessDateTime` (`frontend/private-web/src/services/businessDay.js`); public-web, con `formatLocalDateTime` (`frontend/public-web/src/lib/business-day.ts`), y la tablet toma sus horas del reloj del servidor (sección 4).
+- **Pantallas.** Los estados, servicios, checklist, incidencias, hitos y unidades salen en español de `frontend/private-web/src/features/operations/operationLabels.js` y, en el servidor, de `OperationLabels`; un código desconocido sale como «Otro (código)». Los errores se explican con `problemMessage` y el mapa de cada área, nunca con el título del servidor. Ante un `409`, `412` o `428` la vista relee antes de una nueva intención, y un reintento de la misma intención reutiliza su clave.
+
+**2. Planificación de vuelos y escalas (3-A, 3-B, 3-C, 3-N07, 3-N08, 3-N10, 3-N17, 3-N19, 3-N21, 3-N27, 3-N28).**
+- **Editar, cancelar o desviar una escala (3-A).** `OccTurnaroundsController`:
+  - `GET occ/planning/turnarounds/{id}` devuelve la escala, su versión (repetida como `ETag`) y las acciones que su estado permite: `reschedule`, `cancel`, `divert` y `correctArrival`;
+  - `PUT …/schedule` («Editar vuelo») y `POST …/status-changes` (`Cancelled` o `Diverted`) exigen `operations.planning.update`, `Idempotency-Key`, `If-Match` y un motivo de 5 a 500 caracteres. Solo valen antes de que la operación inicie: si no, responden `operation_started` o `turnaround_closed`;
+  - reprogramar revalida el contrato del nuevo día local, la posición (bloqueada) y, si hay agente, su turno y el tope de tres operaciones simultáneas (`assigned_agent_unavailable`, con razones como `simultaneous_limit`). No cambia la aerolínea;
+  - cancelar o desviar cierra la posición, libera a los agentes por la ruta única (`RampAgentRelease`, aviso `assignment_released`) y pasa la operación a `Cancelled`. Si el charter tenía un prepago confirmado o registrado, Finanzas recibe `charter_cancelled`; la devolución sigue por Cobros y nunca es automática;
+  - nada se borra: se audita `occ.turnaround.rescheduled`, `occ.turnaround.cancelled` u `occ.turnaround.diverted`.
+
+  Planificación ofrece «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» solo con el permiso y según las acciones que permite el servidor. El tablero ya no cuenta como pendiente de asignación una escala cancelada, desviada o completada.
+- **El proveedor no cancela.** Cuando el feed informa cancelado o desviado un vuelo que OCC importó, OCC recibe `flight_cancelled_by_provider` o `flight_diverted_by_provider` una sola vez, cuando cambia el estado del proveedor. La escala no cambia hasta que OCC decide.
+- **Un vuelo, una escala (3-N07).** El alta manual del mismo vuelo de la aerolínea en el mismo día local responde `409 flight_already_planned`; el número se compara normalizado (`FlightIdentity`). La importación del feed se vincula a la escala abierta que ya existe: deja las propuestas `Confirmed`, completa el tipo de avión y la matrícula si faltan, audita `occ.turnaround.feed_linked` y responde `linked: true`. Un replay conserva el vínculo.
+- **Código legible (3-N27).** Las escalas nuevas, manuales o importadas, reciben el código `{ESTACIÓN}-{AAAAMMDD}-{NNN}` (por ejemplo, `PUJ-20261108-001`), numerado por estación y día local (`OperationCodeFormat` y `OperationCodes.NextAsync`, con `UPDLOCK, HOLDLOCK` sobre el prefijo). Los códigos `MAN-`, `EXT-` y `DEV-` ya emitidos se conservan.
+- **Tipo de avión (3-B).** Ya se elegía en «Nuevo vuelo» y en la importación (ADR-0038); ahora también se captura en «Editar vuelo», en la llegada del mapa de posiciones y en «Datos del vuelo» de la tablet (sección 4). Debe estar activo (`aircraft_type_unavailable`); un avión ancho no entra en una posición limitada a estrecho (`stand_unavailable` con `reasons`), y el tipo queda fijo desde la primera entrega (`aircraft_type_locked`). Con el tipo, `OVERTIME` se aplica solo, porque la evidencia del cierre ya lo lee (ADR-0034).
+- **Asignar después de la llegada (3-C).** `OccPlanningAssignmentPolicy` acepta una escala `InProgress` mientras su operación siga `Planned`: registrar la llegada solo dice que el avión está en calzos. Las opciones y el comando usan la misma regla.
+- **Llegada y su corrección (3-N08).** OCC registra la llegada con la hora que escribe en la hora local de la estación (por defecto, ahora) y, si quiere, el tipo de avión. Desde ese registro el tramo pasa a `Manual` y el feed ya no reescribe su hora real. Corregirla después exige motivo (`reason_required`) y solo vale antes de la primera entrega (`arrival_locked`): se audita `occ.turnaround.arrival_corrected` con la hora anterior y la nueva, y la tablet recibe `flight_changed`. `DELAY` se mide con la hora corregida. El mapa ofrece «Corregir llegada» cuando el servidor la permite.
+- **Mapa de posiciones sin carreras (3-N10).** `POST occ/turnarounds/{id}/arrival`, `…/stand` y `…/stand/release`:
+  - aceptan `Idempotency-Key` e `If-Match` opcionales durante la fase expand; con clave, la versión es obligatoria;
+  - corren en una transacción serializable que bloquea la fila de la posición (`StandAvailability.LockAsync`, `UPDLOCK, HOLDLOCK` sobre `ref.stands`) y repite dentro el chequeo de solape y de combinaciones. El alta manual y la importación toman el mismo bloqueo, así que dos vuelos nunca quedan en la misma posición, envíe o no el cliente las cabeceras;
+  - un interbloqueo o un reintento agotado responde `version_conflict`; todo fallo lleva `code`, y el `ETag` nuevo viaja en la cabecera. La respuesta del tablero no gana claves.
+- **Hoy de la estación (3-N17).** Sin fecha, `GET occ/planning` abre el día de hoy en la zona de la estación, nunca la última fecha con vuelos. Monitoreo y el mapa lo heredan.
+- **Hora local en los diálogos (3-N19).** «Nuevo vuelo», «Editar vuelo» y la llegada se escriben en la hora local de la estación y viajan en UTC; las etiquetas dicen «hora local de {estación}». La zona sale de la respuesta y, si falta, del calendario de AVIAM.
+- **Aerolínea mínima para un charter (3-N21).** `POST occ/planning/charter-airlines` (`operations.planning.create`, `Idempotency-Key` obligatoria; `201` la primera vez y `200` en un replay) crea una organización `OCC-…`, la aerolínea y un perfil comercial sin verificar. El OACI de 3 letras es obligatorio y el IATA, opcional. Un código en uso responde `409 airline_code_in_use` con el `airlineId` que lo tiene. Después, la aprobación comercial de un perfil verificado con los mismos códigos vincula esa aerolínea, la completa y audita `commercial.airline.linked`, en lugar de responder `airline_code_in_use`. «Nuevo vuelo» tiene el formulario y, al terminar, selecciona la aerolínea.
+- **Acciones sin backend (3-N28).** Planificación ya no muestra «Editar planificación», «Crear Work Order» ni «Exportar», y la tarjeta del vuelo solo ofrece «Ver detalle».
+
+**3. Cobertura, asignación y relevo de agentes (3-D, 3-E, 3-F, 3-J, 3-N01, 3-N03, 3-N04, 3-N05).**
+- **Una sola regla de ocupación (3-D).** `OperationOccupancyRules` (`backend/Elevant.Application/Operations/OperationOccupancyRules.cs`):
+  - un agente lleva como máximo tres operaciones simultáneas que lo ocupan: asignadas, en curso o devueltas para corrección. Las entregadas (pendientes o en revisión), las aprobadas y las canceladas no cuentan. Una operación que ocupa al agente sin una ventana válida cuenta como solape: la regla falla cerrada;
+  - una posición queda tomada en la ventana salvo que la operación esté aprobada o cancelada, o la escala completada, cancelada o desviada;
+  - la usan Planificación, la reasignación por cambio de posición, el relevo y la reprogramación. La cuarta operación es `assignment_conflict`, y al reprogramar, `simultaneous_limit`. Un agente con menos de tres meses sin una cobertura con mentor a esa hora es `mentor_required`.
+
+  Al aprobar, la operación deja de ocupar al agente y la posición por su estado. No se escribe `ReleasedAt` ni se cierra la posición, porque los documentos, la asistencia, los reportes y la reapertura leen esas filas: `RampAgentRelease.ReleaseOnApprovalAsync` solo anuncia a Planificación y a la agenda del agente que ambos quedaron libres.
+- **Ajuste de turno (3-E).** `PATCH human-resources/shifts/{id}` es un solo comando para Gestión Humana y OCC, con el mismo permiso y alcance que registrar el turno:
+  - cambia el inicio y el fin locales de un turno de hoy o de un día futuro en el calendario de su estación, con `Idempotency-Key`, `expectedVersion` (`409 version_conflict`) y un motivo de 5 a 500 caracteres;
+  - el turno debe seguir cubriendo las coberturas (como titular o mentor) y las operaciones del agente (`shift_uncovers_work`), no pasa de 16 horas (`invalid_shift`) y se rechaza si su día ya pasó (`shift_in_past`) o su asistencia está validada (`attendance_validated`);
+  - audita `hr.shift.adjusted` y emite `hr_shifts`, la agenda del agente y `occ_planning`.
+
+  Programar desde OCC otro turno ese día responde `409 shift_day_taken`. `GET occ/planning/turnarounds/{id}/agents/{agentId}/shift` lee el turno de ese día con su `version` (`404 shift_not_found` si no hay), y el panel ofrece «Ajustar turno del día», que propone ampliarlo hasta cubrir el vuelo. Gestión Humana tiene «Ajustar horario» en el editor semanal.
+- **Relevo (3-F).** `GET occ/planning/turnarounds/{id}/assignment/handover-options` y `POST …/assignment/handover` (`operations.planning.assign`) pasan una operación en curso o devuelta a otro agente elegible para lo que queda de ella:
+  - exigen `Idempotency-Key`, `expectedAssignmentId` (`assignment_changed`) y un motivo de 5 a 500 caracteres; los demás rechazos son `handover_not_allowed`, `same_agent` y `agent_not_eligible`;
+  - corren en una transacción serializable con `UPDLOCK` sobre la operación y el agente destino, y la elegibilidad es la de la asignación manual sobre la ventana que queda;
+  - `RampAgentRelease.ReplaceAgentAsync` libera al agente anterior sin cambiar el estado de la operación, crea la asignación nueva con el mismo rol, avisa `assignment_released` y `operation_assigned`, y audita `occ.operation.handed_over` con los dos agentes;
+  - la evidencia conserva su autor, y OCC puede registrar la asistencia del agente relevado después del inicio.
+
+  Planificación tiene «Relevar agente», con sus estados de carga, vacío, error recuperable y falta de permiso.
+- **Cobertura y liberación idempotentes (3-J).**
+  - `POST occ/coverage` y `POST occ/coverage/{id}/release` aceptan `Idempotency-Key` opcional, con los recibos `occ.coverage.create` (con las posiciones ordenadas en el hash) y `occ.coverage.release`. La misma clave y el mismo cuerpo devuelven el tablero sin repetir la cobertura; otro cuerpo responde `409 idempotency_conflict`.
+  - `POST …/assignment/release` acepta `?expectedAssignmentId=` y la clave, ambas opcionales; una clave sin la asignación responde `400 expected_version_required`, otra asignación `assignment_changed` y una operación iniciada `operation_started`, porque esa operación se releva. Usa la ruta única `RampAgentRelease.ReleaseOperationAsync`.
+- **Elegibilidad completa al seguir la posición (3-N05).** La cobertura exige el alcance del agente en la terminal (`terminal_scope_missing`) y documentos vigentes hasta el día local en que termina. Cuando OCC o el aeropuerto cambian la posición, `CoverageReassignment.FollowStandAsync` evalúa con la elegibilidad completa (documentos a la fecha local, terminal, turno, ausencias, mentor y tope de tres) a los agentes que cubren la posición nueva y al agente anterior:
+  - si hay uno elegible, la operación pasa a él (`occ.operation.reassigned_by_stand`);
+  - si no lo hay, pero el anterior sigue siendo elegible, se queda con él;
+  - si tampoco, la operación vuelve a `Planned` y OCC recibe `stand_change_unassigned` (`occ.operation.unassigned_by_stand`).
+- **Lista de la tablet (3-N01).** `GET ramp/operations` trae las operaciones asignadas, en curso, entregadas (pendientes o en revisión) y devueltas, más las aprobadas de las últimas 48 horas, con las activas primero y el tope de 100. La respuesta no gana claves.
+- **La operación iniciada sigue a su agente (3-N03).** Una vez iniciada, se autoriza por la asignación abierta y el alcance de estación, sin exigir la posición activa ni el alcance de terminal, hasta que termina. Pasarla a otra persona es un relevo explícito.
+- **Contrato no vigente (3-N04).** `POST ramp/operations/{id}/start` responde `409 contract_not_in_force` si ningún contrato cubre ya la fecha de la operación (`ApplicableContracts.For`), salvo un charter. El recibo repite el rechazo, y lo que ya está en curso termina con normalidad. Cuando un contrato activo pasa a `Suspended`, `Terminated` o `Expired`, OCC recibe `contract_not_in_force` por cada operación `Planned` o `Assigned` de hoy en adelante que no tenga otro contrato aplicable (`ContractOperationsNotice`). La tablet nueva lo explica como «Contrato no vigente».
+
+**4. La tablet: cola, reloj, evidencia y entrega (3-I, 3-K, 3-N06, 3-N09, 3-N12, 3-N18, 3-N25).**
+- **La hora del toque (3-I).** `POST ramp/operations/{id}/start` acepta un cuerpo opcional `{ "startedAt" }`; sin cuerpo sigue siendo válido, como lo envía la APK desplegada. La transición de un servicio acepta un `occurredAt` opcional. El servidor guarda la hora del toque recortada a su reloj, según `RampEvidenceTimePolicy`: el inicio no es anterior a la asignación ni de hace más de 24 horas, y una transición nunca es anterior a la última del servicio (`service_time_out_of_order`). Sin esos campos, el cuerpo y el hash del recibo son los de la versión anterior.
+- **Una sola ventana de evidencia (3-N25).** Hitos, daños, incidencias y servicios caen entre el inicio o la llegada registrada, lo que ocurrió primero (también la que OCC corrigió), y el cierre de la operación: ahora, la entrega mientras OCC revisa o la primera entrega en una ronda de corrección. Hay 2 minutos de tolerancia y nunca se pasa de ahora más 2 minutos (`time_outside_operation_window`). Desaparece el límite fijo de 24 horas de los hitos. Solo se exige el orden `BLOCK_ON ≤ PUSHBACK` (`milestone_out_of_order`): ordenar todo el catálogo rechazaría secuencias reales.
+- **Códigos en rampa.** Los controladores de rampa del inicio, los servicios, los hitos y datos del vuelo, los documentos, las incidencias y el charter llevan el filtro `[RampProblemDetails]` (`backend/Elevant.Api/Controllers/RampProblems.cs`): `400 invalid_ramp_command`, `404 not_found` y `409` con el código de la regla, `ramp_operation_state_conflict` o `idempotency_conflict`.
+- **Tipo de avión en «Datos del vuelo» (3-B).** `GET ramp/aircraft-types` (`RampReferenceController`) entrega los tipos activos, que la tablet guarda por cuenta; ante un `404` de una API anterior, deja el tipo en solo lectura. `PUT ramp/operations/{id}/flight-data` acepta `aircraftTypeId` opcional: sin él conserva el tipo actual y el hash del recibo es el de la versión anterior. Un tipo inactivo responde `409 aircraft_type_unavailable`, y un cambio después de la primera entrega, `aircraft_type_locked`.
+- **Una sola cola (3-I).** `frontend/mobile-agent/src/synchronization/flight-report-outbox.ts` suma el inicio, las transiciones de servicio, los cargos, el envío del checklist y el chat a lo que ya llevaba (hitos, datos del vuelo, firmas, walk-around y charter). Es por cuenta y FIFO por operación:
+  - sin red o con la sesión revocada se detiene todo; una foto que ELEVANT no puede guardar ahora no detiene nada; cualquier otro fallo temporal, o un inicio rechazado, retiene solo el resto de su operación;
+  - los comandos que reservó la versión anterior se importan una vez, con su misma clave y sin hora, para que su recibo coincida;
+  - la cola se vacía al abrir la app, al recuperar la señal, al volver a primer plano y cada minuto; después salen las incidencias;
+  - la pantalla de la operación aplica lo pendiente sobre la vista de ELEVANT o su copia guardada, marcado «En el dispositivo», y ya no bloquea el inicio ni los servicios cuando la vista viene de la caché.
+- **Reloj del servidor (3-N18).** `server-clock.ts` toma el desfase de la cabecera `Date` cuando la ida y vuelta tarda menos de 5 segundos y lo guarda en el dispositivo. Toda hora que captura la tablet sale de `serverNow()`: «AHORA», el ajuste de los hitos, el inicio, los servicios, los daños, las incidencias y la asistencia. La insignia de conexión avisa cuando el desfase pasa de 2 minutos.
+- **La evidencia sobrevive a la sesión (3-N12).** Un `401`, un `403`, la sesión vencida o el cierre de sesión borran la credencial, los metadatos y las cachés, pero no lo que ELEVANT aún no confirmó: la cola y sus fotos, las incidencias, los comandos reservados, la entrega, la corrección, los borradores del checklist y las observaciones de asistencia. Quedan en la tablet ligados a su cuenta, y solo esa cuenta los lee y los envía al volver a entrar. La tablet avisa cuántos registros guarda, y «Sincronización» indica los de otra cuenta, que no se pueden ver ni descartar.
+- **Entrega sin pendientes (3-N06).** La APK nueva vacía su cola antes de entregar y no entrega mientras quede un registro pendiente o rechazado de la operación, ni mientras la Orden de Servicio no tenga las firmas de la aerolínea y de AVIAM sobre su contenido actual. El servidor no rechaza esa entrega en `/submit`, para no cambiar el significado de lo que ya envía la APK desplegada: la puerta del servidor está en la aprobación de OCC (sección 5).
+- **Evidencia tardía (3-N06).** Mientras la operación está `PendingReview`, el servidor acepta los hitos, los daños y los datos del vuelo capturados antes de la entrega (`RampOperationExecutionPolicy.AcceptsLateEvidence`). `PendingSubmissionEvidenceRefresher` recalcula los recargos automáticos y la evidencia que revisa OCC, mueve la versión de la revisión (quien tenía la anterior recibe `412` y relee), audita `ramp.operation.evidence.late_accepted` y anuncia `occ_review`. Si la evidencia tardía cambia la Orden firmada, la aprobación queda bloqueada con `service_order_stale`: es intencional.
+- **Ronda de corrección (3-N09).** La ventana se cierra en la primera entrega. En el reenvío, `handedOffAt` y `ActualEndAt` toman la primera `SubmittedAt`, y la evidencia y los recargos se miden hasta esa hora. `AutomaticSurchargeApplier.ReconcileAsync` añade los recargos automáticos que faltan y retira solo los automáticos que ya no se detectan (con `removed_at` y el motivo «Recalculado con las horas corregidas»), nunca los de OCC. En la tablet, el ajuste de la hora queda acotado a la ventana y, en una corrección, un hito vacío abre el ajuste en lugar de grabar «AHORA».
+- **Foto del daño en la revisión (3-K).** La revisión de OCC lista las marcas del walk-around con su nota y su hora local, y «Ver foto» la carga bajo demanda con `getOccDamagePhoto` (solo JPEG o PNG) sobre `GET occ/operations/{id}/damage-marks/{markId}/photo`, con sus estados de carga, sin foto, error con «Reintentar» y falta de permiso. La tablet ya no contiene `feature-pending-screen.tsx`, que nadie usaba.
+
+**5. Revisión de OCC, Orden de Servicio, incidencias y charter (3-G, 3-H, 3-N02, 3-N11, 3-N22, 3-N23, 3-N24, 3-N29).**
+- **Se aprueba lo que se firmó (3-N02).**
+  - Los recargos automáticos se proyectan en la Orden de Servicio antes de la firma (`AutomaticSurchargeApplier.PlanAsync` y `ProjectAsync`), así que lo que firman la aerolínea y AVIAM es lo que se congela.
+  - Aprobar exige la Orden firmada o corregida por OCC: si no, `409 service_order_unsigned` o `service_order_stale`. El detalle expone `serviceOrderState` (`Signed`, `Corrected`, `Stale` o `Unsigned`), y la web deshabilita «Aprobar» con la explicación.
+  - Un ajuste de cargos o una exclusión de facturación que OCC hace después de la firma crea una versión corregida con su motivo (`corrects_version_id`). La aerolínea recibe esa versión en su portal, y el PDF la imprime como «Corregida por OCC después de la firma», con el motivo, la hora y el autor.
+- **Lo que se factura (3-N11).** `ServiceBillability` (`backend/Elevant.Application/Finance/ServiceBillability.cs`) es la regla única: se factura un servicio completado o en excepción, con cantidad ejecutada, que OCC no excluyó. La aplican «Por facturar», el borrador interno, la emisión e-CF, los recargos automáticos y los reportes. `POST occ/review/operations/{id}/services/{serviceId}/billing-exclusion` (`operations.review.decide`, `Idempotency-Key`, `If-Match` y un motivo de 8 a 500 caracteres) excluye de la facturación un servicio en excepción con cantidad ejecutada, o lo vuelve a incluir, mientras la entrega esté pendiente. Otro servicio responde `billing_exclusion_not_allowed`, y una revisión cerrada, `review_closed`. Finanzas lo muestra como «Excluido por OCC en la revisión» (`excluded_in_review`).
+- **Cargos que el contrato excluye (3-N29).** `ContractChargeExclusions` es la regla compartida: las opciones de cargo de OCC no ofrecen lo excluido y el comando responde `charge_excluded_by_contract`. Un cargo heredado de ese tipo bloquea el servicio en «Por facturar», en el borrador y en la emisión con ese mismo motivo, hasta que OCC reabra la revisión y lo quite: Finanzas nunca lo valora en 0 sin aviso. Los demás rechazos de los ajustes llevan código (`charge_not_applicable`, `charge_already_marked` y `charge_already_removed`). Los ajustes y la decisión aceptan una `Idempotency-Key` opcional.
+- **Reabrir una aprobación (3-H).** `POST occ/review/operations/{id}/reopening` (`operations.review.reopen`, `Idempotency-Key`, `If-Match` y un motivo de 8 a 2000 caracteres):
+  - crea la revisión siguiente, `PendingReview`, con la misma evidencia, la misma hora de entrega y el mismo agente, enlazada a la aprobada;
+  - no toca la escala, los agentes, la posición ni las incidencias, y lo que la aprobación liberó sigue libre;
+  - responde `already_invoiced` si una línea de prefactura toma la operación (la corrección es entonces una nota de crédito), `review_not_approved` si no está aprobada, y `service_order_unsigned` o `service_order_stale` si la Orden no está firmada sobre su contenido actual;
+  - una revisión reabierta se corrige y se aprueba en OCC: nunca se devuelve a rampa (`reopened_review_cannot_return`).
+
+  La revisión tiene la sección «Reabrir revisión» y avisa cuando una revisión fue reabierta.
+- **Incidencias en OCC (3-G).** `OccIncidentsController`:
+  - `GET occ/operations/{id}/incidents` (`operations.incidents.read`) lista las incidencias vivas de una operación de las estaciones del actor, con quién las reportó, su versión y su historial;
+  - `POST` en la misma ruta (`operations.incidents.update`, `Idempotency-Key`; `201`, o `200` al repetir) reporta una incidencia de OCC, con la hora que OCC escribe en la hora local de la estación. La operación no puede estar aprobada ni cancelada (`operation_closed`), la hora cae dentro de su ventana y no en el futuro (`incident_occurred_at_invalid`), y un reporte incompleto responde `incident_report_invalid`;
+  - `POST occ/incidents/{id}/status` la pasa a revisión, la resuelve, la cierra una vez resuelta o devuelve una resuelta a revisión, con una nota de 8 a 2000 caracteres, la clave e `If-Match`. Una incidencia cerrada es definitiva (`incident_transition_invalid`);
+  - cada paso queda en `ops.incident_status_events`. Al aprobar, solo las incidencias que OCC no gestionó (abiertas o en revisión) se resuelven con la nota fija.
+
+  El panel «Incidencias de la operación» está en Revisión, también mientras la operación sigue en rampa, y en el detalle del vuelo de Planificación. La tablet sigue leyendo las mismas claves y la APK nueva muestra cada estado en español.
+- **Revisión en vivo (3-N23).** `useOccReviewChangeVersion` escucha `occ_review`: la cola, el detalle y el panel de incidencias se releen sin pasar a «cargando», y una decisión preparada se descarta si cambió la versión.
+- **En español (3-N22).** Revisión y Planificación muestran con su nombre en español los estados, los servicios, el checklist y sus respuestas, las incidencias, el origen de los cargos, el equipo, los hitos y las unidades.
+- **Charter (3-N24).** Antes de confirmar el prepago, un servicio agregado por error se retira marcándolo `NotPerformed` con su nota: deja de sumar al total y la Orden de Servicio lo imprime en 0. Con el prepago confirmado la tablet ya no agrega servicios (`409 charter_prepayment_confirmed`, guardado en el recibo) hasta que Finanzas reabre la cotización con `POST finance/charters/{id}/prepayment/reopening` (`finance.charters.confirm`, `Idempotency-Key`, motivo y la `version` leída; `409 version_conflict` o `charter_prepayment_not_confirmed`). La reapertura devuelve el prepago a `Pending`, conserva el monto y la referencia hasta la confirmación siguiente, audita `finance.charter.prepayment_reopened` y avisa a la tablet. `FinanceCharterResponse` gana `version`, y «Charters» tiene «Reabrir cotización». Marcar un servicio `NotPerformed` después de confirmar sigue permitido.
+
+**6. Reportes de OCC y de Gestión Humana y portal (3-N13, 3-N14, 3-N15, 3-N16, 3-N20, 3-N26).**
+- **Nada se recorta (3-N13).** La exportación de OCC (`GET occ/reports/{key}/export`) lleva el período completo o nada: hasta 25 000 filas en CSV y Excel y 5 000 en PDF (`OccReportCatalog.MaxExportRows` y `MaxPdfExportRows`). Un período mayor responde `422 report_too_large`, sin archivo ni auditoría, y el encabezado «Filas» es el total real. La exportación de Gestión Humana conserva su límite de 5 000 filas con el mismo código. Los `400`, `404` y `422` de ambos reportes llevan código con el filtro `[ReportProblemDetails]` (`backend/Elevant.Api/Controllers/ReportProblems.cs`): `invalid_report_query`, también para un error de binding, `report_not_found` y `station_unavailable`. El `403` sigue sin código. En private-web, exportar a PDF por encima del límite sugiere Excel o CSV.
+- **Productividad por tramo (3-N14).** `OperationWorkAttribution` atribuye cada tramo de la operación a quien lo trabajó:
+  - una operación sin iniciar cuenta para sus asignaciones abiertas, con 0 minutos;
+  - una iniciada cuenta para toda asignación abierta, o liberada después del inicio y asignada antes del fin, desde el mayor entre el inicio y la asignación hasta el menor entre la liberación y el fin, unida por agente;
+  - sin fin, cuenta 0 minutos.
+
+  Así, un agente liberado antes del inicio no cuenta, un relevo reparte los minutos y la aprobación no libera a nadie. La usan «Productividad por agente» y la columna «Agentes».
+- **Servicios facturables (3-N15).** «Servicios ejecutados por aerolínea» cuenta solo las operaciones aprobadas y aplica `ServiceBillability`, sin copiar la regla: el mismo conjunto que «Aprobado sin prefacturar» del reporte de Finanzas.
+- **Español y hora local (3-N16, 3-N26).** `OperationLabels` (estados, severidades, tipos de incidencia y unidades, como «Seguridad (alta)») y `HumanResourcesReportLabels` traducen los exportes. La unidad sale con su nombre de `ref.billing_units`, las cantidades sin ceros de escala y todas las horas, también «Generado», en la hora local de la estación (`BusinessCalendar.Zone`). Los PDF y Excel de Gestión Humana titulan, filtran y fechan en español (fechas `dd/MM/yyyy` y la columna «Fecha y hora local»), y su PDF sin filas dice «No hay filas para estos filtros.». Las páginas JSON y la auditoría conservan sus códigos. En private-web, el período por defecto de los reportes de OCC es el mes en curso según `businessToday()`, el calendario de AVIAM.
+- **Portal en hora local (3-N20).** El portal muestra la aprobación de OCC, el inicio y el fin reales y las firmas de la Orden de Servicio en la hora local de la estación, con el sufijo «(hora local PUJ)», como el PDF firmado. La zona sale del bootstrap, luego del estado de la aerolínea y, si falta, del calendario de AVIAM. La API sigue enviando UTC y ninguna respuesta gana claves.
+
+**7. Arnés E2E del ciclo completo.**
+- En `frontend/public-web/tests/e2e-cycle/fase3-operacion.spec.ts` ya no queda ningún `test.fixme`: los pasos `hueco 3-A` a `hueco 3-K` son pruebas reales, el paso final «huecos 3-N13 a 3-N26» comprueba los códigos de los reportes, los servicios facturables, la productividad y las horas locales de los CSV y PDF, y el paso del portal comprueba 3-N20. El spec de la fase 2 se adaptó al vínculo del feed (3-N07) y al código legible (3-N27).
+- Varios pasos se saltan, con su motivo, cuando el turno del agente sintético ya no tiene una ventana libre ese día; el de 3-H, cuando la operación del ciclo ya está en una prefactura.
+- El arnés no cambia: sigue necesitando el overlay `compose.local.e2e.yml`, Mailpit y la franja de 08:30 a 22:30 de la hora local (ADR-0038). Ningún workflow de CI lo ejecuta. Este ADR no registra todavía una corrida de la fase 3 contra el stack local.
+
+### Migración
+
+`20261108043225_AddOccIncidentsReviewReopenAndServiceOrderCorrections`, posterior a `20261106020045_AddCommercialRequestReviewAndIcaoOnlyAirlines`, es la única migración de la fase. Es aditiva, sin `HasData` ni DML de negocio, y todas sus FK son `NO ACTION`:
+- `ops.incidents`: `reported_by_ramp_agent_id` admite nulos y se suma `reported_by_account_id`, con su FK a la cuenta y su índice. `ck_incident_reporter` exige al menos un reportante.
+- `ops.incident_status_events`, tabla nueva: la incidencia, el estado anterior y el nuevo (`nvarchar(16)`), la nota (`nvarchar(2000)`), `occurred_at` (`datetimeoffset(3)`) y la cuenta que actuó, opcional; con el índice `(incident_id, occurred_at)`.
+- `ops.operation_submissions`: `reopened_from_submission_id` (FK a la misma tabla, con un índice único filtrado), `reopened_by_account_id` y `reopen_reason` (`nvarchar(2000)`). `ck_operation_submission_reopening` exige las tres o ninguna.
+- `ops.operation_document_versions`: `corrects_version_id` (FK a la misma tabla), `correction_reason` (`nvarchar(500)`), `corrected_by_account_id` y `corrected_at`. `ck_operation_document_version_correction` exige todas o ninguna.
+- `ops.operation_services`: `billing_excluded_at`, `billing_excluded_by_account_id` y `billing_exclusion_reason` (`nvarchar(500)`). `ck_operation_service_billing_exclusion` exige todas o ninguna.
+
+El `Down` se detiene (`THROW 52380` a `52383`) si ya hay incidencias reportadas por OCC o historial de incidencias, revisiones reabiertas, Órdenes de Servicio corregidas después de la firma o servicios excluidos de la facturación: es historia operativa y de facturación que se conserva. La migración está registrada en `database/DevelopmentDB/scripts/diagnostics/verify-development.sql`, y `dotnet ef migrations has-pending-model-changes` no reporta cambios.
+
+No necesitan migración:
+- `Cancelled` y `Diverted` de la escala, `Turnaround.AircraftTypeId`, su `rowversion` y `FlightLeg.Source`, que ya existían; el código legible cabe en el índice único actual;
+- los turnos, las coberturas y las asignaciones, que usan `RowVersion`, `ReleasedAt` y `AssignedTo`;
+- las horas de la tablet, que usan `actual_start_at`, `operation_service_status_events.occurred_at` y `mobile_command_receipts.error_code`, y los recargos retirados, que usan `removed_at`;
+- los permisos nuevos, que viven en `DepartmentPermissionCatalog`, y los recibos, que usan las tablas que ya existían.
+
+Ningún bloque toca el seed, la configuración (`appsettings*.json`), `backend/compose.development.api.yml` ni las plantillas de `ops/dokploy`.
+
+### Compatibilidad y orden de despliegue
+
+- **Orden.** Primero la API con su migración: la Database Release aplica `20261108043225_AddOccIncidentsReviewReopenAndServiceOrderCorrections` y `api-cd` promueve la API nueva sobre esa base (ADR-0011). Después, private-web y public-web. Al final, el APK.
+  - **private-web, justo después de la API.** La versión desplegada valida de forma estricta el detalle de Revisión OCC y la respuesta de importar del feed, que ahora traen `serviceOrderState` y `reopening`, y `linked`: hasta que salga la web nueva, la revisión y la importación fallan como respuestas inválidas. La lista de Charters de Finanzas tolera la `version` nueva.
+  - **public-web.** Ninguna respuesta del portal gana claves; la web nueva solo cambia cómo muestra las horas.
+  - **El APK, al final.** La APK desplegada sigue funcionando: ninguna respuesta que lee gana claves, sus peticiones conservan el hash del recibo, `POST …/start` sin cuerpo sigue siendo válido y no enviar `aircraftTypeId` conserva el tipo de avión. Hasta que se instale la APK nueva, muestra como un rechazo genérico los `409` nuevos (`time_outside_operation_window`, `milestone_out_of_order`, `contract_not_in_force` y `charter_prepayment_confirmed`) y como código los estados de incidencia que OCC ahora asigna (`InReview` y `Closed`). Tampoco bloquea la entrega con la cola pendiente o la Orden sin firmar: esa puerta queda en la aprobación de OCC.
+  - **Nunca al revés.** Una API anterior rechaza con `400` las peticiones de la APK nueva que llevan `startedAt` u `occurredAt`, porque sus contratos no admiten miembros desconocidos (`JsonUnmappedMemberHandling.Disallow`).
+- **Database Release cambia**: lleva la migración y su registro en `verify-development.sql`. El seed no cambia.
+- **Volver a la API anterior.** El modelo anterior declara obligatorio el agente que reporta una incidencia. Si la API vuelve a esa versión sobre la base ya migrada después de que OCC reporte una incidencia, falla donde carga esa incidencia completa, por ejemplo al aprobar su operación.
+- **Fase expand.** Aceptan todavía llamadas sin `Idempotency-Key`:
+  - la llegada, la asignación de posición y su liberación en el mapa, también sin `If-Match`;
+  - crear y liberar una cobertura;
+  - liberar al agente de una operación, también sin la asignación esperada;
+  - la decisión de la revisión y los ajustes de cargos, que ya exigían `If-Match`.
+
+  Los comandos nuevos de la fase la exigen.
+- **Avisos al operador.**
+  - Las operaciones `PendingReview` sin una Orden de Servicio firmada ya no se pueden aprobar: OCC las devuelve a rampa para que se firme.
+  - Las aprobaciones anteriores a 3-N02 sin una Orden firmada no se pueden reabrir (`service_order_unsigned`): su corrección es una nota de crédito.
+  - Las cifras de «Productividad por agente» y de «Servicios ejecutados por aerolínea» cambian respecto de los reportes anteriores: ya no cuentan a un agente liberado antes del inicio, reparten el trabajo en un relevo y solo suman los servicios facturables de operaciones aprobadas.
+- **Configuración del VPS.** No hace falta ningún cambio: no hay claves nuevas.
+
+## Consecuencias
+
+- OCC corrige, cancela o desvía un vuelo antes de que empiece, sin borrar nada, y un vuelo se planifica una sola vez aunque llegue también por el feed.
+- Dos vuelos nunca quedan en la misma posición, y un agente lleva hasta tres operaciones simultáneas y queda libre al aprobar.
+- Un vuelo nunca queda en manos de un agente que la tablet no autorizaría, una operación iniciada pasa a otro agente solo con un relevo explícito y ninguna operación se inicia sin contrato vigente, salvo un charter.
+- La tablet trabaja sin señal con una sola cola y la hora del toque, corregida con el reloj de ELEVANT. La evidencia no se pierde al perder la sesión, y la que llega tarde obliga a OCC a releer.
+- OCC aprueba exactamente lo que la aerolínea firmó, y Finanzas factura con una sola regla y nunca valora un cargo en 0 sin aviso.
+- Una aprobación sin facturar se reabre como revisión nueva; lo ya facturado se corrige con una nota de crédito.
+- Los reportes cuentan lo trabajado y lo facturable, en español y en la hora local de la estación, y nunca se recortan en silencio.
+- Durante la fase expand conviven dos formas de llamar a los comandos que ya existían.
+
+**Queda pendiente**
+- **Paso «contract».** Continúa el de ADR-0037 y ADR-0038. Cuando no queden clientes antiguos, hará obligatoria la `Idempotency-Key` en los comandos de la lista «Fase expand», y la versión esperada donde hoy acompaña a la clave (el mapa de posiciones y la liberación del agente).
+- **Zona de cada estación en private-web.** Donde la respuesta no trae la zona de la estación, private-web usa `America/Santo_Domingo`, porque la sesión no la lleva: por ejemplo, «Generado» de los reportes de OCC, la hora de consulta de los reportes de personal y las fechas que proponen los formularios de Gestión Humana. Planificación y el mapa usan la zona que traen sus respuestas. Una estación fuera de República Dominicana necesitará `ianaTimeZone` en las respuestas solo web, con su validador.
+- **Perfil `OCC-` después del vínculo.** Cuando la aprobación comercial vincula la aerolínea que OCC creó para un charter, su perfil comercial `OCC-…` sigue sin verificar y apuntando a la misma aerolínea. Archivarlo en Superadministración es una decisión pendiente.
+- **Documentos después de un relevo.** Los formularios de la operación nombran solo al agente de la asignación abierta, es decir, al nuevo. Los reportes sí reparten el trabajo entre los dos.
+- **Baja con una operación en curso.** Gestión Humana sigue sin poder dar de baja a un agente con una operación en curso o devuelta (`agent_has_operation_in_progress`), y su mensaje todavía dice que solo el agente la desbloquea enviándola desde la tablet. Desde esta fase OCC también puede relevarlo.
+- **Turno en otra estación.** Si `shift_day_taken` responde porque el turno del agente ese día es de otra estación, el panel de OCC no lo encuentra (`shift_not_found`): muestra el aviso, pero no ofrece el ajuste.
+- **`airlineId` de `airline_code_in_use`.** `ElevantApiError` no conserva esa extensión, así que «Nuevo vuelo» elige la aerolínea existente por nombre o IATA.
+- **Fase 4 «Facturación».** Sus 32 huecos siguen abiertos, entre ellos el día UTC de Finanzas (4-N10) y el prepago de un charter confirmado después de facturar (4-N22). En el arnés quedan `test.fixme` los pasos 4-A y 4-B.
+- **Corrida E2E.** Falta registrar una corrida de la fase 3 contra el stack local.
+
+## Trazabilidad de huecos
+
+El código y las pruebas citan estos identificadores.
+
+| Hueco | Qué faltaba | Sección |
+|---|---|---|
+| 3-A | Las escalas no se cancelaban, desviaban ni corregían | 2 |
+| 3-B | El tipo de avión nunca se capturaba y el tiempo extra no se aplicaba solo | 2 y 4 |
+| 3-C | No se asignaba un agente después de registrar la llegada | 2 |
+| 3-D | Aprobar no liberaba al agente: conflictos falsos frente al tope de 3 | 3 |
+| 3-E | OCC y Gestión Humana no ajustaban el turno del día | 3 |
+| 3-F | Sin relevo de una operación iniciada o devuelta | 3 |
+| 3-G | OCC no gestionaba las incidencias de la operación | 5 |
+| 3-H | La aprobación de OCC no se podía reabrir | 5 |
+| 3-I | Sin red, la tablet no reenviaba inicio, servicios, cargos, checklist ni chat | 4 |
+| 3-J | Cobertura y liberación del agente sin idempotencia ni versión esperada | 3 |
+| 3-K | La foto del daño sin consumidor en la revisión y una pantalla muerta en la tablet | 4 |
+| 3-N01 | La tablet dejaba de mostrar vuelos nuevos con 100 asignaciones | 3 |
+| 3-N02 | La Orden de Servicio firmada no coincidía con lo que se aprobaba y se facturaba | 5 |
+| 3-N03 | Mover el vuelo o desactivar la posición dejaba la operación en curso fuera del alcance del agente | 3 |
+| 3-N04 | Un contrato fuera de vigor no detenía las operaciones asignadas | 3 |
+| 3-N05 | La reasignación por cambio de posición no aplicaba la elegibilidad | 3 |
+| 3-N06 | Entrega con evidencia en cola, que el servidor rechazaba para siempre después | 4 |
+| 3-N07 | La misma escala podía existir dos veces | 2 |
+| 3-N08 | La llegada solo con la hora del clic y sin corrección | 2 |
+| 3-N09 | La corrección limitada a 24 h y medida hasta el reenvío | 4 |
+| 3-N10 | Mapa de posiciones sin versión ni idempotencia: dos vuelos en la misma posición | 2 |
+| 3-N11 | Un servicio en «Excepción» con cantidad nunca se facturaba | 5 |
+| 3-N12 | Un `401` o un `403` borraba en silencio la evidencia sin enviar | 4 |
+| 3-N13 | La exportación de OCC se cortaba en silencio a 5 000 filas | 6 |
+| 3-N14 | «Productividad por agente» contaba a agentes liberados o reasignados | 6 |
+| 3-N15 | «Servicios ejecutados por aerolínea» contaba lo planificado y lo no aprobado | 6 |
+| 3-N16 | Reportes de Gestión Humana en inglés, en UTC y sin estado vacío | 6 |
+| 3-N17 | Planificación abría en la última fecha con vuelos | 2 |
+| 3-N18 | La tablet no corregía el desfase de su reloj | 4 |
+| 3-N19 | El alta manual pedía las horas en UTC | 2 |
+| 3-N20 | El portal mostraba en UTC las horas de la operación y de las firmas (el estado ya se traducía desde la fase 2) | 6 |
+| 3-N21 | En Production no se podía registrar el charter de una aerolínea nueva | 2 |
+| 3-N22 | Revisión y Planificación con códigos crudos en inglés | 5 |
+| 3-N23 | La cola de Revisión no se actualizaba sola | 5 |
+| 3-N24 | Charter: servicios por error, total inflado y servicios después del prepago | 5 |
+| 3-N25 | Hitos de cualquier hora de las últimas 24 h, sin orden ni relación con la operación | 4 |
+| 3-N26 | Reportes de OCC con la unidad y el tipo de incidencia sin traducir | 6 |
+| 3-N27 | El código de operación era un GUID | 2 |
+| 3-N28 | Acciones visibles pero siempre deshabilitadas en Planificación | 2 |
+| 3-N29 | OCC añadía cargos que el contrato excluye y Finanzas los valoraba en 0 | 5 |

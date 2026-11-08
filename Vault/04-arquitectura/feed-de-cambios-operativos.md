@@ -193,3 +193,41 @@ Las pistas siguen sin llevar datos: los clientes releen por REST.
   existían; la fase 2 les dio título y destino.
 
 Esto tampoco demuestra latencia en el VPS ni entrega con la aplicación cerrada.
+
+## Fase 3 del ciclo: la operación
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c`;
+[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+Las pistas siguen sin llevar datos.
+
+**Pistas ampliadas:**
+
+- `occ_review` también para la evidencia que llega mientras OCC revisa, la
+  reapertura de una aprobación, las incidencias de OCC, los ajustes de cargos y
+  la exclusión de facturación
+  ([evidencia tardía](../../database/DevelopmentDB/Elevant.Persistence/Operations/PendingSubmissionEvidenceRefresher.cs)).
+  La cola de Revisión, el detalle y el panel de incidencias la escuchan y se
+  releen sin pasar a «cargando»; antes el aviso llegaba, pero la pantalla no lo
+  escuchaba.
+- `hr_shifts`, `ramp_schedule` (la agenda del agente) y `occ_planning` cuando
+  Gestión Humana u OCC ajustan un turno.
+- `ramp_operations` cuando Finanzas reabre la cotización de un charter, para que
+  la tablet vuelva a ofrecer «Agregar».
+
+**Notificaciones nuevas o ampliadas:**
+
+- para OCC (solo `ADMIN_OCC` con la estación en alcance), que abren
+  Planificación: `flight_cancelled_by_provider` y `flight_diverted_by_provider`,
+  una sola vez cuando el proveedor cambia el estado de un vuelo importado;
+  `stand_change_unassigned`, cuando un cambio de posición deja la operación sin
+  agente elegible; y `contract_not_in_force`, por cada operación sin iniciar
+  cuyo contrato dejó de estar en vigor. Ninguna llega a la tablet;
+- para la tablet, solo tipos que la APK desplegada ya conoce:
+  `assignment_released` al cancelar, desviar, liberar, relevar o reasignar;
+  `operation_assigned` al agente que recibe un relevo o una reasignación, y
+  `flight_changed` también al corregir la llegada;
+- de departamento para Finanzas: `charter_cancelled`, cuando OCC cancela o
+  desvía un charter con prepago.
+
+Tampoco esto demuestra latencia en el VPS ni entrega con la aplicación cerrada.

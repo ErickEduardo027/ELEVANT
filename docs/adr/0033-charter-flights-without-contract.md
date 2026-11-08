@@ -44,6 +44,8 @@ Las páginas 2 y 3 son los términos del Acuerdo Estándar de Servicios en Tierr
 
 > **Actualización (7 de noviembre de 2026).** OCC también da de alta un charter desde el feed de vuelos: la vista «Charter sin contrato» muestra los vuelos de las aerolíneas activas registradas sin un contrato en vigor ese día en la estación, y la importación en modo charter crea la escala con su acuerdo y el prepago `Pending` (`charter_required`, `charter_has_contract`). Ver [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
+> **Actualización (8 de noviembre de 2026).** Si la aerolínea del charter no existe, OCC la da de alta desde «Nuevo vuelo» (`POST occ/planning/charter-airlines`, `operations.planning.create`): una organización `OCC-…`, la aerolínea y un perfil comercial sin verificar, con el OACI obligatorio y el IATA opcional. Una aprobación comercial posterior de un perfil verificado con los mismos códigos vincula esa aerolínea en lugar de rechazarla (`airline_code_in_use`); qué hacer con el perfil `OCC-…` sigue pendiente. Cancelar o desviar un charter con prepago avisa a Finanzas (`charter_cancelled`). Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 **3. El agente agrega los servicios en la tablet.**
 - `GET ramp/operations/{id}/charter` devuelve el catálogo de definiciones activas con tarifa base, su precio y su mínimo.
 - `POST …/charter/services` agrega una línea de servicio. La línea guarda:
@@ -94,4 +96,4 @@ Las páginas 2 y 3 son los términos del Acuerdo Estándar de Servicios en Tierr
 **Queda fuera de este bloque**
 - El texto literal de las páginas 2 y 3, hasta tener el formulario de AVIAM.
 - La valoración de recargos de un charter y su prefactura, que llegan con el cierre OCC → Finanzas del bloque 5. *Recargos automáticos y cierre: [ADR-0034](0034-operational-close-occ-to-finance.md).*
-- Retirar un servicio agregado por error: hoy lo corrige OCC en la revisión.
+- Retirar un servicio agregado por error: hoy lo corrige OCC en la revisión. *Desde el 8 de noviembre de 2026, antes de confirmar el prepago el agente lo marca como no realizado: deja de sumar al total y la Orden lo imprime en 0. Con el prepago confirmado la tablet ya no agrega servicios (`charter_prepayment_confirmed`) hasta que Finanzas reabre la cotización con motivo (`POST finance/charters/{id}/prepayment/reopening`) ([ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*

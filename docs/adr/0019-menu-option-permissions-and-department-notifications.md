@@ -135,6 +135,12 @@ En la revisión del proyecto del 19-oct-2026, el profesor observó lo siguiente:
   > carnets, las licencias de rampa y las habilitaciones por vencer. Ver
   > [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
+  > **Actualización (8 de noviembre de 2026).** Finanzas también recibe que OCC canceló o
+  > desvió un charter con prepago (`charter_cancelled`); la devolución sigue por Cobros y nunca
+  > es automática. Revisión suma la subventana «Incidencias» (`operations.incidents.read` y
+  > `operations.incidents.update`). Ver
+  > [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 - **Lectura.** `GET department-notifications` y `PUT …/{id}/read` vuelven a
   comprobar el acceso actual. El feed de cambios de cuenta solo anuncia
   `notifications`; el cliente vuelve a leer la lista.

@@ -110,11 +110,38 @@ texto o reutilizan columnas existentes:
   `America/Santo_Domingo`, nunca el día UTC
   ([calendario](../../backend/Elevant.Application/Common/BusinessCalendar.cs)).
 
+La fase 3 del ciclo (código de `f2d5c52c`, también posterior al commit
+verificado;
+[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md))
+empezó a usar estados que ya existían y sumó historia y reglas de tiempo con
+una sola migración aditiva:
+
+- **Escala:** OCC asigna `Cancelled` y `Diverted` antes de que la operación
+  inicie, y la operación pasa a `Cancelled`, con su evento de estado y su
+  auditoría.
+- **Incidente:** OCC mueve `Open`, `InReview`, `Resolved` y `Closed` con una
+  nota, y cada paso queda en `ops.incident_status_events`; una incidencia
+  cerrada es definitiva.
+- **Envío:** reabrir una aprobación crea un envío `PendingReview` nuevo,
+  enlazado al aprobado, con quién lo reabrió y por qué.
+- **Orden de Servicio y servicio:** una corrección de OCC después de la firma es
+  una versión nueva que apunta a la que corrige, y la exclusión de facturación
+  guarda quién, cuándo y por qué.
+- **Horas de la tablet:** la tablet corrige su reloj con la cabecera `Date` de
+  ELEVANT y envía la hora del toque; el servidor la acepta dentro de la ventana
+  de la operación, con 2 minutos de tolerancia, y la guarda recortada a su
+  propio reloj, así que ninguna hora guardada queda en el futuro
+  ([política](../../backend/Elevant.Application/Operations/RampEvidenceTimePolicy.cs)).
+- **Hora local:** los reportes de OCC y de Gestión Humana muestran sus horas en
+  la zona de la estación, el portal muestra así las horas de la operación y de
+  las firmas, y Planificación abre en el día de hoy de la estación. Finanzas
+  sigue contando el día UTC (hueco 4-N10 de la fase 4).
+
 ## Historia explícita y ausencia deliberada
 
 Tienen tablas de eventos de estado: turnaround, operación en tierra, servicio ejecutado, solicitud comercial y contrato. Tienen registros naturalmente históricos: ciclos, scopes, asignaciones, versiones, respuestas, envíos y decisiones.
 
-No tienen una historia de estado dedicada en v1: cuenta, membresía, disponibilidad, solicitud operativa, checklist, incidente y comando móvil. Podrían quedar cubiertos por auditoría cuando los casos de uso lo implementen, pero esa cobertura no debe suponerse hoy.
+No tienen una historia de estado dedicada en v1: cuenta, membresía, disponibilidad, solicitud operativa, checklist, incidente y comando móvil. Podrían quedar cubiertos por auditoría cuando los casos de uso lo implementen, pero esa cobertura no debe suponerse hoy. *Posterior al commit verificado: desde la fase 3 del ciclo, el incidente sí tiene su historia (`ops.incident_status_events`).*
 
 `NO ACTION` evita borrados en cascada, pero los constraints EF revisados no convierten eventos operativos/comerciales, respuestas, envíos o decisiones en registros append-only. Además, el rol de aplicación de Development tiene `UPDATE` y `DELETE` sobre `commercial` y `ops`. Preservarlos sin mutación sigue siendo un diseño pendiente de enforcement y pruebas.
 
@@ -131,9 +158,9 @@ Auditoría es distinta: ese rol recibe `SELECT` e `INSERT`, no `UPDATE` ni `DELE
 ## Reglas todavía abiertas
 
 - matriz de transiciones y actores autorizados por objeto;
-- política de reloj y tolerancia para comandos offline;
+- política de reloj y tolerancia para comandos offline; *posterior al commit verificado, la fase 3 la definió para la tablet: reloj corregido con el de ELEVANT, ventana de la operación y 2 minutos de tolerancia;*
 - turnos nocturnos que cruzan fecha civil;
-- orden y desempate entre fuentes manuales, internas, aerolínea y proveedor;
+- orden y desempate entre fuentes manuales, internas, aerolínea y proveedor; *posterior al commit verificado, la fase 3 fijó un caso: la llegada que registra OCC prevalece sobre la del proveedor;*
 - retención de auditoría, outbox y recibos móviles;
 - redacción de valores sensibles antes de `AuditChange`, errores o metadata JSON;
 - coherencia transaccional entre `CurrentStatus`, evento de estado, auditoría y outbox.

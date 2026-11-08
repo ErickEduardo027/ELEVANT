@@ -80,6 +80,8 @@ Hasta ahora la asignación tenía estas limitaciones:
 
 **Liberación manual.** OCC puede liberar al agente de una operación asignada y no iniciada (`POST occ/planning/turnarounds/{id}/assignment/release`). La operación vuelve a `Planned` y se avisa al agente.
 
+> **Actualización (8 de noviembre de 2026).** Hay una sola regla de ocupación (`OperationOccupancyRules`): un agente lleva hasta 3 operaciones simultáneas asignadas, en curso o devueltas, una operación sin ventana válida cuenta como solape y, al aprobar, la operación deja de ocupar al agente y la posición por su estado. El vuelo sigue a la nueva posición solo si el agente que la cubre es elegible con todas las reglas de la asignación (documentos a la fecha local, terminal, turno, ausencias, mentor y tope); si nadie lo es, se queda con el agente anterior si este sigue siendo elegible y, si tampoco, vuelve a `Planned` y OCC recibe `stand_change_unassigned`. La cobertura exige el alcance del agente en la terminal (`terminal_scope_missing`) y documentos vigentes hasta el día local en que termina, y crear o liberar una cobertura acepta una `Idempotency-Key`. La liberación manual recibe la asignación que OCC vio (`assignment_changed`) y una clave; una operación ya iniciada no se libera (`operation_started`): se releva a otro agente elegible con motivo (`POST …/assignment/handover`). La posición de un vuelo se asigna en una transacción serializable que la bloquea, así que dos vuelos nunca toman la misma. Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 **Mapa de posiciones.** Cada posición muestra:
 - quién la cubre;
 - si tiene puente;

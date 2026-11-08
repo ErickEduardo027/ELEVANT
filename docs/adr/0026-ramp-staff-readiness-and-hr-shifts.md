@@ -39,6 +39,15 @@ tres piezas:
 > aprobada se cancela o se acorta con motivo. Ver
 > [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
+> **Actualización (8 de noviembre de 2026).** Gestión Humana y OCC ajustan las horas de un turno
+> de hoy o de un día futuro con un solo comando, `PATCH human-resources/shifts/{id}`, con motivo,
+> la versión leída y una `Idempotency-Key`. El turno debe seguir cubriendo las coberturas y las
+> operaciones del agente (`shift_uncovers_work`) y no cambia si su asistencia ya está validada
+> (`attendance_validated`). Si OCC programa un segundo turno el mismo día, la API responde
+> `409 shift_day_taken` y Planificación ofrece «Ajustar turno del día»; Gestión Humana tiene
+> «Ajustar horario» en el editor semanal. Ver
+> [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 ### «¿Puede operar?»
 
 `GET human-resources/ramp-profiles/readiness` (`human_resources.ramp_profiles.read`) evalúa por

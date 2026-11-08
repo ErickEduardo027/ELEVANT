@@ -74,6 +74,8 @@ Fase 3 del ciclo operativo, bloque 5: el cierre de la operación entre OCC y Fin
   - La escala pasa a `Completed` cuando todas sus operaciones están aprobadas.
 - **Finanzas valora la evidencia aprobada.** Los servicios aprobados, la prefactura y el portal de la aerolínea la usan, con la evidencia de la entrega como respaldo para aprobaciones anteriores a este bloque.
 
+> **Actualización (8 de noviembre de 2026).** Aprobar exige ahora la Orden de Servicio firmada o corregida por OCC (`service_order_unsigned`, `service_order_stale`), y un ajuste de cargos después de la firma queda como corrección de OCC con su motivo. Al aprobar, solo se resuelven las incidencias que OCC no gestionó, y la operación deja de ocupar al agente y la posición. Un servicio en excepción con cantidad ejecutada se factura salvo que OCC lo excluya con motivo, y OCC ya no ve ni añade un cargo que el contrato excluye (`charge_excluded_by_contract`). Una aprobación de la que nada se facturó se reabre como una revisión nueva (`operations.review.reopen`). Mientras OCC revisa, la evidencia que llega tarde recalcula los recargos y obliga a releer. Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 **4. Finanzas.**
 
 - **Servicios aprobados:** atajos «Semana pasada» y «Esta semana» (de domingo a sábado) y los recargos de cada servicio con su origen.
@@ -87,6 +89,8 @@ Fase 3 del ciclo operativo, bloque 5: el cierre de la operación entre OCC y Fin
   - tiempo en tierra frente al permitido;
   - demoras IATA, desviaciones y estado.
 - Se exporta en CSV, Excel o PDF como los demás reportes.
+
+> **Actualización (8 de noviembre de 2026).** Las exportaciones de OCC llevan el período completo o nada: hasta 25 000 filas en CSV y Excel y 5 000 en PDF; por encima responden `422 report_too_large`, sin archivo ni auditoría. «Generado» sale en la hora local de la estación, como las horas de cada fila. Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
 
 **Endpoints**
 
@@ -109,6 +113,8 @@ Fase 3 del ciclo operativo, bloque 5: el cierre de la operación entre OCC y Fin
 - **Tipo de avión de cada escala.** Hoy solo lo trae el seed de Development: ni el alta manual, ni la importación de AeroDataBox, ni la tablet lo registran. Sin tipo no hay categoría, así que el tiempo extra automático no aplica (el detalle de cierre lo indica como «Sin tiempo permitido para esta categoría») y OCC lo agrega a mano con motivo. Capturar el tipo de avión es el siguiente paso.
   > **Actualización (7 de noviembre de 2026).** El alta manual y la importación del feed ya aceptan el tipo de avión, opcional; la importación lo sugiere desde el modelo que informa el proveedor. La tablet sigue sin registrarlo, y una escala creada sin tipo sigue sin categoría. Ver [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
+  > **Actualización (8 de noviembre de 2026).** La tablet registra el tipo en «Datos del vuelo», y OCC en la llegada y en «Editar vuelo»; con él, `OVERTIME` se aplica solo. El tipo queda fijo desde la primera entrega (`aircraft_type_locked`). Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 - **Corrección de datos capturados por OCC** (pasajeros, matrícula). Sigue siendo devolver la operación al agente, porque cambia formularios ya firmados.
 - **Calendario de festivos por país o estación.** Hoy es uno solo, de República Dominicana.
-- **Recalcular un recargo automático cuando el agente corrige tras una devolución.** Se agregan los que falten; los que ya no apliquen los quita OCC.
+- **Recalcular un recargo automático cuando el agente corrige tras una devolución.** Se agregan los que falten; los que ya no apliquen los quita OCC. *Resuelto el 8 de noviembre de 2026: el reenvío mide el tiempo en tierra hasta la primera entrega, y `AutomaticSurchargeApplier.ReconcileAsync` añade los que faltan y retira los automáticos que ya no se detectan, nunca los de OCC ([ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*

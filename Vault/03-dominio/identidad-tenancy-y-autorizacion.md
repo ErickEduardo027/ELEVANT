@@ -113,6 +113,27 @@ la fase 2 del ciclo (`50e7778f`;
   revocada no vuelve a registrarse y su cuenta pierde sus sesiones, porque la
   revocación rota su sello de seguridad.
 
+## Fase 3: la operación sigue a su agente
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c`;
+[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+- **Operación iniciada.** Una vez que el agente la inicia, la tablet la autoriza
+  por la asignación abierta y el alcance de estación, sin exigir la posición
+  activa ni el alcance de terminal, hasta que termina. Pasarla a otra persona es
+  un relevo explícito de OCC.
+- **Recibos.** Todo rechazo de un comando de la tablet guarda su código en el
+  recibo, y un reintento con la misma clave devuelve ese mismo código.
+- **Evidencia en una tablet compartida.** Un `401`, un `403` o el cierre de
+  sesión borran la credencial y las cachés, pero lo que ELEVANT no confirmó
+  queda en el dispositivo, ligado a su cuenta: solo esa cuenta lo lee y lo envía
+  al volver a entrar. Otro agente que use la tablet ve cuántos registros de otra
+  cuenta hay, pero no puede verlos ni descartarlos. Eso incluye notas de
+  incidencias y observaciones de asistencia: nada se borra solo. Siguen en la
+  tablet hasta que su autor vuelve a entrar; entonces se envían, y él solo puede
+  descartar los que ELEVANT rechazó.
+
 ## Vocabulario de ciclo de vida
 
 | Tipo | Valores persistibles |

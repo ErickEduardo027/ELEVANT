@@ -146,6 +146,20 @@ aerolínea (`airline_portal.representative` y `airline_portal.signer`) son grant
 de cuenta fuera del catálogo de departamentos, así que nunca entran en el acceso
 de un departamento.
 
+**Altas de la fase 3 del ciclo**, también posteriores al commit verificado
+(código de `f2d5c52c`;
+[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)):
+
+- `operations.planning.update` («Reprogramar, cancelar o desviar escalas»);
+- `operations.review.reopen` («Reabrir operaciones aprobadas sin facturar»);
+- `operations.incidents` («Incidencias»): ver, y reportar y gestionar
+  incidencias. Es una subventana de Revisión.
+
+El administrador de OCC las hereda. El relevo de un agente usa
+`operations.planning.assign`, la exclusión de facturación usa
+`operations.review.decide` y la reapertura de la cotización de un charter usa
+`finance.charters.confirm`, que ya existían.
+
 El acceso efectivo se calcula en el servidor para cada petición. Private Web
 sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/access`).
 
@@ -242,6 +256,13 @@ Posterior al commit verificado de esta nota (código de `8a79fe70`):
   licencia de rampa o una habilitación de un agente.
 - OCC recibe, en su feed operativo, que Gestión Humana liberó a un agente de una
   operación y que el agente asignado ya no tiene un documento vigente.
+- Desde la fase 3 (código de `f2d5c52c`;
+  [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)),
+  Finanzas recibe que OCC canceló o desvió un charter con prepago
+  (`charter_cancelled`). OCC recibe en su feed operativo que el proveedor
+  informó cancelado o desviado un vuelo importado, que un cambio de posición dejó
+  una operación sin agente elegible y que una operación sin iniciar perdió su
+  contrato.
 
 **Pruebas.** Cada tipo tiene una prueba SQL que comprueba quién la recibe y quién
 no, el filtro por estación, la marca de leída, la reaparición como no leída de

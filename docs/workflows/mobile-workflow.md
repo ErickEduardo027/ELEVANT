@@ -32,6 +32,19 @@ REST recuperará el estado canónico tras reconectar; SignalR solo notificará y
 no será fuente de verdad. La outbox actual en AsyncStorage demuestra UX, no
 garantías de sincronización segura o exactly-once.
 
+Para las escrituras de la operación, ese contrato ya rige desde la fase 3 del
+ciclo ([ADR-0039](../adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)):
+el inicio, los servicios, los cargos, el checklist, el chat, los hitos, los
+datos del vuelo, las firmas, el walk-around y el charter salen por una sola
+cola persistente por cuenta, en orden FIFO por operación, con la instalación
+registrada y una clave estable por comando. El recibo del servidor repite el
+mismo resultado o el mismo código de rechazo. El inicio y los servicios llevan
+la hora del toque, corregida con el reloj de ELEVANT, y lo que ELEVANT no
+confirmó sobrevive a un `401`, un `403` o al cierre de sesión, ligado a su
+cuenta. Una API anterior rechaza con `400` los campos nuevos (`startedAt`,
+`occurredAt`), así que la API se despliega antes que la APK. El detalle está en
+el [estado de Mobile Agent](../../Vault/05-aplicaciones/mobile-agent.md).
+
 Las claves de firma/tokens futuros deben permanecer fuera de Git. Una
 evidencia real no se borrará antes de confirmación persistente ni se
 conservará sin política; uploads reales quedan deshabilitados hasta

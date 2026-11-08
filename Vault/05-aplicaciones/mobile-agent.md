@@ -171,6 +171,51 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
   anterior no libera la tablet al cerrar sesión, pero el siguiente agente la
   toma igual.
 
+## Fase 3: una sola cola, el reloj de ELEVANT y la evidencia que se conserva
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c`), que esa verificación no cubre
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+- **Una sola cola.** La [cola persistente](../../frontend/mobile-agent/src/synchronization/flight-report-outbox.ts)
+  lleva también el inicio, las transiciones de servicio, los cargos, el envío
+  del checklist y el chat, en orden FIFO por operación. Sin red o con la sesión
+  revocada se detiene todo; una foto que ELEVANT no puede guardar ahora no
+  detiene nada; cualquier otro fallo temporal retiene solo su operación. Se
+  vacía al abrir la app, al recuperar la señal, al volver a primer plano y cada
+  minuto. Los comandos que reservó la versión anterior se importan una vez con
+  su misma clave.
+- **La hora del toque.** El inicio y los servicios viajan con la hora en que el
+  agente tocó, y ELEVANT la conserva aunque el comando llegue horas después,
+  dentro de la ventana de la operación. Los hitos se ajustan dentro de esa
+  ventana; en una corrección, un hito vacío abre el ajuste en lugar de grabar
+  «AHORA».
+- **El reloj de ELEVANT.** El
+  [reloj del servidor](../../frontend/mobile-agent/src/synchronization/server-clock.ts)
+  toma el desfase de la cabecera `Date` y lo guarda en el dispositivo. Toda hora
+  que captura la tablet sale de ahí, y la insignia de conexión avisa cuando el
+  desfase pasa de 2 minutos.
+- **La evidencia sobrevive a la sesión.** Un `401`, un `403`, la sesión vencida o
+  el cierre de sesión ya no borran lo que ELEVANT no confirmó: queda ligado a la
+  cuenta, solo esa cuenta lo envía al volver a entrar y «Sincronización» indica
+  los registros de otra cuenta, sin mostrarlos.
+- **Entrega.** La APK nueva vacía la cola antes de entregar y no entrega con
+  registros pendientes o rechazados de la operación, ni con la Orden de Servicio
+  sin las firmas de la aerolínea y de AVIAM sobre su contenido actual.
+- **Lista y alcance.** La lista trae las operaciones activas y las aprobadas de
+  las últimas 48 horas, con las activas primero. Una operación iniciada sigue en
+  manos de su agente aunque cambien su posición o su terminal.
+- **Datos del vuelo y charter.** «Datos del vuelo» captura el tipo de avión de
+  la lista de ELEVANT, fijo desde la primera entrega. En un charter con el
+  prepago confirmado, la tarjeta oculta «AGREGAR» y lo explica.
+- **Códigos en español.** Los rechazos se explican por su código, como
+  «Contrato no vigente», y cada estado de incidencia sale en español.
+- **APK desplegada.** Sigue funcionando: ninguna respuesta que lee ganó claves y
+  sus peticiones conservan el hash del recibo. Muestra como un rechazo genérico
+  los códigos nuevos (`time_outside_operation_window`, `milestone_out_of_order`,
+  `contract_not_in_force` y `charter_prepayment_confirmed`), y como código los
+  estados de incidencia que OCC ahora asigna, hasta que se instale la APK nueva.
+
 ## Desarrollo local
 
 Desde `frontend/mobile-agent`:
@@ -214,7 +259,7 @@ verificables de:
 
 - **Brecha actual:** endpoints de autenticación, asignaciones, sync y chat no existen en OpenAPI.
 - **Brecha actual:** token prototípico en AsyncStorage; falta almacenamiento seguro de credenciales.
-- **Brecha actual:** protocolo servidor de dispositivo/idempotencia/reconciliación no está implementado de extremo a extremo.
+- **Brecha actual:** protocolo servidor de dispositivo/idempotencia/reconciliación no está implementado de extremo a extremo. *Posterior al commit verificado: desde la fase 3 del ciclo, todas las escrituras de la operación viajan por la misma cola con la instalación registrada y una clave estable, y el recibo repite el mismo resultado o el mismo código ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*
 - **Brecha actual:** no hay configuración EAS ni comando para producir la APK firmada.
 - **Brecha actual:** uploads reales están deshabilitados hasta diseñar object storage.
 - **Desconocido:** tablets objetivo, versión mínima de OS, MDM/distribución interna, custodia de firma y política de actualización.

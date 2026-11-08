@@ -215,6 +215,51 @@ renovación sin firmar, y los agentes dados de baja antes del cambio que
 conservan coberturas, asignaciones o turnos abiertos. ADR-0038 explica cómo se
 tratan.
 
+## La operación: incidencias, reaperturas y correcciones
+
+`20261108043225_AddOccIncidentsReviewReopenAndServiceOrderCorrections`, posterior
+a `AddCommercialRequestReviewAndIcaoOnlyAirlines`, es la única migración de la
+fase 3 del ciclo
+([ADR-0039](../adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+Es aditiva, sin `HasData` ni DML de negocio, y todas sus claves foráneas son
+`NO ACTION`:
+
+- `ops.incidents`: `reported_by_ramp_agent_id` admite nulos y se suma
+  `reported_by_account_id` (FK a la cuenta, con índice), porque OCC también
+  reporta incidencias. `ck_incident_reporter` exige al menos un reportante.
+- `ops.incident_status_events`, tabla nueva: la historia de cada incidencia, con
+  el estado anterior y el nuevo (`nvarchar(16)`), la nota (`nvarchar(2000)`),
+  `occurred_at` (`datetimeoffset(3)`) y la cuenta que actuó, opcional; índice
+  `(incident_id, occurred_at)`.
+- `ops.operation_submissions`: la reapertura de una aprobación crea una revisión
+  nueva enlazada a la anterior (`reopened_from_submission_id`, FK a la misma
+  tabla con un índice único filtrado), con quién la reabrió y el motivo
+  (`nvarchar(2000)`). `ck_operation_submission_reopening` exige las tres
+  columnas o ninguna.
+- `ops.operation_document_versions`: una Orden de Servicio que OCC corrige
+  después de la firma guarda la versión que corrige (`corrects_version_id`, FK a
+  la misma tabla), el motivo (`nvarchar(500)`), la cuenta y la hora.
+  `ck_operation_document_version_correction` exige todas o ninguna.
+- `ops.operation_services`: la exclusión de facturación de OCC guarda la hora,
+  la cuenta y el motivo (`nvarchar(500)`).
+  `ck_operation_service_billing_exclusion` exige las tres o ninguna.
+
+El `Down` se detiene (`THROW 52380` a `52383`) si ya hay incidencias de OCC o
+historial de incidencias, revisiones reabiertas, Órdenes corregidas o servicios
+excluidos: es historia operativa y de facturación que no se descarta. La
+migración está registrada en `scripts/diagnostics/verify-development.sql`, y
+`has-pending-model-changes` no reporta cambios.
+
+El resto de la fase cabe en columnas que ya existían: `Cancelled` y `Diverted`
+de la escala, `aircraft_type_id`, `source` del tramo, el código de operación
+legible dentro del índice único actual, `row_version`, `released_at` y
+`assigned_to` de turnos, coberturas y asignaciones, `actual_start_at`,
+`operation_service_status_events.occurred_at`,
+`mobile_command_receipts.error_code` y `removed_at` de los recargos. Ningún
+bloque toca el seed. El modelo anterior a esta migración declara obligatorio el
+agente que reporta una incidencia: si la API vuelve a esa versión después de que
+OCC reporte una, falla donde carga esa incidencia completa.
+
 ## Diferido explícitamente
 
 - emisión fiscal, documentos PDF, recibos y ledger de conciliación;

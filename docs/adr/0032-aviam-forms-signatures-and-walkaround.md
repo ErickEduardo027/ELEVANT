@@ -64,6 +64,8 @@ Un error de matrícula o un cambio de avión obligan a rehacer la Orden y a volv
 - **OCC:** consulta los formularios de las operaciones de su estación y descarga los PDF y las fotos desde la revisión, con `operations.review.read`.
 - **Portal de la aerolínea:** solo ve, filtrada por su organización, la última Orden de Servicio firmada por completo, dibujada desde la versión guardada.
 
+> **Actualización (8 de noviembre de 2026).** Los recargos automáticos se proyectan en la Orden de Servicio antes de la firma, y OCC solo aprueba una Orden firmada sobre su contenido actual o corregida por OCC (`service_order_unsigned`, `service_order_stale`). Un ajuste de cargos o una exclusión de facturación que OCC hace después de la firma guarda una versión corregida con su motivo (`corrects_version_id`): el PDF la imprime como «Corregida por OCC después de la firma» y la aerolínea recibe esa versión en su portal. La revisión de OCC lista las marcas del walk-around con su nota y su hora local y abre la foto bajo demanda desde `GET occ/operations/{id}/damage-marks/{markId}/photo`. Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 **Endpoints**
 
 | Ruta | Para qué |
