@@ -7417,15 +7417,22 @@ public sealed partial class SqlServerMigrationTests
                 .SingleAsync(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Service,
                     cancellationToken);
             // The NIGHT surcharge the agent marked is billed as its own line under the service (15 %, ADR-0034).
-            var nightLine = await inspection.PreinvoiceLines.AsNoTracking()
-                .SingleAsync(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Charge,
-                    cancellationToken);
-            Assert.Equal(line.Id, nightLine.ParentLineId);
-            Assert.Equal("NIGHT", nightLine.ServiceCode);
+            // The operation starts when the test runs, and ELEVANT marks HOLIDAY on its own when that is a Sunday or a
+            // Finance holiday between 06:00 and 21:59 station time: that line, when present, is the only other charge,
+            // so the test holds on any day.
+            var chargeLines = await inspection.PreinvoiceLines.AsNoTracking()
+                .Where(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Charge)
+                .ToArrayAsync(cancellationToken);
+            var nightLine = Assert.Single(chargeLines, item => item.ServiceCode == "NIGHT");
+            var holidayLines = chargeLines.Where(item => item.ServiceCode == "HOLIDAY").ToArray();
+            Assert.InRange(holidayLines.Length, 0, 1);
+            Assert.Equal(1 + holidayLines.Length, chargeLines.Length);
+            Assert.All(chargeLines, item => Assert.Equal(line.Id, item.ParentLineId));
+            var holidayAmount = holidayLines.Sum(item => item.Amount);
             Assert.Equal(decimal.Round(line.Amount * 0.15m, 4), nightLine.Amount);
             Assert.Equal(nightLine.Amount, nightLine.ComputedAmount);
             Assert.Equal(PreinvoiceStatus.Draft, draft.Status);
-            Assert.Equal(draft.Total, line.Amount + nightLine.Amount);
+            Assert.Equal(draft.Total, line.Amount + nightLine.Amount + holidayAmount);
             Assert.Equal(1m, line.ExecutedQuantity);
             Assert.True(line.UnitPrice > 0);
             Assert.Equal(approvedServiceName, line.ServiceName);
@@ -7446,11 +7453,13 @@ public sealed partial class SqlServerMigrationTests
                 Assert.NotNull(detail);
                 Assert.Equal(draft.Total, detail.Total);
                 Assert.Equal(baggageServiceId, Assert.Single(detail.Lines, item => item.Kind == "Service").OperationServiceId);
-                Assert.Equal("Charge", Assert.Single(detail.Lines, item => item.ParentLineId != null).Kind);
+                Assert.Equal(chargeLines.Length, detail.Lines.Count(item => item.ParentLineId != null));
+                Assert.All(detail.Lines.Where(item => item.ParentLineId != null),
+                    item => Assert.Equal("Charge", item.Kind));
 
                 // Finance edits the surcharge and adds a discount before sending; computed values are kept.
                 var edits = readScope.ServiceProvider.GetRequiredService<IPreinvoiceLineEditStore>();
-                var charge = Assert.Single(detail.Lines, item => item.Kind == "Charge");
+                var charge = Assert.Single(detail.Lines, item => item.Kind == "Charge" && item.ServiceCode == "NIGHT");
                 Assert.Equal(FinanceCatalogFailure.Invalid, (await edits.EditLineAsync(financeAccountId, detail.Id,
                     charge.Id, new EditPreinvoiceLineInput(10m, false, "", detail.Version!), cancellationToken)).Failure);
                 Assert.Equal(FinanceCatalogFailure.Conflict, (await edits.EditLineAsync(financeAccountId, detail.Id,
@@ -7468,12 +7477,13 @@ public sealed partial class SqlServerMigrationTests
                     new AddPreinvoiceAdjustmentInput("Descuento por demora propia", -5m, "Compensación comercial",
                         edited.Version!), cancellationToken)).IsSuccess);
                 edited = (await drafts.GetAsync(financeAccountId, detail.Id, cancellationToken))!;
-                var editedCharge = Assert.Single(edited.Lines, item => item.Kind == "Charge");
+                var editedCharge = Assert.Single(edited.Lines,
+                    item => item.Kind == "Charge" && item.ServiceCode == "NIGHT");
                 Assert.Equal(10m, editedCharge.Amount);
                 Assert.Equal(charge.Amount, editedCharge.ComputedAmount);
                 Assert.NotNull(editedCharge.EditedAt);
                 Assert.Equal(-5m, Assert.Single(edited.Lines, item => item.Kind == "Adjustment").Amount);
-                Assert.Equal(line.Amount + 10m - 5m, edited.Total);
+                Assert.Equal(line.Amount + 10m - 5m + holidayAmount, edited.Total);
                 Assert.Null(await drafts.GetAsync(occAccountId,
                     created.DraftId.Value, cancellationToken));
             }
@@ -7488,8 +7498,8 @@ public sealed partial class SqlServerMigrationTests
                 var item = Assert.Single(page.Preinvoices);
                 Assert.Equal(created.DraftId, item.Id);
                 Assert.Equal("Draft", item.Status);
-                Assert.Equal(3, item.LineCount);
-                Assert.Equal(line.Amount + 5m, item.Total);
+                Assert.Equal(3 + holidayLines.Length, item.LineCount);
+                Assert.Equal(line.Amount + 5m + holidayAmount, item.Total);
                 Assert.Null(await list.ListAsync(occAccountId, stationId, 1, 20,
                     cancellationToken));
                 Assert.Null(await list.ListAsync(financeAccountId, Guid.NewGuid(), 1, 20,
@@ -7562,9 +7572,10 @@ public sealed partial class SqlServerMigrationTests
                 Assert.NotNull(published);
                 Assert.Equal("Submitted", published.Status);
                 Assert.Equal(draft.Total, published.Total);
-                Assert.Equal(3, published.Lines.Count);
+                Assert.Equal(3 + holidayLines.Length, published.Lines.Count);
                 var snapshot = Assert.Single(published.Lines, item => item.Kind == "Service");
-                Assert.Equal(snapshot.Id, Assert.Single(published.Lines, item => item.Kind == "Charge").ParentLineId);
+                Assert.Equal(snapshot.Id, Assert.Single(published.Lines,
+                    item => item.Kind == "Charge" && item.ServiceCode == "NIGHT").ParentLineId);
                 Assert.Equal("Compensación comercial",
                     Assert.Single(published.Lines, item => item.Kind == "Adjustment").Reason);
                 Assert.Equal(line.OperationCode, snapshot.OperationCode);
@@ -7764,9 +7775,11 @@ public sealed partial class SqlServerMigrationTests
             var invoiceLines = await inspection.NonFiscalInvoiceLines.AsNoTracking()
                 .Where(item => item.InvoiceId == invoice.Id).OrderBy(item => item.LineNumber)
                 .ToArrayAsync(cancellationToken);
-            Assert.Equal([PreinvoiceLineKind.Service, PreinvoiceLineKind.Charge, PreinvoiceLineKind.Adjustment],
+            Assert.Equal([PreinvoiceLineKind.Service,
+                    .. Enumerable.Repeat(PreinvoiceLineKind.Charge, chargeLines.Length), PreinvoiceLineKind.Adjustment],
                 invoiceLines.Select(item => item.Kind));
-            Assert.Equal(invoiceLines[0].LineNumber, invoiceLines[1].ParentLineNumber);
+            Assert.All(invoiceLines.Where(item => item.Kind == PreinvoiceLineKind.Charge),
+                item => Assert.Equal(invoiceLines[0].LineNumber, item.ParentLineNumber));
             Assert.NotNull(invoice.DueDate);
             Assert.Equal(30, invoice.PaymentTermDays);
             var invoiceLine = invoiceLines[0];
@@ -7795,7 +7808,7 @@ public sealed partial class SqlServerMigrationTests
                     financeAccountId, created.DraftId.Value, cancellationToken);
                 Assert.NotNull(financeInvoice);
                 Assert.Equal(invoice.Number, financeInvoice.Number);
-                Assert.Equal(3, financeInvoice.Lines.Count);
+                Assert.Equal(3 + holidayLines.Length, financeInvoice.Lines.Count);
                 Assert.Equal(line.Amount, financeInvoice.Lines[0].Amount);
                 var airlineInvoice = await reader.GetForAirlineAsync(
                     airlineOrganizationId, created.DraftId.Value, cancellationToken);
@@ -7893,7 +7906,8 @@ public sealed partial class SqlServerMigrationTests
                 var period = new FinanceReportFilter(today.AddDays(-1), today.AddDays(1), stationId, null, null);
                 var revenue = (await reports.GetAsync(financeAccountId, "revenue", period, cancellationToken))!;
                 var revenueRow = Assert.Single(revenue.Rows);
-                Assert.Equal("10.00", revenueRow[5]);
+                Assert.Equal((10m + holidayAmount).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+                    revenueRow[5]);
                 Assert.Equal("-5.00", revenueRow[6]);
                 Assert.Equal(invoice.Total.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), revenueRow[7]);
                 Assert.Empty((await reports.GetAsync(financeAccountId, "receivables", period, cancellationToken))!.Rows);
