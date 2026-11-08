@@ -9,10 +9,11 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 namespace Elevant.Api.Controllers;
 
 /// <summary>
-/// One turnaround as OCC edits it from Planificación (3-A): its detail with a strong ETag, «Editar vuelo»,
-/// «Cancelar vuelo» and «Marcar desviado» before the operation starts, and the minimal carrier of a charter (3-N21).
-/// Every change takes an Idempotency-Key; the turnaround changes also its ETag in If-Match (missing: 428
-/// <c>expected_version_required</c>; stale: 412 <c>version_conflict</c>). Failures carry a stable code and a Spanish title.
+/// One turnaround as OCC edits it from Planificación (3-A): its detail with a strong ETag (also the version the positions
+/// map sends with its commands, 3-N10), «Editar vuelo», «Cancelar vuelo» and «Marcar desviado» before the operation
+/// starts, and the minimal carrier of a charter (3-N21). Every change takes an Idempotency-Key; the turnaround changes
+/// also its ETag in If-Match (missing: 428 <c>expected_version_required</c>; stale: 412 <c>version_conflict</c>).
+/// Failures carry a stable code and a Spanish title.
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
@@ -172,6 +173,7 @@ public sealed class OccTurnaroundsController(IOccTurnaroundStore store) : Contro
         "aircraft_type_locked" => "El tipo de avión ya no se puede cambiar: la operación ya se entregó.",
         "contract_not_in_force" => "La aerolínea no tiene un contrato vigente en la nueva fecha.",
         "contract_ambiguous" => "La aerolínea tiene más de un contrato vigente en la nueva fecha.",
+        "flight_already_planned" => "Ese vuelo ya está planificado ese día.",
         "airline_code_in_use" => "Ese código ya pertenece a una aerolínea registrada.",
         "idempotency_conflict" => "Ese envío ya se usó con otros datos.",
         _ => "El vuelo cambió mientras lo revisaba. Vuelva a cargarlo.",

@@ -91,6 +91,7 @@ public sealed class OccTurnaroundsEndpointsTests(ElevantApiFactory factory) : IC
             (MasterDataFailure.Conflict, "idempotency_conflict", HttpStatusCode.Conflict, []),
             (MasterDataFailure.Conflict, "assigned_agent_unavailable", HttpStatusCode.Conflict, ["shift_not_covering", "simultaneous_limit"]),
             (MasterDataFailure.Conflict, "stand_unavailable", HttpStatusCode.Conflict, ["stand_taken"]),
+            (MasterDataFailure.Conflict, "flight_already_planned", HttpStatusCode.Conflict, []),
             (MasterDataFailure.Invalid, "reason_required", HttpStatusCode.BadRequest, []),
             (MasterDataFailure.Forbidden, "forbidden", HttpStatusCode.Forbidden, []),
             (MasterDataFailure.NotFound, "not_found", HttpStatusCode.NotFound, []),
@@ -109,6 +110,8 @@ public sealed class OccTurnaroundsEndpointsTests(ElevantApiFactory factory) : IC
             Assert.Equal(code, problem.Code);
             Assert.Equal(reasons, problem.Reasons);
             Assert.DoesNotContain("The ", problem.Title, StringComparison.Ordinal);
+            // 3-N07: «Editar vuelo» names the duplicate flight, never the stale-version fallback.
+            if (code == "flight_already_planned") Assert.Equal("Ese vuelo ya está planificado ese día.", problem.Title);
         }
     }
 

@@ -83,6 +83,22 @@ export type FlightReportOutboxItem = Readonly<{
   lastCode?: string;
 }>;
 
+/**
+ * The local codes of a walk-around photo that does not reach ELEVANT (3-N06): ELEVANT could not store it, so it keeps
+ * going out on its own and the agent may discard it to hand the operation off without it; or the copy on the device
+ * cannot be read, so sending it again cannot help.
+ */
+export const WALKAROUND_PHOTO_UNAVAILABLE = 'walkaround_photo_unavailable';
+export const WALKAROUND_PHOTO_UNREADABLE = 'walkaround_photo_unreadable';
+/** The local code of a walk-around photo whose mark ELEVANT refused: it is not sent, it has nothing to attach to. */
+export const DAMAGE_MARK_REFUSED = 'damage_mark_refused';
+
+/** A waiting walk-around photo ELEVANT already failed to store: «Sincronización» lets the agent discard it (3-N06). */
+export function isDiscardableWhileWaiting(item: FlightReportOutboxItem) {
+  return item.state === 'pending' && item.command.kind === 'damagePhoto' &&
+    item.lastCode === WALKAROUND_PHOTO_UNAVAILABLE;
+}
+
 export const FLIGHT_REPORT_OUTBOX_LIMIT = 200;
 const KEY_PREFIX = 'elevant.flightReportOutbox.v1.';
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

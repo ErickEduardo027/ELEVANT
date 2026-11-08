@@ -81,6 +81,9 @@ describe('correction round (3-N09)', () => {
     await press(pressable(tree, 'Bloqueo. Toca para registrar su hora.'));
     expect(mockRecord).not.toHaveBeenCalled();
     expect(pressable(tree, 'AHORA')).toBeUndefined();
+    // ELEVANT takes a milestone of the correction until the first hand-off, not until now.
+    expect(text(tree)).toContain('hasta tu primera entrega a OCC (hora de la estación).');
+    expect(text(tree)).not.toContain('hasta ahora');
     // Saturday 18:00 at the station (UTC−4): the time the push-back was recorded, two days ago.
     expect(text(tree)).toContain('18:00');
     await press(pressable(tree, 'Menos 60 minutos'));
@@ -108,6 +111,7 @@ describe('a running operation', () => {
     await press(tab(tree, 'Llegada'));
     await press(pressable(tree, 'Bloqueo, 16:55, Confirmado. Toca para ajustar.'));
     expect(pressable(tree, 'AHORA')).toBeDefined();
+    expect(text(tree)).toContain('hasta ahora (hora de la estación).');
     await press(pressable(tree, 'Más 60 minutos'));
     await press(pressable(tree, 'GUARDAR HORA'));
     expect(mockRecord).toHaveBeenCalledWith(OPERATION_ID, 'BLOCK_ON', new Date('2026-11-07T21:00:00.000Z'), TIME_ZONE);

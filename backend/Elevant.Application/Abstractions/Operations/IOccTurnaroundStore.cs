@@ -35,11 +35,17 @@ public sealed record OccCharterAirlineData(Guid Id, string IcaoCode, string? Iat
 /// </summary>
 public interface IOccTurnaroundStore
 {
-    /// <summary>The turnaround and its version; needs Planificación «Ver» and the station in scope.</summary>
+    /// <summary>
+    /// The turnaround and its version; needs Planificación «Ver», or the positions map's «Registrar llegadas y asignar o
+    /// liberar posiciones» whose commands send that version (3-N10), and the station in scope.
+    /// </summary>
     Task<MasterDataResult<OccTurnaroundDetailData>> ReadAsync(Guid actorId, Guid turnaroundId,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Corrects numbers, airports, times, stand and aircraft type before the start; needs «Reprogramar».</summary>
+    /// <summary>
+    /// Corrects numbers, airports, times, stand and aircraft type before the start; needs «Reprogramar». A number or day
+    /// another open turnaround of the airline already flies is <c>flight_already_planned</c> (3-N07).
+    /// </summary>
     Task<MasterDataResult<OccTurnaroundDetailData>> RescheduleAsync(Guid actorId, Guid turnaroundId,
         RescheduleTurnaroundInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default);
 

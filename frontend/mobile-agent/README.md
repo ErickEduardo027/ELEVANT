@@ -178,13 +178,20 @@ ELEVANT: desde el inicio o la llegada registrada, lo que ocurrió primero, hasta
 ahora (huecos 3-N25 y 3-N09). En una ronda de corrección, cuando OCC devolvió la
 operación, un hito vacío no se graba con «AHORA»: abre el ajuste en la última
 hora registrada, con pasos de hasta una hora, porque los hechos del vuelo
-ocurrieron antes de la primera entrega. El reenvío mide el tiempo en tierra
-hasta esa primera entrega.
+ocurrieron antes de la primera entrega; ELEVANT acepta los hitos hasta esa
+entrega y el ajuste lo indica. El reenvío mide el tiempo en tierra hasta esa
+primera entrega. Los daños del walk-around, las incidencias y las desviaciones
+se registran con la hora actual, sin selector, y ELEVANT también los acepta
+durante la corrección.
 
 La cola se vacía al abrir la app, al recuperar señal, al volver a primer plano
 y cada minuto mientras quede algo pendiente; después salen las incidencias
 guardadas. Sin señal o con la sesión revocada se detiene; una foto que ELEVANT
-no puede guardar ahora no detiene nada; cualquier otro fallo temporal retiene
+no puede guardar ahora no detiene nada y sigue saliendo sola, y el agente puede
+descartarla en «Sincronización» para entregar la operación sin ella; una foto
+que la tablet no puede leer, o la de una marca de daño que ELEVANT rechazó, no
+se envía y espera allí, con su motivo, a que el agente la descarte; al
+reintentar la marca, su foto la sigue. Cualquier otro fallo temporal retiene
 solo el resto de su operación. Un rechazo conserva su código de Problem
 Details, se explica en español y espera en «Sincronización» a que el agente lo
 revise. La pantalla de la operación muestra lo que espera en la cola aplicado

@@ -199,7 +199,8 @@ internal sealed class EfRampOperationSubmissionStore(
         }
         // 3-N09: the facts of the flight do not move to a resubmission. A correction round is measured to the first
         // hand-off (push-back, when it is missing, ends there) and the operation keeps that end; the new revision
-        // records when it was resubmitted.
+        // records when it was resubmitted, and its services are measured with the transitions recorded until then
+        // (the correction round's ones come after the first hand-off).
         var handedOffAt = previous is null
             ? now
             : await RampEvidenceWindowReader.FirstSubmittedAtAsync(context, scope.Operation.Id, cancellationToken) ?? now;
@@ -231,7 +232,7 @@ internal sealed class EfRampOperationSubmissionStore(
             SubmittedAt = now,
             AgentNote = request.AgentNote,
             EvidenceJson = (await OperationSubmissionEvidence.CaptureAsync(
-                context, scope.Operation.Id, cancellationToken, handedOffAt)).ToJson(),
+                context, scope.Operation.Id, cancellationToken, handedOffAt, now)).ToJson(),
             CreatedAt = now,
             UpdatedAt = now,
         };

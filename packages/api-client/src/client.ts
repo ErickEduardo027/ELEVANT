@@ -334,6 +334,7 @@ import {
   getGetRampOperationChecklistUrl,
   getGetRampIncidentsUrl,
   getGetOperationAttendanceDraftUrl,
+  getGetOccAttendanceAssignmentsUrl,
   getSaveOccAttendanceDraftUrl,
   getSaveRampAttendanceDraftUrl,
   getGetHumanResourcesAttendanceUrl,
@@ -552,6 +553,7 @@ import {
   type AttendanceDraftContributionResponse,
   type AttendanceDraftSnapshotResponse,
   type AttendanceDraftWriteResponse,
+  type OccAttendanceAssignmentsResponse,
   type SaveAttendanceDraftRequest,
   type HumanResourcesAttendancePageResponse,
   type HumanResourcesAttendanceRowResponse,
@@ -1433,6 +1435,12 @@ export interface ElevantApiClient {
     installationId: string,
     options?: SaveAttendanceDraftOptions,
   ): Promise<AttendanceDraftWriteResponse>;
+  /**
+   * 3-F: the assignments of the turnaround's operation whose attendance OCC records, oldest first: the open ones and
+   * the ones a handover released after the start (`releasedAt`), which the planning board no longer lists. Web only.
+   */
+  getOccAttendanceAssignments(turnaroundId: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccAttendanceAssignmentsResponse>;
   getHumanResourcesAttendance(
     query: GetHumanResourcesAttendanceParams,
     options?: GetHumanResourcesAttendanceOptions,
@@ -3114,6 +3122,30 @@ function isAttendanceSnapshot(
     isUuid(value.stationId) &&
     (value.occ === null || isAttendanceContribution(value.occ)) &&
     (value.rampAgent === null || isAttendanceContribution(value.rampAgent));
+}
+
+/** An operation hands its agents over, it does not pile them up: more assignments than this is not an answer (3-F). */
+const MAX_OCC_ATTENDANCE_ASSIGNMENTS = 100;
+
+/** An assignment whose attendance OCC records (3-F): open (`releasedAt` null) or released after it was assigned. */
+function isOccAttendanceAssignment(value: unknown) {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["assignmentId", "agentId", "displayName", "employeeNumber", "assignedAt", "releasedAt"]) &&
+    isUuid(value.assignmentId) && isUuid(value.agentId) && isNonEmptyString(value.displayName) &&
+    isString(value.employeeNumber) && isDateTimeOffset(value.assignedAt) &&
+    (value.releasedAt === null ||
+      isDateTimeOffset(value.releasedAt) && Date.parse(value.releasedAt) >= Date.parse(value.assignedAt));
+}
+
+/** The route turnaround's assignments whose attendance OCC records (3-F), each one once. */
+function isOccAttendanceAssignments(value: unknown, turnaroundId: string): value is OccAttendanceAssignmentsResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["turnaroundId", "operationId", "assignments"]) ||
+      !isUuid(value.turnaroundId) || value.turnaroundId.toLowerCase() !== turnaroundId || !isUuid(value.operationId) ||
+      !Array.isArray(value.assignments) || value.assignments.length > MAX_OCC_ATTENDANCE_ASSIGNMENTS ||
+      !value.assignments.every(isOccAttendanceAssignment))
+    return false;
+  const ids = value.assignments.map(item => String((item as { assignmentId: string }).assignmentId).toLowerCase());
+  return new Set(ids).size === ids.length;
 }
 
 function isAttendanceWriteResult(
@@ -7738,6 +7770,13 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isAttendanceSnapshot(result.data, operation, assignment)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getOccAttendanceAssignments(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const result = await execute(getGetOccAttendanceAssignmentsUrl(turnaround), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAttendanceAssignments(result.data, turnaround))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async saveOccAttendanceDraft(

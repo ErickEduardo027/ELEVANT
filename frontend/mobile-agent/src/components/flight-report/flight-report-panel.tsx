@@ -112,7 +112,7 @@ function PhaseBar({ phase, onChange, done }: {
 /**
  * Adjust a time with whole minutes: the agent tapped late, or corrects from the radio log. The time stays inside the
  * operation's window (3-N25), never after now by ELEVANT's clock (3-N18); in a correction round there is no «AHORA»:
- * the facts of the flight happened before the first hand-off (3-N09).
+ * the facts of the flight happened before the first hand-off (3-N09), where ELEVANT closes the milestones' window.
  */
 function TimeSheet({ label, initial, opensAt, correction, timeZone, onClose, onSave }: {
   label: string; initial: Date; opensAt: Date | null; correction: boolean; timeZone: string;
@@ -121,6 +121,7 @@ function TimeSheet({ label, initial, opensAt, correction, timeZone, onClose, onS
   const [value, setValue] = useState(() => clampMilestoneTime(initial, opensAt, serverNow()));
   const shift = (minutes: number) => setValue(current =>
     clampMilestoneTime(new Date(current.getTime() + minutes * 60_000), opensAt, serverNow()));
+  const until = correction ? 'hasta tu primera entrega a OCC' : 'hasta ahora';
   return (
     <Modal animationType="slide" transparent visible onRequestClose={onClose}>
       <View style={styles.sheetBackdrop}>
@@ -129,8 +130,8 @@ function TimeSheet({ label, initial, opensAt, correction, timeZone, onClose, onS
           <Text accessibilityLiveRegion="polite" style={styles.sheetTime}>{timeIn(value, timeZone)}</Text>
           <Text style={styles.sheetDay}>{dayIn(value, timeZone)}</Text>
           <Text style={styles.hint}>
-            {opensAt ? `Hora válida desde ${dayIn(opensAt, timeZone)} ${timeIn(opensAt, timeZone)} hasta ahora (hora de la estación).`
-              : 'Hora válida hasta ahora (hora de la estación).'}
+            {opensAt ? `Hora válida desde ${dayIn(opensAt, timeZone)} ${timeIn(opensAt, timeZone)} ${until} (hora de la estación).`
+              : `Hora válida ${until} (hora de la estación).`}
           </Text>
           <View style={styles.shiftRow}>
             {SHIFTS.map(minutes => (

@@ -33,3 +33,21 @@ public sealed record AttendanceDraftSnapshotResponse(
 public sealed record AttendanceDraftWriteResponse(
     AttendanceDraftContributionResponse Contribution,
     bool Replayed);
+
+/// <summary>
+/// An assignment whose attendance OCC records (3-F): an open one (<c>releasedAt</c> null) or one a handover released after
+/// the operation started, whose agent worked until then.
+/// </summary>
+public sealed record OccAttendanceAssignmentResponse(
+    Guid AssignmentId,
+    Guid AgentId,
+    string DisplayName,
+    string EmployeeNumber,
+    DateTimeOffset AssignedAt,
+    [property: JsonRequired] DateTimeOffset? ReleasedAt);
+
+/// <summary>The assignments of the turnaround's operation whose attendance OCC records, oldest first (3-F).</summary>
+public sealed record OccAttendanceAssignmentsResponse(
+    Guid TurnaroundId,
+    Guid OperationId,
+    IReadOnlyList<OccAttendanceAssignmentResponse> Assignments);

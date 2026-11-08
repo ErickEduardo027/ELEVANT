@@ -167,15 +167,31 @@ public sealed partial class SqlServerMigrationTests
         var installation = await RegisterTimingTabletAsync(provider, "81000000-0000-7000-8000-0000000000c2", ct);
         // A Saturday operation returned by OCC and corrected on Monday: started 49 hours ago, first handed off an hour
         // later, without push-back. The first hand-off marked an OVERTIME the corrected times do not justify, and OCC
-        // added a DELAY of its own.
+        // added a DELAY of its own. Its first service ended in exception after 15 minutes.
         var now = DateTimeOffset.UtcNow;
         var startedAt = Truncate(now.AddHours(-49));
         var firstHandOff = startedAt.AddMinutes(60);
         long operationInternalId;
+        Guid correctedServiceId;
         await using (var setup = CreateContext(database.ConnectionString))
         {
             var state = await PrepareCorrectionRoundAsync(setup, startedAt, firstHandOff, now, ct);
             operationInternalId = state.OperationId;
+            var firstService = await setup.OperationServices.SingleAsync(item => item.Id == state.ServiceId, ct);
+            firstService.CurrentStatus = ServiceExecutionStatus.Exception;
+            correctedServiceId = firstService.PublicId;
+            setup.Set<OperationServiceStatusEvent>().AddRange(
+                new OperationServiceStatusEvent
+                {
+                    OperationServiceId = state.ServiceId, FromStatus = ServiceExecutionStatus.Planned,
+                    ToStatus = ServiceExecutionStatus.InProgress, OccurredAt = startedAt.AddMinutes(5),
+                },
+                new OperationServiceStatusEvent
+                {
+                    OperationServiceId = state.ServiceId, FromStatus = ServiceExecutionStatus.InProgress,
+                    ToStatus = ServiceExecutionStatus.Exception, OccurredAt = startedAt.AddMinutes(20),
+                    Note = "La cinta no funcionó.",
+                });
             setup.OperationServiceCharges.AddRange(
                 new OperationServiceCharge
                 {
@@ -214,6 +230,33 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(RampProblemCodes.MilestoneOutOfOrder,
             (await Milestone(Guid.NewGuid(), "PUSHBACK", startedAt.AddMinutes(5))).Code);
 
+        // A damage, an incident and a deviation the agent records in the correction carry the current time (the tablet
+        // has no time picker for them): taken, while a milestone after the first hand-off is not.
+        var correctionDamage = await Run(services => services.GetRequiredService<IOperationDocumentStore>()
+            .RecordDamageMarkAsync(new DamageMarkWriteRequest(TimingAgent, [TimingStation], TimingOperation,
+                Guid.NewGuid(), 0.3m, 0.4m, "Rayón en la puerta de carga", DateTimeOffset.UtcNow, installation,
+                Guid.NewGuid(), "timing-correction-damage"), ct));
+        Assert.True(correctionDamage.IsSuccess, correctionDamage.Code);
+        foreach (var (incidentType, delayCode) in new[] { ("Safety", (string?)null), (RampIncidentPolicy.Deviation, "93") })
+        {
+            var incident = await Run(services => services.GetRequiredService<IRampIncidentStore>().ReportAsync(
+                new RampIncidentWriteRequest(TimingAgent, [TimingStation], TimingOperation, incidentType,
+                    IncidentSeverity.Medium, "Registrado durante la corrección", DateTimeOffset.UtcNow, installation,
+                    Guid.NewGuid(), Guid.NewGuid(), "timing-correction-incident", delayCode), ct));
+            Assert.True(incident.IsSuccess, incident.Code);
+        }
+
+        // The correction completes the service that ended in exception, as the deployed APK sends it: without a time,
+        // so ELEVANT stamps both transitions after the first hand-off.
+        Task<RampOperationServiceTransitionWriteResult> Transition(ServiceExecutionStatus target, decimal? quantity,
+            string? note) =>
+            Run(services => services.GetRequiredService<IRampOperationServiceCommandStore>().TransitionServiceAsync(
+                new RampOperationServiceTransitionWriteRequest(TimingAgent, [TimingStation], TimingOperation,
+                    correctedServiceId, target, quantity, note, installation, Guid.NewGuid(), Guid.NewGuid(),
+                    "timing-correction-service"), ct));
+        Assert.True((await Transition(ServiceExecutionStatus.InProgress, null, "La cinta sí funcionó.")).IsSuccess);
+        Assert.True((await Transition(ServiceExecutionStatus.Completed, 1m, null)).IsSuccess);
+
         // The resubmission is measured to the first hand-off, keeps it as the operation's end and retires the
         // automatic OVERTIME, never OCC's DELAY.
         var resubmitted = await Run(services => services.GetRequiredService<IRampOperationSubmissionStore>().SubmitAsync(
@@ -232,6 +275,9 @@ public sealed partial class SqlServerMigrationTests
             .EvidenceJson!);
         Assert.Equal((startedAt.AddMinutes(10), firstHandOff, 50m),
             (evidence.Close!.StartedAt!.Value, evidence.Close.EndedAt!.Value, evidence.Close.GroundMinutes!.Value));
+        // The service is measured with the correction's transitions, the ones its current status shows, not with the
+        // 15 minutes of the first attempt.
+        AssertCorrectedService(evidence);
         var marks = await (from mark in check.OperationServiceCharges.AsNoTracking()
                            join charge in check.ChargeDefinitions.AsNoTracking() on mark.ChargeDefinitionId equals charge.Id
                            join service in check.OperationServices.AsNoTracking() on mark.OperationServiceId equals service.Id
@@ -247,6 +293,33 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((ChargeMarkSource.Occ, (DateTimeOffset?)null), (delay.Source, delay.RemovedAt));
         Assert.Contains("retiredSurcharges", (await check.AuditEntries.AsNoTracking()
             .SingleAsync(item => item.Action == "ramp.operation.submitted", ct)).MetadataJson!, StringComparison.Ordinal);
+
+        // A milestone captured before the first hand-off reaches ELEVANT while OCC reviews the resubmission: the frozen
+        // evidence is captured again and still measures the service with the correction's transitions.
+        Assert.True((await Milestone(Guid.NewGuid(), "WALKAROUND_START", startedAt.AddMinutes(15))).IsSuccess);
+        await using var refreshed = CreateContext(database.ConnectionString);
+        Assert.True(await refreshed.AuditEntries.AnyAsync(entry =>
+            entry.Action == PendingSubmissionEvidenceRefresher.AuditAction, ct));
+        AssertCorrectedService(OperationSubmissionEvidence.Parse((await refreshed.OperationSubmissions.AsNoTracking()
+            .SingleAsync(item => item.GroundOperationId == operationInternalId && item.RevisionNumber == 2, ct))
+            .EvidenceJson!));
+
+        // A damage marked during the correction that reaches ELEVANT while OCC reviews the resubmission is still taken;
+        // a milestone at that time is not: the facts of the flight end at the first hand-off.
+        var markedInTheCorrection = resubmitted.Submission.SubmittedAt.AddSeconds(-30);
+        var lateDamage = await Run(services => services.GetRequiredService<IOperationDocumentStore>().RecordDamageMarkAsync(
+            new DamageMarkWriteRequest(TimingAgent, [TimingStation], TimingOperation, Guid.NewGuid(), 0.6m, 0.5m,
+                "Golpe en el borde del ala", markedInTheCorrection, installation, Guid.NewGuid(), "timing-late-damage"), ct));
+        Assert.True(lateDamage.IsSuccess, lateDamage.Code);
+        Assert.Equal(RampProblemCodes.TimeOutsideOperationWindow,
+            (await Milestone(Guid.NewGuid(), "DNCD", markedInTheCorrection)).Code);
+
+        void AssertCorrectedService(OperationSubmissionEvidence frozen)
+        {
+            Assert.Equal(nameof(ServiceExecutionStatus.Completed),
+                Assert.Single(frozen.Services, item => item.Id == correctedServiceId).Status);
+            Assert.InRange(frozen.TimingOf(correctedServiceId)!.ServiceMinutes!.Value, 0m, 1m);
+        }
     }
 
     [Fact]

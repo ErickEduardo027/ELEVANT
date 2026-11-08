@@ -99,9 +99,11 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
             {
                 var operation = scope.Operation.Operation;
                 var tapped = Truncate(request.ReportedAt);
-                // 3-N25: the same window as the milestones; 3-N06: a damage captured before the hand-off is still
-                // taken while OCC reviews it.
-                var window = await RampEvidenceWindowReader.ReadAsync(context, operation, scope.Now, ct);
+                // 3-N25: the window of the milestones, except that a correction round takes until now the damage the
+                // agent marks in it (the tablet records it with the current time); 3-N06: a damage captured before
+                // the hand-off is still taken while OCC reviews it.
+                var window = await RampEvidenceWindowReader.ReadAsync(context, operation, RampEvidenceKind.Report,
+                    scope.Now, ct);
                 if (RampExecutionPolicy.MilestoneRejection(scope.Operation.TurnaroundStatus, operation.CurrentStatus,
                         operation.ActualStartAt, operation.ActualEndAt, string.Empty, tapped, window,
                         new Dictionary<string, DateTimeOffset>(), scope.Now) is { } rejection)

@@ -122,14 +122,17 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 .FirstOrDefaultAsync(cancellationToken);
             var submitted = operation is not null && await context.OperationSubmissions.AsNoTracking()
                 .AnyAsync(item => item.GroundOperationId == operation.Id, cancellationToken);
-            // 3-N08: an arrival OCC recorded (the leg became Manual) is corrected with its reason, and only before the
-            // first submission. A time the feed reported is not OCC's record: the first record needs no reason.
-            var previous = leg.Source == OperationalDataSource.Manual ? leg.ActualAt : null;
+            // 3-N08: from the first submission the arrival is evidence, whoever wrote it (OCC or the flight feed) and even
+            // when the leg has no time yet: DELAY and the close were priced with it.
+            if (!OccTurnaroundRules.CanCorrectArrival(turnaround.CurrentStatus, operation?.CurrentStatus, submitted))
+                return Outcome.Fail(OccPositionFailure.Conflict, "arrival_locked");
+            // Before it, a time already on the leg is replaced with its reason: OCC's record always, the feed's when OCC
+            // records another one. The leg's first time, or the feed's kept as it is, needs none.
+            var recordedAt = Truncate(arrivedAt);
+            var previous = leg.ActualAt;
             string? reason = null;
-            if (previous is not null)
+            if (OccTurnaroundRules.ArrivalNeedsReason(previous, leg.Source == OperationalDataSource.Manual, recordedAt))
             {
-                if (!OccTurnaroundRules.CanCorrectArrival(turnaround.CurrentStatus, operation?.CurrentStatus, submitted))
-                    return Outcome.Fail(OccPositionFailure.Conflict, "arrival_locked");
                 reason = OccTurnaroundRules.Reason(note);
                 if (reason is null) return Outcome.Fail(OccPositionFailure.Invalid, "reason_required");
             }
@@ -150,7 +153,7 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                     turnaround.AircraftTypeId = type.Id;
                 }
             }
-            leg.ActualAt = Truncate(arrivedAt);
+            leg.ActualAt = recordedAt;
             // OCC's time prevails: the feed no longer rewrites this leg's actual time.
             leg.Source = OperationalDataSource.Manual;
             leg.UpdatedAt = now;
@@ -166,7 +169,7 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 });
                 turnaround.CurrentStatus = TurnaroundStatus.InProgress;
             }
-            return previous is null
+            return reason is null
                 ? await AnnounceAsync(current, "occ.turnaround.arrived", $"{registration} {leg.ActualAt:O}", now, cancellationToken)
                 : await AnnounceAsync(current, "occ.turnaround.arrival_corrected",
                     $"{reason} ({previous:O} -> {leg.ActualAt:O})", now, cancellationToken);

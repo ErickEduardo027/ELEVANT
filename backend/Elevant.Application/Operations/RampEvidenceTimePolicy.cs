@@ -11,6 +11,19 @@ public sealed record RampEvidenceWindow(DateTimeOffset Opens, DateTimeOffset Clo
     public bool Contains(DateTimeOffset at) => at >= Opens && at <= Closes;
 }
 
+/// <summary>What a tablet time records, which decides when its window closes after a hand-off (3-N25, 3-N09).</summary>
+public enum RampEvidenceKind
+{
+    /// <summary>A milestone, a fact of the flight: in a correction round it happened before the first hand-off.</summary>
+    Milestone,
+
+    /// <summary>
+    /// A walk-around damage, an incident or a service transition: the tablet records it with the current time, so a
+    /// correction round takes it until now.
+    /// </summary>
+    Report,
+}
+
 /// <summary>
 /// The one rule of «when is a tablet time valid» (phase 3, block C): the start, the service transitions, the
 /// milestones, the walk-around damages and the incidents all go through it. The tablet stamps the moment of the tap
@@ -39,14 +52,18 @@ public static class RampEvidenceTimePolicy
     }
 
     /// <summary>
-    /// When the evidence window closes: the hand-off while OCC reviews it (late evidence captured before it, 3-N06),
-    /// the first hand-off during a correction round (3-N09: the facts of the flight do not move to the resubmission),
-    /// otherwise it is still open. <c>firstSubmittedAt</c> is when the operation was handed to OCC the first time, if
-    /// it ever was.
+    /// When the evidence window closes. While OCC reviews a hand-off it takes the late evidence captured before it
+    /// (3-N06): a milestone until the operation's end, a report until the hand-off under review. During a correction
+    /// round a milestone closes at the first hand-off (3-N09: the facts of the flight do not move to the resubmission),
+    /// while a report stays open: the damage or incident the agent records in the correction carries the current
+    /// time. Otherwise the window is still open. <c>firstSubmittedAt</c> and <c>lastSubmittedAt</c> are when the
+    /// operation was handed to OCC the first and the last time, if it ever was.
     /// </summary>
-    public static DateTimeOffset? ClosedAt(GroundOperationStatus status, DateTimeOffset? actualEndAt,
-        DateTimeOffset? firstSubmittedAt) =>
-        status == GroundOperationStatus.PendingReview && actualEndAt is not null ? actualEndAt : firstSubmittedAt;
+    public static DateTimeOffset? ClosedAt(RampEvidenceKind kind, GroundOperationStatus status,
+        DateTimeOffset? actualEndAt, DateTimeOffset? firstSubmittedAt, DateTimeOffset? lastSubmittedAt) =>
+        kind == RampEvidenceKind.Milestone
+            ? status == GroundOperationStatus.PendingReview && actualEndAt is not null ? actualEndAt : firstSubmittedAt
+            : status == GroundOperationStatus.PendingReview ? lastSubmittedAt ?? actualEndAt : null;
 
     /// <summary>
     /// The window of milestones, damages and incidents: from the start or the recorded arrival, whichever came first,

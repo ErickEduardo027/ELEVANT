@@ -43,12 +43,13 @@ public sealed class RampEvidenceTimePolicyTests
     }
 
     [Fact]
-    public void ThereIsNoFixedDayLimitAndACorrectionRoundClosesAtTheFirstHandOff()
+    public void ThereIsNoFixedDayLimitAndACorrectionRoundClosesTheMilestonesAtTheFirstHandOff()
     {
         var saturday = Now.AddHours(-50);
         var firstHandOff = saturday.AddHours(3);
         var correction = RampEvidenceTimePolicy.WindowFor(saturday, null,
-            RampEvidenceTimePolicy.ClosedAt(GroundOperationStatus.InProgress, null, firstHandOff), Now);
+            RampEvidenceTimePolicy.ClosedAt(RampEvidenceKind.Milestone, GroundOperationStatus.InProgress, null,
+                firstHandOff, firstHandOff), Now);
 
         Assert.True(correction.Contains(saturday.AddHours(2)));
         Assert.Equal(firstHandOff + RampEvidenceTimePolicy.ClockTolerance, correction.Closes);
@@ -58,11 +59,50 @@ public sealed class RampEvidenceTimePolicyTests
     }
 
     [Fact]
+    public void ACorrectionRoundTakesUntilNowTheDamagesAndIncidentsTheAgentRecordsInIt()
+    {
+        // The tablet records a damage, an incident or a deviation with the current time and no time picker: OCC may
+        // return the operation precisely to have one added.
+        var saturday = Now.AddHours(-50);
+        var firstHandOff = saturday.AddHours(3);
+        var closedAt = RampEvidenceTimePolicy.ClosedAt(RampEvidenceKind.Report, GroundOperationStatus.InProgress, null,
+            firstHandOff, firstHandOff);
+        Assert.Null(closedAt);
+        var correction = RampEvidenceTimePolicy.WindowFor(saturday, null, closedAt, Now);
+
+        Assert.Null(RampEvidenceTimePolicy.CheckEvidence(Now, correction));
+        Assert.Null(RampEvidenceTimePolicy.CheckEvidence(saturday.AddHours(2), correction));
+        Assert.Equal(RampProblemCodes.TimeOutsideOperationWindow,
+            RampEvidenceTimePolicy.CheckEvidence(Now.AddMinutes(3), correction));
+        Assert.True(RampIncidentPolicy.CanReport(TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
+            saturday, null, Now, correction));
+        Assert.Null(RampExecutionPolicy.MilestoneRejection(TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
+            saturday, null, string.Empty, Now, correction, new Dictionary<string, DateTimeOffset>(), Now));
+    }
+
+    [Fact]
+    public void UnderReviewOfAResubmissionAMilestoneClosesAtTheFirstHandOffAndAReportAtTheResubmission()
+    {
+        var firstHandOff = Now.AddHours(-48);
+        var resubmittedAt = Now.AddMinutes(-20);
+        // The resubmission keeps the first hand-off as the operation's end (3-N09).
+        Assert.Equal(firstHandOff, RampEvidenceTimePolicy.ClosedAt(RampEvidenceKind.Milestone,
+            GroundOperationStatus.PendingReview, firstHandOff, firstHandOff, resubmittedAt));
+        // A damage marked during the correction that reaches ELEVANT after the resubmission is still taken (3-N06).
+        Assert.Equal(resubmittedAt, RampEvidenceTimePolicy.ClosedAt(RampEvidenceKind.Report,
+            GroundOperationStatus.PendingReview, firstHandOff, firstHandOff, resubmittedAt));
+    }
+
+    [Fact]
     public void UnderReviewTheWindowClosesAtTheHandOffAndOtherwiseItIsStillOpen()
     {
         var handOff = Now.AddMinutes(-30);
-        Assert.Equal(handOff, RampEvidenceTimePolicy.ClosedAt(GroundOperationStatus.PendingReview, handOff, handOff));
-        Assert.Null(RampEvidenceTimePolicy.ClosedAt(GroundOperationStatus.InProgress, null, null));
+        foreach (var kind in Enum.GetValues<RampEvidenceKind>())
+        {
+            Assert.Equal(handOff, RampEvidenceTimePolicy.ClosedAt(kind, GroundOperationStatus.PendingReview, handOff,
+                handOff, handOff));
+            Assert.Null(RampEvidenceTimePolicy.ClosedAt(kind, GroundOperationStatus.InProgress, null, null, null));
+        }
         var review = RampEvidenceTimePolicy.WindowFor(Now.AddHours(-2), null, handOff, Now);
         Assert.True(review.Contains(handOff.AddMinutes(-10)));
         Assert.False(review.Contains(handOff.AddMinutes(10)));

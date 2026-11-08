@@ -1,7 +1,7 @@
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 import { placementReasons } from './occFlightFeedService';
-import { problemMessage } from './problemMessages';
+import { problemMessage, SESSION_EXPIRED_MESSAGE } from './problemMessages';
 
 function client() {
   return createPrivateWebApiClient({ getAccessToken: () => readSession()?.token });
@@ -15,7 +15,7 @@ function client() {
 export const POSITION_PROBLEM_MESSAGES = Object.freeze({
   invalid_position_request: 'Revisa los datos: la matrícula (por ejemplo HI1055) y una hora de llegada que no sea futura.',
   reason_required: 'Indica el motivo de la corrección (entre 5 y 500 caracteres).',
-  arrival_locked: 'La llegada ya no se puede corregir: la operación ya se entregó a OCC.',
+  arrival_locked: 'La llegada ya no se puede registrar ni corregir: la operación ya se entregó a OCC.',
   aircraft_type_unavailable: 'El tipo de avión ya no está disponible. Elige otro.',
   aircraft_type_locked: 'El tipo de avión ya no se puede cambiar: la operación ya se entregó a OCC.',
   stand_unavailable: 'La posición está ocupada o reservada en ese horario. Elige otra o libérala primero.',
@@ -28,6 +28,22 @@ export const POSITION_PROBLEM_MESSAGES = Object.freeze({
 
 const FORBIDDEN = 'Tu acceso no permite registrar llegadas ni asignar posiciones.';
 const FALLBACK = 'No fue posible actualizar la posición. Revisa la conexión e intenta de nuevo.';
+const VERSION_FORBIDDEN = 'Tu acceso no permite consultar este vuelo: no puedes registrar su llegada ni cambiar su posición.';
+const VERSION_FALLBACK = 'No se pudo consultar la versión del vuelo. Revisa la conexión e intenta de nuevo.';
+
+/**
+ * Why the version of a flight could not be read (3-N10), in Spanish: until it is read, the positions map offers no
+ * command for that flight. An expired session, a missing permission or a flight that is gone say so; any other failure
+ * (the network, the server, an unreadable answer) is one the screen retries. The server title is never shown.
+ */
+export function positionVersionMessage(error) {
+  switch (error?.status) {
+    case 401: return SESSION_EXPIRED_MESSAGE;
+    case 403: return VERSION_FORBIDDEN;
+    case 404: return POSITION_PROBLEM_MESSAGES.not_found;
+    default: return VERSION_FALLBACK;
+  }
+}
 
 /**
  * The error a positions screen shows: its Spanish message by code, keeping the status, the code and the rules of the
@@ -58,12 +74,17 @@ async function guarded(request) {
 }
 
 /**
- * The optional headers of a positions command (expand, 3-N10): the intent's key travels only with the ETag of the
- * version on screen; without it (an account that cannot read the flight detail) the command runs as before and the
- * server still serializes the stand.
+ * The headers of a positions command (3-N10): the intent's Idempotency-Key and the ETag of the flight's version on
+ * screen, always together. Without them nothing is sent: the screen reads the flight first (428, like the server), so a
+ * retry never repeats an arrival or a stand change and a stale version is never missed. The server still accepts the
+ * older screens that send neither (expand).
  */
 function commandHeaders({ ifMatch = null, idempotencyKey = null } = {}) {
-  return ifMatch ? { ifMatch, ...(idempotencyKey && { idempotencyKey }) } : {};
+  if (!ifMatch || !idempotencyKey) {
+    throw Object.assign(new Error(POSITION_PROBLEM_MESSAGES.expected_version_required),
+      { status: 428, code: 'expected_version_required', reasons: [] });
+  }
+  return { ifMatch, idempotencyKey };
 }
 
 export const loadOccPositions = (stationId, date, { signal } = {}) =>

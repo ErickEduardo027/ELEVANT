@@ -36,6 +36,20 @@ public sealed class AttendanceDraftPolicyTests
     }
 
     [Fact]
+    public void OccRecordsAnOpenAssignmentAndOneRelievedAfterTheStartOnly()
+    {
+        // 3-F: open, started or not.
+        Assert.True(AttendanceDraftPolicy.AcceptsOccAttendance(null, null));
+        Assert.True(AttendanceDraftPolicy.AcceptsOccAttendance(null, Started));
+        // A handover after the start: the relieved agent worked until then.
+        Assert.True(AttendanceDraftPolicy.AcceptsOccAttendance(Started.AddMinutes(40), Started));
+        // Released before (or at) the start, or of an operation that never started: nobody worked it.
+        Assert.False(AttendanceDraftPolicy.AcceptsOccAttendance(Started.AddMinutes(-5), Started));
+        Assert.False(AttendanceDraftPolicy.AcceptsOccAttendance(Started, Started));
+        Assert.False(AttendanceDraftPolicy.AcceptsOccAttendance(Started, null));
+    }
+
+    [Fact]
     public void AcceptsOnlyTwoDistinctContributorLanes()
     {
         Assert.NotEqual(AttendanceDraftLane.Occ, AttendanceDraftLane.RampAgent);

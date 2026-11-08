@@ -28,7 +28,8 @@ public enum RampOperationStartWriteFailure
 
 /// <summary>
 /// The start of a ramp operation; <paramref name="Code"/> names the rule a refusal broke when the tablet can explain it
-/// (<c>contract_not_in_force</c>, 3-N04). A replay of the device receipt answers the same code.
+/// (<c>contract_not_in_force</c>, 3-N04). A replay of the device receipt answers the same code, except a contract
+/// refusal: it is not stored (no <paramref name="CommitReceiptId"/>), so the same key evaluates the contract again.
 /// </summary>
 public sealed record RampOperationStartWriteResult(
     RampOperationStartData? Start,

@@ -13,7 +13,9 @@ namespace Elevant.Persistence.Operations;
 /// Builds the ramp agent's read-only work queue from the authenticated account profile.
 /// Every assignment and station boundary is enforced by the database query. The queue holds the operations the agent
 /// works or handed over (assigned, in progress, pending or in review, returned) and the ones OCC approved in the last
-/// <see cref="ApprovedWindow"/>, the active ones first (3-N01): an agent with a long history still sees today's flight.
+/// <see cref="ApprovedWindow"/>, counted from the approval (its status event), not from the operation's end: a review
+/// done days after the flight still shows «Aprobada». The active ones first (3-N01): an agent with a long history still
+/// sees today's flight.
 /// An operation that already started stays in its agent's scope until it ends, even if its stand is deactivated or the
 /// flight moved to a terminal the agent has no scope in (3-N03).
 /// </summary>
@@ -22,7 +24,7 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context, TimePr
 {
     private const int MaximumOperations = 100;
 
-    /// <summary>How long an approved operation stays on the tablet («Aprobada»).</summary>
+    /// <summary>How long an approved operation stays on the tablet («Aprobada») after OCC approved it.</summary>
     private static readonly TimeSpan ApprovedWindow = TimeSpan.FromHours(48);
 
     public async Task<RampOperationsReadResult> GetActiveAssignedOperationsAsync(
@@ -106,8 +108,13 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context, TimePr
                        operation.CurrentStatus == GroundOperationStatus.PendingReview ||
                        operation.CurrentStatus == GroundOperationStatus.InReview ||
                        operation.CurrentStatus == GroundOperationStatus.Returned ||
+                       // 3-N01: the window opens when OCC approves (a reopened and approved again one, at the last
+                       // approval), whatever the operation's recorded or planned end.
                        (operation.CurrentStatus == GroundOperationStatus.Approved &&
-                        (operation.ActualEndAt ?? operation.PlannedEndAt) >= approvedSince)) &&
+                        context.Set<GroundOperationStatusEvent>().AsNoTracking().Any(statusEvent =>
+                            statusEvent.GroundOperationId == operation.Id &&
+                            statusEvent.ToStatus == GroundOperationStatus.Approved &&
+                            statusEvent.OccurredAt >= approvedSince))) &&
                       station.IsActive &&
                       stationIds.Contains(station.PublicId) &&
                       context.Set<RampAgentStationScope>().AsNoTracking().Any(scope =>
@@ -139,7 +146,7 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context, TimePr
                                            scope.ValidFrom <= turnaround.OperationDate &&
                                            (scope.ValidTo == null ||
                                             scope.ValidTo >= turnaround.OperationDate)))))))
-                // The active ones first; the approved ones (kept for 48 h) after them.
+                // The active ones first; the approved ones (kept for 48 h after the approval) after them.
                 orderby operation.CurrentStatus == GroundOperationStatus.Approved,
                     operation.PlannedStartAt == null,
                     operation.PlannedStartAt,

@@ -13,7 +13,8 @@ vi.mock('../features/auth/authService', () => ({
 }));
 
 const {
-  assignOccStand, isStalePosition, POSITION_PROBLEM_MESSAGES, recordOccArrival, releaseOccStand, translatePositionError,
+  assignOccStand, isStalePosition, POSITION_PROBLEM_MESSAGES, positionVersionMessage, recordOccArrival, releaseOccStand,
+  translatePositionError,
 } = await import('./occPositionsService');
 
 const turnaroundId = '70000000-0000-7000-8000-000000000012';
@@ -30,21 +31,44 @@ describe('positions map adapter (3-N08, 3-N10, 3-B)', () => {
     for (const method of Object.values(client)) method.mockResolvedValue({ positions: [] });
   });
 
-  it('sends the arrival with its local time converted, its type and reason, and the headers only with an ETag', async () => {
+  it('sends the arrival with its local time converted, its type and reason, with the key and the ETag', async () => {
     const arrival = { aircraftRegistration: 'HI1055', arrivedAt: '2026-11-05T17:05:00.000Z',
       aircraftTypeId: '60000000-0000-7000-8000-000000000001', reason: null };
-    await recordOccArrival(turnaroundId, arrival, { ifMatch: '"AAAAAAAAB+E="', idempotencyKey: key });
-    expect(client.recordOccArrival).toHaveBeenCalledWith(turnaroundId, arrival, { ifMatch: '"AAAAAAAAB+E="',
-      idempotencyKey: key });
-    // An account that cannot read the flight's version sends the command as older screens did.
-    await recordOccArrival(turnaroundId, { aircraftRegistration: 'HI1055' }, { ifMatch: null, idempotencyKey: key });
+    const command = { ifMatch: '"AAAAAAAAB+E="', idempotencyKey: key };
+    await recordOccArrival(turnaroundId, arrival, command);
+    expect(client.recordOccArrival).toHaveBeenCalledWith(turnaroundId, arrival, command);
+    // An untouched time travels empty: the server records the moment it saves.
+    await recordOccArrival(turnaroundId, { aircraftRegistration: 'HI1055' }, command);
     expect(client.recordOccArrival).toHaveBeenLastCalledWith(turnaroundId, { aircraftRegistration: 'HI1055', arrivedAt: null,
-      aircraftTypeId: null, reason: null }, {});
-    await assignOccStand(turnaroundId, standId, null, { ifMatch: '"AAAAAAAAB+E="', idempotencyKey: key });
-    expect(client.assignOccStand).toHaveBeenCalledWith(turnaroundId, { standId, reason: null },
-      { ifMatch: '"AAAAAAAAB+E="', idempotencyKey: key });
-    await releaseOccStand(turnaroundId);
-    expect(client.releaseOccStand).toHaveBeenCalledWith(turnaroundId, {});
+      aircraftTypeId: null, reason: null }, command);
+    await assignOccStand(turnaroundId, standId, null, command);
+    expect(client.assignOccStand).toHaveBeenCalledWith(turnaroundId, { standId, reason: null }, command);
+    await releaseOccStand(turnaroundId, command);
+    expect(client.releaseOccStand).toHaveBeenCalledWith(turnaroundId, command);
+  });
+
+  it('never sends a command without its key and the version it expects (3-N10)', async () => {
+    for (const headers of [undefined, { ifMatch: null, idempotencyKey: key }, { ifMatch: '"AAAAAAAAB+E="', idempotencyKey: null }]) {
+      await expect(recordOccArrival(turnaroundId, { aircraftRegistration: 'HI1055' }, headers)).rejects.toMatchObject({
+        status: 428, code: 'expected_version_required', message: POSITION_PROBLEM_MESSAGES.expected_version_required });
+      await expect(assignOccStand(turnaroundId, standId, null, headers)).rejects.toMatchObject({ status: 428 });
+      await expect(releaseOccStand(turnaroundId, headers)).rejects.toMatchObject({ status: 428 });
+    }
+    // The screen reads the flight again before a new intent.
+    expect(isStalePosition({ status: 428 })).toBe(true);
+    for (const method of Object.values(client)) expect(method).not.toHaveBeenCalled();
+  });
+
+  it('explains in Spanish why the flight version could not be read, never with the server title', () => {
+    expect(positionVersionMessage(problem(401))).toBe('La sesión expiró. Vuelva a iniciar sesión.');
+    expect(positionVersionMessage(problem(403))).toBe(
+      'Tu acceso no permite consultar este vuelo: no puedes registrar su llegada ni cambiar su posición.');
+    expect(positionVersionMessage(problem(404, 'not_found'))).toBe(POSITION_PROBLEM_MESSAGES.not_found);
+    // The server, the network or an unreadable answer: a failure the screen retries.
+    const retry = 'No se pudo consultar la versión del vuelo. Revisa la conexión e intenta de nuevo.';
+    expect(positionVersionMessage(problem(503))).toBe(retry);
+    expect(positionVersionMessage({ status: 400, code: 'invalid_turnaround_change' })).toBe(retry);
+    expect(positionVersionMessage(new ElevantApiError({ kind: 'malformed-response', status: 200 }))).toBe(retry);
   });
 
   it('explains each refusal by its code in Spanish and keeps its status, code and rules', async () => {
@@ -66,7 +90,8 @@ describe('positions map adapter (3-N08, 3-N10, 3-B)', () => {
     expect(translatePositionError(new TypeError('The arrival is invalid.'))).toMatchObject({ status: 400,
       code: 'invalid_position_request', message: POSITION_PROBLEM_MESSAGES.invalid_position_request });
     client.releaseOccStand.mockRejectedValueOnce(problem(401));
-    await expect(releaseOccStand(turnaroundId)).rejects.toMatchObject({ status: 401 });
+    await expect(releaseOccStand(turnaroundId, { ifMatch: '"AAAAAAAAB+E="', idempotencyKey: key }))
+      .rejects.toMatchObject({ status: 401 });
     expect(mocks.handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
   });
 

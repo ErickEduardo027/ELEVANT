@@ -41,8 +41,10 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
                 var operation = scope.Operation.Operation;
                 var tapped = Truncate(request.OccurredAt);
                 // 3-N25: one window for every tablet time (from the start or the recorded arrival to the close) and
-                // block-on never after push-back; 3-N06: late evidence while OCC reviews the hand-off.
-                var window = await RampEvidenceWindowReader.ReadAsync(context, operation, scope.Now, ct);
+                // block-on never after push-back; 3-N06: late evidence while OCC reviews the hand-off; 3-N09: a fact
+                // of the flight, so a correction round closes it at the first hand-off.
+                var window = await RampEvidenceWindowReader.ReadAsync(context, operation, RampEvidenceKind.Milestone,
+                    scope.Now, ct);
                 var recorded = await context.Set<OperationMilestone>().AsNoTracking()
                     .Where(item => item.GroundOperationId == operation.Id && item.Code != request.Code &&
                         item.ActualAt != null &&

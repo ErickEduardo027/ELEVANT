@@ -163,6 +163,16 @@ describe('TurnaroundChangeDialog (3-A, 3-N19)', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('su turno no cubre el nuevo horario'));
   });
 
+  it('explains a number or day another open flight of the airline already has (3-N07)', async () => {
+    vi.mocked(rescheduleTurnaround).mockRejectedValueOnce(problem(409, 'flight_already_planned'));
+    renderDialog('reschedule');
+    await screen.findByLabelText('Llegada programada (hora local de PUJ)');
+    await userEvent.type(screen.getByLabelText('Motivo'), 'Número de vuelo corregido.');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Guardar cambios' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ese vuelo ya está planificado ese día.');
+  });
+
   it('re-reads the flight after a stale version and sends the next attempt with the new ETag', async () => {
     vi.mocked(getTurnaround).mockResolvedValueOnce(detail('v1')).mockResolvedValueOnce(detail('v2'));
     vi.mocked(changeTurnaroundStatus)

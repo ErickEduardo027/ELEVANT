@@ -391,9 +391,12 @@ test("El agente opera el vuelo en la tablet: inicio, hitos, datos, servicios y c
   const resumed = assigned.data.operations.find(item => item.operation.id === operationId)?.operation.status !== "Assigned";
   const again = resumed ? [200, 409] : 200;
   if (!resumed) {
+    // The arrival as the positions map sends it (hueco 3-N10): the intent's key with the flight's version.
     const occ = await login("occ");
+    const read = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
     await expectCall(200, occ, "POST", `/occ/turnarounds/${flight.turnaroundId}/arrival`,
-      { aircraftRegistration: "N123AA", arrivedAt: shifted(flight.arrivalAt, 8) });
+      { aircraftRegistration: "N123AA", arrivedAt: shifted(flight.arrivalAt, 8) },
+      { "idempotency-key": crypto.randomUUID(), "if-match": read.etag ?? "" });
     await device.send(200, "POST", `/ramp/operations/${operationId}/start`);
   }
   // Milestones at their times within the turnaround window, never in the future.
@@ -454,6 +457,18 @@ test("El agente entrega la operación a OCC", async () => {
     `/ramp/operations/${operationId}/charges`);
   saveRun({ automaticCharges: charges.data.services.flatMap(item => item.applied)
     .filter(mark => mark.source === "Automatic").map(mark => mark.code) });
+
+  // Hueco 3-N08: from the first submission the arrival is evidence; OCC neither records nor corrects it any more.
+  const flight = loadRun().flight as Flight;
+  const occ = await login("occ");
+  const read = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
+  expect(read.data.allowedActions).not.toContain("correctArrival");
+  const locked = await call<Problem>(occ, "POST", `/occ/turnarounds/${flight.turnaroundId}/arrival`,
+    { aircraftRegistration: "N123AA", arrivedAt: shifted(flight.arrivalAt, 6), reason: "Corrección tras la entrega (ciclo E2E)." },
+    { "idempotency-key": crypto.randomUUID(), "if-match": read.etag ?? "" });
+  // A resumed run may find the flight already approved and closed.
+  expect([locked.status, locked.data.code])
+    .toEqual([409, read.data.turnaround.status === "Completed" ? "turnaround_closed" : "arrival_locked"]);
 });
 
 test("OCC revisa el cierre y aprueba la operación", async ({ page }) => {
@@ -718,6 +733,16 @@ test("hueco 3-D · aprobar libera al agente y la posición; un agente opera hast
   expect(positions.every(position => position >= 0), "the assigned flights reach the tablet").toBe(true);
   expect(queue.indexOf(approved.turnaroundId)).toBeGreaterThan(Math.max(...positions));
 
+  // Hueco 3-N07: «Editar vuelo» never gives a flight the number of another open flight of the airline that day.
+  const before = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${fourth.turnaroundId}`);
+  const renumbered = await call<Problem>(occ, "PUT", `/occ/planning/turnarounds/${fourth.turnaroundId}/schedule`, {
+    arrivalFlightNumber: flights[0].body.arrivalFlightNumber, arrivalOriginIata: "MIA",
+    arrivalScheduledAt: fourth.body.arrivalScheduledAt, departureFlightNumber: fourth.body.departureFlightNumber,
+    departureDestinationIata: "MIA", departureScheduledAt: fourth.body.departureScheduledAt,
+    reason: "Número de otro vuelo abierto del día (ciclo E2E).",
+  }, { "idempotency-key": crypto.randomUUID(), "if-match": before.etag ?? "" });
+  expect([renumbered.status, renumbered.data.code]).toEqual([409, "flight_already_planned"]);
+
   for (const flight of [...flights, fourth])
     await changeStatus(occ, flight.turnaroundId, "Cancelled", "Vuelo de prueba del ciclo E2E (hueco 3-D): se cancela al terminar.");
 });
@@ -859,11 +884,27 @@ test("hueco 3-F · OCC pasa una operación iniciada a otro agente (relevo)", asy
     await handover.getByLabel("Motivo del relevo").fill(reason);
     await handover.getByRole("button", { name: "Relevar agente" }).click();
     await expect(page.getByText(`Operación relevada a ${target.displayName}.`)).toBeVisible();
+    // The section reads its options again: the agent who took the operation is the current one now.
+    await expect(handover).toContainText(`Agente actual: ${target.displayName}`);
     const handed = await expectCall<Detail>(200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}`);
     expect([handed.data.turnaround.operation?.status, handed.data.turnaround.agents.map(agent => agent.displayName)])
       .toEqual(["InProgress", [target.displayName]]);
     const queue = await device.get<{ operations: Array<{ turnaround: { id: string } }> }>("/ramp/operations");
     expect(queue.data.operations.some(item => item.turnaround.id === flight.turnaroundId)).toBe(false);
+    // OCC still records the attendance of the relieved agent, who worked until the handover: the board no longer lists
+    // him, the drawer does («(relevado)») and OCC saves its note on his assignment.
+    const attendance = (await expectCall<{ assignments: Array<{ assignmentId: string; releasedAt: string | null }> }>(
+      200, occ, "GET", `/occ/planning/turnarounds/${flight.turnaroundId}/attendance-assignments`)).data;
+    expect(attendance.assignments.find(item => item.assignmentId === current.assignmentId)?.releasedAt,
+      "the relieved assignment is listed with its release").toBeTruthy();
+    const attendanceAgent = page.getByLabel("Agente para asistencia");
+    await expect(attendanceAgent.locator("option", { hasText: `${AGENT} (relevado)` })).toHaveCount(1);
+    await attendanceAgent.selectOption(current.assignmentId!);
+    await expect(page.getByRole("heading", { name: `Asistencia de ${AGENT} (relevado)` })).toBeVisible();
+    await page.getByLabel("Nota de OCC").fill("Trabajó hasta el relevo (ciclo E2E, hueco 3-F).");
+    await page.getByRole("button", { name: "Guardar observación OCC" }).click();
+    await expect(page.getByText("Versión guardada: 1")).toBeVisible();
+    await snap(page, "fase3-hueco-3f-asistencia-relevado");
     // Back to the run's agent, with the same key and body replaying the answer, so the run closes it from its tablet.
     const key = { "idempotency-key": crypto.randomUUID() };
     const giveBack = { agentId: options.currentAgentId, expectedAssignmentId: handed.data.turnaround.agents[0]!.assignmentId,

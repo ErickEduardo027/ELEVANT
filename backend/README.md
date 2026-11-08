@@ -181,7 +181,9 @@ a 60 minutos y usa 15 por defecto.
   exactamente un scope.
 - `GET /api/v1/occ/planning/turnarounds/{turnaroundId}` devuelve una escala con
   su versión (repetida como `ETag` fuerte) y las acciones que su estado permite
-  (`reschedule`, `cancel`, `divert`, `correctArrival`). `PUT .../schedule`
+  (`reschedule`, `cancel`, `divert`, `correctArrival`). Exige
+  `operations.planning.read` u `operations.positions_map.assign`: el mapa de
+  posiciones envía esa versión en cada comando. `PUT .../schedule`
   («Editar vuelo») y `POST .../status-changes` (`Cancelled` o `Diverted`, con
   motivo) exigen `operations.planning.update`, `Idempotency-Key` e `If-Match`:
   sin versión responden `428 expected_version_required` y con una vieja
@@ -189,9 +191,11 @@ a 60 minutos y usa 15 por defecto.
   (`operation_started`, `turnaround_closed`). Reprogramar revalida contrato,
   posición bloqueada y, si hay agente, su turno y el tope de tres operaciones
   simultáneas (`assigned_agent_unavailable` con `reasons`); no cambia la
-  aerolínea. Cancelar o desviar cierra la posición, libera a los agentes por la
-  ruta única de liberación (aviso `assignment_released`) y avisa a Finanzas si
-  el charter tenía prepago. Nada se borra.
+  aerolínea, y un número o día nuevo que ya vuela otra escala abierta de la
+  aerolínea responde `409 flight_already_planned`. Cancelar o desviar cierra la
+  posición, libera a los agentes por la ruta única de liberación (aviso
+  `assignment_released`) y avisa a Finanzas si el charter tenía prepago. Nada se
+  borra.
 - `POST /api/v1/occ/planning/charter-airlines` da de alta, con
   `Idempotency-Key` y `operations.planning.create`, la aerolínea mínima de un
   charter: organización `OCC-…`, OACI obligatorio e IATA opcional. Un código en
@@ -250,10 +254,13 @@ a 60 minutos y usa 15 por defecto.
   opcionales durante el expand; con clave, la versión es obligatoria. Los tres
   corren en una transacción serializable con la fila de la posición bloqueada
   (UPDLOCK, HOLDLOCK), así que dos vuelos nunca toman la misma posición, y
-  responden Problem Details con `code`. La llegada acepta `arrivedAt` explícito,
-  `aircraftTypeId` y, para corregir una llegada registrada, `reason`; la
-  corrección solo vale antes de la primera entrega (`arrival_locked`) y el tramo
-  pasa a `Manual`, de modo que el feed ya no lo pisa.
+  responden Problem Details con `code`. La llegada acepta `arrivedAt` explícito
+  (sin él, la hora del servidor), `aircraftTypeId` y `reason`: reemplazar una
+  hora que el tramo ya tiene, la que registró OCC o una distinta de la que
+  informó el feed, exige motivo (`reason_required`). Registrar o corregir la
+  llegada solo vale antes de la primera entrega, la haya escrito OCC o el feed y
+  aunque el tramo no tenga hora (`arrival_locked`), y el tramo pasa a `Manual`,
+  de modo que el feed ya no lo pisa.
 - `GET /api/v1/ramp/aircraft-types` entrega a la tablet los tipos de avión
   activos. `PUT /api/v1/ramp/operations/{operationId}/flight-data` acepta
   `aircraftTypeId` opcional: sin él conserva el tipo actual y el hash del recibo
@@ -395,17 +402,23 @@ a 60 minutos y usa 15 por defecto.
   perfil activo y los scopes, filtra por agente y estación antes de proyectar
   y limita la respuesta a 100 operaciones ordenadas. La cola trae las
   operaciones asignadas, en curso, entregadas (pendientes o en revisión) y
-  devueltas, más las aprobadas de las últimas 48 horas, con las activas
+  devueltas, más las que OCC aprobó en las últimas 48 horas (contadas desde la
+  aprobación, no desde el fin de la operación), con las activas
   primero. Una operación ya iniciada sigue en el alcance de su agente aunque la
   posición se desactive o el vuelo pase a una terminal fuera de su alcance.
   Exige `RAMP_AGENT`, portal `RampMobileApp` y membresía interna AVIAM; una
   cuenta sin perfil compatible falla cerrada con `403` y una cola legítimamente
   vacía responde `200`. `POST /api/v1/ramp/operations/{operationId}/start`
   responde `409 contract_not_in_force` si la aerolínea ya no tiene un contrato
-  vigente en la fecha de la operación (salvo un charter); el recibo del
-  dispositivo repite el mismo rechazo y lo que ya está en curso termina con
-  normalidad. Cuando un contrato se suspende, termina o vence, OCC recibe
-  `contract_not_in_force` por cada operación que aún no inició.
+  vigente en la fecha de la operación (salvo un charter); ese rechazo no queda
+  en el recibo del dispositivo, así que la misma clave vuelve a evaluar el
+  contrato y, si Contratos lo reactiva, el mismo toque inicia la operación. Lo
+  que ya está en curso termina con normalidad. Cuando un contrato se suspende,
+  termina o vence, OCC recibe `contract_not_in_force` por cada operación que aún
+  no inició. `GET /api/v1/occ/planning/turnarounds/{turnaroundId}/attendance-assignments`
+  (solo web, `operations.attendance.read`) lista las asignaciones cuya
+  asistencia registra OCC: las abiertas y las que un relevo cerró después del
+  inicio, con `releasedAt`.
 - Horas de la evidencia de la tablet (fase 3, bloque C; regla única en
   `RampEvidenceTimePolicy`). `POST .../start` acepta un cuerpo opcional
   `{ "startedAt" }` (sin cuerpo sigue siendo válido, como lo envía la APK
@@ -415,15 +428,20 @@ a 60 minutos y usa 15 por defecto.
   asignación ni de hace más de 24 h; una transición nunca es anterior a la
   última del servicio (`service_time_out_of_order`). Hitos, daños e
   incidencias caen entre el inicio o la llegada registrada, lo que ocurrió
-  primero, y el cierre (ahora; la entrega mientras OCC revisa; la primera
-  entrega en una ronda de corrección), con 2 minutos de tolerancia
-  (`time_outside_operation_window`), y el bloqueo nunca es posterior al
+  primero, y el cierre, con 2 minutos de tolerancia
+  (`time_outside_operation_window`): ahora mientras la operación corre; la
+  entrega mientras OCC revisa (el fin de la operación para un hito, la entrega
+  en revisión para un daño); en una ronda de corrección los hitos cierran en la
+  primera entrega, y los daños e incidencias, que la tablet registra con la
+  hora actual, siguen abiertos hasta ahora. El bloqueo nunca es posterior al
   push-back (`milestone_out_of_order`). Sin esas horas el hash del recibo es el
   de la versión anterior. Mientras OCC revisa se aceptan los hitos, daños y
   datos del vuelo capturados antes de la entrega: se recalculan los recargos
   automáticos y la evidencia congelada, y cambia el `ETag` de la revisión. El
-  reenvío de una corrección mide el tiempo en tierra hasta la primera entrega y
-  retira los recargos automáticos que ya no se detectan, nunca los de OCC.
+  reenvío de una corrección mide el tiempo en tierra hasta la primera entrega,
+  mide los servicios con las transiciones registradas hasta el reenvío (las de
+  la corrección incluidas) y retira los recargos automáticos que ya no se
+  detectan, nunca los de OCC.
   Los `400`, `404` y `409` del inicio, los servicios, los hitos y datos del
   vuelo, los documentos y las incidencias llevan `code` (`invalid_ramp_command`,
   `not_found`, `ramp_operation_state_conflict`, `idempotency_conflict` o el de

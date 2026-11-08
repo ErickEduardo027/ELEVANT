@@ -306,11 +306,12 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
     [Fact]
     public async Task AStartWithoutAContractInForceKeepsTheConflictAndNamesIt()
     {
-        // 3-N04: the deployed APK keeps explaining the 409; the new one shows the code's message.
+        // 3-N04: the deployed APK keeps explaining the 409; the new one shows the code's message. The store keeps no
+        // receipt for it (the same key evaluates the contract again).
         var state = new RampState
         {
             Actor = CreateActor(),
-            StartResult = RampOperationStartWriteResult.Failed(RampOperationStartWriteFailure.Conflict, ReceiptId,
+            StartResult = RampOperationStartWriteResult.Failed(RampOperationStartWriteFailure.Conflict, null,
                 "contract_not_in_force"),
         };
         await using var application = CreateApplication(state);

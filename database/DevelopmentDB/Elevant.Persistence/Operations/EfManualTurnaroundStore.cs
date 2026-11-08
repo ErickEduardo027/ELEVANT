@@ -125,8 +125,8 @@ internal sealed class EfManualTurnaroundStore(
 
         // 3-N07: the same flight of the airline on the same local day is planned once, whether OCC typed it or
         // imported it from the feed; a second entry would be operated and invoiced twice.
-        if (await AlreadyPlannedAsync(scope.StationId, airline.Id, request.OperationDate, request.ArrivalFlightNumber,
-                request.DepartureFlightNumber, cancellationToken))
+        if (await PlannedFlights.ExistsAsync(context, scope.StationId, airline.Id, request.OperationDate,
+                request.ArrivalFlightNumber, request.DepartureFlightNumber, null, cancellationToken))
             return (ManualTurnaroundWriteResult.Failed(ManualTurnaroundWriteFailure.Conflict, "flight_already_planned"), null);
 
         // The aircraft type is typed once, here (2-A): stand sizes and ground times read it later.
@@ -333,27 +333,6 @@ internal sealed class EfManualTurnaroundStore(
             departure.ScheduledAt == request.DepartureScheduledAt
                 ? ManualTurnaroundWriteResult.Existing(existing.PublicId, existing.OperationCode)
                 : Conflict();
-    }
-
-    /// <summary>
-    /// An open turnaround of the airline at the station on that local day with the same arrival or departure number,
-    /// compared in the form OCC types them (<see cref="FlightIdentity"/>): the feed keeps the provider's spacing.
-    /// </summary>
-    private async Task<bool> AlreadyPlannedAsync(long stationId, long airlineId, DateOnly operationDate,
-        string arrivalNumber, string departureNumber, CancellationToken cancellationToken)
-    {
-        var legs = await (
-            from turnaround in context.Turnarounds.AsNoTracking()
-            join leg in context.FlightLegs.AsNoTracking() on turnaround.Id equals leg.TurnaroundId
-            where turnaround.StationId == stationId && turnaround.AirlineId == airlineId &&
-                  turnaround.OperationDate == operationDate &&
-                  turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
-                  turnaround.CurrentStatus != TurnaroundStatus.Diverted &&
-                  turnaround.CurrentStatus != TurnaroundStatus.Completed
-            select new { leg.Direction, leg.FlightNumber })
-            .ToArrayAsync(cancellationToken);
-        return legs.Any(leg => FlightIdentity.NormalizeFlightNumber(leg.FlightNumber) ==
-            (leg.Direction == FlightDirection.Arrival ? arrivalNumber : departureNumber));
     }
 
     private static FlightLeg NewLeg(long turnaroundId, FlightDirection direction,

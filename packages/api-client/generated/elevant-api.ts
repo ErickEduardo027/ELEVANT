@@ -4310,6 +4310,22 @@ export interface OccAssignmentResponse {
   services: OccOperationServiceResponse[];
 }
 
+export interface OccAttendanceAssignmentResponse {
+  assignmentId: string;
+  agentId: string;
+  displayName: string;
+  employeeNumber: string;
+  assignedAt: string;
+  /** @nullable */
+  releasedAt: string | null;
+}
+
+export interface OccAttendanceAssignmentsResponse {
+  turnaroundId: string;
+  operationId: string;
+  assignments: OccAttendanceAssignmentResponse[];
+}
+
 export interface OccCharterAirlineResponse {
   id: string;
   icaoCode: string;
@@ -8302,6 +8318,40 @@ export const getOperationAttendanceDraft = async (operationId: string,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AttendanceDraftSnapshotResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAttendanceAssignmentsUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/attendance-assignments`
+}
+
+/**
+ * @summary 3-F: the assignments of the turnaround's operation whose attendance OCC records, oldest first: the open ones and
+the ones a handover released after the start (`releasedAt`), whose agent worked until then and which the
+planning board no longer lists. AVIAM staff of the station with `operations.attendance.read`; a turnaround
+without operation or out of scope is 404 `not_found`. Web only: the tablet never reads it.
+ */
+export const getOccAttendanceAssignments = async (turnaroundId: string, options?: RequestInit): Promise<OccAttendanceAssignmentsResponse> => {
+
+  const res = await fetch(getGetOccAttendanceAssignmentsUrl(turnaroundId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAttendanceAssignmentsResponse = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -104,6 +104,14 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("stand_unavailable", taken.Code);
         Assert.Contains("stand_taken", taken.Reasons!);
 
+        // 3-N07: «Editar vuelo» never gives a flight the number of another open flight of the day, however it is typed,
+        // in either direction; the refused edits change nothing.
+        foreach (var (arrivalNumber, departureNumber) in new[] { ("zz 701", "ZZ704"), ("ZZ703", "ZZ702") })
+            Assert.Equal("flight_already_planned", (await Run(services => Turnarounds(services).RescheduleAsync(occ, second,
+                new RescheduleTurnaroundInput(arrivalNumber, "MIA", LocalAt(today, 14), departureNumber, "MIA",
+                    LocalAt(today, 16), null, null, "Número de vuelo corregido", secondDetail.Version), Guid.NewGuid(), ct))).Code);
+        Assert.Equal(secondDetail.Version, (await Run(services => Turnarounds(services).ReadAsync(occ, second, ct))).Value!.Version);
+
         // An assigned agent keeps the flight only inside their shift: Riley has none today.
         long firstOperation;
         await using (var setup = CreateContext(database.ConnectionString))
@@ -188,8 +196,14 @@ public sealed partial class SqlServerMigrationTests
         var third = Guid.CreateVersion7();
         Assert.True((await Enter(third, "ZZ721", "ZZ722", "B02", 19)).IsSuccess);
         var thirdDetail = (await Run(services => Turnarounds(services).ReadAsync(occ, third, ct))).Value!;
+        // Only open flights count (3-N07): the number of the cancelled flight is free for another one.
+        var renumbered = await Run(services => Turnarounds(services).RescheduleAsync(occ, third,
+            new RescheduleTurnaroundInput("ZZ701", "MIA", LocalAt(today, 19), "ZZ722", "MIA", LocalAt(today, 21), null, null,
+                "La aerolínea reutiliza el número del vuelo cancelado", thirdDetail.Version), Guid.NewGuid(), ct));
+        Assert.Null(renumbered.Failure);
+        Assert.Equal("ZZ701", renumbered.Value!.Turnaround.Arrival!.FlightNumber);
         var diverted = await Run(services => Turnarounds(services).ChangeStatusAsync(occ, third,
-            new TurnaroundStatusChangeInput("Diverted", "Desviado a SDQ por clima", thirdDetail.Version), Guid.NewGuid(), ct));
+            new TurnaroundStatusChangeInput("Diverted", "Desviado a SDQ por clima", renumbered.Value.Version), Guid.NewGuid(), ct));
         Assert.Equal("Diverted", diverted.Value!.Turnaround.Status);
 
         // A cancelled charter with a confirmed prepayment tells Finance; the refund follows Cobros.
@@ -359,6 +373,86 @@ public sealed partial class SqlServerMigrationTests
         await using (var check = CreateContext(database.ConnectionString))
             Assert.Equal(1, await check.AuditEntries.CountAsync(entry => entry.EntityPublicId == winner &&
                 entry.Action == "occ.stand.released", ct));
+
+        // 3-N08: the time the flight feed reported on the other flight is replaced only with its reason, and kept as it is
+        // it needs none. From the first submission it is evidence too, and so is a leg without a time.
+        var other = winner == first ? second : first;
+        var runway = start.AddMinutes(2);
+        async Task FeedReportsAsync(DateTimeOffset? actualAt)
+        {
+            await using var setup = CreateContext(database.ConnectionString);
+            await setup.FlightLegs.Where(item => item.Direction == FlightDirection.Arrival &&
+                    setup.Turnarounds.Any(turnaround => turnaround.PublicId == other && turnaround.Id == item.TurnaroundId))
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.Source, OperationalDataSource.ExternalProvider)
+                    .SetProperty(item => item.ActualAt, actualAt), ct);
+        }
+        async Task<FlightLeg> OtherArrivalAsync()
+        {
+            await using var check = CreateContext(database.ConnectionString);
+            return await (from item in check.FlightLegs.AsNoTracking()
+                          join turnaround in check.Turnarounds.AsNoTracking() on item.TurnaroundId equals turnaround.Id
+                          where turnaround.PublicId == other && item.Direction == FlightDirection.Arrival
+                          select item).SingleAsync(ct);
+        }
+        await FeedReportsAsync(runway);
+        Assert.Contains("correctArrival", (await Run(services => services.GetRequiredService<IOccTurnaroundStore>()
+            .ReadAsync(occ, other, ct))).Value!.AllowedActions);
+        Assert.Equal("reason_required", (await Run(services => Positions(services).RecordArrivalAsync(occ, other,
+            new RecordArrivalInput("HI2042", runway.AddMinutes(6)), OccPositionCommand.None, ct))).Code);
+        Assert.Null((await Run(services => Positions(services).RecordArrivalAsync(occ, other,
+            new RecordArrivalInput("HI2042", runway), OccPositionCommand.None, ct))).Failure);
+        var kept = await OtherArrivalAsync();
+        Assert.Equal((runway, OperationalDataSource.Manual), (kept.ActualAt!.Value, kept.Source));
+        await FeedReportsAsync(runway);
+        Assert.Null((await Run(services => Positions(services).RecordArrivalAsync(occ, other,
+            new RecordArrivalInput("HI2042", runway.AddMinutes(6), null, "Hora de calzos, no la de pista"),
+            OccPositionCommand.None, ct))).Failure);
+        Assert.Equal(runway.AddMinutes(6), (await OtherArrivalAsync()).ActualAt);
+        await using (var check = CreateContext(database.ConnectionString))
+        {
+            Assert.Equal(1, await check.AuditEntries.CountAsync(entry => entry.EntityPublicId == other &&
+                entry.Action == "occ.turnaround.arrived", ct));
+            Assert.Equal("Hora de calzos, no la de pista (" + runway.ToString("O", CultureInfo.InvariantCulture) + " -> " +
+                runway.AddMinutes(6).ToString("O", CultureInfo.InvariantCulture) + ")",
+                (await check.AuditEntries.AsNoTracking().SingleAsync(entry => entry.EntityPublicId == other &&
+                    entry.Action == "occ.turnaround.arrival_corrected", ct)).Reason);
+        }
+        await using (var setup = CreateContext(database.ConnectionString))
+            await setup.GroundOperations.Where(item => setup.Turnarounds.Any(turnaround => turnaround.PublicId == other &&
+                    turnaround.Id == item.TurnaroundId))
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.CurrentStatus, GroundOperationStatus.PendingReview), ct);
+        await FeedReportsAsync(runway);
+        Assert.Equal("arrival_locked", (await Run(services => Positions(services).RecordArrivalAsync(occ, other,
+            new RecordArrivalInput("HI2042", runway.AddMinutes(8), null, "Corrección después de la entrega"),
+            OccPositionCommand.None, ct))).Code);
+        await FeedReportsAsync(null);
+        Assert.Equal("arrival_locked", (await Run(services => Positions(services).RecordArrivalAsync(occ, other,
+            new RecordArrivalInput("HI2042", null), OccPositionCommand.None, ct))).Code);
+        var untouched = await OtherArrivalAsync();
+        Assert.Equal(((DateTimeOffset?)null, OperationalDataSource.ExternalProvider), (untouched.ActualAt, untouched.Source));
+
+        // 3-N10: whoever sends the positions commands reads the version they carry, also without Planificación; with
+        // the map's «Ver» alone the flight's version is not readable.
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var account = await setup.Users.Where(user => user.PublicId == occ).Select(user => user.Id).SingleAsync(ct);
+            await setup.DepartmentAssignments.Where(item => item.AccountId == account)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.Kind, DepartmentAssignmentKind.Member), ct);
+            setup.AccountPermissionGrants.AddRange(
+                new AccountPermissionGrant { AccountId = account, PermissionCode = "operations.positions_map.read" },
+                new AccountPermissionGrant { AccountId = account, PermissionCode = "operations.positions_map.assign" });
+            await setup.SaveChangesAsync(ct);
+        }
+        var mapOnly = await Run(services => services.GetRequiredService<IOccTurnaroundStore>().ReadAsync(occ, winner, ct));
+        Assert.Null(mapOnly.Failure);
+        Assert.Null((await Run(services => Positions(services).AssignAsync(occ, winner, stands["A03"], null,
+            new OccPositionCommand(Guid.NewGuid(), mapOnly.Value!.Version), ct))).Failure);
+        await using (var setup = CreateContext(database.ConnectionString))
+            await setup.AccountPermissionGrants.Where(item => item.PermissionCode == "operations.positions_map.assign" &&
+                    setup.Users.Any(user => user.PublicId == occ && user.Id == item.AccountId))
+                .ExecuteDeleteAsync(ct);
+        Assert.Equal(MasterDataFailure.Forbidden, (await Run(services => services.GetRequiredService<IOccTurnaroundStore>()
+            .ReadAsync(occ, winner, ct))).Failure);
     }
 
     /// <summary>
