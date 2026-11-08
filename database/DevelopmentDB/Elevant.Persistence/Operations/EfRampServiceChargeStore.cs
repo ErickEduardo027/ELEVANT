@@ -50,11 +50,9 @@ internal sealed class EfRampServiceChargeStore(
     private async Task<RampServiceChargesData> ServiceChargesAsync(OperationService service,
         RampOperationExecutionScope scope, CancellationToken cancellationToken)
     {
-        var excluded = await (from rate in context.ContractServiceRates.AsNoTracking()
-                              join exclusion in context.ContractChargeRates.AsNoTracking()
-                                  on rate.ContractVersionId equals exclusion.ContractVersionId
-                              where rate.Id == service.ContractServiceRateId && exclusion.IsExcluded
-                              select exclusion.ChargeDefinitionId).ToArrayAsync(cancellationToken);
+        // 3-N29: the one reading of the contract's exclusions OCC's review and Finance share.
+        var excluded = (await ContractChargeExclusions.ForServicesAsync(context, [service.Id], cancellationToken))
+            .Of(service.Id);
         var available = await context.ChargeDefinitions.AsNoTracking()
             .Where(charge => charge.IsActive && charge.VisibleToAgents && !excluded.Contains(charge.Id) &&
                 (charge.AppliesToAllServices || context.ChargeDefinitionServices.Any(link =>

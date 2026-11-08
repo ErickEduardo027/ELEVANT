@@ -30,12 +30,28 @@ function translate(error) {
   return Object.assign(new Error(message), { status });
 }
 
-async function guarded(request) {
-  try { return await request(); } catch (error) { throw translate(error); }
+async function guarded(request, explain = translate) {
+  try { return await request(); } catch (error) { throw explain(error); }
+}
+
+/** The failures of one walk-around photo (3-K) in Spanish; the status stays on the error for the screen. */
+function translatePhoto(error) {
+  if (error?.name === 'AbortError') return error;
+  if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+  const status = Number.isInteger(error?.status) ? error.status : null;
+  const message = status === 403 ? 'Tu acceso no incluye las fotos del walk-around de esta operación.'
+    : status === 404 ? 'La foto de este daño ya no está disponible.'
+      : status === 503 ? 'Las fotos del walk-around no están disponibles ahora. Intenta en unos minutos.'
+        : 'No se pudo cargar la foto del daño. Intenta nuevamente.';
+  return Object.assign(new Error(message), { status });
 }
 
 export const getOccOperationDocuments = (operationId, { signal } = {}) =>
   guarded(() => client().getOccOperationDocuments(operationId, { signal }));
+
+/** The photo of one walk-around damage mark (3-K), read only when OCC opens it. */
+export const getOccDamagePhoto = (operationId, markId, { signal } = {}) =>
+  guarded(() => client().getOccDamagePhoto(operationId, markId, { signal }), translatePhoto);
 
 /** Downloads the PDF generated from the operation's record, with its signatures and fingerprint. */
 export async function downloadOccOperationDocument(operationId, document) {

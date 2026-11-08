@@ -16,30 +16,36 @@ public sealed class OccPlanningHandlersTests
     private static readonly Guid TurnaroundId = Guid.Parse("70000000-0000-7000-8000-000000000012");
     private static readonly DateOnly FixtureDate = new(2026, 8, 19);
 
+    /// <summary>
+    /// 3-N17: without a date OCC opens today in the station's calendar, never the last day with flights. At 23:30 in
+    /// Punta Cana it is already tomorrow in UTC, and flights loaded for tomorrow or for past days change nothing.
+    /// </summary>
     [Fact]
-    public async Task SnapshotDefaultsToOnlyStationAndLatestAccessibleOperationDate()
+    public async Task SnapshotDefaultsToOnlyStationAndTodayInTheStationCalendar()
     {
+        var today = new DateOnly(2026, 11, 5);
         var store = new StubReadStore
         {
-            LatestDate = FixtureDate,
-            Snapshot = CreateSnapshot(FixtureDate),
+            TimeZoneId = "America/Santo_Domingo",
+            Snapshot = CreateSnapshot(today),
         };
         var handler = new GetOccPlanningSnapshotHandler(
             new StubActorContextResolver(CreateActor()),
             store,
-            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+            // 23:30 local (UTC−4) is 03:30 of the next day in UTC.
+            new FixedTimeProvider(new DateTimeOffset(2026, 11, 6, 3, 30, 0, TimeSpan.Zero)));
 
         var result = await handler.HandleAsync(
             new GetOccPlanningSnapshotQuery(AccountId, null, null),
             TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
-        Assert.Equal(StationId, store.LatestDateStationId);
-        Assert.Equal((StationId, FixtureDate), store.SnapshotRequest);
+        Assert.Equal(StationId, store.TimeZoneStationId);
+        Assert.Equal((StationId, today), store.SnapshotRequest);
     }
 
     [Fact]
-    public async Task ExplicitDateDoesNotQueryLatestDate()
+    public async Task ExplicitDateDoesNotQueryTheStationCalendar()
     {
         var store = new StubReadStore { Snapshot = CreateSnapshot(FixtureDate) };
         var handler = CreateSnapshotHandler(store, CreateActor());
@@ -49,7 +55,7 @@ public sealed class OccPlanningHandlersTests
             TestContext.Current.CancellationToken);
 
         Assert.True(result.IsSuccess);
-        Assert.Null(store.LatestDateStationId);
+        Assert.Null(store.TimeZoneStationId);
         Assert.Equal((StationId, FixtureDate), store.SnapshotRequest);
     }
 
@@ -387,8 +393,6 @@ public sealed class OccPlanningHandlersTests
 
     private sealed class StubReadStore : IOccPlanningReadStore
     {
-        public DateOnly? LatestDate { get; init; }
-
         public OccPlanningSnapshotData? Snapshot { get; init; }
 
         public OccPlanningOptionsSourceData? Options { get; init; }
@@ -397,8 +401,6 @@ public sealed class OccPlanningHandlersTests
 
         public string? TimeZoneId { get; init; } = "America/Santo_Domingo";
 
-        public Guid? LatestDateStationId { get; private set; }
-
         public Guid? TimeZoneStationId { get; private set; }
 
         public (Guid StationId, DateOnly Date)? SnapshotRequest { get; private set; }
@@ -406,15 +408,6 @@ public sealed class OccPlanningHandlersTests
         public IReadOnlyCollection<Guid>? OptionStationIds { get; private set; }
 
         public Guid? OptionTurnaroundId { get; private set; }
-
-        public Task<DateOnly?> GetLatestOperationDateAsync(
-            Guid stationId,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            LatestDateStationId = stationId;
-            return Task.FromResult(LatestDate);
-        }
 
         public Task<OccPlanningSnapshotData?> GetSnapshotAsync(
             Guid stationId,

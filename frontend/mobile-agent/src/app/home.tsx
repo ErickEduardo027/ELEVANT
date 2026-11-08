@@ -26,10 +26,12 @@ import {
   getMobileSession,
   logoutMobileAgent,
   MobileServiceError,
+  readUnsentRecords,
   type MobileAgentActor,
 } from '../services/mobile-auth';
 import { colors } from '../theme/colors';
 import { exitApplication } from '../utils/app-exit';
+import { signOutPendingEvidenceNote } from '../utils/pending-evidence';
 import { resetToLogin } from '../utils/session-navigation';
 import { useLayoutClass } from '../utils/layout-class';
 import { OperationDetail } from './flight/[id]';
@@ -49,6 +51,7 @@ export default function HomeScreen() {
   const [blockingState, setBlockingState] = useState<BlockingState>(null);
   const [profileVisible, setProfileVisible] = useState(false);
   const [sessionClosing, setSessionClosing] = useState(false);
+  const [unsentOwn, setUnsentOwn] = useState(0);
   const requestRef = useRef<AbortController | null>(null);
   const hasLoadedRef = useRef(false);
   const layoutClass = useLayoutClass();
@@ -148,6 +151,13 @@ export default function HomeScreen() {
     }
   }, []);
 
+  // 3-N12: before signing out the agent sees that what is still unsent stays on the tablet for the same account.
+  const openProfile = useCallback(() => {
+    setProfileVisible(true);
+    void readUnsentRecords().then(count => setUnsentOwn(count?.current ?? 0));
+  }, []);
+  const signOutNote = signOutPendingEvidenceNote(unsentOwn);
+
   // En tablet horizontal el manifiesto se abre junto a la lista; en el resto, en su propia pantalla.
   const openOperation = useCallback((operationId: string) => {
     if (expanded) setSelectedId(operationId);
@@ -180,7 +190,7 @@ export default function HomeScreen() {
           accessibilityHint="Muestra la cuenta y las opciones de sesión"
           accessibilityLabel="Abrir perfil del agente"
           accessibilityRole="button"
-          onPress={() => setProfileVisible(true)}
+          onPress={openProfile}
           style={({ pressed }) => [styles.avatar, pressed && styles.pressed]}
         >
           <Image source={require('../../assets/images/elevant-symbol.png')} style={styles.avatarImage} />
@@ -309,6 +319,12 @@ export default function HomeScreen() {
               <Text style={styles.profileScopeLabel}>ACCESO OPERATIVO</Text>
               <Text style={styles.profileScopeValue}>AVIAM · {stationCodes}</Text>
             </View>
+            {!!signOutNote && (
+              <View accessibilityLiveRegion="polite" style={styles.profileNote}>
+                <Ionicons name="cloud-upload-outline" size={18} color={colors.warning} />
+                <Text style={styles.profileNoteText}>{signOutNote}</Text>
+              </View>
+            )}
             <PrimaryButton title={sessionClosing ? 'CERRANDO SESIÓN…' : 'CERRAR SESIÓN'} icon="log-out-outline" onPress={() => void closeSession()} disabled={sessionClosing} secondary />
             <PrimaryButton title="SALIR DE LA APLICACIÓN" icon="exit-outline" onPress={exitApplication} danger />
           </View>
@@ -512,4 +528,9 @@ const styles = StyleSheet.create({
   },
   profileScopeLabel: { color: colors.muted, fontSize: 12, fontWeight: '900', letterSpacing: 1.2 },
   profileScopeValue: { color: colors.navy, fontSize: 13, fontWeight: '800', marginTop: 4 },
+  profileNote: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, padding: 11, borderRadius: 12,
+    backgroundColor: colors.paleOrange,
+  },
+  profileNoteText: { flex: 1, color: colors.warning, fontSize: 12, fontWeight: '700', lineHeight: 17 },
 });

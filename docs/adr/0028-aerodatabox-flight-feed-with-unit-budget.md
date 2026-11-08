@@ -80,6 +80,16 @@ una prueba unitaria que simula el día minuto a minuto.
 > llama a AeroDataBox ni alimenta el registro de aerolíneas. Ver
 > [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
+> **Actualización (8 de noviembre de 2026).** Importar un par que coincide con una escala abierta
+> de la misma estación, aerolínea, número de vuelo normalizado y día local lo vincula a esa escala
+> (`linked`, auditoría `occ.turnaround.feed_linked`) en lugar de crear otra, y el alta manual del
+> mismo vuelo responde `flight_already_planned`. Las escalas nuevas reciben el código
+> `{ESTACIÓN}-{AAAAMMDD}-{NNN}`; los `EXT-` ya emitidos se conservan. Las lecturas posteriores ya
+> no actualizan un tramo cuya llegada registró OCC, que pasa a `Manual`. Cuando el proveedor
+> informa cancelado o desviado un vuelo importado, OCC recibe `flight_cancelled_by_provider` o
+> `flight_diverted_by_provider` una sola vez y decide: el feed no cancela nada. Ver
+> [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 ### Información aeronáutica gratis desde la misma respuesta
 
 - **Aerolíneas:** cada aerolínea que aparece, contratada o no, se guarda en `ref.airline_registry_entries` (códigos, nombre y última vez vista).

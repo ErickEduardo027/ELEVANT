@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Net.Http.Json;
+using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Identity;
 using Elevant.Application.Operations;
 using Elevant.Domain.Enumerations;
@@ -58,6 +61,62 @@ public sealed class CharterEndpointsTests(ElevantApiFactory factory) : IClassFix
         Assert.Equal((260m, "TRF-0001"), (state.Amount, state.Reference));
     }
 
+    /// <summary>
+    /// 3-N24: a service added with the prepayment confirmed is a coded 409 the deployed tablet still explains by its
+    /// status; Finance reopens the quotation with an Idempotency-Key, its reason and the version it saw.
+    /// </summary>
+    [Fact]
+    public async Task TheConfirmedPrepaymentIsCodedAndFinanceReopensItWithKeyReasonAndVersion()
+    {
+        var state = new State { AddCode = "charter_prepayment_confirmed" };
+        await using var application = Create(state);
+        using var client = Authenticated(application);
+        var ct = TestContext.Current.CancellationToken;
+        using var refused = await client.SendAsync(Json(HttpMethod.Post, $"/api/v1/ramp/operations/{OperationId:D}/charter/services",
+            $$"""{"serviceDefinitionId":"{{Guid.NewGuid():D}}","quantity":1}"""), ct);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal("charter_prepayment_confirmed", (await refused.Content.ReadFromJsonAsync<JsonElement>(ct))
+            .GetProperty("code").GetString());
+
+        var charterId = Guid.NewGuid();
+        HttpRequestMessage Reopen(string body, string? key)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/finance/charters/{charterId:D}/prepayment/reopening")
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+            if (key is not null) request.Headers.TryAddWithoutValidation("Idempotency-Key", key);
+            return request;
+        }
+        using var forbidden = await client.SendAsync(Reopen("""{"reason":"Nueva cotización","version":"AAAA"}""",
+            Guid.NewGuid().ToString("D")), ct);
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        state.Permissions = [CharterHandler.FinanceReadPermission, CharterHandler.FinanceConfirmPermission];
+        async Task<string?> CodeOf(HttpResponseMessage response) =>
+            (await response.Content.ReadFromJsonAsync<JsonElement>(ct)).TryGetProperty("code", out var code)
+                ? code.GetString() : null;
+        using var keyless = await client.SendAsync(Reopen("""{"reason":"Nueva cotización","version":"AAAA"}""", null), ct);
+        Assert.Equal((HttpStatusCode.BadRequest, "idempotency_key_required"), (keyless.StatusCode, await CodeOf(keyless)));
+        using var versionless = await client.SendAsync(Reopen("""{"reason":"Nueva cotización"}""",
+            Guid.NewGuid().ToString("D")), ct);
+        Assert.Equal((HttpStatusCode.BadRequest, "expected_version_required"),
+            (versionless.StatusCode, await CodeOf(versionless)));
+        using var brief = await client.SendAsync(Reopen("""{"reason":"corta","version":"AAAA"}""",
+            Guid.NewGuid().ToString("D")), ct);
+        Assert.Equal((HttpStatusCode.BadRequest, "reason_required"), (brief.StatusCode, await CodeOf(brief)));
+        state.ReopenFailure = (MasterDataFailure.Conflict, "version_conflict");
+        using var stale = await client.SendAsync(Reopen("""{"reason":"Nueva cotización","version":"AAAA"}""",
+            Guid.NewGuid().ToString("D")), ct);
+        Assert.Equal((HttpStatusCode.Conflict, "version_conflict"), (stale.StatusCode, await CodeOf(stale)));
+        state.ReopenFailure = null;
+        using var reopened = await client.SendAsync(Reopen("""{"reason":"  Nueva cotización  ","version":"AAAA"}""",
+            Guid.NewGuid().ToString("D")), ct);
+        Assert.Equal(HttpStatusCode.OK, reopened.StatusCode);
+        var body = await reopened.Content.ReadFromJsonAsync<JsonElement>(ct);
+        Assert.Equal(("Pending", "BBBB"), (body.GetProperty("prepaymentStatus").GetString(), body.GetProperty("version").GetString()));
+        Assert.Equal(("Nueva cotización", "AAAA"), (state.ReopenReason, state.ReopenVersion));
+    }
+
     private WebApplicationFactory<Program> Create(State state) =>
         factory.WithWebHostBuilder(builder => builder.ConfigureServices(services =>
         {
@@ -107,6 +166,10 @@ public sealed class CharterEndpointsTests(ElevantApiFactory factory) : IClassFix
         public decimal? Amount { get; private set; }
         public string? Reference { get; private set; }
         public string[] Permissions { get; set; } = [];
+        public string? AddCode { get; init; }
+        public (MasterDataFailure Failure, string Code)? ReopenFailure { get; set; }
+        public string? ReopenReason { get; private set; }
+        public string? ReopenVersion { get; private set; }
 
         private static CharterView View => new(OperationId, Guid.NewGuid(), "USD", null, null, "Pending", null, []);
 
@@ -132,7 +195,9 @@ public sealed class CharterEndpointsTests(ElevantApiFactory factory) : IClassFix
             CancellationToken cancellationToken = default)
         {
             Service = request;
-            return Task.FromResult(new CharterWriteResult(View, null, Guid.NewGuid()));
+            return Task.FromResult(AddCode is null
+                ? new CharterWriteResult(View, null, Guid.NewGuid())
+                : new CharterWriteResult(null, RampExecutionWriteFailure.Conflict, Guid.NewGuid(), AddCode));
         }
 
         public Task<CharterWriteResult> UpdateDetailsAsync(CharterDetailsWriteRequest request,
@@ -151,6 +216,19 @@ public sealed class CharterEndpointsTests(ElevantApiFactory factory) : IClassFix
         {
             (Amount, Reference) = (amount, reference);
             return Task.FromResult<(CharterPrepaymentItem?, CharterPrepaymentFailure?)>((Item(amount, reference), null));
+        }
+
+        public Task<MasterDataResult<CharterPrepaymentItem>> ReopenPrepaymentAsync(Guid accountId,
+            IReadOnlyCollection<Guid> stations, Guid charterId, string reason, string expectedVersion, Guid idempotencyKey,
+            string? requestId, CancellationToken cancellationToken = default)
+        {
+            (ReopenReason, ReopenVersion) = (reason, expectedVersion);
+            return Task.FromResult(ReopenFailure is { } failure
+                ? MasterDataResult<CharterPrepaymentItem>.Failed(failure.Failure, failure.Code)
+                : MasterDataResult<CharterPrepaymentItem>.Success(Item(260m, "TRF-0001") with
+                {
+                    PrepaymentStatus = "Pending", PrepaymentConfirmedAt = null, Version = "BBBB",
+                }));
         }
     }
 }

@@ -4,19 +4,9 @@ import type {
   TransitionRampOperationServiceOptions,
   TransitionRampOperationServiceRequest as ApiTransitionRampOperationServiceRequest,
 } from '@elevant/api-client';
-import { createMobileAgentApiClient } from '../config/elevant-api';
-import {
-  getOrCreateRampServiceTransitionCommandIfCurrent,
-  readRampServiceTransitionCommandIfCurrent,
-  removeRampServiceTransitionCommandIfCurrent,
-} from '../storage/mobile-session';
-import {
-  getMobileSessionRequestContext,
-  MobileServiceError,
-  rejectMobileSessionRequest,
-} from './mobile-auth';
-import { registerCurrentMobileDevice } from './mobile-device';
-import { asMobileServiceError } from './mobile-service-error';
+import { serverNow } from '../synchronization/server-clock';
+import { sendFlightReportCommand } from './flight-report';
+import { MobileServiceError } from './mobile-service-error';
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -28,9 +18,10 @@ export type RampOperationServiceTargetStatus =
   | 'NotPerformed'
   | 'Exception';
 
+/** What a screen asks for; the queue adds the tapped time (3-I). */
 export type TransitionRampOperationServiceRequest = Readonly<Omit<
   ApiTransitionRampOperationServiceRequest,
-  'targetStatus' | 'executedQuantity' | 'note'
+  'targetStatus' | 'executedQuantity' | 'note' | 'occurredAt'
 > & {
   targetStatus: RampOperationServiceTargetStatus;
   executedQuantity?: number;
@@ -55,19 +46,17 @@ export type RampServiceTransitionOptions = Readonly<Omit<
   TransitionRampOperationServiceOptions,
   'signal'
 > & {
+  /** Kept for the screens' request lifecycle; a transition saved on the device is never cancelled by leaving. */
   signal?: AbortSignal;
+  /** Display only: how «Sincronización» names the service and in which time zone it shows the tapped time. */
+  serviceName?: string;
+  timeZone?: string;
 }>;
 
 export type RampServicePendingTransition = Readonly<{
   idempotencyKey: string;
   request: TransitionRampOperationServiceRequest;
 }>;
-
-function apiClient(accessToken: string) {
-  return createMobileAgentApiClient({
-    getAccessToken: () => accessToken,
-  });
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -197,134 +186,42 @@ function parseResponse(
   };
 }
 
-async function confirmSameSession(sessionId: string) {
-  const confirmed = await getMobileSessionRequestContext();
-  if (confirmed.sessionId !== sessionId) {
-    throw new MobileServiceError('cancelled');
-  }
-  return confirmed;
-}
+/**
+ * What happened to a service transition (3-I): ELEVANT confirmed it, or it is saved on the device with the tapped time
+ * and goes out on its own, after the operation's earlier commands. A refusal is thrown with its Problem Details code
+ * and leaves the queue, because the agent saw it on this screen.
+ */
+export type RampServiceTransitionOutcome =
+  | Readonly<{ state: 'confirmed'; response: RampOperationServiceTransitionResponse }>
+  | Readonly<{ state: 'queued'; issue?: MobileServiceError }>;
 
-export async function readRampOperationServicePendingTransition(
-  operationId: string,
-  serviceId: string,
-  targetStatus: RampOperationServiceTargetStatus,
-): Promise<RampServicePendingTransition | null> {
-  if (!isUuid(operationId) || !isUuid(serviceId)) {
-    throw new MobileServiceError('request_failed');
-  }
-  const context = await getMobileSessionRequestContext();
-  try {
-    const result = await readRampServiceTransitionCommandIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      serviceId,
-      targetStatus,
-    );
-    if (result.kind !== 'current') throw new MobileServiceError('cancelled');
-    if (!result.command) return null;
-    const request = parseRequest(JSON.parse(result.command.payload) as unknown);
-    if (!request || request.targetStatus !== targetStatus) {
-      throw new MobileServiceError('storage_unavailable');
-    }
-    return { idempotencyKey: result.command.idempotencyKey, request };
-  } catch (error) {
-    throw asMobileServiceError(error);
-  }
-}
-
+/**
+ * Starts, completes, marks not performed or as an exception one service. The tap is stamped with ELEVANT's clock
+ * (3-N18) and saved in the device's queue before anything is sent (3-I): the server keeps that time, so a transition
+ * sent from the queue minutes later still measures the service.
+ */
 export async function transitionRampOperationService(
   operationId: string,
   serviceId: string,
   request: TransitionRampOperationServiceRequest,
   options: RampServiceTransitionOptions = {},
-): Promise<RampOperationServiceTransitionResponse> {
+): Promise<RampServiceTransitionOutcome> {
   if (!isUuid(operationId) || !isUuid(serviceId)) {
     throw new MobileServiceError('request_failed');
   }
   const validatedRequest = parseRequest(request);
   if (!validatedRequest) throw new MobileServiceError('request_failed');
-  const context = await getMobileSessionRequestContext();
-  let reservedIdempotencyKey: string | undefined;
-
-  try {
-    const command = await getOrCreateRampServiceTransitionCommandIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      serviceId,
-      validatedRequest.targetStatus,
-      JSON.stringify(validatedRequest),
-    );
-    if (command.kind !== 'current') throw new MobileServiceError('cancelled');
-    reservedIdempotencyKey = command.idempotencyKey;
-    const frozenRequest = parseRequest(JSON.parse(command.payload) as unknown);
-    if (!frozenRequest || frozenRequest.targetStatus !== validatedRequest.targetStatus) {
-      throw new MobileServiceError('storage_unavailable');
-    }
-
-    const device = await registerCurrentMobileDevice(
-      { accessToken: context.accessToken },
-      options,
-    );
-    const confirmed = await confirmSameSession(context.sessionId);
-    const value = await apiClient(confirmed.accessToken).transitionRampOperationService(
-      operationId,
-      serviceId,
-      frozenRequest,
-      device.installationId,
-      command.idempotencyKey,
-      { signal: options.signal },
-    );
-    await confirmSameSession(context.sessionId);
-    const response = parseResponse(value, serviceId, frozenRequest.targetStatus);
-    const commandRemoved = await removeRampServiceTransitionCommandIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      serviceId,
-      frozenRequest.targetStatus,
-      command.idempotencyKey,
-    );
-    if (commandRemoved === 'not-current') {
-      throw new MobileServiceError('cancelled');
-    }
-    return response;
-  } catch (error) {
-    const normalized = asMobileServiceError(error);
-    if (isDeterministicWriteRejection(normalized) && reservedIdempotencyKey) {
-      try {
-        const removed = await removeRampServiceTransitionCommandIfCurrent(
-          context.sessionId,
-          context.session.actor.accountId,
-          operationId,
-          serviceId,
-          validatedRequest.targetStatus,
-          reservedIdempotencyKey,
-        );
-        if (removed === 'not-current') throw new MobileServiceError('cancelled');
-      } catch (removalError) {
-        throw asMobileServiceError(removalError);
-      }
-    }
-    if (
-      normalized.code === 'unauthenticated' ||
-      normalized.code === 'forbidden'
-    ) {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
-      if (!cleared) throw new MobileServiceError('cancelled');
-    }
-    throw normalized;
-  }
-}
-
-function isDeterministicWriteRejection(error: MobileServiceError) {
-  return (
-    error.code === 'not_found' ||
-    error.code === 'conflict' ||
-    error.status === 400 ||
-    error.status === 413 ||
-    error.status === 415
-  );
+  const sent = await sendFlightReportCommand({
+    kind: 'serviceTransition',
+    operationId: operationId.toLowerCase(),
+    serviceId: serviceId.toLowerCase(),
+    targetStatus: validatedRequest.targetStatus,
+    executedQuantity: validatedRequest.executedQuantity ?? null,
+    note: validatedRequest.note ?? null,
+    occurredAt: serverNow().toISOString(),
+    ...(options.serviceName ? { serviceName: options.serviceName } : {}),
+    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+  }, { discardRefused: true });
+  if (sent.state === 'queued') return { state: 'queued', ...(sent.issue ? { issue: sent.issue } : {}) };
+  return { state: 'confirmed', response: parseResponse(sent.result, serviceId, validatedRequest.targetStatus) };
 }

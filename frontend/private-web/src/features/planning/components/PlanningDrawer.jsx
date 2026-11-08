@@ -2,14 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { XIcon } from './icons';
 import StatusBadge from '../../../components/StatusBadge';
 import { getPlanningStatusMeta } from '../planningStatus';
-import { isInitialAssignmentCandidate } from '../planningMappers';
+import { isInitialAssignmentCandidate, isTurnaroundChangeCandidate } from '../planningMappers';
 import { formatPlanningClock, formatPlanningDate } from '../planningTime';
 import OccAssignmentPanel from './OccAssignmentPanel';
-import { releaseOccOperationAgent } from '../../../services/occCoverageService';
+import {
+  handOverOccOperation, loadOccAttendanceAssignments, loadOccHandoverOptions, releaseOccOperationAgent,
+} from '../../../services/occCoverageService';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { problemMessage } from '../../../services/problemMessages';
 import OccShiftPanel from './OccShiftPanel';
 import OccAttendancePanel from './OccAttendancePanel';
 import { useTranslation } from '../../../i18n/LanguageScope';
-import { planningMessages } from '../planningMessages';
+import { AGENT_COMMAND_PROBLEM_MESSAGES, planningMessages } from '../planningMessages';
+import { useOptionalDepartmentAccess } from '../../access/DepartmentAccessContext';
+import { equipmentStatusLabel, operationStatusLabel, unitLabel } from '../../operations/operationLabels';
+import OperationIncidentsPanel from '../../incidents/OperationIncidentsPanel';
 
 const FOCUSABLE_SELECTOR = [
   'a[href]',
@@ -53,26 +60,276 @@ function FlightLegDetail({ kind, leg, timeZone }) {
   );
 }
 
-/** OCC frees the agent of an operation not yet started to hand it to someone else (ADR-0030). */
-function ReleaseAgent({ flight, onReleased }) {
+/** The message of a failed command on the operation's agent, by its Problem Details code (3-J, 3-F). */
+function agentProblem(error, fallback) {
+  return problemMessage(error, AGENT_COMMAND_PROBLEM_MESSAGES, {
+    forbidden: 'Su acceso no permite asignar, liberar ni relevar agentes en esta estación.',
+    fallback,
+  });
+}
+
+/**
+ * OCC frees the agent of an operation not yet started to hand it to someone else (ADR-0030); with the arrival
+ * already recorded the operation takes another agent too (3-C). The release names the assignment on screen and keeps
+ * its Idempotency-Key while OCC retries after an uncertain answer (3-J): another agent is never released by mistake,
+ * and a conflict reads the board again.
+ */
+function ReleaseAgent({ flight, onReleased, onStale }) {
+  const { t } = useTranslation(planningMessages);
   const [state, setState] = useState({ status: 'idle', error: null });
+  const release = useRef(createCommandKeyHolder());
   if (flight.operationStatus !== 'Assigned' || !(flight.assignedAgents ?? []).length || !onReleased) return null;
-  const release = async () => {
-    if (!window.confirm('¿Liberar al agente de esta operación? Podrás asignar a otro desde aquí mismo.')) return;
+  const run = async () => {
+    if (!window.confirm(t('drawer.releaseConfirm'))) return;
     setState({ status: 'submitting', error: null });
+    const expectedAssignmentId = flight.assignedAgents[0].assignmentId ?? null;
     try {
-      await releaseOccOperationAgent(flight.turnaroundId);
+      await release.current.run('release', [flight.turnaroundId, expectedAssignmentId], key =>
+        releaseOccOperationAgent(flight.turnaroundId,
+          expectedAssignmentId ? { expectedAssignmentId, idempotencyKey: key } : {}));
       setState({ status: 'idle', error: null });
       onReleased();
-    } catch (error) { setState({ status: 'idle', error }); }
+    } catch (error) {
+      setState({ status: 'idle', error });
+      // Another agent holds it now or it already started: the board is read again before a new intent.
+      if (error?.status === 409) onStale?.();
+    }
   };
   return (
     <div className="mt-2 space-y-1">
-      <button type="button" onClick={() => void release()} disabled={state.status === 'submitting'}
+      <button type="button" onClick={() => void run()} disabled={state.status === 'submitting'}
         className="min-h-11 rounded-lg border border-status-danger/40 px-3 text-xs font-semibold text-status-danger disabled:opacity-50">
-        {state.status === 'submitting' ? 'Liberando…' : 'Liberar agente'}</button>
-      {state.error && <p role="alert" className="text-xs text-status-danger">{state.error.message}</p>}
+        {state.status === 'submitting' ? t('drawer.releasing') : t('drawer.releaseAgent')}</button>
+      {state.error && <p role="alert" className="text-xs text-status-danger">
+        {agentProblem(state.error, t('drawer.releaseError'))}</p>}
     </div>
+  );
+}
+
+const LOADING_HANDOVER_OPTIONS = Object.freeze({ status: 'loading', data: null, error: null });
+
+/**
+ * «Relevar agente» (3-F): OCC hands an operation the agent already started, or one returned for correction, to another
+ * eligible agent of the station with a reason. The operation keeps its status and its evidence (each row keeps its
+ * author) and both agents are told. The options are evaluated for what is left of the operation; the command names
+ * the assignment on screen and keeps its Idempotency-Key while OCC retries after an uncertain answer. A conflict reads
+ * the options and the board again before a new intent.
+ */
+function HandoverAgent({ flight, onHandedOver, onStale }) {
+  const { t, locale } = useTranslation(planningMessages);
+  const access = useOptionalDepartmentAccess();
+  const visible = (flight.operationStatus === 'InProgress' || flight.operationStatus === 'Returned') &&
+    Boolean(onHandedOver) && (access?.can('operations.planning.assign') ?? true);
+  // The answer of one read (the flight and the attempt it belongs to); until it arrives the options are loading.
+  const [answer, setAnswer] = useState(null);
+  const [attempt, setAttempt] = useState(0);
+  const [agentId, setAgentId] = useState('');
+  const [reason, setReason] = useState('');
+  const [submit, setSubmit] = useState({ status: 'idle', error: null });
+  const handover = useRef(createCommandKeyHolder());
+  const request = `${flight.turnaroundId}:${attempt}`;
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    const controller = new AbortController();
+    loadOccHandoverOptions(flight.turnaroundId, { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setAnswer({ request, status: 'success', data, error: null }); })
+      .catch(error => {
+        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        setAnswer({ request, status: error?.status === 403 ? 'forbidden' : 'error', data: null, error });
+      });
+    return () => controller.abort();
+  }, [visible, flight.turnaroundId, request]);
+
+  if (!visible) return null;
+  const options = answer?.request === request ? answer : LOADING_HANDOVER_OPTIONS;
+  const timeZone = flight.station?.ianaTimeZone;
+  const reasonLabels = t('assignment.reasons');
+  const describe = agent => agent.eligibilityReasons.map(item => reasonLabels[item] ?? t('assignment.unknownReason'))
+    .join(', ');
+  const data = options.data;
+  const eligible = data?.agents.filter(agent => agent.eligible) ?? [];
+  const ineligible = data?.agents.filter(agent => !agent.eligible) ?? [];
+  const trimmed = reason.trim();
+  const canSubmit = Boolean(agentId) && trimmed.length >= 5 && trimmed.length <= 500 && submit.status !== 'submitting';
+
+  const send = async event => {
+    event.preventDefault();
+    if (!canSubmit || !data) return;
+    const command = { agentId, expectedAssignmentId: data.currentAssignmentId, reason: trimmed };
+    setSubmit({ status: 'submitting', error: null });
+    try {
+      const result = await handover.current.run('handover', [flight.turnaroundId, command],
+        key => handOverOccOperation(flight.turnaroundId, command, key));
+      const name = eligible.find(agent => agent.id === result.agentId)?.displayName ?? '';
+      setSubmit({ status: 'idle', error: null });
+      setAgentId('');
+      setReason('');
+      // The operation has another agent and assignment now: the options are read again, so the section never offers
+      // the agent who just took it nor sends the released assignment in a second handover.
+      setAttempt(value => value + 1);
+      onHandedOver(name);
+    } catch (error) {
+      setSubmit({ status: 'idle', error });
+      // The agent, the operation or the eligibility changed: the options are read again before a new intent.
+      if (error?.status === 409) {
+        setAgentId('');
+        setAttempt(value => value + 1);
+        onStale?.();
+      }
+    }
+  };
+
+  const field = 'mt-1 min-h-11 w-full rounded-lg border border-black/15 bg-white px-3 text-sm dark:border-white/15 dark:bg-surface-dark-card';
+  return (
+    <Section title={t('drawer.handover')}>
+      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.handoverHint')}</p>
+      {options.status === 'loading' && <p role="status" className="mt-2 text-xs">{t('drawer.handoverLoading')}</p>}
+      {options.status === 'forbidden' && <p role="alert" className="mt-2 text-xs text-status-danger">
+        {t('drawer.handoverForbidden')}</p>}
+      {options.status === 'error' && <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-status-danger">{agentProblem(options.error, t('drawer.handoverLoadError'))}</span>
+        <button type="button" onClick={() => setAttempt(value => value + 1)}
+          className="min-h-11 rounded-lg border border-accent-600/40 px-3 font-semibold text-accent-600">{t('drawer.handoverRetry')}</button>
+      </div>}
+      {options.status === 'success' && data && <form onSubmit={send} aria-label={t('drawer.handover')} className="mt-2 space-y-2">
+        <p className="text-xs">{t('drawer.handoverCurrent', { name: data.currentAgentName })} · {t('drawer.handoverRemaining', {
+          from: formatPlanningClock(data.remainingFrom, timeZone, locale),
+          until: formatPlanningClock(data.remainingUntil, timeZone, locale) })}</p>
+        {eligible.length === 0
+          ? <p role="status" className="text-xs font-semibold">{t('drawer.handoverEmpty')}</p>
+          : <label className="block text-xs font-medium">{t('drawer.handoverAgent')}
+            <select value={agentId} onChange={event => setAgentId(event.target.value)} className={field}>
+              <option value="">{t('drawer.handoverSelect')}</option>
+              {eligible.map(agent => <option key={agent.id} value={agent.id}>{agent.displayName} · {agent.employeeNumber}</option>)}
+            </select>
+          </label>}
+        {ineligible.length > 0 && <p className="text-[11px] text-text-secondary-light dark:text-text-secondary-dark">
+          {t('drawer.handoverIneligible', { list: ineligible.map(agent => `${agent.displayName} (${describe(agent)})`)
+            .join('; ') })}</p>}
+        {eligible.length > 0 && <>
+          <label className="block text-xs font-medium">{t('drawer.handoverReason')}
+            <textarea value={reason} maxLength={500} rows={2} onChange={event => setReason(event.target.value)}
+              className={`${field} py-2`} />
+          </label>
+          <p className="text-[11px] text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.handoverReasonHint')}</p>
+          {submit.error && <p role="alert" className="text-xs text-status-danger">
+            {agentProblem(submit.error, t('drawer.handoverError'))}</p>}
+          <button type="submit" disabled={!canSubmit}
+            className="min-h-11 rounded-lg bg-accent-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+            {submit.status === 'submitting' ? t('drawer.handoverSubmitting') : t('drawer.handoverSubmit')}</button>
+        </>}
+      </form>}
+    </Section>
+  );
+}
+
+/**
+ * «Asistencia compartida»: OCC records the attendance of each agent of the operation, also of one relieved after the
+ * start (3-F), who worked until the handover. The board lists open assignments only, so once the operation started the
+ * relieved ones are read from the server, again with every read of the board; the last answer stays on screen
+ * meanwhile, so the panel of the agent OCC is editing never resets under it.
+ */
+function AttendanceSection({ flight, dataRevision }) {
+  const { t } = useTranslation(planningMessages);
+  const access = useOptionalDepartmentAccess();
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState('');
+  // The answer of one read (the board's read and the attempt it belongs to); a failed one keeps the last list.
+  const [answer, setAnswer] = useState(null);
+  const [attempt, setAttempt] = useState(0);
+  const operationId = flight.operation?.id;
+  const turnaroundId = flight.turnaroundId;
+  const readsRelieved = Boolean(operationId && flight.operation?.actualStartAt) &&
+    (access?.can('operations.attendance.read') ?? true);
+  const request = `${dataRevision}:${attempt}`;
+
+  useEffect(() => {
+    if (!readsRelieved) return undefined;
+    const controller = new AbortController();
+    loadOccAttendanceAssignments(turnaroundId, { signal: controller.signal })
+      .then(data => { if (!controller.signal.aborted) setAnswer({ request, status: 'success', data, error: null }); })
+      .catch(error => {
+        if (controller.signal.aborted || error?.name === 'AbortError') return;
+        setAnswer(previous => ({ request, status: error?.status === 401 || error?.status === 403 ? 'denied' : 'error',
+          data: previous?.data ?? null, error }));
+      });
+    return () => controller.abort();
+  }, [readsRelieved, turnaroundId, request]);
+
+  if (!operationId) return null;
+  let status = 'idle';
+  if (readsRelieved) {
+    status = !answer || (answer.request !== request && answer.status !== 'success') ? 'loading' : answer.status;
+  }
+  const open = (flight.assignedAgents ?? []).filter(agent => agent.assignmentId);
+  const released = readsRelieved ? (answer?.data?.assignments ?? []).filter(item => item.releasedAt) : [];
+  const releasedIds = new Set(released.map(item => item.assignmentId));
+  const openIds = new Set(open.map(agent => agent.assignmentId));
+  const agents = [
+    ...open.map(agent => ({ ...agent, relieved: releasedIds.has(agent.assignmentId) })),
+    ...released.filter(item => !openIds.has(item.assignmentId)).map(item => ({
+      assignmentId: item.assignmentId, agentId: item.agentId, displayName: item.displayName,
+      employeeNumber: item.employeeNumber, relieved: true,
+    })),
+  ];
+  const agent = agents.find(item => item.assignmentId === selectedAssignmentId) ?? agents[0];
+  if (!agent && !['loading', 'error', 'denied'].includes(status)) return null;
+  const label = item => (item.relieved ? t('drawer.attendanceRelieved', { name: item.displayName }) : item.displayName);
+
+  return (
+    <Section title={t('drawer.attendance')}>
+      {agent && <label className="block text-xs">{t('drawer.attendanceAgent')}
+        <select value={agent.assignmentId}
+          onChange={event => setSelectedAssignmentId(event.target.value)}
+          className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm focus-visible:ring-2 focus-visible:ring-accent-600 dark:border-slate-700 dark:bg-surface-dark-card">
+          {agents.map(item => <option key={item.assignmentId}
+            value={item.assignmentId}>{label(item)} · {item.employeeNumber}</option>)}
+        </select>
+      </label>}
+      {agents.some(item => item.relieved) && <p className="mt-1 text-[11px] text-text-secondary-light dark:text-text-secondary-dark">
+        {t('drawer.attendanceRelievedHint')}</p>}
+      {status === 'loading' && <p role="status" className="mt-2 text-xs">{t('drawer.attendanceRelievedLoading')}</p>}
+      {(status === 'error' || status === 'denied') && <div role="alert" className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-status-danger">{problemMessage(answer.error, AGENT_COMMAND_PROBLEM_MESSAGES, {
+          forbidden: t('drawer.attendanceRelievedForbidden'), fallback: t('drawer.attendanceRelievedError') })}</span>
+        {status === 'error' && <button type="button" onClick={() => setAttempt(value => value + 1)}
+          className="min-h-11 rounded-lg border border-accent-600/40 px-3 font-semibold text-accent-600">
+          {t('drawer.attendanceRelievedRetry')}</button>}
+      </div>}
+      {agent && <div className="mt-3">
+        <OccAttendancePanel
+          key={`${operationId}|${agent.assignmentId}`}
+          operationId={operationId}
+          assignmentId={agent.assignmentId}
+          displayName={label(agent)}
+        />
+      </div>}
+    </Section>
+  );
+}
+
+/**
+ * «Editar vuelo», «Cancelar vuelo» and «Marcar desviado» (3-A, 3-N28) while the operation has not started; the dialog
+ * reads the flight's current version and the changes the server allows before sending anything.
+ */
+function FlightChanges({ flight, onChangeFlight }) {
+  const { t } = useTranslation(planningMessages);
+  const access = useOptionalDepartmentAccess();
+  if (!onChangeFlight || !isTurnaroundChangeCandidate(flight) ||
+      !(access?.can('operations.planning.update') ?? true)) return null;
+  const button = 'min-h-11 rounded-lg border px-3 text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-accent-600';
+  return (
+    <Section title={t('drawer.flightChanges')}>
+      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.flightChangesHint')}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button type="button" onClick={() => onChangeFlight('reschedule')}
+          className={`${button} border-accent-600/30 text-accent-600 hover:bg-accent-600/10`}>{t('drawer.editFlight')}</button>
+        <button type="button" onClick={() => onChangeFlight('cancel')}
+          className={`${button} border-status-danger/40 text-status-danger hover:bg-status-danger/5`}>{t('drawer.cancelFlight')}</button>
+        <button type="button" onClick={() => onChangeFlight('divert')}
+          className={`${button} border-status-warning/40 text-ink-900 hover:bg-status-warning/10 dark:text-text-primary-dark`}>{t('drawer.divertFlight')}</button>
+      </div>
+    </Section>
   );
 }
 
@@ -90,6 +347,11 @@ export default function PlanningDrawer({
   onRetryOptions,
   onShiftProgrammed,
   onAgentReleased,
+  onAgentHandedOver,
+  onStale,
+  onChangeFlight,
+  // The board's read counter: the operation's incidents (3-G) and its relieved agents (3-F) are read again with it.
+  dataRevision = 0,
 }) {
   const { t, language, locale } = useTranslation(planningMessages);
   const dialogRef = useRef(null);
@@ -97,7 +359,6 @@ export default function PlanningDrawer({
   const returnFocusRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const isSubmittingRef = useRef(false);
-  const [selectedAttendanceAssignmentId, setSelectedAttendanceAssignmentId] = useState('');
   const isSubmitting = assignmentState.status === 'submitting';
 
   useEffect(() => {
@@ -167,10 +428,6 @@ export default function PlanningDrawer({
   const meta = getPlanningStatusMeta(flight.status, language);
   const timeZone = flight.station?.ianaTimeZone;
   const isInitialAssignmentAvailable = isInitialAssignmentCandidate(flight);
-  const attendanceAgents = (flight.assignedAgents ?? []).filter(agent => agent.assignmentId);
-  const attendanceAgent = attendanceAgents.find(
-    agent => agent.assignmentId === selectedAttendanceAssignmentId
-  ) ?? attendanceAgents[0];
 
   return (
     <>
@@ -206,7 +463,7 @@ export default function PlanningDrawer({
               <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.date')}</dt><dd>{formatPlanningDate(flight.operationDate, locale)}</dd></div>
               <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.station')}</dt><dd>{flight.station ? `${flight.station.code} · ${flight.station.name}` : t('drawer.noStation')}</dd></div>
               <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.airline')}</dt><dd>{flight.airline ? `${flight.airline.iataCode} · ${flight.airline.name}` : (flight.airlineName ?? t('drawer.noAirline'))}</dd></div>
-              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.operation')}</dt><dd>{flight.operationStatus ?? t('drawer.noOperation')}</dd></div>
+              <div><dt className="text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.operation')}</dt><dd>{flight.operationStatus ? operationStatusLabel(flight.operationStatus, language) : t('drawer.noOperation')}</dd></div>
             </dl>
           </Section>
 
@@ -233,43 +490,34 @@ export default function PlanningDrawer({
                     return label === `drawer.unfitReasons.${reason}` ? t('drawer.unfitReasons.other') : label;
                   }).join(', ') })}</span>}</li>}
             </ResourceList>
-            <ReleaseAgent flight={flight} onReleased={onAgentReleased} />
+            <ReleaseAgent flight={flight} onReleased={onAgentReleased} onStale={onStale} />
           </Section>
 
-          {flight.operation?.id && attendanceAgent && <Section title={t('drawer.attendance')}>
-            <label className="block text-xs">{t('drawer.attendanceAgent')}
-              <select value={attendanceAgent.assignmentId}
-                onChange={event => setSelectedAttendanceAssignmentId(event.target.value)}
-                className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm focus-visible:ring-2 focus-visible:ring-accent-600 dark:border-slate-700 dark:bg-surface-dark-card">
-                {attendanceAgents.map(agent => <option key={agent.assignmentId}
-                  value={agent.assignmentId}>{agent.displayName} · {agent.employeeNumber}</option>)}
-              </select>
-            </label>
-            <div className="mt-3">
-              <OccAttendancePanel
-                key={`${flight.operation.id}|${attendanceAgent.assignmentId}`}
-                operationId={flight.operation.id}
-                assignmentId={attendanceAgent.assignmentId}
-                displayName={attendanceAgent.displayName}
-              />
-            </div>
-          </Section>}
+          <HandoverAgent key={flight.turnaroundId} flight={flight} onHandedOver={onAgentHandedOver} onStale={onStale} />
+
+          {flight.operation?.id && <AttendanceSection key={flight.turnaroundId} flight={flight}
+            dataRevision={dataRevision} />}
+
+          {/* 3-G: OCC follows and manages the operation's live incidents from the flight too. */}
+          {flight.operation?.id && <OperationIncidentsPanel operationId={flight.operation.id} refreshToken={dataRevision} />}
 
           <Section title={t('drawer.equipment')}>
             <ResourceList items={flight.assignedEquipment ?? []} emptyLabel={t('drawer.noEquipment')}>
-              {equipment => <li key={equipment.assignmentId}>{equipment.assetCode} · {equipment.equipmentTypeName} <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">({equipment.status})</span></li>}
+              {equipment => <li key={equipment.assignmentId}>{equipment.assetCode} · {equipment.equipmentTypeName} <span className="text-xs text-text-secondary-light dark:text-text-secondary-dark">({equipmentStatusLabel(equipment.status, language)})</span></li>}
             </ResourceList>
           </Section>
 
           <Section title={t('drawer.services')}>
             <ResourceList items={flight.assignedServices ?? []} emptyLabel={t('drawer.noServices')}>
-              {service => <li key={service.id}>{service.code} · {service.name} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{service.executedQuantity}/{service.contractedQuantity} {service.billingUnit}</span></li>}
+              {service => <li key={service.id}>{service.code} · {service.name} <span className="font-mono text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('drawer.serviceQuantity', { executed: service.executedQuantity, contracted: service.contractedQuantity, unit: unitLabel(service.billingUnit) })}</span></li>}
             </ResourceList>
           </Section>
 
+          <FlightChanges flight={flight} onChangeFlight={onChangeFlight} />
+
           <Section title={t('drawer.occAssignment')}>
             <OccShiftPanel flight={flight} optionsState={optionsState}
-              onProgrammed={onShiftProgrammed} />
+              onProgrammed={onShiftProgrammed} onStale={onStale} />
             <OccAssignmentPanel
               optionsState={optionsState}
               assignmentState={assignmentState}
@@ -278,12 +526,6 @@ export default function PlanningDrawer({
               onRetryOptions={onRetryOptions}
             />
           </Section>
-        </div>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          {['editPlanning', 'workOrder'].map(key => (
-            <button key={key} type="button" disabled title={t('drawer.comingSoon')} className="cursor-not-allowed rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-text-secondary-light/50 dark:border-white/10 dark:text-text-secondary-dark/50">{t(`drawer.${key}`)}</button>
-          ))}
         </div>
       </aside>
     </>

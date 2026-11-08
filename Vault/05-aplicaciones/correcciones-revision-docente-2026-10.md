@@ -108,6 +108,18 @@ Ver un reporte exige `operations.reports.read`; exportarlo exige además
 `export`, y cada exportación queda auditada. El período máximo es de un año y
 cada exportación admite hasta 5 000 filas.
 
+*Posterior al commit verificado de esta nota: desde la fase 3 del ciclo
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)),
+los seis reportes (con el cierre operacional del día) exportan el período
+completo o nada: hasta 25 000 filas en Excel y CSV y 5 000 en PDF, y un período
+mayor responde `422 report_too_large`, sin archivo ni auditoría. «Productividad
+por agente» atribuye cada tramo a quien lo trabajó, así que un agente liberado
+antes del inicio no cuenta y un relevo reparte los minutos. «Servicios
+ejecutados por aerolínea» cuenta solo los servicios facturables de operaciones
+aprobadas. Estados, severidades, tipos de incidencia y unidades salen en
+español, y todas las horas, también «Generado», en la hora local de la
+estación. Las cifras cambian respecto de los reportes anteriores.*
+
 ## Contratos: detalle, PDF y firma
 
 - **Detalle.** «Contratos» abre el detalle de cada versión aprobada: partes,
@@ -165,6 +177,16 @@ cada exportación admite hasta 5 000 filas.
   - liberarla.
 
   Cada cambio se audita y se anuncia en tiempo real.
+
+  *Posterior al commit verificado: desde la fase 3 del ciclo, la llegada lleva
+  la hora local que escribe OCC (si no la toca y el vuelo aún no tiene hora, la
+  del servidor al guardar) y, si quiere, el tipo de avión; reemplazar una hora ya
+  informada pide motivo, y registrar o corregir la llegada solo vale hasta la
+  primera entrega. Los tres comandos aceptan `Idempotency-Key` e `If-Match`
+  opcionales (private-web los envía siempre) y corren en una transacción
+  serializable en la que la asignación bloquea la posición, así que dos vuelos
+  nunca toman la misma
+  ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*
 - **Panorama.** Si el panorama no responde en 20 s, la pantalla avisa y ofrece
   reintentar. Las señales del feed ya no reinician una lectura en curso; antes,
   eso lo dejaba en «Cargando panorama operativo…».

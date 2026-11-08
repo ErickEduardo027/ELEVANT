@@ -8,11 +8,13 @@ using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Audit;
 using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Realtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Identity;
 
@@ -21,6 +23,7 @@ internal sealed class EfHumanResourcesShiftWriteStore(
     : IHumanResourcesShiftWriteStore
 {
     private const string RemoveAction = "hr.shift.remove";
+    private const string AdjustAction = "hr.shift.adjust";
 
     public async Task<HumanResourcesShiftWriteResult> RecordAsync(Guid actorId,
         Guid shiftId, RecordHumanResourcesShiftInput input,
@@ -272,6 +275,195 @@ internal sealed class EfHumanResourcesShiftWriteStore(
             return HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict, "shift_in_use");
         }
     }
+
+    public async Task<HumanResourcesShiftAdjustResult> AdjustAsync(Guid actorId, Guid shiftId,
+        AdjustHumanResourcesShiftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
+    {
+        var actor = await actors.ResolveAsync(actorId, cancellationToken);
+        if (!HumanResourcesShiftWritePolicy.CanRecord(actor))
+            return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Forbidden, "forbidden");
+        // A new command (3-E): the key and the version are required.
+        if (idempotencyKey is not { } key || key == Guid.Empty)
+            return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Invalid, "idempotency_key_required");
+        if (shiftId == Guid.Empty || input is null)
+            return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Invalid, "invalid_shift");
+        var expected = string.IsNullOrWhiteSpace(input.ExpectedVersion) ? null : input.ExpectedVersion.Trim();
+        if (expected is null)
+            return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Invalid, "expected_version_required");
+        if (ShiftAdjustmentRules.Reason(input.Reason) is not { } reason)
+            return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Invalid, "reason_required");
+        var actorDatabaseId = await context.Users.AsNoTracking()
+            .Where(user => user.PublicId == actorId).Select(user => user.Id).SingleAsync(cancellationToken);
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            shiftId, startsAtLocal = input.StartsAtLocal, endsAtLocal = input.EndsAtLocal, reason, version = expected,
+        });
+
+        var strategy = context.Database.CreateExecutionStrategy();
+        try
+        {
+            return await strategy.ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(
+                    IsolationLevel.Serializable, cancellationToken);
+                var prior = await CommercialCommandReceipts.FindAsync(context, key, actorDatabaseId, AdjustAction, hash,
+                    cancellationToken);
+                if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                    return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Conflict,
+                        "idempotency_conflict");
+                if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                    return await AdjustedAsync(shiftId, true, cancellationToken);
+
+                var row = await (from item in context.ShiftAssignments
+                                 join station in context.Stations on item.StationId equals station.Id
+                                 where item.PublicId == shiftId
+                                 select new { Shift = item, StationPublicId = station.PublicId, StationKey = station.Id,
+                                     station.IanaTimeZone })
+                    .SingleOrDefaultAsync(cancellationToken);
+                if (row is null)
+                    return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.NotFound, "not_found");
+                if (!HumanResourcesShiftWritePolicy.CanRecord(actor, row.StationPublicId))
+                    return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Forbidden, "forbidden");
+                var now = clock.GetUtcNow();
+                if (!await HasActiveStationGrantAsync(actorDatabaseId, row.StationPublicId, now, cancellationToken))
+                    return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Forbidden, "forbidden");
+                var shift = row.Shift;
+                if (GovernanceSupport.Version(shift.RowVersion) != expected)
+                    return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Conflict, "version_conflict");
+                // The same hours: nothing to write (and nothing to announce).
+                if (shift.StartsAtLocal == input.StartsAtLocal && shift.EndsAtLocal == input.EndsAtLocal)
+                    return HumanResourcesShiftAdjustResult.Success(new HumanResourcesShiftAdjusted(shift.PublicId,
+                        shift.StartsAtLocal, shift.EndsAtLocal, GovernanceSupport.Version(shift.RowVersion)));
+
+                // 2-N31: the station's day decides what is past. The work the shift already carries keeps being covered.
+                var (start, end) = RampAgentReleaseRules.ShiftWindow(shift.WorkDate, shift.StartsAtLocal, shift.EndsAtLocal,
+                    row.IanaTimeZone);
+                var code = ShiftAdjustmentRules.Check(shift.WorkDate, BusinessCalendar.Today(now, row.IanaTimeZone),
+                    input.StartsAtLocal, input.EndsAtLocal, row.IanaTimeZone,
+                    await WorkInAsync(shift, start, end, cancellationToken),
+                    await AttendanceValidatedAsync(shift, start, end, cancellationToken));
+                if (code is not null)
+                    return HumanResourcesShiftAdjustResult.Failed(code == "invalid_shift"
+                        ? HumanResourcesShiftWriteFailure.Invalid : HumanResourcesShiftWriteFailure.Conflict, code);
+
+                var before = (Start: Clock(shift.StartsAtLocal), End: Clock(shift.EndsAtLocal), Block: shift.Block.ToString());
+                shift.StartsAtLocal = input.StartsAtLocal;
+                shift.EndsAtLocal = input.EndsAtLocal;
+                shift.Block = BlockOf(input.StartsAtLocal);
+                shift.UpdatedAt = now;
+                context.AuditEntries.Add(new AuditEntry
+                {
+                    PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+                    ActorAccountId = actorDatabaseId, Source = AuditSource.Api, CorrelationId = key,
+                    Action = "hr.shift.adjusted", EntityType = "hr.shift_assignments", EntityPublicId = shiftId,
+                    StationId = row.StationKey, Reason = reason,
+                    MetadataJson = SafeAuditChanges.Serialize(
+                        new AuditFieldChangeData("shift.starts_at", before.Start, Clock(shift.StartsAtLocal)),
+                        new AuditFieldChangeData("shift.ends_at", before.End, Clock(shift.EndsAtLocal)),
+                        new AuditFieldChangeData("shift.block", before.Block, shift.Block.ToString())),
+                });
+                foreach (var recipient in await HumanResourcesRecipientsAsync(cancellationToken))
+                    AccountChangeOutboxWriter.Add(context, recipient, null, "hr_shifts", shiftId, now);
+                await Elevant.Persistence.Operations.RampOperationChangeWriter.AnnounceScheduleAsync(context, shift.RampAgentId,
+                    shiftId, now, cancellationToken);
+                await OccPlanningChangeWriter.AddForStationAsync(context, row.StationKey, row.StationPublicId, now,
+                    cancellationToken);
+                CommercialCommandReceipts.Add(context, key, actorDatabaseId, AdjustAction, hash, shiftId, now);
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return HumanResourcesShiftAdjustResult.Success(new HumanResourcesShiftAdjusted(shift.PublicId,
+                    shift.StartsAtLocal, shift.EndsAtLocal, GovernanceSupport.Version(shift.RowVersion)));
+            });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Conflict, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent command with the same key committed first.
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, actorDatabaseId, AdjustAction, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? await AdjustedAsync(shiftId, true, cancellationToken)
+                : HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Conflict, "idempotency_conflict");
+        }
+        catch (Exception exception) when (exception is DbUpdateException or RetryLimitExceededException or SqlException &&
+                                          exception.GetBaseException() is SqlException { Number: 1205 or 3960 or 2601 or 2627 })
+        {
+            // A deadlock or a concurrent write that kept repeating: the screen re-reads and decides again.
+            context.ChangeTracker.Clear();
+            return HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.Conflict, "version_conflict");
+        }
+    }
+
+    /// <summary>The shift as it is now, for a replayed adjustment.</summary>
+    private async Task<HumanResourcesShiftAdjustResult> AdjustedAsync(Guid shiftId, bool replayed,
+        CancellationToken cancellationToken)
+    {
+        var shift = await context.ShiftAssignments.AsNoTracking().Where(item => item.PublicId == shiftId)
+            .Select(item => new { item.PublicId, item.StartsAtLocal, item.EndsAtLocal, item.RowVersion })
+            .SingleOrDefaultAsync(cancellationToken);
+        return shift is null
+            ? HumanResourcesShiftAdjustResult.Failed(HumanResourcesShiftWriteFailure.NotFound, "not_found")
+            : HumanResourcesShiftAdjustResult.Success(new HumanResourcesShiftAdjusted(shift.PublicId, shift.StartsAtLocal,
+                shift.EndsAtLocal, GovernanceSupport.Version(shift.RowVersion)), replayed);
+    }
+
+    /// <summary>
+    /// The instants of the work the agent already has in the shift at its station (3-E): the open coverages as the agent
+    /// or the mentor and the operations assigned, in progress or returned whose planned window overlaps the shift, each
+    /// one clipped to the shift as it is (the adjustment must keep covering what the shift covers today, never more).
+    /// </summary>
+    private async Task<IReadOnlyCollection<(DateTimeOffset Start, DateTimeOffset End)>> WorkInAsync(ShiftAssignment shift,
+        DateTimeOffset start, DateTimeOffset end, CancellationToken cancellationToken)
+    {
+        var coverages = await context.Set<PositionCoverage>().AsNoTracking()
+            .Where(coverage => coverage.ReleasedAt == null && coverage.StationId == shift.StationId &&
+                (coverage.RampAgentId == shift.RampAgentId || coverage.MentorRampAgentId == shift.RampAgentId) &&
+                coverage.StartsAt < end && start < coverage.EndsAt)
+            .Select(coverage => new { coverage.StartsAt, coverage.EndsAt })
+            .ToArrayAsync(cancellationToken);
+        var operations = await (from assignment in context.OperationAgentAssignments.AsNoTracking()
+                                join operation in context.GroundOperations.AsNoTracking()
+                                    on assignment.GroundOperationId equals operation.Id
+                                join turnaround in context.Turnarounds.AsNoTracking()
+                                    on operation.TurnaroundId equals turnaround.Id
+                                where assignment.RampAgentId == shift.RampAgentId && assignment.ReleasedAt == null &&
+                                      turnaround.StationId == shift.StationId &&
+                                      // Enums stored as text: explicit comparisons, never an array Contains.
+                                      (operation.CurrentStatus == GroundOperationStatus.Assigned ||
+                                       operation.CurrentStatus == GroundOperationStatus.InProgress ||
+                                       operation.CurrentStatus == GroundOperationStatus.Returned) &&
+                                      operation.PlannedStartAt != null && operation.PlannedEndAt != null &&
+                                      operation.PlannedStartAt < end && start < operation.PlannedEndAt
+                                select new { Start = operation.PlannedStartAt!.Value, End = operation.PlannedEndAt!.Value })
+            .ToArrayAsync(cancellationToken);
+        return [.. coverages.Select(item => Clip(item.StartsAt, item.EndsAt)), .. operations.Select(item => Clip(item.Start, item.End))];
+
+        (DateTimeOffset Start, DateTimeOffset End) Clip(DateTimeOffset itemStart, DateTimeOffset itemEnd) =>
+            (itemStart < start ? start : itemStart, itemEnd > end ? end : itemEnd);
+    }
+
+    /// <summary>Gestión Humana already validated the attendance of an operation the agent worked in the shift.</summary>
+    private Task<bool> AttendanceValidatedAsync(ShiftAssignment shift, DateTimeOffset start, DateTimeOffset end,
+        CancellationToken cancellationToken) =>
+        (from validation in context.OperationAttendanceValidations.AsNoTracking()
+         join assignment in context.OperationAgentAssignments.AsNoTracking()
+             on validation.OperationAgentAssignmentId equals assignment.Id
+         join operation in context.GroundOperations.AsNoTracking() on assignment.GroundOperationId equals operation.Id
+         join turnaround in context.Turnarounds.AsNoTracking() on operation.TurnaroundId equals turnaround.Id
+         where assignment.RampAgentId == shift.RampAgentId && turnaround.StationId == shift.StationId &&
+               validation.StartAt < end && start < validation.EndAt
+         select validation.Id).AnyAsync(cancellationToken);
+
+    private static ShiftBlock BlockOf(TimeOnly startsAtLocal) =>
+        startsAtLocal.Hour < 12 ? ShiftBlock.Morning : startsAtLocal.Hour < 18 ? ShiftBlock.Afternoon : ShiftBlock.Night;
+
+    private static string Clock(TimeOnly value) => value.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
     /// 2-N11: the agent of the shift already works in its hours at its station — an open coverage as the agent or

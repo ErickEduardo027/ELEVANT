@@ -4,6 +4,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Infrastructure.Finance;
 using Elevant.Infrastructure.Identity;
 using PdfSharp;
@@ -14,8 +15,8 @@ namespace Elevant.Infrastructure.Operations;
 
 /// <summary>
 /// Renders an OCC report table. Every format carries the same heading (report, station, period,
-/// generation time and row count) and Spanish column titles; CSV is UTF-8 with BOM so Excel opens
-/// accents correctly.
+/// generation time in the station's local time and row count) and Spanish column titles; CSV is UTF-8
+/// with BOM so Excel opens accents correctly. The cells arrive translated from the store (3-N26).
 /// </summary>
 public sealed class OccReportRenderer : IOccReportRenderer
 {
@@ -133,7 +134,9 @@ public sealed class OccReportRenderer : IOccReportRenderer
         yield return table.Definition.Title;
         yield return $"Estación: {table.StationCode}";
         yield return $"Período: {Date(table.From)} – {Date(table.To)}";
-        yield return $"Generado: {table.AsOf.ToUniversalTime().ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)} UTC";
+        // 3-N26: the station's local time, as every time of the report (BusinessCalendar, never the host's zone).
+        var generated = TimeZoneInfo.ConvertTime(table.AsOf, BusinessCalendar.Zone(table.TimeZoneId));
+        yield return $"Generado: {generated.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)} (hora local)";
         yield return $"Filas: {table.RowCount.ToString(CultureInfo.InvariantCulture)}";
     }
 

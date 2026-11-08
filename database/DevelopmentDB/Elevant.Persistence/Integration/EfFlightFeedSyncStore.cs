@@ -117,8 +117,10 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
             .Select(proposal => proposal.RevisedAt ?? proposal.ScheduledAt).ToArrayAsync(cancellationToken);
         var legTimes = await (from turnaround in context.Turnarounds.AsNoTracking()
                               join leg in context.FlightLegs.AsNoTracking() on turnaround.Id equals leg.TurnaroundId
+                              // A cancelled or diverted flight no longer drives paid reads (3-A).
                               where turnaround.StationId == station.StationId && turnaround.OperationDate == today &&
-                                    turnaround.CurrentStatus != TurnaroundStatus.Cancelled
+                                    turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
+                                    turnaround.CurrentStatus != TurnaroundStatus.Diverted
                               select leg.EstimatedAt ?? leg.ScheduledAt).ToArrayAsync(cancellationToken);
         var since = now.AddHours(-48);
         var usage = await context.Set<ProviderUsageEntry>().AsNoTracking()
@@ -297,10 +299,12 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
             .ToDictionaryAsync(leg => leg.Id, cancellationToken);
         var created = 0;
         var updatedLegs = 0;
+        var alerts = new List<(long TurnaroundId, string Kind)>();
         foreach (var (flight, date, airlineId) in legs)
         {
             var reference = Reference(flight);
             var counterpart = flight.Counterpart?.IataCode is { } code && airports.TryGetValue(code, out var airport) ? airport : null;
+            var previousStatus = existing.TryGetValue(reference, out var known) ? known.ProviderStatus : null;
             if (!existing.TryGetValue(reference, out var proposal))
             {
                 proposal = new ExternalFlightProposal
@@ -320,6 +324,11 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
             proposal.RevisedAt = flight.RevisedUtc;
             proposal.RunwayAt = flight.RunwayUtc;
             proposal.ProviderStatus = Trim(flight.Status, 32)!;
+            // 3-A: the provider cancelled or diverted a flight OCC already imported. OCC decides; nothing is cancelled
+            // by the feed. The alert goes when a leg's status changes, once per turnaround (AlertOccAsync).
+            if (proposal.Status == ExternalFlightProposalStatus.Confirmed && proposal.TurnaroundId is { } importedId &&
+                ProviderAlertKind(proposal.ProviderStatus) is { } alertKind && ProviderAlertKind(previousStatus) != alertKind)
+                alerts.Add((importedId, alertKind));
             proposal.AircraftRegistration = Trim(flight.Registration, 16) ?? proposal.AircraftRegistration;
             proposal.AircraftModel = Trim(flight.AircraftModel, 80) ?? proposal.AircraftModel;
             proposal.Terminal = Trim(flight.Terminal, 16);
@@ -342,7 +351,42 @@ internal sealed class EfFlightFeedSyncStore(ElevantDbContext context, IActorCont
             if (existing.TryGetValue(Reference(flight), out var proposal) && proposal.CounterpartAirportId is null &&
                 flight.Counterpart?.IataCode is { } code && airports.TryGetValue(code, out var airport))
                 proposal.CounterpartAirportId = airport.Id;
+        // Both legs of a turnaround usually change in the same read: one alert per turnaround and kind.
+        foreach (var (turnaroundId, kind) in alerts.Distinct())
+            await AlertOccAsync(turnaroundId, kind, call.OccurredAt, cancellationToken);
         return (contractedLegs, created, updatedLegs);
+    }
+
+    /// <summary>OCC notice kinds of a provider status OCC has to act on (3-A); null for any other status.</summary>
+    public static string? ProviderAlertKind(string? providerStatus) => providerStatus?.Trim().ToUpperInvariant() switch
+    {
+        "CANCELED" or "CANCELLED" => "flight_cancelled_by_provider",
+        "DIVERTED" => "flight_diverted_by_provider",
+        _ => null,
+    };
+
+    /// <summary>
+    /// Tells the station's OCC that the provider cancelled or diverted an imported flight still open. The turnaround is
+    /// the notice's source and a notice of that kind already on its operation counts, so it reaches each OCC account once
+    /// whichever leg the provider reports, in one read or in several.
+    /// </summary>
+    private async Task AlertOccAsync(long turnaroundId, string kind, DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        var target = await (from turnaround in context.Turnarounds.AsNoTracking()
+                            join operation in context.GroundOperations.AsNoTracking() on turnaround.Id equals operation.TurnaroundId
+                            where turnaround.Id == turnaroundId &&
+                                  turnaround.CurrentStatus != TurnaroundStatus.Cancelled &&
+                                  turnaround.CurrentStatus != TurnaroundStatus.Diverted &&
+                                  turnaround.CurrentStatus != TurnaroundStatus.Completed
+                            select new { turnaround.StationId, turnaround.PublicId, OperationId = operation.Id })
+            .FirstOrDefaultAsync(cancellationToken);
+        // By operation, not by source: earlier notices named the leg's proposal as their source.
+        if (target is null || await context.OperationalNotifications.AsNoTracking()
+                .AnyAsync(notice => notice.GroundOperationId == target.OperationId && notice.Kind == kind, cancellationToken))
+            return;
+        await OperationalNotificationWriter.NotifyOccAsync(context, target.StationId, target.OperationId, target.PublicId,
+            kind, occurredAt, null, cancellationToken);
     }
 
     /// <summary>Stable key of a leg at the provider: number, direction and scheduled UTC minute.</summary>

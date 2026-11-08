@@ -11,12 +11,21 @@ namespace Elevant.Persistence.Operations;
 
 /// <summary>
 /// Builds the ramp agent's read-only work queue from the authenticated account profile.
-/// Every assignment and station boundary is enforced by the database query.
+/// Every assignment and station boundary is enforced by the database query. The queue holds the operations the agent
+/// works or handed over (assigned, in progress, pending or in review, returned) and the ones OCC approved in the last
+/// <see cref="ApprovedWindow"/>, counted from the approval (its status event), not from the operation's end: a review
+/// done days after the flight still shows «Aprobada». The active ones first (3-N01): an agent with a long history still
+/// sees today's flight.
+/// An operation that already started stays in its agent's scope until it ends, even if its stand is deactivated or the
+/// flight moved to a terminal the agent has no scope in (3-N03).
 /// </summary>
-internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
+internal sealed class EfRampOperationsReadStore(ElevantDbContext context, TimeProvider timeProvider)
     : IRampOperationsReadStore
 {
     private const int MaximumOperations = 100;
+
+    /// <summary>How long an approved operation stays on the tablet («Aprobada») after OCC approved it.</summary>
+    private static readonly TimeSpan ApprovedWindow = TimeSpan.FromHours(48);
 
     public async Task<RampOperationsReadResult> GetActiveAssignedOperationsAsync(
         Guid accountId,
@@ -74,6 +83,7 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
         }
 
         var agentProfile = agentProfiles[0];
+        var approvedSince = timeProvider.GetUtcNow() - ApprovedWindow;
         var operations = await (
                 from assignment in context.OperationAgentAssignments.AsNoTracking()
                 join operation in context.GroundOperations.AsNoTracking()
@@ -92,6 +102,19 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                 from position in positions.DefaultIfEmpty()
                 where assignment.RampAgentId == agentProfile.Id &&
                       assignment.ReleasedAt == null &&
+                      // Enums stored as text: explicit comparisons, never an array Contains.
+                      (operation.CurrentStatus == GroundOperationStatus.Assigned ||
+                       operation.CurrentStatus == GroundOperationStatus.InProgress ||
+                       operation.CurrentStatus == GroundOperationStatus.PendingReview ||
+                       operation.CurrentStatus == GroundOperationStatus.InReview ||
+                       operation.CurrentStatus == GroundOperationStatus.Returned ||
+                       // 3-N01: the window opens when OCC approves (a reopened and approved again one, at the last
+                       // approval), whatever the operation's recorded or planned end.
+                       (operation.CurrentStatus == GroundOperationStatus.Approved &&
+                        context.Set<GroundOperationStatusEvent>().AsNoTracking().Any(statusEvent =>
+                            statusEvent.GroundOperationId == operation.Id &&
+                            statusEvent.ToStatus == GroundOperationStatus.Approved &&
+                            statusEvent.OccurredAt >= approvedSince))) &&
                       station.IsActive &&
                       stationIds.Contains(station.PublicId) &&
                       context.Set<RampAgentStationScope>().AsNoTracking().Any(scope =>
@@ -100,7 +123,9 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                           scope.ValidFrom <= turnaround.OperationDate &&
                           (scope.ValidTo == null ||
                            scope.ValidTo >= turnaround.OperationDate)) &&
-                      context.Set<StandAssignment>().AsNoTracking()
+                      // 3-N03: once started, the operation is authorized by its open assignment and the station scope.
+                      (operation.ActualStartAt != null ||
+                       context.Set<StandAssignment>().AsNoTracking()
                           .Where(standAssignment =>
                               standAssignment.TurnaroundId == turnaround.Id &&
                               standAssignment.AssignedTo == null)
@@ -120,8 +145,10 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                                            scope.TerminalId == terminal.Id &&
                                            scope.ValidFrom <= turnaround.OperationDate &&
                                            (scope.ValidTo == null ||
-                                            scope.ValidTo >= turnaround.OperationDate))))))
-                orderby operation.PlannedStartAt == null,
+                                            scope.ValidTo >= turnaround.OperationDate)))))))
+                // The active ones first; the approved ones (kept for 48 h after the approval) after them.
+                orderby operation.CurrentStatus == GroundOperationStatus.Approved,
+                    operation.PlannedStartAt == null,
                     operation.PlannedStartAt,
                     turnaround.OperationDate,
                     turnaround.OperationCode,
@@ -202,14 +229,13 @@ internal sealed class EfRampOperationsReadStore(ElevantDbContext context)
                 join terminalCandidate in context.Terminals.AsNoTracking()
                     on stand.TerminalId equals terminalCandidate.Id into terminals
                 from terminal in terminals.DefaultIfEmpty()
+                // The stand of an operation listed above, active or not: a started one keeps showing its stand (3-N03).
                 where turnaroundIds.Contains(assignment.TurnaroundId) &&
                       assignment.AssignedTo == null &&
                       station.IsActive &&
                       stationIds.Contains(station.PublicId) &&
-                      stand.IsActive &&
                       stand.StationId == station.Id &&
-                      (terminal == null ||
-                       (terminal.IsActive && terminal.StationId == station.Id))
+                      (terminal == null || terminal.StationId == station.Id)
                 select new
                 {
                     assignment.TurnaroundId,

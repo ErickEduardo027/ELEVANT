@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { reviewMessages } from '../reviewMessages';
-import { addOccReviewCharge, removeOccReviewCharge } from '../../../services/occReviewService';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
+import {
+  addOccReviewCharge, removeOccReviewCharge, setOccReviewBillingExclusion,
+} from '../../../services/occReviewService';
+import { chargeSourceLabel, milestoneLabel } from '../../operations/operationLabels';
 
 const SOURCE_TONE = {
   Agent: 'bg-black/5 dark:bg-white/10',
@@ -21,12 +25,18 @@ function time(value, timeZone, locale) {
  * «Cierre de la operación» (ADR-0034): ground time against Finance's allowance, the Flight Report
  * milestones and the charges Finance will value. While the delivery is pending, OCC adds or removes
  * a charge with a reason; each change moves the review version the decision is sent with.
+ *
+ * Phase 3, block D: a service in Exception with an executed quantity is billed unless OCC excludes it here with a reason
+ * (3-N11); a change after the Service Order was signed becomes its corrected version (3-N02). Each change carries its
+ * intent's Idempotency-Key; a refusal for a stale version is reported with `onChanged(text, 'error')`, which re-reads.
  */
 export default function OperationCloseSection({ detail, disabled, onChanged }) {
-  const { t, locale } = useTranslation(reviewMessages);
+  const { t, locale, language } = useTranslation(reviewMessages);
   const close = detail.close;
+  const keys = useRef(createCommandKeyHolder());
   const [removing, setRemoving] = useState(null);
   const [adding, setAdding] = useState(false);
+  const [exclusion, setExclusion] = useState(null);
   const [serviceId, setServiceId] = useState('');
   const [chargeId, setChargeId] = useState('');
   const [reason, setReason] = useState('');
@@ -39,10 +49,17 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
   const serviceName = id => detail.services.find(service => service.id === id)?.name ?? '';
   const options = close.chargeOptions.filter(option => !serviceId || option.serviceIds.includes(serviceId));
   const validReason = reason.trim().length >= 8 && reason.trim().length <= 500;
+  const exclusions = close.billingExclusions ?? [];
+  const exclusionOf = id => exclusions.find(item => item.serviceId === id) ?? null;
+  // 3-N11: what OCC may exclude from billing, plus whatever it already excluded.
+  const billable = detail.services.filter(service =>
+    (service.status === 'Exception' && service.executedQuantity > 0) || exclusionOf(service.id));
+  const signed = detail.serviceOrderState === 'Signed' || detail.serviceOrderState === 'Corrected';
 
   function reset() {
     setRemoving(null);
     setAdding(false);
+    setExclusion(null);
     setServiceId('');
     setChargeId('');
     setReason('');
@@ -52,26 +69,47 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
   async function submit(event) {
     event.preventDefault();
     if (busy || !validReason) return;
+    const trimmed = reason.trim();
+    const version = detail.reviewVersion;
     setBusy(true);
     setError('');
     try {
       if (removing) {
-        await removeOccReviewCharge(detail.operationId, removing,
-          { submissionId: detail.submissionId, reason: reason.trim() }, detail.reviewVersion);
+        const command = { submissionId: detail.submissionId, reason: trimmed };
+        await keys.current.run('remove', { markId: removing, ...command, version }, key =>
+          removeOccReviewCharge(detail.operationId, removing, command, version, { idempotencyKey: key }));
         reset();
         onChanged(t('close.removed'));
+      } else if (exclusion) {
+        const command = { submissionId: detail.submissionId, excluded: exclusion.excluded, reason: trimmed };
+        await keys.current.run('exclusion', { serviceId: exclusion.serviceId, ...command, version }, key =>
+          setOccReviewBillingExclusion(detail.operationId, exclusion.serviceId, command, version, key));
+        const excluded = exclusion.excluded;
+        reset();
+        onChanged(excluded ? t('close.excludedDone') : t('close.includedDone'));
       } else {
-        await addOccReviewCharge(detail.operationId,
-          { submissionId: detail.submissionId, serviceId, chargeId, reason: reason.trim() }, detail.reviewVersion);
+        const command = { submissionId: detail.submissionId, serviceId, chargeId, reason: trimmed };
+        await keys.current.run('add', { ...command, version }, key =>
+          addOccReviewCharge(detail.operationId, command, version, { idempotencyKey: key }));
         reset();
         onChanged(t('close.added'));
       }
     } catch (failure) {
-      setError(failure.message);
+      // A stale version or a state that moved: the screen re-reads before OCC forms a new intent.
+      if (failure?.status === 409 || failure?.status === 412) {
+        reset();
+        onChanged(failure.message, 'error');
+      } else {
+        setError(failure.message);
+      }
     } finally {
       setBusy(false);
     }
   }
+
+  const confirmLabel = removing ? t('close.confirmRemove')
+    : exclusion ? (exclusion.excluded ? t('close.confirmExclude') : t('close.confirmInclude'))
+      : t('close.confirmAdd');
 
   return (
     <section aria-label={t('close.title')} className="space-y-3 rounded-xl border border-black/10 p-4 dark:border-white/10">
@@ -103,7 +141,7 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
           <ul className="mt-1 flex flex-wrap gap-2 text-xs">
             {close.milestones.map(item => (
               <li key={`${item.code}:${item.actualAt}`} className="rounded-full border border-black/10 px-2.5 py-1 dark:border-white/10">
-                {item.code} · <span className="tabular-nums">{time(item.actualAt, detail.ianaTimeZone, locale)}</span>
+                {milestoneLabel(item.code, language)} · <span className="tabular-nums">{time(item.actualAt, detail.ianaTimeZone, locale)}</span>
               </li>
             ))}
           </ul>
@@ -120,7 +158,7 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
                 <span>
                   <strong>{charge.name}</strong> <span className="text-text-secondary-light">({charge.code})</span> · {serviceName(charge.serviceId) || charge.serviceCode}
                   <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${SOURCE_TONE[charge.source] ?? ''}`}>
-                    {t(`close.source.${charge.source}`)}
+                    {chargeSourceLabel(charge.source, language)}
                   </span>
                   {charge.reason && <span className="block text-xs text-text-secondary-light">{charge.reason}</span>}
                 </span>
@@ -135,14 +173,44 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
           </ul>
         )}
       </div>
-      {close.canAdjustCharges && !removing && !adding && close.chargeOptions.length > 0 && (
+      {billable.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold">{t('close.billing')}</h4>
+          <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('close.billingIntro')}</p>
+          <ul className="mt-1 divide-y divide-black/10 text-sm dark:divide-white/10">
+            {billable.map(service => {
+              const excluded = exclusionOf(service.id);
+              return (
+                <li key={service.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                  <span>
+                    <strong>{service.name}</strong> <span className="text-text-secondary-light">({service.code})</span>
+                    <span className={`ml-2 rounded-full px-2 py-0.5 text-xs font-semibold ${excluded ? 'bg-status-warning/15' : 'bg-black/5 dark:bg-white/10'}`}>
+                      {excluded ? t('close.excluded', { reason: excluded.reason }) : t('close.billed')}
+                    </span>
+                  </span>
+                  {close.canAdjustCharges && (
+                    <button type="button" disabled={disabled || busy}
+                      onClick={() => { reset(); setExclusion({ serviceId: service.id, excluded: !excluded }); }}
+                      className="min-h-10 rounded-lg border border-status-warning px-3 py-1.5 text-xs font-semibold disabled:opacity-50">
+                      {excluded ? t('close.include') : t('close.exclude')}
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+      {close.canAdjustCharges && !removing && !adding && !exclusion && close.chargeOptions.length > 0 && (
         <button type="button" disabled={disabled || busy} onClick={() => { reset(); setAdding(true); }}
           className="min-h-10 rounded-lg border border-accent-600 px-3 py-1.5 text-sm font-semibold text-accent-600 disabled:opacity-50">
           {t('close.add')}
         </button>
       )}
-      {(removing || adding) && (
+      {(removing || adding || exclusion) && (
         <form onSubmit={event => void submit(event)} className="space-y-2 rounded-lg border border-status-warning/40 p-3 text-sm">
+          {exclusion && <p className="font-semibold">{exclusion.excluded ? t('close.exclude') : t('close.include')} · {serviceName(exclusion.serviceId)}</p>}
+          {signed && <p role="note" className="text-xs font-semibold text-status-warning">{t('close.correction')}</p>}
           {adding && (
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="block">{t('close.service')}
@@ -169,7 +237,7 @@ export default function OperationCloseSection({ detail, disabled, onChanged }) {
           <div className="flex flex-wrap gap-2">
             <button type="submit" disabled={busy || !validReason || (adding && (!serviceId || !chargeId))}
               className="min-h-10 rounded-lg bg-accent-600 px-3 py-1.5 font-semibold text-white disabled:opacity-50">
-              {busy ? t('close.saving') : removing ? t('close.confirmRemove') : t('close.confirmAdd')}
+              {busy ? t('close.saving') : confirmLabel}
             </button>
             <button type="button" disabled={busy} onClick={reset} className="min-h-10 rounded-lg border px-3 py-1.5">{t('close.cancel')}</button>
           </div>

@@ -44,8 +44,12 @@ function Reasons({ error }) {
   );
 }
 
-/** Form to hand an agent their stands for the shift; the server applies Pillier's rules. */
-function CoverageForm({ board, terminal, date, onDone }) {
+/**
+ * Form to hand an agent their stands for the shift; the server applies Pillier's rules. One intent keeps its
+ * Idempotency-Key while OCC retries the same coverage after an uncertain answer (3-J), so a lost answer never turns
+ * into «El agente ya cubre posiciones en ese horario».
+ */
+function CoverageForm({ board, terminal, date, onDone, onStale }) {
   const agents = board.agents.filter(agent => agent.terminalId === terminal.terminalId || terminal.code === 'B');
   const stands = board.stands.filter(stand => stand.terminalId === terminal.terminalId && stand.isActive);
   const [agentId, setAgentId] = useState('');
@@ -55,6 +59,7 @@ function CoverageForm({ board, terminal, date, onDone }) {
   const [reinforcement, setReinforcement] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const creation = useRef(createCommandKeyHolder());
   const agent = board.agents.find(item => item.agentId === agentId);
   const mentors = board.agents.filter(item => !item.isJunior && item.agentId !== agentId);
   const toggle = id => setSelected(value => value.includes(id) ? value.filter(item => item !== id) : [...value, id]);
@@ -63,12 +68,18 @@ function CoverageForm({ board, terminal, date, onDone }) {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    const command = { stationId: board.stationId, date, agentId, terminalId: terminal.terminalId, standIds: selected,
+      mentorAgentId: mentorId || null, vehicleCode: vehicle.trim() || null, isReinforcement: reinforcement };
     try {
-      const result = await createOccCoverage({ stationId: board.stationId, date, agentId, terminalId: terminal.terminalId,
-        standIds: selected, mentorAgentId: mentorId || null, vehicleCode: vehicle.trim() || null, isReinforcement: reinforcement });
+      const result = await creation.current.run('create', command,
+        key => createOccCoverage(command, { idempotencyKey: key }));
       setSelected([]); setMentorId(''); setVehicle(''); setReinforcement(false); setAgentId('');
       onDone(result);
-    } catch (failure) { setError(failure); } finally { setBusy(false); }
+    } catch (failure) {
+      setError(failure);
+      // The board changed meanwhile: it is read again before a new intent.
+      if (failure?.status === 409) onStale?.();
+    } finally { setBusy(false); }
   };
 
   return (
@@ -127,13 +138,21 @@ function CoverageForm({ board, terminal, date, onDone }) {
   );
 }
 
-function CoverageBoard({ board, terminal, date, onChange }) {
+function CoverageBoard({ board, terminal, date, onChange, onStale }) {
   const [error, setError] = useState(null);
+  const releases = useRef(createCommandKeyHolder());
   const coverages = board.coverages.filter(item => item.terminalId === terminal.terminalId);
   const stands = board.stands.filter(stand => stand.terminalId === terminal.terminalId);
+  // A release retried after an uncertain answer keeps its key and answers the board again (3-J).
   const release = async coverage => {
     setError(null);
-    try { onChange(await releaseOccCoverage(coverage.id, date)); } catch (failure) { setError(failure); }
+    try {
+      onChange(await releases.current.run('release', [coverage.id, date],
+        key => releaseOccCoverage(coverage.id, date, { idempotencyKey: key })));
+    } catch (failure) {
+      setError(failure);
+      if (failure?.status === 409) onStale?.();
+    }
   };
   return (
     <div className="space-y-4">
@@ -288,7 +307,12 @@ export default function CoverageRoute() {
     const controller = new AbortController();
     const read = () => loadOccCoverage(station.stationId, date, { signal: controller.signal })
       .then(board => setState({ status: 'success', board }))
-      .catch(error => { if (error?.name !== 'AbortError') setState(value => value.board ? value : { status: 'error', error }); });
+      .catch(error => {
+        if (error?.name === 'AbortError') return;
+        // Without access the view says so and offers no retry; another failure keeps the board on screen.
+        setState(value => error?.status === 403 ? { status: 'forbidden' }
+          : value.board ? value : { status: 'error', error });
+      });
     live.current = read;
     void read();
     return () => controller.abort();
@@ -313,14 +337,16 @@ export default function CoverageRoute() {
   let body;
   if (!station.stationId) body = <p role="alert" className={card}>Tu cuenta no tiene una estación OCC autorizada.</p>;
   else if (state.status === 'loading') body = <p role="status" className={card}>Cargando la cobertura de posiciones…</p>;
+  else if (state.status === 'forbidden') body = <p role="alert" className={card}>Tu acceso no permite ver la cobertura de posiciones de esta estación.</p>;
   else if (state.status === 'error') body = <div role="alert" className={`${card} flex flex-wrap items-center gap-3`}>
     <p>{state.error?.message}</p><button type="button" className={secondary} onClick={() => setAttempt(value => value + 1)}>Reintentar</button></div>;
   else if (!terminal) body = <p role="status" className={card}>La estación no tiene terminales activas. OCC las crea en «Datos maestros».</p>;
   else if (tab === 'configuration') body = <Configuration key={`${terminal.terminalId}-${terminal.maxStandsPerAgent}-${terminal.requiresBridgeQualification}`}
     board={board} terminal={terminal} date={date} onChange={onChange} onStale={onStale} />;
   else body = <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,420px)]">
-    <CoverageBoard board={board} terminal={terminal} date={date} onChange={onChange} />
-    {board.canAssign ? <CoverageForm key={terminal.terminalId} board={board} terminal={terminal} date={date} onDone={onChange} />
+    <CoverageBoard board={board} terminal={terminal} date={date} onChange={onChange} onStale={onStale} />
+    {board.canAssign ? <CoverageForm key={terminal.terminalId} board={board} terminal={terminal} date={date} onDone={onChange}
+      onStale={onStale} />
       : <p className={card}>Tu acceso permite ver la cobertura, no asignarla.</p>}
   </div>;
 

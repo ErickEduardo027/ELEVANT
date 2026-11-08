@@ -1,6 +1,7 @@
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Common;
 using Elevant.Application.Identity;
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Workforce;
@@ -24,6 +25,10 @@ namespace Elevant.Persistence.Operations;
 /// <see cref="ReleasedKind"/> notice per operation; the agent's tablet with <c>assignment_released</c>.
 /// An operation in progress or returned for correction keeps the agent: nothing changes and the command fails
 /// with <see cref="OperationInProgressCode"/>. The caller saves and commits.
+/// Phase 3 (block B) takes the same path for one operation: OCC's release of an agent and the stand reassignment
+/// (<see cref="ReleaseOperationAsync"/>), the handover and the reassignment to the agent who covers the new stand
+/// (<see cref="ReplaceAgentAsync"/>), and the approval, which frees the agent and the stand by status without closing
+/// the assignment of record (<see cref="ReleaseOnApprovalAsync"/>).
 /// </summary>
 internal static class RampAgentRelease
 {
@@ -194,41 +199,9 @@ internal static class RampAgentRelease
 
         var releasedOperations = inScope.GroupBy(row => row.Operation.Id).ToArray();
         foreach (var group in releasedOperations)
-        {
-            var operation = group.First().Operation;
-            var stationId = group.First().StationId;
-            foreach (var row in group)
-            {
-                row.Assignment.ReleasedAt = now < row.Assignment.AssignedAt ? row.Assignment.AssignedAt : now;
-                row.Assignment.UpdatedAt = now;
-            }
-            var othersKeep = await context.OperationAgentAssignments.AnyAsync(item => item.GroundOperationId == operation.Id &&
-                item.ReleasedAt == null && item.RampAgentId != agentId, cancellationToken);
-            var changes = new List<AuditFieldChangeData> { new("assignment.status", "Open", "Released") };
-            if (operation.CurrentStatus == GroundOperationStatus.Assigned && !othersKeep)
-            {
-                operation.CurrentStatus = GroundOperationStatus.Planned;
-                operation.UpdatedAt = now;
-                context.Set<GroundOperationStatusEvent>().Add(new GroundOperationStatusEvent
-                {
-                    GroundOperationId = operation.Id, FromStatus = GroundOperationStatus.Assigned,
-                    ToStatus = GroundOperationStatus.Planned, OccurredAt = now, ActorAccountId = actorAccountId,
-                    Reason = $"Agente liberado: {reason}.",
-                });
-                changes.Add(new("operation.status", nameof(GroundOperationStatus.Assigned), nameof(GroundOperationStatus.Planned)));
-            }
-            Audit(context, actorAccountId, "hr.agent_release.operation_released", nameof(GroundOperation), operation.PublicId,
-                stationId, reason, correlation, now, [.. changes]);
-            var assignment = group.First().Assignment;
-            await OperationalNotificationWriter.NotifyOccAsync(context, stationId, operation.Id, assignment.PublicId,
-                ReleasedKind, now, actorAccountId, cancellationToken);
-            await OperationalNotificationWriter.NotifyAgentAsync(context, agentId, stationId, operation.Id,
-                assignment.PublicId, "assignment_released", now, cancellationToken);
-            var organizationId = await context.Airlines.Where(airline => airline.Id == group.First().AirlineId)
-                .Select(airline => airline.OrganizationId).SingleAsync(cancellationToken);
-            await AirlineOperationChangeWriter.AddAsync(context, organizationId, operation.PublicId, now, cancellationToken);
-            await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, false, cancellationToken, agentId);
-        }
+            await ReleaseOperationAsync(context, group.First().Operation, group.Select(row => row.Assignment).ToArray(),
+                group.First().StationId, group.First().AirlineId, actorAccountId, reason,
+                "hr.agent_release.operation_released", ReleasedKind, correlation, now, cancellationToken);
 
         if (removedShifts.Length > 0)
         {
@@ -251,6 +224,118 @@ internal static class RampAgentRelease
                      .Select(item => new { item.Id, item.PublicId }).ToArrayAsync(cancellationToken))
             await OccPlanningChangeWriter.AddForStationAsync(context, station.Id, station.PublicId, now, cancellationToken);
         return new Outcome(false, releasedCoverages.Length, releasedOperations.Length, removedShifts.Length);
+    }
+
+    /// <summary>
+    /// Takes the given open assignments off one operation, inside the caller's transaction: each one is released,
+    /// audited (<paramref name="auditAction"/>, with the reason) and its agent told with <c>assignment_released</c>,
+    /// a type the deployed tablet knows. OCC is told with <paramref name="occNoticeKind"/> unless it is null (OCC made
+    /// the change). An assigned operation left without agents goes back to Planned unless <paramref name="keepStatus"/>
+    /// (a cancellation sets its own status, a handover keeps it). <paramref name="extraChanges"/> join the audit (the
+    /// agent a handover names). The airline's portal and the tablets hear the change. The caller saves.
+    /// </summary>
+    public static async Task ReleaseOperationAsync(ElevantDbContext context, GroundOperation operation,
+        IReadOnlyCollection<OperationAgentAssignment> assignments, long stationId, long airlineId, long actorAccountId,
+        string reason, string auditAction, string? occNoticeKind, Guid correlation, DateTimeOffset now,
+        CancellationToken cancellationToken, bool keepStatus = false,
+        IReadOnlyCollection<AuditFieldChangeData>? extraChanges = null)
+    {
+        if (assignments.Count == 0) return;
+        foreach (var assignment in assignments)
+        {
+            assignment.ReleasedAt = now < assignment.AssignedAt ? assignment.AssignedAt : now;
+            assignment.UpdatedAt = now;
+        }
+        var released = assignments.Select(assignment => assignment.Id).ToArray();
+        var othersKeep = await context.OperationAgentAssignments.AnyAsync(item => item.GroundOperationId == operation.Id &&
+            item.ReleasedAt == null && !released.Contains(item.Id), cancellationToken);
+        var changes = new List<AuditFieldChangeData> { new("assignment.status", "Open", "Released") };
+        if (!keepStatus && operation.CurrentStatus == GroundOperationStatus.Assigned && !othersKeep)
+        {
+            operation.CurrentStatus = GroundOperationStatus.Planned;
+            operation.UpdatedAt = now;
+            context.Set<GroundOperationStatusEvent>().Add(new GroundOperationStatusEvent
+            {
+                GroundOperationId = operation.Id, FromStatus = GroundOperationStatus.Assigned,
+                ToStatus = GroundOperationStatus.Planned, OccurredAt = now, ActorAccountId = actorAccountId,
+                Reason = $"Agente liberado: {reason}.",
+            });
+            changes.Add(new("operation.status", nameof(GroundOperationStatus.Assigned), nameof(GroundOperationStatus.Planned)));
+        }
+        if (extraChanges is not null) changes.AddRange(extraChanges);
+        Audit(context, actorAccountId, auditAction, nameof(GroundOperation), operation.PublicId, stationId, reason,
+            correlation, now, [.. changes]);
+        var first = assignments.First();
+        if (occNoticeKind is not null)
+            await OperationalNotificationWriter.NotifyOccAsync(context, stationId, operation.Id, first.PublicId,
+                occNoticeKind, now, actorAccountId, cancellationToken);
+        var agents = assignments.GroupBy(assignment => assignment.RampAgentId).ToArray();
+        foreach (var agent in agents)
+            await OperationalNotificationWriter.NotifyAgentAsync(context, agent.Key, stationId, operation.Id,
+                agent.First().PublicId, "assignment_released", now, cancellationToken);
+        var organizationId = await context.Airlines.Where(airline => airline.Id == airlineId)
+            .Select(airline => airline.OrganizationId).SingleAsync(cancellationToken);
+        await AirlineOperationChangeWriter.AddAsync(context, organizationId, operation.PublicId, now, cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, false, cancellationToken,
+            [.. agents.Select(agent => agent.Key)]);
+    }
+
+    /// <summary>
+    /// Hands an operation from its agent to another one, inside the caller's transaction (3-F, 3-N05): the previous
+    /// assignment is released with <see cref="ReleaseOperationAsync"/> keeping the operation's status (nothing is
+    /// re-materialized, the evidence keeps its author per row), the new agent gets an assignment with the same role and
+    /// <paramref name="operationalPositionId"/> (the previous one's when null), is told with <c>operation_assigned</c>
+    /// and both agents' tablets and schedules hear it. One audit (<paramref name="auditAction"/>) names both agents. The
+    /// caller checks the new agent's eligibility and saves. Returns the new assignment.
+    /// </summary>
+    public static async Task<OperationAgentAssignment> ReplaceAgentAsync(ElevantDbContext context, GroundOperation operation,
+        OperationAgentAssignment previous, long newAgentId, long? operationalPositionId, long stationId, long airlineId,
+        long actorAccountId, string reason, string auditAction, Guid correlation, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var numbers = await context.RampAgents.AsNoTracking()
+            .Where(agent => agent.Id == previous.RampAgentId || agent.Id == newAgentId)
+            .ToDictionaryAsync(agent => agent.Id, agent => new { agent.EmployeeNumber, agent.PublicId }, cancellationToken);
+        await ReleaseOperationAsync(context, operation, [previous], stationId, airlineId, actorAccountId, reason,
+            auditAction, null, correlation, now, cancellationToken, keepStatus: true,
+            [new AuditFieldChangeData("assignment.agent", numbers.GetValueOrDefault(previous.RampAgentId)?.EmployeeNumber,
+                numbers.GetValueOrDefault(newAgentId)?.EmployeeNumber)]);
+        var assignment = new OperationAgentAssignment
+        {
+            PublicId = Guid.CreateVersion7(), GroundOperationId = operation.Id, RampAgentId = newAgentId,
+            OperationalPositionId = operationalPositionId ?? previous.OperationalPositionId,
+            AssignmentRole = previous.AssignmentRole, AssignedAt = now, AssignedByAccountId = actorAccountId,
+            CreatedAt = now, UpdatedAt = now,
+        };
+        context.OperationAgentAssignments.Add(assignment);
+        await OperationalNotificationWriter.NotifyAgentAsync(context, newAgentId, stationId, operation.Id,
+            assignment.PublicId, "operation_assigned", now, cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, false, cancellationToken,
+            previous.RampAgentId, newAgentId);
+        foreach (var agent in new[] { previous.RampAgentId, newAgentId })
+            await RampOperationChangeWriter.AnnounceScheduleAsync(context, agent,
+                numbers.GetValueOrDefault(agent)?.PublicId ?? operation.PublicId, now, cancellationToken);
+        return assignment;
+    }
+
+    /// <summary>
+    /// OCC approved the operation (3-D): from now on it no longer holds its agent nor its stand
+    /// (<see cref="OperationOccupancyRules"/>), so the planning board and the agent's schedule hear that both are free.
+    /// Nothing is closed: the assignment and the stand assignment stay as the record of who worked the flight and where
+    /// (documents, attendance, reports and the reopening read them). Announcing twice is harmless, so a second approval
+    /// of a reopened review calls it again. The caller saves.
+    /// </summary>
+    public static async Task ReleaseOnApprovalAsync(ElevantDbContext context, GroundOperation operation, long stationId,
+        DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var station = await context.Stations.AsNoTracking().Where(item => item.Id == stationId)
+            .Select(item => item.PublicId).SingleAsync(cancellationToken);
+        await OccPlanningChangeWriter.AddForStationAsync(context, stationId, station, now, cancellationToken);
+        var agents = await context.OperationAgentAssignments.AsNoTracking()
+            .Where(item => item.GroundOperationId == operation.Id && item.ReleasedAt == null)
+            .Select(item => item.RampAgentId).Distinct().ToArrayAsync(cancellationToken);
+        foreach (var agent in agents)
+            await RampOperationChangeWriter.AnnounceScheduleAsync(context, agent, operation.PublicId, now, cancellationToken);
     }
 
     /// <summary>A scope that began after today ends the day it began; the check constraint keeps ValidTo ≥ ValidFrom.</summary>

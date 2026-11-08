@@ -2544,6 +2544,73 @@
         ]
       }
     },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/attendance-assignments": {
+      "get": {
+        "tags": [
+          "AttendanceDraft"
+        ],
+        "summary": "3-F: the assignments of the turnaround's operation whose attendance OCC records, oldest first: the open ones and\nthe ones a handover released after the start (`releasedAt`), whose agent worked until then and which the\nplanning board no longer lists. AVIAM staff of the station with `operations.attendance.read`; a turnaround\nwithout operation or out of scope is 404 `not_found`. Web only: the tablet never reads it.",
+        "operationId": "GetOccAttendanceAssignments",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAttendanceAssignmentsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/operations/{operationId}/assignments/{assignmentId}/attendance-draft/occ": {
       "put": {
         "tags": [
@@ -11178,6 +11245,115 @@
               }
             }
           }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinanceCharterResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/charters/{charterId}/prepayment/reopening": {
+      "post": {
+        "tags": [
+          "FinanceCharters"
+        ],
+        "summary": "3-N24: reopens a confirmed prepayment as a new quotation, so the agent can add services again; the amount and the\nreference stay until Finance confirms it again. Takes an Idempotency-Key and the version Finance saw (a stale one\nis 409 `version_conflict`); a prepayment not confirmed is 409 `charter_prepayment_not_confirmed`.",
+        "operationId": "ReopenFinanceCharterPrepayment",
+        "parameters": [
+          {
+            "name": "charterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReopenCharterPrepaymentRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
         },
         "responses": {
           "200": {
@@ -22560,6 +22736,81 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -22991,6 +23242,112 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "HumanResourcesShifts"
+        ],
+        "summary": "«Ajustar horario» (3-E): Gestión Humana and OCC change the hours of a shift of today or later in its station's\ncalendar, with a reason, the shift's `version` and an Idempotency-Key (required). The adjusted shift keeps\ncovering the agent's coverages and operations in it (`shift_uncovers_work`); a past shift\n(`shift_in_past`) or one whose attendance was validated (`attendance_validated`) stays as it is.",
+        "operationId": "AdjustHumanResourcesShift",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/AdjustHumanResourcesShiftRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HumanResourcesShiftAdjusted"
+                }
+              }
+            }
           },
           "400": {
             "description": "Bad Request",
@@ -23482,7 +23839,18 @@
         "tags": [
           "OccCoverage"
         ],
+        "summary": "Hands an agent their stands for a window of the shift (ADR-0030). 3-J: with an Idempotency-Key (optional while\nolder clients exist) a repeated attempt answers the board instead of a second coverage; the key with another body\nis `idempotency_conflict`.",
         "operationId": "CreateOccCoverage",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -23581,6 +23949,7 @@
         "tags": [
           "OccCoverage"
         ],
+        "summary": "Releases a coverage; releasing twice answers the board. The Idempotency-Key works as in the creation.",
         "operationId": "ReleaseOccCoverage",
         "parameters": [
           {
@@ -23600,6 +23969,14 @@
               "type": "string",
               "format": "date"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "responses": {
@@ -23609,6 +23986,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OccCoverageBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -24059,8 +24446,104 @@
         "tags": [
           "OccCoverage"
         ],
-        "summary": "Releases the agent of an operation not yet started so OCC can assign another (ADR-0030).",
+        "summary": "Releases the agent of an operation not yet started so OCC can assign another (ADR-0030). 3-J:\n`expectedAssignmentId` is the assignment OCC saw (another one is `assignment_changed`) and the\nIdempotency-Key replays the release; both are optional while older clients exist, and a key needs the assignment\n(`expected_version_required`). A started operation is `operation_started`: OCC hands it over instead.",
         "operationId": "ReleaseOccOperationAgent",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "expectedAssignmentId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/assignment/handover-options": {
+      "get": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "summary": "«Relevar agente» (3-F): the agents who may take an operation in progress or returned for correction from its agent,\nwith OCC's assignment rules over what is left of it. Another status is `handover_not_allowed`.",
+        "operationId": "GetOccHandoverOptions",
         "parameters": [
           {
             "name": "turnaroundId",
@@ -24073,8 +24556,124 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "No Content"
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccHandoverOptionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/assignment/handover": {
+      "post": {
+        "tags": [
+          "OccCoverage"
+        ],
+        "summary": "«Relevar agente» (3-F): OCC hands an operation in progress or returned to another eligible agent, with the\nassignment it saw (`assignment_changed` otherwise), a reason of 5 to 500 characters and an Idempotency-Key\n(required). The operation keeps its status and evidence; both agents are told.",
+        "operationId": "HandOverOccOperation",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/HandOverOccOperationRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccOperationHandoverResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized",
@@ -24636,6 +25235,326 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/operations/{operationId}/incidents": {
+      "get": {
+        "tags": [
+          "OccIncidents"
+        ],
+        "summary": "The live incidents of the operation, oldest first, with their history.",
+        "operationId": "GetOccOperationIncidents",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccIncidentListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "OccIncidents"
+        ],
+        "summary": "OCC reports an incident of an operation still open: 201 the first time, 200 when the key replays it.",
+        "operationId": "ReportOccIncident",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReportOccIncidentRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccIncidentResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccIncidentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/incidents/{incidentId}/status": {
+      "post": {
+        "tags": [
+          "OccIncidents"
+        ],
+        "summary": "Takes an incident into review, resolves it, closes it or takes a resolved one back, with a note.",
+        "operationId": "ChangeOccIncidentStatus",
+        "parameters": [
+          {
+            "name": "incidentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ChangeOccIncidentStatusRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccIncidentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26451,6 +27370,92 @@
         ]
       }
     },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/agents/{agentId}/shift": {
+      "get": {
+        "tags": [
+          "OccPlanning"
+        ],
+        "summary": "The shift an agent already has on the flight's day (3-E), with its version, so OCC adjusts it with\n`AdjustHumanResourcesShift` instead of programming a second one; 404 `shift_not_found` when there is none.",
+        "operationId": "GetOccAgentShift",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "agentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccAgentShiftResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/planning/turnarounds/{turnaroundId}/assignment": {
       "post": {
         "tags": [
@@ -26719,6 +27724,7 @@
         "tags": [
           "OccPositions"
         ],
+        "summary": "Records the arrival (registration, actual on-block time and optionally the aircraft type) or corrects a recorded\none with its reason before the first submission (3-N08).",
         "operationId": "RecordOccArrival",
         "parameters": [
           {
@@ -26728,6 +27734,21 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -26805,6 +27826,26 @@
                 }
               }
             }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -26828,6 +27869,21 @@
             "schema": {
               "type": "string",
               "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -26898,6 +27954,26 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27048,6 +28124,21 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -27057,6 +28148,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/OccPositionBoardResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -27093,6 +28194,26 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27491,6 +28612,26 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Unprocessable Content",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -27840,6 +28981,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
@@ -27977,6 +29126,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
@@ -28082,6 +29239,287 @@
         ]
       }
     },
+    "/api/v1/occ/review/operations/{operationId}/services/{serviceId}/billing-exclusion": {
+      "post": {
+        "tags": [
+          "OccReview"
+        ],
+        "summary": "3-N11: OCC excludes a service in exception with an executed quantity from billing, or includes it again, with\na reason. Only while the hand-off is pending; a signed Service Order records it as OCC's correction (3-N02).",
+        "operationId": "SetOccReviewServiceBillingExclusion",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "serviceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/SetOccReviewServiceBillingExclusionRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccReviewChargeAdjustResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/review/operations/{operationId}/reopening": {
+      "post": {
+        "tags": [
+          "OccReview"
+        ],
+        "summary": "3-H: OCC reopens an approval nothing was invoiced from yet as a new pending revision, with its reason; once\nanything is invoiced the correction is a credit note (409 `already_invoiced`). The agent and the stand the\napproval freed stay free, and the reopened revision is approved again in OCC, never returned to the ramp, so an\napproval whose Service Order is not signed as it stands is not reopened (409 `service_order_unsigned` or\n`service_order_stale`, 3-N02).",
+        "operationId": "ReopenOccReview",
+        "parameters": [
+          {
+            "name": "operationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ReopenOccReviewRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccReviewReopenResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/occ/review/operations/{operationId}/decision": {
       "post": {
         "tags": [
@@ -28104,6 +29542,14 @@
             "in": "header",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -28320,6 +29766,445 @@
           },
           "503": {
             "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}": {
+      "get": {
+        "tags": [
+          "OccTurnarounds"
+        ],
+        "summary": "The turnaround, its version (also the ETag) and the changes its state allows.",
+        "operationId": "GetOccTurnaround",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccTurnaroundDetailResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/schedule": {
+      "put": {
+        "tags": [
+          "OccTurnarounds"
+        ],
+        "summary": "«Editar vuelo»: corrects numbers, airports, times, stand and aircraft type before the operation starts. The stand\nis checked again for the new window, and an assigned agent must still be on shift and within three simultaneous\noperations (`assigned_agent_unavailable` with its reasons).",
+        "operationId": "RescheduleOccTurnaround",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RescheduleOccTurnaroundRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccTurnaroundDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/turnarounds/{turnaroundId}/status-changes": {
+      "post": {
+        "tags": [
+          "OccTurnarounds"
+        ],
+        "summary": "«Cancelar vuelo» or «Marcar desviado» before the start: the stand and the agents are released.",
+        "operationId": "ChangeOccTurnaroundStatus",
+        "parameters": [
+          {
+            "name": "turnaroundId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ChangeOccTurnaroundStatusRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccTurnaroundDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/occ/planning/charter-airlines": {
+      "post": {
+        "tags": [
+          "OccTurnarounds"
+        ],
+        "summary": "Registers a carrier without contract for a charter (3-N21): 201 the first time, 200 when the key replays it. A\ndesignator already in use answers `airline_code_in_use` with the `airlineId` that holds it.",
+        "operationId": "CreateOccCharterAirline",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateOccCharterAirlineRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCharterAirlineResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OccCharterAirlineResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -30648,7 +32533,7 @@
         "tags": [
           "RampDocuments"
         ],
-        "summary": "Marks a damage found in the 360° walk-around; the id comes from the tablet.",
+        "summary": "Marks a damage found in the 360° walk-around; the id comes from the tablet. Its time must fit the operation's\nwindow (409 `time_outside_operation_window`, 3-N25).",
         "operationId": "RecordRampDamageMark",
         "parameters": [
           {
@@ -30891,7 +32776,7 @@
         "tags": [
           "RampExecution"
         ],
-        "summary": "Records (or corrects) the time of one Flight Report milestone.",
+        "summary": "Records (or corrects) the time of one Flight Report milestone. The time must fit the operation's window (from\nits start or recorded arrival to its close, 409 `time_outside_operation_window`) and block-on never comes\nafter push-back (409 `milestone_out_of_order`, 3-N25).",
         "operationId": "RecordRampMilestone",
         "parameters": [
           {
@@ -31018,7 +32903,7 @@
         "tags": [
           "RampExecution"
         ],
-        "summary": "Saves passengers, MTOW and the registration correction typed once on the ramp.",
+        "summary": "Saves passengers, MTOW, the registration correction and the aircraft type typed once on the ramp (3-B). A null\naircraft type keeps the current one; an unknown or inactive type answers `aircraft_type_unavailable` and a\nchange after the first submission `aircraft_type_locked`, both 409 as before.",
         "operationId": "UpdateRampFlightData",
         "parameters": [
           {
@@ -31202,7 +33087,7 @@
         "tags": [
           "RampIncidents"
         ],
-        "summary": "Atomically reports one incident without duplicating offline retries.",
+        "summary": "Atomically reports one incident without duplicating offline retries. Its time must fit the operation's window\n(409 `time_outside_operation_window`, 3-N25).",
         "operationId": "ReportRampIncident",
         "parameters": [
           {
@@ -31731,7 +33616,7 @@
         "tags": [
           "RampOperations"
         ],
-        "summary": "Returns only active operations assigned to the current ramp agent.",
+        "summary": "The operations of the current ramp agent's queue (3-N01): assigned, in progress, handed over (pending or in review)\nand returned, then the ones OCC approved in the last 48 hours; the active ones first, at most 100.",
         "operationId": "GetRampAssignedOperations",
         "responses": {
           "200": {
@@ -31797,7 +33682,7 @@
         "tags": [
           "RampOperations"
         ],
-        "summary": "Starts one operation assigned to the authenticated ramp agent.",
+        "summary": "Starts one operation assigned to the authenticated ramp agent. The body is optional (3-I): the first version\nof the app posts no body and the server's time applies; a newer one sends the moment the agent tapped\n«Iniciar», which must not precede the assignment nor be more than a day old (409\n`time_outside_operation_window`).",
         "operationId": "StartRampOperation",
         "parameters": [
           {
@@ -31828,6 +33713,37 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StartRampOperationRequest"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StartRampOperationRequest"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StartRampOperationRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -31922,7 +33838,7 @@
         "tags": [
           "RampOperationServices"
         ],
-        "summary": "Applies one audited, idempotent service status transition.",
+        "summary": "Applies one audited, idempotent service status transition. The optional `occurredAt` is the moment the\nagent tapped it (3-I): it must fit the operation's window and not precede the service's last transition (409\n`time_outside_operation_window`, `service_time_out_of_order`).",
         "operationId": "TransitionRampOperationService",
         "parameters": [
           {
@@ -32608,6 +34524,51 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ramp/aircraft-types": {
+      "get": {
+        "tags": [
+          "RampReference"
+        ],
+        "operationId": "GetRampAircraftTypes",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RampAircraftTypesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -34565,6 +36526,32 @@
           "parentLineId": {
             "type": "string",
             "format": "uuid",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "AdjustHumanResourcesShiftRequest": {
+        "required": [
+          "endsAtLocal",
+          "startsAtLocal"
+        ],
+        "type": "object",
+        "properties": {
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "expectedVersion": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -37108,6 +39095,34 @@
         "type": "integer",
         "format": "int32"
       },
+      "ChangeOccIncidentStatusRequest": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "nullable": true
+          },
+          "note": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ChangeOccTurnaroundStatusRequest": {
+        "type": "object",
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ChangePasswordRequest": {
         "required": [
           "currentPassword",
@@ -39472,6 +41487,24 @@
         },
         "additionalProperties": false
       },
+      "CreateOccCharterAirlineRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateOccCoverageRequest": {
         "required": [
           "agentId",
@@ -41404,6 +43437,10 @@
           "prepaymentConfirmedAt": {
             "type": "string",
             "format": "date-time",
+            "nullable": true
+          },
+          "version": {
+            "type": "string",
             "nullable": true
           }
         },
@@ -45212,6 +47249,28 @@
         },
         "additionalProperties": false
       },
+      "HandOverOccOperationRequest": {
+        "required": [
+          "agentId",
+          "expectedAssignmentId"
+        ],
+        "type": "object",
+        "properties": {
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedAssignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesAccountMovementResponse": {
         "required": [
           "accountId",
@@ -46380,6 +48439,33 @@
         },
         "additionalProperties": false
       },
+      "HumanResourcesShiftAdjusted": {
+        "required": [
+          "endsAtLocal",
+          "id",
+          "startsAtLocal",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "HumanResourcesShiftAssignmentOptions": {
         "required": [
           "hasShift",
@@ -46731,6 +48817,7 @@
       },
       "ImportOccFlightResponse": {
         "required": [
+          "linked",
           "operationCode",
           "replayed",
           "turnaroundId"
@@ -46745,6 +48832,9 @@
             "type": "string"
           },
           "replayed": {
+            "type": "boolean"
+          },
+          "linked": {
             "type": "boolean"
           }
         },
@@ -48109,6 +50199,47 @@
         },
         "additionalProperties": false
       },
+      "OccAgentShiftResponse": {
+        "required": [
+          "agentId",
+          "endsAtLocal",
+          "shiftId",
+          "startsAtLocal",
+          "terminalCode",
+          "version",
+          "workDate"
+        ],
+        "type": "object",
+        "properties": {
+          "shiftId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "startsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "endsAtLocal": {
+            "type": "string",
+            "format": "time"
+          },
+          "terminalCode": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "OccAircraftResponse": {
         "required": [
           "icaoCode",
@@ -48457,6 +50588,93 @@
             "items": {
               "$ref": "#/components/schemas/OccOperationServiceResponse"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAttendanceAssignmentResponse": {
+        "required": [
+          "agentId",
+          "assignedAt",
+          "assignmentId",
+          "displayName",
+          "employeeNumber",
+          "releasedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "employeeNumber": {
+            "type": "string"
+          },
+          "assignedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "releasedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccAttendanceAssignmentsResponse": {
+        "required": [
+          "assignments",
+          "operationId",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAttendanceAssignmentResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccCharterAirlineResponse": {
+        "required": [
+          "icaoCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -49073,6 +51291,206 @@
         },
         "additionalProperties": false
       },
+      "OccHandoverOptionsResponse": {
+        "required": [
+          "agents",
+          "currentAgentId",
+          "currentAgentName",
+          "currentAssignmentId",
+          "operationId",
+          "operationStatus",
+          "remainingFrom",
+          "remainingUntil",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationStatus": {
+            "type": "string"
+          },
+          "currentAssignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currentAgentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currentAgentName": {
+            "type": "string"
+          },
+          "remainingFrom": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "remainingUntil": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccAgentOptionResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccIncidentEventResponse": {
+        "required": [
+          "actor",
+          "note",
+          "occurredAt",
+          "toStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "fromStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "toStatus": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actor": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccIncidentListResponse": {
+        "required": [
+          "canReport",
+          "ianaTimeZone",
+          "incidents",
+          "operationCode",
+          "operationId",
+          "operationStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "operationCode": {
+            "type": "string"
+          },
+          "operationStatus": {
+            "type": "string"
+          },
+          "ianaTimeZone": {
+            "type": "string"
+          },
+          "canReport": {
+            "type": "boolean"
+          },
+          "incidents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccIncidentResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccIncidentResponse": {
+        "required": [
+          "allowedStatuses",
+          "description",
+          "history",
+          "id",
+          "occurredAt",
+          "reportedAt",
+          "reportedBy",
+          "reportedByKind",
+          "severity",
+          "status",
+          "type",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "delayCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "reportedBy": {
+            "type": "string"
+          },
+          "reportedByKind": {
+            "type": "string"
+          },
+          "resolutionNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "resolvedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "resolvedBy": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "string"
+          },
+          "allowedStatuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccIncidentEventResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
       "OccMasterData": {
         "required": [
           "aircraftTypes",
@@ -49242,6 +51660,38 @@
             "items": {
               "$ref": "#/components/schemas/OccMobileDeviceData"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccOperationHandoverResponse": {
+        "required": [
+          "agentId",
+          "assignmentId",
+          "previousAgentId",
+          "replayed",
+          "turnaroundId"
+        ],
+        "type": "object",
+        "properties": {
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assignmentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "agentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "previousAgentId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "replayed": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -49832,6 +52282,28 @@
         },
         "additionalProperties": false
       },
+      "OccReviewBillingExclusionResponse": {
+        "required": [
+          "excludedAt",
+          "reason",
+          "serviceId"
+        ],
+        "type": "object",
+        "properties": {
+          "serviceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "excludedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "additionalProperties": false
+      },
       "OccReviewChargeAdjustResponse": {
         "required": [
           "reviewVersion"
@@ -49995,6 +52467,13 @@
           "damageCount": {
             "type": "integer",
             "format": "int32"
+          },
+          "billingExclusions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OccReviewBillingExclusionResponse"
+            },
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -50144,6 +52623,18 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/OccReviewCloseResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "serviceOrderState": {
+            "type": "string",
+            "nullable": true
+          },
+          "reopening": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccReviewReopeningResponse"
               }
             ],
             "nullable": true
@@ -50297,6 +52788,63 @@
           },
           "hasMore": {
             "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewReopenResponse": {
+        "required": [
+          "operationId",
+          "reviewVersion",
+          "revisionNumber",
+          "status",
+          "submissionId"
+        ],
+        "type": "object",
+        "properties": {
+          "operationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revisionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reviewVersion": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccReviewReopeningResponse": {
+        "required": [
+          "fromRevisionNumber",
+          "reason",
+          "reopenedAt",
+          "reopenedBy"
+        ],
+        "type": "object",
+        "properties": {
+          "fromRevisionNumber": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "reopenedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reopenedBy": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -50571,6 +53119,45 @@
           },
           "name": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "OccTurnaroundDetailResponse": {
+        "required": [
+          "allowedActions",
+          "isCharter",
+          "station",
+          "turnaround",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "station": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccStationResponse"
+              }
+            ]
+          },
+          "turnaround": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/OccTurnaroundResponse"
+              }
+            ]
+          },
+          "version": {
+            "type": "string"
+          },
+          "isCharter": {
+            "type": "boolean"
+          },
+          "allowedActions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": false
@@ -52133,6 +54720,50 @@
           "registration": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAircraftTypeResponse": {
+        "required": [
+          "icaoCode",
+          "id",
+          "manufacturer",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RampAircraftTypesResponse": {
+        "required": [
+          "aircraftTypes"
+        ],
+        "type": "object",
+        "properties": {
+          "aircraftTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RampAircraftTypeResponse"
+            }
           }
         },
         "additionalProperties": false
@@ -53895,6 +56526,15 @@
             "type": "string",
             "format": "date-time",
             "nullable": true
+          },
+          "aircraftTypeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -54140,6 +56780,38 @@
         },
         "additionalProperties": false
       },
+      "ReopenCharterPrepaymentRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "version": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReopenOccReviewRequest": {
+        "required": [
+          "submissionId"
+        ],
+        "type": "object",
+        "properties": {
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "reason": {
+            "maxLength": 2000,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "ReopenServiceRequest": {
         "type": "object",
         "properties": {
@@ -54166,6 +56838,33 @@
           },
           "body": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ReportOccIncidentRequest": {
+        "type": "object",
+        "properties": {
+          "incidentType": {
+            "type": "string",
+            "nullable": true
+          },
+          "severity": {
+            "type": "string",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "delayCode": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -54400,6 +57099,52 @@
           },
           "employeeNumber": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "RescheduleOccTurnaroundRequest": {
+        "type": "object",
+        "properties": {
+          "arrivalFlightNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "arrivalOriginIata": {
+            "type": "string",
+            "nullable": true
+          },
+          "arrivalScheduledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "departureFlightNumber": {
+            "type": "string",
+            "nullable": true
+          },
+          "departureDestinationIata": {
+            "type": "string",
+            "nullable": true
+          },
+          "departureScheduledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "standId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "aircraftTypeId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -55726,6 +58471,28 @@
         },
         "additionalProperties": false
       },
+      "SetOccReviewServiceBillingExclusionRequest": {
+        "required": [
+          "excluded",
+          "submissionId"
+        ],
+        "type": "object",
+        "properties": {
+          "submissionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "excluded": {
+            "type": "boolean"
+          },
+          "reason": {
+            "maxLength": 500,
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
       "SetOperationalNotificationReadRequest": {
         "required": [
           "read"
@@ -55825,6 +58592,17 @@
           },
           "signerIdentification": {
             "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "StartRampOperationRequest": {
+        "type": "object",
+        "properties": {
+          "startedAt": {
+            "type": "string",
+            "format": "date-time",
             "nullable": true
           }
         },
@@ -56380,6 +59158,11 @@
             "minLength": 0,
             "type": "string",
             "nullable": true
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -56709,6 +59492,11 @@
           },
           "aircraftRegistration": {
             "type": "string",
+            "nullable": true
+          },
+          "aircraftTypeId": {
+            "type": "string",
+            "format": "uuid",
             "nullable": true
           }
         },
@@ -57086,6 +59874,9 @@
       "name": "OccFlightFeed"
     },
     {
+      "name": "OccIncidents"
+    },
+    {
       "name": "OccMasterData"
     },
     {
@@ -57111,6 +59902,9 @@
     },
     {
       "name": "OccTraffic"
+    },
+    {
+      "name": "OccTurnarounds"
     },
     {
       "name": "OperationalChat"
@@ -57159,6 +59953,9 @@
     },
     {
       "name": "RampProfiles"
+    },
+    {
+      "name": "RampReference"
     },
     {
       "name": "RampServiceCharges"

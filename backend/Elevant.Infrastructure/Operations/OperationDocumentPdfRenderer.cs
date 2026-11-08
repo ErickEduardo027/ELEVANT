@@ -1,4 +1,5 @@
 using System.Globalization;
+using Elevant.Application.Common;
 using Elevant.Application.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Finance;
@@ -11,7 +12,9 @@ namespace Elevant.Infrastructure.Operations;
 /// AVIAM's paper forms drawn from the operation's single record (ADR-0032): Orden de Servicio en
 /// Rampa, Reporte de Vuelo and Check-List/Reporte Diario del Puente. Same sections, wording, codes
 /// and revisions as the paper; signatures are the strokes drawn on the tablet, and the footer
-/// prints the SHA-256 of the content they signed.
+/// prints the SHA-256 of the content they signed. A Service Order OCC corrected after the signature
+/// (3-N02) prints its corrections and the version its signatures were drawn on. Times are the
+/// station's local time (BusinessCalendar).
 /// </summary>
 public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = null) : IOperationDocumentPdfRenderer
 {
@@ -27,34 +30,27 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
     static OperationDocumentPdfRenderer() => ElevantPdfFontResolver.EnsureRegistered();
 
     public byte[] Render(OperationDocumentContent content, string contentSha256,
-        IReadOnlyList<OperationDocumentSignatureData> signatures, IReadOnlyDictionary<Guid, DamagePhoto> damagePhotos)
+        IReadOnlyList<OperationDocumentSignatureData> signatures, IReadOnlyDictionary<Guid, DamagePhoto> damagePhotos,
+        IReadOnlyList<OperationDocumentCorrectionData>? corrections = null)
     {
         ArgumentNullException.ThrowIfNull(content);
+        var corrected = content.Kind == OperationDocumentKind.ServiceOrder ? corrections ?? [] : [];
         using var pdf = new PdfDocument();
         pdf.Info.Title = $"{content.Title} · {content.Number}";
         pdf.Info.Author = "AVIAM Ltd. · ELEVANT";
         pdf.Info.Subject = content.FormCode;
-        var writer = new Writer(pdf, content, TimeZone(content.Flight.StationTimeZone));
+        var writer = new Writer(pdf, content, BusinessCalendar.Zone(content.Flight.StationTimeZone));
         switch (content.Kind)
         {
-            case OperationDocumentKind.ServiceOrder: writer.ServiceOrder(signatures); break;
+            case OperationDocumentKind.ServiceOrder: writer.ServiceOrder(signatures, corrected); break;
             case OperationDocumentKind.FlightReport: writer.FlightReport(signatures, damagePhotos); break;
             case OperationDocumentKind.CharterServiceRequest: writer.CharterServiceRequest(signatures); break;
             default: writer.BridgeChecklist(signatures); break;
         }
-        writer.Finish(contentSha256, signatures, (timeProvider ?? TimeProvider.System).GetUtcNow());
+        writer.Finish(contentSha256, signatures, (timeProvider ?? TimeProvider.System).GetUtcNow(), corrected.Count > 0);
         using var output = new MemoryStream();
         pdf.Save(output, false);
         return output.ToArray();
-    }
-
-    private static TimeZoneInfo TimeZone(string id)
-    {
-        try { return TimeZoneInfo.FindSystemTimeZoneById(id); }
-        catch (Exception exception) when (exception is TimeZoneNotFoundException or InvalidTimeZoneException)
-        {
-            return TimeZoneInfo.Utc;
-        }
     }
 
     private static readonly string[] PaperLeft =
@@ -100,7 +96,8 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
         private DocumentFlightHeader Flight => content.Flight;
 
         // ───────────────────────── Orden de Servicio ─────────────────────────
-        public void ServiceOrder(IReadOnlyList<OperationDocumentSignatureData> signatures)
+        public void ServiceOrder(IReadOnlyList<OperationDocumentSignatureData> signatures,
+            IReadOnlyList<OperationDocumentCorrectionData> corrections)
         {
             Header("ORDEN DE SERVICIO EN RAMPA / RAMP ORDER SERVICE",
                 [("Estación / Station", Flight.StationName), ("Número / Number", content.Number)]);
@@ -152,6 +149,23 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                 Lines("•  " + clause, small);
             SignatureBoxes(signatures, [(OperationSignatureRole.AirlineRepresentative, "Cliente / Airline Client"),
                 (OperationSignatureRole.AviamAgent, "Aviam Ltd. · Responsable / Responsible")]);
+            if (corrections.Count > 0) Corrections(signatures, corrections);
+        }
+
+        /// <summary>
+        /// 3-N02: what OCC changed after the airline and AVIAM signed, with its reason, time and author; the signatures
+        /// above were drawn on the version of the day they show.
+        /// </summary>
+        private void Corrections(IReadOnlyList<OperationDocumentSignatureData> signatures,
+            IReadOnlyList<OperationDocumentCorrectionData> corrections)
+        {
+            y += 6;
+            Band("Corregida por OCC después de la firma / Corrected by OCC after signature");
+            foreach (var correction in corrections)
+                Lines($"{Time(correction.CorrectedAt)} · {correction.CorrectedBy}: {correction.Reason}", body);
+            if (signatures.Count > 0)
+                Lines($"Las firmas se hicieron sobre la versión del {Time(signatures.Min(item => item.SignedAt))}, " +
+                    "antes de la corrección de OCC.", small);
         }
 
         // ───────────────────────── Reporte de Vuelo ─────────────────────────
@@ -453,7 +467,8 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
             SignatureBoxes(signatures, [(OperationSignatureRole.BridgeOperator, "Operador")]);
         }
 
-        public void Finish(string sha256, IReadOnlyList<OperationDocumentSignatureData> signatures, DateTimeOffset generatedAt)
+        public void Finish(string sha256, IReadOnlyList<OperationDocumentSignatureData> signatures, DateTimeOffset generatedAt,
+            bool corrected = false)
         {
             graphics.Dispose();
             var total = pdf.PageCount;
@@ -468,7 +483,9 @@ public sealed class OperationDocumentPdfRenderer(TimeProvider? timeProvider = nu
                     small, new XSolidBrush(Muted), new XRect(Margin, top + 4, pageWidth - 2 * Margin, 10), XStringFormats.TopCenter);
                 footer.DrawString($"{content.FormCode}  {index + 1}/{total}", smallBold, new XSolidBrush(Navy),
                     new XRect(Margin, top + 4, pageWidth - 2 * Margin, 10), XStringFormats.TopRight);
-                var state = signatures.Count == 0 ? "sin firmas" : $"{signatures.Count} firma(s) sobre esta huella";
+                var state = signatures.Count == 0 ? "sin firmas"
+                    : corrected ? $"{signatures.Count} firma(s) sobre la versión firmada · corregida por OCC"
+                    : $"{signatures.Count} firma(s) sobre esta huella";
                 footer.DrawString($"SHA-256 {sha256} · {state} · generado por ELEVANT el " +
                     $"{TimeZoneInfo.ConvertTime(generatedAt, zone).ToString("dd/MM/yyyy HH:mm", Spanish)}",
                     small, new XSolidBrush(Muted), Margin, top + 24);

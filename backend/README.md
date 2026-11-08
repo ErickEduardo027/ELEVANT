@@ -28,8 +28,16 @@ estación y la página devuelve los filtros efectivos.
 `GET .../{kind}/export?format=pdf|xlsx` vuelve a autorizar, lee un snapshot
 coherente de hasta 5 000 filas, registra auditoría sin filas privadas y sirve
 un archivo con cabeceras `no-store` y `nosniff`. Un conjunto mayor devuelve
-422 sin archivo. Las filas de la página no son un total global ni la fuente
-de la exportación. No se atribuyen eventos de cuenta históricos sin estación
+422 `report_too_large` sin archivo ni auditoría; una consulta inválida (también
+la que falla en el binding) es 400 `invalid_report_query` y una estación fuera
+de alcance o inactiva, 404 `station_unavailable`. Un rol rechazado sigue siendo
+un 403 sin `code`. El PDF y el Excel titulan, filtran y fechan en español
+(`HumanResourcesReportLabels`): «Habilitación»/«Permiso», «Carnet
+aeroportuario», «Alta de cuenta», fechas `dd/MM/yyyy`, la hora de cada
+movimiento («Fecha y hora local») y «Generado» en la hora local de la
+estación; el PDF sin filas dice «No hay filas para estos filtros.». Las páginas
+JSON conservan sus códigos. Las filas de la página no son un total global ni la
+fuente de la exportación. No se atribuyen eventos de cuenta históricos sin estación
 verificable. Desde este cambio, los comandos de gobierno etiquetan altas,
 bajas y cambios de estado de cuentas de rampa con las estaciones verificadas
 en el momento del evento; los eventos anteriores no se atribuyen de forma
@@ -37,6 +45,34 @@ retroactiva ni se reconstruyen desde concesiones actuales.
 Para esa atribución, las fechas de vigencia del perfil de rampa se evalúan
 con la fecha UTC del evento, la misma convención usada al crearlas. Esto
 evita perder la estación entre la medianoche UTC y la local.
+Código local: no acredita despliegue al VPS.
+
+## Reportes OCC (rama local)
+
+`GET /api/v1/occ/reports` lista los seis reportes calculados en el servidor y
+`GET /api/v1/occ/reports/{key}` lee una página (1 a 100 filas) de hasta 366 días
+de una estación del alcance del actor (`operations.reports.read`).
+`GET .../{key}/export?format=csv|xlsx|pdf` exige además
+`operations.reports.export` y exporta el período completo o nada: hasta 25 000
+filas en CSV y Excel y 5 000 en PDF. Un período mayor responde 422
+`report_too_large`, sin archivo ni auditoría; el encabezado «Filas» es el total
+real. Los fallos llevan `code`: 400 `invalid_report_query` (también la estación
+que falta o la fecha ilegible), 404 `report_not_found` o `station_unavailable`;
+un permiso rechazado sigue siendo un 403 sin código.
+«Productividad por agente» y la columna «Agentes» atribuyen cada operación a
+quien trabajó cada tramo (`OperationWorkAttribution`): un agente liberado antes
+del inicio (cambio de posición, liberación) no cuenta, en un relevo cada agente
+suma los minutos de su parte y la aprobación no libera a nadie, así que la
+asignación abierta conserva los minutos hasta el fin. «Servicios ejecutados por
+aerolínea» cuenta solo los servicios facturables (`ServiceBillability`, con la
+exclusión de OCC) de las operaciones aprobadas: el mismo conjunto que «Por
+facturar». Estados, severidades y tipos de incidencia salen en español
+(`OperationLabels`, «Seguridad (alta)»), la unidad con el nombre de
+`ref.billing_units`, las cantidades sin ceros de escala y todas las horas,
+también «Generado», en la hora local de la estación (`BusinessCalendar`). Las
+cifras de productividad y de servicios cambian respecto de los reportes
+anteriores: ya no duplican al agente liberado ni cuentan lo planificado o no
+aprobado. El JSON conserva sus claves.
 Código local: no acredita despliegue al VPS.
 
 ## Revisión de asistencia (rama local)
@@ -139,9 +175,33 @@ a 60 minutos y usa 15 por defecto.
   iniciar sesión; cambiarla invalida los JWT anteriores mediante la versión
   de seguridad comprobada en cada petición autenticada.
 - `GET /api/v1/occ/planning` publica el snapshot OCC de una fecha y estación
-  dentro del scope efectivo del actor. Si se omite la fecha, selecciona la más
-  reciente con operaciones; la estación solo se puede omitir cuando el actor
-  tiene exactamente un scope.
+  dentro del scope efectivo del actor. Si se omite la fecha, abre el día de hoy
+  en la zona IANA de la estación (`BusinessCalendar`), nunca la última fecha
+  con vuelos; la estación solo se puede omitir cuando el actor tiene
+  exactamente un scope.
+- `GET /api/v1/occ/planning/turnarounds/{turnaroundId}` devuelve una escala con
+  su versión (repetida como `ETag` fuerte) y las acciones que su estado permite
+  (`reschedule`, `cancel`, `divert`, `correctArrival`). Exige
+  `operations.planning.read` u `operations.positions_map.assign`: el mapa de
+  posiciones envía esa versión en cada comando. `PUT .../schedule`
+  («Editar vuelo») y `POST .../status-changes` (`Cancelled` o `Diverted`, con
+  motivo) exigen `operations.planning.update`, `Idempotency-Key` e `If-Match`:
+  sin versión responden `428 expected_version_required` y con una vieja
+  `412 version_conflict`. Solo valen antes de que la operación inicie
+  (`operation_started`, `turnaround_closed`). Reprogramar revalida contrato,
+  posición bloqueada y, si hay agente, su turno y el tope de tres operaciones
+  simultáneas (`assigned_agent_unavailable` con `reasons`); no cambia la
+  aerolínea, y un número o día nuevo que ya vuela otra escala abierta de la
+  aerolínea responde `409 flight_already_planned`. Cancelar o desviar cierra la
+  posición, libera a los agentes por la ruta única de liberación (aviso
+  `assignment_released`) y avisa a Finanzas si el charter tenía prepago. Nada se
+  borra.
+- `POST /api/v1/occ/planning/charter-airlines` da de alta, con
+  `Idempotency-Key` y `operations.planning.create`, la aerolínea mínima de un
+  charter: organización `OCC-…`, OACI obligatorio e IATA opcional. Un código en
+  uso responde `409 airline_code_in_use` con `airlineId`; la aprobación
+  comercial de un perfil verificado con los mismos códigos la completa en vez de
+  rechazarla.
 - `GET /api/v1/occ/planning/options?turnaroundId=...` deriva estación, terminal
   y hora desde el turnaround y devuelve el catálogo contractual junto con la
   elegibilidad explicable de agentes. Su `ETag` fuerte representa toda la
@@ -152,14 +212,72 @@ a 60 minutos y usa 15 por defecto.
   scope, estado, agente, posición, turno, permisos y contrato dentro de una
   transacción serializable; crea la asignación primaria, materializa todos los
   servicios contractuales y registra transición y auditoría de forma atómica.
+- Una sola regla de ocupación (`OperationOccupancyRules`): un agente lleva hasta
+  tres operaciones simultáneas asignadas, en curso o devueltas (una operación
+  sin ventana válida cuenta, falla cerrada); la cuarta es `assignment_conflict`
+  en la asignación, la reasignación por cambio de posición y el relevo, y
+  `simultaneous_limit` en la reprogramación. Un agente con menos de tres meses sin cobertura con mentor a
+  esa hora es `mentor_required`. Al aprobar, la operación deja de ocupar al
+  agente y la posición por su estado (también la escala `Completed`, cancelada o
+  desviada): la asignación y la posición quedan como registro y el tablero y la
+  agenda del agente reciben el anuncio.
+- `POST /api/v1/occ/coverage` y `POST /api/v1/occ/coverage/{coverageId}/release`
+  aceptan `Idempotency-Key` opcional durante el expand: la misma clave y cuerpo
+  devuelven el tablero sin repetir la cobertura, y otro cuerpo responde
+  `409 idempotency_conflict`. La cobertura exige el alcance del agente en la
+  terminal (`terminal_scope_missing`) y documentos vigentes hasta el día local en
+  que termina. Todo Problem Details lleva `code`.
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment/release`
+  acepta `?expectedAssignmentId=` e `Idempotency-Key` opcionales; con clave, la
+  asignación esperada es obligatoria (`400 expected_version_required`). Otra
+  asignación responde `409 assignment_changed` y una operación iniciada
+  `409 operation_started`. `GET .../assignment/handover-options` y
+  `POST .../assignment/handover` (relevo) pasan una operación en curso o
+  devuelta a otro agente elegible con `Idempotency-Key` obligatorio,
+  `expectedAssignmentId` y motivo de 5 a 500 caracteres
+  (`handover_not_allowed`, `assignment_changed`, `same_agent`,
+  `agent_not_eligible`). La operación conserva su estado y su evidencia, y los
+  dos agentes reciben `assignment_released` y `operation_assigned`. Cuando OCC
+  cambia la posición, el vuelo sigue al agente que la cubre solo si es elegible;
+  si nadie lo es y el agente anterior tampoco, la operación vuelve a `Planned` y
+  OCC recibe `stand_change_unassigned`.
 - `GET /api/v1/occ/planning/manual-options` y `POST /api/v1/occ/planning/turnarounds`
   permiten crear una escala manual con contrato vigente, ruta completa y posición
-  sin solapamiento. El UUID de intención conserva la idempotencia del alta.
+  sin solapamiento. El UUID de intención conserva la idempotencia del alta. El
+  mismo vuelo de la aerolínea en el mismo día local se planifica una sola vez
+  (`409 flight_already_planned`), y la importación del feed lo vincula a la escala
+  existente (`linked=true`). El tipo de avión que la escala aún no tiene solo se
+  toma si la posición que ya ocupa lo admite; si no, responde
+  `409 stand_unavailable` con `reasons`, igual que la llegada y «Editar vuelo».
+  Las escalas nuevas, manuales o importadas, reciben el
+  código legible `{ESTACIÓN}-{AAAAMMDD}-{NNN}`; los códigos `MAN-` y `EXT-` ya
+  emitidos se conservan.
+- `POST /api/v1/occ/turnarounds/{turnaroundId}/arrival`, `.../stand` y
+  `.../stand/release` (mapa de posiciones) aceptan `Idempotency-Key` e `If-Match`
+  opcionales durante el expand; con clave, la versión es obligatoria. Los tres
+  corren en una transacción serializable con la fila de la posición bloqueada
+  (UPDLOCK, HOLDLOCK), así que dos vuelos nunca toman la misma posición, y
+  responden Problem Details con `code`. La llegada acepta `arrivedAt` explícito
+  (sin él, la hora del servidor), `aircraftTypeId` y `reason`: reemplazar una
+  hora que el tramo ya tiene, la que registró OCC o una distinta de la que
+  informó el feed, exige motivo (`reason_required`). Registrar o corregir la
+  llegada solo vale antes de la primera entrega, la haya escrito OCC o el feed y
+  aunque el tramo no tenga hora (`arrival_locked`), y el tramo pasa a `Manual`,
+  de modo que el feed ya no lo pisa.
+- `GET /api/v1/ramp/aircraft-types` entrega a la tablet los tipos de avión
+  activos. `PUT /api/v1/ramp/operations/{operationId}/flight-data` acepta
+  `aircraftTypeId` opcional: sin él conserva el tipo actual y el hash del recibo
+  de la versión anterior. Un tipo inactivo o un cambio después de la primera
+  entrega responden `409` con `aircraft_type_unavailable` o
+  `aircraft_type_locked`.
 - `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/shift` programa un turno
   local de un agente sin asignarlo automáticamente: deriva estación, terminal y
   posición, exige cobertura de la escala y aptitud vigente, y rechaza otro turno
-  para ese día. Todos estos endpoints OCC exigen `ADMIN_OCC`, portal BackOffice,
-  membresía interna AVIAM vigente y scope de estación.
+  para ese día (`409 shift_day_taken`). `GET .../turnarounds/{turnaroundId}/agents/{agentId}/shift`
+  devuelve el turno que el agente ya tiene ese día, con su `version`, para
+  ajustarlo con `PATCH /api/v1/human-resources/shifts/{id}`; sin turno responde
+  `404 shift_not_found`. Todos estos endpoints OCC exigen `ADMIN_OCC`, portal
+  BackOffice, membresía interna AVIAM vigente y scope de estación.
 - `GET /api/v1/human-resources/qualifications?page=&limit=` lista páginas de
   hasta 100 ciclos de habilitación marcados como vigentes, con agente y equipo
   reales. Exige rol interno `GESTION_HUMANA` o `SUPERADMIN` y membresía AVIAM
@@ -255,6 +373,15 @@ a 60 minutos y usa 15 por defecto.
   con un día libre o restricción `Approved` que cubra la fecha local consultada
   o el inicio de su turno nocturno; `Pending`, `Rejected`, `Cancelled` y
   `ShiftChange` no son ausencias.
+  `PATCH /api/v1/human-resources/shifts/{id}` ajusta la hora de inicio y de fin
+  de un turno de hoy o de un día futuro en el calendario de su estación, para
+  Gestión Humana y OCC con el mismo permiso y alcance que al registrarlo. Exige
+  `Idempotency-Key`, `expectedVersion` (`409 version_conflict` si cambió) y un
+  motivo de 5 a 500 caracteres. El turno debe seguir cubriendo las coberturas y
+  las operaciones del agente (`409 shift_uncovers_work`) y se rechaza un turno
+  pasado (`shift_in_past`) o con asistencia validada (`attendance_validated`).
+  Audita `hr.shift.adjusted` y emite `hr_shifts`, la agenda del agente y
+  `occ_planning`.
 - `GET /api/v1/human-resources/availability-requests?from=&to=&page=&limit=`
   devuelve solicitudes de disponibilidad que se solapan con una ventana de
   hasta 31 fechas locales, paginadas de forma estable. Exige Gestión Humana o
@@ -276,9 +403,52 @@ a 60 minutos y usa 15 por defecto.
   asignaciones activas, el contexto operativo y los servicios planificados.
   No acepta `agentId` ni `stationId`: vuelve a resolver en SQL la cuenta, el
   perfil activo y los scopes, filtra por agente y estación antes de proyectar
-  y limita la respuesta a 100 operaciones ordenadas. Exige `RAMP_AGENT`, portal
-  `RampMobileApp` y membresía interna AVIAM; una cuenta sin perfil compatible
-  falla cerrada con `403` y una cola legítimamente vacía responde `200`.
+  y limita la respuesta a 100 operaciones ordenadas. La cola trae las
+  operaciones asignadas, en curso, entregadas (pendientes o en revisión) y
+  devueltas, más las que OCC aprobó en las últimas 48 horas (contadas desde la
+  aprobación, no desde el fin de la operación), con las activas
+  primero. Una operación ya iniciada sigue en el alcance de su agente aunque la
+  posición se desactive o el vuelo pase a una terminal fuera de su alcance.
+  Exige `RAMP_AGENT`, portal `RampMobileApp` y membresía interna AVIAM; una
+  cuenta sin perfil compatible falla cerrada con `403` y una cola legítimamente
+  vacía responde `200`. `POST /api/v1/ramp/operations/{operationId}/start`
+  responde `409 contract_not_in_force` si la aerolínea ya no tiene un contrato
+  vigente en la fecha de la operación (salvo un charter); ese rechazo no queda
+  en el recibo del dispositivo, así que la misma clave vuelve a evaluar el
+  contrato y, si Contratos lo reactiva, el mismo toque inicia la operación. Lo
+  que ya está en curso termina con normalidad. Cuando un contrato se suspende,
+  termina o vence, OCC recibe `contract_not_in_force` por cada operación que aún
+  no inició. `GET /api/v1/occ/planning/turnarounds/{turnaroundId}/attendance-assignments`
+  (solo web, `operations.attendance.read`) lista las asignaciones cuya
+  asistencia registra OCC: las abiertas y las que un relevo cerró después del
+  inicio, con `releasedAt`.
+- Horas de la evidencia de la tablet (fase 3, bloque C; regla única en
+  `RampEvidenceTimePolicy`). `POST .../start` acepta un cuerpo opcional
+  `{ "startedAt" }` (sin cuerpo sigue siendo válido, como lo envía la APK
+  desplegada) y `POST .../services/{serviceId}/transition` un `occurredAt`
+  opcional: se guarda la hora del toque recortada al reloj del servidor, y el
+  recibo conserva la hora de llegada. El inicio no puede ser anterior a la
+  asignación ni de hace más de 24 h; una transición nunca es anterior a la
+  última del servicio (`service_time_out_of_order`). Hitos, daños e
+  incidencias caen entre el inicio o la llegada registrada, lo que ocurrió
+  primero, y el cierre, con 2 minutos de tolerancia
+  (`time_outside_operation_window`): ahora mientras la operación corre; la
+  entrega mientras OCC revisa (el fin de la operación para un hito, la entrega
+  en revisión para un daño); en una ronda de corrección los hitos cierran en la
+  primera entrega, y los daños e incidencias, que la tablet registra con la
+  hora actual, siguen abiertos hasta ahora. El bloqueo nunca es posterior al
+  push-back (`milestone_out_of_order`). Sin esas horas el hash del recibo es el
+  de la versión anterior. Mientras OCC revisa se aceptan los hitos, daños y
+  datos del vuelo capturados antes de la entrega: se recalculan los recargos
+  automáticos y la evidencia congelada, y cambia el `ETag` de la revisión. El
+  reenvío de una corrección mide el tiempo en tierra hasta la primera entrega,
+  mide los servicios con las transiciones registradas hasta el reenvío (las de
+  la corrección incluidas) y retira los recargos automáticos que ya no se
+  detectan, nunca los de OCC.
+  Los `400`, `404` y `409` del inicio, los servicios, los hitos y datos del
+  vuelo, los documentos y las incidencias llevan `code` (`invalid_ramp_command`,
+  `not_found`, `ramp_operation_state_conflict`, `idempotency_conflict` o el de
+  la regla) y el recibo del dispositivo repite el mismo código.
 - `GET /api/v1/airline/portal/bootstrap` obtiene la aerolínea de la única
   membresía `AIRLINE_CLIENT` vigente del actor autenticado y proyecta solo
   estaciones cubiertas por una versión aprobada de contrato activo en la
@@ -304,17 +474,58 @@ a 60 minutos y usa 15 por defecto.
   de una estación autorizada, primero las pendientes, con límite de 100 y
   `hasMore` explícito. `GET /api/v1/occ/review/operations/{operationId}`
   devuelve el detalle canónico de la última entrega: checklist, servicios,
-  incidencias y decisión registrada. Su `ETag` fuerte se repite en
-  `reviewVersion` y representa la versión de operación y entrega observada.
+  incidencias y decisión registrada, el estado de la Orden de Servicio
+  (`serviceOrderState`: `Signed`, `Corrected`, `Stale` o `Unsigned`), la
+  reapertura que dio origen a la revisión (`reopening`) y, en el cierre, los
+  servicios excluidos de la facturación (`billingExclusions`). Su `ETag` fuerte
+  se repite en `reviewVersion` y representa la versión de operación y entrega
+  observada.
 - `POST /api/v1/occ/review/operations/{operationId}/decision` aprueba o
-  devuelve una sola entrega pendiente. Exige `If-Match` con ese ETag,
-  `submissionId` exacto y un motivo de 8 a 2000 caracteres al devolver.
-  Revalida rol OCC, membresía AVIAM y estación en SQL dentro de una
-  transacción serializable; cambia operación y entrega, crea una decisión,
-  evento y auditoría atómicos. `409`/`412` obligan a releer el detalle; el
-  cliente nunca reintenta automáticamente una decisión de resultado incierto.
-  Esta versión no implementa todavía la corrección y nueva entrega por parte
-  del agente tras una devolución, ni adjuntos de evidencia.
+  devuelve una sola entrega pendiente. Exige `If-Match` con ese ETag
+  (`428 expected_version_required`, `412 version_conflict`), `submissionId`
+  exacto y un motivo de 8 a 2000 caracteres al devolver; acepta
+  `Idempotency-Key` opcional mientras existan clientes anteriores. Revalida rol
+  OCC, membresía AVIAM y estación en SQL dentro de una transacción serializable;
+  cambia operación y entrega, crea una decisión, evento y auditoría atómicos.
+  Aprobar exige la Orden de Servicio firmada o corregida por OCC
+  (`409 service_order_unsigned` o `service_order_stale`); una revisión reabierta
+  no se devuelve a rampa (`409 reopened_review_cannot_return`). Los rechazos
+  llevan `code` (`review_closed`, `review_already_decided`…). `409`/`412`
+  obligan a releer el detalle; un reintento de resultado incierto reutiliza la
+  misma clave.
+- Los ajustes de cargos de la revisión (`POST .../charges` y
+  `POST .../charges/{markId}/removal`) aceptan la misma `Idempotency-Key`
+  opcional, no ofrecen ni aceptan un cargo que el contrato excluye
+  (`charge_excluded_by_contract`) y, con la Orden ya firmada, guardan la
+  versión corregida por OCC con su motivo. `POST
+  .../services/{serviceId}/billing-exclusion` excluye de la facturación, o
+  vuelve a incluir, un servicio en excepción con cantidad ejecutada
+  (`billing_exclusion_not_allowed` en otro caso), con `Idempotency-Key`,
+  `If-Match` y motivo de 8 a 500 caracteres.
+- `POST /api/v1/occ/review/operations/{operationId}/reopening` reabre, con
+  `operations.review.reopen`, `Idempotency-Key`, `If-Match` y motivo, una
+  aprobación de la que nada se facturó: crea la revisión siguiente
+  `PendingReview` con la misma evidencia, hora y agente. No toca la escala, los
+  agentes, la posición ni las incidencias. Una línea de prefactura sobre la
+  operación responde `409 already_invoiced` (la corrección es una nota de
+  crédito) y una Orden que ya no está firmada, `service_order_unsigned` o
+  `service_order_stale`.
+- `GET /api/v1/occ/operations/{operationId}/incidents` lista las incidencias
+  vivas de una operación de las estaciones del actor, con quién las reportó,
+  su versión e historial (`operations.incidents.read`). `POST` en la misma ruta
+  reporta una incidencia de OCC con `Idempotency-Key` (`201`, o `200` al
+  repetir) y `POST /api/v1/occ/incidents/{incidentId}/status` la pasa a
+  revisión, la resuelve, la cierra o la reabre con nota, `Idempotency-Key` e
+  `If-Match` (`operations.incidents.update`). Al aprobar, solo las incidencias
+  que OCC no gestionó se resuelven con la nota fija.
+- En un charter sin contrato, el total del prepago no cuenta los servicios no
+  realizados y la Orden los imprime en 0. Con el prepago confirmado, la tablet
+  no agrega servicios (`409 charter_prepayment_confirmed`, guardado en el
+  recibo) hasta que Finanzas reabra la cotización con
+  `POST /api/v1/finance/charters/{charterId}/prepayment/reopening`
+  (`finance.charters.confirm`, `Idempotency-Key`, motivo y la `version` leída;
+  una vieja responde `409 version_conflict` y un prepago no confirmado,
+  `charter_prepayment_not_confirmed`).
 - El `POST` de sesión limita el cuerpo a 4096 bytes (4 KiB) y, por defecto, a
   10 intentos por IP remota en 60 segundos; responde `413` o `429`,
   respectivamente, cuando se excede cada límite.

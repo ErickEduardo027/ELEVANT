@@ -2,6 +2,7 @@ using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Infrastructure.Operations;
+using Elevant.UnitTests.Application;
 
 namespace Elevant.UnitTests.Infrastructure;
 
@@ -9,7 +10,10 @@ public sealed class OccReportRendererTests
 {
     private static OccReportTable Table(params IReadOnlyList<OccReportCell>[] rows) => new(
         OccReportCatalog.Find("services-by-airline")!, Guid.NewGuid(), "PUJ", new(2026, 8, 1), new(2026, 8, 31),
-        new DateTimeOffset(2026, 10, 26, 12, 0, 0, TimeSpan.Zero), rows, 1, 5000, false);
+        new DateTimeOffset(2026, 10, 26, 12, 0, 0, TimeSpan.Zero), rows, 1, 5000, false)
+    {
+        TimeZoneId = "America/Santo_Domingo",
+    };
 
     private static readonly IReadOnlyList<OccReportCell> Row =
     [
@@ -41,6 +45,36 @@ public sealed class OccReportRendererTests
         }
         Assert.Equal("%PDF", Encoding.ASCII.GetString(renderer.RenderPdf(Table(Row))[..4]));
         Assert.Equal("%PDF", Encoding.ASCII.GetString(renderer.RenderPdf(Table())[..4]));
+    }
+
+    [Fact]
+    public void EveryFormatSaysWhenItWasGeneratedInTheStationsLocalTimeAndHowManyRowsItHas()
+    {
+        // 12:00Z is 08:00 in Punta Cana (3-N26); the PDF prints the same heading as the CSV and the Excel.
+        var renderer = new OccReportRenderer();
+        var csv = Encoding.UTF8.GetString(renderer.RenderCsv(Table(Row, Row))[3..]);
+        Assert.Contains("Generado: 26/10/2026 08:00 (hora local)", csv);
+        Assert.Contains("Filas: 2", csv);
+        Assert.DoesNotContain("UTC", csv);
+        var pdf = PdfFontInspector.Text(renderer.RenderPdf(Table(Row, Row)));
+        Assert.Contains("Generado: 26/10/2026 08:00 (hora local)", pdf);
+        Assert.Contains("Filas: 2", pdf);
+        // Without a zone the heading uses AVIAM's calendar, never the host's.
+        var unzoned = Table(Row) with { TimeZoneId = null };
+        Assert.Contains("Generado: 26/10/2026 08:00 (hora local)",
+            Encoding.UTF8.GetString(renderer.RenderCsv(unzoned)[3..]));
+        Assert.Contains("Sin datos para el período seleccionado.", PdfFontInspector.Text(renderer.RenderPdf(Table())));
+    }
+
+    [Fact]
+    public void ANumberDropsTheTrailingZerosOfItsStoredScale()
+    {
+        Assert.Equal("1", OccReportCell.Number(1.0000m).Value);
+        Assert.Equal("2.5", OccReportCell.Number(2.5000m).Value);
+        Assert.Equal("-1", OccReportCell.Number(-1m).Value);
+        Assert.Equal("0.125", OccReportCell.Number(0.1250m).Value);
+        Assert.Equal("25000", OccReportCell.Number(25000m).Value);
+        Assert.Equal(OccReportCellType.Number, OccReportCell.Number(3m).Type);
     }
 
     [Fact]

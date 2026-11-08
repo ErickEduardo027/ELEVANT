@@ -387,7 +387,9 @@ de los informes siguen usando la fecha local de la estación. La vista retira
 la información anterior si se pierde acceso,
 y relee por señal durable, foco, reconexión y sondeo visible de 25 segundos.
 No hay todavía evidencia de CI, navegador ni promoción de estos reportes al
-VPS. Fuentes locales: [API](../../backend/Elevant.Api/Controllers/HumanResourcesReportsController.cs),
+VPS. Desde la fase 3 del ciclo, los archivos y la tabla hablan español y
+muestran las horas locales, y el rechazo de un conjunto mayor lleva su código
+(`report_too_large`): ver [La operación (fase 3)](#la-operación-fase-3). Fuentes locales: [API](../../backend/Elevant.Api/Controllers/HumanResourcesReportsController.cs),
 [consulta EF](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfHumanResourcesReportStore.cs),
 [cliente compartido](../../packages/api-client/src/client.ts),
 [vista](../../frontend/private-web/src/features/human-resources/reports/CurrentReportsPage.jsx)
@@ -421,7 +423,8 @@ fijos de ejemplo. Fuentes: [editor](../../frontend/private-web/src/features/huma
 [panel](../../frontend/private-web/src/features/human-resources/users/RampReadinessPanel.jsx) y
 [ADR-0026](../../docs/adr/0026-ramp-staff-readiness-and-hr-shifts.md).
 La fase 2 del ciclo cambió quitar turnos, copiar la semana y las ausencias: ver
-[Pre-operación (fase 2)](#pre-operación-fase-2).
+[Pre-operación (fase 2)](#pre-operación-fase-2). La fase 3 sumó «Ajustar
+horario»: ver [La operación (fase 3)](#la-operación-fase-3).
 
 ## OCC listo: contratos listos, posiciones ubicadas y mapa en Planificación
 
@@ -457,7 +460,9 @@ configurada, el diálogo lo dice y no hay llamadas. Fuentes:
 [ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md).
 La fase 2 sumó las vistas «Charter sin contrato» y «Descartadas», el tipo de
 avión, la posición y la restauración: ver
-[Pre-operación (fase 2)](#pre-operación-fase-2).
+[Pre-operación (fase 2)](#pre-operación-fase-2). Desde la fase 3, importar un
+vuelo que ya está planificado lo vincula a esa escala en lugar de duplicarla:
+ver [La operación (fase 3)](#la-operación-fase-3).
 
 ## Chat con presencia y cierre de sesión confirmado
 
@@ -558,6 +563,46 @@ Planificación. Fuentes:
 [ausencias](../../frontend/private-web/src/features/human-resources/schedules/AvailabilityRequestsPanel.jsx),
 [avisos de departamento](../../frontend/private-web/src/features/notifications/departmentNotifications.js) y
 [avisos de OCC](../../frontend/private-web/src/features/notifications/notificationKinds.js).
+
+## La operación (fase 3)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c`) y las correcciones de la revisión de sus
+bloques A, B y C (`34e90aad`) y D (`3b749a94`), que esa verificación no cubre.
+
+La fase 3 del ciclo operativo
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md))
+sigue la convención de errores, claves y estados de las fases anteriores. Las
+etiquetas de estados, servicios, checklist, incidencias, hitos y unidades salen
+de un solo
+[mapa](../../frontend/private-web/src/features/operations/operationLabels.js), y
+las horas locales, de
+[`businessDay.js`](../../frontend/private-web/src/services/businessDay.js).
+
+| Pantalla | Comportamiento |
+| --- | --- |
+| OCC → Planificación | Sin fecha abre el día de hoy de la estación. El detalle de la escala ofrece «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» con `operations.planning.update` y según las acciones que permite el servidor; las horas se escriben en la hora local de la estación. «Nuevo vuelo» y «Editar vuelo» explican el mismo vuelo planificado dos veces («Ese vuelo ya está planificado ese día.»), y «Nuevo vuelo» da de alta la aerolínea mínima de un charter. «Liberar agente» envía la asignación que OCC ve, y «Relevar agente» pasa una operación en curso o devuelta a otro agente elegible, con motivo. Tras el relevo vuelve a leer sus opciones y muestra al agente actual nuevo; «Asistencia compartida» incluye a los agentes relevados después del inicio, como «{nombre} (relevado)», para registrar su asistencia. Si el agente ya tiene turno ese día, «Ajustar turno del día» lo amplía hasta cubrir el vuelo. La elegibilidad explica «Ya tiene 3 operaciones simultáneas» y «necesita un mentor», y el detalle muestra las incidencias de la operación. Ya no ofrece «Crear Work Order» ni «Exportar». |
+| OCC → Mapa de posiciones | Los comandos de cada vuelo esperan su versión («Consultando la versión del vuelo…»); si no se puede leer, el vuelo ofrece «Reintentar» o explica el permiso que falta, y la llegada, la asignación y la liberación viajan siempre con su `Idempotency-Key` e `If-Match`. Registra la llegada con la hora local y el tipo de avión: sin tocar la hora, un vuelo que aún no la tiene registra la del servidor al guardar, y cambiar una hora ya informada pide «Motivo del cambio de hora». «Corregir llegada» pide motivo y aparece con `operations.positions_map.assign` aunque la cuenta no tenga Planificación. Desde la primera entrega la llegada ya no se registra ni se corrige. |
+| OCC → Revisión | La cola, el detalle y las incidencias se releen solos con `occ_review`. «Aprobar» solo se habilita con la Orden de Servicio firmada o corregida por OCC, y la etiqueta dice su estado. «Excluir de la facturación» y «Volver a facturar» piden motivo para un servicio en excepción con cantidad. Con `operations.review.reopen`, «Reabrir revisión» reabre una aprobación que no se facturó, y esa revisión ya no ofrece «Devolver». El panel «Incidencias de la operación» (`operations.incidents.*`) cambia estados con nota y reporta las de OCC en hora local, también mientras la operación sigue en rampa. Con la operación aprobada o cancelada solo ofrece resolver o cerrar, y un rechazo `operation_closed` explica que sus incidencias quedan como historia y relee la lista. Las marcas del walk-around ofrecen «Ver foto». |
+| OCC → Reportes | Exporta el período completo o nada: hasta 25 000 filas en Excel y CSV y 5 000 en PDF. Un período mayor se explica con `report_too_large` y, desde el PDF, sugiere Excel o CSV. «Generado» se muestra en hora local. |
+| Gestión Humana → Horarios | «Ajustar horario» cambia con motivo las horas de un turno de hoy o de un día futuro; el servidor rechaza un horario que deje sin cubrir el trabajo del agente. |
+| Gestión Humana → Reportes de personal | Clases, documentos y movimientos en español, fechas dd/mm/aaaa y la hora de cada movimiento y de la consulta en hora local. Un conjunto de más de 5 000 filas se rechaza con `report_too_large`, nunca se recorta. |
+| Finanzas → Charters | «Reabrir cotización», con motivo, para un charter con el prepago confirmado. |
+| Finanzas → Por facturar | Explica el servicio que OCC excluyó en la revisión y el que lleva un cargo que su contrato excluye. Un servicio en excepción facturable que no está listo bloquea su operación, y al emitir la e-CF el rechazo por esos dos motivos se explica en español. |
+
+La campana de OCC muestra `flight_cancelled_by_provider`,
+`flight_diverted_by_provider`, `stand_change_unassigned` y
+`contract_not_in_force`, que abren Planificación, y Finanzas recibe
+`charter_cancelled`, que abre Charters. Donde la respuesta no trae la zona de la
+estación (por ejemplo, «Generado» de los reportes o la consulta de los reportes
+de personal), la web usa el calendario de `America/Santo_Domingo`, porque la
+sesión no trae la zona de cada estación. Fuentes:
+[diálogo de cambios de la escala](../../frontend/private-web/src/features/planning/components/TurnaroundChangeDialog.jsx),
+[detalle de la escala](../../frontend/private-web/src/features/planning/components/PlanningDrawer.jsx),
+[acciones del mapa](../../frontend/private-web/src/features/positions-map/components/PositionActions.jsx),
+[revisión](../../frontend/private-web/src/features/review/CanonicalReviewRoute.jsx),
+[reportes](../../frontend/private-web/src/features/reports/CanonicalReportsRoute.jsx) y
+[charters](../../frontend/private-web/src/features/finance/charters/ChartersPage.jsx).
 
 ## Estado de integración
 

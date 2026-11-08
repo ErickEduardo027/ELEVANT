@@ -12,6 +12,8 @@ export * from "./contractDocuments";
 export * from "./airlinePermits";
 export * from "./masterData";
 export * from "./flightFeedReview";
+export * from "./occTurnarounds";
+export * from "./occIncidents";
 export * from "./humanResourcesCommands";
 export * from "./mobileDevices";
 export * from "./airlinePortalUsers";
@@ -110,6 +112,10 @@ export {
   type ApplyRampServiceChargeOptions,
   type SessionStart,
   type OccCoverageCommand,
+  type OccCoverageCommandOptions,
+  type ReleaseOccOperationAgentOptions,
+  type HandOverOccOperationCommand,
+  type AdjustHumanResourcesShiftCommand,
   type RampFlightDataCommand,
   type OccStandAttributesCommand,
 } from "./client";
@@ -276,6 +282,10 @@ export {
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
   type OccCoverageBoardResponse,
+  type OccHandoverOptionsResponse,
+  type OccOperationHandoverResponse,
+  type OccAgentShiftResponse,
+  type HumanResourcesShiftAdjusted,
   type OccCoverageResponse,
   type OccCoverageAgentResponse,
   type OccCoverageStandResponse,
@@ -394,6 +404,14 @@ export {
   type OccStationResponse,
   type OccTerminalResponse,
   type OccTurnaroundResponse,
+  type OccTurnaroundDetailResponse,
+  type OccCharterAirlineResponse,
+  type RescheduleOccTurnaroundRequest,
+  type ChangeOccTurnaroundStatusRequest,
+  type CreateOccCharterAirlineRequest,
+  type RampAircraftTypesResponse,
+  type RampAircraftTypeResponse,
+  type RecordOccArrivalRequest,
   type ProblemDetails,
   type RampAircraftResponse,
   type RampAgentAssignmentResponse,
@@ -414,6 +432,8 @@ export {
   type AttendanceDraftContributionResponse,
   type AttendanceDraftSnapshotResponse,
   type AttendanceDraftWriteResponse,
+  type OccAttendanceAssignmentResponse,
+  type OccAttendanceAssignmentsResponse,
   type SaveAttendanceDraftRequest,
   type HumanResourcesAttendancePageResponse,
   type HumanResourcesAttendanceRowResponse,
@@ -456,5 +476,6 @@ export {
   type SessionStationScopeResponse,
   type SubmitRampOperationChecklistRequest,
   type SystemPingResponse,
+  type StartRampOperationRequest,
   type TransitionRampOperationServiceRequest,
 } from "../generated/elevant-api";

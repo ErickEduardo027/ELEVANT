@@ -42,10 +42,11 @@ public sealed partial class SqlServerMigrationTests
             new MobileDeviceRegistrationWriteRequest(agent, installation, MobilePlatform.Android, "1.2.3",
                 "Flight Report SQL test tablet", "Android 16"), ct))).IsSuccess);
         var startKey = Guid.NewGuid();
-        Assert.True((await Run(services => services.GetRequiredService<IRampOperationsCommandStore>().StartOperationAsync(
-            new RampOperationStartWriteRequest(agent, [station], operationId, installation, startKey, startKey, "fr-start"),
-            ct))).IsSuccess);
         var now = DateTimeOffset.UtcNow;
+        // 3-I, 3-N25: «Iniciar» tapped ten minutes ago opens the window every milestone fits in.
+        Assert.True((await Run(services => services.GetRequiredService<IRampOperationsCommandStore>().StartOperationAsync(
+            new RampOperationStartWriteRequest(agent, [station], operationId, installation, startKey, startKey, "fr-start",
+                now.AddMinutes(-10)), ct))).IsSuccess);
 
         Task<RampExecutionWriteResult> Milestone(Guid key, string code, DateTimeOffset at) =>
             Run(services => services.GetRequiredService<IRampExecutionCommandStore>().RecordMilestoneAsync(

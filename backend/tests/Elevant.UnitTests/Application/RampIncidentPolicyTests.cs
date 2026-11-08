@@ -40,22 +40,41 @@ public sealed class RampIncidentPolicyTests
         }
     }
 
+    // 3-N25: incidents share the window of the damages, with the clock tolerance on both ends.
     [Fact]
-    public void RequiresActiveOperationAndOccurrenceInsideTheExecutionWindow()
+    public void RequiresActiveOperationAndOccurrenceInsideTheOperationWindow()
     {
         var occurredAt = Started.AddMinutes(2);
         var now = Started.AddMinutes(3);
+        var window = RampEvidenceTimePolicy.WindowFor(Started, null, null, now);
         Assert.True(RampIncidentPolicy.CanReport(
             TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
-            Started, null, occurredAt, now));
-        Assert.False(RampIncidentPolicy.CanReport(
+            Started, null, occurredAt, window));
+        Assert.True(RampIncidentPolicy.CanReport(
             TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
-            Started, null, Started.AddSeconds(-1), now));
-        Assert.False(RampIncidentPolicy.CanReport(
+            Started, null, Started.AddSeconds(-1), window));
+        Assert.True(RampIncidentPolicy.CanReport(
             TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
-            Started, null, now.AddSeconds(1), now));
-        Assert.False(RampIncidentPolicy.CanReport(
+            Started, null, now.AddSeconds(90), window));
+        Assert.Equal(RampProblemCodes.TimeOutsideOperationWindow, RampIncidentPolicy.ReportRejection(
             TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
-            Started, now, occurredAt, now));
+            Started, null, Started.AddMinutes(-3), window));
+        Assert.Equal(RampProblemCodes.TimeOutsideOperationWindow, RampIncidentPolicy.ReportRejection(
+            TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
+            Started, null, now.AddMinutes(3), window));
+        Assert.Equal(RampProblemCodes.GenericConflict, RampIncidentPolicy.ReportRejection(
+            TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
+            Started, now, occurredAt, window));
+    }
+
+    [Fact]
+    public void TheRecordedArrivalOpensTheWindowBeforeALateStart()
+    {
+        var arrival = Started.AddMinutes(-25);
+        var now = Started.AddMinutes(30);
+        var window = RampEvidenceTimePolicy.WindowFor(Started, arrival, null, now);
+        Assert.True(RampIncidentPolicy.CanReport(
+            TurnaroundStatus.InProgress, GroundOperationStatus.InProgress,
+            Started, null, arrival.AddMinutes(5), window));
     }
 }

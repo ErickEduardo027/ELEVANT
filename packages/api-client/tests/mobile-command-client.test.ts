@@ -112,6 +112,48 @@ describe("mobile device and command API client", () => {
     expect(requestedHeaders.get("idempotency-key")).toBe(idempotencyKey);
   });
 
+  // 3-I: the queued start carries the tapped time; without it the request is the first version's.
+  it("sends the tapped start only when there is one", async () => {
+    const observed: { body: BodyInit | null | undefined; contentType: string | null }[] = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "ramp-token",
+      fetch: async (_input, init) => {
+        observed.push({ body: init?.body, contentType: new Headers(init?.headers).get("content-type") });
+        return jsonResponse(started);
+      },
+    });
+
+    await client.startRampOperation(operationId, installationId, idempotencyKey, undefined,
+      { startedAt: "2026-09-17T16:01:02.123-04:00" });
+    await client.startRampOperation(operationId, installationId, idempotencyKey, undefined, { startedAt: null });
+    await client.startRampOperation(operationId, installationId, idempotencyKey, undefined, {});
+
+    expect(observed).toEqual([
+      { body: JSON.stringify({ startedAt: "2026-09-17T16:01:02.123-04:00" }), contentType: "application/json" },
+      { body: undefined, contentType: null },
+      { body: undefined, contentType: null },
+    ]);
+  });
+
+  it("rejects a start body with another field or an invalid time before fetch", async () => {
+    let calls = 0;
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "ramp-token",
+      fetch: async () => {
+        calls += 1;
+        return jsonResponse(started);
+      },
+    });
+
+    await expect(client.startRampOperation(operationId, installationId, idempotencyKey, undefined,
+      { startedAt: "ayer" })).rejects.toThrow(TypeError);
+    await expect(client.startRampOperation(operationId, installationId, idempotencyKey, undefined,
+      { startedAt: "2026-09-17T20:00:00Z", agentId: operationId } as never)).rejects.toThrow(TypeError);
+    expect(calls).toBe(0);
+  });
+
   it("rejects invalid client authority data before fetch", async () => {
     let calls = 0;
     const client = createElevantApiClient({

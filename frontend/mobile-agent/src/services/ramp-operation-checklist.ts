@@ -13,19 +13,18 @@ import type {
 } from '@elevant/api-client';
 import { createMobileAgentApiClient } from '../config/elevant-api';
 import {
-  getOrCreateRampChecklistSubmitCommandIfCurrent,
+  readRampChecklistCacheIfCurrent,
   readRampChecklistDraftIfCurrent,
-  readRampChecklistSubmitCommandIfCurrent,
   removeRampChecklistDraftIfCurrent,
-  removeRampChecklistSubmitCommandIfCurrent,
+  writeRampChecklistCacheIfCurrent,
   writeRampChecklistDraftIfCurrent,
 } from '../storage/mobile-session';
+import { discardFlightReportItem, readOperationQueue, sendFlightReportCommand } from './flight-report';
 import {
   getMobileSessionRequestContext,
   MobileServiceError,
   rejectMobileSessionRequest,
 } from './mobile-auth';
-import { registerCurrentMobileDevice } from './mobile-device';
 import { asMobileServiceError } from './mobile-service-error';
 
 const DRAFT_SCHEMA_VERSION = 1 as const;
@@ -73,6 +72,8 @@ export type GetRampOperationChecklistResponse = Readonly<Omit<
   'checklist'
 > & {
   checklist: RampChecklistSnapshot;
+  /** True when ELEVANT could not be reached and the last copy saved on the device is shown (3-I). */
+  fromCache?: boolean;
 }>;
 
 export type RampChecklistDraftAnswer = Readonly<{
@@ -445,21 +446,41 @@ async function rejectIfUnauthorized(sessionId: string, error: unknown): Promise<
   throw normalized;
 }
 
+/**
+ * The operation's checklist. The last copy ELEVANT returned stays on the device for this account (3-I): without
+ * signal the agent opens it from there, answers it and sends it to the queue; the copy is flagged as cached.
+ */
 export async function getRampOperationChecklist(
   operationId: string,
   options: RampChecklistRequestOptions = {},
 ): Promise<GetRampOperationChecklistResponse> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
   const context = await getMobileSessionRequestContext();
+  const accountId = context.session.actor.accountId;
   try {
     const value = await apiClient(context.accessToken).getRampOperationChecklist(
       operationId,
       { signal: options.signal },
     );
     await confirmSameSession(context.sessionId);
-    return parseChecklistResponse(value, operationId);
+    const checklist = parseChecklistResponse(value, operationId);
+    await writeRampChecklistCacheIfCurrent(context.sessionId, accountId, operationId, JSON.stringify(value))
+      .catch(() => undefined);
+    return checklist;
   } catch (error) {
-    return rejectIfUnauthorized(context.sessionId, error);
+    const normalized = asMobileServiceError(error);
+    if (normalized.code === 'network_unavailable' || normalized.code === 'request_timeout') {
+      const cached = await readRampChecklistCacheIfCurrent(context.sessionId, accountId, operationId)
+        .catch(() => null);
+      if (cached?.kind === 'current' && cached.value !== null) {
+        try {
+          return { ...parseChecklistResponse(JSON.parse(cached.value) as unknown, operationId), fromCache: true };
+        } catch {
+          // A copy that no longer reads is not shown; the screen explains it is offline.
+        }
+      }
+    }
+    return rejectIfUnauthorized(context.sessionId, normalized);
   }
 }
 
@@ -511,6 +532,7 @@ export async function saveRampOperationChecklistDraft(
   }
 }
 
+/** The submission of this checklist still saved on the device (3-I), or null. */
 export async function readRampChecklistPendingSubmission(
   operationId: string,
   checklistId: string,
@@ -518,109 +540,61 @@ export async function readRampChecklistPendingSubmission(
   if (!isUuid(operationId) || !isUuid(checklistId)) {
     throw new MobileServiceError('request_failed');
   }
-  const context = await getMobileSessionRequestContext();
   try {
-    const result = await readRampChecklistSubmitCommandIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      checklistId,
-    );
-    if (result.kind !== 'current') throw new MobileServiceError('cancelled');
-    if (!result.command) return null;
-    const request = parseSubmitRequest(JSON.parse(result.command.payload) as unknown);
-    if (!request || request.checklistId !== checklistId.toLowerCase()) {
-      throw new MobileServiceError('storage_unavailable');
-    }
-    return { idempotencyKey: result.command.idempotencyKey, request };
+    const queued = (await readOperationQueue(operationId)).checklists.find(item =>
+      item.state === 'pending' && item.command.kind === 'checklistSubmit' &&
+      item.command.checklistId.toLowerCase() === checklistId.toLowerCase());
+    if (!queued || queued.command.kind !== 'checklistSubmit') return null;
+    const request = parseSubmitRequest({ checklistId: queued.command.checklistId, answers: queued.command.answers });
+    if (!request) throw new MobileServiceError('storage_unavailable');
+    return { idempotencyKey: queued.idempotencyKey, request };
   } catch (error) {
     throw asMobileServiceError(error);
   }
 }
 
+/**
+ * What happened to «Enviar checklist» (3-I): ELEVANT confirmed it, or it is saved on the device and goes out on its
+ * own after the operation's earlier commands. A refusal is thrown with its Problem Details code.
+ */
+export type RampChecklistSubmissionOutcome =
+  | Readonly<{ state: 'confirmed'; response: RampChecklistSubmissionResponse }>
+  | Readonly<{ state: 'queued'; issue?: MobileServiceError }>;
+
+/**
+ * Sends the checklist through the device's queue (3-I). A submission of this checklist already waiting is sent again
+ * with its key and body; one ELEVANT refused before gives way to this one. The draft is removed once ELEVANT confirms
+ * the answers.
+ */
 export async function submitRampOperationChecklist(
   operationId: string,
   request: SubmitRampOperationChecklistRequest,
-  options: RampChecklistRequestOptions = {},
-): Promise<RampChecklistSubmissionResponse> {
+  _options: RampChecklistRequestOptions = {},
+): Promise<RampChecklistSubmissionOutcome> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
   const validatedRequest = parseSubmitRequest(request);
   if (!validatedRequest) throw new MobileServiceError('request_failed');
-  const context = await getMobileSessionRequestContext();
-  let reservedIdempotencyKey: string | undefined;
-  try {
-    const command = await getOrCreateRampChecklistSubmitCommandIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      validatedRequest.checklistId,
-      JSON.stringify(validatedRequest),
-    );
-    if (command.kind !== 'current') throw new MobileServiceError('cancelled');
-    reservedIdempotencyKey = command.idempotencyKey;
-    const frozenRequest = parseSubmitRequest(JSON.parse(command.payload) as unknown);
-    if (!frozenRequest || frozenRequest.checklistId !== validatedRequest.checklistId) {
-      throw new MobileServiceError('storage_unavailable');
-    }
-
-    const device = await registerCurrentMobileDevice(
-      { accessToken: context.accessToken },
-      options,
-    );
-    const confirmed = await confirmSameSession(context.sessionId);
-    const value = await apiClient(confirmed.accessToken).submitRampOperationChecklist(
-      operationId,
-      frozenRequest,
-      device.installationId,
-      command.idempotencyKey,
-      { signal: options.signal },
-    );
-    await confirmSameSession(context.sessionId);
-    const response = parseSubmitResponse(value, frozenRequest.checklistId);
-    const removed = await removeRampChecklistDraftIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      frozenRequest.checklistId,
-    );
-    if (removed !== 'removed') throw new MobileServiceError('cancelled');
-    const commandRemoved = await removeRampChecklistSubmitCommandIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-      frozenRequest.checklistId,
-      command.idempotencyKey,
-    );
-    if (commandRemoved === 'not-current') {
-      throw new MobileServiceError('cancelled');
-    }
-    return response;
-  } catch (error) {
-    const normalized = asMobileServiceError(error);
-    if (isDeterministicWriteRejection(normalized) && reservedIdempotencyKey) {
-      try {
-        const removed = await removeRampChecklistSubmitCommandIfCurrent(
-          context.sessionId,
-          context.session.actor.accountId,
-          operationId,
-          validatedRequest.checklistId,
-          reservedIdempotencyKey,
-        );
-        if (removed === 'not-current') throw new MobileServiceError('cancelled');
-      } catch (removalError) {
-        throw asMobileServiceError(removalError);
-      }
-    }
-    return rejectIfUnauthorized(context.sessionId, normalized);
+  const queue = await readOperationQueue(operationId);
+  const same = queue.checklists.filter(item => item.command.kind === 'checklistSubmit' &&
+    item.command.checklistId.toLowerCase() === validatedRequest.checklistId);
+  const waiting = same.find(item => item.state === 'pending');
+  for (const refused of same.filter(item => item.state === 'blocked')) {
+    await discardFlightReportItem(refused.idempotencyKey);
   }
-}
-
-function isDeterministicWriteRejection(error: MobileServiceError) {
-  return (
-    error.code === 'not_found' ||
-    error.code === 'conflict' ||
-    error.status === 400 ||
-    error.status === 413 ||
-    error.status === 415
-  );
+  const command = waiting?.command.kind === 'checklistSubmit' ? waiting.command : {
+    kind: 'checklistSubmit' as const,
+    operationId: operationId.toLowerCase(),
+    checklistId: validatedRequest.checklistId,
+    answers: validatedRequest.answers.map(answer => ({ ...answer })),
+  };
+  const sent = await sendFlightReportCommand(command, {
+    discardRefused: true,
+    ...(waiting ? { idempotencyKey: waiting.idempotencyKey } : {}),
+  });
+  if (sent.state === 'queued') return { state: 'queued', ...(sent.issue ? { issue: sent.issue } : {}) };
+  const response = parseSubmitResponse(sent.result, validatedRequest.checklistId);
+  const context = await getMobileSessionRequestContext();
+  await removeRampChecklistDraftIfCurrent(context.sessionId, context.session.actor.accountId, operationId,
+    validatedRequest.checklistId).catch(() => undefined);
+  return { state: 'confirmed', response };
 }

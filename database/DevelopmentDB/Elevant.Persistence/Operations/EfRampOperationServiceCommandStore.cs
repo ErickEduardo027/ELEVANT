@@ -196,6 +196,33 @@ internal sealed class EfRampOperationServiceCommandStore(
                 cancellationToken);
         }
 
+        // 3-I: the moment the agent tapped the transition, possibly sent later from the offline queue. It fits the
+        // operation's window and never precedes the service's last transition; without it the server's time applies.
+        var occurredAt = now;
+        if (request.OccurredAt is { } tapped)
+        {
+            occurredAt = NormalizeToMilliseconds(tapped);
+            var window = await RampEvidenceWindowReader.ReadAsync(context, scope.Operation, RampEvidenceKind.Report,
+                now, cancellationToken);
+            var lastEventAt = await context.Set<OperationServiceStatusEvent>().AsNoTracking()
+                .Where(item => item.OperationServiceId == service.Id)
+                .MaxAsync(item => (DateTimeOffset?)item.OccurredAt, cancellationToken);
+            if (RampEvidenceTimePolicy.CheckServiceTime(occurredAt, window.Opens, lastEventAt, now) is { } broken)
+            {
+                return await RejectAsync(
+                    receipt,
+                    RampOperationServiceTransitionWriteFailure.Conflict,
+                    broken,
+                    broken == RampProblemCodes.ServiceTimeOutOfOrder
+                        ? "The transition is earlier than the service's last transition."
+                        : "The transition time is outside the operation's window.",
+                    now,
+                    cancellationToken);
+            }
+
+            occurredAt = RampEvidenceTimePolicy.Clamp(occurredAt, now);
+        }
+
         var previousStatus = service.CurrentStatus;
         var previousQuantity = service.ExecutedQuantity;
         service.CurrentStatus = request.TargetStatus;
@@ -215,7 +242,7 @@ internal sealed class EfRampOperationServiceCommandStore(
             OperationServiceId = service.Id,
             FromStatus = previousStatus,
             ToStatus = request.TargetStatus,
-            OccurredAt = now,
+            OccurredAt = occurredAt,
             RampAgentId = actor.RampAgentInternalId,
             Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
         });
@@ -244,6 +271,9 @@ internal sealed class EfRampOperationServiceCommandStore(
                 targetStatus = request.TargetStatus.ToString(),
                 executedQuantity = service.ExecutedQuantity,
                 installationId = device.InstallationId,
+                // 3-I: when the command reached the server and when the agent tapped it.
+                receivedAt = now,
+                occurredAt,
             }, ReceiptJsonOptions),
         };
         context.AuditEntries.Add(auditEntry);
@@ -329,7 +359,8 @@ internal sealed class EfRampOperationServiceCommandStore(
         await context.SaveChangesAsync(cancellationToken);
         return RampOperationServiceTransitionWriteResult.Failed(
             failure,
-            receipt.PublicId);
+            receipt.PublicId,
+            RampProblemCodes.PublicCode(errorCode));
     }
 
     private static RampOperationServiceTransitionWriteResult Replay(
@@ -368,33 +399,52 @@ internal sealed class EfRampOperationServiceCommandStore(
             var failure = receipt.ErrorCode switch
             {
                 "not_found" => RampOperationServiceTransitionWriteFailure.NotFound,
-                "conflict" => RampOperationServiceTransitionWriteFailure.Conflict,
+                "conflict" or RampProblemCodes.TimeOutsideOperationWindow or RampProblemCodes.ServiceTimeOutOfOrder =>
+                    RampOperationServiceTransitionWriteFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "The stored service command rejection is invalid."),
             };
             return RampOperationServiceTransitionWriteResult.Failed(
                 failure,
-                receipt.PublicId);
+                receipt.PublicId,
+                RampProblemCodes.PublicCode(receipt.ErrorCode));
         }
 
         return Conflict();
     }
 
-    private static string ComputePayloadHash(
+    /// <summary>
+    /// The receipt hash of a transition. Without a tapped time the canonical payload is byte for byte the one of the
+    /// first version, so a transition the deployed APK queued replays instead of conflicting (3-I); a tapped time,
+    /// truncated to milliseconds, extends it.
+    /// </summary>
+    internal static string ComputePayloadHash(
         RampOperationServiceTransitionWriteRequest request)
     {
-        var canonical = new
-        {
-            command = CommandType,
-            operationId = request.OperationId.ToString("D"),
-            serviceId = request.ServiceId.ToString("D"),
-            targetStatus = request.TargetStatus.ToString(),
-            executedQuantity = request.ExecutedQuantity?.ToString(
-                "G29",
-                CultureInfo.InvariantCulture),
-            request.Note,
-        };
-        var payload = JsonSerializer.Serialize(canonical, ReceiptJsonOptions);
+        var operationId = request.OperationId.ToString("D");
+        var serviceId = request.ServiceId.ToString("D");
+        var targetStatus = request.TargetStatus.ToString();
+        var executedQuantity = request.ExecutedQuantity?.ToString("G29", CultureInfo.InvariantCulture);
+        var payload = request.OccurredAt is { } tapped
+            ? JsonSerializer.Serialize(new
+            {
+                command = CommandType,
+                operationId,
+                serviceId,
+                targetStatus,
+                executedQuantity,
+                request.Note,
+                occurredAt = NormalizeToMilliseconds(tapped),
+            }, ReceiptJsonOptions)
+            : JsonSerializer.Serialize(new
+            {
+                command = CommandType,
+                operationId,
+                serviceId,
+                targetStatus,
+                executedQuantity,
+                request.Note,
+            }, ReceiptJsonOptions);
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)))
             .ToLowerInvariant();
     }

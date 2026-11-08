@@ -122,6 +122,13 @@ public sealed record OccServiceOptionData(
     decimal UnitPrice,
     string CurrencyCode);
 
+/// <summary>
+/// The facts OCC's agent eligibility evaluates (<see cref="OccAgentEligibilityPolicy"/>).
+/// <paramref name="HasAssignmentConflict"/> means the agent already carries
+/// <see cref="OperationOccupancyRules.MaxSimultaneousOperations"/> operations in the window (3-D);
+/// <paramref name="RequiresMentor"/> means the agent has less than three months and no open coverage with a mentor at
+/// the reference time: a junior never works alone.
+/// </summary>
 public sealed record OccAgentCandidateData(
     Guid Id,
     string DisplayName,
@@ -136,7 +143,8 @@ public sealed record OccAgentCandidateData(
     bool HasCompatibleShift,
     Guid? OperationalPositionId,
     bool HasAssignmentConflict,
-    bool HasApprovedAbsence = false);
+    bool HasApprovedAbsence = false,
+    bool RequiresMentor = false);
 
 public sealed record OccPlanningOptionsSourceData(
     OccPlanningTurnaroundContextData Turnaround,

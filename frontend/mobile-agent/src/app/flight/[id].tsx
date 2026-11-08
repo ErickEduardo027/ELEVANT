@@ -1,4 +1,5 @@
 import type {
+  OperationDocumentsResponse,
   RampAssignedOperationResponse,
   RampFlightLegResponse,
   RampGroundOperationResponse,
@@ -39,6 +40,7 @@ import {
 } from '../../features/assigned-operations/presentation';
 import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
+import { explainsProblem } from '../../services/mobile-service-error';
 import { startAssignedRampOperation } from '../../services/ramp-operation-start';
 import {
   readPendingRampCorrection,
@@ -50,13 +52,18 @@ import {
   type RampOperationPendingSubmission,
 } from '../../services/ramp-operation-submission';
 import {
-  readRampOperationServicePendingTransition,
+  HANDOFF_PENDING_QUEUE,
+  HANDOFF_SERVICE_ORDER_UNSIGNED,
+  isServiceOrderSigned,
+} from '../../features/assigned-operations/handoff';
+import {
   transitionRampOperationService,
   type RampOperationServiceExecutionResponse,
-  type RampOperationServiceTargetStatus,
-  type RampServicePendingTransition,
   type TransitionRampOperationServiceRequest,
 } from '../../services/ramp-operation-service-execution';
+import { subscribeFlightReport } from '../../services/flight-report';
+import type { FlightReportOutboxItem } from '../../synchronization/flight-report-outbox';
+import { projectRampOperation } from '../../synchronization/ramp-command-projection';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
 import { dateTimeFormat } from '../../utils/date-format';
@@ -87,9 +94,12 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   const [starting, setStarting] = useState(false);
   const [startNotice, setStartNotice] = useState<StartNotice | null>(null);
   const [busyServiceId, setBusyServiceId] = useState<string | null>(null);
-  const [serviceReconciliationRequired, setServiceReconciliationRequired] = useState(false);
   const [serviceNotices, setServiceNotices] = useState<Readonly<Record<string, ServiceExecutionNotice>>>({});
-  const [pendingServiceCommands, setPendingServiceCommands] = useState<Readonly<Record<string, RampServicePendingTransition>>>({});
+  // 3-I: what the agent left in the device's queue; the screen shows it applied on ELEVANT's view.
+  const [queueItems, setQueueItems] = useState<readonly FlightReportOutboxItem[]>([]);
+  const [queueRevision, setQueueRevision] = useState(0);
+  // 3-N06: the last forms read for this operation, so the hand-off waits for the signed Service Order.
+  const [documents, setDocuments] = useState<OperationDocumentsResponse | undefined>(undefined);
   const [pendingSubmission, setPendingSubmission] = useState<RampOperationPendingSubmission | null>(null);
   const [submissionNote, setSubmissionNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -124,7 +134,6 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       setStartNotice(null);
       setBusyServiceId(null);
       setServiceNotices({});
-      setPendingServiceCommands({});
       setPendingSubmission(null);
       setSubmissionNote('');
       setSubmissionNotice(null);
@@ -161,14 +170,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         lastStartedOperationRef.current = null;
         lastServiceExecutionsRef.current.clear();
       }
-      let pendingCommands: Readonly<Record<string, RampServicePendingTransition>> | undefined;
       let pendingHandoff: RampOperationPendingSubmission | null = null;
-      if (found && snapshot.source === 'network') {
-        pendingCommands = await findPendingServiceCommands(
-          found.operation.id,
-          found.services,
-        );
-      }
       if (found) {
         pendingHandoff = await readRampOperationPendingSubmission(found.operation.id);
         setCorrectionPending(await readPendingRampCorrection(found.operation.id));
@@ -178,11 +180,6 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       setCached(snapshot.source === 'cache');
       setState(found ? 'ready' : 'not-found');
       loadedOperationIdRef.current = found ? id ?? null : null;
-      if (snapshot.source === 'network') {
-        setServiceReconciliationRequired(false);
-      }
-      if (pendingCommands) setPendingServiceCommands(pendingCommands);
-      else if (!found) setPendingServiceCommands({});
       setPendingSubmission(pendingHandoff);
       if (pendingHandoff) setSubmissionNote(pendingHandoff.request.agentNote ?? '');
       setSubmissionReconciliationRequired(false);
@@ -220,6 +217,20 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     if (resources.includes('ramp_operations')) void load('silent');
   }), [load]));
 
+  // 3-I: the queue as the device holds it; when ELEVANT confirms a start, service, charge or checklist of this
+  // operation that went out on its own, the view is read again.
+  useEffect(() => subscribeFlightReport(snapshot => {
+    setQueueItems(snapshot.items);
+    setQueueRevision(id ? snapshot.revisions[id.toLowerCase()] ?? snapshot.revisions[id] ?? 0 : 0);
+    setDocuments(id ? snapshot.documents?.[id] ?? snapshot.documents?.[id.toLowerCase()] : undefined);
+  }), [id]);
+  const seenRevisionRef = useRef(queueRevision);
+  useEffect(() => {
+    if (queueRevision === seenRevisionRef.current) return;
+    seenRevisionRef.current = queueRevision;
+    if (loadedOperationIdRef.current === id) void load('silent');
+  }, [id, load, queueRevision]);
+
   useFocusEffect(useCallback(() => {
     setFocused(true);
     void load(loadedOperationIdRef.current === id ? 'silent' : false);
@@ -238,11 +249,13 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
   }, [id, load]));
 
   const startOperation = useCallback(async () => {
+    // 3-I: with or without signal, the tap is saved on the device with its time and goes out on its own.
     if (
       startInFlightRef.current ||
       !operation ||
-      cached ||
-      operation.operation.status !== 'Assigned'
+      operation.operation.status !== 'Assigned' ||
+      queueItems.some(item => item.state === 'pending' && item.command.kind === 'start' &&
+        item.command.operationId.toLowerCase() === operation.operation.id.toLowerCase())
     ) {
       return;
     }
@@ -255,10 +268,16 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     setStartNotice(null);
 
     try {
-      const response = await startAssignedRampOperation(operation.operation.id, {
+      const outcome = await startAssignedRampOperation(operation.operation.id, {
         signal: request.signal,
+        timeZone: operation.turnaround.station.ianaTimeZone,
       });
       if (request.signal.aborted) return;
+      if (outcome.state === 'queued') {
+        setStartNotice(queuedStartNotice(outcome.issue));
+        return;
+      }
+      const response = outcome.response;
 
       lastStartedOperationRef.current = response.operation;
       setOperation(current => {
@@ -305,18 +324,22 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         if (!request.signal.aborted) setStarting(false);
       }
     }
-  }, [cached, load, operation]);
+  }, [load, operation, queueItems]);
 
   const transitionService = useCallback(async (
     service: RampOperationServiceResponse,
     transitionRequest: TransitionRampOperationServiceRequest,
   ) => {
+    // 3-I: the operation and the service as the agent left them on the device (a start or a transition may still wait
+    // in the queue); the tap is saved with its time and goes out on its own, with or without signal.
+    const projected = operation ? projectRampOperation(operation, queueItems).view : null;
+    const current = projected?.services.find(candidate => candidate.id === service.id) ?? service;
     if (
       serviceInFlightRef.current ||
       !operation ||
-      cached ||
-      operation.operation.status !== 'InProgress' ||
-      (isTerminalServiceStatus(service.status) &&
+      !projected ||
+      projected.operation.status !== 'InProgress' ||
+      (isTerminalServiceStatus(current.status) &&
         !(operation.review?.status === 'Returned' &&
           transitionRequest.targetStatus === 'InProgress'))
     ) {
@@ -328,39 +351,41 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     serviceRequestRef.current = request;
     serviceInFlightRef.current = true;
     setBusyServiceId(service.id);
-    setServiceNotices((current) => {
-      const next = { ...current };
+    setServiceNotices((notices) => {
+      const next = { ...notices };
       delete next[service.id];
       return next;
     });
 
     try {
-      const response = await transitionRampOperationService(
+      const outcome = await transitionRampOperationService(
         operation.operation.id,
         service.id,
         transitionRequest,
-        { signal: request.signal },
+        { signal: request.signal, serviceName: service.name, timeZone: operation.turnaround.station.ianaTimeZone },
       );
       if (request.signal.aborted) return;
+      if (outcome.state === 'queued') {
+        setServiceNotices((notices) => ({
+          ...notices,
+          [service.id]: queuedServiceNotice(service.name, outcome.issue),
+        }));
+        return;
+      }
+      const response = outcome.response;
 
       lastServiceExecutionsRef.current.set(service.id, response.service);
-      setServiceReconciliationRequired(false);
-      setOperation((current) => current
+      setOperation((value) => value
         ? {
-            ...current,
-            services: current.services.map((candidate) =>
+            ...value,
+            services: value.services.map((candidate) =>
               candidate.id === response.service.id
                 ? { ...candidate, ...response.service }
                 : candidate),
           }
-        : current);
-      setPendingServiceCommands((current) => {
-        const next = { ...current };
-        delete next[service.id];
-        return next;
-      });
-      setServiceNotices((current) => ({
-        ...current,
+        : value);
+      setServiceNotices((notices) => ({
+        ...notices,
         [service.id]: {
           tone: 'success',
           title: 'Servicio actualizado',
@@ -371,6 +396,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     } catch (error) {
       if (request.signal.aborted) return;
       if (error instanceof MobileServiceError) {
+        if (error.code === 'cancelled') return;
         if (error.code === 'unauthenticated' || error.code === 'session_expired') {
           resetToLogin('session_expired');
           return;
@@ -379,83 +405,17 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           resetToLogin('access_revoked');
           return;
         }
-        let reservedPending: RampServicePendingTransition | null = null;
-        let pendingReadFailed = false;
-        try {
-          reservedPending = await readRampOperationServicePendingTransition(
-            operation.operation.id,
-            service.id,
-            transitionRequest.targetStatus,
-          );
-          setPendingServiceCommands((current) => {
-            const next = { ...current };
-            if (reservedPending) next[service.id] = reservedPending;
-            else delete next[service.id];
-            return next;
-          });
-          setServiceReconciliationRequired(false);
-        } catch {
-          pendingReadFailed = true;
-          setServiceReconciliationRequired(true);
-        }
-        if (pendingReadFailed) {
-          setServiceNotices((current) => ({
-            ...current,
-            [service.id]: {
-              tone: 'error',
-              title: 'Estado local por conciliar',
-              message: 'No pudimos verificar el comando reservado. Actualiza el detalle; mientras tanto, todos los comandos de servicio permanecen bloqueados.',
-            },
-          }));
-          return;
-        }
-        if (error.code === 'cancelled') {
-          setServiceNotices((current) => ({
-            ...current,
-            [service.id]: {
-              tone: 'warning',
-              title: 'Sesión actualizada',
-              message: 'La revisión de sesión cambió durante el comando. Verificaremos el estado canónico y el replay reservado.',
-            },
-          }));
-          await load(true);
-          return;
-        }
-        if (error.code === 'network_unavailable' || error.code === 'request_timeout') {
-          setServiceNotices((current) => ({
-            ...current,
-            [service.id]: serviceTransitionErrorNotice(error),
-          }));
-          return;
-        }
-        setServiceNotices((current) => ({
-          ...current,
+        setServiceNotices((notices) => ({
+          ...notices,
           [service.id]: serviceTransitionErrorNotice(error),
         }));
         if (error.code === 'not_found' || error.code === 'conflict') {
           await load(true);
         }
-        if (
-          reservedPending &&
-          error.code !== 'not_found' &&
-          error.code !== 'conflict' &&
-          error.code !== 'device_conflict' &&
-          error.code !== 'device_in_use' &&
-          error.code !== 'device_revoked'
-        ) {
-          setServiceNotices((current) => ({
-            ...current,
-            [service.id]: {
-              tone: 'warning',
-              title: 'Respuesta no confirmada',
-              message: 'El payload quedó reservado. El próximo intento reutilizará exactamente el mismo comando.',
-            },
-          }));
-        }
         return;
       }
-      setServiceNotices((current) => ({
-        ...current,
+      setServiceNotices((notices) => ({
+        ...notices,
         [service.id]: {
           tone: 'error',
           title: 'Servicio no actualizado',
@@ -469,13 +429,12 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         if (!request.signal.aborted) setBusyServiceId(null);
       }
     }
-  }, [cached, load, operation]);
+  }, [load, operation, queueItems]);
 
   const handoffOperation = useCallback(async () => {
     if (
       submissionInFlightRef.current || !operation || cached ||
-      busyServiceId !== null || Object.keys(pendingServiceCommands).length > 0 ||
-      serviceReconciliationRequired || submissionReconciliationRequired ||
+      busyServiceId !== null || submissionReconciliationRequired ||
       (!pendingSubmission && (
         operation.operation.status !== 'InProgress' ||
         operation.services.length === 0 ||
@@ -551,8 +510,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
         if (!request.signal.aborted) setSubmitting(false);
       }
     }
-  }, [busyServiceId, cached, operation, pendingServiceCommands, pendingSubmission,
-    serviceReconciliationRequired, submissionNote, submissionReconciliationRequired]);
+  }, [busyServiceId, cached, operation, pendingSubmission, submissionNote, submissionReconciliationRequired]);
 
   const confirmHandoff = useCallback(() => {
     if (pendingSubmission) {
@@ -561,7 +519,7 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
     }
     Alert.alert(
       'Entregar operación a OCC',
-      'Confirma que el checklist está enviado, los servicios terminaron y las incidencias pendientes están sincronizadas. Una vez entregada, la ejecución queda cerrada para revisión.',
+      'Confirma que el checklist está enviado, los servicios terminaron, la Orden de Servicio está firmada y los hitos, datos del vuelo, daños, firmas e incidencias ya llegaron a ELEVANT. Una vez entregada, la ejecución queda cerrada para revisión.',
       [
         { text: 'Seguir revisando', style: 'cancel' },
         { text: 'Entregar a OCC', onPress: () => void handoffOperation() },
@@ -651,10 +609,15 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 
   const { assignment, turnaround } = operation;
   const timeZone = turnaround.station.ianaTimeZone;
-  const pendingServiceId = Object.keys(pendingServiceCommands)[0] ?? null;
+  // 3-I: ELEVANT's view (network or saved copy) with what still waits in the device's queue applied on top: a start or
+  // a service transition saved without signal already shows, marked «En el dispositivo».
+  const projection = projectRampOperation(operation, queueItems);
+  const shown = projection.view;
   // Every operation carries an execution checklist (ADR-0031): the bridge one or the Flight Report.
   const hasOperationalChecklist = true;
-  const executing = !cached && operation.operation.status === 'InProgress';
+  const executing = shown.operation.status === 'InProgress';
+  // 3-N06: a new hand-off waits until everything recorded reached ELEVANT and the Service Order is signed.
+  const handoffHolds = pendingSubmission ? [] : handoffHoldsFor(projection.pending + projection.blocked, documents);
 
   return (
     <ScrollView
@@ -684,8 +647,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
             <Text style={styles.airline}>{turnaround.airline.name}</Text>
           </View>
           <StatusPill
-            text={operationStatusLabel(operation.operation.status)}
-            tone={operationStatusTone(operation.operation.status)}
+            text={operationStatusLabel(shown.operation.status)}
+            tone={operationStatusTone(shown.operation.status)}
           />
         </View>
 
@@ -698,25 +661,26 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
       </Card>
 
       <OperationStartControl
-        cached={cached}
         notice={startNotice}
+        onDevice={projection.startOnDevice}
         onStart={() => void startOperation()}
-        operation={operation.operation}
+        operation={shown.operation}
+        refusal={projection.startRefused?.lastError}
         starting={starting}
         timeZone={timeZone}
       />
 
       <ConnectionBadge />
-      {operation.operation.status !== 'Assigned' && (
+      {shown.operation.status !== 'Assigned' && (
         <>
-          <FlightReportPanel operation={operation} timeZone={timeZone} editable={executing} />
+          <FlightReportPanel operation={shown} timeZone={timeZone} editable={executing} />
           <DeviationAction operationId={operation.operation.id} editable={executing} />
-          <FlightDataCard key={operation.operation.id} operation={operation} editable={executing} />
+          <FlightDataCard key={operation.operation.id} operation={shown} editable={executing} />
           <WalkaroundCard operationId={operation.operation.id} editable={executing} />
           <CharterCard operationId={operation.operation.id} editable={executing}
             existingServiceIds={operation.services.map(service => service.serviceDefinitionId)} />
-          <DocumentsPanel operationId={operation.operation.id} editable={executing || operation.operation.status === 'PendingReview' ||
-            operation.operation.status === 'Returned'} />
+          <DocumentsPanel operationId={operation.operation.id} editable={executing || shown.operation.status === 'PendingReview' ||
+            shown.operation.status === 'Returned'} />
         </>
       )}
 
@@ -782,38 +746,30 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 
       <SectionTitle
         title="Servicios contratados"
-        subtitle={`${operation.services.length} ${operation.services.length === 1 ? 'línea' : 'líneas'} de servicio`}
+        subtitle={`${shown.services.length} ${shown.services.length === 1 ? 'línea' : 'líneas'} de servicio`}
       />
       <View style={styles.servicesList}>
-        {operation.services.length > 0 ? operation.services.map((service) => (
+        {shown.services.length > 0 ? shown.services.map((service) => (
           <RampServiceExecutionCard
             actionable={
-              !cached &&
-              !serviceReconciliationRequired &&
-              operation.operation.status === 'InProgress' &&
-              (pendingServiceId === null || pendingServiceId === service.id) &&
+              executing &&
               (busyServiceId === null || busyServiceId === service.id)
             }
             busy={busyServiceId === service.id}
-            correctionMode={operation.operation.status === 'InProgress' &&
-              operation.review?.status === 'Returned'}
+            correctionMode={executing && operation.review?.status === 'Returned'}
             disabledReason={
-              cached
-                ? 'Reconecta y actualiza el detalle antes de registrar un cambio.'
-                : serviceReconciliationRequired
-                  ? 'Actualiza el detalle para conciliar el comando local antes de continuar.'
-                : operation.operation.status !== 'InProgress'
-                  ? 'Inicia la operación antes de ejecutar sus servicios.'
-                  : pendingServiceId && pendingServiceId !== service.id
-                    ? 'Confirma primero el comando pendiente del otro servicio.'
-                  : busyServiceId && busyServiceId !== service.id
-                    ? 'Espera a que termine el comando del otro servicio.'
-                    : undefined
+              !executing
+                ? 'Inicia la operación antes de ejecutar sus servicios.'
+                : busyServiceId && busyServiceId !== service.id
+                  ? 'Espera a que termine el comando del otro servicio.'
+                  : undefined
             }
             key={service.id}
             notice={serviceNotices[service.id]}
             onTransition={serviceTransitionHandlers.get(service.id)!}
-            pending={pendingServiceCommands[service.id]}
+            queue={projection.servicesRefused.has(service.id)
+              ? { tone: 'blocked', message: projection.servicesRefused.get(service.id)?.lastError }
+              : projection.servicesOnDevice.has(service.id) ? { tone: 'device' } : undefined}
             service={service}
           />
         )) : (
@@ -823,15 +779,15 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
           </Card>
         )}
       </View>
-      {!cached && operation.services.length > 0 && (
+      {shown.services.length > 0 && (
         <RampOperationChargesCard
           operationId={operation.operation.id}
-          refreshKey={`${operation.operation.status}:${operation.review?.status ?? ''}:${operation.services.map(service => service.status).join(',')}`}
-          services={operation.services}
+          refreshKey={`${shown.operation.status}:${operation.review?.status ?? ''}:${shown.services.map(service => service.status).join(',')}`}
+          services={shown.services}
         />
       )}
 
-      {operation.operation.status === 'InProgress' && (
+      {executing && (
         <View style={styles.nextPhase}>
           <View style={styles.nextPhaseIcon}>
             <Ionicons name="alert-circle-outline" size={26} color={colors.navy} />
@@ -860,34 +816,18 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
             <Text style={styles.nextPhaseText}>
               Completa las secciones vigentes para esta operación. El envío del checklist no finaliza ni remite la operación a OCC.
             </Text>
-            {cached && (
-              <Text style={styles.nextPhaseWarning}>
-                Reconecta y actualiza el detalle para abrir el checklist canónico.
-              </Text>
-            )}
-            {operation.operation.status === 'Assigned' && (
+            {shown.operation.status === 'Assigned' && (
               <Text style={styles.nextPhaseWarning}>
                 Inicia la operación antes de completar el checklist.
               </Text>
             )}
-            {pendingServiceId && (
+            {cached && executing && (
               <Text style={styles.nextPhaseWarning}>
-                Confirma primero el comando de servicio pendiente.
-              </Text>
-            )}
-            {serviceReconciliationRequired && (
-              <Text style={styles.nextPhaseWarning}>
-                Actualiza el detalle para conciliar el comando local antes de abrir el checklist.
+                Sin señal se abre la última copia del checklist guardada en el dispositivo; el envío sale al reconectar.
               </Text>
             )}
             <PrimaryButton
-              disabled={
-                cached ||
-                operation.operation.status !== 'InProgress' ||
-                busyServiceId !== null ||
-                pendingServiceId !== null ||
-                serviceReconciliationRequired
-              }
+              disabled={!executing || busyServiceId !== null}
               icon="clipboard-outline"
               onPress={() => router.push({
                 pathname: '/checklist/[id]',
@@ -901,10 +841,8 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 
       {(hasOperationalChecklist || pendingSubmission || operation.operation.status === 'PendingReview') && (
         <OperationSubmissionControl
-          blocked={
-            cached || busyServiceId !== null || pendingServiceId !== null ||
-            serviceReconciliationRequired || submissionReconciliationRequired
-          }
+          blocked={cached || busyServiceId !== null || submissionReconciliationRequired}
+          holds={handoffHolds}
           note={submissionNote}
           notice={submissionNotice}
           onChangeNote={setSubmissionNote}
@@ -939,17 +877,21 @@ export function OperationDetail({ operationId: id }: Readonly<{ operationId?: st
 }
 
 function OperationStartControl({
-  cached,
   notice,
+  onDevice,
   onStart,
   operation,
+  refusal,
   starting,
   timeZone,
 }: {
-  readonly cached: boolean;
   readonly notice: StartNotice | null;
+  /** 3-I: the start waits in the device's queue; the operation already runs from the tapped time. */
+  readonly onDevice: boolean;
   readonly onStart: () => void;
   readonly operation: RampGroundOperationResponse;
+  /** 3-I: why ELEVANT refused the start saved on the device, until the agent taps «Iniciar» again. */
+  readonly refusal?: string;
   readonly starting: boolean;
   readonly timeZone: string;
 }) {
@@ -995,9 +937,12 @@ function OperationStartControl({
           <View style={styles.startedAtRow}>
             <Ionicons name="checkmark-circle" size={19} color={colors.success} />
             <Text style={styles.startedAtText}>
-              {operation.actualStartAt
-                ? `Inicio registrado ${formatDateTime(operation.actualStartAt, timeZone)}`
-                : 'Inicio confirmado por ELEVANT'}
+              {onDevice
+                ? `Inicio guardado en el dispositivo ${operation.actualStartAt
+                  ? formatDateTime(operation.actualStartAt, timeZone) : ''} · se envía a ELEVANT en cuanto haya señal`
+                : operation.actualStartAt
+                  ? `Inicio registrado ${formatDateTime(operation.actualStartAt, timeZone)}`
+                  : 'Inicio confirmado por ELEVANT'}
             </Text>
           </View>
         ) : isAssigned ? (
@@ -1005,16 +950,16 @@ function OperationStartControl({
             <Text style={styles.startDescription}>
               Confirma que estás en posición y listo para atender esta operación.
             </Text>
-            {cached && (
+            {refusal && (
               <View style={styles.startOfflineHint}>
-                <Ionicons name="cloud-offline-outline" size={18} color={colors.warning} />
+                <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
                 <Text style={styles.startOfflineText}>
-                  Reconecta y actualiza el detalle antes de iniciar.
+                  ELEVANT rechazó el inicio guardado en el dispositivo: {refusal} Si corresponde, vuelve a iniciar.
                 </Text>
               </View>
             )}
             <PrimaryButton
-              disabled={cached || starting}
+              disabled={starting}
               icon="play"
               onPress={onStart}
               title={starting ? 'INICIANDO…' : 'INICIAR OPERACIÓN'}
@@ -1054,6 +999,7 @@ function OperationStartControl({
 
 function OperationSubmissionControl({
   blocked,
+  holds,
   note,
   notice,
   onChangeNote,
@@ -1065,6 +1011,8 @@ function OperationSubmissionControl({
   submitting,
 }: {
   readonly blocked: boolean;
+  /** 3-N06: why a new hand-off waits (records still on the device, the Service Order without its signatures). */
+  readonly holds: readonly HandoffHold[];
   readonly note: string;
   readonly notice: StartNotice | null;
   readonly onChangeNote: (value: string) => void;
@@ -1077,7 +1025,7 @@ function OperationSubmissionControl({
 }) {
   const delivered = operation.status === 'PendingReview' && !pending;
   const canSubmit = !blocked && !submitting && (
-    pending !== null || (operation.status === 'InProgress' && servicesReady));
+    pending !== null || (operation.status === 'InProgress' && servicesReady && holds.length === 0));
 
   return (
     <View style={[styles.handoffCard, delivered && styles.handoffDelivered]}>
@@ -1100,7 +1048,7 @@ function OperationSubmissionControl({
       <Text style={styles.startDescription}>
         {delivered
           ? 'La ejecución quedó cerrada. OCC revisará el checklist, los servicios y las incidencias registradas.'
-          : 'Antes de entregar, envía el checklist y termina todos los servicios. Las incidencias pendientes deben sincronizarse.'}
+          : 'Antes de entregar, envía el checklist, termina todos los servicios, firma la Orden de Servicio y espera a que todo lo que registraste llegue a ELEVANT.'}
       </Text>
       {operation.status === 'InProgress' && !pending && (
         <View style={styles.handoffNoteGroup}>
@@ -1128,6 +1076,14 @@ function OperationSubmissionControl({
       {!servicesReady && operation.status === 'InProgress' && !pending && (
         <Text style={styles.nextPhaseWarning}>Termina todos los servicios antes de entregar.</Text>
       )}
+      {operation.status === 'InProgress' && !pending && holds.map(hold => (
+        <View key={hold.kind} style={styles.handoffHold}>
+          <Text style={styles.nextPhaseWarning}>{hold.message}</Text>
+          {hold.kind === 'queue' && (
+            <PrimaryButton icon="sync" onPress={() => router.push('/sync')} secondary title="ABRIR SINCRONIZACIÓN" />
+          )}
+        </View>
+      ))}
       {blocked && !delivered && (
         <Text style={styles.nextPhaseWarning}>
           Actualiza en línea y concilia los comandos pendientes antes de entregar.
@@ -1166,60 +1122,43 @@ function OperationSubmissionControl({
   );
 }
 
-async function findPendingServiceCommands(
-  operationId: string,
-  services: readonly RampOperationServiceResponse[],
-) {
-  const pending: Record<string, RampServicePendingTransition> = {};
-  for (const service of services) {
-    const targets = allowedServiceTargets(service.status);
-    for (const target of targets) {
-      const command = await readRampOperationServicePendingTransition(
-        operationId,
-        service.id,
-        target,
-      );
-      if (command) {
-        pending[service.id] = command;
-        break;
-      }
-    }
-  }
-  return pending;
-}
-
-function allowedServiceTargets(
-  status: string,
-): readonly RampOperationServiceTargetStatus[] {
-  if (status === 'Planned') {
-    return ['InProgress', 'NotPerformed', 'Exception'];
-  }
-  if (status === 'InProgress') {
-    return ['Completed', 'NotPerformed', 'Exception'];
-  }
-  if (isTerminalServiceStatus(status)) return ['InProgress'];
-  return [];
-}
-
 function isTerminalServiceStatus(status: string) {
   return status === 'Completed' || status === 'NotPerformed' || status === 'Exception';
+}
+
+/** 3-I: «Iniciar» saved on the device: it goes out on its own with the tapped time. */
+function queuedStartNotice(issue?: MobileServiceError): StartNotice {
+  if (issue && (issue.code === 'device_revoked' || issue.code === 'device_in_use' || issue.code === 'device_conflict')) {
+    return startErrorNotice(issue);
+  }
+  return {
+    tone: 'warning',
+    title: 'Inicio guardado en el dispositivo',
+    message: 'Se envía a ELEVANT en cuanto haya señal, con la hora en que lo tocaste. Puedes registrar los tiempos y los servicios mientras tanto.',
+  };
+}
+
+/** 3-I: a service transition saved on the device: it goes out on its own, in its order, with the tapped time. */
+function queuedServiceNotice(serviceName: string, issue?: MobileServiceError): ServiceExecutionNotice {
+  if (issue && (issue.code === 'device_revoked' || issue.code === 'device_in_use' || issue.code === 'device_conflict')) {
+    return serviceTransitionErrorNotice(issue);
+  }
+  return {
+    tone: 'warning',
+    title: 'Guardado en el dispositivo',
+    message: `${serviceName} se envía a ELEVANT en cuanto haya señal, con la hora en que lo tocaste.`,
+  };
 }
 
 function serviceTransitionErrorNotice(
   error: MobileServiceError,
 ): ServiceExecutionNotice {
-  if (error.code === 'network_unavailable') {
+  // Phase 3 block C: a refusal with a code the tablet explains (a time out of order, outside the operation's window…).
+  if (error.code === 'conflict' && explainsProblem(error)) {
     return {
-      tone: 'warning',
-      title: 'Estado pendiente de confirmación',
-      message: 'La conexión se perdió antes de confirmar el resultado. Sin cerrar sesión, reintenta: ELEVANT reutilizará exactamente el mismo payload y la misma clave.',
-    };
-  }
-  if (error.code === 'request_timeout') {
-    return {
-      tone: 'warning',
-      title: 'Estado pendiente de confirmación',
-      message: 'La respuesta tardó demasiado y el resultado es incierto. Sin cerrar sesión, reintenta: ELEVANT reutilizará exactamente el mismo payload y la misma clave.',
+      tone: 'error',
+      title: 'Servicio rechazado',
+      message: error.message,
     };
   }
   if (error.code === 'conflict') {
@@ -1232,8 +1171,8 @@ function serviceTransitionErrorNotice(
   if (error.code === 'not_found') {
     return {
       tone: 'warning',
-      title: 'Servicio no disponible',
-      message: 'El servicio o la asignación ya no están disponibles para esta cuenta.',
+      title: 'Se liberó tu asignación',
+      message: 'El servicio o la operación ya no están a tu cargo. Estamos actualizando el detalle.',
     };
   }
   if (error.code === 'device_revoked') {
@@ -1273,6 +1212,21 @@ function serviceTransitionErrorNotice(
   };
 }
 
+/** 3-N06: one reason a new hand-off waits, with the text the hand-off card shows. */
+type HandoffHold = Readonly<{ kind: 'queue' | 'signatures'; message: string }>;
+
+function handoffHoldsFor(waitingRecords: number, documents: OperationDocumentsResponse | undefined): HandoffHold[] {
+  const holds: HandoffHold[] = [];
+  if (waitingRecords > 0) {
+    holds.push({ kind: 'queue', message: `Faltan ${waitingRecords} ${waitingRecords === 1 ? 'registro' : 'registros'} por enviar a ELEVANT: abre Sincronización.` });
+  }
+  // Before the forms are read the service decides: it checks them again right before sending the hand-off.
+  if (documents && !isServiceOrderSigned(documents)) {
+    holds.push({ kind: 'signatures', message: 'Falta firmar la Orden de Servicio (aerolínea y AVIAM).' });
+  }
+  return holds;
+}
+
 function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
   if (pending) {
     return {
@@ -1282,6 +1236,10 @@ function submissionErrorNotice(error: unknown, pending: boolean): StartNotice {
     };
   }
   if (error instanceof MobileServiceError) {
+    if (error.code === 'conflict' &&
+        (error.problemCode === HANDOFF_PENDING_QUEUE || error.problemCode === HANDOFF_SERVICE_ORDER_UNSIGNED)) {
+      return { tone: 'warning', title: 'Entrega en espera', message: error.message };
+    }
     if (error.code === 'conflict' || error.code === 'not_found') {
       return {
         tone: 'warning',
@@ -1308,8 +1266,24 @@ function startErrorNotice(error: MobileServiceError): StartNotice {
   if (error.code === 'not_found') {
     return {
       tone: 'warning',
-      title: 'Asignación no disponible',
+      title: 'Se liberó tu asignación',
       message: 'La operación ya no pertenece a tu lista. Estamos actualizando el detalle.',
+    };
+  }
+  // 3-N04: the airline's contract is no longer in force; the operation does not start until OCC decides.
+  if (error.code === 'conflict' && error.problemCode === 'contract_not_in_force') {
+    return {
+      tone: 'error',
+      title: 'Contrato no vigente',
+      message: error.message,
+    };
+  }
+  // Phase 3 block C: a start the server refuses with a code the tablet explains (before the assignment, too old…).
+  if (error.code === 'conflict' && explainsProblem(error)) {
+    return {
+      tone: 'error',
+      title: 'Inicio rechazado',
+      message: error.message,
     };
   }
   if (error.code === 'conflict') {
@@ -1580,6 +1554,7 @@ const styles = StyleSheet.create({
   handoffCopy: { flex: 1, minWidth: 0 },
   handoffTitle: { color: colors.ink, fontSize: 18, fontWeight: '900', marginTop: 2 },
   handoffNoteGroup: { gap: 6 },
+  handoffHold: { gap: 8 },
   handoffLabel: { color: colors.navy, fontSize: 13, fontWeight: '800' },
   handoffNoteInput: {
     minHeight: 96,

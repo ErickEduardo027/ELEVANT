@@ -12,6 +12,11 @@ verified_commit: "8a79fe70a3c592ab3f5dc8af1e7c03f1314b526d"
 sources:
   - database/DevelopmentDB/Elevant.Persistence/Commercial/GoverningContractVersions.cs
   - database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs
+  - backend/Elevant.Application/Finance/ServiceBillability.cs
+  - backend/Elevant.Application/Finance/FinanceApprovedServicePolicy.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/ContractChargeExclusions.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/AutomaticSurchargeApplier.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfCharterStore.cs
   - docs/superpowers/plans/2026-10-18-finance-platform.md
   - backend/Elevant.Application/Commercial/ContractAmendment.cs
   - backend/Elevant.Application/Finance/BillingUnitNames.cs
@@ -230,6 +235,19 @@ Se gestionan en el módulo «Reglas de cierre» con `finance.close_rules.read` y
 - En «Servicios aprobados» cada servicio muestra sus recargos con su origen, y hay atajos de semana de domingo a sábado.
 - El seed de Development usa 15 % para el nocturno y el festivo, como el formulario de AVIAM.
 
+### Fase 3 del ciclo: qué se factura de la operación
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c`) y la corrección de la revisión de su bloque D
+(`3b749a94`;
+[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+- **Una sola regla de lo facturable.** Se factura un servicio completado o en excepción, con cantidad ejecutada, que OCC no excluyó en la revisión ([`ServiceBillability`](../../backend/Elevant.Application/Finance/ServiceBillability.cs)). La aplican «Por facturar», el borrador interno, la emisión e-CF, los recargos automáticos y los reportes, también «Servicios ejecutados por aerolínea» de OCC.
+- **Exclusión de OCC.** OCC excluye de la facturación, con motivo, un servicio en excepción con cantidad mientras la revisión sigue abierta. Finanzas lo ve como «Excluido por OCC en la revisión». El tiempo extra y la demora que marca ELEVANT van a un servicio completado antes que a uno en excepción, y si OCC excluye el servicio que los lleva pasan al siguiente servicio facturable que los admite: la operación los sigue facturando una vez.
+- **Cargos que el contrato excluye.** OCC ya no los ve ni los añade. Un cargo heredado de ese tipo bloquea el servicio en «Por facturar», en el borrador y en la emisión con `charge_excluded_by_contract`, hasta que OCC reabra la revisión y lo quite: nunca se valora en 0 sin aviso ([política](../../backend/Elevant.Application/Finance/FinanceApprovedServicePolicy.cs)).
+- **Lo firmado.** OCC solo aprueba la Orden de Servicio firmada o corregida por OCC, y los recargos automáticos se proyectan en la Orden antes de la firma: Finanzas factura lo que firmó la aerolínea. Una aprobación de la que nada se facturó se reabre en OCC; si ya está en una prefactura, su corrección es una nota de crédito.
+- **Recargos recalculados.** El reenvío de una corrección mide el tiempo en tierra hasta la primera entrega y retira solo los recargos automáticos que ya no se detectan, y la evidencia que llega mientras OCC revisa los recalcula.
+
 ## Charters sin contrato
 
 Un vuelo de una aerolínea sin contrato se cobra a la tarifa base, con prepago ([ADR-0033](../../docs/adr/0033-charter-flights-without-contract.md)). El agente agrega los servicios en rampa con el precio en instantánea, y la Solicitud de Servicio firmada hace de contrato del vuelo.
@@ -241,6 +259,12 @@ El módulo «Charters sin contrato» de Finanzas:
 - con `finance.charters.confirm`, registra el monto y la referencia del prepago. Repetir con los mismos datos es idempotente, con otros datos da conflicto, y queda auditado.
 
 Los recargos de un charter llegan con el cierre OCC → Finanzas (fase 3, bloque 5). Al facturarlo, el prepago confirmado salda la factura ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)). No se ha verificado en el VPS.
+
+Desde la fase 3 del ciclo, también posterior al commit verificado ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)):
+
+- un servicio que el agente marca como no realizado deja de sumar al total del prepago, y la Orden lo imprime en 0;
+- con el prepago confirmado la tablet ya no agrega servicios (`charter_prepayment_confirmed`) hasta que Finanzas reabre la cotización con motivo y la versión que leyó (`POST finance/charters/{id}/prepayment/reopening`, `finance.charters.confirm`). La reapertura devuelve el prepago a `Pending` y conserva el monto y la referencia hasta la confirmación siguiente;
+- Finanzas recibe un aviso cuando OCC cancela o desvía un charter con prepago (`charter_cancelled`); la devolución sigue por Cobros y nunca es automática.
 
 ## Límites y referencias
 

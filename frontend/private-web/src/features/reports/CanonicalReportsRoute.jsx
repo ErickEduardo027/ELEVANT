@@ -3,6 +3,7 @@ import { OccStationBadge } from '../admin-occ/OccQueueState';
 import { useOccStation } from '../admin-occ/useOccStation';
 import { useOptionalDepartmentAccess } from '../access/DepartmentAccessContext';
 import { useTranslation } from '../../i18n/LanguageScope';
+import { businessToday, formatBusinessDateTime } from '../../services/businessDay';
 import { downloadOccReport, getOccReport, listOccReports } from '../../services/occReportsService';
 import { reportsMessages } from './reportsMessages';
 
@@ -10,12 +11,13 @@ const PAGE_SIZE = 25;
 const FORMATS = [{ id: 'xlsx', label: 'Excel' }, { id: 'pdf', label: 'PDF' }, { id: 'csv', label: 'CSV' }];
 const inputClass = 'min-h-11 rounded-lg border border-black/10 bg-white px-3 text-sm dark:border-white/10 dark:bg-surface-dark-card';
 
-function isoDate(date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-}
-
-export function defaultPeriod(today = new Date()) {
-  return { from: isoDate(new Date(today.getFullYear(), today.getMonth(), 1)), to: isoDate(today) };
+/**
+ * The month so far in the station's calendar (3-N26): from 20:00 in Punta Cana the UTC day is already tomorrow, and
+ * on the evening of the last day of the month the browser's UTC month would be the next one.
+ */
+export function defaultPeriod(now = new Date()) {
+  const to = businessToday(now);
+  return { from: `${to.slice(0, 8)}01`, to };
 }
 
 /**
@@ -67,7 +69,9 @@ export default function CanonicalReportsRoute() {
     try {
       await downloadOccReport(query.key, { stationId: station.stationId, from: query.from, to: query.to }, format, station.stationCode);
     } catch (error) {
-      setExportError(t('exportFailed', { message: error.message }));
+      // 3-N13: an export is the whole period or nothing; a PDF over its 5 000 rows can still go to Excel or CSV.
+      setExportError(format === 'pdf' && error?.code === 'report_too_large'
+        ? t('pdfTooLarge') : t('exportFailed', { message: error.message }));
     } finally {
       setExporting('');
     }
@@ -116,7 +120,7 @@ export default function CanonicalReportsRoute() {
               <div>
                 <h2 className="text-lg font-semibold">{data.title}</h2>
                 <p className="text-xs text-text-secondary-light">
-                  {t('rows', { page: data.page, count: data.rows.length })} · {t('generatedAt', { date: new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(data.asOf)) })}
+                  {t('rows', { page: data.page, count: data.rows.length })} · {t('generatedAt', { date: formatBusinessDateTime(data.asOf, { locale }) })}
                 </p>
               </div>
               {canExport && <div className="flex flex-wrap gap-2">

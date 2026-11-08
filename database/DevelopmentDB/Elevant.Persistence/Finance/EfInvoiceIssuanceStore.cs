@@ -80,10 +80,11 @@ internal sealed class EfInvoiceIssuanceStore(
         if (operations.Select(item => item.AirlineId).Distinct().Count() != 1)
             return IssueInvoiceResult.Failed(IssueInvoiceFailure.Unprocessable, "mixed_airline");
         var operationIds = operations.Select(item => item.Id).ToArray();
-        // Only completed services are billable; one not performed is not invoiced.
+        // ServiceBillability (3-N11): a completed service or one in exception with its executed quantity is invoiced;
+        // one not performed, or excluded by OCC in the review, is not.
         var services = await context.OperationServices.AsNoTracking()
-            .Where(service => operationIds.Contains(service.GroundOperationId) &&
-                service.CurrentStatus == ServiceExecutionStatus.Completed && service.ExecutedQuantity > 0)
+            .Where(service => operationIds.Contains(service.GroundOperationId))
+            .Where(ServiceBillability.Billable)
             .Select(service => new { service.PublicId, service.GroundOperationId }).ToArrayAsync(cancellationToken);
         if (operations.Any(item => services.All(service => service.GroundOperationId != item.Id)))
             return IssueInvoiceResult.Failed(IssueInvoiceFailure.Unprocessable, "nothing_to_invoice");

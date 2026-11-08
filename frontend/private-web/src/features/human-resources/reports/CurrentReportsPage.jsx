@@ -5,27 +5,31 @@ import { useAuth } from '../../auth/AuthContext';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { exportHumanResourcesReport, getHumanResourcesReport } from
   '../../../services/humanResourcesVerifiedReportsService';
-import { addDays, toDateKey } from '../schedules/mappers';
+import { addDays, businessToday, formatBusinessDateTime } from '../../../services/businessDay';
+import { problemMessage } from '../../../services/problemMessages';
+import { HUMAN_RESOURCES_REPORT_PROBLEMS } from '../../../services/reportProblems';
+import { formatReportCell, formatReportDate, KIND_LABELS } from './reportLabels';
 
 const PAGE_LIMIT = 20;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const WATCHED_RESOURCES = new Set(['ramp_profiles', 'hr_qualifications', 'hr_permits',
   'hr_shifts', 'iam_accounts']);
+// 3-N16: the titles, codes and times read as the exports write them (reportLabels.js).
 const KINDS = {
-  expirations: { label: 'Vigencias', columns: [
+  expirations: { label: KIND_LABELS.expirations, columns: [
     ['expiresOn', 'Vence'], ['agentName', 'Agente'], ['employeeNumber', 'Empleado'],
     ['kind', 'Clase'], ['code', 'Documento'],
   ] },
-  'account-movements': { label: 'Movimientos de cuenta', columns: [
-    ['occurredAt', 'Fecha UTC'], ['agentName', 'Agente'],
+  'account-movements': { label: KIND_LABELS['account-movements'], columns: [
+    ['occurredAt', 'Fecha y hora local'], ['agentName', 'Agente'],
     ['employeeNumber', 'Empleado'], ['kind', 'Movimiento'],
   ] },
-  'staff-distribution': { label: 'Distribución de turnos', columns: [
+  'staff-distribution': { label: KIND_LABELS['staff-distribution'], columns: [
     ['workDate', 'Fecha'], ['agentName', 'Agente'], ['employeeNumber', 'Empleado'],
     ['terminalCode', 'Terminal'], ['positionCode', 'Puesto'],
     ['startsAtLocal', 'Inicio'], ['endsAtLocal', 'Fin'],
   ] },
-  'qualification-coverage': { label: 'Cobertura de habilitaciones', columns: [
+  'qualification-coverage': { label: KIND_LABELS['qualification-coverage'], columns: [
     ['equipmentCode', 'Equipo'], ['equipmentName', 'Nombre'],
     ['eligibleAgents', 'Elegibles'], ['qualifiedAgents', 'Habilitados'],
   ] },
@@ -39,11 +43,6 @@ function validRange(from, to) {
   const days = (Date.parse(`${to}T00:00:00Z`) -
     Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
   return Number.isInteger(days) && days < 30;
-}
-
-function visibleValue(value) {
-  if (value === null || value === undefined || value === '') return '—';
-  return String(value);
 }
 
 export default function CurrentReportsPage({ initialDate = new Date() }) {
@@ -63,8 +62,10 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
   const validity = kind === 'expirations' &&
     ['Current', 'Expired'].includes(searchParams.get('validity'))
     ? searchParams.get('validity') : '';
-  const from = searchParams.get('from') ?? toDateKey(addDays(initialDate, -29));
-  const to = searchParams.get('to') ?? toDateKey(initialDate);
+  // The default 30 dates end today in AVIAM's calendar, not in the browser's (3-N16).
+  const today = businessToday(initialDate);
+  const from = searchParams.get('from') ?? addDays(today, -29);
+  const to = searchParams.get('to') ?? today;
   const pageValue = Number(searchParams.get('page') ?? '1');
   const page = Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1;
   const [revision, setRevision] = useState(0);
@@ -175,11 +176,11 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
       setDownloadState({ busy: false, error: null });
     } catch (error) {
       if (version !== downloadVersion.current || currentKey.current !== key) return;
-      setDownloadState({ busy: false, error: error?.status === 422
-        ? 'El reporte excede 5 000 filas. Acota el intervalo antes de exportar.'
-        : error?.status === 401 || error?.status === 403 || error?.status === 404
-          ? 'No tienes acceso a la exportación de esta estación.'
-          : 'No se pudo descargar el reporte. Reintenta.' });
+      // 3-N13: the message follows the Problem Details code; an export over 5 000 rows is refused, never cut.
+      setDownloadState({ busy: false, error: problemMessage(error, HUMAN_RESOURCES_REPORT_PROBLEMS, {
+        forbidden: 'No tienes acceso a la exportación de esta estación.',
+        fallback: 'No se pudo descargar el reporte. Reintenta.',
+      }) });
       if (error?.status === 401 || error?.status === 403 || error?.status === 404)
         setState({ status: 'forbidden', data: null, key: queryKey });
     }
@@ -267,12 +268,12 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
       <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4 dark:border-white/10">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-600">
-            {scopes.find(scope => scope.stationId === stationId)?.stationCode} · {from} — {to}
+            {scopes.find(scope => scope.stationId === stationId)?.stationCode} · {formatReportDate(from)} — {formatReportDate(to)}
           </p>
           <h2 className="mt-1 text-lg font-semibold">{KINDS[kind].label}</h2>
           <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">
             {shown.data.rows.length} {shown.data.rows.length === 1 ? 'fila' : 'filas'} en esta página ·
-            consulta {new Date(shown.data.asOf).toLocaleString('es-DO')}
+            consulta {formatBusinessDateTime(shown.data.asOf)} (hora local)
           </p>
         </div>
         <div className="flex gap-2">
@@ -293,7 +294,7 @@ export default function CurrentReportsPage({ initialDate = new Date() }) {
           </tr></thead>
           <tbody>{shown.data.rows.map((row, index) => <tr key={row.id ?? row.equipmentTypeId ?? index}
             className="border-b border-slate-100 dark:border-white/5">
-            {KINDS[kind].columns.map(([field]) => <td key={field} className="px-3 py-3">{visibleValue(row[field])}</td>)}
+            {KINDS[kind].columns.map(([field]) => <td key={field} className="px-3 py-3">{formatReportCell(kind, field, row)}</td>)}
           </tr>)}</tbody>
         </table></div>}
       <nav aria-label="Páginas del reporte" className="mt-4 flex items-center justify-between gap-4">

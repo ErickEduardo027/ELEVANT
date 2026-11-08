@@ -80,6 +80,8 @@ Hasta ahora la asignación tenía estas limitaciones:
 
 **Liberación manual.** OCC puede liberar al agente de una operación asignada y no iniciada (`POST occ/planning/turnarounds/{id}/assignment/release`). La operación vuelve a `Planned` y se avisa al agente.
 
+> **Actualización (8 de noviembre de 2026).** Una sola regla de ocupación (`OperationOccupancyRules`) limita al agente a 3 operaciones simultáneas; una operación ocupa al agente mientras está asignada, en curso o devuelta (desde la entrega ya no lo ocupa) y ocupa la posición mientras no esté aprobada ni cancelada y la escala siga abierta. Un cambio de posición reasigna la operación solo a un agente que cubra la nueva posición y sea elegible con todas las reglas de la asignación; si no lo hay y el anterior tampoco sigue siendo elegible, vuelve a `Planned` y OCC recibe `stand_change_unassigned`. La cobertura exige el alcance en la terminal (`terminal_scope_missing`), la cobertura y la liberación del agente aceptan una `Idempotency-Key` opcional, y una operación ya iniciada no se libera: se releva. Ver la sección 3 de [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 **Mapa de posiciones.** Cada posición muestra:
 - quién la cubre;
 - si tiene puente;

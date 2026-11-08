@@ -192,7 +192,8 @@ internal sealed class EfRampIncidentStore(
                 priorIncident.Severity != request.Severity ||
                 priorIncident.Description != request.Description ||
                 priorIncident.DelayCode != request.DelayCode ||
-                priorIncident.OccurredAt != occurredAt)
+                // The stored time was clamped to the server's clock when it was first reported.
+                priorIncident.OccurredAt != RampEvidenceTimePolicy.Clamp(occurredAt, priorIncident.ReportedAt))
             {
                 return await RejectAsync(receipt, RampOperationsFailure.Conflict, "conflict", now, cancellationToken);
             }
@@ -200,15 +201,20 @@ internal sealed class EfRampIncidentStore(
             return await CompleteReceiptAsync(receipt, priorIncident, request.OperationId, now, device, cancellationToken);
         }
 
-        if (!RampIncidentPolicy.CanReport(
+        // 3-N25: the same window as the damages, with the clock tolerance on both ends: a correction round takes until
+        // now the incident or deviation the agent reports in it. The time is stored clamped to the server's clock
+        // (ck_incident_reported).
+        var window = await RampEvidenceWindowReader.ReadAsync(context, scope.Operation, RampEvidenceKind.Report, now,
+            cancellationToken);
+        if (RampIncidentPolicy.ReportRejection(
                 scope.TurnaroundStatus,
                 scope.Operation.CurrentStatus,
                 scope.Operation.ActualStartAt,
                 scope.Operation.ActualEndAt,
                 occurredAt,
-                now))
+                window) is { } rejection)
         {
-            return await RejectAsync(receipt, RampOperationsFailure.Conflict, "conflict", now, cancellationToken);
+            return await RejectAsync(receipt, RampOperationsFailure.Conflict, rejection, now, cancellationToken);
         }
 
         var incident = new Incident
@@ -221,12 +227,23 @@ internal sealed class EfRampIncidentStore(
             Status = IncidentStatus.Open,
             Description = request.Description,
             DelayCode = request.DelayCode,
-            OccurredAt = occurredAt,
+            OccurredAt = RampEvidenceTimePolicy.Clamp(occurredAt, now),
             ReportedAt = now,
             CreatedAt = now,
             UpdatedAt = now,
         };
         context.Incidents.Add(incident);
+        // 3-G: the report is the first step of the incident's history OCC follows; the tablet's answer is unchanged.
+        await context.SaveChangesAsync(cancellationToken);
+        context.Set<IncidentStatusEvent>().Add(new IncidentStatusEvent
+        {
+            IncidentId = incident.Id,
+            FromStatus = null,
+            ToStatus = IncidentStatus.Open,
+            Note = EfOccIncidentStore.RampReportedNote,
+            OccurredAt = now,
+            ActorAccountId = actor.AccountInternalId,
+        });
         context.AuditEntries.Add(new AuditEntry
         {
             PublicId = Guid.CreateVersion7(),
@@ -295,10 +312,12 @@ internal sealed class EfRampIncidentStore(
         receipt.Status = MobileCommandStatus.Rejected;
         receipt.ProcessedAt = now;
         receipt.ErrorCode = errorCode;
-        receipt.ErrorMessage = "The incident request conflicts with current operational data.";
+        receipt.ErrorMessage = errorCode == RampProblemCodes.TimeOutsideOperationWindow
+            ? "The incident time is outside the operation's window."
+            : "The incident request conflicts with current operational data.";
         receipt.UpdatedAt = now;
         await context.SaveChangesAsync(cancellationToken);
-        return RampIncidentWriteResult.Failed(failure, receipt.PublicId);
+        return RampIncidentWriteResult.Failed(failure, receipt.PublicId, RampProblemCodes.PublicCode(errorCode));
     }
 
     private static RampIncidentWriteResult Replay(
@@ -309,7 +328,7 @@ internal sealed class EfRampIncidentStore(
         if (receipt.AccountId != accountId || receipt.CommandType != CommandType ||
             receipt.PayloadHash != payloadHash)
         {
-            return RampIncidentWriteResult.Failed(RampOperationsFailure.Conflict);
+            return RampIncidentWriteResult.Failed(RampOperationsFailure.Conflict, code: RampProblemCodes.IdempotencyConflict);
         }
 
         if (receipt.Status == MobileCommandStatus.Processed &&
@@ -329,9 +348,9 @@ internal sealed class EfRampIncidentStore(
             return RampIncidentWriteResult.Failed(receipt.ErrorCode switch
             {
                 "not_found" => RampOperationsFailure.NotFound,
-                "conflict" => RampOperationsFailure.Conflict,
+                "conflict" or RampProblemCodes.TimeOutsideOperationWindow => RampOperationsFailure.Conflict,
                 _ => throw new InvalidOperationException("The stored incident rejection is invalid."),
-            }, receipt.PublicId);
+            }, receipt.PublicId, RampProblemCodes.PublicCode(receipt.ErrorCode));
         }
 
         return RampIncidentWriteResult.Failed(RampOperationsFailure.Conflict);

@@ -111,6 +111,7 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                 service.BillingUnitSnapshot,
                 service.UnitPriceSnapshot,
                 service.CurrencyCodeSnapshot,
+                service.BillingExcludedAt,
             })
             .Take(PageLimit + 1)
             .ToArrayAsync(cancellationToken);
@@ -120,7 +121,7 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                 .Where(mark => internalIds.Contains(mark.OperationServiceId) && mark.RemovedAt == null)
                 .Select(mark => new { mark.OperationServiceId, mark.PublicId }).ToArrayAsync(cancellationToken))
             .ToLookup(mark => mark.OperationServiceId, mark => mark.PublicId);
-        var services = rows.Take(PageLimit).Select(row =>
+        var page = rows.Take(PageLimit).Select(row =>
         {
             OccReviewServiceData? evidence = null;
             IReadOnlyList<ServiceChargeEvidence> frozenCharges = [];
@@ -135,6 +136,15 @@ internal sealed class EfFinanceApprovedServicesReadStore(
                 catch (System.Text.Json.JsonException) { }
                 catch (InvalidOperationException) { }
             }
+            return (Row: row, Evidence: evidence, Charges: frozenCharges);
+        }).ToArray();
+        // 3-N29: a charge its contract excludes blocks the service instead of being valued at zero.
+        var carryingExcluded = await ContractChargeExclusions.ServicesCarryingExcludedAsync(context,
+            page.SelectMany(item => item.Charges.Select(charge => (item.Row.ServiceInternalId, charge.ChargeId))).ToArray(),
+            cancellationToken);
+        var services = page.Select(item =>
+        {
+            var (row, evidence, frozenCharges) = item;
             var evidenceMatches = evidence is not null &&
                 liveMarks[row.ServiceInternalId].Order().SequenceEqual(frozenCharges.Select(charge => charge.MarkId).Order()) &&
                 evidence.Status == row.CurrentStatus.ToString() &&
@@ -144,7 +154,8 @@ internal sealed class EfFinanceApprovedServicesReadStore(
             var valuation = evidenceMatches
                 ? FinanceApprovedServicePolicy.Evaluate(
                     row.CurrentStatus, row.ExecutedQuantity, row.UnitPriceSnapshot,
-                    row.CurrencyCodeSnapshot, row.BillingUnitSnapshot)
+                    row.CurrencyCodeSnapshot, row.BillingUnitSnapshot, row.BillingExcludedAt is not null,
+                    carryingExcluded.Contains(row.ServiceInternalId))
                 : new FinanceServiceValuation(false, "approved_evidence_mismatch", null);
             return new FinanceApprovedServiceData(
                 row.ServiceId, row.OperationId, row.TurnaroundId, row.SubmissionId,

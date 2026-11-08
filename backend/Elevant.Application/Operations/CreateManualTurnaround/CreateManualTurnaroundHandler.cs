@@ -18,16 +18,16 @@ public sealed class CreateManualTurnaroundHandler(
         if (command.AccountId == Guid.Empty)
             return CreateManualTurnaroundResult.Failed(OccPlanningFailure.Unauthorized);
 
-        var arrivalNumber = NormalizeFlightNumber(command.ArrivalFlightNumber);
-        var departureNumber = NormalizeFlightNumber(command.DepartureFlightNumber);
-        var originIata = command.ArrivalOriginIata?.Trim().ToUpperInvariant() ?? string.Empty;
-        var destinationIata = command.DepartureDestinationIata?.Trim().ToUpperInvariant() ?? string.Empty;
+        var arrivalNumber = FlightIdentity.NormalizeFlightNumber(command.ArrivalFlightNumber);
+        var departureNumber = FlightIdentity.NormalizeFlightNumber(command.DepartureFlightNumber);
+        var originIata = FlightIdentity.NormalizeIata(command.ArrivalOriginIata);
+        var destinationIata = FlightIdentity.NormalizeIata(command.DepartureDestinationIata);
         if (command.TurnaroundId == Guid.Empty || command.StationId == Guid.Empty ||
             command.AirlineId == Guid.Empty || command.StandId == Guid.Empty || command.AircraftTypeId == Guid.Empty ||
             command.CorrelationId == Guid.Empty ||
             command.OperationDate == default ||
-            !IsFlightNumber(arrivalNumber) || !IsFlightNumber(departureNumber) ||
-            !IsIata(originIata) || !IsIata(destinationIata) ||
+            !FlightIdentity.IsFlightNumber(arrivalNumber) || !FlightIdentity.IsFlightNumber(departureNumber) ||
+            !FlightIdentity.IsIata(originIata) || !FlightIdentity.IsIata(destinationIata) ||
             command.ArrivalScheduledAt.Offset != TimeSpan.Zero ||
             command.DepartureScheduledAt.Offset != TimeSpan.Zero ||
             command.DepartureScheduledAt <= command.ArrivalScheduledAt ||
@@ -75,13 +75,4 @@ public sealed class CreateManualTurnaroundHandler(
                 _ => throw new InvalidOperationException("Unsupported manual turnaround write failure."),
             }, result.Code);
     }
-
-    private static string NormalizeFlightNumber(string? value) =>
-        value is null ? string.Empty : string.Concat(value.Where(c => !char.IsWhiteSpace(c))).ToUpperInvariant();
-
-    private static bool IsFlightNumber(string value) =>
-        value.Length is >= 2 and <= 16 && value.All(c => c is >= 'A' and <= 'Z' or >= '0' and <= '9');
-
-    private static bool IsIata(string value) =>
-        value.Length == 3 && value.All(c => c is >= 'A' and <= 'Z');
 }

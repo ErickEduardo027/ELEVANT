@@ -192,6 +192,71 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task ShiftAdjustmentPassesTheKeyAndTheVersionAndMapsItsRules()
+    {
+        var id = Guid.NewGuid();
+        var stub = new WriteStub();
+        await using var application = factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IHumanResourcesShiftWriteStore>();
+                services.AddSingleton<IHumanResourcesShiftWriteStore>(stub);
+            }));
+        using var client = application.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        var key = Guid.NewGuid();
+        async Task<HttpResponseMessage> AdjustAsync(string body)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Patch, $"/api/v1/human-resources/shifts/{id:D}")
+            {
+                Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
+            };
+            request.Headers.Add("Idempotency-Key", key.ToString("D"));
+            return await client.SendAsync(request, TestContext.Current.CancellationToken);
+        }
+        const string Body = """
+            {"startsAtLocal":"08:00:00","endsAtLocal":"13:00:00","reason":"El vuelo se extendió.","expectedVersion":"AAAAAAAAB9E="}
+            """;
+
+        // 3-E: the intent's key and the version the screen read reach the store; the shift answers its new version.
+        using (var adjusted = await AdjustAsync(Body))
+        {
+            Assert.Equal(HttpStatusCode.OK, adjusted.StatusCode);
+            using var json = JsonDocument.Parse(await adjusted.Content.ReadAsStringAsync(TestContext.Current.CancellationToken));
+            Assert.Equal(["id", "startsAtLocal", "endsAtLocal", "version"],
+                json.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal("13:00:00", json.RootElement.GetProperty("endsAtLocal").GetString());
+        }
+        Assert.Equal((id, new AdjustHumanResourcesShiftInput(new TimeOnly(8, 0), new TimeOnly(13, 0),
+            "El vuelo se extendió.", "AAAAAAAAB9E="), (Guid?)key), stub.Adjusted);
+
+        // An unknown member is refused before the store.
+        using (var unknown = await AdjustAsync("""{"startsAtLocal":"08:00:00","endsAtLocal":"13:00:00","stationId":"x"}"""))
+            Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+
+        foreach (var (failure, code, status) in new[]
+                 {
+                     (HumanResourcesShiftWriteFailure.Conflict, "shift_uncovers_work", HttpStatusCode.Conflict),
+                     (HumanResourcesShiftWriteFailure.Conflict, "attendance_validated", HttpStatusCode.Conflict),
+                     (HumanResourcesShiftWriteFailure.Conflict, "version_conflict", HttpStatusCode.Conflict),
+                     (HumanResourcesShiftWriteFailure.Invalid, "idempotency_key_required", HttpStatusCode.BadRequest),
+                     (HumanResourcesShiftWriteFailure.NotFound, "not_found", HttpStatusCode.NotFound),
+                 })
+        {
+            stub.AdjustFailure = failure;
+            stub.Code = code;
+            using var refused = await AdjustAsync(Body);
+            Assert.Equal(status, refused.StatusCode);
+            using var problem = JsonDocument.Parse(await refused.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            Assert.Equal(code, problem.RootElement.GetProperty("code").GetString());
+        }
+        stub.AdjustFailure = HumanResourcesShiftWriteFailure.Forbidden;
+        using (var forbidden = await AdjustAsync(Body))
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+    }
+
+    [Fact]
     public async Task ShiftRecordingMapsForbiddenWithoutPublishingAResult()
     {
         var stub = new WriteStub { Forbidden = true };
@@ -401,6 +466,20 @@ public sealed class HumanResourcesShiftEndpointsTests(ElevantApiFactory factory)
             return Task.FromResult(Conflict
                 ? HumanResourcesShiftWriteResult.Failed(HumanResourcesShiftWriteFailure.Conflict, Code)
                 : HumanResourcesShiftWriteResult.Success(shiftId));
+        }
+
+        public (Guid ShiftId, AdjustHumanResourcesShiftInput Input, Guid? Key)? Adjusted { get; private set; }
+
+        public HumanResourcesShiftWriteFailure? AdjustFailure { get; set; }
+
+        public Task<HumanResourcesShiftAdjustResult> AdjustAsync(Guid actorId, Guid shiftId,
+            AdjustHumanResourcesShiftInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default)
+        {
+            Adjusted = (shiftId, input, idempotencyKey);
+            return Task.FromResult(AdjustFailure is { } failure
+                ? HumanResourcesShiftAdjustResult.Failed(failure, Code ?? "version_conflict")
+                : HumanResourcesShiftAdjustResult.Success(new HumanResourcesShiftAdjusted(shiftId, input.StartsAtLocal,
+                    input.EndsAtLocal, "AAAAAAAAB9E=")));
         }
     }
 }

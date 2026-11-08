@@ -3,11 +3,13 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Finance;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Finance;
 using Microsoft.Data.SqlClient;
@@ -16,10 +18,37 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Operations;
 
-/// <summary>Station-scoped OCC review projections and serialized decisions.</summary>
+/// <summary>
+/// Station-scoped OCC review projections and serialized decisions. Every command (decision, charge adjustment,
+/// billing exclusion, reopening) runs in one serializable transaction, checks the review version OCC saw and, with an
+/// Idempotency-Key, keeps its receipt (<see cref="CommercialCommandReceipts"/>): a retry replays the first answer and
+/// never repeats its audit or announcements. Refusals carry a stable code.
+/// </summary>
 internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider timeProvider) : IOccReviewStore
 {
     private const int QueueLimit = 100;
+    private const string DecideAction = "occ.review.decide";
+    private const string AddChargeAction = "occ.review.charge.add";
+    private const string RemoveChargeAction = "occ.review.charge.remove";
+    private const string BillingExclusionAction = "occ.review.service_billing_exclusion";
+    private const string ReopenAction = "occ.review.reopen";
+    private const string DecidePermission = "operations.review.decide";
+    private const string ReopenPermission = "operations.review.reopen";
+
+    /// <summary>The note an approval leaves on the incidents OCC did not manage (ADR-0034).</summary>
+    public const string ApprovalResolutionNote = "Cerrada al aprobar la revisión de OCC.";
+
+    /// <summary>What one command step answered: the record it wrote, or the failure and code that roll it back.</summary>
+    private readonly record struct ReviewStep(Guid ResultId, OccReviewFailure? Failure, string? Code)
+    {
+        public static ReviewStep Done(Guid resultId) => new(resultId, null, null);
+
+        public static ReviewStep Fail(OccReviewFailure failure, string code) => new(Guid.Empty, failure, code);
+    }
+
+    /// <summary>The operation and its hand-offs locked for one command, with the actor's live scope.</summary>
+    private sealed record CommandScope(GroundOperation Operation, OperationSubmission Latest, long StationId,
+        long AirlineOrganizationId, long AccountId, string ActorName);
 
     public async Task<OccReviewQueueData?> GetQueueAsync(
         Guid stationId, CancellationToken cancellationToken = default)
@@ -172,6 +201,10 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                 submission.SubmittedAt,
                 submission.AgentNote,
                 submission.EvidenceJson,
+                submission.ReopenedFromSubmissionId,
+                submission.ReopenedByAccountId,
+                submission.ReopenReason,
+                SubmissionCreatedAt = submission.CreatedAt,
                 ChecklistInternalId = checklist.Id,
                 ChecklistStatus = checklist.Status,
                 turnaround.OperationCode,
@@ -208,10 +241,27 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         var latestRevision = await context.OperationSubmissions.AsNoTracking()
             .Where(item => item.GroundOperationId == core.OperationInternalId)
             .MaxAsync(item => item.RevisionNumber, cancellationToken);
-        var canAdjust = core.Status == SubmissionStatus.PendingReview && core.RevisionNumber == latestRevision;
+        var isLatest = core.RevisionNumber == latestRevision;
+        var canAdjust = core.Status == SubmissionStatus.PendingReview && isLatest;
         var close = await CloseAsync(core.OperationInternalId, evidence,
             decisionRow?.ApprovedEvidenceJson is { } approved ? OperationSubmissionEvidence.Parse(approved) : null,
             canAdjust, cancellationToken);
+        // 3-N02: the state of the Service Order the decision approves; an earlier revision is history.
+        var serviceOrderState = isLatest
+            ? (await ServiceOrderSignatures.EvaluateAsync(context, core.OperationInternalId, timeProvider,
+                cancellationToken)).State
+            : null;
+        // 3-H: a reopened revision says which approval it reopens, why, when and who.
+        OccReviewReopeningData? reopening = null;
+        if (core.ReopenedFromSubmissionId is long reopenedFrom)
+        {
+            var fromRevision = await context.OperationSubmissions.AsNoTracking()
+                .Where(item => item.Id == reopenedFrom).Select(item => item.RevisionNumber)
+                .SingleAsync(cancellationToken);
+            reopening = new OccReviewReopeningData(fromRevision, core.ReopenReason ?? string.Empty,
+                core.SubmissionCreatedAt,
+                await AccountDisplayNames.OfAsync(context, core.ReopenedByAccountId, cancellationToken));
+        }
 
         return new OccReviewDetailData(
             core.OperationId, core.SubmissionId, core.RevisionNumber,
@@ -221,12 +271,14 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             core.PlannedEndAt, core.ActualStartAt, core.ActualEndAt ?? core.SubmittedAt,
             core.SubmittedAt, core.AgentNote, core.ChecklistStatus.ToString(),
             answers, evidence.Services, evidence.Incidents, decision,
-            ConcurrencyToken(core.OperationId, core.RowVersion, core.SubmissionId, core.Status), close);
+            ConcurrencyToken(core.OperationId, core.RowVersion, core.SubmissionId, core.Status), close,
+            serviceOrderState, reopening);
     }
 
     /// <summary>
     /// What OCC closes the operation with (ADR-0034): recorded times, the charges (live while it can
-    /// still adjust them, otherwise as approved or as handed off) and the charges it may add.
+    /// still adjust them, otherwise as approved or as handed off), the charges it may add and the
+    /// services it excluded from billing.
     /// </summary>
     private async Task<OccReviewCloseData> CloseAsync(long operationId, OperationSubmissionEvidence submitted,
         OperationSubmissionEvidence? approved, bool canAdjust, CancellationToken cancellationToken)
@@ -268,13 +320,17 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         {
             var services = await context.OperationServices.AsNoTracking()
                 .Where(service => service.GroundOperationId == operationId)
-                .Select(service => new { service.PublicId, service.ServiceDefinitionId }).ToArrayAsync(cancellationToken);
+                .Select(service => new { service.Id, service.PublicId, service.ServiceDefinitionId }).ToArrayAsync(cancellationToken);
             var links = await context.ChargeDefinitionServices.AsNoTracking()
                 .Select(link => new { link.ChargeDefinitionId, link.ServiceDefinitionId }).ToArrayAsync(cancellationToken);
+            // 3-N29: a charge the service's contract excludes is not offered for that service.
+            var exclusions = await ContractChargeExclusions.ForServicesAsync(context,
+                services.Select(service => service.Id).ToArray(), cancellationToken);
             foreach (var charge in definitions.Where(item => item.IsActive).OrderBy(item => item.Name))
             {
-                var serviceIds = services.Where(service => charge.AppliesToAllServices || links.Any(link =>
-                        link.ChargeDefinitionId == charge.Id && link.ServiceDefinitionId == service.ServiceDefinitionId))
+                var serviceIds = services.Where(service => (charge.AppliesToAllServices || links.Any(link =>
+                        link.ChargeDefinitionId == charge.Id && link.ServiceDefinitionId == service.ServiceDefinitionId)) &&
+                        !exclusions.Contains(service.Id, charge.Id))
                     .Select(service => service.PublicId).ToArray();
                 if (serviceIds.Length > 0)
                     options.Add(new OccReviewChargeOptionData(charge.PublicId, charge.Code, charge.Name,
@@ -288,7 +344,13 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             : await LiveTimingAsync(operationId, cancellationToken);
         var damages = await context.Set<OperationDamageMark>().AsNoTracking()
             .CountAsync(item => item.GroundOperationId == operationId, cancellationToken);
-        return new OccReviewCloseData(milestones, charges, options, timing, canAdjust, damages);
+        var exclusionsInReview = await context.OperationServices.AsNoTracking()
+            .Where(service => service.GroundOperationId == operationId && service.BillingExcludedAt != null)
+            .OrderBy(service => service.LineNumber)
+            .Select(service => new OccReviewBillingExclusionData(service.PublicId, service.BillingExclusionReason!,
+                service.BillingExcludedAt!.Value))
+            .ToArrayAsync(cancellationToken);
+        return new OccReviewCloseData(milestones, charges, options, timing, canAdjust, damages, exclusionsInReview);
     }
 
     private async Task<OccReviewTimingData> LiveTimingAsync(long operationId, CancellationToken cancellationToken)
@@ -302,80 +364,35 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         OccReviewChargeAdjustRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var strategy = context.Database.CreateExecutionStrategy();
-        OccReviewChargeAdjustResult? attempt = null;
-        Guid? auditId = null;
-        try
+        var hash = CommercialCommandReceipts.Hash(new
         {
-            return await strategy.ExecuteInTransactionAsync(
-                async token =>
-                {
-                    context.ChangeTracker.Clear();
-                    (attempt, auditId) = await AdjustInsideTransactionAsync(request, token);
-                    if (!attempt.IsSuccess) context.ChangeTracker.Clear();
-                    return attempt;
-                },
-                async token =>
-                {
-                    context.ChangeTracker.Clear();
-                    return auditId is not Guid id ||
-                        await context.AuditEntries.AsNoTracking().AnyAsync(item => item.PublicId == id, token);
-                },
-                IsolationLevel.Serializable,
-                cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            context.ChangeTracker.Clear();
-            return new OccReviewChargeAdjustResult(null, OccReviewFailure.PreconditionFailed);
-        }
-        catch (Exception exception) when (exception is RetryLimitExceededException or DbUpdateException or SqlException &&
-            exception.GetBaseException() is SqlException { Number: 1205 or 1222 or 3960 or 2601 or 2627 or 547 })
-        {
-            context.ChangeTracker.Clear();
-            return new OccReviewChargeAdjustResult(null, OccReviewFailure.Conflict);
-        }
+            request.OperationId, request.SubmissionId, request.ServiceId, request.ChargeId, request.MarkId, request.Reason,
+            expected = request.ConcurrencyToken,
+        });
+        var (step, _) = await RunAsync(request.ActorAccountId, request.IdempotencyKey,
+            request.MarkId is null ? AddChargeAction : RemoveChargeAction, hash,
+            token => AdjustInsideTransactionAsync(request, token), cancellationToken);
+        return step.Failure is { } failure
+            ? OccReviewChargeAdjustResult.Failed(failure, step.Code)
+            : await VersionResultAsync(request.OperationId, cancellationToken);
     }
 
-    private async Task<(OccReviewChargeAdjustResult Result, Guid? AuditId)> AdjustInsideTransactionAsync(
-        OccReviewChargeAdjustRequest request, CancellationToken cancellationToken)
+    private async Task<ReviewStep> AdjustInsideTransactionAsync(OccReviewChargeAdjustRequest request,
+        CancellationToken cancellationToken)
     {
-        static (OccReviewChargeAdjustResult, Guid?) Fail(OccReviewFailure failure) =>
-            (new OccReviewChargeAdjustResult(null, failure), null);
-        var liveActor = await new EfActorContextResolver(context, timeProvider)
-            .ResolveAsync(request.ActorAccountId, cancellationToken);
-        if (liveActor is null || !liveActor.HasPermission("operations.review.decide"))
-            return Fail(OccReviewFailure.NotFound);
-        var liveStations = liveActor.StationScopes.Select(item => item.StationId)
-            .Intersect(request.AllowedStationIds).ToArray();
-        if (liveStations.Length == 0) return Fail(OccReviewFailure.NotFound);
-        var now = NormalizeToMilliseconds(timeProvider.GetUtcNow());
-        var operation = await context.GroundOperations
-            .FromSqlInterpolated($"""
-                SELECT * FROM [ops].[ground_operations] WITH (UPDLOCK, HOLDLOCK)
-                WHERE [public_id] = {request.OperationId}
-                """)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (operation is null) return Fail(OccReviewFailure.NotFound);
-        var scope = await (from turnaround in context.Turnarounds.AsNoTracking()
-                           join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
-                           join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
-                           join account in context.Users.AsNoTracking() on request.ActorAccountId equals account.PublicId
-                           where turnaround.Id == operation.TurnaroundId && station.IsActive &&
-                                 liveStations.Contains(station.PublicId)
-                           select new { StationId = station.Id, AirlineOrganizationId = airline.OrganizationId,
-                               AccountId = account.Id, ActorName = account.UserName })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (scope is null) return Fail(OccReviewFailure.NotFound);
-        var latest = await context.OperationSubmissions.AsNoTracking()
-            .Where(item => item.GroundOperationId == operation.Id)
-            .OrderByDescending(item => item.RevisionNumber).FirstOrDefaultAsync(cancellationToken);
-        if (latest is null || latest.PublicId != request.SubmissionId ||
-            ConcurrencyToken(operation.PublicId, operation.RowVersion, latest.PublicId, latest.Status) != request.ConcurrencyToken)
-            return Fail(OccReviewFailure.PreconditionFailed);
+        var now = Now();
+        var (scope, refusal) = await LockAsync(request.ActorAccountId, request.AllowedStationIds, request.OperationId,
+            DecidePermission, now, cancellationToken);
+        if (scope is null) return refusal;
+        var operation = scope.Operation;
+        var latest = scope.Latest;
+        if (!Matches(scope, request.SubmissionId, request.ConcurrencyToken))
+            return ReviewStep.Fail(OccReviewFailure.PreconditionFailed, "version_conflict");
         if (!OccReviewDecisionPolicy.CanDecide(operation.CurrentStatus.ToString(), latest.Status.ToString()))
-            return Fail(OccReviewFailure.Conflict);
+            return ReviewStep.Fail(OccReviewFailure.Conflict, "review_closed");
+        var order = await ServiceOrderSignatures.EvaluateAsync(context, operation.Id, timeProvider, cancellationToken);
 
+        Guid markPublicId;
         string action;
         object metadata;
         if (request.MarkId is Guid markId)
@@ -384,12 +401,13 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             var mark = await context.OperationServiceCharges.SingleOrDefaultAsync(item => item.PublicId == markId &&
                 context.OperationServices.Any(service => service.Id == item.OperationServiceId &&
                     service.GroundOperationId == operation.Id), cancellationToken);
-            if (mark is null) return Fail(OccReviewFailure.NotFound);
-            if (mark.RemovedAt is not null) return Fail(OccReviewFailure.Conflict);
+            if (mark is null) return ReviewStep.Fail(OccReviewFailure.NotFound, "not_found");
+            if (mark.RemovedAt is not null) return ReviewStep.Fail(OccReviewFailure.Conflict, "charge_already_removed");
             mark.RemovedAt = now;
             mark.RemovedByAccountId = scope.AccountId;
             mark.AdjustmentReason = request.Reason;
             mark.UpdatedAt = now;
+            markPublicId = mark.PublicId;
             action = "removed";
             metadata = new { operationId = operation.PublicId, markId, source = mark.Source.ToString() };
         }
@@ -400,14 +418,19 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                     cancellationToken);
             var charge = await context.ChargeDefinitions.AsNoTracking()
                 .SingleOrDefaultAsync(item => item.PublicId == request.ChargeId && item.IsActive, cancellationToken);
-            if (service is null || charge is null) return Fail(OccReviewFailure.NotFound);
+            if (service is null || charge is null) return ReviewStep.Fail(OccReviewFailure.NotFound, "not_found");
             var applies = charge.AppliesToAllServices || await context.ChargeDefinitionServices.AsNoTracking()
                 .AnyAsync(link => link.ChargeDefinitionId == charge.Id && link.ServiceDefinitionId == service.ServiceDefinitionId,
                     cancellationToken);
+            if (!applies) return ReviewStep.Fail(OccReviewFailure.Conflict, "charge_not_applicable");
+            // 3-N29: OCC never adds what the airline's contract excludes for this service.
+            if ((await ContractChargeExclusions.ForServicesAsync(context, [service.Id], cancellationToken))
+                .Contains(service.Id, charge.Id))
+                return ReviewStep.Fail(OccReviewFailure.Conflict, "charge_excluded_by_contract");
             var duplicate = !charge.AllowMultiple && await context.OperationServiceCharges.AsNoTracking()
                 .AnyAsync(item => item.OperationServiceId == service.Id && item.ChargeDefinitionId == charge.Id &&
                     item.RemovedAt == null, cancellationToken);
-            if (!applies || duplicate) return Fail(OccReviewFailure.Conflict);
+            if (duplicate) return ReviewStep.Fail(OccReviewFailure.Conflict, "charge_already_marked");
             var added = new OperationServiceCharge
             {
                 PublicId = Guid.CreateVersion7(), OperationServiceId = service.Id, ChargeDefinitionId = charge.Id,
@@ -415,13 +438,14 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                 AppliedAt = now, CreatedAt = now, UpdatedAt = now,
             };
             context.OperationServiceCharges.Add(added);
+            markPublicId = added.PublicId;
             action = "added";
             metadata = new { operationId = operation.PublicId, markId = added.PublicId, serviceId = service.PublicId,
                 charge = charge.Code };
         }
         // The operation version moves, so a decision prepared on the previous charges is refused.
         operation.UpdatedAt = now;
-        var audit = new AuditEntry
+        context.AuditEntries.Add(new AuditEntry
         {
             PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
             ActorAccountId = scope.AccountId, ActorDisplay = scope.ActorName, Action = $"occ.operation.charge.{action}",
@@ -429,129 +453,142 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             OrganizationId = scope.AirlineOrganizationId, StationId = scope.StationId, Source = AuditSource.Api,
             CorrelationId = request.CorrelationId, RequestId = request.RequestId, Reason = request.Reason,
             MetadataJson = JsonSerializer.Serialize(metadata),
-        };
-        context.AuditEntries.Add(audit);
+        });
         await context.SaveChangesAsync(cancellationToken);
-        return (new OccReviewChargeAdjustResult(
-            ConcurrencyToken(operation.PublicId, operation.RowVersion, latest.PublicId, latest.Status), null), audit.PublicId);
+        // 3-N02: a change to a signed Service Order is recorded as OCC's correction, with this reason.
+        await ServiceOrderSignatures.RecordCorrectionAsync(context, operation.Id, order, request.Reason, scope.AccountId,
+            now, cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, true, cancellationToken);
+        return ReviewStep.Done(markPublicId);
+    }
+
+    public async Task<OccReviewChargeAdjustResult> SetServiceBillingExclusionAsync(
+        OccReviewBillingExclusionRequest request, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            request.OperationId, request.ServiceId, request.SubmissionId, request.Excluded, request.Reason,
+            expected = request.ConcurrencyToken,
+        });
+        var (step, _) = await RunAsync(request.ActorAccountId, request.IdempotencyKey, BillingExclusionAction, hash,
+            token => ExcludeInsideTransactionAsync(request, token), cancellationToken);
+        return step.Failure is { } failure
+            ? OccReviewChargeAdjustResult.Failed(failure, step.Code)
+            : await VersionResultAsync(request.OperationId, cancellationToken);
+    }
+
+    /// <summary>
+    /// 3-N11: excludes a service in exception with an executed quantity from billing (when, who and why), or includes
+    /// it again; the history stays in the audit. An automatic charge of the whole operation the excluded service
+    /// carried moves to the next billable service, so the operation still bills it
+    /// (<see cref="AutomaticSurchargeApplier.RelocateOperationSurchargesAsync"/>). The review version moves and a signed
+    /// Service Order records the change as OCC's correction.
+    /// </summary>
+    private async Task<ReviewStep> ExcludeInsideTransactionAsync(OccReviewBillingExclusionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var now = Now();
+        var (scope, refusal) = await LockAsync(request.ActorAccountId, request.AllowedStationIds, request.OperationId,
+            DecidePermission, now, cancellationToken);
+        if (scope is null) return refusal;
+        var operation = scope.Operation;
+        if (!Matches(scope, request.SubmissionId, request.ConcurrencyToken))
+            return ReviewStep.Fail(OccReviewFailure.PreconditionFailed, "version_conflict");
+        if (!OccReviewDecisionPolicy.CanDecide(operation.CurrentStatus.ToString(), scope.Latest.Status.ToString()))
+            return ReviewStep.Fail(OccReviewFailure.Conflict, "review_closed");
+        var service = await context.OperationServices.SingleOrDefaultAsync(item =>
+            item.PublicId == request.ServiceId && item.GroundOperationId == operation.Id, cancellationToken);
+        if (service is null) return ReviewStep.Fail(OccReviewFailure.NotFound, "not_found");
+        if (!ServiceBillability.CanExclude(service.CurrentStatus, service.ExecutedQuantity))
+            return ReviewStep.Fail(OccReviewFailure.Conflict, "billing_exclusion_not_allowed");
+        // Already as asked: nothing changes and the version stays.
+        if ((service.BillingExcludedAt is not null) == request.Excluded) return ReviewStep.Done(service.PublicId);
+        var order = await ServiceOrderSignatures.EvaluateAsync(context, operation.Id, timeProvider, cancellationToken);
+        var previousReason = service.BillingExclusionReason;
+        service.BillingExcludedAt = request.Excluded ? now : null;
+        service.BillingExcludedByAccountId = request.Excluded ? scope.AccountId : null;
+        service.BillingExclusionReason = request.Excluded ? request.Reason : null;
+        service.UpdatedAt = now;
+        operation.UpdatedAt = now;
+        IReadOnlyList<string> relocatedSurcharges = request.Excluded
+            ? await AutomaticSurchargeApplier.RelocateOperationSurchargesAsync(context, operation.Id, service.Id,
+                scope.AccountId, now, cancellationToken)
+            : [];
+        context.AuditEntries.Add(new AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+            ActorAccountId = scope.AccountId, ActorDisplay = scope.ActorName,
+            Action = request.Excluded ? "occ.operation.service.billing_excluded" : "occ.operation.service.billing_included",
+            EntityType = nameof(OperationService), EntityPublicId = service.PublicId,
+            OrganizationId = scope.AirlineOrganizationId, StationId = scope.StationId, Source = AuditSource.Api,
+            CorrelationId = request.CorrelationId, RequestId = request.RequestId, Reason = request.Reason,
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                operationId = operation.PublicId, serviceId = service.PublicId, submissionId = scope.Latest.PublicId,
+                excluded = request.Excluded, previousReason, relocatedSurcharges,
+            }),
+        });
+        await context.SaveChangesAsync(cancellationToken);
+        await ServiceOrderSignatures.RecordCorrectionAsync(context, operation.Id, order, request.Reason, scope.AccountId,
+            now, cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, true, cancellationToken);
+        return ReviewStep.Done(service.PublicId);
     }
 
     public async Task<OccReviewDecisionWriteResult> DecideAsync(
         OccReviewDecisionWriteRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var strategy = context.Database.CreateExecutionStrategy();
-        OccReviewDecisionWriteResult? attempt = null;
-        try
-        {
-            return await strategy.ExecuteInTransactionAsync(
-                async token =>
-                {
-                    context.ChangeTracker.Clear();
-                    attempt = await DecideInsideTransactionAsync(request, token);
-                    if (!attempt.IsSuccess) context.ChangeTracker.Clear();
-                    return attempt;
-                },
-                async token =>
-                {
-                    context.ChangeTracker.Clear();
-                    return attempt?.CommitAuditId is not Guid auditId ||
-                        await context.AuditEntries.AsNoTracking().AnyAsync(item =>
-                            item.PublicId == auditId &&
-                            item.CorrelationId == request.CorrelationId &&
-                            item.Action == "occ.operation.review.decided", token);
-                },
-                IsolationLevel.Serializable,
-                cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            context.ChangeTracker.Clear();
-            return OccReviewDecisionWriteResult.Failed(OccReviewFailure.PreconditionFailed);
-        }
-        catch (RetryLimitExceededException exception) when (IsSerializationConflict(exception))
-        {
-            context.ChangeTracker.Clear();
-            return OccReviewDecisionWriteResult.Failed(OccReviewFailure.Conflict);
-        }
-        catch (DbUpdateException exception) when (IsOperationalConflict(exception))
-        {
-            context.ChangeTracker.Clear();
-            return OccReviewDecisionWriteResult.Failed(OccReviewFailure.Conflict);
-        }
-        catch (SqlException exception) when (IsSerializationConflict(exception.Number))
-        {
-            context.ChangeTracker.Clear();
-            return OccReviewDecisionWriteResult.Failed(OccReviewFailure.Conflict);
-        }
-    }
-
-    private async Task<OccReviewDecisionWriteResult> DecideInsideTransactionAsync(
-        OccReviewDecisionWriteRequest request, CancellationToken cancellationToken)
-    {
         if (request.ActorAccountId == Guid.Empty || request.OperationId == Guid.Empty ||
             request.SubmissionId == Guid.Empty ||
             !OccReviewDecisionPolicy.HasValidRequest(request.Outcome, request.Reason))
-            return Failed(OccReviewFailure.InvalidRequest);
-        var liveActor = await new EfActorContextResolver(context, timeProvider)
-            .ResolveAsync(request.ActorAccountId, cancellationToken);
-        if (liveActor is null ||
-            !liveActor.HasPermission("operations.review.decide") ||
-            !liveActor.Memberships.Any(membership =>
-                membership.OrganizationType == OrganizationType.AviamOperator &&
-                membership.Kind == MembershipKind.InternalStaff))
-            return Failed(OccReviewFailure.NotFound);
-        var liveStations = liveActor.StationScopes.Select(item => item.StationId)
-            .Intersect(request.AllowedStationIds).ToArray();
-        if (liveStations.Length == 0) return Failed(OccReviewFailure.NotFound);
+            return OccReviewDecisionWriteResult.Failed(OccReviewFailure.InvalidRequest, OccReviewHandler.InvalidRequestCode);
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            request.OperationId, request.SubmissionId, request.Outcome, request.Reason, expected = request.ConcurrencyToken,
+        });
+        var (step, _) = await RunAsync(request.ActorAccountId, request.IdempotencyKey, DecideAction, hash,
+            token => DecideInsideTransactionAsync(request, token), cancellationToken);
+        if (step.Failure is { } failure) return OccReviewDecisionWriteResult.Failed(failure, step.Code);
+        var decision = await DecisionAsync(step.ResultId, cancellationToken);
+        return decision is null
+            ? OccReviewDecisionWriteResult.Failed(OccReviewFailure.NotFound, "not_found")
+            : OccReviewDecisionWriteResult.Success(decision, step.ResultId);
+    }
 
-        var now = NormalizeToMilliseconds(timeProvider.GetUtcNow());
-        var operation = await context.GroundOperations
-            .FromSqlInterpolated($"""
-                SELECT * FROM [ops].[ground_operations] WITH (UPDLOCK, HOLDLOCK)
-                WHERE [public_id] = {request.OperationId}
-                """)
-            .SingleOrDefaultAsync(cancellationToken);
-        if (operation is null) return Failed(OccReviewFailure.NotFound);
-        var scope = await (
-            from turnaround in context.Turnarounds.AsNoTracking()
-            join station in context.Stations.AsNoTracking()
-                on turnaround.StationId equals station.Id
-            join airline in context.Airlines.AsNoTracking()
-                on turnaround.AirlineId equals airline.Id
-            join account in context.Users.AsNoTracking()
-                on request.ActorAccountId equals account.PublicId
-            where turnaround.Id == operation.TurnaroundId && station.IsActive &&
-                  liveStations.Contains(station.PublicId) &&
-                  context.AccountStationScopes.AsNoTracking().Any(actorScope =>
-                      actorScope.AccountId == account.Id &&
-                      actorScope.StationId == station.Id &&
-                      actorScope.GrantedAt <= now && actorScope.RevokedAt == null)
-            select new { StationId = station.Id, AirlineOrganizationId = airline.OrganizationId,
-                AccountId = account.Id, ActorName = account.UserName })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (scope is null) return Failed(OccReviewFailure.NotFound);
-
-        var submissions = await context.OperationSubmissions
-            .FromSqlInterpolated($"""
-                SELECT * FROM [ops].[operation_submissions] WITH (UPDLOCK, HOLDLOCK)
-                WHERE [ground_operation_id] = {operation.Id}
-                """)
-            .ToArrayAsync(cancellationToken);
-        var latest = submissions.MaxBy(item => item.RevisionNumber);
-        if (latest is null || latest.PublicId != request.SubmissionId)
-            return Failed(OccReviewFailure.PreconditionFailed);
-        if (ConcurrencyToken(operation.PublicId, operation.RowVersion,
-                latest.PublicId, latest.Status) != request.ConcurrencyToken)
-            return Failed(OccReviewFailure.PreconditionFailed);
-        if (!OccReviewDecisionPolicy.CanDecide(
-                operation.CurrentStatus.ToString(), latest.Status.ToString()))
-            return Failed(OccReviewFailure.Conflict);
+    private async Task<ReviewStep> DecideInsideTransactionAsync(
+        OccReviewDecisionWriteRequest request, CancellationToken cancellationToken)
+    {
+        var now = Now();
+        var (scope, refusal) = await LockAsync(request.ActorAccountId, request.AllowedStationIds, request.OperationId,
+            DecidePermission, now, cancellationToken);
+        if (scope is null) return refusal;
+        var operation = scope.Operation;
+        var latest = scope.Latest;
+        if (!Matches(scope, request.SubmissionId, request.ConcurrencyToken))
+            return ReviewStep.Fail(OccReviewFailure.PreconditionFailed, "version_conflict");
+        if (!OccReviewDecisionPolicy.CanDecide(operation.CurrentStatus.ToString(), latest.Status.ToString()))
+            return ReviewStep.Fail(OccReviewFailure.Conflict, "review_closed");
         if (await context.ReviewDecisions.AsNoTracking().AnyAsync(item =>
                 item.OperationSubmissionId == latest.Id, cancellationToken))
-            return Failed(OccReviewFailure.Conflict);
+            return ReviewStep.Fail(OccReviewFailure.Conflict, "review_already_decided");
 
         var outcome = request.Outcome == "Approved" ? ReviewOutcome.Approved : ReviewOutcome.Returned;
+        // 3-H: a reopened revision has nobody on the ramp to correct it; OCC corrects and approves it.
+        if (outcome == ReviewOutcome.Returned &&
+            !OccReviewDecisionPolicy.CanReturn(latest.ReopenedFromSubmissionId is not null))
+            return ReviewStep.Fail(OccReviewFailure.Conflict, "reopened_review_cannot_return");
+        if (outcome == ReviewOutcome.Approved)
+        {
+            // 3-N02: what is approved and billed is the Service Order the airline and AVIAM signed (or OCC's
+            // correction of it); otherwise OCC returns it to the ramp to be signed again.
+            var order = await ServiceOrderSignatures.EvaluateAsync(context, operation.Id, timeProvider, cancellationToken);
+            if (!order.CanBeApproved)
+                return ReviewStep.Fail(OccReviewFailure.Conflict,
+                    order.State == ServiceOrderStates.Stale ? "service_order_stale" : "service_order_unsigned");
+        }
+
         var status = outcome == ReviewOutcome.Approved
             ? GroundOperationStatus.Approved : GroundOperationStatus.Returned;
         operation.CurrentStatus = status;
@@ -589,7 +626,7 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                 ? "OCC approved the submitted operation."
                 : "OCC returned the submitted operation for correction.",
         });
-        var audit = new AuditEntry
+        context.AuditEntries.Add(new AuditEntry
         {
             PublicId = Guid.CreateVersion7(),
             OccurredAt = now,
@@ -612,8 +649,7 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
                 revision = latest.RevisionNumber,
                 outcome = outcome.ToString(),
             }),
-        };
-        context.AuditEntries.Add(audit);
+        });
         await AirlineOperationChangeWriter.AddAsync(context,
             scope.AirlineOrganizationId, operation.PublicId, now, cancellationToken);
         await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, true, cancellationToken,
@@ -622,15 +658,15 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             await FinanceApprovedServiceChangeWriter.AddAsync(context,
                 scope.StationId, operation.PublicId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
-        return OccReviewDecisionWriteResult.Success(new OccReviewDecisionWriteData(
-            operation.PublicId, latest.PublicId, latest.Status.ToString(), outcome.ToString(),
-            now, request.Reason), audit.PublicId);
+        return ReviewStep.Done(reviewDecision.PublicId);
     }
 
     /// <summary>
     /// ADR-0034: what OCC approves is the handed-off evidence with the charges as they stand after its
-    /// adjustments; the open incidents are closed and the turnaround completes when every operation of
-    /// it is approved.
+    /// adjustments; the incidents OCC did not manage are resolved with the approval's note (3-G: one OCC
+    /// already resolved or closed keeps its note and its author) and the turnaround completes when every
+    /// operation of it is approved. A reopened revision (3-H) goes through here again: the release of
+    /// block B only announces, so it is the same the second time.
     /// </summary>
     private async Task CloseApprovedAsync(GroundOperation operation, OperationSubmission submission,
         ReviewDecision decision, long reviewerAccountId, DateTimeOffset now, CancellationToken cancellationToken)
@@ -643,14 +679,19 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
 
         var incidents = await context.Incidents
             .Where(item => item.GroundOperationId == operation.Id &&
-                item.Status != IncidentStatus.Resolved && item.Status != IncidentStatus.Closed)
+                (item.Status == IncidentStatus.Open || item.Status == IncidentStatus.InReview))
             .ToArrayAsync(cancellationToken);
         foreach (var incident in incidents)
         {
+            context.Set<IncidentStatusEvent>().Add(new IncidentStatusEvent
+            {
+                IncidentId = incident.Id, FromStatus = incident.Status, ToStatus = IncidentStatus.Resolved,
+                Note = ApprovalResolutionNote, OccurredAt = now, ActorAccountId = reviewerAccountId,
+            });
             incident.Status = IncidentStatus.Resolved;
             incident.ResolvedAt = now;
             incident.ResolvedByAccountId = reviewerAccountId;
-            incident.ResolutionNote = "Cerrada al aprobar la revisión de OCC.";
+            incident.ResolutionNote = ApprovalResolutionNote;
             incident.UpdatedAt = now;
         }
 
@@ -670,6 +711,310 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
             turnaround.CurrentStatus = TurnaroundStatus.Completed;
             turnaround.UpdatedAt = now;
         }
+
+        // 3-D: the approved operation no longer holds its agent nor its stand (OperationOccupancyRules); the planning
+        // board and the agent's schedule hear that both are free. Nothing is closed: the assignment and the stand stay
+        // as the record. RampAgentRelease owns this step; every approval keeps calling it.
+        await RampAgentRelease.ReleaseOnApprovalAsync(context, operation, turnaround.StationId, now, cancellationToken);
+    }
+
+    public async Task<OccReviewReopenResult> ReopenAsync(OccReviewReopenRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var hash = CommercialCommandReceipts.Hash(new
+        {
+            request.OperationId, request.SubmissionId, request.Reason, expected = request.ConcurrencyToken,
+        });
+        var (step, replayed) = await RunAsync(request.ActorAccountId, request.IdempotencyKey, ReopenAction, hash,
+            token => ReopenInsideTransactionAsync(request, token), cancellationToken);
+        if (step.Failure is { } failure) return OccReviewReopenResult.Failed(failure, step.Code);
+        var data = await ReopenDataAsync(step.ResultId, cancellationToken);
+        return data is null
+            ? OccReviewReopenResult.Failed(OccReviewFailure.NotFound, "not_found")
+            : new OccReviewReopenResult(data, null, null, replayed);
+    }
+
+    /// <summary>
+    /// 3-H: an approval nothing was invoiced from yet becomes revision N+1, pending, with the same hand-off (evidence,
+    /// time, agent, checklist and note), its reason and who reopened it. Revision N keeps its decision and its
+    /// approved evidence as history. The turnaround stays completed and the agent and the stand stay free (3-D);
+    /// the incidents keep their state. «Por facturar» stops listing it until OCC approves it again.
+    /// </summary>
+    private async Task<ReviewStep> ReopenInsideTransactionAsync(OccReviewReopenRequest request,
+        CancellationToken cancellationToken)
+    {
+        var now = Now();
+        var (scope, refusal) = await LockAsync(request.ActorAccountId, request.AllowedStationIds, request.OperationId,
+            ReopenPermission, now, cancellationToken);
+        if (scope is null) return refusal;
+        var operation = scope.Operation;
+        var latest = scope.Latest;
+        if (!Matches(scope, request.SubmissionId, request.ConcurrencyToken))
+            return ReviewStep.Fail(OccReviewFailure.PreconditionFailed, "version_conflict");
+        if (!OccReviewDecisionPolicy.CanReopen(operation.CurrentStatus.ToString(), latest.Status.ToString()))
+            return ReviewStep.Fail(OccReviewFailure.Conflict, "review_not_approved");
+        // Once anything of it is on a preinvoice (an issued e-CF included), the correction is a credit note.
+        var serviceIds = await context.OperationServices.AsNoTracking()
+            .Where(service => service.GroundOperationId == operation.Id).Select(service => service.Id)
+            .ToArrayAsync(cancellationToken);
+        if (await context.PreinvoiceLines.AsNoTracking().AnyAsync(line => line.ReleasedAt == null &&
+                ((line.OperationServiceId != null && serviceIds.Contains(line.OperationServiceId.Value)) ||
+                 line.ApprovedSubmissionId == latest.Id), cancellationToken))
+            return ReviewStep.Fail(OccReviewFailure.Conflict, "already_invoiced");
+        // 3-N02: the new revision is approved again only on a signed (or corrected) Service Order and never goes back
+        // to the ramp to be signed, so an approval whose order is not signed as it stands is not reopened.
+        var order = await ServiceOrderSignatures.EvaluateAsync(context, operation.Id, timeProvider, cancellationToken);
+        if (!order.CanBeApproved)
+            return ReviewStep.Fail(OccReviewFailure.Conflict,
+                order.State == ServiceOrderStates.Stale ? "service_order_stale" : "service_order_unsigned");
+
+        var reopened = new OperationSubmission
+        {
+            PublicId = Guid.CreateVersion7(),
+            GroundOperationId = operation.Id,
+            OperationChecklistId = latest.OperationChecklistId,
+            RevisionNumber = checked(latest.RevisionNumber + 1),
+            Status = SubmissionStatus.PendingReview,
+            SubmittedByRampAgentId = latest.SubmittedByRampAgentId,
+            SubmittedAt = latest.SubmittedAt,
+            AgentNote = latest.AgentNote,
+            EvidenceJson = latest.EvidenceJson,
+            ReopenedFromSubmissionId = latest.Id,
+            ReopenedByAccountId = scope.AccountId,
+            ReopenReason = request.Reason,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
+        context.OperationSubmissions.Add(reopened);
+        operation.CurrentStatus = GroundOperationStatus.PendingReview;
+        operation.UpdatedAt = now;
+        context.Set<GroundOperationStatusEvent>().Add(new GroundOperationStatusEvent
+        {
+            GroundOperationId = operation.Id,
+            FromStatus = GroundOperationStatus.Approved,
+            ToStatus = GroundOperationStatus.PendingReview,
+            OccurredAt = now,
+            ActorAccountId = scope.AccountId,
+            Reason = Truncate($"OCC reabrió la aprobación: {request.Reason}", 1000),
+        });
+        context.AuditEntries.Add(new AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+            ActorAccountId = scope.AccountId, ActorDisplay = scope.ActorName, Action = "occ.operation.review.reopened",
+            EntityType = nameof(OperationSubmission), EntityPublicId = reopened.PublicId,
+            OrganizationId = scope.AirlineOrganizationId, StationId = scope.StationId, Source = AuditSource.Api,
+            CorrelationId = request.CorrelationId, RequestId = request.RequestId, Reason = request.Reason,
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                operationId = operation.PublicId, submissionId = reopened.PublicId, reopenedFrom = latest.PublicId,
+                revision = reopened.RevisionNumber,
+            }),
+        });
+        await AirlineOperationChangeWriter.AddAsync(context, scope.AirlineOrganizationId, operation.PublicId, now,
+            cancellationToken);
+        await RampOperationChangeWriter.AnnounceAsync(context, operation.Id, now, true, cancellationToken,
+            latest.SubmittedByRampAgentId);
+        await FinanceApprovedServiceChangeWriter.AddAsync(context, scope.StationId, operation.PublicId, now,
+            cancellationToken);
+        await context.SaveChangesAsync(cancellationToken);
+        return ReviewStep.Done(reopened.PublicId);
+    }
+
+    /// <summary>
+    /// Runs one review command in a serializable transaction. With an Idempotency-Key the receipt is looked up first
+    /// and written with the work: a replay answers the record the first attempt wrote, the key with another actor,
+    /// command or body is <c>idempotency_conflict</c>. A stale row is a failed precondition (<c>version_conflict</c>,
+    /// 412); a deadlock or snapshot conflict that kept repeating is a 409 <c>version_conflict</c>: re-read and decide
+    /// again.
+    /// </summary>
+    private async Task<(ReviewStep Step, bool Replayed)> RunAsync(Guid actorId, Guid? idempotencyKey, string action,
+        string hash, Func<CancellationToken, Task<ReviewStep>> work, CancellationToken cancellationToken)
+    {
+        long accountId = 0;
+        if (idempotencyKey is Guid)
+        {
+            var account = await context.Users.AsNoTracking().Where(user => user.PublicId == actorId)
+                .Select(user => (long?)user.Id).SingleOrDefaultAsync(cancellationToken);
+            if (account is not long id) return (ReviewStep.Fail(OccReviewFailure.NotFound, "not_found"), false);
+            accountId = id;
+        }
+        var strategy = context.Database.CreateExecutionStrategy();
+        try
+        {
+            return await strategy.ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+                    cancellationToken);
+                if (idempotencyKey is Guid key)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, key, accountId, action, hash,
+                        cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return (ReviewStep.Fail(OccReviewFailure.Conflict, "idempotency_conflict"), false);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay)
+                        return (ReviewStep.Done(prior.ResultId), true);
+                }
+                var step = await work(cancellationToken);
+                if (step.Failure is not null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    context.ChangeTracker.Clear();
+                    return (step, false);
+                }
+                if (idempotencyKey is Guid used)
+                    CommercialCommandReceipts.Add(context, used, accountId, action, hash, step.ResultId, Now());
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return (step, false);
+            });
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return (ReviewStep.Fail(OccReviewFailure.PreconditionFailed, "version_conflict"), false);
+        }
+        catch (DbUpdateException exception) when (idempotencyKey is Guid key && CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent attempt with the same key committed first: answer what it wrote.
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, accountId, action, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? (ReviewStep.Done(concurrent.ResultId), true)
+                : (ReviewStep.Fail(OccReviewFailure.Conflict, "idempotency_conflict"), false);
+        }
+        catch (Exception exception) when (exception is RetryLimitExceededException or DbUpdateException or SqlException &&
+            exception.GetBaseException() is SqlException { Number: 1205 or 1222 or 3960 or 2601 or 2627 or 547 })
+        {
+            context.ChangeTracker.Clear();
+            return (ReviewStep.Fail(OccReviewFailure.Conflict, "version_conflict"), false);
+        }
+    }
+
+    /// <summary>
+    /// Re-resolves the live actor (permission, internal membership and station) and locks the operation and its
+    /// hand-offs; a refused actor sees nothing (<c>not_found</c>).
+    /// </summary>
+    private async Task<(CommandScope? Scope, ReviewStep Refusal)> LockAsync(Guid actorAccountId,
+        IReadOnlyCollection<Guid> allowedStationIds, Guid operationId, string permission, DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var notFound = ReviewStep.Fail(OccReviewFailure.NotFound, "not_found");
+        var liveActor = await new EfActorContextResolver(context, timeProvider)
+            .ResolveAsync(actorAccountId, cancellationToken);
+        if (liveActor is null || !liveActor.HasPermission(permission) ||
+            !liveActor.Memberships.Any(membership =>
+                membership.OrganizationType == OrganizationType.AviamOperator &&
+                membership.Kind == MembershipKind.InternalStaff))
+            return (null, notFound);
+        var liveStations = liveActor.StationScopes.Select(item => item.StationId)
+            .Intersect(allowedStationIds).ToArray();
+        if (liveStations.Length == 0) return (null, notFound);
+        var operation = await context.GroundOperations
+            .FromSqlInterpolated($"""
+                SELECT * FROM [ops].[ground_operations] WITH (UPDLOCK, HOLDLOCK)
+                WHERE [public_id] = {operationId}
+                """)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (operation is null) return (null, notFound);
+        var scope = await (
+            from turnaround in context.Turnarounds.AsNoTracking()
+            join station in context.Stations.AsNoTracking()
+                on turnaround.StationId equals station.Id
+            join airline in context.Airlines.AsNoTracking()
+                on turnaround.AirlineId equals airline.Id
+            join account in context.Users.AsNoTracking()
+                on actorAccountId equals account.PublicId
+            where turnaround.Id == operation.TurnaroundId && station.IsActive &&
+                  liveStations.Contains(station.PublicId) &&
+                  context.AccountStationScopes.AsNoTracking().Any(actorScope =>
+                      actorScope.AccountId == account.Id &&
+                      actorScope.StationId == station.Id &&
+                      actorScope.GrantedAt <= now && actorScope.RevokedAt == null)
+            select new { StationId = station.Id, AirlineOrganizationId = airline.OrganizationId,
+                AccountId = account.Id, ActorName = account.UserName })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (scope is null) return (null, notFound);
+        var submissions = await context.OperationSubmissions
+            .FromSqlInterpolated($"""
+                SELECT * FROM [ops].[operation_submissions] WITH (UPDLOCK, HOLDLOCK)
+                WHERE [ground_operation_id] = {operation.Id}
+                """)
+            .ToArrayAsync(cancellationToken);
+        var latest = submissions.MaxBy(item => item.RevisionNumber);
+        if (latest is null) return (null, notFound);
+        return (new CommandScope(operation, latest, scope.StationId, scope.AirlineOrganizationId, scope.AccountId,
+            scope.ActorName ?? string.Empty), default);
+    }
+
+    /// <summary>The command names the latest hand-off with the review version OCC saw.</summary>
+    private static bool Matches(CommandScope scope, Guid submissionId, string concurrencyToken) =>
+        scope.Latest.PublicId == submissionId &&
+        ConcurrencyToken(scope.Operation.PublicId, scope.Operation.RowVersion, scope.Latest.PublicId,
+            scope.Latest.Status) == concurrencyToken;
+
+    /// <summary>The review version as it stands now: what the next command must send in If-Match.</summary>
+    private async Task<OccReviewChargeAdjustResult> VersionResultAsync(Guid operationId,
+        CancellationToken cancellationToken)
+    {
+        var row = await context.GroundOperations.AsNoTracking()
+            .Where(operation => operation.PublicId == operationId)
+            .Select(operation => new
+            {
+                operation.PublicId, operation.RowVersion,
+                Latest = context.OperationSubmissions.Where(item => item.GroundOperationId == operation.Id)
+                    .OrderByDescending(item => item.RevisionNumber)
+                    .Select(item => new { item.PublicId, item.Status }).FirstOrDefault(),
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        return row?.Latest is null
+            ? OccReviewChargeAdjustResult.Failed(OccReviewFailure.NotFound, "not_found")
+            : new OccReviewChargeAdjustResult(
+                ConcurrencyToken(row.PublicId, row.RowVersion, row.Latest.PublicId, row.Latest.Status), null);
+    }
+
+    private async Task<OccReviewDecisionWriteData?> DecisionAsync(Guid decisionId, CancellationToken cancellationToken)
+    {
+        var row = await (from decision in context.ReviewDecisions.AsNoTracking()
+                         join submission in context.OperationSubmissions.AsNoTracking()
+                             on decision.OperationSubmissionId equals submission.Id
+                         join operation in context.GroundOperations.AsNoTracking()
+                             on submission.GroundOperationId equals operation.Id
+                         where decision.PublicId == decisionId
+                         select new
+                         {
+                             OperationId = operation.PublicId, SubmissionId = submission.PublicId, submission.Status,
+                             decision.Outcome, decision.DecidedAt, decision.Reason,
+                         }).SingleOrDefaultAsync(cancellationToken);
+        return row is null ? null : new OccReviewDecisionWriteData(row.OperationId, row.SubmissionId,
+            row.Status.ToString(), row.Outcome.ToString(), row.DecidedAt, row.Reason);
+    }
+
+    /// <summary>
+    /// What a reopening answers, the first time and when its key replays it: the revision it created, in the state it
+    /// created it (pending review, also once OCC decided that revision: the replay names the reopening, never a later
+    /// decision), and the review version as it stands now, the one the next command sends in If-Match.
+    /// </summary>
+    private async Task<OccReviewReopenData?> ReopenDataAsync(Guid submissionId, CancellationToken cancellationToken)
+    {
+        var row = await (from submission in context.OperationSubmissions.AsNoTracking()
+                         join operation in context.GroundOperations.AsNoTracking()
+                             on submission.GroundOperationId equals operation.Id
+                         where submission.PublicId == submissionId
+                         select new
+                         {
+                             OperationId = operation.PublicId, operation.RowVersion, submission.PublicId,
+                             submission.RevisionNumber,
+                             Latest = context.OperationSubmissions.Where(item => item.GroundOperationId == operation.Id)
+                                 .OrderByDescending(item => item.RevisionNumber)
+                                 .Select(item => new { item.PublicId, item.Status }).FirstOrDefault(),
+                         }).SingleOrDefaultAsync(cancellationToken);
+        if (row?.Latest is null) return null;
+        return new OccReviewReopenData(row.OperationId, row.PublicId, row.RevisionNumber,
+            nameof(SubmissionStatus.PendingReview),
+            ConcurrencyToken(row.OperationId, row.RowVersion, row.Latest.PublicId, row.Latest.Status));
     }
 
     private static string ConcurrencyToken(
@@ -680,22 +1025,13 @@ internal sealed class EfOccReviewStore(ElevantDbContext context, TimeProvider ti
         return $"\"{Convert.ToHexString(hash).ToLowerInvariant()}\"";
     }
 
+    private DateTimeOffset Now() => NormalizeToMilliseconds(timeProvider.GetUtcNow());
+
     private static DateTimeOffset NormalizeToMilliseconds(DateTimeOffset value)
     {
         var utc = value.ToUniversalTime();
         return new DateTimeOffset(utc.Ticks - utc.Ticks % TimeSpan.TicksPerMillisecond, TimeSpan.Zero);
     }
 
-    private static OccReviewDecisionWriteResult Failed(OccReviewFailure failure) =>
-        OccReviewDecisionWriteResult.Failed(failure);
-
-    private static bool IsOperationalConflict(DbUpdateException exception) =>
-        exception.GetBaseException() is SqlException sqlException &&
-        (sqlException.Number is 2601 or 2627 or 547 || IsSerializationConflict(sqlException.Number));
-
-    private static bool IsSerializationConflict(int number) => number is 1205 or 1222 or 3960;
-
-    private static bool IsSerializationConflict(Exception exception) =>
-        exception.GetBaseException() is SqlException sqlException &&
-        IsSerializationConflict(sqlException.Number);
+    private static string Truncate(string value, int maximum) => value.Length <= maximum ? value : value[..maximum];
 }

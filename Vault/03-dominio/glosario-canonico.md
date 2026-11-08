@@ -167,6 +167,27 @@ de la fase 2 «Pre-operación» (`50e7778f`;
 | Tablet compartida | Instalación de la app de rampa que pasa al agente que inicia sesión y se libera al cerrar la sesión; OCC la desvincula o revoca una perdida. | El binding, que es el registro de cada vínculo entre instalación y cuenta. |
 | Feed simulado | Proveedor de vuelos determinista y sin red (`Simulated`), apagado por defecto, solo para los entornos Development o Test y activado únicamente por el overlay del arnés E2E. | AeroDataBox, el feed real que usa el VPS Development. |
 
+### Términos de la fase 3 del ciclo
+
+Posterior al commit verificado de esta nota: estos términos describen el código
+de la fase 3 «La operación» (`f2d5c52c`;
+[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+| Término | Significado | No confundir con |
+| --- | --- | --- |
+| Código de operación | Identificador legible de una escala manual o importada: `{ESTACIÓN}-{AAAAMMDD}-{NNN}`, numerado por estación y día local. Los `MAN-`, `EXT-` y `DEV-` ya emitidos se conservan. | El número interno de los formularios AVIAM (`PUJ000000123`). |
+| Ocupación del agente | Las operaciones que cuentan para el tope de tres simultáneas: asignadas, en curso o devueltas. Una operación entregada, aprobada o cancelada ya no ocupa al agente. | La asignación como registro, que se conserva abierta después de aprobar. |
+| Relevo | Paso explícito de una operación en curso o devuelta a otro agente elegible, con motivo; la operación conserva su estado y su evidencia. | La liberación, que solo vale antes del inicio y devuelve la operación a `Planned`. |
+| Ajuste de turno | Cambio, con motivo y versión, de las horas de un turno de hoy o de un día futuro; el turno debe seguir cubriendo el trabajo del agente. | Programar otro turno el mismo día, que se rechaza (`shift_day_taken`). |
+| Ventana de evidencia | El lapso en que una hora de la tablet es evidencia de la operación: desde el inicio o la llegada registrada, lo que ocurrió primero, hasta el cierre, con 2 minutos de tolerancia. | El límite fijo de 24 horas que tenían antes los hitos. |
+| Evidencia tardía | Un hito, un daño o un dato del vuelo capturado antes de la entrega que llega mientras OCC revisa; se acepta, recalcula los recargos y obliga a OCC a releer. | Una corrección después de una devolución, que es una ronda nueva. |
+| Orden de Servicio corregida | Versión que OCC guarda, con su motivo, cuando ajusta cargos o la facturación después de la firma; el PDF la imprime como «Corregida por OCC después de la firma». | Una Orden firmada de nuevo por la aerolínea y AVIAM. |
+| Servicio facturable | Un servicio completado o en excepción, con cantidad ejecutada, que OCC no excluyó en la revisión ([`ServiceBillability`](../../backend/Elevant.Application/Finance/ServiceBillability.cs)). | Un servicio planificado o no realizado, que no se factura. |
+| Exclusión de facturación | Decisión de OCC, con motivo y reversible mientras la revisión siga abierta, de no facturar un servicio en excepción con cantidad. | Quitar un recargo, que es un ajuste de cargos. |
+| Reapertura de la revisión | Envío nuevo `PendingReview` que OCC crea, con motivo, sobre una aprobación de la que nada se facturó; se corrige y se aprueba en OCC, sin volver a rampa. | Una devolución a rampa, que pide al agente corregir y reenviar. |
+| Aerolínea charter creada por OCC | Aerolínea mínima (organización `OCC-…`, OACI obligatorio e IATA opcional) que OCC da de alta para un charter; una aprobación comercial posterior la vincula. | Una aerolínea aprobada por Contratos con su contrato. |
+| Reabrir la cotización | Paso de Finanzas, con motivo y versión, que devuelve a `Pending` el prepago confirmado de un charter para que la tablet agregue servicios; el monto y la referencia se conservan hasta la confirmación siguiente. | La confirmación del prepago, que cierra la cotización. |
+
 ## Integración y trazabilidad
 
 | Término | Significado |

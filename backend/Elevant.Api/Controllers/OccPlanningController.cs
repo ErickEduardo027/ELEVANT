@@ -5,6 +5,7 @@ using Elevant.Application.Operations;
 using Elevant.Application.Operations.AssignOccOperation;
 using Elevant.Application.Operations.CreateManualTurnaround;
 using Elevant.Application.Operations.GetManualTurnaroundOptions;
+using Elevant.Application.Operations.GetOccAgentShift;
 using Elevant.Application.Operations.GetOccPlanningOptions;
 using Elevant.Application.Operations.GetOccPlanningSnapshot;
 using Elevant.Application.Operations.ProgramOccShift;
@@ -28,7 +29,8 @@ public sealed class OccPlanningController(
     AssignOccOperationHandler assignmentHandler,
     GetManualTurnaroundOptionsHandler manualOptionsHandler,
     CreateManualTurnaroundHandler createManualHandler,
-    ProgramOccShiftHandler shiftHandler) : ControllerBase
+    ProgramOccShiftHandler shiftHandler,
+    GetOccAgentShiftHandler agentShiftHandler) : ControllerBase
 {
     /// <summary>Returns the planning snapshot for an authorized station and operation date.</summary>
     [HttpGet(Name = "GetOccPlanningSnapshot")]
@@ -151,6 +153,9 @@ public sealed class OccPlanningController(
                 // A wide-body on a narrow-body stand: the same rule the positions map explains (ADR-0030).
                 "stand_unavailable" => CodedResult<ManualTurnaroundResponse>(StatusCodes.Status409Conflict,
                     "La posición solo admite aviones de fuselaje estrecho.", "stand_unavailable", ["stand_narrowbody_only"]),
+                // 3-N07: the same flight of the airline on that local day is already planned (typed or imported).
+                "flight_already_planned" => CodedResult<ManualTurnaroundResponse>(StatusCodes.Status409Conflict,
+                    "Ese vuelo ya está planificado ese día.", "flight_already_planned"),
                 _ => FailureResult<ManualTurnaroundResponse>(result.Failure!.Value),
             };
 
@@ -188,10 +193,47 @@ public sealed class OccPlanningController(
             request.StartsAtLocal, request.EndsAtLocal,
             Guid.NewGuid(), HttpContext.TraceIdentifier), cancellationToken);
         if (!result.IsSuccess)
+        {
+            // 3-E: the agent already has another shift that day: the screen offers to adjust it.
+            if (result.Failure == OccPlanningFailure.Conflict && result.Code is { } code)
+                return CodedResult<ProgramOccShiftResponse>(StatusCodes.Status409Conflict,
+                    "El agente ya tiene un turno ese día: ajústelo para cubrir el vuelo.", code);
             return FailureResult<ProgramOccShiftResponse>(result.Failure!.Value);
+        }
 
         return StatusCode(result.Replayed ? StatusCodes.Status200OK : StatusCodes.Status201Created,
             new ProgramOccShiftResponse(turnaroundId, result.ShiftId!.Value, result.Replayed));
+    }
+
+    /// <summary>
+    /// The shift an agent already has on the flight's day (3-E), with its version, so OCC adjusts it with
+    /// <c>AdjustHumanResourcesShift</c> instead of programming a second one; 404 <c>shift_not_found</c> when there is none.
+    /// </summary>
+    [HttpGet("turnarounds/{turnaroundId:guid}/agents/{agentId:guid}/shift", Name = "GetOccAgentShift")]
+    [ProducesResponseType<OccAgentShiftResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<ActionResult<OccAgentShiftResponse>> GetAgentShift(
+        [FromRoute] Guid turnaroundId,
+        [FromRoute] Guid agentId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetAccountId(out var accountId))
+            return UnauthorizedResult<OccAgentShiftResponse>();
+
+        var result = await agentShiftHandler.HandleAsync(new GetOccAgentShiftQuery(accountId, turnaroundId, agentId),
+            cancellationToken);
+        if (!result.IsSuccess)
+            return result.Code is { } code
+                ? CodedResult<OccAgentShiftResponse>(StatusCodes.Status404NotFound,
+                    "El agente no tiene turno ese día en esta estación.", code)
+                : FailureResult<OccAgentShiftResponse>(result.Failure!.Value);
+
+        var shift = result.Shift!;
+        return Ok(new OccAgentShiftResponse(shift.ShiftId, shift.AgentId, shift.WorkDate, shift.StartsAtLocal,
+            shift.EndsAtLocal, shift.TerminalCode, shift.Version));
     }
 
     /// <summary>Assigns one eligible agent and materializes all applicable contracted services.</summary>
@@ -313,7 +355,8 @@ public sealed class OccPlanningController(
         snapshot.Date,
         snapshot.Turnarounds.Select(Map).ToArray());
 
-    private static OccTurnaroundResponse Map(OccTurnaroundData turnaround) => new(
+    /// <summary>The turnaround as the snapshot and the turnaround detail (3-A) show it.</summary>
+    internal static OccTurnaroundResponse Map(OccTurnaroundData turnaround) => new(
         turnaround.Id,
         turnaround.OperationCode,
         turnaround.OperationDate,
@@ -405,7 +448,7 @@ public sealed class OccPlanningController(
                     stand.Terminal.Code,
                     stand.Terminal.Name));
 
-    private static OccStationResponse Map(OccStationData station) => new(
+    internal static OccStationResponse Map(OccStationData station) => new(
         station.Id,
         station.Code,
         station.Name,

@@ -11,7 +11,11 @@ public sealed record CoverageStandFacts(Guid StandId, string Code, bool IsActive
 /// <param name="IsMentorPair">It belongs to the mentor of this agent, or this agent mentors it.</param>
 public sealed record CoverageStandOverlap(Guid StandId, string StandCode, bool IsMentorPair);
 
-/// <summary>What the store knows about the agent for the requested window.</summary>
+/// <summary>
+/// What the store knows about the agent for the requested window. The documents are current on the work date and on
+/// the local day the window ends (a night shift, 3-N05); <paramref name="HasTerminalScope"/> is a current scope of the
+/// agent in the coverage's terminal, the one the tablet requires to work its stands.
+/// </summary>
 public sealed record CoverageAgentFacts(
     bool IsActive,
     DateOnly HireDate,
@@ -20,7 +24,8 @@ public sealed record CoverageAgentFacts(
     bool HasBridgeQualification,
     bool ShiftCoversWindow,
     bool HasApprovedAbsence,
-    bool HasOverlappingCoverage);
+    bool HasOverlappingCoverage,
+    bool HasTerminalScope = true);
 
 /// <summary>
 /// The mentor, when one is named. A mentor on an approved absence or without a current airport permit
@@ -81,6 +86,7 @@ public static class PositionCoveragePolicy
 
         var agent = candidate.Agent;
         if (!agent.IsActive) Add("agent_inactive");
+        if (!agent.HasTerminalScope) Add("terminal_scope_missing");
         if (!agent.HasAirportPermit) Add("airport_permit_required");
         var needsBridge = candidate.Terminal.RequiresBridgeQualification ||
                           candidate.Stands.Any(stand => stand.HasBoardingBridge);

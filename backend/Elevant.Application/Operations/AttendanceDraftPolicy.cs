@@ -8,6 +8,13 @@ public static class AttendanceDraftPolicy
     public static string? NormalizeNote(string? note) =>
         string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
+    /// <summary>
+    /// 3-F: OCC records the attendance of an open assignment and of one a handover released after the operation started
+    /// (the relieved agent worked until then); any other released assignment takes no new attendance.
+    /// </summary>
+    public static bool AcceptsOccAttendance(DateTimeOffset? releasedAt, DateTimeOffset? actualStartAt) =>
+        releasedAt is not { } released || actualStartAt is { } started && released > started;
+
     public static bool IsValid(
         int expectedRevision,
         DateTimeOffset? observedStartAt,

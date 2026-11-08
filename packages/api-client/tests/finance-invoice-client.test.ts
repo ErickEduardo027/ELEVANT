@@ -105,6 +105,21 @@ it("issues an e-CF invoice from approved operations and validates the e-NCF", as
   expect(calls).toHaveLength(2);
 });
 
+it("keeps the reason a refused e-CF names: a charge the contract excludes or a service OCC excluded", async () => {
+  const stationId = "10000000-0000-7000-8000-000000000008";
+  const operationIds = ["10000000-0000-7000-8000-000000000009"];
+  let reasons = ["charge_excluded_by_contract"];
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async () => new Response(JSON.stringify({ status: 422,
+      title: "The operations cannot be invoiced together.", reasons }),
+    { status: 422, headers: { "content-type": "application/problem+json" } }) });
+  await expect(client.issueInvoiceFromOperations({ stationId, operationIds, requestId }))
+    .rejects.toMatchObject({ status: 422, reasons: ["charge_excluded_by_contract"] });
+  reasons = ["excluded_in_review"];
+  await expect(client.issueInvoiceFromOperations({ stationId, operationIds, requestId }))
+    .rejects.toMatchObject({ status: 422, reasons: ["excluded_in_review"] });
+});
+
 it("downloads the invoice PDF by invoice id for Finance and the airline portal", async () => {
   const urls: string[] = [];
   const client = createElevantApiClient({ baseUrl: "https://api.example.test",

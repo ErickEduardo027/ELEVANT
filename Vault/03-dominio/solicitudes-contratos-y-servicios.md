@@ -107,6 +107,10 @@ desde el portal (ADR-0024).
   contrato sigue vivo, cuentas activas del portal o un código que pertenece a
   otra aerolínea. Quien ya opera amplía su contrato con una enmienda o una
   renovación. Con contratos solo terminados o vencidos puede volver a afiliarse.
+  *Posterior al commit verificado: desde la fase 3 del ciclo, un código que
+  pertenece a la aerolínea mínima que OCC creó para un charter no rechaza la
+  aprobación: la aprobación vincula esa aerolínea y la completa
+  ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*
 - **Representante confirmado.** Aprobar exige que Contratos haya registrado
   quién confirmó al representante, cuándo y cómo.
 - **Aerolínea propuesta.** Si la aerolínea no está en el catálogo, la solicitud

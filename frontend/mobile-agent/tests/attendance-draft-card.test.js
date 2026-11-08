@@ -24,6 +24,9 @@ jest.mock('../src/services/mobile-service-error', () => ({
   },
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+// 3-N18: «ahora» is ELEVANT's time, whatever the tablet's clock says.
+const mockServerNow = Date.parse('2026-10-05T14:07:00.000Z');
+jest.mock('../src/synchronization/server-clock', () => ({ serverNow: () => new Date(mockServerNow) }));
 
 const { AttendanceDraftCard } = require('../src/components/attendance-draft-card');
 const { MobileServiceError } = require('../src/services/mobile-service-error');
@@ -80,6 +83,7 @@ test('shows the canonical OCC lane read-only and saves a manual start with timez
   expect(request.expectedRevision).toBe(0);
   expect(request.incidentNote).toBe('Inicio observado en rampa');
   expect(request.observedStartAt).toMatch(/(Z|[+-]\d\d:\d\d)$/);
+  expect(Date.parse(request.observedStartAt)).toBe(mockServerNow);
   expect(textContent()).toContain('Guardado');
 });
 

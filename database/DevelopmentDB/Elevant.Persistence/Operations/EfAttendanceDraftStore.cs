@@ -109,6 +109,60 @@ internal sealed class EfAttendanceDraftStore(
         }
     }
 
+    public async Task<OccAttendanceAssignmentsReadResult> ListOccAssignmentsAsync(
+        Guid actorAccountId, Guid turnaroundId, CancellationToken cancellationToken = default)
+    {
+        if (actorAccountId == Guid.Empty)
+            return OccAttendanceAssignmentsReadResult.Failed(AttendanceDraftFailure.Unauthorized);
+        var actor = await new EfActorContextResolver(context, timeProvider)
+            .ResolveAsync(actorAccountId, cancellationToken);
+        if (actor is null)
+            return OccAttendanceAssignmentsReadResult.Failed(AttendanceDraftFailure.Unauthorized);
+        // The OCC lane of the attendance (the planning screen's sub-window), never Gestión Humana's or the tablet's.
+        if (!actor.Memberships.Any(membership =>
+                membership.Kind == MembershipKind.InternalStaff &&
+                membership.OrganizationType == OrganizationType.AviamOperator) ||
+            !actor.HasPermission("operations.attendance.read"))
+            return OccAttendanceAssignmentsReadResult.Failed(AttendanceDraftFailure.Forbidden);
+
+        var operation = await (from turnaround in context.Turnarounds.AsNoTracking()
+            join ground in context.GroundOperations.AsNoTracking()
+                on turnaround.Id equals ground.TurnaroundId
+            join station in context.Stations.AsNoTracking()
+                on turnaround.StationId equals station.Id
+            where turnaround.PublicId == turnaroundId && station.IsActive
+            select new
+            {
+                ground.Id,
+                ground.PublicId,
+                ground.ActualStartAt,
+                StationPublicId = station.PublicId,
+            }).SingleOrDefaultAsync(cancellationToken);
+        if (operation is null || !actor.StationScopes.Any(scope =>
+                scope.StationId == operation.StationPublicId))
+            return OccAttendanceAssignmentsReadResult.Failed(AttendanceDraftFailure.NotFound);
+
+        var assignments = await (from assignment in context.OperationAgentAssignments.AsNoTracking()
+            join agent in context.RampAgents.AsNoTracking()
+                on assignment.RampAgentId equals agent.Id
+            join person in context.Persons.AsNoTracking()
+                on agent.PersonId equals person.Id
+            where assignment.GroundOperationId == operation.Id
+            orderby assignment.AssignedAt, assignment.PublicId
+            select new OccAttendanceAssignmentData(
+                assignment.PublicId,
+                agent.PublicId,
+                (person.FirstName + " " + person.LastName).Trim(),
+                agent.EmployeeNumber,
+                assignment.AssignedAt,
+                assignment.ReleasedAt)).ToArrayAsync(cancellationToken);
+        // The same rule the OCC lane's write applies: the open ones and the ones relieved after the start.
+        return OccAttendanceAssignmentsReadResult.Success(new OccAttendanceAssignmentsData(
+            turnaroundId, operation.PublicId,
+            assignments.Where(item =>
+                AttendanceDraftPolicy.AcceptsOccAttendance(item.ReleasedAt, operation.ActualStartAt)).ToArray()));
+    }
+
     private async Task<(AttendanceDraftWriteResult Result, Guid? AppendedId)>
         SaveInsideTransactionAsync(AttendanceDraftWriteRequest request,
             CancellationToken cancellationToken)
@@ -231,7 +285,7 @@ internal sealed class EfAttendanceDraftStore(
             assignment = await context.OperationAgentAssignments.AsNoTracking()
                 .SingleOrDefaultAsync(item => item.PublicId == assignmentId,
                     cancellationToken);
-        if (assignment is null || lockForWrite && assignment.ReleasedAt is not null)
+        if (assignment is null)
             return (null, AttendanceDraftFailure.NotFound);
 
         var operation = await (from ground in context.GroundOperations.AsNoTracking()
@@ -249,9 +303,16 @@ internal sealed class EfAttendanceDraftStore(
                 StationInternalId = station.Id,
                 StationPublicId = station.PublicId,
                 AirlineOrganizationInternalId = airline.OrganizationId,
+                ground.ActualStartAt,
             }).SingleOrDefaultAsync(cancellationToken);
         if (operation is null || !actor.StationScopes.Any(scope =>
                 scope.StationId == operation.StationPublicId))
+            return (null, AttendanceDraftFailure.NotFound);
+        // A released assignment takes no new attendance, except one OCC released by a handover after the start (3-F):
+        // the agent worked until then, so OCC still records it. The tablet's lane stays closed below.
+        if (lockForWrite && assignment.ReleasedAt is not null &&
+            !(writeLane == AttendanceDraftLane.Occ &&
+              AttendanceDraftPolicy.AcceptsOccAttendance(assignment.ReleasedAt, operation.ActualStartAt)))
             return (null, AttendanceDraftFailure.NotFound);
 
         if (writeLane == AttendanceDraftLane.RampAgent ||

@@ -19,9 +19,11 @@ import {
   normalizedCharterDetails,
   normalizedCharterService,
   normalizedPrepayment,
+  normalizedPrepaymentReopening,
   type AddCharterServiceCommand,
   type CharterDetailsCommand,
   type ConfirmCharterPrepaymentCommand,
+  type ReopenCharterPrepaymentCommand,
 } from "./charters";
 import {
   AIRCRAFT_SIZE_CATEGORIES,
@@ -31,17 +33,49 @@ import {
   isGroundTimeAllowanceResponse,
   isOccReviewChargeAdjustResponse,
   isOccReviewClose,
+  isOccReviewReopenResponse,
   normalizedAddCharge,
   normalizedAllowance,
+  normalizedBillingExclusion,
   normalizedHoliday,
   normalizedRemoveCharge,
+  normalizedReopenReview,
+  SERVICE_ORDER_STATES,
   type AddFinanceHolidayCommand,
   type AddOccReviewChargeCommand,
   type AircraftSizeCategory,
   type RemoveOccReviewChargeCommand,
+  type ReopenOccReviewCommand,
   type SetGroundTimeAllowanceCommand,
+  type SetOccReviewServiceBillingExclusionCommand,
 } from "./operationalClose";
+import {
+  isOccIncident,
+  isOccIncidentList,
+  normalizedOccIncidentReport,
+  normalizedOccIncidentStatus,
+  type ChangeOccIncidentStatusCommand,
+  type ReportOccIncidentCommand,
+} from "./occIncidents";
 import type { OperationalPresenceList, OwnPresence, PresenceHeartbeat, PresenceStatusUpdate } from "./presence";
+import {
+  isOccCharterAirline,
+  isOccTurnaroundAction,
+  isRampAircraftTypes,
+  isStrongEntityTag,
+  normalizedCharterAirline,
+  normalizedTurnaroundReason,
+  normalizedTurnaroundReschedule,
+  normalizedTurnaroundStatusChange,
+  validatedPositionHeaders,
+  validatedTurnaroundHeaders,
+  type ChangeOccTurnaroundStatusCommand,
+  type CreateOccCharterAirlineCommand,
+  type OccPositionCommandHeaders,
+  type OccTurnaroundCommandHeaders,
+  type OccTurnaroundWithMetadata,
+  type RescheduleOccTurnaroundCommand,
+} from "./occTurnarounds";
 import {
   isContractDraftReadiness,
   isContractDraftScope,
@@ -300,6 +334,7 @@ import {
   getGetRampOperationChecklistUrl,
   getGetRampIncidentsUrl,
   getGetOperationAttendanceDraftUrl,
+  getGetOccAttendanceAssignmentsUrl,
   getSaveOccAttendanceDraftUrl,
   getSaveRampAttendanceDraftUrl,
   getGetHumanResourcesAttendanceUrl,
@@ -319,8 +354,17 @@ import {
   getAddOccStandConstraintUrl,
   getRemoveOccStandConstraintUrl,
   getReleaseOccOperationAgentUrl,
+  getGetOccHandoverOptionsUrl,
+  getHandOverOccOperationUrl,
+  getGetOccAgentShiftUrl,
+  getAdjustHumanResourcesShiftUrl,
   getGetOwnRampCoverageUrl,
   getRecordOccArrivalUrl,
+  getGetOccTurnaroundUrl,
+  getRescheduleOccTurnaroundUrl,
+  getChangeOccTurnaroundStatusUrl,
+  getCreateOccCharterAirlineUrl,
+  getGetRampAircraftTypesUrl,
   getAssignOccStandUrl,
   getReleaseOccStandUrl,
   getLocateOccStandUrl,
@@ -387,11 +431,18 @@ import {
   getAttachRampDamagePhotoUrl,
   getGetOccOperationDocumentsUrl,
   getGetOccOperationDocumentPdfUrl,
+  getGetOccDamagePhotoUrl,
   getGetAirlineServiceOrderUrl,
   getGetAirlineServiceOrderPdfUrl,
   getGetRampCharterUrl,
   getAddOccReviewChargeUrl,
   getRemoveOccReviewChargeUrl,
+  getSetOccReviewServiceBillingExclusionUrl,
+  getReopenOccReviewUrl,
+  getGetOccOperationIncidentsUrl,
+  getReportOccIncidentUrl,
+  getChangeOccIncidentStatusUrl,
+  getReopenFinanceCharterPrepaymentUrl,
   getGetFinanceCloseRulesUrl,
   getSetGroundTimeAllowanceUrl,
   getAddFinanceHolidayUrl,
@@ -502,6 +553,7 @@ import {
   type AttendanceDraftContributionResponse,
   type AttendanceDraftSnapshotResponse,
   type AttendanceDraftWriteResponse,
+  type OccAttendanceAssignmentsResponse,
   type SaveAttendanceDraftRequest,
   type HumanResourcesAttendancePageResponse,
   type HumanResourcesAttendanceRowResponse,
@@ -512,7 +564,14 @@ import {
   type HumanResourcesExpirationResponseHumanResourcesReportPageResponse,
   type OccReportCatalogResponse,
   type OccPositionBoardResponse,
+  type OccCharterAirlineResponse,
+  type OccTurnaroundDetailResponse,
+  type RampAircraftTypesResponse,
   type OccCoverageBoardResponse,
+  type OccHandoverOptionsResponse,
+  type OccOperationHandoverResponse,
+  type OccAgentShiftResponse,
+  type HumanResourcesShiftAdjusted,
   type RampOwnCoverageListResponse,
   type OccReadyContractsResponse,
   type OccFlightFeedResponse,
@@ -591,6 +650,9 @@ import {
   type AirlineServiceOrderResponse,
   type RampCharterResponse,
   type OccReviewChargeAdjustResponse,
+  type OccReviewReopenResponse,
+  type OccIncidentListResponse,
+  type OccIncidentResponse,
   type FinanceCloseRulesResponse,
   type GroundTimeAllowanceResponse,
   type FinanceHolidayResponse,
@@ -616,6 +678,7 @@ import {
   type ProvisioningTaskData,
   type CommercialAccountResponse,
   type SubmitRampOperationChecklistRequest,
+  type StartRampOperationRequest,
   type SystemPingResponse,
   type TransitionRampOperationServiceRequest,
 } from "../generated/elevant-api";
@@ -673,6 +736,39 @@ export interface OccCoverageCommand {
   mentorAgentId?: string | null;
   vehicleCode?: string | null;
   isReinforcement: boolean;
+}
+
+/**
+ * A coverage command with the intent's Idempotency-Key (3-J): optional while older clients exist (expand); the same
+ * key and body answer the board again instead of a second coverage.
+ */
+export type OccCoverageCommandOptions = GetHumanResourcesReportOptions & { readonly idempotencyKey?: string | null };
+
+/**
+ * «Liberar agente» (3-J): the assignment OCC saw and the intent's Idempotency-Key, both optional while older clients
+ * exist; a key needs the assignment, as the server asks (`expected_version_required`).
+ */
+export type ReleaseOccOperationAgentOptions = GetHumanResourcesReportOptions & {
+  readonly expectedAssignmentId?: string | null;
+  readonly idempotencyKey?: string | null;
+};
+
+/** «Relevar agente» (3-F): who takes the operation, the assignment OCC saw and the reason (5 to 500 characters). */
+export interface HandOverOccOperationCommand {
+  readonly agentId: string;
+  readonly expectedAssignmentId: string;
+  readonly reason: string;
+}
+
+/**
+ * «Ajustar horario» (3-E): the new local hours of the shift (HH:mm:ss; an end at or before the start crosses
+ * midnight, at most 16 hours), the reason (5 to 500 characters) and the shift's `version` on screen.
+ */
+export interface AdjustHumanResourcesShiftCommand {
+  readonly startsAtLocal: string;
+  readonly endsAtLocal: string;
+  readonly reason: string;
+  readonly expectedVersion: string;
 }
 
 export interface OccStandAttributesCommand {
@@ -774,7 +870,11 @@ export type GetOperationalCommunicationOptions = Omit<ElevantRequestInit, "body"
 export type GetAccountChangesOptions = Omit<ElevantRequestInit, "body" | "method"> & {
   installationId?: string;
 };
-export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method">;
+/**
+ * The decision and the charge adjustments of the OCC review. The intent's Idempotency-Key is optional while older
+ * callers exist (phase 3, block D, expand); private-web always sends it.
+ */
+export type DecideOccReviewOptions = Omit<ElevantRequestInit, "body" | "method"> & { readonly idempotencyKey?: string | null };
 export type AssignOccPlanningOperationOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -809,6 +909,8 @@ export interface RampFlightDataCommand {
   passengersOut: number | null;
   mtowKg: number | null;
   aircraftRegistration: string | null;
+  /** 3-B: the aircraft type seen on the ramp; omitted or null keeps the current one (and the receipt hash). */
+  aircraftTypeId?: string | null;
 }
 export type SubmitRampOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type ReopenRampOperationCorrectionOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -1056,6 +1158,13 @@ export interface ElevantApiClient {
   removeHumanResourcesShift(id: string, expectedVersion?: string | null, idempotencyKey?: string | null,
     options?: GetHumanResourcesReportOptions): Promise<void>;
   /**
+   * «Ajustar horario» (3-E): Gestión Humana and OCC change the hours of a shift of today or later with its version, a
+   * reason and the intent's key (required). It keeps covering the agent's work (`shift_uncovers_work`); a past shift
+   * (`shift_in_past`) or one with a validated attendance (`attendance_validated`) stays.
+   */
+  adjustHumanResourcesShift(id: string, command: AdjustHumanResourcesShiftCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<HumanResourcesShiftAdjusted>;
+  /**
    * The planning board's marks (2-N25): the assignments of the station's operations on the date whose agent is
    * inactive, on an approved absence or without a current airport permit or ramp licence. Nothing is released.
    */
@@ -1199,6 +1308,21 @@ export interface ElevantApiClient {
     options?: DecideOccReviewOptions): Promise<OccReviewChargeAdjustResponse>;
   removeOccReviewCharge(operationId: string, markId: string, command: RemoveOccReviewChargeCommand, etag: string,
     options?: DecideOccReviewOptions): Promise<OccReviewChargeAdjustResponse>;
+  /** 3-N11: OCC excludes a service in exception from billing, or includes it again; returns the new review version. */
+  setOccReviewServiceBillingExclusion(operationId: string, serviceId: string,
+    command: SetOccReviewServiceBillingExclusionCommand, etag: string, idempotencyKey: string,
+    options?: GetOccReviewOptions): Promise<OccReviewChargeAdjustResponse>;
+  /** 3-H: OCC reopens an approval nothing was invoiced from yet as a new pending revision (its ETag is the answer's). */
+  reopenOccReview(operationId: string, command: ReopenOccReviewCommand, etag: string, idempotencyKey: string,
+    options?: GetOccReviewOptions): Promise<OccReviewReopenResponse>;
+  /** 3-G: the live incidents of an operation of OCC's stations, with their history. */
+  getOccOperationIncidents(operationId: string, options?: GetOccReviewOptions): Promise<OccIncidentListResponse>;
+  /** 3-G: OCC reports an incident of an operation still open; the same key replays it. */
+  reportOccIncident(operationId: string, command: ReportOccIncidentCommand, idempotencyKey: string,
+    options?: GetOccReviewOptions): Promise<OccIncidentResponse>;
+  /** 3-G: OCC moves an incident with a note, against the version it saw. */
+  changeOccIncidentStatus(incidentId: string, command: ChangeOccIncidentStatusCommand, version: string,
+    idempotencyKey: string, options?: GetOccReviewOptions): Promise<OccIncidentResponse>;
   /** Finance's ground time allowances and holiday calendar (ADR-0034). */
   getFinanceCloseRules(options?: GetHumanResourcesReportOptions): Promise<FinanceCloseRulesResponse>;
   setGroundTimeAllowance(category: AircraftSizeCategory, command: SetGroundTimeAllowanceCommand,
@@ -1272,11 +1396,16 @@ export interface ElevantApiClient {
     request: RegisterMobileDeviceRequest,
     options?: RegisterMobileDeviceOptions,
   ): Promise<RegisterMobileDeviceResponse>;
+  /**
+   * «Iniciar». Without `request` the command is the first version's (no body); with it, the tablet sends the
+   * moment the agent tapped it, possibly from its offline queue (3-I).
+   */
   startRampOperation(
     operationId: string,
     installationId: string,
     idempotencyKey: string,
     options?: StartRampOperationOptions,
+    request?: StartRampOperationRequest,
   ): Promise<RampOperationStartResponse>;
   getRampOperationChecklist(
     operationId: string,
@@ -1306,6 +1435,12 @@ export interface ElevantApiClient {
     installationId: string,
     options?: SaveAttendanceDraftOptions,
   ): Promise<AttendanceDraftWriteResponse>;
+  /**
+   * 3-F: the assignments of the turnaround's operation whose attendance OCC records, oldest first: the open ones and
+   * the ones a handover released after the start (`releasedAt`), which the planning board no longer lists. Web only.
+   */
+  getOccAttendanceAssignments(turnaroundId: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccAttendanceAssignmentsResponse>;
   getHumanResourcesAttendance(
     query: GetHumanResourcesAttendanceParams,
     options?: GetHumanResourcesAttendanceOptions,
@@ -1318,15 +1453,37 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
   listOccReports(options?: GetHumanResourcesReportOptions): Promise<OccReportCatalogResponse>;
   getOccPositions(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
-  recordOccArrival(turnaroundId: string, request: { aircraftRegistration: string; arrivedAt?: string | null },
-    options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+  /**
+   * Records the arrival (3-N08): the registration, the actual time (now when omitted), the aircraft type (3-B) and, to
+   * correct a recorded one, the reason. `options.idempotencyKey` and `options.ifMatch` are optional (3-N10); a key needs
+   * the turnaround's ETag.
+   */
+  recordOccArrival(turnaroundId: string,
+    request: { aircraftRegistration: string; arrivedAt?: string | null; aircraftTypeId?: string | null; reason?: string | null },
+    options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders): Promise<OccPositionBoardResponse>;
   assignOccStand(turnaroundId: string, request: { standId: string; reason?: string | null },
-    options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
-  releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccPositionBoardResponse>;
+    options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders): Promise<OccPositionBoardResponse>;
+  releaseOccStand(turnaroundId: string,
+    options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders): Promise<OccPositionBoardResponse>;
+  /** One turnaround with its ETag and the changes its state allows (3-A). */
+  getOccTurnaround(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccTurnaroundWithMetadata>;
+  /** «Editar vuelo» before the operation starts, with the intent's key and the ETag on screen (3-A). */
+  rescheduleOccTurnaround(turnaroundId: string, command: RescheduleOccTurnaroundCommand, headers: OccTurnaroundCommandHeaders,
+    options?: GetHumanResourcesReportOptions): Promise<OccTurnaroundWithMetadata>;
+  /** «Cancelar vuelo» or «Marcar desviado» before the operation starts (3-A). */
+  changeOccTurnaroundStatus(turnaroundId: string, command: ChangeOccTurnaroundStatusCommand,
+    headers: OccTurnaroundCommandHeaders, options?: GetHumanResourcesReportOptions): Promise<OccTurnaroundWithMetadata>;
+  /** The minimal carrier of a charter (3-N21); 201 the first time, 200 when the key replays it. */
+  createOccCharterAirline(command: CreateOccCharterAirlineCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccCharterAirlineResponse>;
+  /** The active aircraft types the tablet offers in «Datos del vuelo» (3-B). */
+  getRampAircraftTypes(options?: GetHumanResourcesReportOptions): Promise<RampAircraftTypesResponse>;
   /** Position coverage per shift (ADR-0030). A rejected coverage throws 422 with `reasons`. */
   getOccCoverage(stationId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
-  createOccCoverage(request: OccCoverageCommand, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
-  releaseOccCoverage(coverageId: string, date: string, options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
+  /** With `options.idempotencyKey` a repeated attempt answers the board instead of a second coverage (3-J). */
+  createOccCoverage(request: OccCoverageCommand, options?: OccCoverageCommandOptions): Promise<OccCoverageBoardResponse>;
+  /** Releasing twice answers the board; `options.idempotencyKey` replays the release (3-J). */
+  releaseOccCoverage(coverageId: string, date: string, options?: OccCoverageCommandOptions): Promise<OccCoverageBoardResponse>;
   /**
    * The bridge, remote, size and active flags of a stand with the version on the board and the intent's
    * Idempotency-Key (2-A): a stand in use is not deactivated (`stand_in_use`) and one of an inactive terminal is not
@@ -1340,8 +1497,22 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
   removeOccStandConstraint(constraintId: string, date: string,
     options?: GetHumanResourcesReportOptions): Promise<OccCoverageBoardResponse>;
-  /** Releases the agent of an operation not yet started so OCC can assign another. */
-  releaseOccOperationAgent(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<void>;
+  /**
+   * Releases the agent of an operation not yet started so OCC can assign another. With the assignment OCC saw
+   * (`assignment_changed` otherwise) and the intent's key (3-J); a started operation is `operation_started`.
+   */
+  releaseOccOperationAgent(turnaroundId: string, options?: ReleaseOccOperationAgentOptions): Promise<void>;
+  /**
+   * «Relevar agente» (3-F): who works an operation in progress or returned now and the agents of the station that may
+   * take what is left of it (`handover_not_allowed` in any other status).
+   */
+  getOccHandoverOptions(turnaroundId: string, options?: GetHumanResourcesReportOptions): Promise<OccHandoverOptionsResponse>;
+  /** «Relevar agente» (3-F): hands the operation to another eligible agent with the intent's key (required). */
+  handOverOccOperation(turnaroundId: string, command: HandOverOccOperationCommand, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccOperationHandoverResponse>;
+  /** The agent's shift of the flight's day with its version (3-E); `shift_not_found` (404) when there is none. */
+  getOccAgentShift(turnaroundId: string, agentId: string,
+    options?: GetHumanResourcesReportOptions): Promise<OccAgentShiftResponse>;
   /** «Mis posiciones de hoy» of the signed-in ramp agent. */
   getOwnRampCoverage(options?: GetOperationalCommunicationOptions): Promise<RampOwnCoverageListResponse>;
   /** Places a stand on the map (WGS84) or clears it with both coordinates null (ADR-0027). */
@@ -1606,6 +1777,11 @@ export interface ElevantApiClient {
   /** OCC: the current form as PDF, signatures and walk-around photos included. */
   downloadOccOperationDocument(operationId: string, kind: OperationDocumentKind,
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /**
+   * OCC: the photo of one walk-around damage mark (3-K), JPEG or PNG only, read on demand when OCC opens it. Anything
+   * else the server answers is a malformed response.
+   */
+  getOccDamagePhoto(operationId: string, markId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
   /** Airline portal: the latest Service Order its representative signed. */
   getAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<AirlineServiceOrderResponse>;
   downloadAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
@@ -1618,6 +1794,9 @@ export interface ElevantApiClient {
   /** Finance: charters of its stations and their prepayment. */
   getFinanceCharters(options?: GetHumanResourcesReportOptions): Promise<FinanceCharterListResponse>;
   confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand,
+    options?: GetHumanResourcesReportOptions): Promise<FinanceCharterResponse>;
+  /** 3-N24: Finance reopens a confirmed prepayment as a new quotation, with its reason and the version it saw. */
+  reopenFinanceCharterPrepayment(charterId: string, command: ReopenCharterPrepaymentCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<FinanceCharterResponse>;
   /** Saves passengers, MTOW and the registration correction typed once on the ramp. */
   updateRampFlightData(
@@ -2200,6 +2379,23 @@ function isOccTurnaroundResponse(value: unknown) {
   );
 }
 
+/** One turnaround as OCC edits it (3-A): the snapshot's turnaround, its station, version and allowed changes. */
+function isOccTurnaroundDetail(value: unknown, turnaroundId: string): value is OccTurnaroundDetailResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["station", "turnaround", "version", "isCharter", "allowedActions"]) &&
+    isOccStationResponse(value.station) && isOccTurnaroundResponse(value.turnaround) &&
+    isRecord(value.turnaround) && typeof value.turnaround.id === "string" &&
+    value.turnaround.id.toLowerCase() === turnaroundId.toLowerCase() &&
+    isNonEmptyString(value.version) && value.version.length <= 64 && typeof value.isCharter === "boolean" &&
+    Array.isArray(value.allowedActions) && value.allowedActions.every(isOccTurnaroundAction);
+}
+
+/** The imported pair's turnaround; `linked` (3-N07) is optional so an older server keeps answering. */
+function isImportedFlight(value: unknown): value is ImportOccFlightResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed", "linked"]) &&
+    isUuid(value.turnaroundId) && isNonEmptyString(value.operationCode) && typeof value.replayed === "boolean" &&
+    (value.linked === undefined || typeof value.linked === "boolean");
+}
+
 function isOccPlanningSnapshotResponse(
   value: unknown,
 ): value is OccPlanningSnapshotResponse {
@@ -2346,6 +2542,91 @@ function isOccAgentOptionResponse(value: unknown) {
     Array.isArray(value.eligibilityReasons) &&
     value.eligibilityReasons.every(isString)
   );
+}
+
+/** A local clock the API answers (HH:mm:ss). */
+const LOCAL_CLOCK = /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/;
+/** A local clock a shift adjustment sends: whole minutes, as the server requires (3-E). */
+const LOCAL_MINUTE = /^([01]\d|2[0-3]):[0-5]\d:00$/;
+/** The statuses OCC hands an operation over in (3-F). */
+const HANDOVER_STATUSES: readonly string[] = ["InProgress", "Returned"];
+
+/**
+ * «Relevar agente» (3-F): the route's operation in progress or returned, the agent and assignment that work it now,
+ * the window left (it ends after it starts) and the agents evaluated for it; the current agent is never offered.
+ */
+function isOccHandoverOptions(value: unknown, turnaroundId: string): value is OccHandoverOptionsResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["turnaroundId", "operationId", "operationStatus", "currentAssignmentId",
+      "currentAgentId", "currentAgentName", "remainingFrom", "remainingUntil", "agents"]) ||
+      !isUuid(value.turnaroundId) || value.turnaroundId.toLowerCase() !== turnaroundId || !isUuid(value.operationId) ||
+      !isString(value.operationStatus) || !HANDOVER_STATUSES.includes(value.operationStatus) ||
+      !isUuid(value.currentAssignmentId) || !isUuid(value.currentAgentId) || !isNonEmptyString(value.currentAgentName) ||
+      !isDateTimeOffset(value.remainingFrom) || !isDateTimeOffset(value.remainingUntil) ||
+      Date.parse(value.remainingUntil) <= Date.parse(value.remainingFrom) ||
+      !Array.isArray(value.agents) || value.agents.length > 1000 || !value.agents.every(isOccAgentOptionResponse))
+    return false;
+  const current = value.currentAgentId.toLowerCase();
+  return value.agents.every(agent => String((agent as { id: string }).id).toLowerCase() !== current);
+}
+
+/** The handed-over operation (3-F): the route's turnaround and the new assignment of the agent OCC chose. */
+function isOccOperationHandover(value: unknown, turnaroundId: string, agentId: string):
+  value is OccOperationHandoverResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["turnaroundId", "assignmentId", "agentId", "previousAgentId", "replayed"]) &&
+    isUuid(value.turnaroundId) && value.turnaroundId.toLowerCase() === turnaroundId && isUuid(value.assignmentId) &&
+    isUuid(value.agentId) && value.agentId.toLowerCase() === agentId && isUuid(value.previousAgentId) &&
+    value.previousAgentId.toLowerCase() !== agentId && typeof value.replayed === "boolean";
+}
+
+/** The route agent's shift of the flight's day (3-E), with the version «Ajustar turno» sends back. */
+function isOccAgentShift(value: unknown, agentId: string): value is OccAgentShiftResponse {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["shiftId", "agentId", "workDate", "startsAtLocal", "endsAtLocal", "terminalCode", "version"]) &&
+    isUuid(value.shiftId) && isUuid(value.agentId) && value.agentId.toLowerCase() === agentId &&
+    isDateOnly(value.workDate) && isString(value.startsAtLocal) && LOCAL_CLOCK.test(value.startsAtLocal) &&
+    isString(value.endsAtLocal) && LOCAL_CLOCK.test(value.endsAtLocal) && isNonEmptyString(value.terminalCode) &&
+    isRecordVersion(value.version);
+}
+
+/** The route's adjusted shift (3-E) with its new version. */
+function isHumanResourcesShiftAdjusted(value: unknown, shiftId: string): value is HumanResourcesShiftAdjusted {
+  return isRecord(value) && hasOnlyKeys(value, ["id", "startsAtLocal", "endsAtLocal", "version"]) &&
+    isUuid(value.id) && value.id.toLowerCase() === shiftId && isString(value.startsAtLocal) &&
+    LOCAL_CLOCK.test(value.startsAtLocal) && isString(value.endsAtLocal) && LOCAL_CLOCK.test(value.endsAtLocal) &&
+    isRecordVersion(value.version);
+}
+
+/** A reason the audit keeps: trimmed, from 5 to 500 characters. */
+function validatedAgentReason(reason: unknown) {
+  const trimmed = typeof reason === "string" ? reason.trim() : "";
+  if (trimmed.length < 5 || trimmed.length > 500) throw new TypeError("reason must have 5 to 500 characters.");
+  return trimmed;
+}
+
+/** «Relevar agente» (3-F): the agent, the assignment OCC saw and the reason. */
+function validatedHandoverCommand(command: HandOverOccOperationCommand) {
+  if (!isRecord(command) || !hasOnlyKeys(command, ["agentId", "expectedAssignmentId", "reason"]))
+    throw new TypeError("The handover is invalid.");
+  return { agentId: validatedUuid(command.agentId, "agentId"),
+    expectedAssignmentId: validatedUuid(command.expectedAssignmentId, "expectedAssignmentId"),
+    reason: validatedAgentReason(command.reason) };
+}
+
+/** «Ajustar horario» (3-E): distinct whole-minute local times at most 16 hours apart, the reason and the version. */
+function validatedShiftAdjustment(command: AdjustHumanResourcesShiftCommand) {
+  if (!isRecord(command) || !hasOnlyKeys(command, ["startsAtLocal", "endsAtLocal", "reason", "expectedVersion"]) ||
+      !isString(command.startsAtLocal) || !isString(command.endsAtLocal) || !LOCAL_MINUTE.test(command.startsAtLocal) ||
+      !LOCAL_MINUTE.test(command.endsAtLocal) || command.startsAtLocal === command.endsAtLocal ||
+      !isRecordVersion(command.expectedVersion))
+    throw new TypeError("The shift adjustment needs distinct local HH:mm:00 times and the shift's version.");
+  const minutes = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3, 5));
+  const start = minutes(command.startsAtLocal);
+  const end = minutes(command.endsAtLocal);
+  if ((end > start ? end - start : end + 1440 - start) > 16 * 60)
+    throw new TypeError("A shift cannot exceed sixteen hours.");
+  return { startsAtLocal: command.startsAtLocal, endsAtLocal: command.endsAtLocal,
+    reason: validatedAgentReason(command.reason), expectedVersion: command.expectedVersion };
 }
 
 function isOccPlanningTurnaroundContextResponse(value: unknown) {
@@ -2539,6 +2820,8 @@ const rampServiceTargetStatuses = [
   "Exception",
 ] as const;
 const maximumExecutedQuantityExclusive = 100_000_000_000_000;
+/** A walk-around photo is at most 6 MiB, the limit the server takes on upload (OperationDocumentRules.MaxPhotoBytes). */
+const MAXIMUM_DAMAGE_PHOTO_BYTES = 6 * 1024 * 1024;
 
 function isOneOf<const TValue extends readonly string[]>(
   value: unknown,
@@ -2839,6 +3122,30 @@ function isAttendanceSnapshot(
     isUuid(value.stationId) &&
     (value.occ === null || isAttendanceContribution(value.occ)) &&
     (value.rampAgent === null || isAttendanceContribution(value.rampAgent));
+}
+
+/** An operation hands its agents over, it does not pile them up: more assignments than this is not an answer (3-F). */
+const MAX_OCC_ATTENDANCE_ASSIGNMENTS = 100;
+
+/** An assignment whose attendance OCC records (3-F): open (`releasedAt` null) or released after it was assigned. */
+function isOccAttendanceAssignment(value: unknown) {
+  return isRecord(value) &&
+    hasOnlyKeys(value, ["assignmentId", "agentId", "displayName", "employeeNumber", "assignedAt", "releasedAt"]) &&
+    isUuid(value.assignmentId) && isUuid(value.agentId) && isNonEmptyString(value.displayName) &&
+    isString(value.employeeNumber) && isDateTimeOffset(value.assignedAt) &&
+    (value.releasedAt === null ||
+      isDateTimeOffset(value.releasedAt) && Date.parse(value.releasedAt) >= Date.parse(value.assignedAt));
+}
+
+/** The route turnaround's assignments whose attendance OCC records (3-F), each one once. */
+function isOccAttendanceAssignments(value: unknown, turnaroundId: string): value is OccAttendanceAssignmentsResponse {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["turnaroundId", "operationId", "assignments"]) ||
+      !isUuid(value.turnaroundId) || value.turnaroundId.toLowerCase() !== turnaroundId || !isUuid(value.operationId) ||
+      !Array.isArray(value.assignments) || value.assignments.length > MAX_OCC_ATTENDANCE_ASSIGNMENTS ||
+      !value.assignments.every(isOccAttendanceAssignment))
+    return false;
+  const ids = value.assignments.map(item => String((item as { assignmentId: string }).assignmentId).toLowerCase());
+  return new Set(ids).size === ids.length;
 }
 
 function isAttendanceWriteResult(
@@ -3434,8 +3741,17 @@ function isOccReviewDetailResponse(
       "operationCode", "operationDate", "stationId", "stationCode", "ianaTimeZone",
       "airlineName", "agentName", "plannedStartAt", "plannedEndAt", "actualStartAt",
       "actualEndAt", "submittedAt", "agentNote", "checklistStatus", "checklistAnswers",
-      "services", "incidents", "decision", "reviewVersion", "close"]) &&
+      "services", "incidents", "decision", "reviewVersion", "close", "serviceOrderState", "reopening"]) &&
     (value.close === undefined || value.close === null || isOccReviewClose(value.close)) &&
+    // Phase 3, block D: the state of the Service Order (3-N02) and the approval a revision reopens (3-H); both may be
+    // missing on servers before it.
+    isOptionalNullable(value.serviceOrderState, (state) => isOneOf(state, SERVICE_ORDER_STATES)) &&
+    isOptionalNullable(value.reopening, (reopening) => isRecord(reopening) &&
+      hasOnlyKeys(reopening, ["fromRevisionNumber", "reason", "reopenedAt", "reopenedBy"]) &&
+      isInt32(reopening.fromRevisionNumber) && reopening.fromRevisionNumber > 0 &&
+      isNonEmptyString(reopening.reason) && reopening.reason.length <= 2000 &&
+      isDateTimeOffset(reopening.reopenedAt) && isNonEmptyString(reopening.reopenedBy) &&
+      reopening.reopenedBy.length <= 200) &&
     isUuid(value.operationId) && value.operationId.toLowerCase() === operationId &&
     isUuid(value.submissionId) && isInt32(value.revisionNumber) && value.revisionNumber > 0 &&
     isOneOf(value.status, occReviewStatuses) && isNonEmptyString(value.operationCode) &&
@@ -4719,8 +5035,9 @@ function isFinanceApprovedServicesResponse(value: unknown): value is FinanceAppr
         typeof value === "string" && /^[A-Z]{3}$/.test(value)) &&
       isOptionalNullable(service.preinvoiceId, isUuid) &&
       typeof service.ready === "boolean" &&
+      // 3-N11: a service in exception with an executed quantity is billed too (ServiceBillability).
       (service.ready
-        ? service.executionStatus === "Completed" && service.executedQuantity > 0 &&
+        ? ["Completed", "Exception"].includes(String(service.executionStatus)) && service.executedQuantity > 0 &&
           isNonEmptyString(service.billingUnit) && isFiniteNumber(service.frozenUnitPrice) &&
           typeof service.frozenCurrency === "string" &&
           /^[A-Z]{3}$/.test(service.frozenCurrency) &&
@@ -5257,17 +5574,28 @@ function hasAtMostFourDecimalPlaces(value: number) {
   return Number.isInteger(exponent) && Math.max(0, decimalPlaces - exponent) <= 4;
 }
 
+/** The optional body of «Iniciar» (3-I): only the tapped time, and only when there is one. */
+function validatedStartRequest(request: StartRampOperationRequest): StartRampOperationRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, ["startedAt"]) ||
+    !isOptionalNullable(request.startedAt, isDateTimeOffset)) {
+    throw new TypeError("Ramp operation start is invalid.");
+  }
+  return typeof request.startedAt === "string" ? { startedAt: request.startedAt } : {};
+}
+
 function validatedServiceTransitionRequest(
   request: TransitionRampOperationServiceRequest,
 ): TransitionRampOperationServiceRequest {
   if (
     !isRecord(request) ||
-    !hasOnlyKeys(request, ["targetStatus", "executedQuantity", "note"]) ||
+    !hasOnlyKeys(request, ["targetStatus", "executedQuantity", "note", "occurredAt"]) ||
     !isOneOf(request.targetStatus, rampServiceTargetStatuses) ||
     !isOptionalNullable(
       request.note,
       (note) => typeof note === "string" && note.length <= 1_000,
-    )
+    ) ||
+    // 3-I: the moment the agent tapped it; without it the server's time applies, as for the first version.
+    !isOptionalNullable(request.occurredAt, isDateTimeOffset)
   ) {
     throw new TypeError("Ramp service transition is invalid.");
   }
@@ -5305,6 +5633,7 @@ function validatedServiceTransitionRequest(
     targetStatus: request.targetStatus,
     ...(quantity === undefined ? {} : { executedQuantity: quantity }),
     ...(request.note === undefined ? {} : { note: request.note }),
+    ...(typeof request.occurredAt === "string" ? { occurredAt: request.occurredAt } : {}),
   };
 }
 
@@ -5779,21 +6108,50 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     return new Blob([bytes], { type: mime });
   };
 
-  const positionCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions,
-    method: "POST" | "PUT" = "POST") => {
-    const headers = headersFrom(options?.headers, "Request headers");
+  // A positions map command (3-N10): the Idempotency-Key and the turnaround's ETag travel only when the screen sends them.
+  const positionCommand = async (path: string, body: unknown,
+    options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders, method: "POST" | "PUT" = "POST") => {
+    const { ifMatch, idempotencyKey, ...init } = options ?? {};
+    const command = validatedPositionHeaders({ ifMatch: ifMatch ?? null, idempotencyKey: idempotencyKey ?? null });
+    const headers = headersFrom(init.headers, "Request headers");
     if (body !== undefined) headers.set("content-type", "application/json");
-    const result = await execute(path, { ...options, method, headers,
+    if (command.idempotencyKey) headers.set("idempotency-key", command.idempotencyKey);
+    if (command.ifMatch) headers.set("if-match", command.ifMatch);
+    const result = await execute(path, { ...init, method, headers,
       ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
     if (!isOccPositionBoard(result.data)) throw malformedResponse(result.status);
     return result.data;
   };
 
-  const coverageCommand = async (path: string, body: unknown, options?: GetHumanResourcesReportOptions,
-    method: "POST" | "PUT" | "DELETE" = "POST") => {
+  // A turnaround detail with its strong ETag; the version in the body is the ETag's value (3-A).
+  const turnaroundWithMetadata = (result: ApiResult, turnaroundId: string): OccTurnaroundWithMetadata => {
+    const etag = result.etag;
+    if (!isOccTurnaroundDetail(result.data, turnaroundId) || !isStrongEntityTag(etag) ||
+        etag !== "\"" + result.data.version + "\"")
+      throw malformedResponse(result.status);
+    return { turnaround: result.data, etag };
+  };
+
+  // «Editar vuelo», «Cancelar vuelo» and «Marcar desviado»: the intent's key and the ETag on screen (3-A).
+  const turnaroundCommand = async (method: "POST" | "PUT", path: string, turnaroundId: string, body: unknown,
+    commandHeaders: OccTurnaroundCommandHeaders, options?: GetHumanResourcesReportOptions) => {
+    const { ifMatch, idempotencyKey } = validatedTurnaroundHeaders(commandHeaders);
     const headers = headersFrom(options?.headers, "Request headers");
+    headers.set("content-type", "application/json");
+    headers.set("idempotency-key", idempotencyKey);
+    headers.set("if-match", ifMatch);
+    const result = await execute(path, { ...options, method, headers, body: JSON.stringify(body) }, true);
+    return turnaroundWithMetadata(result, turnaroundId);
+  };
+
+  // A coverage command; the intent's Idempotency-Key travels only when the screen sends one (3-J, expand).
+  const coverageCommand = async (path: string, body: unknown, options?: OccCoverageCommandOptions,
+    method: "POST" | "PUT" | "DELETE" = "POST") => {
+    const { idempotencyKey, ...init } = options ?? {};
+    const headers = headersFrom(init.headers, "Request headers");
     if (body !== undefined) headers.set("content-type", "application/json");
-    const result = await execute(path, { ...options, method, headers,
+    if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...init, method, headers,
       ...(body !== undefined && { body: JSON.stringify(body) }) }, true);
     if (!isOccCoverageBoard(result.data)) throw malformedResponse(result.status);
     return result.data;
@@ -5833,10 +6191,12 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
   };
 
   const reviewChargeWrite = async (path: string, body: unknown, etag: string, options?: DecideOccReviewOptions) => {
-    const headers = headersFrom(options?.headers, "Request headers");
+    const { idempotencyKey, ...init } = options ?? {};
+    const headers = headersFrom(init.headers, "Request headers");
     headers.set("content-type", "application/json");
     headers.set("if-match", validatedStrongEtag(etag));
-    const result = await execute(path, { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+    if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+    const result = await execute(path, { ...init, method: "POST", headers, body: JSON.stringify(body) }, true);
     if (!isOccReviewChargeAdjustResponse(result.data)) throw malformedResponse(result.status);
     return result.data;
   };
@@ -6569,6 +6929,18 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         expectedVersion == null ? undefined : { version: expectedVersion }), { ...options, method: "DELETE", headers }, true);
       if (result.status !== 204) throw malformedResponse(result.status);
     },
+    async adjustHumanResourcesShift(id: string, command: AdjustHumanResourcesShiftCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const shiftId = validatedUuid(id, "Shift ID");
+      const body = validatedShiftAdjustment(command);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getAdjustHumanResourcesShiftUrl(shiftId),
+        { ...options, method: "PATCH", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isHumanResourcesShiftAdjusted(result.data, shiftId)) throw malformedResponse(result.status);
+      return result.data;
+    },
     async getOccAssignmentReadiness(query: OccAssignmentReadinessQuery, options?: GetHumanResourcesReportOptions) {
       const scope = validatedOccAssignmentReadinessQuery(query);
       const result = await execute(getGetOccAssignmentReadinessUrl(scope), { ...options, method: "GET" }, true);
@@ -7139,6 +7511,62 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (body === null) throw new TypeError("The charge adjustment is invalid.");
       return reviewChargeWrite(getRemoveOccReviewChargeUrl(operation, mark), body, etag, options);
     },
+    async setOccReviewServiceBillingExclusion(operationId: string, serviceId: string,
+      command: SetOccReviewServiceBillingExclusionCommand, etag: string, idempotencyKey: string,
+      options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const service = validatedUuid(serviceId, "serviceId");
+      const body = normalizedBillingExclusion(command);
+      if (body === null) throw new TypeError("The billing exclusion is invalid.");
+      return reviewChargeWrite(getSetOccReviewServiceBillingExclusionUrl(operation, service), body, etag,
+        { ...options, idempotencyKey: validatedUuid(idempotencyKey, "idempotencyKey") });
+    },
+    async reopenOccReview(operationId: string, command: ReopenOccReviewCommand, etag: string, idempotencyKey: string,
+      options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const body = normalizedReopenReview(command);
+      if (body === null) throw new TypeError("The reopening is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("if-match", validatedStrongEtag(etag));
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getReopenOccReviewUrl(operation),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isOccReviewReopenResponse(result.data, operation) || result.data.reviewVersion !== result.etag)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccOperationIncidents(operationId: string, options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const result = await execute(getGetOccOperationIncidentsUrl(operation), { ...options, method: "GET" }, true);
+      if (!isOccIncidentList(result.data, operation)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async reportOccIncident(operationId: string, command: ReportOccIncidentCommand, idempotencyKey: string,
+      options?: GetOccReviewOptions) {
+      const operation = validatedUuid(operationId, "operationId");
+      const body = normalizedOccIncidentReport(command);
+      if (body === null) throw new TypeError("The incident report is invalid.");
+      return masterDataCommand("POST", getReportOccIncidentUrl(operation), body, idempotencyKey, options,
+        (value): value is OccIncidentResponse => isOccIncident(value));
+    },
+    async changeOccIncidentStatus(incidentId: string, command: ChangeOccIncidentStatusCommand, version: string,
+      idempotencyKey: string, options?: GetOccReviewOptions) {
+      const incident = validatedUuid(incidentId, "incidentId");
+      const body = normalizedOccIncidentStatus(command);
+      if (body === null || typeof version !== "string" || version.length < 1 || version.length > 64 ||
+          version.includes("\""))
+        throw new TypeError("The incident change is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      headers.set("if-match", "\"" + version + "\"");
+      const result = await execute(getChangeOccIncidentStatusUrl(incident),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isOccIncident(result.data) || result.data.id.toLowerCase() !== incident)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async getFinanceCloseRules(options?: GetHumanResourcesReportOptions) {
       const result = await execute(getGetFinanceCloseRulesUrl(), { ...options, method: "GET" }, true);
       if (!isFinanceCloseRulesResponse(result.data)) throw malformedResponse(result.status);
@@ -7180,11 +7608,13 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     ) {
       const operation = validatedUuid(operationId, "operationId");
       const decision = validatedOccReviewDecisionRequest(request);
-      const headers = headersFrom(options?.headers, "Request headers");
+      const { idempotencyKey, ...init } = options ?? {};
+      const headers = headersFrom(init.headers, "Request headers");
       headers.set("content-type", "application/json");
       headers.set("if-match", validatedStrongEtag(etag));
+      if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
       const result = await execute(getDecideOccReviewUrl(operation),
-        { ...options, method: "POST", headers, body: JSON.stringify(decision) }, true);
+        { ...init, method: "POST", headers, body: JSON.stringify(decision) }, true);
       if (!isOccReviewDecisionResponse(result.data, operation, decision))
         throw malformedResponse(result.status);
       return result.data;
@@ -7261,19 +7691,24 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       installationId: string,
       idempotencyKey: string,
       options?: StartRampOperationOptions,
+      request?: StartRampOperationRequest,
     ) {
       const operation = validatedUuid(operationId, "operationId");
       const installation = validatedUuid(installationId, "installationId");
       const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const start = request === undefined ? undefined : validatedStartRequest(request);
       const headers = headersFrom(options?.headers, "Request headers");
       headers.set("x-elevant-installation-id", installation);
       headers.set("idempotency-key", commandKey);
+      // Without a tapped time the request stays the first version's: no body and no content type.
+      if (start?.startedAt !== undefined) headers.set("content-type", "application/json");
       const result = await execute(
         getStartRampOperationUrl(operation),
         {
           ...options,
           method: "POST",
           headers,
+          ...(start?.startedAt === undefined ? {} : { body: JSON.stringify(start) }),
         },
         true,
       );
@@ -7336,6 +7771,13 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isAttendanceSnapshot(result.data, operation, assignment)) {
         throw malformedResponse(result.status);
       }
+      return result.data;
+    },
+    async getOccAttendanceAssignments(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const result = await execute(getGetOccAttendanceAssignmentsUrl(turnaround), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAttendanceAssignments(result.data, turnaround))
+        throw malformedResponse(result.status);
       return result.data;
     },
     async saveOccAttendanceDraft(
@@ -7748,26 +8190,61 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccPositionBoard(result.data, station)) throw malformedResponse(result.status);
       return result.data;
     },
-    async recordOccArrival(turnaroundId: string, request: { aircraftRegistration: string; arrivedAt?: string | null },
-      options?: GetHumanResourcesReportOptions) {
+    async recordOccArrival(turnaroundId: string,
+      request: { aircraftRegistration: string; arrivedAt?: string | null; aircraftTypeId?: string | null; reason?: string | null },
+      options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders) {
       const turnaround = validatedUuid(turnaroundId, "turnaroundId");
       const registration = typeof request?.aircraftRegistration === "string" ? request.aircraftRegistration.trim().toUpperCase() : "";
       if (!/^[A-Z0-9-]{2,10}$/.test(registration) ||
-          (request.arrivedAt != null && !isDateTimeOffset(request.arrivedAt)))
+          (request.arrivedAt != null && !isDateTimeOffset(request.arrivedAt)) ||
+          (request.aircraftTypeId != null && !isUuid(request.aircraftTypeId)))
         throw new TypeError("The arrival is invalid.");
-      return positionCommand(getRecordOccArrivalUrl(turnaround),
-        { aircraftRegistration: registration, arrivedAt: request.arrivedAt ?? null }, options);
+      // An older body keeps its two fields; the type and the correction reason travel only when given.
+      const body: Record<string, unknown> = { aircraftRegistration: registration, arrivedAt: request.arrivedAt ?? null };
+      if (request.aircraftTypeId != null) body.aircraftTypeId = request.aircraftTypeId;
+      if (request.reason != null) body.reason = normalizedTurnaroundReason(request.reason);
+      return positionCommand(getRecordOccArrivalUrl(turnaround), body, options);
     },
     async assignOccStand(turnaroundId: string, request: { standId: string; reason?: string | null },
-      options?: GetHumanResourcesReportOptions) {
+      options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders) {
       const turnaround = validatedUuid(turnaroundId, "turnaroundId");
       const reason = typeof request?.reason === "string" && request.reason.trim() ? request.reason.trim() : null;
       if (reason && reason.length > 500) throw new TypeError("The reason is too long.");
       return positionCommand(getAssignOccStandUrl(turnaround),
         { standId: validatedUuid(request?.standId, "standId"), reason }, options);
     },
-    async releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+    async releaseOccStand(turnaroundId: string, options?: GetHumanResourcesReportOptions & OccPositionCommandHeaders) {
       return positionCommand(getReleaseOccStandUrl(validatedUuid(turnaroundId, "turnaroundId")), undefined, options);
+    },
+    async getOccTurnaround(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const result = await execute(getGetOccTurnaroundUrl(turnaround), { ...options, method: "GET" }, true);
+      return turnaroundWithMetadata(result, turnaround);
+    },
+    async rescheduleOccTurnaround(turnaroundId: string, command: RescheduleOccTurnaroundCommand,
+      headers: OccTurnaroundCommandHeaders, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      return turnaroundCommand("PUT", getRescheduleOccTurnaroundUrl(turnaround), turnaround,
+        normalizedTurnaroundReschedule(command), headers, options);
+    },
+    async changeOccTurnaroundStatus(turnaroundId: string, command: ChangeOccTurnaroundStatusCommand,
+      headers: OccTurnaroundCommandHeaders, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      return turnaroundCommand("POST", getChangeOccTurnaroundStatusUrl(turnaround), turnaround,
+        normalizedTurnaroundStatusChange(command), headers, options);
+    },
+    async createOccCharterAirline(command: CreateOccCharterAirlineCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const body = normalizedCharterAirline(command);
+      const created = await masterDataCommand("POST", getCreateOccCharterAirlineUrl(), body, idempotencyKey, options,
+        (value): value is OccCharterAirlineResponse => isOccCharterAirline(value));
+      if (created.icaoCode !== body.icaoCode) throw malformedResponse(201);
+      return created;
+    },
+    async getRampAircraftTypes(options?: GetHumanResourcesReportOptions) {
+      const result = await execute(getGetRampAircraftTypesUrl(), { ...options, method: "GET" }, true);
+      if (!isRampAircraftTypes(result.data)) throw malformedResponse(result.status);
+      return result.data;
     },
     async locateOccStand(standId: string,
       request: { latitude: number | null; longitude: number | null; operationDate: string },
@@ -7788,7 +8265,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOccCoverageBoard(result.data, station)) throw malformedResponse(result.status);
       return result.data;
     },
-    async createOccCoverage(request: OccCoverageCommand, options?: GetHumanResourcesReportOptions) {
+    async createOccCoverage(request: OccCoverageCommand, options?: OccCoverageCommandOptions) {
       const standIds = Array.isArray(request?.standIds) ? request.standIds.map(id => validatedUuid(id, "standId")) : [];
       const vehicleCode = typeof request?.vehicleCode === "string" && request.vehicleCode.trim() ? request.vehicleCode.trim() : null;
       const startsAt = request?.startsAt ?? null;
@@ -7805,7 +8282,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         mentorAgentId: request.mentorAgentId ? validatedUuid(request.mentorAgentId, "mentorAgentId") : null,
         vehicleCode, isReinforcement: request.isReinforcement }, options);
     },
-    async releaseOccCoverage(coverageId: string, date: string, options?: GetHumanResourcesReportOptions) {
+    async releaseOccCoverage(coverageId: string, date: string, options?: OccCoverageCommandOptions) {
       if (!isDateOnly(date)) throw new TypeError("date must be an ISO date.");
       return coverageCommand(getReleaseOccCoverageUrl(validatedUuid(coverageId, "coverageId"), { date }), undefined, options);
     },
@@ -7842,9 +8319,44 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return coverageCommand(getRemoveOccStandConstraintUrl(validatedUuid(constraintId, "constraintId"), { date }),
         undefined, options, "DELETE");
     },
-    async releaseOccOperationAgent(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
-      await execute(getReleaseOccOperationAgentUrl(validatedUuid(turnaroundId, "turnaroundId")),
-        { ...options, method: "POST" }, true);
+    async releaseOccOperationAgent(turnaroundId: string, options?: ReleaseOccOperationAgentOptions) {
+      const { expectedAssignmentId, idempotencyKey, ...init } = options ?? {};
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const expected = expectedAssignmentId == null ? null : validatedUuid(expectedAssignmentId, "expectedAssignmentId");
+      // A key needs the assignment on screen, like the server asks (expected_version_required).
+      if (idempotencyKey != null && expected === null)
+        throw new TypeError("A keyed agent release needs the assignment on screen.");
+      const headers = headersFrom(init.headers, "Request headers");
+      if (idempotencyKey != null) headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getReleaseOccOperationAgentUrl(turnaround,
+        expected === null ? undefined : { expectedAssignmentId: expected }), { ...init, method: "POST", headers }, true);
+      if (result.status !== 204) throw malformedResponse(result.status);
+    },
+    async getOccHandoverOptions(turnaroundId: string, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const result = await execute(getGetOccHandoverOptionsUrl(turnaround), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccHandoverOptions(result.data, turnaround)) throw malformedResponse(result.status);
+      return result.data;
+    },
+    async handOverOccOperation(turnaroundId: string, command: HandOverOccOperationCommand, idempotencyKey: string,
+      options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const body = validatedHandoverCommand(command);
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getHandOverOccOperationUrl(turnaround),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (result.status !== 200 || !isOccOperationHandover(result.data, turnaround, body.agentId))
+        throw malformedResponse(result.status);
+      return result.data;
+    },
+    async getOccAgentShift(turnaroundId: string, agentId: string, options?: GetHumanResourcesReportOptions) {
+      const turnaround = validatedUuid(turnaroundId, "turnaroundId");
+      const agent = validatedUuid(agentId, "agentId");
+      const result = await execute(getGetOccAgentShiftUrl(turnaround, agent), { ...options, method: "GET" }, true);
+      if (result.status !== 200 || !isOccAgentShift(result.data, agent)) throw malformedResponse(result.status);
+      return result.data;
     },
     async getOwnRampCoverage(options?: GetOperationalCommunicationOptions) {
       const result = await execute(getGetOwnRampCoverageUrl(), { ...options, method: "GET" }, true);
@@ -7878,10 +8390,8 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       headers.set("content-type", "application/json");
       const result = await execute(getImportOccFlightUrl(), { ...options, method: "POST", headers,
         body: JSON.stringify({ arrivalProposalId: arrival, departureProposalId: departure }) }, true);
-      const data = result.data;
-      if (!isRecord(data) || !hasOnlyKeys(data, ["turnaroundId", "operationCode", "replayed"]) || !isUuid(data.turnaroundId) ||
-          !isNonEmptyString(data.operationCode) || typeof data.replayed !== "boolean") throw malformedResponse(result.status);
-      return data as unknown as ImportOccFlightResponse;
+      if (!isImportedFlight(result.data)) throw malformedResponse(result.status);
+      return result.data;
     },
     async dismissOccFlightProposal(proposalId: string, expectedVersion: string, idempotencyKey: string,
       options?: GetHumanResourcesReportOptions) {
@@ -7897,9 +8407,7 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
     async importOccFlightProposals(command: ImportOccFlightCommand, idempotencyKey: string,
       options?: GetHumanResourcesReportOptions) {
       return catalogCommand("POST", getImportOccFlightUrl(), normalizedFlightImport(command), idempotencyKey, options,
-        (value): value is ImportOccFlightResponse => isRecord(value) &&
-          hasOnlyKeys(value, ["turnaroundId", "operationCode", "replayed"]) && isUuid(value.turnaroundId) &&
-          isNonEmptyString(value.operationCode) && typeof value.replayed === "boolean");
+        isImportedFlight);
     },
     async restoreOccFlightProposal(proposalId: string, expectedVersion: string, idempotencyKey: string,
       options?: GetHumanResourcesReportOptions) {
@@ -8082,6 +8590,28 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return executeReportDocument(getGetOccOperationDocumentPdfUrl(validatedUuid(operationId, "operationId"), kind),
         "pdf", options);
     },
+    async getOccDamagePhoto(operationId: string, markId: string, options?: GetHumanResourcesReportOptions) {
+      const path = getGetOccDamagePhotoUrl(validatedUuid(operationId, "operationId"), validatedUuid(markId, "markId"));
+      const response = await send(path, { ...options, method: "GET" }, true);
+      const mime = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+      if (mime !== "image/jpeg" && mime !== "image/png") throw malformedResponse(response.status);
+      const declaredLength = response.headers.get("content-length");
+      if (declaredLength && Number(declaredLength) > MAXIMUM_DAMAGE_PHOTO_BYTES) throw malformedResponse(response.status);
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await response.arrayBuffer();
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        throw malformedResponse(response.status);
+      }
+      // The bytes must be the image the header names: the same magic numbers the server sniffs on upload (ADR-0032).
+      const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 8));
+      const signature = mime === "image/jpeg" ? [0xff, 0xd8, 0xff] : [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      if (bytes.byteLength > MAXIMUM_DAMAGE_PHOTO_BYTES || bytes.byteLength < signature.length ||
+          !signature.every((value, index) => header[index] === value))
+        throw malformedResponse(response.status);
+      return new Blob([bytes], { type: mime });
+    },
     async getAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions) {
       const operation = validatedUuid(operationId, "operationId");
       const result = await execute(getGetAirlineServiceOrderUrl(operation), { ...options, method: "GET" }, true);
@@ -8131,6 +8661,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isFinanceCharterResponse(result.data)) throw malformedResponse(result.status);
       return result.data;
     },
+    async reopenFinanceCharterPrepayment(charterId: string, command: ReopenCharterPrepaymentCommand,
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      const charter = validatedUuid(charterId, "charterId");
+      const body = normalizedPrepaymentReopening(command);
+      if (body === null) throw new TypeError("The prepayment reopening is invalid.");
+      const headers = headersFrom(options?.headers, "Request headers");
+      headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getReopenFinanceCharterPrepaymentUrl(charter),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if (!isFinanceCharterResponse(result.data) || result.data.id.toLowerCase() !== charter)
+        throw malformedResponse(result.status);
+      return result.data;
+    },
     async updateRampFlightData(
       operationId: string, request: RampFlightDataCommand, installationId: string, idempotencyKey: string,
       options?: ReportRampIncidentOptions,
@@ -8141,11 +8685,15 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isRecord(request) || (request.passengersIn !== null && !isPassengerCount(request.passengersIn)) ||
           (request.passengersOut !== null && !isPassengerCount(request.passengersOut)) ||
           (request.mtowKg !== null && !isMtow(request.mtowKg)) ||
-          (registration !== null && !/^[A-Z0-9-]{2,10}$/.test(registration)))
+          (registration !== null && !/^[A-Z0-9-]{2,10}$/.test(registration)) ||
+          (request.aircraftTypeId != null && !isUuid(request.aircraftTypeId)))
         throw new TypeError("The flight data is invalid.");
+      // 3-B: without an aircraft type the body is the one older tablets send, so the server keeps its receipt hash.
       return rampExecution(getUpdateRampFlightDataUrl(operation), operation, {
         passengersIn: request.passengersIn, passengersOut: request.passengersOut, mtowKg: request.mtowKg,
-        aircraftRegistration: registration }, installationId, idempotencyKey, options);
+        aircraftRegistration: registration,
+        ...(typeof request.aircraftTypeId === "string" && { aircraftTypeId: request.aircraftTypeId }) },
+        installationId, idempotencyKey, options);
     },
     async reportRampIncident(
       operationId: string,

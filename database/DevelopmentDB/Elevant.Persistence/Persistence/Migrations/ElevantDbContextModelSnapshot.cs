@@ -9208,7 +9208,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("datetimeoffset(3)")
                         .HasColumnName("reported_at");
 
-                    b.Property<long>("ReportedByRampAgentId")
+                    b.Property<long?>("ReportedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reported_by_account_id");
+
+                    b.Property<long?>("ReportedByRampAgentId")
                         .HasColumnType("bigint")
                         .HasColumnName("reported_by_ramp_agent_id");
 
@@ -9257,6 +9261,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
+                    b.HasIndex("ReportedByAccountId");
+
                     b.HasIndex("ReportedByRampAgentId");
 
                     b.HasIndex("ResolvedByAccountId");
@@ -9267,8 +9273,58 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         {
                             t.HasCheckConstraint("ck_incident_reported", "[reported_at] >= [occurred_at]");
 
+                            t.HasCheckConstraint("ck_incident_reporter", "[reported_by_ramp_agent_id] IS NOT NULL OR [reported_by_account_id] IS NOT NULL");
+
                             t.HasCheckConstraint("ck_incident_resolved", "[resolved_at] IS NULL OR [resolved_at] >= [reported_at]");
                         });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.IncidentStatusEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("ActorAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("actor_account_id");
+
+                    b.Property<string>("FromStatus")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("from_status");
+
+                    b.Property<long>("IncidentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("incident_id");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("note");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("ToStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)")
+                        .HasColumnName("to_status");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorAccountId");
+
+                    b.HasIndex("IncidentId", "OccurredAt");
+
+                    b.ToTable("incident_status_events", "ops");
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationAgentAssignment", b =>
@@ -9920,6 +9976,24 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("content_sha256")
                         .IsFixedLength();
 
+                    b.Property<DateTimeOffset?>("CorrectedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("corrected_at");
+
+                    b.Property<long?>("CorrectedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("corrected_by_account_id");
+
+                    b.Property<string>("CorrectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("correction_reason");
+
+                    b.Property<long?>("CorrectsVersionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("corrects_version_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(3)
@@ -9965,6 +10039,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CorrectedByAccountId");
+
+                    b.HasIndex("CorrectsVersionId");
+
                     b.HasIndex("PublicId")
                         .IsUnique();
 
@@ -9973,6 +10051,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.ToTable("operation_document_versions", "ops", t =>
                         {
+                            t.HasCheckConstraint("ck_operation_document_version_correction", "([corrects_version_id] IS NULL AND [correction_reason] IS NULL AND [corrected_by_account_id] IS NULL AND [corrected_at] IS NULL) OR ([corrects_version_id] IS NOT NULL AND [correction_reason] IS NOT NULL AND [corrected_by_account_id] IS NOT NULL AND [corrected_at] IS NOT NULL)");
+
                             t.HasCheckConstraint("ck_operation_document_version_sha", "LEN([content_sha256]) = 64");
                         });
                 });
@@ -10302,6 +10382,20 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<DateTimeOffset?>("BillingExcludedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("billing_excluded_at");
+
+                    b.Property<long?>("BillingExcludedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("billing_excluded_by_account_id");
+
+                    b.Property<string>("BillingExclusionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("billing_exclusion_reason");
+
                     b.Property<string>("BillingUnitSnapshot")
                         .IsRequired()
                         .HasMaxLength(32)
@@ -10378,6 +10472,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BillingExcludedByAccountId");
+
                     b.HasIndex("ContractServiceRateId");
 
                     b.HasIndex("PublicId")
@@ -10392,6 +10488,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.ToTable("operation_services", "ops", t =>
                         {
+                            t.HasCheckConstraint("ck_operation_service_billing_exclusion", "([billing_excluded_at] IS NULL AND [billing_excluded_by_account_id] IS NULL AND [billing_exclusion_reason] IS NULL) OR ([billing_excluded_at] IS NOT NULL AND [billing_excluded_by_account_id] IS NOT NULL AND [billing_exclusion_reason] IS NOT NULL)");
+
                             t.HasCheckConstraint("ck_operation_service_currency", "[currency_code_snapshot] IS NULL OR LEN([currency_code_snapshot]) = 3");
 
                             t.HasCheckConstraint("ck_operation_service_line", "[line_number] > 0");
@@ -10598,6 +10696,19 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnName("public_id")
                         .HasDefaultValueSql("NEWSEQUENTIALID()");
 
+                    b.Property<string>("ReopenReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)")
+                        .HasColumnName("reopen_reason");
+
+                    b.Property<long?>("ReopenedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reopened_by_account_id");
+
+                    b.Property<long?>("ReopenedFromSubmissionId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("reopened_from_submission_id");
+
                     b.Property<int>("RevisionNumber")
                         .HasColumnType("int")
                         .HasColumnName("revision_number");
@@ -10638,6 +10749,12 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
+                    b.HasIndex("ReopenedByAccountId");
+
+                    b.HasIndex("ReopenedFromSubmissionId")
+                        .IsUnique()
+                        .HasFilter("[reopened_from_submission_id] IS NOT NULL");
+
                     b.HasIndex("SubmittedByRampAgentId");
 
                     b.HasIndex("GroundOperationId", "RevisionNumber")
@@ -10647,6 +10764,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.ToTable("operation_submissions", "ops", t =>
                         {
+                            t.HasCheckConstraint("ck_operation_submission_reopening", "([reopened_from_submission_id] IS NULL AND [reopened_by_account_id] IS NULL AND [reopen_reason] IS NULL) OR ([reopened_from_submission_id] IS NOT NULL AND [reopened_by_account_id] IS NOT NULL AND [reopen_reason] IS NOT NULL)");
+
                             t.HasCheckConstraint("ck_operation_submission_revision", "[revision_number] > 0");
                         });
                 });
@@ -15453,16 +15572,34 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
 
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReportedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
                         .WithMany()
                         .HasForeignKey("ReportedByRampAgentId")
-                        .OnDelete(DeleteBehavior.NoAction)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
                         .WithMany()
                         .HasForeignKey("ResolvedByAccountId")
                         .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Operations.IncidentStatusEvent", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.Incident", null)
+                        .WithMany()
+                        .HasForeignKey("IncidentId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationAgentAssignment", b =>
@@ -15589,6 +15726,16 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationDocumentVersion", b =>
                 {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("CorrectedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationDocumentVersion", null)
+                        .WithMany()
+                        .HasForeignKey("CorrectsVersionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Elevant.Domain.Entities.Operations.GroundOperation", null)
                         .WithMany()
                         .HasForeignKey("GroundOperationId")
@@ -15668,6 +15815,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Elevant.Domain.Entities.Operations.OperationService", b =>
                 {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("BillingExcludedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Elevant.Domain.Entities.Commercial.ContractServiceRate", null)
                         .WithMany()
                         .HasForeignKey("ContractServiceRateId")
@@ -15748,6 +15900,16 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("OperationChecklistId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ReopenedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.OperationSubmission", null)
+                        .WithMany()
+                        .HasForeignKey("ReopenedFromSubmissionId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Domain.Entities.Workforce.RampAgent", null)
                         .WithMany()

@@ -7,6 +7,28 @@ import { createPrivateWebAccountChangeObserver } from '../../services/accountCha
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * A counter that moves each time the account-change feed announces `occ_review` (ADR-0029, 3-N23): a hand-off, a
+ * decision, a reopening, an incident or late evidence of the account's stations. The screen re-reads what it shows
+ * when it changes, under the permissions it has now; the feed only says that something changed. Zero until the first
+ * announcement, so the first read stays the screen's own.
+ */
+export function useOccReviewChangeVersion() {
+  const { session } = useAuth();
+  const [version, setVersion] = useState(0);
+
+  useEffect(() => {
+    if (!UUID.test(session?.accountId ?? '')) return undefined;
+    const observer = createPrivateWebAccountChangeObserver(resources => {
+      if (resources.includes('occ_review')) setVersion(value => value + 1);
+    });
+    void observer.start().catch(() => {});
+    return () => { void observer.stop(); };
+  }, [session?.accountId]);
+
+  return version;
+}
+
 export function useOccReviewQueue() {
   const { session } = useAuth();
   const stationScopes = useMemo(() => selectOccStationScopes(session?.stationScopes)
@@ -14,7 +36,7 @@ export function useOccReviewQueue() {
   [session?.stationScopes]);
   const [stationId, setStationId] = useState(() => stationScopes[0]?.stationId ?? '');
   const [retry, setRetry] = useState(0);
-  const [live, setLive] = useState(0);
+  const live = useOccReviewChangeVersion();
   const [state, setState] = useState({ status: 'loading', data: null, error: null });
 
   useEffect(() => {
@@ -22,15 +44,6 @@ export function useOccReviewQueue() {
       setStationId(stationScopes[0]?.stationId ?? '');
     }
   }, [stationId, stationScopes]);
-
-  useEffect(() => {
-    if (!UUID.test(session?.accountId ?? '')) return undefined;
-    const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('occ_review')) setLive(value => value + 1);
-    });
-    void observer.start();
-    return () => { void observer.stop(); };
-  }, [session?.accountId]);
 
   // A live re-read keeps the current list on screen; only a scope change or retry shows loading.
   useEffect(() => {

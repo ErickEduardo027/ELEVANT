@@ -59,6 +59,22 @@ describe("finance approved-evidence client", () => {
       .rejects.toBeInstanceOf(TypeError);
   });
 
+  it("accepts a ready service in exception with its executed quantity (3-N11), never one not performed", async () => {
+    let payload: unknown = { ...page, services: [{ ...page.services[0], executionStatus: "Exception" }] };
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      fetch: async () => new Response(JSON.stringify(payload),
+        { headers: { "content-type": "application/json" } }),
+    });
+    await expect(client.getFinanceApprovedServices(query)).resolves.toEqual(payload);
+    payload = { ...page, services: [{ ...page.services[0], executionStatus: "NotPerformed" }] };
+    await expect(client.getFinanceApprovedServices(query))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+    payload = { ...page, services: [{ ...page.services[0], executionStatus: "Exception", executedQuantity: 0 }] };
+    await expect(client.getFinanceApprovedServices(query))
+      .rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
   it("rejects a changed scope, unexpected field or unpriced ready line", async () => {
     let payload: unknown = { ...page, stationId: crypto.randomUUID() };
     const client = createElevantApiClient({

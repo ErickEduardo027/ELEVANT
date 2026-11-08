@@ -1,5 +1,7 @@
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { problemMessage } from './problemMessages';
+import { HUMAN_RESOURCES_REPORT_PROBLEMS } from './reportProblems';
 
 function sessionError(token) {
   return readSession()?.token === token ? null : Object.assign(
@@ -8,15 +10,21 @@ function sessionError(token) {
   );
 }
 
+/**
+ * The Spanish message of a failed report call by its Problem Details code (3-N13), keeping `status` and `code` for
+ * the screen; the server title is never shown.
+ */
 function translate(error, token) {
   const changed = sessionError(token);
   if (changed) return changed;
   if (error?.name === 'AbortError') return error;
   if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
   const status = Number.isInteger(error?.status) ? error.status : null;
-  return Object.assign(new Error(status === 422
-    ? 'El reporte excede 5 000 filas. Acota el intervalo antes de exportar.'
-    : 'No se pudo consultar el reporte.'), { status });
+  const code = typeof error?.code === 'string' ? error.code : undefined;
+  const message = problemMessage(error, HUMAN_RESOURCES_REPORT_PROBLEMS, {
+    forbidden: 'No tienes acceso a este reporte o estación.', fallback: 'No se pudo consultar el reporte.',
+  });
+  return Object.assign(new Error(message), { status, ...(code && { code }) });
 }
 
 function client(token) {

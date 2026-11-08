@@ -36,6 +36,11 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         return Map(await store.ReadAsync(actorId, stationId, date, cancellationToken));
     }
 
+    /// <summary>
+    /// Hands an agent their stands for a window of the shift (ADR-0030). 3-J: with an Idempotency-Key (optional while
+    /// older clients exist) a repeated attempt answers the board instead of a second coverage; the key with another body
+    /// is <c>idempotency_conflict</c>.
+    /// </summary>
     [HttpPost("occ/coverage", Name = "CreateOccCoverage")]
     [RequestSizeLimit(4096)]
     [Consumes("application/json")]
@@ -47,26 +52,30 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
     [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(422, "application/problem+json")]
     public async Task<ActionResult<OccCoverageBoardResponse>> Create([FromBody, BindRequired] CreateOccCoverageRequest request,
-        CancellationToken cancellationToken)
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryAccount(out var actorId)) return Unauthorized<OccCoverageBoardResponse>();
-        if (request.StationId == Guid.Empty) return Problem<OccCoverageBoardResponse>(400, "The station is required.");
+        if (request.StationId == Guid.Empty)
+            return Coded<OccCoverageBoardResponse>(400, "La estación es obligatoria.", InvalidCoverageRequestCode);
         return Map(await store.CreateAsync(actorId, request.StationId, new CreateCoverageInput(request.AgentId, request.TerminalId,
             request.StandIds ?? [], request.Date, request.StartsAt, request.EndsAt, request.MentorAgentId, request.VehicleCode,
-            request.IsReinforcement), cancellationToken));
+            request.IsReinforcement), idempotencyKey, cancellationToken));
     }
 
+    /// <summary>Releases a coverage; releasing twice answers the board. The Idempotency-Key works as in the creation.</summary>
     [HttpPost("occ/coverage/{coverageId:guid}/release", Name = "ReleaseOccCoverage")]
     [ProducesResponseType<OccCoverageBoardResponse>(200, "application/json")]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
     public async Task<ActionResult<OccCoverageBoardResponse>> Release([FromRoute] Guid coverageId,
-        [FromQuery(Name = "date"), BindRequired] DateOnly date, CancellationToken cancellationToken)
+        [FromQuery(Name = "date"), BindRequired] DateOnly date, [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
+        CancellationToken cancellationToken)
     {
         if (!TryAccount(out var actorId)) return Unauthorized<OccCoverageBoardResponse>();
-        return Map(await store.ReleaseAsync(actorId, coverageId, date, cancellationToken));
+        return Map(await store.ReleaseAsync(actorId, coverageId, date, idempotencyKey, cancellationToken));
     }
 
     /// <summary>
@@ -143,23 +152,77 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
         return Map(await store.RemoveConstraintAsync(actorId, constraintId, date, cancellationToken));
     }
 
-    /// <summary>Releases the agent of an operation not yet started so OCC can assign another (ADR-0030).</summary>
+    /// <summary>
+    /// Releases the agent of an operation not yet started so OCC can assign another (ADR-0030). 3-J:
+    /// <c>expectedAssignmentId</c> is the assignment OCC saw (another one is <c>assignment_changed</c>) and the
+    /// Idempotency-Key replays the release; both are optional while older clients exist, and a key needs the assignment
+    /// (<c>expected_version_required</c>). A started operation is <c>operation_started</c>: OCC hands it over instead.
+    /// </summary>
     [HttpPost("occ/planning/turnarounds/{turnaroundId:guid}/assignment/release", Name = "ReleaseOccOperationAgent")]
     [ProducesResponseType(204)]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
-    public async Task<IActionResult> ReleaseAgent([FromRoute] Guid turnaroundId, CancellationToken cancellationToken)
+    public async Task<IActionResult> ReleaseAgent([FromRoute] Guid turnaroundId,
+        [FromQuery(Name = "expectedAssignmentId")] Guid? expectedAssignmentId,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken)
     {
         if (!TryAccount(out var actorId)) return Unauthorized<object>().Result!;
-        return await store.ReleaseOperationAgentAsync(actorId, turnaroundId, cancellationToken) switch
-        {
-            null => NoContent(),
-            PositionCoverageFailure.Forbidden => Problem<object>(403, "Planning assignment access is forbidden.").Result!,
-            PositionCoverageFailure.NotFound => Problem<object>(404, "The turnaround was not found.").Result!,
-            _ => Problem<object>(409, "Only an assigned operation that has not started can be released.").Result!,
-        };
+        var result = await store.ReleaseOperationAgentAsync(actorId, turnaroundId,
+            new ReleaseOperationAgentInput(expectedAssignmentId, idempotencyKey), cancellationToken);
+        return result.Failure is null ? NoContent() : AgentFailure<object>(result.Failure.Value, result.Code).Result!;
+    }
+
+    /// <summary>
+    /// «Relevar agente» (3-F): the agents who may take an operation in progress or returned for correction from its agent,
+    /// with OCC's assignment rules over what is left of it. Another status is <c>handover_not_allowed</c>.
+    /// </summary>
+    [HttpGet("occ/planning/turnarounds/{turnaroundId:guid}/assignment/handover-options", Name = "GetOccHandoverOptions")]
+    [ProducesResponseType<OccHandoverOptionsResponse>(200, "application/json")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
+    public async Task<ActionResult<OccHandoverOptionsResponse>> HandoverOptions([FromRoute] Guid turnaroundId,
+        CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var actorId)) return Unauthorized<OccHandoverOptionsResponse>();
+        var result = await store.ReadHandoverOptionsAsync(actorId, turnaroundId, cancellationToken);
+        if (result.Value is not { } options) return AgentFailure<OccHandoverOptionsResponse>(result.Failure!.Value, result.Code);
+        return Ok(new OccHandoverOptionsResponse(options.TurnaroundId, options.OperationId, options.OperationStatus,
+            options.CurrentAssignmentId, options.CurrentAgentId, options.CurrentAgentName, options.RemainingFrom,
+            options.RemainingUntil, options.Agents.Select(agent => new OccAgentOptionResponse(agent.Id, agent.DisplayName,
+                agent.EmployeeNumber, agent.Eligible, agent.EligibilityReasons)).ToArray()));
+    }
+
+    /// <summary>
+    /// «Relevar agente» (3-F): OCC hands an operation in progress or returned to another eligible agent, with the
+    /// assignment it saw (<c>assignment_changed</c> otherwise), a reason of 5 to 500 characters and an Idempotency-Key
+    /// (required). The operation keeps its status and evidence; both agents are told.
+    /// </summary>
+    [HttpPost("occ/planning/turnarounds/{turnaroundId:guid}/assignment/handover", Name = "HandOverOccOperation")]
+    [RequestSizeLimit(4096)]
+    [Consumes("application/json")]
+    [ProducesResponseType<OccOperationHandoverResponse>(200, "application/json")]
+    [ProducesResponseType<ProblemDetails>(400, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(401, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(403, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(404, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(409, "application/problem+json")]
+    public async Task<ActionResult<OccOperationHandoverResponse>> HandOver([FromRoute] Guid turnaroundId,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
+        [FromBody, BindRequired] HandOverOccOperationRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryAccount(out var actorId)) return Unauthorized<OccOperationHandoverResponse>();
+        var result = await store.HandOverOperationAsync(actorId, turnaroundId,
+            new HandOverOperationInput(request.AgentId, request.ExpectedAssignmentId, request.Reason), idempotencyKey,
+            cancellationToken);
+        if (result.Value is not { } handover)
+            return AgentFailure<OccOperationHandoverResponse>(result.Failure!.Value, result.Code);
+        return Ok(new OccOperationHandoverResponse(handover.TurnaroundId, handover.AssignmentId, handover.AgentId,
+            handover.PreviousAgentId, handover.Replayed));
     }
 
     /// <summary>«Mis posiciones de hoy»: the signed-in ramp agent's stand coverages for the next hours.</summary>
@@ -177,16 +240,23 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
             item.IsReinforcement)).ToArray()));
     }
 
-    // A failure with a stable code carries it (version_conflict, idempotency_conflict, expected_version_required…).
+    /// <summary>Default codes of the coverage failures (3-J: every Problem Details carries one).</summary>
+    private const string InvalidCoverageRequestCode = "invalid_coverage_request";
+
+    private const string CoverageRejectedCode = "coverage_rejected";
+
+    // A failure with a stable code carries it (version_conflict, idempotency_conflict, expected_version_required…);
+    // otherwise it carries the default code of its status (3-J). A refused permission stays a bare 403 unless coded.
     private ActionResult<OccCoverageBoardResponse> Map(CoverageResult result) => result.Failure switch
     {
         PositionCoverageFailure.Forbidden => Problem<OccCoverageBoardResponse>(403, "Position coverage access is forbidden.",
             result.Code),
-        PositionCoverageFailure.NotFound => Problem<OccCoverageBoardResponse>(404,
-            "The station, agent, terminal or stand was not found.", result.Code),
-        PositionCoverageFailure.Invalid => Problem<OccCoverageBoardResponse>(400, "The coverage request is invalid.", result.Code),
-        PositionCoverageFailure.Conflict => Problem<OccCoverageBoardResponse>(409, "The data changed; read the board again.",
-            result.Code),
+        PositionCoverageFailure.NotFound => Coded<OccCoverageBoardResponse>(404,
+            "The station, agent, terminal or stand was not found.", result.Code ?? "not_found"),
+        PositionCoverageFailure.Invalid => Coded<OccCoverageBoardResponse>(400, "The coverage request is invalid.",
+            result.Code ?? InvalidCoverageRequestCode),
+        PositionCoverageFailure.Conflict => Coded<OccCoverageBoardResponse>(409, "The data changed; read the board again.",
+            result.Code ?? "version_conflict"),
         PositionCoverageFailure.Rejected => Rejected(result.Reasons, result.Code),
         _ => Ok(Board(result.Board!)),
     };
@@ -198,9 +268,29 @@ public sealed class OccCoverageController(IPositionCoverageStore store) : Contro
             Status = 422, Title = "The coverage breaks assignment rules.", Instance = HttpContext.Request.Path,
         };
         problem.Extensions["reasons"] = reasons;
-        // A stand in use or of an inactive terminal (2-A): the same codes as the master-data screen.
-        if (code is not null) problem.Extensions["code"] = code;
+        // A stand in use or of an inactive terminal (2-A): the same codes as the master-data screen; the broken rules
+        // otherwise (3-J).
+        problem.Extensions["code"] = code ?? CoverageRejectedCode;
         return new ObjectResult(problem) { StatusCode = 422 };
+    }
+
+    /// <summary>
+    /// A failure of a command on an operation's agent (3-J, 3-F) with its stable code; a refused permission stays a bare
+    /// 403. The titles are Spanish: the screens show the code's message, never the title.
+    /// </summary>
+    private ActionResult<T> AgentFailure<T>(PositionCoverageFailure failure, string? code) => failure switch
+    {
+        PositionCoverageFailure.Forbidden => Problem<T>(403, "Su acceso no permite asignar agentes en esta estación."),
+        PositionCoverageFailure.NotFound => Coded<T>(404, "El vuelo no existe o no está en su alcance.", code ?? "not_found"),
+        PositionCoverageFailure.Invalid => Coded<T>(400, "La solicitud no es válida.", code ?? "invalid_handover"),
+        _ => Coded<T>(409, "El agente o la operación cambiaron. Vuelva a cargar los datos.", code ?? "version_conflict"),
+    };
+
+    private ActionResult<T> Coded<T>(int status, string title, string code)
+    {
+        var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
+        problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status };
     }
 
     private static OccCoverageBoardResponse Board(CoverageBoardData board) => new(board.StationId, board.StationCode, board.Date,

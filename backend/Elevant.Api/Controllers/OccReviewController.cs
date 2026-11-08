@@ -11,7 +11,12 @@ using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Elevant.Api.Controllers;
 
-/// <summary>Station-scoped OCC review queue, evidence and guarded final decision.</summary>
+/// <summary>
+/// Station-scoped OCC review queue, evidence and guarded final decision. Every command checks the review version in
+/// If-Match (missing: 428 <c>expected_version_required</c>; stale: 412 <c>version_conflict</c>) and takes an
+/// Idempotency-Key (optional on the decision and the charge adjustments while older callers exist, required on the
+/// billing exclusion and the reopening). Every failure but 401 and 403 carries a stable code and a Spanish title.
+/// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
@@ -137,7 +142,12 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
                     item.AppliesToAllServices, item.ServiceIds)).ToArray(),
                 new OccReviewTimingResponse(close.Timing.GroundMinutes, close.Timing.AllowedGroundMinutes,
                     close.Timing.ArrivalDelayMinutes, close.Timing.AircraftCategory),
-                close.CanAdjustCharges, close.DamageCount));
+                close.CanAdjustCharges, close.DamageCount,
+                (close.BillingExclusions ?? []).Select(item => new OccReviewBillingExclusionResponse(item.ServiceId,
+                    item.Reason, item.ExcludedAt)).ToArray()),
+            detail.ServiceOrderState,
+            detail.Reopening is not { } reopening ? null : new OccReviewReopeningResponse(reopening.FromRevisionNumber,
+                reopening.Reason, reopening.ReopenedAt, reopening.ReopenedBy));
 
     /// <summary>OCC adds a charge to a service of the operation it is reviewing (ADR-0034).</summary>
     [RequestSizeLimit(BodyLimitBytes)]
@@ -153,9 +163,9 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
     [ProducesResponseType<ProblemDetails>(428, "application/problem+json")]
     public Task<ActionResult<OccReviewChargeAdjustResponse>> AddCharge([FromRoute] Guid operationId,
         [FromHeader(Name = "If-Match")] string? ifMatch, [FromBody, BindRequired] AddOccReviewChargeRequest request,
-        CancellationToken cancellationToken) =>
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
         AdjustAsync(operationId, ifMatch, request.SubmissionId, request.ServiceId, request.ChargeId, null, request.Reason,
-            cancellationToken);
+            idempotencyKey, cancellationToken);
 
     /// <summary>OCC removes a charge from the operation it is reviewing, whoever marked it (ADR-0034).</summary>
     [RequestSizeLimit(BodyLimitBytes)]
@@ -171,23 +181,85 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
     [ProducesResponseType<ProblemDetails>(428, "application/problem+json")]
     public Task<ActionResult<OccReviewChargeAdjustResponse>> RemoveCharge([FromRoute] Guid operationId,
         [FromRoute] Guid markId, [FromHeader(Name = "If-Match")] string? ifMatch,
-        [FromBody, BindRequired] RemoveOccReviewChargeRequest request, CancellationToken cancellationToken) =>
-        AdjustAsync(operationId, ifMatch, request.SubmissionId, null, null, markId, request.Reason, cancellationToken);
+        [FromBody, BindRequired] RemoveOccReviewChargeRequest request,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey, CancellationToken cancellationToken) =>
+        AdjustAsync(operationId, ifMatch, request.SubmissionId, null, null, markId, request.Reason, idempotencyKey,
+            cancellationToken);
 
     private async Task<ActionResult<OccReviewChargeAdjustResponse>> AdjustAsync(Guid operationId, string? ifMatch,
-        Guid submissionId, Guid? serviceId, Guid? chargeId, Guid? markId, string? reason,
+        Guid submissionId, Guid? serviceId, Guid? chargeId, Guid? markId, string? reason, Guid? idempotencyKey,
         CancellationToken cancellationToken)
     {
         if (!TryAccountId(out var accountId)) return UnauthorizedResult<OccReviewChargeAdjustResponse>();
-        if (string.IsNullOrWhiteSpace(ifMatch))
-            return ProblemResult<OccReviewChargeAdjustResponse>(428, "An If-Match precondition is required.");
-        if (!StrongTokenPattern().IsMatch(ifMatch))
-            return ProblemResult<OccReviewChargeAdjustResponse>(400, "The review precondition is invalid.");
+        if (PreconditionProblem<OccReviewChargeAdjustResponse>(ifMatch) is { } precondition) return precondition;
         var result = await handler.AdjustChargeAsync(accountId, operationId, submissionId, ifMatch, serviceId, chargeId,
-            markId, reason, HttpContext.TraceIdentifier, cancellationToken);
-        if (!result.IsSuccess) return FailureResult<OccReviewChargeAdjustResponse>(result.Failure!.Value);
+            markId, reason, HttpContext.TraceIdentifier, idempotencyKey, cancellationToken);
+        if (!result.IsSuccess) return FailureResult<OccReviewChargeAdjustResponse>(result.Failure!.Value, result.Code);
         Response.Headers.ETag = result.ConcurrencyToken;
         return Ok(new OccReviewChargeAdjustResponse(result.ConcurrencyToken!));
+    }
+
+    /// <summary>
+    /// 3-N11: OCC excludes a service in exception with an executed quantity from billing, or includes it again, with
+    /// a reason. Only while the hand-off is pending; a signed Service Order records it as OCC's correction (3-N02).
+    /// </summary>
+    [RequestSizeLimit(BodyLimitBytes)]
+    [HttpPost("operations/{operationId:guid}/services/{serviceId:guid}/billing-exclusion",
+        Name = "SetOccReviewServiceBillingExclusion")]
+    [Consumes("application/json")]
+    [ProducesResponseType<OccReviewChargeAdjustResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status412PreconditionFailed, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(428, "application/problem+json")]
+    public async Task<ActionResult<OccReviewChargeAdjustResponse>> SetServiceBillingExclusion([FromRoute] Guid operationId,
+        [FromRoute] Guid serviceId, [FromHeader(Name = "If-Match")] string? ifMatch,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
+        [FromBody, BindRequired] SetOccReviewServiceBillingExclusionRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryAccountId(out var accountId)) return UnauthorizedResult<OccReviewChargeAdjustResponse>();
+        if (PreconditionProblem<OccReviewChargeAdjustResponse>(ifMatch) is { } precondition) return precondition;
+        var result = await handler.SetServiceBillingExclusionAsync(accountId, operationId, serviceId, request.SubmissionId,
+            ifMatch, request.Excluded, request.Reason, idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
+        if (!result.IsSuccess) return FailureResult<OccReviewChargeAdjustResponse>(result.Failure!.Value, result.Code);
+        Response.Headers.ETag = result.ConcurrencyToken;
+        return Ok(new OccReviewChargeAdjustResponse(result.ConcurrencyToken!));
+    }
+
+    /// <summary>
+    /// 3-H: OCC reopens an approval nothing was invoiced from yet as a new pending revision, with its reason; once
+    /// anything is invoiced the correction is a credit note (409 <c>already_invoiced</c>). The agent and the stand the
+    /// approval freed stay free, and the reopened revision is approved again in OCC, never returned to the ramp, so an
+    /// approval whose Service Order is not signed as it stands is not reopened (409 <c>service_order_unsigned</c> or
+    /// <c>service_order_stale</c>, 3-N02).
+    /// </summary>
+    [RequestSizeLimit(BodyLimitBytes)]
+    [HttpPost("operations/{operationId:guid}/reopening", Name = "ReopenOccReview")]
+    [Consumes("application/json")]
+    [ProducesResponseType<OccReviewReopenResponse>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status412PreconditionFailed, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(428, "application/problem+json")]
+    public async Task<ActionResult<OccReviewReopenResponse>> Reopen([FromRoute] Guid operationId,
+        [FromHeader(Name = "If-Match")] string? ifMatch, [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
+        [FromBody, BindRequired] ReopenOccReviewRequest request, CancellationToken cancellationToken)
+    {
+        if (!TryAccountId(out var accountId)) return UnauthorizedResult<OccReviewReopenResponse>();
+        if (PreconditionProblem<OccReviewReopenResponse>(ifMatch) is { } precondition) return precondition;
+        var result = await handler.ReopenAsync(accountId, operationId, request.SubmissionId, ifMatch, request.Reason,
+            idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
+        if (!result.IsSuccess) return FailureResult<OccReviewReopenResponse>(result.Failure!.Value, result.Code);
+        var data = result.Data!;
+        Response.Headers.ETag = data.ReviewVersion;
+        return Ok(new OccReviewReopenResponse(data.OperationId, data.SubmissionId, data.RevisionNumber, data.Status,
+            data.ReviewVersion));
     }
 
     /// <summary>Approves or returns one pending submission using its strong snapshot token.</summary>
@@ -209,23 +281,21 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
         [FromRoute] Guid operationId,
         [FromHeader(Name = "If-Match")] string? ifMatch,
         [FromBody, BindRequired] DecideOccReviewRequest request,
+        [FromHeader(Name = "Idempotency-Key")] Guid? idempotencyKey,
         CancellationToken cancellationToken)
     {
         if (!TryAccountId(out var accountId)) return UnauthorizedResult<DecideOccReviewResponse>();
-        if (string.IsNullOrWhiteSpace(ifMatch))
-            return ProblemResult<DecideOccReviewResponse>(428, "An If-Match precondition is required.");
-        if (!StrongTokenPattern().IsMatch(ifMatch))
-            return ProblemResult<DecideOccReviewResponse>(400, "The review precondition is invalid.");
+        if (PreconditionProblem<DecideOccReviewResponse>(ifMatch) is { } precondition) return precondition;
 
         var result = await handler.DecideAsync(
             accountId, operationId, request.SubmissionId, ifMatch,
-            request.Outcome, request.Reason, HttpContext.TraceIdentifier, cancellationToken);
+            request.Outcome, request.Reason, HttpContext.TraceIdentifier, idempotencyKey, cancellationToken);
         return result.IsSuccess
             ? Ok(new DecideOccReviewResponse(
                 result.Decision!.OperationId, result.Decision.SubmissionId,
                 result.Decision.Status, result.Decision.Outcome,
                 result.Decision.DecidedAt, result.Decision.Reason))
-            : FailureResult<DecideOccReviewResponse>(result.Failure!.Value);
+            : FailureResult<DecideOccReviewResponse>(result.Failure!.Value, result.Code);
     }
 
     private bool TryAccountId(out Guid accountId) =>
@@ -235,25 +305,72 @@ public sealed partial class OccReviewController(OccReviewHandler handler) : Cont
     private ActionResult<T> UnauthorizedResult<T>()
     {
         Response.Headers.WWWAuthenticate = "Bearer";
-        return ProblemResult<T>(401, "Authentication failed.");
+        return ProblemResult<T>(401, "Authentication failed.", null);
     }
 
-    private ActionResult<T> FailureResult<T>(OccReviewFailure failure) => failure switch
+    /// <summary>A missing If-Match is 428 <c>expected_version_required</c>; one that is not a strong ETag, 400.</summary>
+    private ActionResult<T>? PreconditionProblem<T>(string? ifMatch)
     {
-        OccReviewFailure.Unauthorized => UnauthorizedResult<T>(),
-        OccReviewFailure.Forbidden => ProblemResult<T>(403, "OCC review is forbidden."),
-        OccReviewFailure.InvalidRequest => ProblemResult<T>(400, "The review request is invalid."),
-        OccReviewFailure.NotFound => ProblemResult<T>(404, "The review resource was not found."),
-        OccReviewFailure.Conflict => ProblemResult<T>(409, "The review state changed."),
-        OccReviewFailure.PreconditionFailed => ProblemResult<T>(412, "The review snapshot changed."),
-        _ => throw new InvalidOperationException("Unsupported OCC review failure."),
+        if (string.IsNullOrWhiteSpace(ifMatch))
+            return ProblemResult<T>(428, Title("expected_version_required"), "expected_version_required");
+        return StrongTokenPattern().IsMatch(ifMatch)
+            ? null
+            : ProblemResult<T>(400, Title(OccReviewHandler.InvalidRequestCode), OccReviewHandler.InvalidRequestCode);
+    }
+
+    /// <summary>
+    /// The Problem Details of a refused review command. A 403 keeps no code (the shell explains the permission); every
+    /// other failure carries the store's code or, when it has none, the status's default.
+    /// </summary>
+    private ActionResult<T> FailureResult<T>(OccReviewFailure failure, string? code = null)
+    {
+        if (failure == OccReviewFailure.Unauthorized) return UnauthorizedResult<T>();
+        if (failure == OccReviewFailure.Forbidden) return ProblemResult<T>(403, "No tiene permiso para esta revisión.", null);
+        var (status, fallback) = failure switch
+        {
+            OccReviewFailure.InvalidRequest => (StatusCodes.Status400BadRequest, OccReviewHandler.InvalidRequestCode),
+            OccReviewFailure.NotFound => (StatusCodes.Status404NotFound, "not_found"),
+            OccReviewFailure.PreconditionFailed => (StatusCodes.Status412PreconditionFailed, "version_conflict"),
+            OccReviewFailure.Conflict => (StatusCodes.Status409Conflict, "version_conflict"),
+            _ => throw new InvalidOperationException("Unsupported OCC review failure."),
+        };
+        var resolved = code ?? fallback;
+        return ProblemResult<T>(status, Title(resolved), resolved);
+    }
+
+    private static string Title(string code) => code switch
+    {
+        "expected_version_required" => "Falta la versión de la revisión que se vio en pantalla.",
+        "invalid_review_request" => "La solicitud de revisión no es válida.",
+        "idempotency_key_required" => "No se pudo identificar el envío.",
+        "idempotency_conflict" => "Ese envío ya se usó con otros datos.",
+        "reason_required" => "Indique el motivo.",
+        "not_found" => "La operación ya no existe o no está en su alcance.",
+        "version_conflict" => "La revisión cambió mientras la revisaba. Vuelva a cargarla.",
+        "review_closed" => "La entrega ya no está pendiente de revisión.",
+        "review_already_decided" => "La entrega ya tiene una decisión.",
+        "review_not_approved" => "Solo se reabre una operación aprobada.",
+        "reopened_review_cannot_return" => "Una revisión reabierta se corrige y aprueba en OCC: no vuelve a rampa.",
+        "already_invoiced" => "Ya hay servicios facturados: corrija con una nota de crédito.",
+        "service_order_unsigned" => "La Orden de Servicio no está firmada.",
+        "service_order_stale" => "La Orden de Servicio cambió después de la firma.",
+        "billing_exclusion_not_allowed" => "Solo se excluye un servicio con excepción y cantidad ejecutada.",
+        "charge_excluded_by_contract" => "El contrato de la aerolínea excluye este cargo.",
+        "charge_not_applicable" => "El cargo no aplica a este servicio.",
+        "charge_already_marked" => "El servicio ya tiene este cargo.",
+        "charge_already_removed" => "El cargo ya se quitó.",
+        _ => "La revisión no admite este cambio.",
     };
 
-    private ActionResult<T> ProblemResult<T>(int status, string title) =>
-        new ObjectResult(new ProblemDetails
+    private ActionResult<T> ProblemResult<T>(int status, string title, string? code)
+    {
+        var problem = new ProblemDetails
         {
             Status = status,
             Title = title,
             Instance = HttpContext.Request.Path,
-        }) { StatusCode = status };
+        };
+        if (code is not null) problem.Extensions["code"] = code;
+        return new ObjectResult(problem) { StatusCode = status };
+    }
 }

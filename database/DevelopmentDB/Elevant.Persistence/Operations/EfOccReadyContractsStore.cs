@@ -39,8 +39,9 @@ internal sealed class EfOccReadyContractsStore(ElevantDbContext context, IActorC
             .ToLookup(item => item.ContractVersionId);
         var airlineIds = rows.Select(item => item.Row.AirlineId).Distinct().ToArray();
         var flights = (await context.Turnarounds.AsNoTracking()
+                // A cancelled or diverted flight is not operated (3-A): it no longer counts for its contract.
                 .Where(item => item.StationId == station.Id && item.OperationDate == date && airlineIds.Contains(item.AirlineId) &&
-                    item.CurrentStatus != TurnaroundStatus.Cancelled)
+                    item.CurrentStatus != TurnaroundStatus.Cancelled && item.CurrentStatus != TurnaroundStatus.Diverted)
                 .Select(item => item.AirlineId).ToArrayAsync(cancellationToken))
             .GroupBy(id => id).ToDictionary(group => group.Key, group => group.Count());
 

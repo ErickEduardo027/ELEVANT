@@ -48,8 +48,10 @@ public static class DepartmentPermissionCatalog
                 Module("operations", "flight_monitoring", "Monitoreo de vuelos", "Monitoreo", null, Read()),
                 Module("operations", "positions_map", "Mapa de posiciones", "Monitoreo", null, Read(),
                     Other("assign", "Registrar llegadas y asignar o liberar posiciones")),
+                // 3-A: a flight is rescheduled, cancelled or diverted before its operation starts; nothing is deleted.
                 Module("operations", "planning", "Planificación operativa", "Operación", null,
-                    Read(), Create("Crear escalas"), Other("assign", "Asignar agentes, posiciones y turnos")),
+                    Read(), Create("Crear escalas"), Update("Reprogramar, cancelar o desviar escalas"),
+                    Other("assign", "Asignar agentes, posiciones y turnos")),
                 Module("operations", "coverage", "Cobertura de posiciones", "Operación", null, Read(),
                     Other("assign", "Asignar posiciones por turno"), Update("Configurar posiciones y combinaciones")),
                 // Terminals and stands of the station and the aircraft types (2-A); nothing is deleted, only deactivated.
@@ -60,7 +62,12 @@ public static class DepartmentPermissionCatalog
                 // Shared ramp tablets (2-N02): who holds each one; OCC frees a tablet or revokes a lost one.
                 Module("operations", "devices", "Tablets", "Operación", null, Read(),
                     Other("unbind", "Desvincular tablets"), Other("revoke", "Revocar tablets perdidas")),
-                Module("operations", "review", "Revisión", "Operación", null, Read(), Other("decide", "Aprobar o devolver entregas")),
+                // 3-H: an approval nothing was invoiced from yet is reopened as a new review, with its reason.
+                Module("operations", "review", "Revisión", "Operación", null, Read(), Other("decide", "Aprobar o devolver entregas"),
+                    Other("reopen", "Reabrir operaciones aprobadas sin facturar")),
+                // 3-G: OCC follows, reports and manages the incidents of an operation inside Revisión and Planificación.
+                Module("operations", "incidents", "Incidencias", "Operación", "review", Read(),
+                    Update("Reportar y gestionar incidencias")),
                 Module("operations", "service_closures", "Clausura de servicios", "Operación", "review",
                     Read(), Create("Solicitar clausura")),
                 Module("operations", "reports", "Reportes", "Operación", null, Read(), Other("export", "Exportar")),

@@ -122,6 +122,21 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
             new { arrivalProposalId = arrival, departureProposalId = departure }, TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
         Assert.Equal((new OccFlightImportInput(arrival, departure), (Guid?)null), (store.LastImport, store.LastImportKey));
+        using (var imported = JsonDocument.Parse(await legacy.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
+        {
+            Assert.Equal(["turnaroundId", "operationCode", "replayed", "linked"],
+                imported.RootElement.EnumerateObject().Select(item => item.Name).ToArray());
+            Assert.False(imported.RootElement.GetProperty("linked").GetBoolean());
+        }
+        // 3-N07: a pair of a flight OCC already planned joins that turnaround.
+        store.ImportResult = new OccFlightImportResult(Guid.NewGuid(), "PUJ-20261105-001", null, Linked: true);
+        using (var linked = await SendAsync(client, HttpMethod.Post, "occ/flight-feed/turnarounds", Guid.NewGuid(), new
+               {
+                   arrivalProposalId = arrival, departureProposalId = departure, expectedArrivalVersion = "AAAAAAAAB9E=",
+                   expectedDepartureVersion = "AAAAAAAAB9F=",
+               }))
+        using (var answer = JsonDocument.Parse(await linked.Content.ReadAsStringAsync(TestContext.Current.CancellationToken)))
+            Assert.True(answer.RootElement.GetProperty("linked").GetBoolean());
 
         var key = Guid.NewGuid();
         store.ImportResult = new OccFlightImportResult(null, null, OccFlightFeedFailure.Conflict, false, "stand_unavailable",
@@ -448,9 +463,9 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<CoverageResult> CreateAsync(Guid actorId, Guid stationId, CreateCoverageInput input,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            Guid? idempotencyKey, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
-        public Task<CoverageResult> ReleaseAsync(Guid actorId, Guid coverageId, DateOnly date,
+        public Task<CoverageResult> ReleaseAsync(Guid actorId, Guid coverageId, DateOnly date, Guid? idempotencyKey,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<CoverageResult> UpdateTerminalAsync(Guid actorId, Guid terminalId, TerminalRulesInput input, DateOnly date,
@@ -462,8 +477,16 @@ public sealed class MasterDataAndFlightFeedEndpointsTests(ElevantApiFactory fact
         public Task<CoverageResult> RemoveConstraintAsync(Guid actorId, Guid constraintId, DateOnly date,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
-        public Task<PositionCoverageFailure?> ReleaseOperationAgentAsync(Guid actorId, Guid turnaroundId,
+        public Task<OperationAgentCommandResult> ReleaseOperationAgentAsync(Guid actorId, Guid turnaroundId,
+            ReleaseOperationAgentInput input, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<OccHandoverResult<OccHandoverOptionsData>> ReadHandoverOptionsAsync(Guid actorId, Guid turnaroundId,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<OccHandoverResult<OccOperationHandoverData>> HandOverOperationAsync(Guid actorId, Guid turnaroundId,
+            HandOverOperationInput input, Guid? idempotencyKey, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
         public Task<IReadOnlyList<OwnCoverageData>?> ReadOwnAsync(Guid accountId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();

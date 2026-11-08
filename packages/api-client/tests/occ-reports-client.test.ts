@@ -24,6 +24,24 @@ describe("OCC reports client", () => {
     expect(urls[2]).toBe(`https://api.example.test/api/v1/occ/reports/operations/export?stationId=${stationId}&from=2026-08-01&to=2026-08-31&format=csv`);
   });
 
+  it("keeps the code of a refused export so the screen explains it (3-N13)", async () => {
+    const problem = (status: number, code?: string) => new Response(JSON.stringify({ status, title: "Server title",
+      ...(code && { code }) }), { status, headers: { "content-type": "application/problem+json" } });
+    const answers = [problem(422, "report_too_large"), problem(404, "station_unavailable"),
+      problem(400, "invalid_report_query"), problem(404, "report_not_found"), problem(403)];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async () => answers.shift()! });
+    await expect(client.exportOccReport("operations", query, "pdf"))
+      .rejects.toMatchObject({ status: 422, code: "report_too_large" });
+    await expect(client.exportOccReport("operations", query, "xlsx"))
+      .rejects.toMatchObject({ status: 404, code: "station_unavailable" });
+    await expect(client.getOccReport("operations", { ...query, page: 1, limit: 25 }))
+      .rejects.toMatchObject({ status: 400, code: "invalid_report_query" });
+    await expect(client.getOccReport("operations", query)).rejects.toMatchObject({ status: 404, code: "report_not_found" });
+    const forbidden = await client.exportOccReport("operations", query, "csv").catch((error: unknown) => error);
+    expect(forbidden).toMatchObject({ status: 403 });
+    expect((forbidden as { code?: string }).code).toBeUndefined();
+  });
+
   it("rejects unknown reports, inverted periods and ragged rows", async () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => Response.json({ ...page, rows: [[{ value: "solo", type: "text" }]] }) });

@@ -60,6 +60,33 @@ describe('groupOperations', () => {
     expect(operations[3]).toMatchObject({ ready: false, blockingReason: 'missing_frozen_rate' });
   });
 
+  it('blocks an operation on a service in exception the invoice bills and is not ready (3-N11)', () => {
+    const exception = { executionStatus: 'Exception', executedQuantity: 2 };
+    const blocked = reason => ({ ...exception, ready: false, blockingReason: reason, amount: null });
+    const operations = groupOperations([
+      service('s1', 'op-1', 'DEV-TAT-0001', DEMO, 'Demo Airlines'),
+      service('s2', 'op-1', 'DEV-TAT-0001', DEMO, 'Demo Airlines', blocked('charge_excluded_by_contract')),
+      service('s3', 'op-2', 'DEV-TAT-0002', DEMO, 'Demo Airlines'),
+      service('s4', 'op-2', 'DEV-TAT-0002', DEMO, 'Demo Airlines', blocked('missing_frozen_rate')),
+      service('s5', 'op-3', 'DEV-TAT-0003', DEMO, 'Demo Airlines'),
+      service('s6', 'op-3', 'DEV-TAT-0003', DEMO, 'Demo Airlines', blocked('excluded_in_review')),
+      service('s7', 'op-4', 'DEV-TAT-0004', DEMO, 'Demo Airlines', { ...exception, amount: 20 }),
+      service('s8', 'op-4', 'DEV-TAT-0004', DEMO, 'Demo Airlines', {
+        executionStatus: 'NotPerformed', executedQuantity: 0, ready: false, blockingReason: 'service_not_completed',
+        amount: null,
+      }),
+    ]);
+    expect(operations.map(item => [item.operationCode, item.ready, item.blockingReason])).toEqual([
+      ['DEV-TAT-0001', false, 'charge_excluded_by_contract'],
+      ['DEV-TAT-0002', false, 'missing_frozen_rate'],
+      // OCC excluded it in the review: the invoice leaves it out and bills the rest.
+      ['DEV-TAT-0003', true, null],
+      // A ready service in exception is billed; one not performed has nothing to bill.
+      ['DEV-TAT-0004', true, null],
+    ]);
+    expect(operations[3]).toMatchObject({ estimate: 20, currency: 'USD' });
+  });
+
   it('a calendar month never exceeds the 31 days the API accepts', () => {
     expect(calendarMonth('2026-08-19')).toEqual({ from: '2026-08-01', to: '2026-08-31' });
     expect(calendarMonth('2026-03-05', -1)).toEqual({ from: '2026-02-01', to: '2026-02-28' });

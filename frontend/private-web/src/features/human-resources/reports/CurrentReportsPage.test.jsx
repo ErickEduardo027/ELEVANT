@@ -56,6 +56,43 @@ it('shows a station-scoped page without inventing a global total and follows pag
   expect(screen.queryByText('Agente de prueba')).not.toBeInTheDocument();
 });
 
+it('shows the codes in Spanish and the account movements at the station local time (3-N16)', async () => {
+  getHumanResourcesReport.mockImplementation(async kind => kind === 'account-movements'
+    ? { ...page, hasMore: false, rows: [{ id: '60000000-0000-7000-8000-000000000001', accountId: row.id,
+      rampProfileId: row.id, agentName: 'Agente de prueba', employeeNumber: 'DEV-001', kind: 'Created',
+      occurredAt: '2026-10-06T01:00:00Z' }] }
+    : { ...page, hasMore: false, rows: [row, { ...row, id: '50000000-0000-7000-8000-000000000003',
+      agentName: 'Segundo agente', kind: 'Permit', code: 'AirportId' }] });
+  renderReport();
+  expect(await screen.findByText('Segundo agente')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Vigencias de habilitaciones y permisos' })).toBeInTheDocument();
+  expect(screen.getByText('Habilitación')).toBeInTheDocument();
+  expect(screen.getByText('Permiso')).toBeInTheDocument();
+  expect(screen.getByText('Carnet aeroportuario')).toBeInTheDocument();
+  expect(screen.getAllByText('20/10/2026')).toHaveLength(2);
+  expect(screen.queryByText('Qualification')).not.toBeInTheDocument();
+  expect(screen.queryByText('AirportId')).not.toBeInTheDocument();
+  // asOf is 2026-10-05T12:00:00Z: 08:00 in Punta Cana.
+  expect(screen.getByText(/consulta 05\/10\/2026, 08:00 \(hora local\)/)).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText('Tipo de reporte'), { target: { value: 'account-movements' } });
+  expect(await screen.findByText('Alta de cuenta')).toBeInTheDocument();
+  // 01:00Z on 6 October is 21:00 on 5 October in Punta Cana.
+  expect(screen.getByText('05/10/2026, 21:00')).toBeInTheDocument();
+  expect(screen.getByRole('columnheader', { name: 'Fecha y hora local' })).toBeInTheDocument();
+  expect(screen.queryByText('Fecha UTC')).not.toBeInTheDocument();
+  expect(screen.queryByText('2026-10-06T01:00:00Z')).not.toBeInTheDocument();
+});
+
+it('opens on the last 30 dates of AVIAM calendar, not of the browser UTC day (3-N16)', async () => {
+  render(<MemoryRouter initialEntries={['/gestion-humana/reports']}>
+    <CurrentReportsPage initialDate={new Date('2026-11-06T01:30:00Z')} /></MemoryRouter>);
+  // 21:30 on 5 November in Punta Cana is already 6 November in UTC.
+  await waitFor(() => expect(getHumanResourcesReport).toHaveBeenCalledWith('expirations',
+    expect.objectContaining({ from: '2026-10-07', to: '2026-11-05' }), expect.anything()));
+  expect(screen.getByLabelText('Hasta')).toHaveValue('2026-11-05');
+});
+
 it('switches among all four server report kinds and shows an honest empty state', async () => {
   getHumanResourcesReport.mockResolvedValue({ ...page, hasMore: false, rows: [] });
   renderReport();
@@ -129,9 +166,22 @@ it('exports a complete server PDF and explains the 5 000-row limit', async () =>
     { timeout: 1_500 });
 
   exportHumanResourcesReport.mockRejectedValueOnce(
-    Object.assign(new Error('internal'), { status: 422 }));
+    Object.assign(new Error('Narrow the filters before exporting.'), { status: 422, code: 'report_too_large' }));
   fireEvent.click(screen.getByRole('button', { name: 'Descargar XLSX' }));
-  expect(await screen.findByRole('alert')).toHaveTextContent('Acota el intervalo');
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('El reporte supera las 5 000 filas exportables. Acote el intervalo');
+  expect(alert).not.toHaveTextContent('Narrow');
+});
+
+it('explains a failed download by its code and keeps the server title out of the screen (3-N13)', async () => {
+  renderReport();
+  expect(await screen.findByText('Agente de prueba')).toBeInTheDocument();
+  exportHumanResourcesReport.mockRejectedValueOnce(
+    Object.assign(new Error('Server exploded'), { status: 503 }));
+  fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('No se pudo descargar el reporte. Reintenta.');
+  expect(alert).not.toHaveTextContent('Server exploded');
 });
 
 it('re-enables exports when the session changes during an older download', async () => {

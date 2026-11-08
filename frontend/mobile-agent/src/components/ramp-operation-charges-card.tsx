@@ -4,9 +4,11 @@ import type {
   RampServiceChargesResponse,
 } from '@elevant/api-client';
 import { Ionicons } from '@expo/vector-icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { subscribeFlightReport } from '../services/flight-report';
 import { MobileServiceError } from '../services/mobile-auth';
+import type { FlightReportOutboxItem } from '../synchronization/flight-report-outbox';
 import {
   changeRampServiceCharge,
   getRampOperationCharges,
@@ -16,6 +18,40 @@ import { colors } from '../theme/colors';
 import { Card } from './ui';
 
 type LoadState = 'loading' | 'ready' | 'error';
+
+/**
+ * The charges as the agent left them on the device (3-I): each mark or unmark still waiting in the queue is applied,
+ * in its order, over ELEVANT's copy. A mark saved on the device carries the source «Device» until ELEVANT confirms it.
+ */
+export function projectCharges(
+  charges: RampOperationChargesResponse,
+  items: readonly FlightReportOutboxItem[],
+): RampOperationChargesResponse {
+  const queued = items.filter(item => item.state === 'pending' && item.command.kind === 'serviceCharge' &&
+    item.command.operationId.toLowerCase() === charges.operationId.toLowerCase());
+  if (queued.length === 0) return charges;
+  return {
+    ...charges,
+    services: charges.services.map(service => {
+      let applied = service.applied;
+      for (const item of queued) {
+        const command = item.command;
+        if (command.kind !== 'serviceCharge' || command.serviceId.toLowerCase() !== service.serviceId.toLowerCase()) continue;
+        if (command.action === 'Apply') {
+          const option = service.available.find(candidate => candidate.id.toLowerCase() === command.chargeId);
+          applied = [...applied, { id: item.idempotencyKey, chargeId: option?.id ?? command.chargeId,
+            code: option?.code ?? '', name: option?.name ?? command.chargeName ?? 'Cargo', appliedAt: item.createdAt,
+            source: 'Device' }];
+        } else {
+          const index = applied.map(mark => mark.chargeId.toLowerCase() === command.chargeId &&
+            (mark.source ?? 'Agent') !== 'Automatic' && mark.source !== 'Occ').lastIndexOf(true);
+          if (index >= 0) applied = [...applied.slice(0, index), ...applied.slice(index + 1)];
+        }
+      }
+      return { ...service, applied };
+    }),
+  };
+}
 
 /**
  * "Cargos aplicados": the agent marks only the type of charge (night, overtime…)
@@ -32,19 +68,26 @@ export function RampOperationChargesCard({
   refreshKey: string;
   services: readonly RampOperationServiceResponse[];
 }>) {
-  const [charges, setCharges] = useState<RampOperationChargesResponse | null>(null);
+  const [loaded, setLoaded] = useState<RampOperationChargesResponse | null>(null);
   const [fromCache, setFromCache] = useState(false);
   const [state, setState] = useState<LoadState>('loading');
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [queueItems, setQueueItems] = useState<readonly FlightReportOutboxItem[]>([]);
+  const [revision, setRevision] = useState(0);
   const generation = useRef(0);
+  useEffect(() => subscribeFlightReport(snapshot => {
+    setQueueItems(snapshot.items);
+    setRevision(snapshot.revisions[operationId.toLowerCase()] ?? snapshot.revisions[operationId] ?? 0);
+  }), [operationId]);
+  const charges = useMemo(() => loaded && projectCharges(loaded, queueItems), [loaded, queueItems]);
 
   const load = useCallback(async () => {
     const current = ++generation.current;
     try {
       const result = await getRampOperationCharges(operationId);
       if (current !== generation.current) return;
-      setCharges(result.charges);
+      setLoaded(result.charges);
       setFromCache(result.fromCache);
       setState('ready');
     } catch (error) {
@@ -54,25 +97,30 @@ export function RampOperationChargesCard({
     }
   }, [operationId]);
 
-  useEffect(() => { void load(); }, [load, refreshKey]);
+  // A charge that went out from the queue moves the operation's revision: ELEVANT's copy is read again (3-I).
+  useEffect(() => { void load(); }, [load, refreshKey, revision]);
 
   async function change(service: RampServiceChargesResponse, chargeId: string, action: RampServiceChargeAction) {
     const key = `${service.serviceId}:${chargeId}`;
     setBusy(key);
     setMessage(null);
     try {
-      const updated = await changeRampServiceCharge(operationId, service.serviceId, chargeId, action);
-      setCharges(current => current && {
+      const option = service.available.find(candidate => candidate.id === chargeId);
+      const updated = await changeRampServiceCharge(operationId, service.serviceId, chargeId, action,
+        { chargeName: option?.name });
+      if (!updated) {
+        setMessage('Cargo guardado en el dispositivo; se envía a ELEVANT en cuanto haya señal.');
+        return;
+      }
+      setLoaded(current => current && {
         ...current,
         services: current.services.map(item => (item.serviceId === updated.serviceId ? updated : item)),
       });
     } catch (error) {
       const failure = error instanceof MobileServiceError ? error : null;
-      setMessage(failure?.code === 'conflict'
+      setMessage(failure?.code === 'conflict' && !failure.problemCode
         ? 'El servicio cambió. Se actualizaron los cargos.'
-        : failure?.code === 'network_unavailable' || failure?.code === 'request_timeout'
-          ? 'Sin conexión. Toca el cargo de nuevo para reintentar el mismo envío.'
-          : failure?.message ?? 'No fue posible registrar el cargo.');
+        : failure?.message ?? 'No fue posible registrar el cargo.');
       if (failure?.code === 'conflict' || failure?.code === 'not_found') void load();
     } finally {
       setBusy(null);
@@ -92,7 +140,7 @@ export function RampOperationChargesCard({
         </View>
       </View>
       {state === 'loading' && <ActivityIndicator color={colors.blue} accessibilityLabel="Cargando cargos" />}
-      {fromCache && <Text style={styles.warning}>Sin conexión: se muestra la última copia guardada.</Text>}
+      {fromCache && <Text style={styles.warning}>Sin conexión: se muestra la última copia guardada; lo que marques se envía al reconectar.</Text>}
       {message && <Text accessibilityRole="alert" style={styles.error}>{message}</Text>}
       {state === 'error' && (
         <Pressable accessibilityRole="button" onPress={() => { setState('loading'); void load(); }} style={styles.retry}>
@@ -101,7 +149,8 @@ export function RampOperationChargesCard({
       )}
       {withOptions.map(item => {
         const service = services.find(candidate => candidate.id === item.serviceId);
-        const editable = item.canEdit && !fromCache;
+        // 3-I: without signal the agent still marks; the queue sends it in order when there is signal.
+        const editable = item.canEdit;
         return (
           <View key={item.serviceId} style={styles.service}>
             <Text style={styles.serviceName}>{service ? `${service.code} · ${service.name}` : 'Servicio'}</Text>
@@ -112,10 +161,11 @@ export function RampOperationChargesCard({
                 const selected = marks.length > 0;
                 const key = `${item.serviceId}:${option.id}`;
                 // ADR-0034: ELEVANT's automatic marks and OCC's are not the agent's to remove.
-                const agentMarks = marks.filter(mark => (mark.source ?? 'Agent') === 'Agent');
+                const agentMarks = marks.filter(mark => (mark.source ?? 'Agent') === 'Agent' || mark.source === 'Device');
                 const locked = selected && !option.allowMultiple && agentMarks.length === 0;
                 const origin = marks.find(mark => mark.source === 'Automatic') ? 'automático'
-                  : marks.find(mark => mark.source === 'Occ') ? 'OCC' : null;
+                  : marks.find(mark => mark.source === 'Occ') ? 'OCC'
+                    : marks.find(mark => mark.source === 'Device') ? 'en el dispositivo' : null;
                 const disabled = !editable || busy !== null || locked;
                 const action: RampServiceChargeAction = selected && !option.allowMultiple ? 'Remove' : 'Apply';
                 return (
@@ -139,10 +189,10 @@ export function RampOperationChargesCard({
               })}
             </View>
             {item.available.some(option => option.allowMultiple && item.applied.some(applied => applied.chargeId === option.id &&
-              (applied.source ?? 'Agent') === 'Agent')) && editable && (
+              ((applied.source ?? 'Agent') === 'Agent' || applied.source === 'Device'))) && editable && (
               <View style={styles.chips}>
                 {item.available.filter(option => option.allowMultiple && item.applied.some(applied => applied.chargeId === option.id &&
-                  (applied.source ?? 'Agent') === 'Agent')).map(option => (
+                  ((applied.source ?? 'Agent') === 'Agent' || applied.source === 'Device'))).map(option => (
                   <Pressable accessibilityRole="button" accessibilityLabel={`Quitar ${option.name}`} disabled={busy !== null}
                     key={option.id} onPress={() => void change(item, option.id, 'Remove')} style={styles.remove}>
                     <Text style={styles.removeText}>Quitar uno · {option.name}</Text>

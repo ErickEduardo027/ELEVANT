@@ -19,6 +19,12 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 
+  it("names the tablet evidence rules of phase 3 (block C)", () => {
+    for (const code of ["time_outside_operation_window", "milestone_out_of_order", "service_time_out_of_order",
+      "ramp_operation_state_conflict", "invalid_ramp_command", "idempotency_conflict", "not_found"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
   it("keeps the master data and flight feed codes of phase 2 (block C)", () => {
     for (const code of ["station_code_taken", "airport_has_station", "airport_icao_taken", "invalid_station",
       "invalid_time_zone", "airport_required", "time_zone_locked", "station_in_use", "terminal_code_taken",
@@ -47,6 +53,45 @@ describe("Problem Details codes", () => {
   it("keeps the airline permit codes of phase 2 (block B)", () => {
     for (const code of ["review_closed", "permit_not_verified", "review_note_required", "invalid_permit",
       "permit_dates_invalid", "permit_expired", "document_invalid", "document_expired"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the planning codes of phase 3 (block A)", () => {
+    for (const code of ["operation_started", "turnaround_closed", "assigned_agent_unavailable", "invalid_turnaround_change",
+      "arrival_locked", "aircraft_type_locked", "flight_already_planned", "invalid_charter_airline", "invalid_position_request",
+      "aircraft_type_unavailable", "stand_unavailable", "contract_not_in_force", "airline_code_in_use"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A rescheduled flight keeps its agent only inside the shift and within three simultaneous operations.
+    for (const reason of ["shift_not_covering", "simultaneous_limit", "stand_taken", "stand_narrowbody_only"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("knows the coverage, assignment and handover codes of phase 3 (block B)", () => {
+    for (const code of ["assignment_changed", "handover_not_allowed", "same_agent", "agent_not_eligible",
+      "invalid_handover", "shift_not_found", "invalid_coverage_request", "coverage_rejected", "operation_started"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // An adjusted shift keeps covering the agent's work and a validated attendance freezes it (3-E).
+    for (const code of ["shift_uncovers_work", "attendance_validated", "shift_day_taken", "shift_in_past"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // A coverage needs the agent's scope in its terminal (3-N05); a junior needs a mentor.
+    for (const reason of ["terminal_scope_missing", "mentor_required"]) expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("knows the review, incident and charter codes of phase 3 (block D)", () => {
+    for (const code of ["invalid_review_request", "service_order_unsigned", "service_order_stale", "review_already_decided",
+      "review_not_approved", "reopened_review_cannot_return", "already_invoiced", "billing_exclusion_not_allowed",
+      "charge_excluded_by_contract", "charge_not_applicable", "charge_already_marked", "charge_already_removed",
+      "incident_transition_invalid", "incident_report_invalid", "incident_occurred_at_invalid", "operation_closed",
+      "invalid_incident_request", "charter_prepayment_confirmed", "charter_prepayment_not_confirmed", "review_closed"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // already_invoiced is also the reason the e-CF issuance names (ADR-0035), and so are a charge the contract
+    // excludes (3-N29) and a service OCC excluded from billing (3-N11).
+    for (const reason of ["already_invoiced", "charge_excluded_by_contract", "excluded_in_review"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
+  it("knows the report codes of phase 3 (block E)", () => {
+    for (const code of ["report_too_large", "invalid_report_query", "report_not_found", "station_unavailable"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 

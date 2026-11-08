@@ -23,6 +23,14 @@ internal sealed class EfRampOperationsCommandStore(
     TimeProvider timeProvider) : IRampOperationsCommandStore
 {
     private const string StartCommandType = "ramp.operation.start.v1";
+
+    /// <summary>
+    /// 3-N04: the airline has no contract in force on the operation's date (suspended, terminated or expired), so the
+    /// operation does not start. What already started ends normally; a charter flight has no contract (ADR-0033). The
+    /// refusal is never kept in the device receipt: the contract may come back in force and the tablet repeats the
+    /// same key for the operation, so each tap evaluates the contract again.
+    /// </summary>
+    public const string ContractNotInForceCode = "contract_not_in_force";
     private static readonly TimeSpan ReceiptRetention = TimeSpan.FromDays(30);
     private static readonly JsonSerializerOptions ReceiptJsonOptions =
         new(JsonSerializerDefaults.Web);
@@ -164,7 +172,8 @@ internal sealed class EfRampOperationsCommandStore(
         }
 
         var idempotencyKey = request.IdempotencyKey.ToString("D");
-        var payloadHash = ComputePayloadHash(request.OperationId);
+        var startedAt = request.StartedAt is { } tapped ? NormalizeToMilliseconds(tapped) : (DateTimeOffset?)null;
+        var payloadHash = ComputePayloadHash(request.OperationId, startedAt);
         var existingReceipt = await context.MobileCommandReceipts
             .FromSqlInterpolated($"""
                 SELECT *
@@ -175,7 +184,16 @@ internal sealed class EfRampOperationsCommandStore(
             .SingleOrDefaultAsync(cancellationToken);
         if (existingReceipt is not null)
         {
-            return Replay(existingReceipt, actor.AccountInternalId, payloadHash);
+            if (!IsContractRefusal(existingReceipt, actor.AccountInternalId, payloadHash))
+            {
+                return Replay(existingReceipt, actor.AccountInternalId, payloadHash);
+            }
+
+            // 3-N04: a refusal for a contract out of force is not the command's answer for good. A receipt an earlier
+            // server version kept for this same command is dropped and the key evaluates the contract again; another
+            // account or body still conflicts with the key in Replay.
+            context.MobileCommandReceipts.Remove(existingReceipt);
+            await context.SaveChangesAsync(cancellationToken);
         }
 
         var receipt = new MobileCommandReceipt
@@ -226,7 +244,8 @@ internal sealed class EfRampOperationsCommandStore(
                     turnaround.OperationDate,
                     turnaround.CurrentStatus,
                     station.Id,
-                    airline.OrganizationId))
+                    airline.OrganizationId,
+                    airline.Id))
             .SingleOrDefaultAsync(cancellationToken);
         if (scope is null)
         {
@@ -239,13 +258,14 @@ internal sealed class EfRampOperationsCommandStore(
                 cancellationToken);
         }
 
-        var hasActiveAssignment = await context.OperationAgentAssignments
+        var activeAssignments = await context.OperationAgentAssignments
             .AsNoTracking()
-            .AnyAsync(
-                assignment => assignment.GroundOperationId == operation.Id &&
-                    assignment.RampAgentId == actor.RampAgentInternalId &&
-                    assignment.ReleasedAt == null,
-                cancellationToken);
+            .Where(assignment => assignment.GroundOperationId == operation.Id &&
+                assignment.RampAgentId == actor.RampAgentInternalId &&
+                assignment.ReleasedAt == null)
+            .Select(assignment => assignment.AssignedAt)
+            .ToArrayAsync(cancellationToken);
+        var hasActiveAssignment = activeAssignments.Length > 0;
         var hasStationScope = await context.Set<RampAgentStationScope>()
             .AsNoTracking()
             .AnyAsync(
@@ -328,15 +348,45 @@ internal sealed class EfRampOperationsCommandStore(
                 cancellationToken);
         }
 
+        // 3-N04: no new work for an airline whose contract stopped being in force; what already started ends normally
+        // (it never reaches this point). The refusal is not stored: Contratos may reactivate the contract and the tablet
+        // (the deployed APK too) keeps the same key for the operation, so the next tap evaluates the contract again.
+        if (!await context.Set<CharterAgreement>().AsNoTracking()
+                .AnyAsync(item => item.TurnaroundId == operation.TurnaroundId, cancellationToken) &&
+            !await ApplicableContracts.For(context, scope.AirlineInternalId, scope.StationInternalId, scope.OperationDate)
+                .AnyAsync(cancellationToken))
+        {
+            context.Entry(receipt).State = EntityState.Detached;
+            return RampOperationStartWriteResult.Failed(
+                RampOperationStartWriteFailure.Conflict,
+                null,
+                ContractNotInForceCode);
+        }
+
+        // 3-I: the moment the agent tapped «Iniciar», possibly sent later from the offline queue: not before the
+        // assignment it starts, at most a day ago and never in the future (clamped to the server's clock).
+        if (startedAt is { } tappedAt &&
+            !RampEvidenceTimePolicy.CheckStart(tappedAt, activeAssignments.Min(), now))
+        {
+            return await RejectAsync(
+                receipt,
+                RampOperationStartWriteFailure.Conflict,
+                RampProblemCodes.TimeOutsideOperationWindow,
+                "The start time is outside the assignment's window.",
+                now,
+                cancellationToken);
+        }
+
+        var actualStartAt = RampEvidenceTimePolicy.Clamp(startedAt ?? now, now);
         operation.CurrentStatus = GroundOperationStatus.InProgress;
-        operation.ActualStartAt = now;
+        operation.ActualStartAt = actualStartAt;
         operation.UpdatedAt = now;
         context.Set<GroundOperationStatusEvent>().Add(new GroundOperationStatusEvent
         {
             GroundOperationId = operation.Id,
             FromStatus = GroundOperationStatus.Assigned,
             ToStatus = GroundOperationStatus.InProgress,
-            OccurredAt = now,
+            OccurredAt = actualStartAt,
             ActorAccountId = actor.AccountInternalId,
             Reason = "Operation started by the assigned ramp agent.",
         });
@@ -362,6 +412,9 @@ internal sealed class EfRampOperationsCommandStore(
                 turnaroundId = scope.TurnaroundPublicId,
                 rampAgentId = actor.RampAgentPublicId,
                 installationId = device.InstallationId,
+                // 3-I: when the command reached the server and when the agent tapped it.
+                receivedAt = now,
+                startedAt = actualStartAt,
             }, ReceiptJsonOptions),
         };
         context.AuditEntries.Add(auditEntry);
@@ -402,7 +455,7 @@ internal sealed class EfRampOperationsCommandStore(
             {
                 AuditEntryId = auditEntry.Id,
                 PropertyName = nameof(GroundOperation.ActualStartAt),
-                NewValue = now.ToString("O"),
+                NewValue = actualStartAt.ToString("O"),
             });
         await context.SaveChangesAsync(cancellationToken);
 
@@ -423,7 +476,7 @@ internal sealed class EfRampOperationsCommandStore(
         receipt.ErrorMessage = errorMessage;
         receipt.UpdatedAt = now;
         await context.SaveChangesAsync(cancellationToken);
-        return RampOperationStartWriteResult.Failed(failure, receipt.PublicId);
+        return RampOperationStartWriteResult.Failed(failure, receipt.PublicId, RampProblemCodes.PublicCode(errorCode));
     }
 
     private static RampOperationStartWriteResult Replay(
@@ -457,23 +510,43 @@ internal sealed class EfRampOperationsCommandStore(
 
         if (receipt.Status == MobileCommandStatus.Rejected)
         {
+            // A contract refusal of this command never gets here (IsContractRefusal): it is evaluated again instead.
             var failure = receipt.ErrorCode switch
             {
                 "not_found" => RampOperationStartWriteFailure.NotFound,
-                "conflict" => RampOperationStartWriteFailure.Conflict,
+                "conflict" or RampProblemCodes.TimeOutsideOperationWindow =>
+                    RampOperationStartWriteFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "The stored mobile command rejection is invalid."),
             };
-            return RampOperationStartWriteResult.Failed(failure, receipt.PublicId);
+            return RampOperationStartWriteResult.Failed(failure, receipt.PublicId,
+                RampProblemCodes.PublicCode(receipt.ErrorCode));
         }
 
         return RampOperationStartWriteResult.Failed(
             RampOperationStartWriteFailure.Conflict);
     }
 
-    private static string ComputePayloadHash(Guid operationId)
+    /// <summary>
+    /// The same start (account and body) refused because the contract was out of force (3-N04): never replayed, the
+    /// contract is evaluated again.
+    /// </summary>
+    private static bool IsContractRefusal(MobileCommandReceipt receipt, long actorAccountId, string payloadHash) =>
+        receipt.Status == MobileCommandStatus.Rejected &&
+        receipt.AccountId == actorAccountId &&
+        string.Equals(receipt.CommandType, StartCommandType, StringComparison.Ordinal) &&
+        string.Equals(receipt.PayloadHash, payloadHash, StringComparison.Ordinal) &&
+        string.Equals(receipt.ErrorCode, ContractNotInForceCode, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The receipt hash of «Iniciar». Without a tapped time the payload is byte for byte the one of the first version,
+    /// so a start the deployed APK queued replays instead of conflicting (3-I); a tapped time is appended to it.
+    /// </summary>
+    internal static string ComputePayloadHash(Guid operationId, DateTimeOffset? startedAt = null)
     {
-        var payload = $"v1\n{StartCommandType}\n{operationId:D}";
+        var payload = startedAt is { } tapped
+            ? $"v1\n{StartCommandType}\n{operationId:D}\n{tapped.ToUniversalTime():O}"
+            : $"v1\n{StartCommandType}\n{operationId:D}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload)))
             .ToLowerInvariant();
     }
@@ -514,7 +587,8 @@ internal sealed class EfRampOperationsCommandStore(
         DateOnly OperationDate,
         TurnaroundStatus TurnaroundStatus,
         long StationInternalId,
-        long AirlineOrganizationInternalId);
+        long AirlineOrganizationInternalId,
+        long AirlineInternalId);
 
     private sealed record StandScope(
         long StationInternalId,

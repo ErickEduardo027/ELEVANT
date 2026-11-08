@@ -23,6 +23,11 @@ public sealed class AttendanceDraftEndpointsTests(ElevantApiFactory factory)
     private static readonly Guid InstallationId = Guid.Parse("81000000-0000-7000-8000-000000000041");
     private static readonly Guid Key = Guid.Parse("82000000-0000-7000-8000-000000000041");
     private const string Path = "/api/v1/operations/70000000-0000-7000-8000-000000000005/assignments/70000000-0000-7000-8000-000000000006/attendance-draft";
+    private static readonly Guid TurnaroundId = Guid.Parse("70000000-0000-7000-8000-000000000001");
+    private static readonly Guid RelievingAssignmentId = Guid.Parse("70000000-0000-7000-8000-000000000016");
+    private static readonly DateTimeOffset Released = new(2026, 11, 9, 14, 40, 0, TimeSpan.Zero);
+    private const string AssignmentsPath =
+        "/api/v1/occ/planning/turnarounds/70000000-0000-7000-8000-000000000001/attendance-assignments";
 
     [Fact]
     public async Task ReadRequiresBearerAndReturnsBothNullLanes()
@@ -132,6 +137,51 @@ public sealed class AttendanceDraftEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task OccListsTheAssignmentsWhoseAttendanceItRecordsWithTheRelievedOnes()
+    {
+        // 3-F: the relieved agent's closed assignment comes with its release; the open one without.
+        var state = new StubStore();
+        await using var app = CreateApplication(state);
+        using var anonymous = app.CreateClient();
+        using var denied = await anonymous.GetAsync(AssignmentsPath, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+
+        using var client = CreateAuthenticatedClient(app);
+        using var response = await client.GetAsync(AssignmentsPath, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        AssertPrivate(response);
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal(TurnaroundId, body.GetProperty("turnaroundId").GetGuid());
+        Assert.Equal(OperationId, body.GetProperty("operationId").GetGuid());
+        var items = body.GetProperty("assignments").EnumerateArray().ToArray();
+        Assert.Equal([AssignmentId, RelievingAssignmentId], items.Select(item => item.GetProperty("assignmentId").GetGuid()));
+        Assert.Equal(Released, items[0].GetProperty("releasedAt").GetDateTimeOffset());
+        // The open one carries its null release: the key is always there.
+        Assert.Equal(JsonValueKind.Null, items[1].GetProperty("releasedAt").ValueKind);
+        Assert.Equal(["agentId", "assignedAt", "assignmentId", "displayName", "employeeNumber", "releasedAt"],
+            items[1].EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal));
+        Assert.Equal((AccountId, TurnaroundId), state.LastList);
+    }
+
+    [Theory]
+    [InlineData(AttendanceDraftFailure.Forbidden, HttpStatusCode.Forbidden, null)]
+    [InlineData(AttendanceDraftFailure.NotFound, HttpStatusCode.NotFound, "not_found")]
+    [InlineData(AttendanceDraftFailure.Unauthorized, HttpStatusCode.Unauthorized, null)]
+    public async Task TheAssignmentListMapsStoreFailuresWithTheirCode(AttendanceDraftFailure failure,
+        HttpStatusCode expectedStatus, string? expectedCode)
+    {
+        var state = new StubStore { ListFailure = failure };
+        await using var app = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(app);
+        using var response = await client.GetAsync(AssignmentsPath, TestContext.Current.CancellationToken);
+        Assert.Equal(expectedStatus, response.StatusCode);
+        AssertPrivate(response);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal((int)expectedStatus, problem.GetProperty("status").GetInt32());
+        Assert.Equal(expectedCode, problem.TryGetProperty("code", out var code) ? code.GetString() : null);
+    }
+
+    [Fact]
     public async Task WriteRejectsOversizedJsonBeforeStore()
     {
         var state = new StubStore();
@@ -163,6 +213,9 @@ public sealed class AttendanceDraftEndpointsTests(ElevantApiFactory factory)
             .GetProperty("required").EnumerateArray().Select(item => item.GetString()).ToArray();
         Assert.Contains("occ", snapshotRequired);
         Assert.Contains("rampAgent", snapshotRequired);
+        // 3-F: an open assignment of OCC's attendance list carries its null release, never an absent key.
+        Assert.Contains("releasedAt", schemas.GetProperty("OccAttendanceAssignmentResponse")
+            .GetProperty("required").EnumerateArray().Select(item => item.GetString()));
     }
 
     private WebApplicationFactory<Program> CreateApplication(StubStore state) =>
@@ -222,6 +275,23 @@ public sealed class AttendanceDraftEndpointsTests(ElevantApiFactory factory)
         public (Guid ActorId, Guid OperationId, Guid AssignmentId, Guid? InstallationId)? LastRead { get; private set; }
         public AttendanceDraftWriteRequest? LastWrite { get; private set; }
         public AttendanceDraftFailure? WriteFailure { get; init; }
+        public (Guid ActorId, Guid TurnaroundId)? LastList { get; private set; }
+        public AttendanceDraftFailure? ListFailure { get; init; }
+
+        public Task<OccAttendanceAssignmentsReadResult> ListOccAssignmentsAsync(Guid actorAccountId, Guid turnaroundId,
+            CancellationToken cancellationToken = default)
+        {
+            LastList = (actorAccountId, turnaroundId);
+            return Task.FromResult(ListFailure is AttendanceDraftFailure failure
+                ? OccAttendanceAssignmentsReadResult.Failed(failure)
+                : OccAttendanceAssignmentsReadResult.Success(new OccAttendanceAssignmentsData(turnaroundId, OperationId,
+                [
+                    new OccAttendanceAssignmentData(AssignmentId, Guid.Parse("50000000-0000-7000-8000-000000000001"),
+                        "Riley Ramp", "DEV-RA-001", Released.AddHours(-1), Released),
+                    new OccAttendanceAssignmentData(RelievingAssignmentId, Guid.Parse("50000000-0000-7000-8000-000000000011"),
+                        "Ximena Ramp", "QA-RA-302", Released, null),
+                ])));
+        }
 
         public Task<AttendanceDraftReadResult> GetAsync(Guid actorAccountId,
             Guid operationId, Guid assignmentId, Guid? installationId,

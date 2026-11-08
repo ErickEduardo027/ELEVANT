@@ -228,12 +228,23 @@ con contrato aprobado y vigente, aeropuertos y posiciones activas de la estació
 OCC autorizada. `createManualTurnaround` envía un UUID de intención generado por
 el cliente, los dos vuelos y la posición elegida; la API revalida scope, contrato,
 fecha local, ruta y solapamiento de posición antes de escribir. Repetir el mismo
-UUID y cuerpo devuelve la misma escala sin duplicarla. Editar escalas existentes
-y reasignar siguen fuera de este cliente. `programOccShift` programa el turno
-local de un agente para una escala autorizada: el cuerpo contiene solo agente
-e intervalo, nunca estación, terminal o puesto. Tras programar, OCC debe
-obtener nuevamente las opciones y su ETag antes de asignar; programar un turno
-no constituye la asignación.
+UUID y cuerpo devuelve la misma escala sin duplicarla. `getOccTurnaround`,
+`rescheduleOccTurnaround` y `changeOccTurnaroundStatus` editan, cancelan o
+desvían una escala con su ETag y la clave de la intención. `programOccShift`
+programa el turno local de un agente para una escala autorizada: el cuerpo
+contiene solo agente e intervalo, nunca estación, terminal o puesto; si el
+agente ya tiene turno ese día responde `409 shift_day_taken`, y
+`getOccAgentShift` lee ese turno con su `version` para ajustarlo con
+`adjustHumanResourcesShift` (clave obligatoria). Tras programar o ajustar, OCC
+debe obtener nuevamente las opciones y su ETag antes de asignar; un turno no
+constituye la asignación. `releaseOccOperationAgent` acepta la asignación que
+OCC ve (`expectedAssignmentId`) y la clave de la intención; una clave sin esa
+asignación se rechaza antes de enviar. `getOccHandoverOptions` y
+`handOverOccOperation` relevan una operación en curso o devuelta a otro agente
+elegible con motivo, asignación esperada y clave obligatoria.
+`getOccAttendanceAssignments` (solo web) lista las asignaciones cuya asistencia
+registra OCC: las abiertas y las que un relevo cerró después del inicio, con su
+`releasedAt`, que Planificación ya no muestra.
 la ejecución posterior de servicios corresponde exclusivamente al agente
 asignado y a su dispositivo registrado.
 Las respuestas OCC también rechazan propiedades no declaradas porque sus

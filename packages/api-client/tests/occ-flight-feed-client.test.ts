@@ -132,6 +132,17 @@ describe("OCC flight feed client (ADR-0028)", () => {
     expect(calls).toHaveLength(2);
   });
 
+  it("accepts the pair linked to the flight OCC had planned, and an older answer without the flag (3-N07)", async () => {
+    const answer = { turnaroundId: "30000000-0000-7000-8000-000000000009", operationCode: "PUJ-20261105-001", replayed: false };
+    const api = client([Response.json({ ...answer, linked: true }), Response.json(answer),
+      Response.json({ ...answer, linked: "yes" })]);
+    const command = { arrivalProposalId: arrivalId, departureProposalId: departureId, expectedArrivalVersion: "AAAAAAAAB9E=",
+      expectedDepartureVersion: "AAAAAAAAB9F=" };
+    await expect(api.importOccFlightProposals(command, key)).resolves.toEqual({ ...answer, linked: true });
+    await expect(api.importOccFlightProposals(command, key)).resolves.toEqual(answer);
+    await expect(api.importOccFlightProposals(command, key)).rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
   it("normalizes the import body and refuses one without versions, unknown fields or a pair of one leg", () => {
     expect(normalizedFlightImport({ arrivalProposalId: arrivalId, departureProposalId: departureId,
       expectedArrivalVersion: "AAAAAAAAB9E=", expectedDepartureVersion: "AAAAAAAAB9F=" })).toEqual({

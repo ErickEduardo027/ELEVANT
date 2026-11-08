@@ -79,6 +79,25 @@ async function stillCurrent(identity: Identity) {
   const latest = await currentIdentity();
   return latest?.sessionId === identity.sessionId && latest.accountId === identity.accountId;
 }
+/**
+ * Moves an observation an earlier session of the same account reserved under the current session's key (3-N12): a
+ * sign-out, an expired or revoked session and a new authorization revision keep what the agent recorded, so the card
+ * offers it again for a deliberate retry with its first key and body. Another account never sees it; a corrupt one is
+ * refused like any other.
+ */
+async function adoptEarlierSession(identity: Identity, operationId: string, assignmentId: string) {
+  const key = keyFor(identity, operationId, assignmentId);
+  if ((await AsyncStorage.getItem(key)) !== null) return;
+  const suffix = `:${identity.accountId}:${operationId.toLowerCase()}:${assignmentId.toLowerCase()}`;
+  const earlier = (await AsyncStorage.getAllKeys()).find(candidate => candidate !== key &&
+    candidate.startsWith(ATTENDANCE_DRAFT_PENDING_PREFIX) && candidate.endsWith(suffix) &&
+    validUuid(candidate.slice(ATTENDANCE_DRAFT_PENDING_PREFIX.length, candidate.length - suffix.length)));
+  if (!earlier) return;
+  const raw = await AsyncStorage.getItem(earlier);
+  if (raw === null || parseStored(raw) === null) return;
+  await AsyncStorage.setItem(key, raw);
+  await AsyncStorage.removeItem(earlier);
+}
 function safeStorageError(error: unknown): never {
   if (error instanceof MobileSessionStorageError) throw error;
   throw new MobileSessionStorageError();
@@ -90,6 +109,7 @@ export async function readPendingAttendanceDraft(operationId: string,
     try {
       const identity = await currentIdentity();
       if (!identity) return null;
+      await adoptEarlierSession(identity, operationId, assignmentId);
       const stored = parseStored(await AsyncStorage.getItem(keyFor(identity, operationId, assignmentId)));
       if (!(await stillCurrent(identity))) return null;
       return stored ? { idempotencyKey: stored.idempotencyKey, request: stored.request } : null;
@@ -107,6 +127,7 @@ export async function reservePendingAttendanceDraft(operationId: string,
       const identity = await currentIdentity();
       if (!identity || !validRequest(frozenRequest)) throw new MobileSessionStorageError();
       const key = keyFor(identity, operationId, assignmentId);
+      await adoptEarlierSession(identity, operationId, assignmentId);
       const existing = parseStored(await AsyncStorage.getItem(key));
       if (existing) return { idempotencyKey: existing.idempotencyKey, request: existing.request };
       const stored: StoredIntent = { schemaVersion: 1,
@@ -128,6 +149,7 @@ export async function clearPendingAttendanceDraft(operationId: string,
       const identity = await currentIdentity();
       if (!identity || !validUuid(idempotencyKey)) return false;
       const key = keyFor(identity, operationId, assignmentId);
+      await adoptEarlierSession(identity, operationId, assignmentId);
       const existing = parseStored(await AsyncStorage.getItem(key));
       if (existing?.idempotencyKey !== idempotencyKey || !(await stillCurrent(identity))) return false;
       await AsyncStorage.removeItem(key);

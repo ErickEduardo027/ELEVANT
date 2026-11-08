@@ -42,6 +42,8 @@ const KINDS = {
   preinvoice_accepted: { title: 'La aerolínea aceptó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
   preinvoice_disputed: { title: 'La aerolínea disputó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
   invoice_paid: { title: 'La aerolínea pagó una factura con tarjeta', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
+  // 3-A (phase 3, block A): OCC cancelled a charter with a prepayment; the refund follows Cobros, never automatic.
+  charter_cancelled: { title: 'OCC canceló un charter con prepago: revise la devolución', target: { moduleId: FINANCE_MODULE_IDS.CHARTERS } },
 };
 
 export function describeNotification(item) {

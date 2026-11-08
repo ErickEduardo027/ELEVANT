@@ -66,7 +66,7 @@ invalidan la vista, pero la API REST sigue siendo la autoridad. No hay horas
 extra automáticas ni captura biométrica. Aún falta aceptación de tres sesiones
 contra Development después de promocionar DB, API y web.
 
-**Reportes de personal** en esta rama consulta cuatro informes de la API versionada por estación autorizada: vigencias, movimientos de cuenta con auditoría atribuible, distribución de turnos y cobertura de habilitaciones. Cada página muestra hasta 20 filas, `asOf` y filtros de hasta 30 fechas; no se presenta la página como un total global. La cobertura usa perfiles y ciclos activos actuales y comprueba sus fechas al día final seleccionado; no reconstruye altas o bajas históricas. PDF y XLSX provienen de una exportación completa del servidor (máximo 5 000 filas), no de la tabla visible. La API reautoriza la estación y el rol antes de servir el archivo y audita la exportación. La vista retira datos al perder acceso y reconsulta con pistas durables, foco, reconexión y sondeo visible de 25 segundos. Los movimientos históricos sin estación verificable no se atribuyen retrospectivamente; los comandos de gobierno nuevos asocian la estación verificada al evento de cuentas de rampa. Este cambio aún necesita CI, navegador y promoción antes de considerarse disponible en el VPS.
+**Reportes de personal** en esta rama consulta cuatro informes de la API versionada por estación autorizada: vigencias, movimientos de cuenta con auditoría atribuible, distribución de turnos y cobertura de habilitaciones. Cada página muestra hasta 20 filas, `asOf` y filtros de hasta 30 fechas; no se presenta la página como un total global. La cobertura usa perfiles y ciclos activos actuales y comprueba sus fechas al día final seleccionado; no reconstruye altas o bajas históricas. PDF y XLSX provienen de una exportación completa del servidor (máximo 5 000 filas; un conjunto mayor se rechaza con `report_too_large`, nunca se recorta), no de la tabla visible. La tabla y los archivos muestran clases, documentos y movimientos en español (`src/features/human-resources/reports/reportLabels.js`), fechas dd/mm/aaaa y la hora de cada movimiento y de la consulta en la hora local de la estación; los errores se explican por su `code` (`src/services/reportProblems.js`). La API reautoriza la estación y el rol antes de servir el archivo y audita la exportación. La vista retira datos al perder acceso y reconsulta con pistas durables, foco, reconexión y sondeo visible de 25 segundos. Los movimientos históricos sin estación verificable no se atribuyen retrospectivamente; los comandos de gobierno nuevos asocian la estación verificada al evento de cuentas de rampa. Este cambio aún necesita CI, navegador y promoción antes de considerarse disponible en el VPS.
 
 El informe de vigencias también filtra habilitaciones o permisos y estado de
 vigencia calculado con la fecha local de la estación. PDF y XLSX conservan
@@ -190,16 +190,22 @@ durable. Una desactivación también avisa a la estación cuyo scope se retira.
 
 La ruta `/admin-occ/planning` es el primer módulo de negocio conectado de extremo a extremo con la API de Development. Consume exclusivamente el cliente compartido para consultar:
 
-- `GET /api/v1/occ/planning`, con la estación PUJ tomada de los scopes de la sesión (OCC no ofrece selector de estación) y fecha operativa controlada por el usuario;
+- `GET /api/v1/occ/planning`, con la estación PUJ tomada de los scopes de la sesión (OCC no ofrece selector de estación) y fecha operativa controlada por el usuario; sin fecha, el servidor abre el día de hoy de la estación;
+- `GET /api/v1/occ/planning/turnarounds/{turnaroundId}`, `PUT .../schedule` y `POST .../status-changes`, para «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» antes de que la operación inicie, con el `ETag` de la escala en `If-Match` y la `Idempotency-Key` de la intención;
+- `POST /api/v1/occ/planning/charter-airlines`, para dar de alta la aerolínea mínima de un charter desde «Nuevo vuelo»;
 - `GET /api/v1/occ/planning/options?turnaroundId={turnaroundId}`, al abrir el detalle de una escala autorizada;
 - `GET /api/v1/occ/planning/manual-options?stationId={stationId}&date={date}`, para elegir aerolínea con contrato vigente, aeropuertos y posición activa en la estación autorizada;
 - `POST /api/v1/occ/planning/turnarounds`, para crear una escala manual con llegada, salida y posición, usando un UUID estable para reintentos ambiguos;
 - `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/shift`, para programar un turno local de un agente cuyo único impedimento es la cobertura;
-- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment`, para confirmar la asignación inicial de un único agente elegible con el `ETag` fuerte devuelto por la consulta de opciones.
+- `GET /api/v1/occ/planning/turnarounds/{turnaroundId}/agents/{agentId}/shift` y `PATCH /api/v1/human-resources/shifts/{id}`, para «Ajustar turno del día» cuando el agente ya tiene turno ese día (el mismo comando que usa Gestión Humana);
+- `POST /api/v1/occ/planning/turnarounds/{turnaroundId}/assignment`, para confirmar la asignación inicial de un único agente elegible con el `ETag` fuerte devuelto por la consulta de opciones;
+- `POST .../assignment/release?expectedAssignmentId=`, `GET .../assignment/handover-options` y `POST .../assignment/handover`, para «Liberar agente» antes del inicio y «Relevar agente» de una operación en curso o devuelta.
 
 La pantalla representa una escala completa, conserva sus tramos de llegada y salida y muestra solo los recursos devueltos por el servidor. El manifiesto de despacho permite escoger exclusivamente un agente marcado como elegible; contrato, posición y servicios son decisiones del backend y se muestran como datos bloqueados. La web no reintenta automáticamente el comando. Un `409`, `412`, `404` o resultado de red ambiguo obliga a refrescar opciones y planificación antes de una nueva confirmación.
 
-El alta manual verifica nuevamente en la API el scope OCC, contrato único aprobado y vigente, fecha local, ruta y disponibilidad de la posición. Una respuesta ambigua conserva el mismo UUID para reintentar sin duplicar; editar el formulario inicia una intención nueva. El alta deja la operación en `Planned` y no despacha automáticamente. El panel de cobertura muestra solo agentes cuyo único impedimento es el turno; la API revalida permisos, terminal, jornada de hasta 16 horas y cobertura completa. Tras programar, la web obtiene opciones y ETag nuevos antes de permitir asignar. El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Editar escalas existentes, importar vuelos y generar Work Orders permanecen deshabilitados. Los fixtures del módulo se usan solo en pruebas.
+El alta manual verifica nuevamente en la API el scope OCC, contrato único aprobado y vigente, fecha local, ruta y disponibilidad de la posición. Una respuesta ambigua conserva el mismo UUID para reintentar sin duplicar; editar el formulario inicia una intención nueva. El alta deja la operación en `Planned` y no despacha automáticamente. El panel de cobertura muestra solo agentes cuyo único impedimento es el turno; la API revalida permisos, terminal, jornada de hasta 16 horas y cobertura completa. Tras programar, la web obtiene opciones y ETag nuevos antes de permitir asignar. El módulo incluye estados de carga, vacío, error recuperable, sesión expirada, permiso denegado y ausencia de scopes. Un `403` no se presenta como fallo de conexión ni ofrece reintentos infinitos. Las horas del alta, de «Editar vuelo» y de la llegada en el mapa de posiciones se escriben en la hora local de la estación (`stationLocalToUtc` y `utcToStationLocalInput` de `src/services/businessDay.js`) y viajan en UTC. «Editar vuelo», «Cancelar vuelo» y «Marcar desviado» aparecen en el detalle de la escala solo con `operations.planning.update` y según las acciones que el servidor permite; un `409`, `412` o `428` relee la escala antes de una nueva intención. En el mapa de posiciones, registrar o corregir la llegada, asignar y liberar esperan la versión del vuelo (el detalle de la escala, que también autoriza `operations.positions_map.assign`) y viajan siempre con su `ETag` en `If-Match` y la `Idempotency-Key` de la intención: mientras se lee no se envían, y si no se puede leer el vuelo muestra «Reintentar» o el permiso que falta. Sin tocar la hora de llegada se registra la del servidor al guardar; reemplazar una hora que el vuelo ya tiene pide motivo. Planificación no ofrece Work Orders ni exportación: esas acciones no tienen backend. Los fixtures del módulo se usan solo en pruebas.
+
+Un agente lleva hasta tres operaciones simultáneas; la elegibilidad muestra «Ya tiene 3 operaciones simultáneas» y, para un agente con menos de tres meses sin cobertura con mentor, «necesita un mentor». Si el agente ya tiene turno ese día, el panel de turno pasa a «Ajustar turno del día»: propone ampliar ese mismo turno hasta cubrir el vuelo, pide motivo y envía la versión leída con su clave de intención; el servidor rechaza un horario que deje sin cubrir sus coberturas u operaciones. «Liberar agente» envía la asignación que OCC ve y conserva su clave ante un resultado incierto; si otro usuario cambió el agente o la operación ya inició, la vista relee la planificación. «Relevar agente» lista los agentes elegibles para lo que queda de la operación, exige motivo y avisa a los dos agentes; la operación conserva su estado y su evidencia. Cada vista explica el código de Problem Details en español.
 
 El formulario OCC de cobertura de rampa ofrece seis horarios precargados por vuelo y permite editar inicio y fin antes de confirmar. No guarda plantillas globales: la API valida la cobertura local, la elegibilidad y los conflictos. Fuera de las escalas manuales todavía no existe un editor general del calendario OCC.
 
@@ -257,10 +263,33 @@ cola limitada por la estación del actor, detalle de la última entrega y decisi
 individual. Muestra checklist, servicios, incidencias y nota del agente sin
 convertir los fixtures históricos en datos reales. Aprobar o devolver requiere
 confirmación; devolver exige un motivo. Cada decisión usa `If-Match` con la
-versión fuerte del detalle. Ante `409`, `412` o un resultado de red ambiguo, la
-web refresca la cola y el detalle y no reenvía el comando automáticamente.
-No ofrece aprobación masiva ni simula firmas, adjuntos o envío a Finanzas. Las
-devoluciones aún no tienen un flujo de corrección y reentrega en Mobile Agent.
+versión fuerte del detalle y la `Idempotency-Key` de su intención. Ante `409`,
+`412` o un resultado de red ambiguo, la web refresca la cola y el detalle y no
+reenvía el comando automáticamente; un reintento de la misma intención reutiliza
+su clave. La cola y el detalle se releen solos con el aviso `occ_review`.
+No ofrece aprobación masiva ni simula firmas, adjuntos o envío a Finanzas.
+
+«Aprobar» solo se habilita con la Orden de Servicio firmada o corregida por OCC;
+un ajuste de cargos o una exclusión de facturación después de la firma queda
+como corrección de OCC. Un servicio en excepción con cantidad se factura salvo
+que OCC lo excluya con motivo. Con `operations.review.reopen`, OCC reabre una
+aprobación no facturada como una revisión nueva que solo se corrige y aprueba en
+OCC. El panel «Incidencias de la operación» (`operations.incidents.*`) lista las
+incidencias vivas, las cambia de estado con nota y reporta las de OCC en hora
+local de la estación, también desde el detalle del vuelo en Planificación y
+mientras la operación sigue en rampa. Los códigos de estados, servicios,
+checklist, incidencias, hitos y unidades se muestran en español
+(`src/features/operations/operationLabels.js`) y los errores, por su `code` de
+Problem Details.
+
+**Reportes operativos** (`/admin-occ/reports`) lee los seis reportes que calcula
+la API para PUJ y exporta el período completo a Excel, CSV o PDF con
+`operations.reports.export`. Una exportación que supera su límite (25 000 filas
+en Excel y CSV, 5 000 en PDF) se rechaza con `report_too_large` y la pantalla
+sugiere acotar el período o, desde el PDF, exportar a Excel o CSV; los errores se
+explican por su `code` (`src/services/reportProblems.js`). El período por defecto
+es el mes en curso del calendario de la estación y «Generado» se muestra en su
+hora local (`formatBusinessDateTime` de `src/services/businessDay.js`).
 
 La pantalla ofrece carga, cola vacía, error recuperable, sesión caducada,
 permiso denegado y ausencia de scopes. El backend sigue siendo quien impone

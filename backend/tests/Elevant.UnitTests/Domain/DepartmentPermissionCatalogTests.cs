@@ -36,6 +36,9 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("finance.packages.delete", Department.Finance)]
     [InlineData("finance.packages.retire", Department.Finance)]
     [InlineData("operations.review.decide", Department.Operations)]
+    [InlineData("operations.planning.update", Department.Operations)]
+    [InlineData("operations.review.reopen", Department.Operations)]
+    [InlineData("operations.incidents.update", Department.Operations)]
     [InlineData("human_resources.access_requests.validate", Department.HumanResources)]
     [InlineData("finance.preinvoices.issue", Department.Finance)]
     public void KnowsWhichDepartmentOwnsACode(string code, Department department)
@@ -101,6 +104,41 @@ public sealed class DepartmentPermissionCatalogTests
         Assert.Equal(["finance.packages.retire"], codes.Where(code => code.EndsWith(".retire", StringComparison.Ordinal)));
     }
 
+    /// <summary>3-A: rescheduling, cancelling and diverting a flight is its own planning action.</summary>
+    [Fact]
+    public void PlanningOffersTheRescheduleActionWithItsLabel()
+    {
+        var planning = Assert.Single(DepartmentPermissionCatalog.ModulesOf(Department.Operations),
+            module => module.Key == "planning");
+        var update = Assert.Single(planning.Actions, action => action.Action == "update");
+        Assert.Equal(("Reprogramar, cancelar o desviar escalas", PermissionKinds.Update), (update.Label, update.Kind));
+        Assert.Contains("operations.planning.update", DepartmentPermissionCatalog.CodesOf(Department.Operations));
+        Assert.Equal(["operations.planning.read", "operations.planning.update"],
+            DepartmentPermissionCatalog.Normalize(["operations.planning.update"]));
+    }
+
+    /// <summary>
+    /// 3-H: reopening an approval is its own review action; 3-G: the incidents are a sub-window of Revisión that OCC
+    /// reads and manages (report, review, resolve and close).
+    /// </summary>
+    [Fact]
+    public void ReviewOffersTheReopenActionAndTheIncidentsSubWindow()
+    {
+        var modules = DepartmentPermissionCatalog.ModulesOf(Department.Operations);
+        var review = Assert.Single(modules, module => module.Key == "review");
+        var reopen = Assert.Single(review.Actions, action => action.Action == "reopen");
+        Assert.Equal(("Reabrir operaciones aprobadas sin facturar", PermissionKinds.Other), (reopen.Label, reopen.Kind));
+        var incidents = Assert.Single(modules, module => module.Key == "incidents");
+        Assert.Equal(("Incidencias", "review"), (incidents.Label, incidents.Parent));
+        Assert.Equal(["read", "update"], incidents.Actions.Select(action => action.Action).ToArray());
+        Assert.Equal("Reportar y gestionar incidencias", incidents.Actions.Single(action => action.Action == "update").Label);
+        var codes = DepartmentPermissionCatalog.CodesOf(Department.Operations);
+        foreach (var code in new[] { "operations.review.reopen", "operations.incidents.read", "operations.incidents.update" })
+            Assert.Contains(code, codes);
+        Assert.Equal(["operations.review.read", "operations.review.reopen"],
+            DepartmentPermissionCatalog.Normalize(["operations.review.reopen"]));
+    }
+
     [Fact]
     public void RejectsUnknownCodesIncludingLegacyCommercialOnes()
     {
@@ -122,6 +160,7 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("contracts.service_closures.decide", "contracts.catalog.read")]
     [InlineData("finance.adjustments.create", "finance.reconciliation.read")]
     [InlineData("operations.attendance.read", "operations.planning.read")]
+    [InlineData("operations.incidents.update", "operations.review.read")]
     [InlineData("human_resources.availability.create", "human_resources.schedules.read")]
     public void SubWindowGrantsReadOfTheScreenThatContainsIt(string code, string parentRead)
     {

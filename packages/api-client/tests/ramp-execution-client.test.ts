@@ -240,6 +240,33 @@ describe("ramp checklist and service execution API client", () => {
     expect(JSON.parse(requestedBody)).toEqual(transitionRequest);
   });
 
+  // 3-I: the queued transition carries the tapped time; without it the body is the first version's.
+  it("sends the tapped transition time only when there is one", async () => {
+    const bodies: unknown[] = [];
+    const client = createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "ramp-token",
+      fetch: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return jsonResponse(transitioned);
+      },
+    });
+
+    await client.transitionRampOperationService(operationId, serviceId,
+      { ...transitionRequest, occurredAt: "2026-09-17T16:01:02.123-04:00" }, installationId, idempotencyKey);
+    await client.transitionRampOperationService(operationId, serviceId, { ...transitionRequest, occurredAt: null },
+      installationId, idempotencyKey);
+
+    expect(bodies).toEqual([
+      { ...transitionRequest, occurredAt: "2026-09-17T16:01:02.123-04:00" },
+      transitionRequest,
+    ]);
+    await expect(client.transitionRampOperationService(operationId, serviceId,
+      { ...transitionRequest, occurredAt: "17/09/2026 16:01" }, installationId, idempotencyKey))
+      .rejects.toThrow(TypeError);
+    expect(bodies).toHaveLength(2);
+  });
+
   it("rejects client-controlled authority and malformed command bodies before fetch", async () => {
     let calls = 0;
     const client = createElevantApiClient({

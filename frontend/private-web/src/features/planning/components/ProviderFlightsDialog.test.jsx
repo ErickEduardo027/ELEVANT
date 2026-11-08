@@ -60,6 +60,23 @@ it('imports an arrival with its suggested departure, type and a stand, with the 
   expect(loadOccFlightFeed).toHaveBeenLastCalledWith(stationId, '2026-11-03', expect.objectContaining({ view: 'Contracted' }));
 });
 
+it('says the proposal joined the flight OCC had already planned instead of creating another one (3-N07)', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  loadOccFlightFeed.mockResolvedValue(feed([leg('arr', 'Arrival', 'ZZ161', { suggestedDepartureId: 'dep' }),
+    leg('dep', 'Departure', 'ZZ162')]));
+  importOccFlightProposals.mockResolvedValue({ turnaroundId: 't1', operationCode: 'PUJ-20261103-001', replayed: false,
+    linked: true });
+  const onImported = vi.fn();
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={() => {}} onImported={onImported} />);
+
+  const arrivals = await screen.findByRole('list', { name: 'Llegadas propuestas' });
+  fireEvent.click(within(arrivals).getByRole('button', { name: 'Importar escala' }));
+  expect(await screen.findByText('La propuesta se vinculó a la escala ya planificada (PUJ-20261103-001); no se creó otra.'))
+    .toBeInTheDocument();
+  expect(screen.queryByText(/^Escala importada/)).not.toBeInTheDocument();
+  expect(onImported).toHaveBeenCalled();
+});
+
 it('explains a taken stand by its rules and reads the list again; a retry after a network failure keeps the key', async () => {
   getManualTurnaroundOptions.mockResolvedValue(options);
   loadOccFlightFeed.mockResolvedValue(feed([leg('arr', 'Arrival', 'ZZ161', { suggestedDepartureId: 'dep' }),

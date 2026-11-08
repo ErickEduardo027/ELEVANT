@@ -52,9 +52,8 @@ query parameters opcionales:
   estación autorizada;
 - una estación solicitada fuera del scope responde `404`, igual que una
   estación inexistente;
-- al omitir `date`, el servidor selecciona la fecha operativa más reciente
-  disponible para esa estación y, si todavía no hay escalas, usa la fecha civil
-  actual en la zona IANA de la estación;
+- al omitir `date`, el servidor abre el día de hoy en la zona IANA de la
+  estación, nunca la última fecha con escalas;
 - una fecha válida sin escalas devuelve `200` con `turnarounds: []`.
 
 La respuesta contiene estación, fecha, escalas, vuelos de llegada/salida,
@@ -74,11 +73,18 @@ estas razones estables: `agent_inactive`, `mobile_account_unavailable`,
 `station_scope_missing`, `terminal_scope_missing`,
 `operational_position_unavailable`, `qualification_not_current`,
 `airport_id_not_current`, `ramp_driver_license_not_current`,
-`shift_not_compatible` y `assignment_conflict`. El cliente muestra
-esas razones, pero no debe reconstruir ni reemplazar la política del servidor.
-`assignment_conflict` también falla cerrado cuando otra asignación activa del
-agente tiene una ventana horaria ausente o no positiva; el cliente nunca debe
-interpretar un horario incompleto como disponibilidad.
+`shift_not_compatible`, `approved_absence`, `mentor_required` y
+`assignment_conflict`. El cliente
+muestra esas razones, pero no debe reconstruir ni reemplazar la política del
+servidor. `assignment_conflict` significa que el agente ya lleva tres
+operaciones simultáneas que lo ocupan (asignadas, en curso o devueltas para
+corrección) en la ventana de la escala; las entregadas, aprobadas o canceladas
+no cuentan. También falla cerrado: una operación que ocupa al agente con una
+ventana horaria ausente o no positiva cuenta como simultánea, y el cliente nunca
+debe interpretar un horario incompleto como disponibilidad. `approved_absence`
+indica un día libre o una restricción aprobados en el día local de la operación
+o en el día del turno que la cubre. `mentor_required` indica un agente con
+menos de tres meses sin una cobertura con mentor a la hora de la escala.
 
 La respuesta de opciones incluye un `ETag` fuerte y opaco de la representación
 asignable completa: operación, turnaround, stand, contrato, servicios y
@@ -94,8 +100,15 @@ precondición ausente responde `428`, una versión obsoleta
 responde `412` y los conflictos operativos vigentes responden `409`; ante esos
 casos, la UI vuelve a leer las opciones en lugar de simular éxito.
 
-Creación de escala, reasignación, ejecución de servicios y escrituras offline
-del flujo mobile siguen fuera de este corte.
+La creación de escalas (`POST /api/v1/occ/planning/turnarounds` y la
+importación del feed), el relevo y la liberación del agente
+(`POST …/assignment/handover` y `…/assignment/release`), la ejecución de
+servicios en rampa y las escrituras offline de la tablet ya existen: se
+describen en
+[ADR-0039](../adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md),
+que remite a los ADR anteriores, y en el
+[flujo de Mobile Agent](../workflows/mobile-workflow.md). Esta sección solo
+cubre la asignación inicial.
 
 ## Solicitudes
 
@@ -110,9 +123,16 @@ del flujo mobile siguen fuera de este corte.
   HTTP normal.
 - Propagar cancelación al abandonar pantalla/flujo.
 - No reintentar comandos salvo contrato idempotente.
-- Cuando exista el endpoint de comandos offline, Mobile deberá enviar una
-  identidad de dispositivo autorizada y una idempotency key estable según su
-  contrato; la tabla de receipts por sí sola no implementa este flujo.
+- Mobile envía sus comandos con la instalación registrada
+  (`X-Elevant-Installation-Id`) y una `Idempotency-Key` estable. El servidor
+  guarda el recibo ligado a la instalación (`integration.mobile_command_receipts`):
+  un reintento con la misma clave y el mismo cuerpo no repite el trabajo y
+  devuelve el éxito o el mismo código de rechazo (salvo `contract_not_in_force`
+  del inicio, que se vuelve a evaluar), y la misma clave con otro cuerpo
+  responde `idempotency_conflict`. El chat y la observación de asistencia
+  se deduplican por su propia clave, sin ese recibo, y la foto del walk-around
+  viaja sin clave; la cola y sus reglas están en el
+  [flujo de Mobile Agent](../workflows/mobile-workflow.md).
 - No registrar bodies, tokens o URLs con parámetros sensibles.
 - IDs de organización/estación/agente enviados por cliente no sustituyen el scope autenticado del servidor.
 - No adjuntar el Bearer a ping, health ni otros endpoints anónimos; el cliente

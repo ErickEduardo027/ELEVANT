@@ -1,23 +1,29 @@
 using System.Text.Json;
+using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Finance;
 using Microsoft.EntityFrameworkCore;
+using Step = Elevant.Persistence.Operations.MasterDataCommand.Step;
 
 namespace Elevant.Persistence.Operations;
 
 /// <summary>
 /// Charter flights (ADR-0033): the agent adds the services at Finance's base tariff and records the
 /// carrier data the representative gives; Finance confirms the prepayment. Tablet writes follow the
-/// mobile command contract (device receipt, assigned agent, serializable transaction, audit).
+/// mobile command contract (device receipt, assigned agent, serializable transaction, audit). Once
+/// Finance confirms the prepayment no service is added until it reopens the quotation (3-N24); a
+/// service not performed no longer counts in the prepayment total.
 /// </summary>
 internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider timeProvider) : ICharterStore
 {
     private const string AddServiceCommand = "ramp.charter.service.add.v1";
     private const string DetailsCommand = "ramp.charter.details.update.v1";
+    private const string ReopenAction = "finance.charter.prepayment.reopen";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public async Task<CharterView?> ReadForAgentAsync(Guid accountId, IReadOnlyCollection<Guid> stations, Guid operationId,
@@ -42,18 +48,20 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
             {
                 var operation = scope.Operation.Operation;
                 var agreement = await AgreementAsync(operation.TurnaroundId, ct);
-                if (agreement is null || !CanCapture(scope)) return false;
+                if (agreement is null || !CanCapture(scope)) return RampProblemCodes.GenericConflict;
+                // 3-N24: what the carrier prepaid is closed; a new service waits for Finance to reopen the quotation.
+                if (agreement.PrepaymentStatus == CharterPrepaymentStatus.Confirmed) return CharterCodes.PrepaymentConfirmed;
                 var definition = await context.ServiceDefinitions.AsNoTracking()
                     .Where(item => item.PublicId == request.ServiceDefinitionId && item.IsActive)
                     .Select(item => new { item.Id, item.Code }).SingleOrDefaultAsync(ct);
-                if (definition is null) return false;
+                if (definition is null) return RampProblemCodes.GenericConflict;
                 var lines = await context.OperationServices.Where(item => item.GroundOperationId == operation.Id)
                     .Select(item => new { item.LineNumber, item.ServiceDefinitionId }).ToArrayAsync(ct);
                 // One line per service: the quantity actually served is set when the agent completes it.
-                if (lines.Any(line => line.ServiceDefinitionId == definition.Id)) return false;
+                if (lines.Any(line => line.ServiceDefinitionId == definition.Id)) return RampProblemCodes.GenericConflict;
                 var rates = await FinanceTariffLookup.ServiceRatesAsync(context, agreement.CurrencyCode,
                     scope.Operation.OperationDate, scope.Operation.StationInternalId, [definition.Id], ct);
-                if (!rates.TryGetValue(definition.Id, out var rate)) return false;
+                if (!rates.TryGetValue(definition.Id, out var rate)) return RampProblemCodes.GenericConflict;
                 var service = new OperationService
                 {
                     PublicId = Guid.CreateVersion7(), GroundOperationId = operation.Id,
@@ -77,7 +85,7 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
                         code = definition.Code, quantity = service.ContractedQuantity, unitPrice = rate.UnitPrice,
                         currency = agreement.CurrencyCode, installationId = request.InstallationId,
                     });
-                return true;
+                return (string?)null;
             }, cancellationToken);
         return await ResultAsync(outcome, cancellationToken);
     }
@@ -180,6 +188,65 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
         return (await ItemAsync(agreementRow.Id, cancellationToken), null);
     }
 
+    public async Task<MasterDataResult<CharterPrepaymentItem>> ReopenPrepaymentAsync(Guid accountId,
+        IReadOnlyCollection<Guid> stations, Guid charterId, string reason, string expectedVersion, Guid idempotencyKey,
+        string? requestId, CancellationToken cancellationToken = default)
+    {
+        var allowed = stations.Where(id => id != Guid.Empty).Distinct().ToArray();
+        var found = await (from agreement in context.Set<CharterAgreement>().AsNoTracking()
+                           join turnaround in context.Turnarounds.AsNoTracking() on agreement.TurnaroundId equals turnaround.Id
+                           join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+                           join airline in context.Airlines.AsNoTracking() on agreement.AirlineId equals airline.Id
+                           where agreement.PublicId == charterId && allowed.Contains(station.PublicId)
+                           select new
+                           {
+                               AgreementId = agreement.Id, StationId = station.Id, airline.OrganizationId,
+                               TurnaroundPublicId = turnaround.PublicId,
+                               OperationId = context.GroundOperations.Where(item => item.TurnaroundId == turnaround.Id)
+                                   .Select(item => (long?)item.Id).FirstOrDefault(),
+                           }).SingleOrDefaultAsync(cancellationToken);
+        if (found is null) return MasterDataResult<CharterPrepaymentItem>.Failed(MasterDataFailure.NotFound, "not_found");
+        var account = await context.Users.AsNoTracking().Where(user => user.PublicId == accountId)
+            .Select(user => new { user.Id, user.UserName }).SingleOrDefaultAsync(cancellationToken);
+        if (account is null) return MasterDataResult<CharterPrepaymentItem>.Failed(MasterDataFailure.NotFound, "not_found");
+        var now = RampReceiptRunner.Truncate(timeProvider.GetUtcNow());
+        var hash = CommercialCommandReceipts.Hash(new { charterId, reason, expected = expectedVersion });
+        return await MasterDataCommand.RunAsync(context, idempotencyKey, account.Id, ReopenAction, hash, "version_conflict",
+            now, async () =>
+            {
+                var agreement = await context.Set<CharterAgreement>().SingleAsync(item => item.Id == found.AgreementId,
+                    cancellationToken);
+                if (MasterDataCommand.Version(agreement.RowVersion) != expectedVersion)
+                    return Step.Fail(MasterDataFailure.Conflict, "version_conflict");
+                if (agreement.PrepaymentStatus != CharterPrepaymentStatus.Confirmed)
+                    return Step.Fail(MasterDataFailure.Conflict, CharterCodes.PrepaymentNotConfirmed);
+                var before = new
+                {
+                    amount = agreement.PrepaymentAmount, reference = agreement.PrepaymentReference,
+                    confirmedAt = agreement.PrepaymentConfirmedAt,
+                };
+                // A new quotation: the amount and the reference stay until Finance confirms it again.
+                agreement.PrepaymentStatus = CharterPrepaymentStatus.Pending;
+                agreement.PrepaymentConfirmedAt = null;
+                agreement.PrepaymentConfirmedByAccountId = null;
+                agreement.UpdatedAt = now;
+                context.AuditEntries.Add(new AuditEntry
+                {
+                    PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+                    ActorAccountId = account.Id, ActorDisplay = account.UserName,
+                    Action = "finance.charter.prepayment_reopened", EntityType = nameof(CharterAgreement),
+                    EntityPublicId = agreement.PublicId, OrganizationId = found.OrganizationId, StationId = found.StationId,
+                    Source = AuditSource.Api, CorrelationId = Guid.CreateVersion7(), RequestId = requestId, Reason = reason,
+                    MetadataJson = JsonSerializer.Serialize(new { before, turnaroundId = found.TurnaroundPublicId }, Json),
+                });
+                // The agent's tablet hears that services can be added again.
+                if (found.OperationId is long operationId)
+                    await RampOperationChangeWriter.AnnounceAsync(context, operationId, now, false, cancellationToken);
+                await context.SaveChangesAsync(cancellationToken);
+                return Step.Done(agreement.PublicId);
+            }, _ => ItemAsync(found.AgreementId, cancellationToken), cancellationToken);
+    }
+
     /// <summary>The agent captures charter data while the operation is assigned or being executed.</summary>
     private static bool CanCapture(RampReceiptScope scope)
     {
@@ -195,7 +262,7 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
 
     private async Task<CharterWriteResult> ResultAsync(RampReceiptOutcome outcome, CancellationToken cancellationToken)
     {
-        if (!outcome.IsSuccess) return new CharterWriteResult(null, outcome.Failure, outcome.ReceiptId);
+        if (!outcome.IsSuccess) return new CharterWriteResult(null, outcome.Failure, outcome.ReceiptId, outcome.Code);
         var view = await ViewAsync(outcome.OperationId, cancellationToken);
         return view is null
             ? new CharterWriteResult(null, RampExecutionWriteFailure.NotFound, outcome.ReceiptId)
@@ -242,11 +309,13 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
                          }).FirstOrDefaultAsync(cancellationToken);
         if (row is null) return null;
         var lines = await context.OperationServices.AsNoTracking().Where(item => item.GroundOperationId == row.OperationId)
-            .Select(item => new { item.UnitPriceSnapshot, item.ExecutedQuantity, item.ContractedQuantity })
+            .Select(item => new { item.UnitPriceSnapshot, item.ExecutedQuantity, item.ContractedQuantity, item.CurrentStatus })
             .ToArrayAsync(cancellationToken);
+        // 3-N24: a service not performed (added by mistake or not served) is not prepaid.
         decimal? total = lines.Length == 0 ? null
-            : lines.Sum(line => (line.UnitPriceSnapshot ?? 0m) *
-                (line.ExecutedQuantity > 0 ? line.ExecutedQuantity : line.ContractedQuantity));
+            : lines.Where(line => line.CurrentStatus != ServiceExecutionStatus.NotPerformed)
+                .Sum(line => (line.UnitPriceSnapshot ?? 0m) *
+                    (line.ExecutedQuantity > 0 ? line.ExecutedQuantity : line.ContractedQuantity));
         var required = OperationDocumentRules.RolesFor(OperationDocumentKind.CharterServiceRequest);
         var signedRoles = await (from version in context.Set<OperationDocumentVersion>().AsNoTracking()
                                  join signature in context.Set<OperationDocumentSignature>().AsNoTracking()
@@ -259,6 +328,7 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
         return new CharterPrepaymentItem(row.agreement.PublicId, row.OperationPublicId, row.OperationCode, row.OperationDate,
             row.StationCode, row.AirlineName, row.agreement.CurrencyCode, total is null ? null : decimal.Round(total.Value, 2),
             signed, row.agreement.PrepaymentStatus.ToString(), row.agreement.PrepaymentAmount,
-            row.agreement.PrepaymentReference, row.agreement.PrepaymentConfirmedAt);
+            row.agreement.PrepaymentReference, row.agreement.PrepaymentConfirmedAt,
+            MasterDataCommand.Version(row.agreement.RowVersion));
     }
 }

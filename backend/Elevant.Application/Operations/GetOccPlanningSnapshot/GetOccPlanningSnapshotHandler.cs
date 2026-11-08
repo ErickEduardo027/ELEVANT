@@ -1,5 +1,6 @@
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 
 namespace Elevant.Application.Operations.GetOccPlanningSnapshot;
@@ -63,26 +64,20 @@ public sealed class GetOccPlanningSnapshotHandler(
             stationId = allowedStations[0];
         }
 
+        // Without a date OCC opens today's operation in the station's calendar (3-N17), never the last day that has
+        // flights: a past or a future day would be planned as if it were the current one.
         var operationDate = query.Date;
         if (!operationDate.HasValue)
         {
-            operationDate = await readStore.GetLatestOperationDateAsync(
+            var timeZoneId = await readStore.GetStationTimeZoneAsync(
                 stationId,
                 cancellationToken);
-            if (!operationDate.HasValue)
+            if (string.IsNullOrWhiteSpace(timeZoneId))
             {
-                var timeZoneId = await readStore.GetStationTimeZoneAsync(
-                    stationId,
-                    cancellationToken);
-                if (string.IsNullOrWhiteSpace(timeZoneId))
-                {
-                    return GetOccPlanningSnapshotResult.Failed(OccPlanningFailure.NotFound);
-                }
-
-                var zone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-                operationDate = DateOnly.FromDateTime(
-                    TimeZoneInfo.ConvertTime(timeProvider.GetUtcNow(), zone).DateTime);
+                return GetOccPlanningSnapshotResult.Failed(OccPlanningFailure.NotFound);
             }
+
+            operationDate = BusinessCalendar.Today(timeProvider.GetUtcNow(), timeZoneId);
         }
 
         var snapshot = await readStore.GetSnapshotAsync(

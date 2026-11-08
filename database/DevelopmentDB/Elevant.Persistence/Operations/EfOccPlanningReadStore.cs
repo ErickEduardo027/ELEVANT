@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Operations;
@@ -15,17 +16,6 @@ internal sealed class EfOccPlanningReadStore(
     ElevantDbContext context,
     TimeProvider timeProvider) : IOccPlanningReadStore
 {
-    public Task<DateOnly?> GetLatestOperationDateAsync(
-        Guid stationId,
-        CancellationToken cancellationToken = default) =>
-        (
-            from turnaround in context.Turnarounds.AsNoTracking()
-            join station in context.Stations.AsNoTracking()
-                on turnaround.StationId equals station.Id
-            where station.PublicId == stationId && station.IsActive
-            select (DateOnly?)turnaround.OperationDate
-        ).MaxAsync(cancellationToken);
-
     public Task<string?> GetStationTimeZoneAsync(
         Guid stationId,
         CancellationToken cancellationToken = default) =>
@@ -57,8 +47,30 @@ internal sealed class EfOccPlanningReadStore(
             return null;
         }
 
+        var responseTurnarounds = await ProjectTurnaroundsAsync(context, station.Id,
+            context.Turnarounds.AsNoTracking().Where(turnaround => turnaround.StationId == station.Id &&
+                turnaround.OperationDate == operationDate),
+            cancellationToken);
+
+        return new OccPlanningSnapshotData(
+            new OccStationData(
+                station.PublicId,
+                station.Code,
+                station.Name,
+                station.IanaTimeZone),
+            operationDate,
+            responseTurnarounds);
+    }
+
+    /// <summary>
+    /// Projects the turnarounds of one station as the planning snapshot shows them: airline, aircraft, stand, legs,
+    /// operation, agents, equipment and services. The turnaround detail of 3-A reads one turnaround with it.
+    /// </summary>
+    internal static async Task<OccTurnaroundData[]> ProjectTurnaroundsAsync(ElevantDbContext context, long stationId,
+        IQueryable<Turnaround> source, CancellationToken cancellationToken)
+    {
         var turnarounds = await (
-                from turnaround in context.Turnarounds.AsNoTracking()
+                from turnaround in source
                 join airline in context.Airlines.AsNoTracking()
                     on turnaround.AirlineId equals airline.Id
                 join aircraftCandidate in context.AircraftTypes.AsNoTracking()
@@ -67,8 +79,6 @@ internal sealed class EfOccPlanningReadStore(
                 join operationCandidate in context.GroundOperations.AsNoTracking()
                     on turnaround.Id equals operationCandidate.TurnaroundId into operations
                 from operation in operations.DefaultIfEmpty()
-                where turnaround.StationId == station.Id &&
-                      turnaround.OperationDate == operationDate
                 orderby operation.PlannedStartAt,
                     turnaround.OperationCode,
                     turnaround.PublicId
@@ -108,14 +118,7 @@ internal sealed class EfOccPlanningReadStore(
 
         if (turnarounds.Length == 0)
         {
-            return new OccPlanningSnapshotData(
-                new OccStationData(
-                    station.PublicId,
-                    station.Code,
-                    station.Name,
-                    station.IanaTimeZone),
-                operationDate,
-                []);
+            return [];
         }
 
         var turnaroundIds = turnarounds.Select(item => item.InternalId).ToArray();
@@ -130,11 +133,11 @@ internal sealed class EfOccPlanningReadStore(
                     on assignment.StandId equals standItem.Id
                 join terminalCandidate in context.Terminals
                     .AsNoTracking()
-                    .Where(item => item.StationId == station.Id)
+                    .Where(item => item.StationId == stationId)
                     on standItem.TerminalId equals terminalCandidate.Id into terminals
                 from terminal in terminals.DefaultIfEmpty()
                 where turnaroundIds.Contains(assignment.TurnaroundId) &&
-                      standItem.StationId == station.Id &&
+                      standItem.StationId == stationId &&
                       assignment.AssignedTo == null
                 select new
                 {
@@ -261,7 +264,7 @@ internal sealed class EfOccPlanningReadStore(
         var equipmentByOperation = equipment.ToLookup(item => item.GroundOperationId, item => item.Equipment);
         var servicesByOperation = services.ToLookup(item => item.GroundOperationId, item => item.Service);
 
-        var responseTurnarounds = turnarounds.Select(item =>
+        return turnarounds.Select(item =>
         {
             var operationId = item.OperationInternalId;
             var turnaroundLegs = legsByTurnaround[item.InternalId];
@@ -280,15 +283,6 @@ internal sealed class EfOccPlanningReadStore(
                 operationId.HasValue ? equipmentByOperation[operationId.Value].ToArray() : [],
                 operationId.HasValue ? servicesByOperation[operationId.Value].ToArray() : []);
         }).ToArray();
-
-        return new OccPlanningSnapshotData(
-            new OccStationData(
-                station.PublicId,
-                station.Code,
-                station.Name,
-                station.IanaTimeZone),
-            operationDate,
-            responseTurnarounds);
     }
 
     public async Task<OccPlanningOptionsReadResult> GetOptionsAsync(
@@ -436,7 +430,7 @@ internal sealed class EfOccPlanningReadStore(
                         contract.Contract.CurrencyCode))
                 .ToArrayAsync(cancellationToken);
 
-        var candidates = await BuildAgentCandidatesAsync(
+        var candidates = (await BuildAgentCandidatesAsync(
             scope.OperationInternalId,
             scope.StationInternalId,
             stand?.TerminalInternalId,
@@ -445,7 +439,8 @@ internal sealed class EfOccPlanningReadStore(
             scope.PlannedStartAt,
             scope.PlannedEndAt,
             scope.Station.IanaTimeZone,
-            cancellationToken);
+            null,
+            cancellationToken)).Select(candidate => candidate.Data).ToArray();
 
         var options = new OccPlanningOptionsSourceData(
             new OccPlanningTurnaroundContextData(
@@ -474,7 +469,19 @@ internal sealed class EfOccPlanningReadStore(
         });
     }
 
-    private async Task<OccAgentCandidateData[]> BuildAgentCandidatesAsync(
+    /// <summary>One candidate with its internal key, for the stores that act on it (3-N05, 3-F).</summary>
+    internal sealed record AgentCandidate(long AgentId, OccAgentCandidateData Data);
+
+    /// <summary>
+    /// The agents of the station and the facts OCC's eligibility evaluates for one operation
+    /// (<see cref="OccAgentEligibilityPolicy"/>): account, scopes, documents and qualification on
+    /// <paramref name="operationDate"/>, the shift and absences at <paramref name="referenceTime"/> in the station's
+    /// calendar, the mentor a junior needs, and the simultaneous operations in [<paramref name="plannedStartAt"/>,
+    /// <paramref name="plannedEndAt"/>) (<see cref="AgentSimultaneity"/>; the operation itself never counts). The stand
+    /// reassignment and the handover evaluate only <paramref name="onlyAgentIds"/>, with the same rules as the manual
+    /// assignment.
+    /// </summary>
+    internal async Task<AgentCandidate[]> BuildAgentCandidatesAsync(
         long? operationId,
         long stationId,
         long? terminalId,
@@ -483,9 +490,16 @@ internal sealed class EfOccPlanningReadStore(
         DateTimeOffset? plannedStartAt,
         DateTimeOffset? plannedEndAt,
         string ianaTimeZone,
+        IReadOnlyCollection<long>? onlyAgentIds,
         CancellationToken cancellationToken)
     {
-        var zone = TimeZoneInfo.FindSystemTimeZoneById(ianaTimeZone);
+        var only = onlyAgentIds?.Distinct().ToArray();
+        if (only is { Length: 0 })
+        {
+            return [];
+        }
+
+        var zone = BusinessCalendar.Zone(ianaTimeZone);
         var localReference = TimeZoneInfo.ConvertTime(referenceTime, zone);
         var localDate = DateOnly.FromDateTime(localReference.DateTime);
         var localTime = TimeOnly.FromDateTime(localReference.DateTime);
@@ -494,7 +508,8 @@ internal sealed class EfOccPlanningReadStore(
                 from agent in context.RampAgents.AsNoTracking()
                 join person in context.Persons.AsNoTracking()
                     on agent.PersonId equals person.Id
-                where context.Set<RampAgentStationScope>().AsNoTracking().Any(scope =>
+                where (only == null || only.Contains(agent.Id)) &&
+                      (context.Set<RampAgentStationScope>().AsNoTracking().Any(scope =>
                           scope.RampAgentId == agent.Id &&
                           scope.StationId == stationId &&
                           scope.ValidFrom <= operationDate &&
@@ -513,7 +528,7 @@ internal sealed class EfOccPlanningReadStore(
                             ((shift.WorkDate == localDate &&
                               shift.StartsAtLocal <= localTime) ||
                              (shift.WorkDate == previousDate &&
-                              localTime < shift.EndsAtLocal)))))
+                              localTime < shift.EndsAtLocal))))))
                 orderby person.FirstName, person.LastName, agent.PublicId
                 select new
                 {
@@ -522,6 +537,7 @@ internal sealed class EfOccPlanningReadStore(
                     agent.PersonId,
                     agent.EmployeeNumber,
                     agent.IsActive,
+                    agent.HireDate,
                     DisplayName = (person.FirstName + " " + person.LastName).Trim(),
                 })
             .ToArrayAsync(cancellationToken);
@@ -693,26 +709,36 @@ internal sealed class EfOccPlanningReadStore(
                 })
                 .ToArrayAsync(cancellationToken);
 
-        var conflictingAgentIds = operationId.HasValue &&
+        // 3-D: one rule of simultaneity (OperationOccupancyRules): up to three operations that hold the agent may
+        // overlap; approved, handed-over or cancelled ones do not count, and a holding one without a window does.
+        var overlaps = operationId.HasValue &&
             plannedStartAt.HasValue &&
             plannedEndAt.HasValue &&
             plannedStartAt.Value < plannedEndAt.Value
-                ? await (
-                        from assignment in context.OperationAgentAssignments.AsNoTracking()
-                        join otherOperation in context.GroundOperations.AsNoTracking()
-                            on assignment.GroundOperationId equals otherOperation.Id
-                        where agentIds.Contains(assignment.RampAgentId) &&
-                              assignment.ReleasedAt == null &&
-                              assignment.GroundOperationId != operationId.Value &&
-                              (otherOperation.PlannedStartAt == null ||
-                               otherOperation.PlannedEndAt == null ||
-                               otherOperation.PlannedStartAt >= otherOperation.PlannedEndAt ||
-                               (otherOperation.PlannedStartAt < plannedEndAt.Value &&
-                                plannedStartAt.Value < otherOperation.PlannedEndAt))
-                        select assignment.RampAgentId)
-                    .Distinct()
-                    .ToArrayAsync(cancellationToken)
-                : [];
+                ? await AgentSimultaneity.CountOverlapsAsync(context, agentIds, operationId, plannedStartAt.Value,
+                    plannedEndAt.Value, cancellationToken)
+                : new Dictionary<long, int>();
+
+        // Pillier: an agent with less than three months never works alone. A junior is eligible only with an open
+        // coverage of this station that names a mentor at the reference time (ADR-0030, PositionCoveragePolicy).
+        var juniors = agents
+            .Where(agent => PositionCoveragePolicy.IsJunior(agent.HireDate, operationDate))
+            .Select(agent => agent.Id)
+            .ToArray();
+        var mentoredJuniors = juniors.Length == 0
+            ? []
+            : await context.Set<PositionCoverage>()
+                .AsNoTracking()
+                .Where(coverage => juniors.Contains(coverage.RampAgentId) &&
+                    coverage.StationId == stationId &&
+                    coverage.ReleasedAt == null &&
+                    coverage.MentorRampAgentId != null &&
+                    coverage.StartsAt <= referenceTime &&
+                    referenceTime < coverage.EndsAt)
+                .Select(coverage => coverage.RampAgentId)
+                .Distinct()
+                .ToArrayAsync(cancellationToken);
+        var mentored = mentoredJuniors.ToHashSet();
 
         var mobileRoles = mobileRoleAccounts.ToHashSet();
         var memberships = activeMembershipAccounts.ToHashSet();
@@ -734,7 +760,6 @@ internal sealed class EfOccPlanningReadStore(
         var shiftsByAgent = shifts.ToLookup(shift => shift.RampAgentId);
         var absencesByAgent = approvedAbsences.ToLookup(absence => absence.RampAgentId);
         var positionsById = positions.ToDictionary(position => position.Id);
-        var assignmentConflicts = conflictingAgentIds.ToHashSet();
 
         return agents.Select(agent =>
         {
@@ -771,7 +796,7 @@ internal sealed class EfOccPlanningReadStore(
                  (position.RequiredEquipmentTypeId.HasValue &&
                   currentQualifications.Contains((agent.Id, position.RequiredEquipmentTypeId.Value))));
 
-            return new OccAgentCandidateData(
+            return new AgentCandidate(agent.Id, new OccAgentCandidateData(
                 agent.PublicId,
                 agent.DisplayName,
                 agent.EmployeeNumber,
@@ -784,8 +809,9 @@ internal sealed class EfOccPlanningReadStore(
                 driverLicenses.Contains(agent.Id),
                 hasShift,
                 position?.PublicId,
-                assignmentConflicts.Contains(agent.Id),
-                hasApprovedAbsence);
+                OperationOccupancyRules.AtCapacity(overlaps.GetValueOrDefault(agent.Id)),
+                hasApprovedAbsence,
+                PositionCoveragePolicy.IsJunior(agent.HireDate, operationDate) && !mentored.Contains(agent.Id)));
         }).ToArray();
     }
 

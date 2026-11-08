@@ -8,9 +8,11 @@ import { createMobileAgentApiClient } from '../config/elevant-api';
 import {
   clearStoredMobileSession,
   clearStoredMobileSessionIfCurrent,
+  countPendingEvidence,
   readStoredMobileSession,
   updateStoredMobileSessionMetadata,
   writeStoredMobileSession,
+  type PendingEvidenceCount,
 } from '../storage/mobile-session';
 import {
   asMobileServiceError,
@@ -468,8 +470,21 @@ export async function refreshMobileSession(
 }
 
 /**
+ * What this tablet keeps that ELEVANT has not confirmed (3-N12), for the account signed in and for the others; null
+ * when the device's storage cannot be read, so a screen simply shows no notice.
+ */
+export async function readUnsentRecords(): Promise<PendingEvidenceCount | null> {
+  try {
+    return await countPendingEvidence();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Signs out: frees the tablet for the next agent (2-N02, best effort and bounded in time) and clears the session and
- * its caches. A tablet that cannot reach ELEVANT still signs out; the next agent who signs in on it takes it.
+ * its caches. A tablet that cannot reach ELEVANT still signs out; the next agent who signs in on it takes it. What the
+ * agent recorded and ELEVANT has not confirmed stays on the device for the same account (3-N12).
  */
 export async function logoutMobileAgent(): Promise<void> {
   let state: LocalSessionState | null = null;

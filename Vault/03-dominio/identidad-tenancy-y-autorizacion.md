@@ -113,6 +113,36 @@ la fase 2 del ciclo (`50e7778f`;
   revocada no vuelve a registrarse y su cuenta pierde sus sesiones, porque la
   revocación rota su sello de seguridad.
 
+## Fase 3: la operación sigue a su agente
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c` y las correcciones de la revisión de sus bloques
+A, B y C, `34e90aad`;
+[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+- **Operación iniciada.** Una vez que el agente la inicia, la tablet la autoriza
+  por la asignación abierta y el alcance de estación, sin exigir la posición
+  activa ni el alcance de terminal, hasta que termina. Pasarla a otra persona es
+  un relevo explícito de OCC.
+- **Recibos.** Todo rechazo de regla de un comando de rampa con clave guarda su
+  código en el recibo de la instalación, y un reintento con la misma clave y el
+  mismo cuerpo devuelve ese mismo código; la misma clave con otro cuerpo
+  responde `idempotency_conflict`. La excepción es `contract_not_in_force` al
+  iniciar: no queda en el recibo y la misma clave vuelve a evaluar el contrato,
+  de modo que una operación cuyo contrato se reactiva puede iniciarse. El chat y
+  la observación de asistencia no usan ese recibo: se deduplican por su propia
+  clave.
+- **Evidencia en una tablet compartida.** Un `401`, un `403` o el cierre de
+  sesión borran la credencial y las cachés, pero lo que ELEVANT no confirmó
+  queda en el dispositivo, ligado a su cuenta: solo esa cuenta lo lee y lo envía
+  al volver a entrar. Otro agente que use la tablet ve cuántos registros de otra
+  cuenta hay, pero no puede verlos ni descartarlos. Eso incluye notas de
+  incidencias y observaciones de asistencia: nada se borra solo. Siguen en la
+  tablet hasta que su autor vuelve a entrar; entonces se envían, y él puede
+  descartar los que ELEVANT rechazó y las fotos del walk-around que no llegan a
+  ELEVANT: la que ELEVANT no pudo guardar, la que la tablet no puede leer y la de
+  una marca rechazada.
+
 ## Vocabulario de ciclo de vida
 
 | Tipo | Valores persistibles |

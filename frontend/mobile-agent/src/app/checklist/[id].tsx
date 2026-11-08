@@ -335,12 +335,26 @@ export default function ChecklistScreen() {
         });
         return;
       }
-      const response = await submitRampOperationChecklist(
+      const outcome = await submitRampOperationChecklist(
         snapshot.operationId,
         requestBody,
         { signal: request.signal },
       );
       if (request.signal.aborted) return;
+      if (outcome.state === 'queued') {
+        // 3-I: saved on the device with the answers frozen; the queue sends it after the operation's earlier commands.
+        setPendingSubmission(await readRampChecklistPendingSubmission(snapshot.operationId, snapshot.checklist.id));
+        setNotice(outcome.issue && (outcome.issue.code === 'device_revoked' || outcome.issue.code === 'device_in_use' ||
+          outcome.issue.code === 'device_conflict')
+          ? { tone: 'error', title: 'Dispositivo no autorizado', message: outcome.issue.message }
+          : {
+              tone: 'warning',
+              title: 'Checklist guardado en el dispositivo',
+              message: 'Se envía a ELEVANT en cuanto haya señal. No necesitas volver a tocar ENVIAR.',
+            });
+        return;
+      }
+      const response = outcome.response;
       setSnapshot((current) => current
         ? {
             ...current,
@@ -416,7 +430,9 @@ export default function ChecklistScreen() {
           setNotice({
             tone: 'warning',
             title: error.code === 'not_found' ? 'Checklist no disponible' : 'El checklist cambió',
-            message: 'Consultaremos nuevamente el estado canónico antes de permitir otra acción.',
+            message: error.problemCode
+              ? `${error.message} Consultaremos nuevamente el estado canónico antes de permitir otra acción.`
+              : 'Consultaremos nuevamente el estado canónico antes de permitir otra acción.',
           });
           await load(true);
           return;
@@ -496,7 +512,7 @@ export default function ChecklistScreen() {
                   : submissionReconciliationRequired
                     ? 'Estado por conciliar'
                     : frozen
-                      ? 'Envío reservado'
+                      ? 'En el dispositivo'
                       : 'Borrador'}
                 tone={submitted ? 'green' : frozen ? 'orange' : 'blue'}
               />
@@ -534,16 +550,26 @@ export default function ChecklistScreen() {
             </View>
           </Card>
 
+          {snapshot.fromCache && !submitted && (
+            <NoticeCard
+              notice={{
+                tone: 'warning',
+                title: 'Sin señal · copia guardada en el dispositivo',
+                message: 'Puedes responder y enviar el checklist: el envío queda en el dispositivo y sale a ELEVANT al reconectar.',
+              }}
+            />
+          )}
+
           {frozen && (
             <NoticeCard
               notice={{
                 tone: submissionReconciliationRequired ? 'error' : 'warning',
                 title: submissionReconciliationRequired
                   ? 'Edición bloqueada hasta conciliar el estado'
-                  : 'Edición bloqueada para un replay seguro',
+                  : 'Envío guardado en el dispositivo',
                 message: submissionReconciliationRequired
                   ? 'Actualiza para verificar el estado canónico y si existe un comando reservado antes de continuar.'
-                  : 'Existe un envío reservado en este dispositivo. Reintentar conserva exactamente sus respuestas y su clave idempotente.',
+                  : 'Se envía a ELEVANT en cuanto haya señal, con estas mismas respuestas y la misma clave. Para enviarlo ahora toca REINTENTAR ENVÍO.',
               }}
             />
           )}
@@ -974,7 +1000,7 @@ function draftSaveLabel(
 ) {
   if (submitted) return 'Envío confirmado por ELEVANT';
   if (reconciliationRequired) return 'Comando local pendiente de verificación';
-  if (frozen) return 'Payload reservado para replay exacto';
+  if (frozen) return 'Envío guardado en el dispositivo; sale a ELEVANT al reconectar';
   if (state === 'saving') return 'Guardando borrador en este dispositivo…';
   if (state === 'saved') return 'Borrador guardado en este dispositivo';
   if (state === 'error') return 'No se pudo proteger el borrador';

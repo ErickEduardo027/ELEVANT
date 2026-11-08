@@ -190,6 +190,15 @@ export interface AddPreinvoiceAdjustmentInput {
   parentLineId?: string | null;
 }
 
+export interface AdjustHumanResourcesShiftRequest {
+  startsAtLocal: string;
+  endsAtLocal: string;
+  /** @nullable */
+  reason?: string | null;
+  /** @nullable */
+  expectedVersion?: string | null;
+}
+
 export interface AffiliationStationOptionResponse {
   id: string;
   code: string;
@@ -910,6 +919,20 @@ export interface CardPaymentResponse {
   attempt: CardPaymentAttemptResponse;
   invoiceBalance: number;
   replayed: boolean;
+}
+
+export interface ChangeOccIncidentStatusRequest {
+  /** @nullable */
+  status?: string | null;
+  /** @nullable */
+  note?: string | null;
+}
+
+export interface ChangeOccTurnaroundStatusRequest {
+  /** @nullable */
+  outcome?: string | null;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface ChangePasswordRequest {
@@ -1661,6 +1684,15 @@ export interface CreateManualTurnaroundRequest {
   aircraftTypeId?: string | null;
 }
 
+export interface CreateOccCharterAirlineRequest {
+  /** @nullable */
+  name?: string | null;
+  /** @nullable */
+  icaoCode?: string | null;
+  /** @nullable */
+  iataCode?: string | null;
+}
+
 export interface CreateOccCoverageRequest {
   stationId: string;
   date: string;
@@ -2377,6 +2409,8 @@ export interface FinanceCharterResponse {
   prepaymentReference?: string | null;
   /** @nullable */
   prepaymentConfirmedAt?: string | null;
+  /** @nullable */
+  version?: string | null;
 }
 
 export interface FinanceCharterListResponse {
@@ -3361,6 +3395,13 @@ export interface GovernanceSnapshot {
   rampProfiles: GovernanceRampProfileData[];
 }
 
+export interface HandOverOccOperationRequest {
+  agentId: string;
+  expectedAssignmentId: string;
+  /** @nullable */
+  reason?: string | null;
+}
+
 export interface HumanResourcesAccountMovementResponse {
   id: string;
   accountId: string;
@@ -3656,6 +3697,13 @@ export interface HumanResourcesScheduleWarningPageResponse {
   warnings: HumanResourcesScheduleWarningResponse[];
 }
 
+export interface HumanResourcesShiftAdjusted {
+  id: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  version: string;
+}
+
 export interface HumanResourcesShiftTerminalOption {
   id: string;
   code: string;
@@ -3755,6 +3803,7 @@ export interface ImportOccFlightResponse {
   turnaroundId: string;
   operationCode: string;
   replayed: boolean;
+  linked: boolean;
 }
 
 export interface InviteAirlinePortalUserInput {
@@ -4123,6 +4172,16 @@ export interface OccAgentOptionResponse {
   eligibilityReasons: string[];
 }
 
+export interface OccAgentShiftResponse {
+  shiftId: string;
+  agentId: string;
+  workDate: string;
+  startsAtLocal: string;
+  endsAtLocal: string;
+  terminalCode: string;
+  version: string;
+}
+
 export interface OccAircraftResponse {
   id: string;
   icaoCode: string;
@@ -4249,6 +4308,30 @@ export interface OccAssignmentResponse {
   operation: OccGroundOperationResponse;
   assignment: OccAssignedAgentResponse;
   services: OccOperationServiceResponse[];
+}
+
+export interface OccAttendanceAssignmentResponse {
+  assignmentId: string;
+  agentId: string;
+  displayName: string;
+  employeeNumber: string;
+  assignedAt: string;
+  /** @nullable */
+  releasedAt: string | null;
+}
+
+export interface OccAttendanceAssignmentsResponse {
+  turnaroundId: string;
+  operationId: string;
+  assignments: OccAttendanceAssignmentResponse[];
+}
+
+export interface OccCharterAirlineResponse {
+  id: string;
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  name: string;
 }
 
 export interface OccContractOptionResponse {
@@ -4419,6 +4502,59 @@ export interface OccFlightLegResponse {
   actualAt?: string | null;
 }
 
+export interface OccHandoverOptionsResponse {
+  turnaroundId: string;
+  operationId: string;
+  operationStatus: string;
+  currentAssignmentId: string;
+  currentAgentId: string;
+  currentAgentName: string;
+  remainingFrom: string;
+  remainingUntil: string;
+  agents: OccAgentOptionResponse[];
+}
+
+export interface OccIncidentEventResponse {
+  /** @nullable */
+  fromStatus?: string | null;
+  toStatus: string;
+  note: string;
+  occurredAt: string;
+  actor: string;
+}
+
+export interface OccIncidentResponse {
+  id: string;
+  type: string;
+  severity: string;
+  status: string;
+  description: string;
+  occurredAt: string;
+  reportedAt: string;
+  /** @nullable */
+  delayCode?: string | null;
+  reportedBy: string;
+  reportedByKind: string;
+  /** @nullable */
+  resolutionNote?: string | null;
+  /** @nullable */
+  resolvedAt?: string | null;
+  /** @nullable */
+  resolvedBy?: string | null;
+  version: string;
+  allowedStatuses: string[];
+  history: OccIncidentEventResponse[];
+}
+
+export interface OccIncidentListResponse {
+  operationId: string;
+  operationCode: string;
+  operationStatus: string;
+  ianaTimeZone: string;
+  canReport: boolean;
+  incidents: OccIncidentResponse[];
+}
+
 export interface OccMasterData {
   stationId: string;
   stationCode: string;
@@ -4465,6 +4601,14 @@ export interface OccMobileDevicesData {
   canUnbind: boolean;
   canRevoke: boolean;
   devices: OccMobileDeviceData[];
+}
+
+export interface OccOperationHandoverResponse {
+  turnaroundId: string;
+  assignmentId: string;
+  agentId: string;
+  previousAgentId: string;
+  replayed: boolean;
 }
 
 export interface OccPlanningTurnaroundContextResponse {
@@ -4634,6 +4778,12 @@ export interface OccReportPageResponse {
   hasMore: boolean;
 }
 
+export interface OccReviewBillingExclusionResponse {
+  serviceId: string;
+  reason: string;
+  excludedAt: string;
+}
+
 export interface OccReviewChargeAdjustResponse {
   reviewVersion: string;
 }
@@ -4691,6 +4841,8 @@ export interface OccReviewCloseResponse {
   timing: OccReviewTimingResponse;
   canAdjustCharges: boolean;
   damageCount: number;
+  /** @nullable */
+  billingExclusions?: OccReviewBillingExclusionResponse[] | null;
 }
 
 export interface OccReviewDecisionResponse {
@@ -4719,6 +4871,13 @@ export interface OccReviewIncidentResponse {
   occurredAt: string;
   /** @nullable */
   delayCode?: string | null;
+}
+
+export interface OccReviewReopeningResponse {
+  fromRevisionNumber: number;
+  reason: string;
+  reopenedAt: string;
+  reopenedBy: string;
 }
 
 export interface OccReviewDetailResponse {
@@ -4751,6 +4910,9 @@ export interface OccReviewDetailResponse {
   decision?: OccReviewDecisionResponse | null;
   reviewVersion: string;
   close?: OccReviewCloseResponse | null;
+  /** @nullable */
+  serviceOrderState?: string | null;
+  reopening?: OccReviewReopeningResponse | null;
 }
 
 export interface OccReviewQueueItemResponse {
@@ -4776,6 +4938,14 @@ export interface OccReviewQueueResponse {
   hasMore: boolean;
 }
 
+export interface OccReviewReopenResponse {
+  operationId: string;
+  submissionId: string;
+  revisionNumber: number;
+  status: string;
+  reviewVersion: string;
+}
+
 export interface OccReviewSubmissionHistoryItemResponse {
   submissionId: string;
   revisionNumber: number;
@@ -4791,6 +4961,14 @@ export interface OccReviewSubmissionHistoryResponse {
   operationId: string;
   submissions: OccReviewSubmissionHistoryItemResponse[];
   hasMore: boolean;
+}
+
+export interface OccTurnaroundDetailResponse {
+  station: OccStationResponse;
+  turnaround: OccTurnaroundResponse;
+  version: string;
+  isCharter: boolean;
+  allowedActions: string[];
 }
 
 export interface OperationMessageResponse {
@@ -5211,6 +5389,19 @@ export interface RampAircraftResponse {
   model: string;
   /** @nullable */
   registration?: string | null;
+}
+
+export interface RampAircraftTypeResponse {
+  id: string;
+  icaoCode: string;
+  /** @nullable */
+  iataCode?: string | null;
+  manufacturer: string;
+  model: string;
+}
+
+export interface RampAircraftTypesResponse {
+  aircraftTypes: RampAircraftTypeResponse[];
 }
 
 export interface RampAirlineResponse {
@@ -5636,6 +5827,10 @@ export interface RecordOccArrivalRequest {
   aircraftRegistration: string;
   /** @nullable */
   arrivedAt?: string | null;
+  /** @nullable */
+  aircraftTypeId?: string | null;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface RecordRampMilestoneRequest {
@@ -5739,6 +5934,22 @@ export interface RemoveOccReviewChargeRequest {
   reason?: string | null;
 }
 
+export interface ReopenCharterPrepaymentRequest {
+  /** @nullable */
+  reason?: string | null;
+  /** @nullable */
+  version?: string | null;
+}
+
+export interface ReopenOccReviewRequest {
+  submissionId: string;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  reason?: string | null;
+}
+
 export interface ReopenServiceRequest {
   /** @nullable */
   reason?: string | null;
@@ -5749,6 +5960,19 @@ export interface ReopenServiceRequest {
 export interface ReplyContractDraftInput {
   expectedVersion: string;
   body: string;
+}
+
+export interface ReportOccIncidentRequest {
+  /** @nullable */
+  incidentType?: string | null;
+  /** @nullable */
+  severity?: string | null;
+  /** @nullable */
+  description?: string | null;
+  /** @nullable */
+  occurredAt?: string | null;
+  /** @nullable */
+  delayCode?: string | null;
 }
 
 export interface ReportRampIncidentRequest {
@@ -5804,6 +6028,27 @@ export interface RequestUserAccessInput {
   supervisorRampAgentId?: string | null;
   /** @nullable */
   employeeId?: string | null;
+}
+
+export interface RescheduleOccTurnaroundRequest {
+  /** @nullable */
+  arrivalFlightNumber?: string | null;
+  /** @nullable */
+  arrivalOriginIata?: string | null;
+  /** @nullable */
+  arrivalScheduledAt?: string | null;
+  /** @nullable */
+  departureFlightNumber?: string | null;
+  /** @nullable */
+  departureDestinationIata?: string | null;
+  /** @nullable */
+  departureScheduledAt?: string | null;
+  /** @nullable */
+  standId?: string | null;
+  /** @nullable */
+  aircraftTypeId?: string | null;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface ResendInvitationInput {
@@ -6153,6 +6398,16 @@ export interface SetGroundTimeAllowanceRequest {
   version?: string | null;
 }
 
+export interface SetOccReviewServiceBillingExclusionRequest {
+  submissionId: string;
+  excluded: boolean;
+  /**
+     * @maxLength 500
+     * @nullable
+     */
+  reason?: string | null;
+}
+
 export interface SetOperationalNotificationReadRequest {
   read: boolean;
 }
@@ -6182,6 +6437,11 @@ export interface SignOperationDocumentRequest {
   strokes: number[][];
   /** @nullable */
   signerIdentification?: string | null;
+}
+
+export interface StartRampOperationRequest {
+  /** @nullable */
+  startedAt?: string | null;
 }
 
 export interface StationAirportData {
@@ -6347,6 +6607,8 @@ export interface TransitionRampOperationServiceRequest {
      * @nullable
      */
   note?: string | null;
+  /** @nullable */
+  occurredAt?: string | null;
 }
 
 export interface UnbindMobileDeviceInput {
@@ -6459,6 +6721,8 @@ export interface UpdateRampFlightDataRequest {
   mtowKg?: number | null;
   /** @nullable */
   aircraftRegistration?: string | null;
+  /** @nullable */
+  aircraftTypeId?: string | null;
 }
 
 export interface UpdateStandInput {
@@ -6951,6 +7215,10 @@ date: string;
 
 export type RemoveOccStandConstraintParams = {
 date: string;
+};
+
+export type ReleaseOccOperationAgentParams = {
+expectedAssignmentId?: string;
 };
 
 export type GetOccFlightFeedParams = {
@@ -8050,6 +8318,40 @@ export const getOperationAttendanceDraft = async (operationId: string,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: AttendanceDraftSnapshotResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccAttendanceAssignmentsUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/attendance-assignments`
+}
+
+/**
+ * @summary 3-F: the assignments of the turnaround's operation whose attendance OCC records, oldest first: the open ones and
+the ones a handover released after the start (`releasedAt`), whose agent worked until then and which the
+planning board no longer lists. AVIAM staff of the station with `operations.attendance.read`; a turnaround
+without operation or out of scope is 404 `not_found`. Web only: the tablet never reads it.
+ */
+export const getOccAttendanceAssignments = async (turnaroundId: string, options?: RequestInit): Promise<OccAttendanceAssignmentsResponse> => {
+
+  const res = await fetch(getGetOccAttendanceAssignmentsUrl(turnaroundId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAttendanceAssignmentsResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -11937,6 +12239,46 @@ const res = await fetch(getConfirmFinanceCharterPrepaymentUrl(charterId),
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(confirmCharterPrepaymentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinanceCharterResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReopenFinanceCharterPrepaymentUrl = (charterId: string,) => {
+
+
+
+
+  return `/api/v1/finance/charters/${charterId}/prepayment/reopening`
+}
+
+/**
+ * @summary 3-N24: reopens a confirmed prepayment as a new quotation, so the agent can add services again; the amount and the
+reference stay until Finance confirms it again. Takes an Idempotency-Key and the version Finance saw (a stale one
+is 409 `version_conflict`); a prepayment not confirmed is 409 `charter_prepayment_not_confirmed`.
+ */
+export const reopenFinanceCharterPrepayment = async (charterId: string,
+    reopenCharterPrepaymentRequest: ReopenCharterPrepaymentRequest, options?: RequestInit): Promise<FinanceCharterResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReopenFinanceCharterPrepaymentUrl(charterId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reopenCharterPrepaymentRequest)
   }
 )
 
@@ -17031,6 +17373,47 @@ export const removeHumanResourcesShift = async (id: string,
 
 
 
+export const getAdjustHumanResourcesShiftUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/human-resources/shifts/${id}`
+}
+
+/**
+ * @summary «Ajustar horario» (3-E): Gestión Humana and OCC change the hours of a shift of today or later in its station's
+calendar, with a reason, the shift's `version` and an Idempotency-Key (required). The adjusted shift keeps
+covering the agent's coverages and operations in it (`shift_uncovers_work`); a past shift
+(`shift_in_past`) or one whose attendance was validated (`attendance_validated`) stays as it is.
+ */
+export const adjustHumanResourcesShift = async (id: string,
+    adjustHumanResourcesShiftRequest?: AdjustHumanResourcesShiftRequest, options?: RequestInit): Promise<HumanResourcesShiftAdjusted> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getAdjustHumanResourcesShiftUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(adjustHumanResourcesShiftRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: HumanResourcesShiftAdjusted = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getListManagedContractsUrl = (params?: ListManagedContractsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -17224,6 +17607,11 @@ export const getCreateOccCoverageUrl = () => {
   return `/api/v1/occ/coverage`
 }
 
+/**
+ * @summary Hands an agent their stands for a window of the shift (ADR-0030). 3-J: with an Idempotency-Key (optional while
+older clients exist) a repeated attempt answers the board instead of a second coverage; the key with another body
+is `idempotency_conflict`.
+ */
 export const createOccCoverage = async (createOccCoverageRequest: CreateOccCoverageRequest, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
@@ -17266,6 +17654,9 @@ export const getReleaseOccCoverageUrl = (coverageId: string,
   return stringifiedParams.length > 0 ? `/api/v1/occ/coverage/${coverageId}/release?${stringifiedParams}` : `/api/v1/occ/coverage/${coverageId}/release`
 }
 
+/**
+ * @summary Releases a coverage; releasing twice answers the board. The Idempotency-Key works as in the creation.
+ */
 export const releaseOccCoverage = async (coverageId: string,
     params: ReleaseOccCoverageParams, options?: RequestInit): Promise<OccCoverageBoardResponse> => {
 
@@ -17434,20 +17825,32 @@ export const removeOccStandConstraint = async (constraintId: string,
 
 
 
-export const getReleaseOccOperationAgentUrl = (turnaroundId: string,) => {
+export const getReleaseOccOperationAgentUrl = (turnaroundId: string,
+    params?: ReleaseOccOperationAgentParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/release`
+  return stringifiedParams.length > 0 ? `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/release?${stringifiedParams}` : `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/release`
 }
 
 /**
- * @summary Releases the agent of an operation not yet started so OCC can assign another (ADR-0030).
+ * @summary Releases the agent of an operation not yet started so OCC can assign another (ADR-0030). 3-J:
+`expectedAssignmentId` is the assignment OCC saw (another one is `assignment_changed`) and the
+Idempotency-Key replays the release; both are optional while older clients exist, and a key needs the assignment
+(`expected_version_required`). A started operation is `operation_started`: OCC hands it over instead.
  */
-export const releaseOccOperationAgent = async (turnaroundId: string, options?: RequestInit): Promise<void> => {
+export const releaseOccOperationAgent = async (turnaroundId: string,
+    params?: ReleaseOccOperationAgentParams, options?: RequestInit): Promise<void> => {
 
-  const res = await fetch(getReleaseOccOperationAgentUrl(turnaroundId),
+  const res = await fetch(getReleaseOccOperationAgentUrl(turnaroundId,params),
   {
     ...options,
     method: 'POST'
@@ -17460,6 +17863,78 @@ export const releaseOccOperationAgent = async (turnaroundId: string, options?: R
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: void = body ? JSON.parse(body) : undefined
+  return data
+}
+
+
+
+export const getGetOccHandoverOptionsUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/handover-options`
+}
+
+/**
+ * @summary «Relevar agente» (3-F): the agents who may take an operation in progress or returned for correction from its agent,
+with OCC's assignment rules over what is left of it. Another status is `handover_not_allowed`.
+ */
+export const getOccHandoverOptions = async (turnaroundId: string, options?: RequestInit): Promise<OccHandoverOptionsResponse> => {
+
+  const res = await fetch(getGetOccHandoverOptionsUrl(turnaroundId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccHandoverOptionsResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getHandOverOccOperationUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/assignment/handover`
+}
+
+/**
+ * @summary «Relevar agente» (3-F): OCC hands an operation in progress or returned to another eligible agent, with the
+assignment it saw (`assignment_changed` otherwise), a reason of 5 to 500 characters and an Idempotency-Key
+(required). The operation keeps its status and evidence; both agents are told.
+ */
+export const handOverOccOperation = async (turnaroundId: string,
+    handOverOccOperationRequest: HandOverOccOperationRequest, options?: RequestInit): Promise<OccOperationHandoverResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getHandOverOccOperationUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(handOverOccOperationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccOperationHandoverResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -17689,6 +18164,113 @@ const res = await fetch(getRestoreOccFlightProposalUrl(proposalId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RestoreOccFlightProposalResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccOperationIncidentsUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/operations/${operationId}/incidents`
+}
+
+/**
+ * @summary The live incidents of the operation, oldest first, with their history.
+ */
+export const getOccOperationIncidents = async (operationId: string, options?: RequestInit): Promise<OccIncidentListResponse> => {
+
+  const res = await fetch(getGetOccOperationIncidentsUrl(operationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccIncidentListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReportOccIncidentUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/operations/${operationId}/incidents`
+}
+
+/**
+ * @summary OCC reports an incident of an operation still open: 201 the first time, 200 when the key replays it.
+ */
+export const reportOccIncident = async (operationId: string,
+    reportOccIncidentRequest: ReportOccIncidentRequest, options?: RequestInit): Promise<OccIncidentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReportOccIncidentUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reportOccIncidentRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccIncidentResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getChangeOccIncidentStatusUrl = (incidentId: string,) => {
+
+
+
+
+  return `/api/v1/occ/incidents/${incidentId}/status`
+}
+
+/**
+ * @summary Takes an incident into review, resolves it, closes it or takes a resolved one back, with a note.
+ */
+export const changeOccIncidentStatus = async (incidentId: string,
+    changeOccIncidentStatusRequest: ChangeOccIncidentStatusRequest, options?: RequestInit): Promise<OccIncidentResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getChangeOccIncidentStatusUrl(incidentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changeOccIncidentStatusRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccIncidentResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -18326,6 +18908,40 @@ const res = await fetch(getProgramOccShiftUrl(turnaroundId),
 
 
 
+export const getGetOccAgentShiftUrl = (turnaroundId: string,
+    agentId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/agents/${agentId}/shift`
+}
+
+/**
+ * @summary The shift an agent already has on the flight's day (3-E), with its version, so OCC adjusts it with
+`AdjustHumanResourcesShift` instead of programming a second one; 404 `shift_not_found` when there is none.
+ */
+export const getOccAgentShift = async (turnaroundId: string,
+    agentId: string, options?: RequestInit): Promise<OccAgentShiftResponse> => {
+
+  const res = await fetch(getGetOccAgentShiftUrl(turnaroundId,agentId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccAgentShiftResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getAssignOccPlanningOperationUrl = (turnaroundId: string,) => {
 
 
@@ -18407,6 +19023,10 @@ export const getRecordOccArrivalUrl = (turnaroundId: string,) => {
   return `/api/v1/occ/turnarounds/${turnaroundId}/arrival`
 }
 
+/**
+ * @summary Records the arrival (registration, actual on-block time and optionally the aircraft type) or corrects a recorded
+one with its reason before the first submission (3-N08).
+ */
 export const recordOccArrival = async (turnaroundId: string,
     recordOccArrivalRequest: RecordOccArrivalRequest, options?: RequestInit): Promise<OccPositionBoardResponse> => {
 
@@ -18882,6 +19502,89 @@ const res = await fetch(getRemoveOccReviewChargeUrl(operationId,markId),
 
 
 
+export const getSetOccReviewServiceBillingExclusionUrl = (operationId: string,
+    serviceId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/services/${serviceId}/billing-exclusion`
+}
+
+/**
+ * @summary 3-N11: OCC excludes a service in exception with an executed quantity from billing, or includes it again, with
+a reason. Only while the hand-off is pending; a signed Service Order records it as OCC's correction (3-N02).
+ */
+export const setOccReviewServiceBillingExclusion = async (operationId: string,
+    serviceId: string,
+    setOccReviewServiceBillingExclusionRequest: SetOccReviewServiceBillingExclusionRequest, options?: RequestInit): Promise<OccReviewChargeAdjustResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getSetOccReviewServiceBillingExclusionUrl(operationId,serviceId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setOccReviewServiceBillingExclusionRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewChargeAdjustResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getReopenOccReviewUrl = (operationId: string,) => {
+
+
+
+
+  return `/api/v1/occ/review/operations/${operationId}/reopening`
+}
+
+/**
+ * @summary 3-H: OCC reopens an approval nothing was invoiced from yet as a new pending revision, with its reason; once
+anything is invoiced the correction is a credit note (409 `already_invoiced`). The agent and the stand the
+approval freed stay free, and the reopened revision is approved again in OCC, never returned to the ramp, so an
+approval whose Service Order is not signed as it stands is not reopened (409 `service_order_unsigned` or
+`service_order_stale`, 3-N02).
+ */
+export const reopenOccReview = async (operationId: string,
+    reopenOccReviewRequest: ReopenOccReviewRequest, options?: RequestInit): Promise<OccReviewReopenResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReopenOccReviewUrl(operationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(reopenOccReviewRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccReviewReopenResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
 export const getDecideOccReviewUrl = (operationId: string,) => {
 
 
@@ -18950,6 +19653,153 @@ export const getOccAircraftTraffic = async (params: GetOccAircraftTrafficParams,
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: OccAircraftTrafficResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetOccTurnaroundUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}`
+}
+
+/**
+ * @summary The turnaround, its version (also the ETag) and the changes its state allows.
+ */
+export const getOccTurnaround = async (turnaroundId: string, options?: RequestInit): Promise<OccTurnaroundDetailResponse> => {
+
+  const res = await fetch(getGetOccTurnaroundUrl(turnaroundId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccTurnaroundDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getRescheduleOccTurnaroundUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/schedule`
+}
+
+/**
+ * @summary «Editar vuelo»: corrects numbers, airports, times, stand and aircraft type before the operation starts. The stand
+is checked again for the new window, and an assigned agent must still be on shift and within three simultaneous
+operations (`assigned_agent_unavailable` with its reasons).
+ */
+export const rescheduleOccTurnaround = async (turnaroundId: string,
+    rescheduleOccTurnaroundRequest: RescheduleOccTurnaroundRequest, options?: RequestInit): Promise<OccTurnaroundDetailResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRescheduleOccTurnaroundUrl(turnaroundId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(rescheduleOccTurnaroundRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccTurnaroundDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getChangeOccTurnaroundStatusUrl = (turnaroundId: string,) => {
+
+
+
+
+  return `/api/v1/occ/planning/turnarounds/${turnaroundId}/status-changes`
+}
+
+/**
+ * @summary «Cancelar vuelo» or «Marcar desviado» before the start: the stand and the agents are released.
+ */
+export const changeOccTurnaroundStatus = async (turnaroundId: string,
+    changeOccTurnaroundStatusRequest: ChangeOccTurnaroundStatusRequest, options?: RequestInit): Promise<OccTurnaroundDetailResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getChangeOccTurnaroundStatusUrl(turnaroundId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(changeOccTurnaroundStatusRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccTurnaroundDetailResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getCreateOccCharterAirlineUrl = () => {
+
+
+
+
+  return `/api/v1/occ/planning/charter-airlines`
+}
+
+/**
+ * @summary Registers a carrier without contract for a charter (3-N21): 201 the first time, 200 when the key replays it. A
+designator already in use answers `airline_code_in_use` with the `airlineId` that holds it.
+ */
+export const createOccCharterAirline = async (createOccCharterAirlineRequest: CreateOccCharterAirlineRequest, options?: RequestInit): Promise<OccCharterAirlineResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getCreateOccCharterAirlineUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(createOccCharterAirlineRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: OccCharterAirlineResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -19905,7 +20755,8 @@ export const getRecordRampDamageMarkUrl = (operationId: string,
 }
 
 /**
- * @summary Marks a damage found in the 360° walk-around; the id comes from the tablet.
+ * @summary Marks a damage found in the 360° walk-around; the id comes from the tablet. Its time must fit the operation's
+window (409 `time_outside_operation_window`, 3-N25).
  */
 export const recordRampDamageMark = async (operationId: string,
     markId: string,
@@ -19978,7 +20829,9 @@ export const getRecordRampMilestoneUrl = (operationId: string,
 }
 
 /**
- * @summary Records (or corrects) the time of one Flight Report milestone.
+ * @summary Records (or corrects) the time of one Flight Report milestone. The time must fit the operation's window (from
+its start or recorded arrival to its close, 409 `time_outside_operation_window`) and block-on never comes
+after push-back (409 `milestone_out_of_order`, 3-N25).
  */
 export const recordRampMilestone = async (operationId: string,
     code: string,
@@ -20017,7 +20870,9 @@ export const getUpdateRampFlightDataUrl = (operationId: string,) => {
 }
 
 /**
- * @summary Saves passengers, MTOW and the registration correction typed once on the ramp.
+ * @summary Saves passengers, MTOW, the registration correction and the aircraft type typed once on the ramp (3-B). A null
+aircraft type keeps the current one; an unknown or inactive type answers `aircraft_type_unavailable` and a
+change after the first submission `aircraft_type_locked`, both 409 as before.
  */
 export const updateRampFlightData = async (operationId: string,
     updateRampFlightDataRequest: UpdateRampFlightDataRequest, options?: RequestInit): Promise<RampExecutionResponse> => {
@@ -20086,7 +20941,8 @@ export const getReportRampIncidentUrl = (operationId: string,) => {
 }
 
 /**
- * @summary Atomically reports one incident without duplicating offline retries.
+ * @summary Atomically reports one incident without duplicating offline retries. Its time must fit the operation's window
+(409 `time_outside_operation_window`, 3-N25).
  */
 export const reportRampIncident = async (operationId: string,
     reportRampIncidentRequest: ReportRampIncidentRequest, options?: RequestInit): Promise<RampIncidentReceiptResponse> => {
@@ -20221,7 +21077,8 @@ export const getGetRampAssignedOperationsUrl = () => {
 }
 
 /**
- * @summary Returns only active operations assigned to the current ramp agent.
+ * @summary The operations of the current ramp agent's queue (3-N01): assigned, in progress, handed over (pending or in review)
+and returned, then the ones OCC approved in the last 48 hours; the active ones first, at most 100.
  */
 export const getRampAssignedOperations = async ( options?: RequestInit): Promise<RampAssignedOperationsResponse> => {
 
@@ -20252,16 +21109,26 @@ export const getStartRampOperationUrl = (operationId: string,) => {
 }
 
 /**
- * @summary Starts one operation assigned to the authenticated ramp agent.
+ * @summary Starts one operation assigned to the authenticated ramp agent. The body is optional (3-I): the first version
+of the app posts no body and the server's time applies; a newer one sends the moment the agent tapped
+«Iniciar», which must not precede the assignment nor be more than a day old (409
+`time_outside_operation_window`).
  */
-export const startRampOperation = async (operationId: string, options?: RequestInit): Promise<RampOperationStartResponse> => {
+export const startRampOperation = async (operationId: string,
+    startRampOperationRequest?: StartRampOperationRequest, options?: RequestInit): Promise<RampOperationStartResponse> => {
 
-  const res = await fetch(getStartRampOperationUrl(operationId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getStartRampOperationUrl(operationId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(startRampOperationRequest)
   }
 )
 
@@ -20284,7 +21151,9 @@ export const getTransitionRampOperationServiceUrl = (operationId: string,
 }
 
 /**
- * @summary Applies one audited, idempotent service status transition.
+ * @summary Applies one audited, idempotent service status transition. The optional `occurredAt` is the moment the
+agent tapped it (3-I): it must fit the operation's window and not precede the service's last transition (409
+`time_outside_operation_window`, `service_time_out_of_order`).
  */
 export const transitionRampOperationService = async (operationId: string,
     serviceId: string,
@@ -20512,6 +21381,34 @@ const res = await fetch(getRequestRampMobileAccessUrl(id),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: RampMobileAccessRequestData = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetRampAircraftTypesUrl = () => {
+
+
+
+
+  return `/api/v1/ramp/aircraft-types`
+}
+
+export const getRampAircraftTypes = async ( options?: RequestInit): Promise<RampAircraftTypesResponse> => {
+
+  const res = await fetch(getGetRampAircraftTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: RampAircraftTypesResponse = body ? JSON.parse(body) : {}
   return data
 }
 

@@ -5,6 +5,7 @@ import type {
 import { isIataDelayCode } from '@elevant/api-client';
 import { createMobileAgentApiClient } from '../config/elevant-api';
 import {
+  listRampIncidentOutboxOperationsIfCurrent,
   readRampIncidentOutboxIfCurrent,
   reserveRampIncidentOutboxItemIfCurrent,
   updateRampIncidentOutboxItemIfCurrent,
@@ -243,6 +244,29 @@ export async function loadRampIncidentCenter(
     sent,
     ...(issue ? { issue } : {}),
   };
+}
+
+/**
+ * Sends the incident reports this account left on the device, for every operation (3-I). It runs when the tablet
+ * starts, recovers signal or comes back to the foreground, right after the Flight Report queue, so an incident goes
+ * out after the start of its operation. Without signal or with a revoked session it stops; it never throws.
+ */
+export async function flushPendingRampIncidents(): Promise<void> {
+  let context;
+  try { context = await getMobileSessionRequestContext(); } catch { return; }
+  const accountId = context.session.actor.accountId;
+  try {
+    const listed = await listRampIncidentOutboxOperationsIfCurrent(context.sessionId, accountId);
+    if (listed.kind !== 'current') return;
+    for (const operationId of listed.operationIds) {
+      const waiting = (await readOutbox(context.sessionId, accountId, operationId)).some(item => item.state === 'pending');
+      if (!waiting) continue;
+      const center = await loadRampIncidentCenter(operationId);
+      if (!center.online) return;
+    }
+  } catch {
+    // The reports stay on the device; the next reconnection sends them.
+  }
 }
 
 /** Reserves the complete report before attempting any network request. */

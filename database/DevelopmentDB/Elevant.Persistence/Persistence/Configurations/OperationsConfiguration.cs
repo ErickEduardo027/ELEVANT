@@ -244,6 +244,10 @@ internal static class OperationsConfiguration
                 table.HasCheckConstraint("ck_operation_service_quantities", "[contracted_quantity] >= 0 AND [executed_quantity] >= 0");
                 table.HasCheckConstraint("ck_operation_service_price", "[unit_price_snapshot] IS NULL OR [unit_price_snapshot] >= 0");
                 table.HasCheckConstraint("ck_operation_service_currency", "[currency_code_snapshot] IS NULL OR LEN([currency_code_snapshot]) = 3");
+                // 3-N11: an exclusion from billing names when, who and why, or nothing at all.
+                table.HasCheckConstraint("ck_operation_service_billing_exclusion",
+                    "([billing_excluded_at] IS NULL AND [billing_excluded_by_account_id] IS NULL AND [billing_exclusion_reason] IS NULL) OR " +
+                    "([billing_excluded_at] IS NOT NULL AND [billing_excluded_by_account_id] IS NOT NULL AND [billing_exclusion_reason] IS NOT NULL)");
             });
             builder.Property(service => service.ContractedQuantity).HasPrecision(18, 4);
             builder.Property(service => service.ExecutedQuantity).HasPrecision(18, 4);
@@ -251,11 +255,14 @@ internal static class OperationsConfiguration
             builder.Property(service => service.UnitPriceSnapshot).HasPrecision(19, 4);
             builder.Property(service => service.CurrencyCodeSnapshot).HasColumnType("char(3)");
             builder.Property(service => service.CurrentStatus).HasConversion<string>().HasMaxLength(24);
+            builder.Property(service => service.BillingExcludedAt).HasPrecision(3);
+            builder.Property(service => service.BillingExclusionReason).HasMaxLength(500);
             builder.HasIndex(service => new { service.GroundOperationId, service.LineNumber }).IsUnique();
             builder.HasIndex(service => new { service.GroundOperationId, service.CurrentStatus });
             AddReference<GroundOperation, OperationService>(builder, service => service.GroundOperationId);
             AddReference<ServiceDefinition, OperationService>(builder, service => service.ServiceDefinitionId);
             AddReference<ContractServiceRate, OperationService>(builder, service => service.ContractServiceRateId);
+            AddReference<ApplicationUser, OperationService>(builder, service => service.BillingExcludedByAccountId);
         });
 
         modelBuilder.Entity<OperationServiceStatusEvent>(builder =>
@@ -378,6 +385,9 @@ internal static class OperationsConfiguration
             {
                 table.HasCheckConstraint("ck_incident_reported", "[reported_at] >= [occurred_at]");
                 table.HasCheckConstraint("ck_incident_resolved", "[resolved_at] IS NULL OR [resolved_at] >= [reported_at]");
+                // 3-G: the ramp agent reports from the tablet and OCC from its screens; one of them always did.
+                table.HasCheckConstraint("ck_incident_reporter",
+                    "[reported_by_ramp_agent_id] IS NOT NULL OR [reported_by_account_id] IS NOT NULL");
             });
             builder.Property(incident => incident.DelayCode).HasMaxLength(4);
             builder.Property(incident => incident.IncidentType).HasMaxLength(80).IsRequired();
@@ -391,22 +401,49 @@ internal static class OperationsConfiguration
             builder.HasIndex(incident => new { incident.GroundOperationId, incident.Status, incident.ReportedAt });
             AddReference<GroundOperation, Incident>(builder, incident => incident.GroundOperationId);
             AddReference<RampAgent, Incident>(builder, incident => incident.ReportedByRampAgentId);
+            AddReference<ApplicationUser, Incident>(builder, incident => incident.ReportedByAccountId);
             AddReference<ApplicationUser, Incident>(builder, incident => incident.ResolvedByAccountId);
+        });
+
+        // 3-G: the life of an incident, append-only: its report, each change OCC made with its note, its resolution.
+        modelBuilder.Entity<IncidentStatusEvent>(builder =>
+        {
+            builder.ToTable("incident_status_events", "ops");
+            builder.Property(statusEvent => statusEvent.Id).UseIdentityColumn();
+            builder.Property(statusEvent => statusEvent.FromStatus).HasConversion<string>().HasMaxLength(16);
+            builder.Property(statusEvent => statusEvent.ToStatus).HasConversion<string>().HasMaxLength(16);
+            builder.Property(statusEvent => statusEvent.Note).HasMaxLength(2000).IsRequired();
+            builder.Property(statusEvent => statusEvent.OccurredAt).HasPrecision(3);
+            builder.HasIndex(statusEvent => new { statusEvent.IncidentId, statusEvent.OccurredAt });
+            AddReference<Incident, IncidentStatusEvent>(builder, statusEvent => statusEvent.IncidentId);
+            AddReference<ApplicationUser, IncidentStatusEvent>(builder, statusEvent => statusEvent.ActorAccountId);
         });
 
         modelBuilder.Entity<OperationSubmission>(builder =>
         {
             builder.ToTable("operation_submissions", "ops", table =>
-                table.HasCheckConstraint("ck_operation_submission_revision", "[revision_number] > 0"));
+            {
+                table.HasCheckConstraint("ck_operation_submission_revision", "[revision_number] > 0");
+                // 3-H: a reopened revision names the approved one it reopens, who reopened it and why, or none of them.
+                table.HasCheckConstraint("ck_operation_submission_reopening",
+                    "([reopened_from_submission_id] IS NULL AND [reopened_by_account_id] IS NULL AND [reopen_reason] IS NULL) OR " +
+                    "([reopened_from_submission_id] IS NOT NULL AND [reopened_by_account_id] IS NOT NULL AND [reopen_reason] IS NOT NULL)");
+            });
             builder.Property(submission => submission.Status).HasConversion<string>().HasMaxLength(24);
             builder.Property(submission => submission.SubmittedAt).HasPrecision(3);
             builder.Property(submission => submission.AgentNote).HasMaxLength(2000);
             builder.Property(submission => submission.EvidenceJson).HasColumnType("nvarchar(max)");
+            builder.Property(submission => submission.ReopenReason).HasMaxLength(2000);
             builder.HasIndex(submission => new { submission.GroundOperationId, submission.RevisionNumber }).IsUnique();
             builder.HasIndex(submission => new { submission.Status, submission.SubmittedAt });
+            // An approved revision is reopened once: the reopened revision is the next one.
+            builder.HasIndex(submission => submission.ReopenedFromSubmissionId)
+                .HasFilter("[reopened_from_submission_id] IS NOT NULL").IsUnique();
             AddReference<GroundOperation, OperationSubmission>(builder, submission => submission.GroundOperationId);
             AddReference<OperationChecklist, OperationSubmission>(builder, submission => submission.OperationChecklistId);
             AddReference<RampAgent, OperationSubmission>(builder, submission => submission.SubmittedByRampAgentId);
+            AddReference<OperationSubmission, OperationSubmission>(builder, submission => submission.ReopenedFromSubmissionId);
+            AddReference<ApplicationUser, OperationSubmission>(builder, submission => submission.ReopenedByAccountId);
         });
 
         modelBuilder.Entity<ReviewDecision>(builder =>
@@ -506,13 +543,23 @@ internal static class OperationsConfiguration
         modelBuilder.Entity<OperationDocumentVersion>(builder =>
         {
             builder.ToTable("operation_document_versions", "ops", table =>
-                table.HasCheckConstraint("ck_operation_document_version_sha", "LEN([content_sha256]) = 64"));
+            {
+                table.HasCheckConstraint("ck_operation_document_version_sha", "LEN([content_sha256]) = 64");
+                // 3-N02: a version OCC corrected after the signature names the one it corrects, why, who and when.
+                table.HasCheckConstraint("ck_operation_document_version_correction",
+                    "([corrects_version_id] IS NULL AND [correction_reason] IS NULL AND [corrected_by_account_id] IS NULL AND [corrected_at] IS NULL) OR " +
+                    "([corrects_version_id] IS NOT NULL AND [correction_reason] IS NOT NULL AND [corrected_by_account_id] IS NOT NULL AND [corrected_at] IS NOT NULL)");
+            });
             builder.Property(version => version.Kind).HasConversion<string>().HasMaxLength(24);
             builder.Property(version => version.DocumentNumber).HasMaxLength(24).IsRequired();
             builder.Property(version => version.ContentJson).IsRequired();
             builder.Property(version => version.ContentSha256).HasMaxLength(64).IsFixedLength().IsRequired();
+            builder.Property(version => version.CorrectionReason).HasMaxLength(500);
+            builder.Property(version => version.CorrectedAt).HasPrecision(3);
             builder.HasIndex(version => new { version.GroundOperationId, version.Kind, version.ContentSha256 }).IsUnique();
             AddReference<GroundOperation, OperationDocumentVersion>(builder, version => version.GroundOperationId);
+            AddReference<OperationDocumentVersion, OperationDocumentVersion>(builder, version => version.CorrectsVersionId);
+            AddReference<ApplicationUser, OperationDocumentVersion>(builder, version => version.CorrectedByAccountId);
         });
 
         modelBuilder.Entity<OperationDocumentSignature>(builder =>

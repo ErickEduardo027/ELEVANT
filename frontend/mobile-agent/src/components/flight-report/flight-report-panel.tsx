@@ -15,8 +15,10 @@ import {
   subscribeFlightReport,
   type FlightReportSnapshot,
 } from '../../services/flight-report';
+import { aircraftTypeLabel, getRampAircraftTypes, type RampAircraftTypeCatalog } from '../../services/aircraft-types';
 import { loadRampIncidentCenter, reserveRampIncident } from '../../services/ramp-incidents';
 import { pendingFor } from '../../synchronization/flight-report-outbox';
+import { EVIDENCE_CLOCK_TOLERANCE_MS, serverNow } from '../../synchronization/server-clock';
 import { colors } from '../../theme/colors';
 import { radius, space, syncTone, touch, type } from '../../theme/tokens';
 import { PrimaryButton } from '../ui';
@@ -34,6 +36,31 @@ function timeIn(value: string | Date, timeZone: string) {
   return new Intl.DateTimeFormat('es-DO', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone })
     .format(new Date(value));
 }
+
+function dayIn(value: Date, timeZone: string) {
+  return new Intl.DateTimeFormat('es-DO', { weekday: 'short', day: 'numeric', month: 'short', timeZone }).format(value);
+}
+
+/**
+ * When the operation's evidence window opens, as ELEVANT measures it (3-N25): its start or the recorded arrival,
+ * whichever came first, minus the clock tolerance. Null before the operation started.
+ */
+export function evidenceWindowOpens(operation: Operation): Date | null {
+  const times = [operation.operation.actualStartAt, operation.turnaround.arrival?.actualAt]
+    .map(value => (typeof value === 'string' ? Date.parse(value) : Number.NaN))
+    .filter(Number.isFinite);
+  return times.length === 0 ? null : new Date(Math.min(...times) - EVIDENCE_CLOCK_TOLERANCE_MS);
+}
+
+/** A milestone time inside the window the tablet knows: not before it opens, never after now by ELEVANT's clock. */
+export function clampMilestoneTime(value: Date, opensAt: Date | null, now: Date) {
+  if (value.getTime() > now.getTime()) return now;
+  if (opensAt && value.getTime() < opensAt.getTime()) return opensAt;
+  return value;
+}
+
+/** Whole-minute steps of the adjustment; an hour at a time reaches a correction days later (3-N09). */
+const SHIFTS = [-60, -10, -5, -1, 1, 5, 60] as const;
 
 function haptic() {
   void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
@@ -82,30 +109,41 @@ function PhaseBar({ phase, onChange, done }: {
   );
 }
 
-/** Adjust a time with whole minutes: the agent tapped late, or corrects from the radio log. */
-function TimeSheet({ label, initial, timeZone, onClose, onSave }: {
-  label: string; initial: Date; timeZone: string; onClose: () => void; onSave: (value: Date) => void;
+/**
+ * Adjust a time with whole minutes: the agent tapped late, or corrects from the radio log. The time stays inside the
+ * operation's window (3-N25), never after now by ELEVANT's clock (3-N18); in a correction round there is no «AHORA»:
+ * the facts of the flight happened before the first hand-off (3-N09), where ELEVANT closes the milestones' window.
+ */
+function TimeSheet({ label, initial, opensAt, correction, timeZone, onClose, onSave }: {
+  label: string; initial: Date; opensAt: Date | null; correction: boolean; timeZone: string;
+  onClose: () => void; onSave: (value: Date) => void;
 }) {
-  const [value, setValue] = useState(initial);
-  const shift = (minutes: number) => setValue(current => {
-    const next = new Date(current.getTime() + minutes * 60_000);
-    return next.getTime() > Date.now() ? new Date() : next;
-  });
+  const [value, setValue] = useState(() => clampMilestoneTime(initial, opensAt, serverNow()));
+  const shift = (minutes: number) => setValue(current =>
+    clampMilestoneTime(new Date(current.getTime() + minutes * 60_000), opensAt, serverNow()));
+  const until = correction ? 'hasta tu primera entrega a OCC' : 'hasta ahora';
   return (
     <Modal animationType="slide" transparent visible onRequestClose={onClose}>
       <View style={styles.sheetBackdrop}>
         <View style={styles.sheet} accessibilityViewIsModal>
           <Text style={styles.sheetTitle}>{label}</Text>
           <Text accessibilityLiveRegion="polite" style={styles.sheetTime}>{timeIn(value, timeZone)}</Text>
+          <Text style={styles.sheetDay}>{dayIn(value, timeZone)}</Text>
+          <Text style={styles.hint}>
+            {opensAt ? `Hora válida desde ${dayIn(opensAt, timeZone)} ${timeIn(opensAt, timeZone)} ${until} (hora de la estación).`
+              : `Hora válida ${until} (hora de la estación).`}
+          </Text>
           <View style={styles.shiftRow}>
-            {[-10, -5, -1, 1, 5].map(minutes => (
+            {SHIFTS.map(minutes => (
               <Pressable key={minutes} accessibilityRole="button" accessibilityLabel={`${minutes > 0 ? 'Más' : 'Menos'} ${Math.abs(minutes)} minutos`}
                 onPress={() => shift(minutes)} style={styles.shiftButton}>
                 <Text style={styles.shiftText}>{minutes > 0 ? `+${minutes}` : minutes}</Text>
               </Pressable>
             ))}
           </View>
-          <PrimaryButton icon="time-outline" secondary title="AHORA" onPress={() => setValue(new Date())} />
+          {!correction && (
+            <PrimaryButton icon="time-outline" secondary title="AHORA" onPress={() => setValue(serverNow())} />
+          )}
           <PrimaryButton icon="checkmark" title="GUARDAR HORA" onPress={() => onSave(value)} />
           <PrimaryButton secondary title="CANCELAR" onPress={onClose} />
         </View>
@@ -114,15 +152,16 @@ function TimeSheet({ label, initial, timeZone, onClose, onSave }: {
   );
 }
 
-function MilestoneButton({ label, state, timeZone, disabled, onNow, onEdit }: {
+function MilestoneButton({ label, state, timeZone, disabled, correction, onNow, onEdit }: {
   label: string; state: { at?: string; tone: Tone; error?: string }; timeZone: string; disabled: boolean;
-  onNow: () => void; onEdit: () => void;
+  correction: boolean; onNow: () => void; onEdit: () => void;
 }) {
   const tone = syncTone[state.tone];
   const recorded = Boolean(state.at);
   return (
     <Pressable accessibilityRole="button" disabled={disabled}
-      accessibilityLabel={recorded ? `${label}, ${timeIn(state.at!, timeZone)}, ${tone.label}. Toca para ajustar.` : `${label}. Toca para registrar ahora.`}
+      accessibilityLabel={recorded ? `${label}, ${timeIn(state.at!, timeZone)}, ${tone.label}. Toca para ajustar.`
+        : correction ? `${label}. Toca para registrar su hora.` : `${label}. Toca para registrar ahora.`}
       onPress={recorded ? onEdit : onNow}
       style={({ pressed }) => [styles.milestone, { borderColor: recorded ? tone.fg : colors.border, backgroundColor: tone.bg },
         disabled && styles.disabled, pressed && styles.pressed]}>
@@ -132,6 +171,8 @@ function MilestoneButton({ label, state, timeZone, disabled, onNow, onEdit }: {
           <Text style={[styles.milestoneTime, { color: tone.fg }]}>{timeIn(state.at!, timeZone)}</Text>
           <Ionicons accessibilityLabel={tone.label} name={tone.icon} size={18} color={tone.fg} />
         </View>
+      ) : correction ? (
+        <View style={styles.nowChip}><Ionicons name="time-outline" size={16} color={colors.white} /><Text style={styles.nowText}>REGISTRAR HORA</Text></View>
       ) : (
         <View style={styles.nowChip}><Ionicons name="finger-print" size={16} color={colors.white} /><Text style={styles.nowText}>AHORA</Text></View>
       )}
@@ -142,6 +183,8 @@ function MilestoneButton({ label, state, timeZone, disabled, onNow, onEdit }: {
 /**
  * «Reporte de Vuelo» by phase (ADR-0031): Llegada → En posición → Salida → Retroempuje. One tap
  * records the time on the device, with a vibration; the queue sends it when there is signal.
+ * In a correction round (OCC returned the operation) the facts of the flight already happened: an empty milestone
+ * opens the adjustment at the last recorded time instead of recording «AHORA» (3-N09).
  */
 export function FlightReportPanel({ operation, timeZone, editable }: { operation: Operation; timeZone: string; editable: boolean }) {
   const snapshot = useFlightReport();
@@ -155,11 +198,20 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
   const [phase, setPhase] = useState<FlightReportPhase>(firstOpen);
   const [editing, setEditing] = useState<{ code: string; label: string; at: Date } | null>(null);
   const [error, setError] = useState('');
+  const correction = editable && operation.review?.status === 'Returned';
+  const opensAt = evidenceWindowOpens(operation);
+  /** Where a correction starts from: the last time recorded on the operation, or its start. */
+  const lastRecorded = () => {
+    const times = [...states.values()].map(state => (state.at ? Date.parse(state.at) : Number.NaN)).filter(Number.isFinite);
+    const start = operation.operation.actualStartAt ? Date.parse(operation.operation.actualStartAt) : Number.NaN;
+    const latest = times.length > 0 ? Math.max(...times) : start;
+    return Number.isFinite(latest) ? new Date(latest) : serverNow();
+  };
 
   const record = (code: string, at: Date) => {
     setError('');
     haptic();
-    recordMilestone(operation.operation.id, code, at).catch(() => setError('No se pudo guardar en el dispositivo. Intenta de nuevo.'));
+    recordMilestone(operation.operation.id, code, at, timeZone).catch(() => setError('No se pudo guardar en el dispositivo. Intenta de nuevo.'));
   };
 
   return (
@@ -173,13 +225,18 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
       <View style={styles.grid}>
         {FLIGHT_REPORT_MILESTONES.filter(item => item.phase === phase).map(item => (
           <MilestoneButton key={item.code} label={item.label} state={states.get(item.code)!} timeZone={timeZone}
-            disabled={!editable}
-            onNow={() => record(item.code, new Date())}
+            disabled={!editable} correction={correction}
+            onNow={() => (correction ? setEditing({ code: item.code, label: item.label, at: lastRecorded() })
+              : record(item.code, serverNow()))}
             onEdit={() => setEditing({ code: item.code, label: item.label, at: new Date(states.get(item.code)!.at!) })} />
         ))}
       </View>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
-      {editing && <TimeSheet label={editing.label} initial={editing.at} timeZone={timeZone} onClose={() => setEditing(null)}
+      {correction && (
+        <Text style={styles.hint}>Corrección: registra cada hora como ocurrió en el vuelo, no la hora actual.</Text>
+      )}
+      {editing && <TimeSheet label={editing.label} initial={editing.at} opensAt={opensAt} correction={correction}
+        timeZone={timeZone} onClose={() => setEditing(null)}
         onSave={value => { record(editing.code, value); setEditing(null); }} />}
     </View>
   );
@@ -187,9 +244,27 @@ export function FlightReportPanel({ operation, timeZone, editable }: { operation
 
 const toInt = (text: string) => (text.trim() === '' ? null : Number.parseInt(text.replace(/\D/g, ''), 10));
 
-/** Passengers, MTOW and registration, typed once; every AVIAM form takes them from here. */
+/** The active aircraft types of ELEVANT; without them (no signal and no copy, an older server) the type is read-only. */
+function useAircraftTypeCatalog() {
+  const [catalog, setCatalog] = useState<RampAircraftTypeCatalog | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    getRampAircraftTypes({ signal: controller.signal })
+      .then(value => { if (!controller.signal.aborted) setCatalog(value); })
+      .catch(() => { if (!controller.signal.aborted) setCatalog({ types: [], available: false, fromCache: false }); });
+    return () => controller.abort();
+  }, []);
+  return catalog;
+}
+
+/**
+ * Passengers, MTOW, registration and aircraft type, typed once; every AVIAM form takes them from here. The type (3-B)
+ * is chosen from ELEVANT's catalog only while the operation runs: the ground-time allowance and the package-exceeded
+ * surcharge read it. Leaving it untouched keeps the current one.
+ */
 export function FlightDataCard({ operation, editable }: { operation: Operation; editable: boolean }) {
   const snapshot = useFlightReport();
+  const catalog = useAircraftTypeCatalog();
   const confirmed = snapshot?.confirmed[operation.operation.id];
   const pending = pendingFor(snapshot?.items ?? [], operation.operation.id).flightData;
   const source = pending?.command.kind === 'flightData' ? pending.command : {
@@ -202,13 +277,25 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
     passengersIn: source.passengersIn?.toString() ?? '', passengersOut: source.passengersOut?.toString() ?? '',
     mtowKg: source.mtowKg?.toString() ?? '', aircraftRegistration: source.aircraftRegistration ?? '',
   });
+  // Undefined: untouched here, so the type still waiting on the device (or none, which keeps the flight's) applies.
+  const [picked, setPicked] = useState<string | null | undefined>(undefined);
+  const waitingType = pending?.command.kind === 'flightData' ? pending.command.aircraftTypeId ?? null : null;
+  const aircraftTypeId = picked !== undefined ? picked : waitingType;
+  const [picking, setPicking] = useState(false);
   const [error, setError] = useState('');
   const tone: Tone = pending ? (pending.state === 'blocked' ? 'blocked' : 'device') :
     (source.passengersIn ?? source.passengersOut ?? source.mtowKg) !== null ? 'confirmed' : 'empty';
+  const currentType = operation.turnaround.aircraft;
+  const chosen = aircraftTypeId ? catalog?.types.find(item => item.id === aircraftTypeId) : undefined;
+  const typeText = chosen ? aircraftTypeLabel(chosen)
+    : aircraftTypeId ? 'Tipo elegido en este dispositivo'
+      : currentType ? aircraftTypeLabel(currentType) : 'Sin tipo de avión registrado';
+  const canPick = editable && Boolean(catalog?.available) && (catalog?.types.length ?? 0) > 0;
 
   const save = () => {
     const values = { passengersIn: toInt(draft.passengersIn), passengersOut: toInt(draft.passengersOut), mtowKg: toInt(draft.mtowKg),
-      aircraftRegistration: draft.aircraftRegistration.trim().toUpperCase() || null };
+      aircraftRegistration: draft.aircraftRegistration.trim().toUpperCase() || null,
+      ...(aircraftTypeId ? { aircraftTypeId } : {}) };
     if ([values.passengersIn, values.passengersOut].some(value => value !== null && (value < 0 || value > 999)) ||
         (values.mtowKg !== null && (values.mtowKg < 1000 || values.mtowKg > 700000)) ||
         (values.aircraftRegistration && !/^[A-Z0-9-]{2,10}$/.test(values.aircraftRegistration))) {
@@ -244,8 +331,41 @@ export function FlightDataCard({ operation, editable }: { operation: Operation; 
         {field('mtowKg', 'MTOW (kg)')}
         {field('aircraftRegistration', 'Matrícula', false)}
       </View>
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>Tipo de avión</Text>
+        {canPick ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={`Tipo de avión: ${typeText}`} onPress={() => setPicking(true)}
+            style={({ pressed }) => [styles.input, styles.typeField, pressed && styles.pressed]}>
+            <Text style={styles.typeText}>{typeText}</Text>
+            <Ionicons name="chevron-down" size={18} color={colors.navy} />
+          </Pressable>
+        ) : (
+          <Text accessibilityLabel={`Tipo de avión: ${typeText}`} style={[styles.input, styles.typeText, styles.typeReadOnly]}>{typeText}</Text>
+        )}
+        {catalog?.fromCache ? <Text style={styles.hint}>Lista de tipos guardada en el dispositivo (sin conexión).</Text> : null}
+        {catalog && !catalog.available && editable
+          ? <Text style={styles.hint}>Sin la lista de tipos de ELEVANT el tipo no se puede cambiar desde la tablet.</Text> : null}
+      </View>
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       <PrimaryButton disabled={!editable} icon="save-outline" title="GUARDAR DATOS DEL VUELO" onPress={save} />
+      <Modal animationType="slide" visible={picking} onRequestClose={() => setPicking(false)}>
+        <View style={styles.deviationScreen}>
+          <Text style={styles.sheetTitle}>¿Qué avión está en la posición?</Text>
+          <FlatList data={catalog?.types ?? []} keyExtractor={item => item.id} style={styles.codeList}
+            renderItem={({ item }) => {
+              const selected = (aircraftTypeId ?? currentType?.id) === item.id;
+              return (
+                <Pressable accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={aircraftTypeLabel(item)}
+                  onPress={() => { setPicked(item.id === currentType?.id ? null : item.id); setPicking(false); setError(''); }}
+                  style={[styles.code, selected && styles.codeSelected]}>
+                  <Text style={[styles.codeNumber, selected && styles.codeSelectedText]}>{item.icaoCode}</Text>
+                  <Text style={[styles.codeLabel, selected && styles.codeSelectedText]}>{item.manufacturer} {item.model}</Text>
+                </Pressable>
+              );
+            }} />
+          <PrimaryButton secondary title="CERRAR" onPress={() => setPicking(false)} />
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -264,7 +384,7 @@ export function DeviationAction({ operationId, editable }: { operationId: string
     setStatus('saving');
     try {
       await reserveRampIncident(operationId, { incidentType: 'Deviation', severity: 'Medium', description: note.trim(),
-        occurredAt: new Date(Math.floor(Date.now() / 1000) * 1000).toISOString(), delayCode: code });
+        occurredAt: new Date(Math.floor(serverNow().getTime() / 1000) * 1000).toISOString(), delayCode: code });
       haptic();
       setOpen(false); setCode(null); setNote('');
       setStatus('saved');
@@ -340,7 +460,8 @@ const styles = StyleSheet.create({
   sheet: { backgroundColor: colors.white, borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg, padding: space.xl, gap: space.md },
   sheetTitle: { ...type.title, color: colors.navy },
   sheetTime: { fontSize: 48, fontWeight: '900', color: colors.ink, textAlign: 'center', fontVariant: ['tabular-nums'] },
-  shiftRow: { flexDirection: 'row', gap: space.sm, justifyContent: 'center' },
+  sheetDay: { ...type.label, color: colors.muted, textAlign: 'center', textTransform: 'capitalize' },
+  shiftRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, justifyContent: 'center' },
   shiftButton: { minWidth: touch.min, minHeight: touch.min, borderRadius: radius.md, borderWidth: 1, borderColor: colors.navy, alignItems: 'center', justifyContent: 'center' },
   shiftText: { ...type.label, color: colors.navy },
   syncChip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: radius.pill, paddingHorizontal: space.sm, paddingVertical: 4 },
@@ -362,4 +483,7 @@ const styles = StyleSheet.create({
   codeLabel: { ...type.body, color: colors.ink, flex: 1 },
   codeSelectedText: { color: colors.white },
   note: { minHeight: 96, textAlignVertical: 'top', paddingTop: space.md },
+  typeField: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  typeText: { fontSize: 16, fontWeight: '700', color: colors.ink, flexShrink: 1 },
+  typeReadOnly: { textAlignVertical: 'center', paddingTop: space.sm, backgroundColor: colors.background },
 });

@@ -48,7 +48,7 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
             {
                 var operation = scope.Operation.Operation;
                 if (!OperationDocumentRules.CanSign(operation.CurrentStatus, operation.ActualStartAt)) return false;
-                var assembled = await new OperationDocumentAssembler(context).AssembleAsync(operation.Id, ct);
+                var assembled = await new OperationDocumentAssembler(context, timeProvider).AssembleAsync(operation.Id, ct);
                 var content = assembled?.Documents.SingleOrDefault(item => item.Kind == request.Kind);
                 if (content is null) return false;
                 var canonical = OperationDocumentRules.CanonicalJson(content);
@@ -98,23 +98,32 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
             async (scope, ct) =>
             {
                 var operation = scope.Operation.Operation;
-                var reportedAt = Truncate(request.ReportedAt);
-                if (!RampExecutionPolicy.CanRecordMilestone(scope.Operation.TurnaroundStatus, operation.CurrentStatus,
-                        operation.ActualStartAt, operation.ActualEndAt, reportedAt, scope.Now))
-                    return false;
+                var tapped = Truncate(request.ReportedAt);
+                // 3-N25: the window of the milestones, except that a correction round takes until now the damage the
+                // agent marks in it (the tablet records it with the current time); 3-N06: a damage captured before
+                // the hand-off is still taken while OCC reviews it.
+                var window = await RampEvidenceWindowReader.ReadAsync(context, operation, RampEvidenceKind.Report,
+                    scope.Now, ct);
+                if (RampExecutionPolicy.MilestoneRejection(scope.Operation.TurnaroundStatus, operation.CurrentStatus,
+                        operation.ActualStartAt, operation.ActualEndAt, string.Empty, tapped, window,
+                        new Dictionary<string, DateTimeOffset>(), scope.Now) is { } rejection)
+                    return rejection;
                 if (await context.Set<OperationDamageMark>().AnyAsync(item => item.PublicId == request.MarkId, ct))
-                    return false;
+                    return RampProblemCodes.GenericConflict;
                 context.Add(new OperationDamageMark
                 {
                     PublicId = request.MarkId, GroundOperationId = operation.Id, PositionX = request.X,
                     PositionY = request.Y, Note = request.Note, ReportedByRampAgentId = scope.Actor.RampAgentInternalId,
-                    ReportedAt = reportedAt, CreatedAt = scope.Now, UpdatedAt = scope.Now,
+                    ReportedAt = RampEvidenceTimePolicy.Clamp(tapped, scope.Now), CreatedAt = scope.Now,
+                    UpdatedAt = scope.Now,
                 });
                 Audit(scope, request.RequestId, "ramp.operation.damage_mark.recorded", new
                 {
                     markId = request.MarkId, request.X, request.Y, note = request.Note, installationId = request.InstallationId,
                 });
-                return true;
+                await PendingSubmissionEvidenceRefresher.RefreshAsync(context, scope.Actor, scope.Operation, scope.Now,
+                    "damage_mark", request.RequestId, ct);
+                return null;
             }, cancellationToken);
 
     public async Task<OperationDocumentWriteResult> AttachDamagePhotoAsync(DamagePhotoWriteRequest request,
@@ -207,6 +216,8 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
                       operation.PublicId == operationId
                 select (long?)operation.Id).SingleOrDefaultAsync(cancellationToken);
         if (operationInternalId is null) return null;
+        // 3-N02: the Service Order as it stands when it is signed or OCC corrected it after the signature.
+        if (await CurrentServiceOrderAsync(operationInternalId.Value, cancellationToken) is { } current) return current;
         var required = OperationDocumentRules.RolesFor(OperationDocumentKind.ServiceOrder);
         var versions = await context.Set<OperationDocumentVersion>().AsNoTracking()
             .Where(item => item.GroundOperationId == operationInternalId && item.Kind == OperationDocumentKind.ServiceOrder)
@@ -219,6 +230,39 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
                 return new SignedOperationDocument(OperationDocumentRules.Parse(version.ContentJson), version.ContentSha256, mine);
         }
         return null;
+    }
+
+    public async Task<SignedOperationDocument?> ReadCorrectedServiceOrderForOccAsync(IReadOnlyCollection<Guid> stations,
+        Guid operationId, CancellationToken cancellationToken = default)
+    {
+        var operation = await OccOperationAsync(stations, operationId, cancellationToken);
+        if (operation is null) return null;
+        var current = await CurrentServiceOrderAsync(operation.Value.Id, cancellationToken);
+        return current?.Corrections is { Count: > 0 } ? current : null;
+    }
+
+    /// <summary>
+    /// The current Service Order when it can be approved (3-N02): signed, with its own signatures, or corrected by OCC
+    /// after the signature, with the signatures of the version it corrects and the corrections, oldest first. Null
+    /// when it is not signed or its content changed since the signature.
+    /// </summary>
+    private async Task<SignedOperationDocument?> CurrentServiceOrderAsync(long operationId,
+        CancellationToken cancellationToken)
+    {
+        var evaluation = await ServiceOrderSignatures.EvaluateAsync(context, operationId, timeProvider, cancellationToken);
+        if (!evaluation.CanBeApproved || evaluation.CurrentVersionId is not long currentId ||
+            evaluation.SignedVersionId is not long signedId)
+            return null;
+        var version = await context.Set<OperationDocumentVersion>().AsNoTracking()
+            .Where(item => item.Id == currentId).Select(item => new { item.ContentJson, item.ContentSha256 })
+            .SingleAsync(cancellationToken);
+        var signatures = (await SignaturesAsync([signedId], cancellationToken)).GetValueOrDefault(signedId) ?? [];
+        var corrections = evaluation.State == ServiceOrderStates.Corrected
+            ? (await ServiceOrderSignatures.CorrectionsAsync(context, currentId, cancellationToken))
+                .Select(item => new OperationDocumentCorrectionData(item.Reason, item.CorrectedAt, item.CorrectedBy)).ToArray()
+            : [];
+        return new SignedOperationDocument(OperationDocumentRules.Parse(version.ContentJson), version.ContentSha256,
+            signatures, corrections);
     }
 
     private async Task<(long Id, Guid PublicId)?> OccOperationAsync(IReadOnlyCollection<Guid> stations, Guid operationId,
@@ -237,7 +281,7 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
     private async Task<OperationDocumentsView> ViewAsync(long operationId, Guid operationPublicId,
         CancellationToken cancellationToken)
     {
-        var assembled = await new OperationDocumentAssembler(context).AssembleAsync(operationId, cancellationToken)
+        var assembled = await new OperationDocumentAssembler(context, timeProvider).AssembleAsync(operationId, cancellationToken)
                         ?? throw new InvalidOperationException("The operation disappeared while reading its forms.");
         var versions = await context.Set<OperationDocumentVersion>().AsNoTracking()
             .Where(item => item.GroundOperationId == operationId)
@@ -271,16 +315,26 @@ internal sealed class EfOperationDocumentStore(ElevantDbContext context, TimePro
                 OperationDocumentRules.ParseStrokes(item.StrokesJson), item.SignerIdentification)).ToArray());
     }
 
+    private Task<OperationDocumentWriteResult> RunAsync(string commandType, Guid accountId,
+        IReadOnlyCollection<Guid> stations, Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
+        Func<RampReceiptScope, CancellationToken, Task<bool>> apply, CancellationToken cancellationToken) =>
+        RunAsync(commandType, accountId, stations, operationId, installationId, idempotencyKey, payloadHash,
+            async (scope, ct) => await apply(scope, ct) ? null : RampProblemCodes.GenericConflict, cancellationToken);
+
+    /// <summary>
+    /// Runs one form command whose <paramref name="apply"/> answers null when it applied or the code of the rule it
+    /// broke, which the receipt keeps and the refusal carries (phase 3, block C).
+    /// </summary>
     private async Task<OperationDocumentWriteResult> RunAsync(string commandType, Guid accountId,
         IReadOnlyCollection<Guid> stations, Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
-        Func<RampReceiptScope, CancellationToken, Task<bool>> apply, CancellationToken cancellationToken)
+        Func<RampReceiptScope, CancellationToken, Task<string?>> apply, CancellationToken cancellationToken)
     {
         var outcome = await new RampReceiptRunner(context, timeProvider).RunAsync(commandType, accountId, stations,
             operationId, installationId, idempotencyKey, payloadHash, apply, cancellationToken);
         return outcome.IsSuccess
             ? OperationDocumentWriteResult.Success(
                 await ViewAsync(outcome.OperationId, outcome.OperationPublicId, cancellationToken), outcome.ReceiptId)
-            : OperationDocumentWriteResult.Failed(outcome.Failure!.Value, outcome.ReceiptId);
+            : OperationDocumentWriteResult.Failed(outcome.Failure!.Value, outcome.ReceiptId, outcome.Code);
     }
 
     private void Audit(RampReceiptScope scope, string? requestId, string action, object metadata) =>

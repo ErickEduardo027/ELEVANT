@@ -6,6 +6,7 @@ using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Operations;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -493,7 +494,7 @@ public sealed partial class SqlServerMigrationTests
         var terminal = Assert.Single(board.Terminals, item => item.Code == "A");
         var stand = board.Stands.First(item => item.Code == "A01").StandId;
         var input = new CreateCoverageInput(juniorProfile, terminal.TerminalId, [stand], date, null, null, RileyProfile, null, false);
-        Assert.Contains("mentor_absent", (await CoverageStore(store => store.CreateAsync(OperationsAdministrator, PujStation, input, ct)))
+        Assert.Contains("mentor_absent", (await CoverageStore(store => store.CreateAsync(OperationsAdministrator, PujStation, input, null, ct)))
             .Reasons);
         await using (var setup = CreateContext(database.ConnectionString))
         {
@@ -502,7 +503,7 @@ public sealed partial class SqlServerMigrationTests
             await setup.AirportPermitCycles.Where(item => item.PublicId == RileyAirportId).ExecuteUpdateAsync(update =>
                 update.SetProperty(item => item.ExpiresOn, date.AddDays(-1)), ct);
         }
-        var reasons = (await CoverageStore(store => store.CreateAsync(OperationsAdministrator, PujStation, input, ct))).Reasons;
+        var reasons = (await CoverageStore(store => store.CreateAsync(OperationsAdministrator, PujStation, input, null, ct))).Reasons;
         Assert.Contains("mentor_permit_required", reasons);
         Assert.DoesNotContain("mentor_absent", reasons);
 
@@ -524,13 +525,17 @@ public sealed partial class SqlServerMigrationTests
         await context.RampAgents.Where(item => item.Id == mateo.Id).ExecuteUpdateAsync(update =>
             update.SetProperty(item => item.IsActive, false), ct);
         await context.SaveChangesAsync(ct);
-        var holder = await context.OperationAgentAssignments.AsNoTracking().Where(item => item.GroundOperationId == flight.Id &&
-            item.ReleasedAt == null).Select(item => item.RampAgentId).SingleAsync(ct);
         await using (var scope = provider.CreateAsyncScope())
             Assert.Null((await scope.ServiceProvider.GetRequiredService<IOccPositionStore>()
-                .AssignAsync(OperationsAdministrator, flight.Turnaround, b01.PublicId, "Cambio del aeropuerto", ct)).Failure);
-        Assert.Equal(holder, await context.OperationAgentAssignments.AsNoTracking().Where(item =>
-            item.GroundOperationId == flight.Id && item.ReleasedAt == null).Select(item => item.RampAgentId).SingleAsync(ct));
+                .AssignAsync(OperationsAdministrator, flight.Turnaround, b01.PublicId, "Cambio del aeropuerto", OccPositionCommand.None, ct)).Failure);
+        // Mateo never receives it. 3-N05: Riley may not work terminal B either (no scope nor shift there), so nobody may
+        // take it at B01: the operation goes back to Planned and OCC is told to reassign it.
+        Assert.Empty(await context.OperationAgentAssignments.AsNoTracking().Where(item =>
+            item.GroundOperationId == flight.Id && item.ReleasedAt == null).ToArrayAsync(ct));
+        Assert.False(await context.OperationAgentAssignments.AsNoTracking().AnyAsync(item =>
+            item.GroundOperationId == flight.Id && item.RampAgentId == mateo.Id, ct));
+        Assert.True(await context.OperationalNotifications.AsNoTracking().AnyAsync(item =>
+            item.GroundOperationId == flight.Id && item.Kind == CoverageReassignment.UnassignedKind, ct));
     }
 
     private static async Task<CoverageResult> RunCoverage(ServiceProvider provider,

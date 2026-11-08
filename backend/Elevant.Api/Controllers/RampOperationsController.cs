@@ -17,12 +17,16 @@ namespace Elevant.Api.Controllers;
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[RampProblemDetails]
 [Route("api/v{version:apiVersion}/ramp/operations")]
 public sealed class RampOperationsController(
     GetRampAssignedOperationsHandler handler,
     StartRampOperationHandler startHandler) : ControllerBase
 {
-    /// <summary>Returns only active operations assigned to the current ramp agent.</summary>
+    /// <summary>
+    /// The operations of the current ramp agent's queue (3-N01): assigned, in progress, handed over (pending or in review)
+    /// and returned, then the ones OCC approved in the last 48 hours; the active ones first, at most 100.
+    /// </summary>
     [HttpGet(Name = "GetRampAssignedOperations")]
     [ProducesResponseType<RampAssignedOperationsResponse>(
         StatusCodes.Status200OK,
@@ -44,7 +48,7 @@ public sealed class RampOperationsController(
     {
         if (!TryGetAccountId(out var accountId))
         {
-            return UnauthorizedResult<RampAssignedOperationsResponse>();
+            return RampProblems.Failure(this, RampOperationsFailure.Unauthorized);
         }
 
         var result = await handler.HandleAsync(
@@ -54,10 +58,15 @@ public sealed class RampOperationsController(
         return result.IsSuccess
             ? Ok(new RampAssignedOperationsResponse(
                 result.Operations!.Select(Map).ToArray()))
-            : FailureResult<RampAssignedOperationsResponse>(result.Failure!.Value);
+            : RampProblems.Failure(this, result.Failure!.Value);
     }
 
-    /// <summary>Starts one operation assigned to the authenticated ramp agent.</summary>
+    /// <summary>
+    /// Starts one operation assigned to the authenticated ramp agent. The body is optional (3-I): the first version
+    /// of the app posts no body and the server's time applies; a newer one sends the moment the agent tapped
+    /// «Iniciar», which must not precede the assignment nor be more than a day old (409
+    /// <c>time_outside_operation_window</c>).
+    /// </summary>
     [HttpPost("{operationId:guid}/start", Name = "StartRampOperation")]
     [ProducesResponseType<RampOperationStartResponse>(StatusCodes.Status200OK, "application/json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
@@ -71,11 +80,13 @@ public sealed class RampOperationsController(
         [FromRoute] Guid operationId,
         [FromHeader(Name = "X-Elevant-Installation-Id"), BindRequired] Guid installationId,
         [FromHeader(Name = "Idempotency-Key"), BindRequired] Guid idempotencyKey,
+        // No [Consumes]: the deployed APK posts no body and no content type, which must not answer 415.
+        [FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] StartRampOperationRequest? request,
         CancellationToken cancellationToken)
     {
         if (!TryGetAccountId(out var accountId))
         {
-            return UnauthorizedResult<RampOperationStartResponse>();
+            return RampProblems.Failure(this, RampOperationsFailure.Unauthorized);
         }
 
         var result = await startHandler.HandleAsync(
@@ -85,12 +96,14 @@ public sealed class RampOperationsController(
                 installationId,
                 idempotencyKey,
                 idempotencyKey,
-                HttpContext.TraceIdentifier),
+                HttpContext.TraceIdentifier,
+                request?.StartedAt),
             cancellationToken);
 
         if (!result.IsSuccess)
         {
-            return FailureResult<RampOperationStartResponse>(result.Failure!.Value);
+            // 3-N04, 3-I: a coded refusal keeps the status the deployed APK explains and adds the code the new one shows.
+            return RampProblems.Failure(this, result.Failure!.Value, result.Code);
         }
 
         var start = result.Start!;
@@ -100,46 +113,6 @@ public sealed class RampOperationsController(
     private bool TryGetAccountId(out Guid accountId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
-
-    private ActionResult<T> FailureResult<T>(RampOperationsFailure failure) => failure switch
-    {
-        RampOperationsFailure.Unauthorized => UnauthorizedResult<T>(),
-        RampOperationsFailure.Forbidden => ProblemResult<T>(
-            StatusCodes.Status403Forbidden,
-            "Access to ramp operations is forbidden."),
-        RampOperationsFailure.InvalidRequest => ProblemResult<T>(
-            StatusCodes.Status400BadRequest,
-            "The ramp operation request is invalid."),
-        RampOperationsFailure.NotFound => ProblemResult<T>(
-            StatusCodes.Status404NotFound,
-            "The ramp operation was not found."),
-        RampOperationsFailure.Conflict => ProblemResult<T>(
-            StatusCodes.Status409Conflict,
-            "The ramp operation request conflicts with current operational data."),
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(failure),
-            failure,
-            "Unsupported failure."),
-    };
-
-    private ActionResult<T> UnauthorizedResult<T>()
-    {
-        Response.Headers.WWWAuthenticate = "Bearer";
-        return ProblemResult<T>(
-            StatusCodes.Status401Unauthorized,
-            "Authentication failed.");
-    }
-
-    private ActionResult<T> ProblemResult<T>(int statusCode, string title) =>
-        new ObjectResult(new ProblemDetails
-        {
-            Status = statusCode,
-            Title = title,
-            Instance = HttpContext.Request.Path,
-        })
-        {
-            StatusCode = statusCode,
-        };
 
     private static RampAssignedOperationResponse Map(RampAssignedOperationData operation) => new(
         new RampAgentAssignmentResponse(

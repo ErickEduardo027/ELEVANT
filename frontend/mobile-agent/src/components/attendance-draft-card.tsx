@@ -16,6 +16,7 @@ import {
 } from '../services/ramp-attendance-draft';
 import { subscribeMobileChanges } from '../services/mobile-change-feed';
 import { MobileServiceError } from '../services/mobile-service-error';
+import { serverNow } from '../synchronization/server-clock';
 import { colors } from '../theme/colors';
 import { resetToLogin } from '../utils/session-navigation';
 import { Card, PrimaryButton } from './ui';
@@ -345,13 +346,13 @@ export function AttendanceDraftCard({ operationId, assignmentId, active = true }
           onChangeText={value => change('start', value)} placeholder="AAAA-MM-DD HH:mm"
           style={styles.input} value={form.start} />
         <PrimaryButton title="Registrar inicio ahora" disabled={busy || !!pending || conflict}
-          onPress={() => change('start', localValue(new Date().toISOString()))} secondary />
+          onPress={() => change('start', localValue(serverNow().toISOString()))} secondary />
         <Text>Fin observado · {timezone}</Text>
         <TextInput accessibilityLabel="Fin observado" editable={!busy && !pending && !conflict}
           onChangeText={value => change('end', value)} placeholder="AAAA-MM-DD HH:mm"
           style={styles.input} value={form.end} />
         <PrimaryButton title="Registrar fin ahora" disabled={busy || !!pending || conflict}
-          onPress={() => change('end', localValue(new Date().toISOString()))} secondary />
+          onPress={() => change('end', localValue(serverNow().toISOString()))} secondary />
         <Text>Nota del agente</Text>
         <TextInput accessibilityLabel="Nota del agente" editable={!busy && !pending && !conflict}
           maxLength={2_000} multiline onChangeText={value => change('note', value)}

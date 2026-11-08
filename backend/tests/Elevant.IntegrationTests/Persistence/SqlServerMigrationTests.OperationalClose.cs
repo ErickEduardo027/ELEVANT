@@ -1,5 +1,12 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Elevant.Application.Abstractions.Integration;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Finance;
+using Elevant.Application.Integration;
+using Elevant.Application.Operations;
+using Elevant.Domain.Entities.Integration;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Persistence.Operations;
@@ -148,5 +155,155 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(TimeZoneInfo.ConvertTime(blockOn.AddMinutes(90), zone).ToString("HH:mm"), row[7].Value);
         Assert.Equal(("90", "60"), (row[11].Value, row[12].Value));
         Assert.Equal(OccReportCellType.Number, row[11].Type);
+    }
+
+    /// <summary>
+    /// 3-B: the tablet types the aircraft type once (an older tablet's command keeps its receipt hash and replays), the
+    /// ramp catalog lists the active types, the type is frozen from the first submission, and the package-exceeded
+    /// surcharge is marked automatically from the type's ground-time allowance.
+    /// </summary>
+    [Fact]
+    public async Task TheTabletTypesTheAircraftOnceAndOvertimeIsAppliedAutomatically()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await SeedDevelopmentAsync(database, ct);
+        var agent = SeededRampAgentAccount;
+        var station = SeededPujStation;
+        var operationId = Guid.Parse("70000000-0000-7000-8000-000000000005");
+        var installation = Guid.Parse("81000000-0000-7000-8000-000000000081");
+        await using var provider = CreateAuthenticationProvider(database.ConnectionString, new PasswordHashCounter());
+        async Task<T> Run<T>(Func<IServiceProvider, Task<T>> action)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await action(scope.ServiceProvider);
+        }
+        Task<RampExecutionWriteResult> FlightData(Guid key, Guid? aircraftTypeId, int passengers = 120) =>
+            Run(services => services.GetRequiredService<IRampExecutionCommandStore>().UpdateFlightDataAsync(
+                new RampFlightDataWriteRequest(agent, [station], operationId, passengers, 118, 70_000, null, installation, key,
+                    "type-test", aircraftTypeId), ct));
+
+        // The flight was planned without its type; the agent starts it on the tablet.
+        await using (var setup = CreateContext(database.ConnectionString))
+            await setup.Turnarounds.Where(item => item.OperationCode == "DEV-TAT-0001")
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.AircraftTypeId, (long?)null), ct);
+        Assert.True((await Run(services => services.GetRequiredService<IMobileDeviceCommandStore>().RegisterAsync(
+            new MobileDeviceRegistrationWriteRequest(agent, installation, MobilePlatform.Android, "1.2.3",
+                "Aircraft type SQL test tablet", "Android 16"), ct))).IsSuccess);
+        var startKey = Guid.NewGuid();
+        Assert.True((await Run(services => services.GetRequiredService<IRampOperationsCommandStore>().StartOperationAsync(
+            new RampOperationStartWriteRequest(agent, [station], operationId, installation, startKey, startKey, "type-start"),
+            ct))).IsSuccess);
+
+        // The ramp catalog: active types only, and only for ramp agents.
+        Guid narrow, wide;
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            narrow = await setup.AircraftTypes.Where(item => item.IcaoCode == "A320").Select(item => item.PublicId).SingleAsync(ct);
+            wide = await setup.AircraftTypes.Where(item => item.IcaoCode == "A333").Select(item => item.PublicId).SingleAsync(ct);
+            await setup.AircraftTypes.Where(item => item.PublicId == wide)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.IsActive, false), ct);
+        }
+        var catalog = await Run(services => services.GetRequiredService<IRampReferenceStore>().ListAircraftTypesAsync(agent, ct));
+        Assert.Contains(catalog!, item => item.Id == narrow);
+        Assert.DoesNotContain(catalog!, item => item.Id == wide);
+        Assert.Null(await Run(services => services.GetRequiredService<IRampReferenceStore>()
+            .ListAircraftTypesAsync(SeededOccAccount, ct)));
+
+        // An older tablet queued flight data without a type: its receipt, stored with the first hash, replays as it was.
+        var legacyKey = Guid.NewGuid();
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var device = await setup.MobileDevices.SingleAsync(item => item.InstallationId == installation, ct);
+            var account = await setup.Users.Where(user => user.PublicId == agent).Select(user => user.Id).SingleAsync(ct);
+            var web = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            var v1 = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new
+            {
+                command = "ramp.operation.flight_data.update.v1", operationId, passengersIn = (int?)99, passengersOut = (int?)118,
+                mtowKg = (int?)70_000, aircraftRegistration = (string?)null,
+            }, web)))).ToLowerInvariant();
+            var stored = new RampExecutionData(Guid.NewGuid(), operationId, [], new RampFlightData(99, 118, 70_000), null);
+            setup.MobileCommandReceipts.Add(new MobileCommandReceipt
+            {
+                PublicId = stored.ReceiptId, MobileDeviceId = device.Id, AccountId = account,
+                IdempotencyKey = legacyKey.ToString("D"), CommandType = "ramp.operation.flight_data.update.v1",
+                PayloadHash = v1, Status = MobileCommandStatus.Processed, ReceivedAt = DateTimeOffset.UtcNow,
+                ProcessedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddDays(30),
+                ResultJson = JsonSerializer.Serialize(stored, web), CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            await setup.SaveChangesAsync(ct);
+        }
+        var legacy = await FlightData(legacyKey, null, 99);
+        Assert.True(legacy.IsSuccess, legacy.Failure?.ToString());
+        Assert.Equal(99, legacy.Data!.FlightData.PassengersIn);
+        // The same key with a type is another payload.
+        Assert.Equal(RampExecutionWriteFailure.IdempotencyKeyConflict, (await FlightData(legacyKey, narrow, 99)).Failure);
+
+        // An unknown or inactive type is refused with its code, and the replay answers the same code.
+        var unknownKey = Guid.NewGuid();
+        var refused = await FlightData(unknownKey, wide);
+        Assert.Equal(("aircraft_type_unavailable", RampExecutionWriteFailure.Conflict), (refused.Code, refused.Failure));
+        Assert.Equal("aircraft_type_unavailable", (await FlightData(unknownKey, wide)).Code);
+        var typed = await FlightData(Guid.NewGuid(), narrow);
+        Assert.True(typed.IsSuccess, typed.Failure?.ToString());
+
+        // 120 minutes on the ground against the narrow-body's 75: OVERTIME is marked automatically.
+        long operationInternalId;
+        var blockOn = DateTimeOffset.UtcNow.AddMinutes(-130);
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var operation = await setup.GroundOperations.SingleAsync(item => item.PublicId == operationId, ct);
+            operationInternalId = operation.Id;
+            Assert.NotNull(await setup.Turnarounds.Where(item => item.Id == operation.TurnaroundId)
+                .Select(item => item.AircraftTypeId).SingleAsync(ct));
+            foreach (var service in await setup.OperationServices.Where(item => item.GroundOperationId == operation.Id).ToArrayAsync(ct))
+            {
+                service.CurrentStatus = ServiceExecutionStatus.Completed;
+                service.ExecutedQuantity = 1;
+            }
+            foreach (var (code, at) in new[] { ("BLOCK_ON", blockOn), ("PUSHBACK", blockOn.AddMinutes(120)) })
+                setup.Set<OperationMilestone>().Add(new OperationMilestone
+                {
+                    PublicId = Guid.CreateVersion7(), GroundOperationId = operation.Id, Code = code, ActualAt = at,
+                    Status = MilestoneStatus.Actual, Source = OperationalDataSource.Manual,
+                    CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+                });
+            await setup.SaveChangesAsync(ct);
+        }
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            Assert.Contains("OVERTIME", await AutomaticSurchargeApplier.ApplyAsync(context, operationInternalId,
+                blockOn.AddMinutes(125), ct));
+            await context.SaveChangesAsync(ct);
+            var evidence = await OperationSubmissionEvidence.CaptureAsync(context, operationInternalId, ct, blockOn.AddMinutes(125));
+            Assert.Equal(("Narrowbody", 75), (evidence.Close!.AircraftCategory, evidence.Close.AllowedGroundMinutes));
+            var overtime = await (from mark in context.OperationServiceCharges.AsNoTracking()
+                                  join charge in context.ChargeDefinitions.AsNoTracking() on mark.ChargeDefinitionId equals charge.Id
+                                  join service in context.OperationServices.AsNoTracking() on mark.OperationServiceId equals service.Id
+                                  where service.GroundOperationId == operationInternalId && charge.Code == "OVERTIME"
+                                  select mark.Source).ToArrayAsync(ct);
+            Assert.Equal(ChargeMarkSource.Automatic, Assert.Single(overtime));
+        }
+
+        // From the first submission the type is evidence: a change is refused, the same type is not a change.
+        await using (var setup = CreateContext(database.ConnectionString))
+        {
+            var checklist = await setup.OperationChecklists.FirstAsync(item => item.GroundOperationId == operationInternalId, ct);
+            var riley = await setup.RampAgents.SingleAsync(item => item.EmployeeNumber == "DEV-RA-001", ct);
+            setup.OperationSubmissions.Add(new OperationSubmission
+            {
+                PublicId = Guid.CreateVersion7(), GroundOperationId = operationInternalId, OperationChecklistId = checklist.Id,
+                RevisionNumber = 1, Status = SubmissionStatus.Returned, SubmittedByRampAgentId = riley.Id,
+                SubmittedAt = DateTimeOffset.UtcNow.AddMinutes(-3), CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            });
+            await setup.SaveChangesAsync(ct);
+            await setup.AircraftTypes.Where(item => item.PublicId == wide)
+                .ExecuteUpdateAsync(update => update.SetProperty(item => item.IsActive, true), ct);
+        }
+        Assert.Equal("aircraft_type_locked", (await FlightData(Guid.NewGuid(), wide)).Code);
+        Assert.True((await FlightData(Guid.NewGuid(), narrow, 121)).IsSuccess);
     }
 }

@@ -66,6 +66,14 @@ es lo que habilita operaciones (OCC solo planifica contratos `Active`).
 > firma de cada versión es la de su segunda firma. Ver
 > [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
 
+> **Actualización (8 de noviembre de 2026).** Un contrato que deja de estar en vigor también
+> detiene lo que no empezó: la tablet no inicia una operación si ningún contrato cubre ya su
+> fecha (`409 contract_not_in_force`), salvo un charter, y lo que está en curso termina con
+> normalidad. Cuando un contrato activo pasa a `Suspended`, `Terminated` o `Expired`, OCC recibe
+> `contract_not_in_force` por cada operación planificada o asignada, de hoy en adelante, que se
+> queda sin contrato aplicable. Ver
+> [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 ### Acciones manuales de Contratos
 
 `POST contract-versions/{id}/lifecycle` requiere el permiso `contracts.agreements.lifecycle`, un

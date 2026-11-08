@@ -1,5 +1,7 @@
 using System.Globalization;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
+using Elevant.Application.Identity;
 using Elevant.Infrastructure.Finance;
 using PdfSharp;
 using PdfSharp.Drawing;
@@ -7,8 +9,16 @@ using PdfSharp.Pdf;
 
 namespace Elevant.Infrastructure.Identity;
 
+/// <summary>
+/// The PDF of a Gestión Humana report (3-N16): the report's Spanish title, its period and filters in Spanish, when it
+/// was generated in the station's local time and, without rows, an explicit empty state. The cells arrive translated
+/// from the store.
+/// </summary>
 public sealed class HumanResourcesReportPdfRenderer : IHumanResourcesReportPdfRenderer
 {
+    /// <summary>What an export without rows says, as the report screen does.</summary>
+    internal const string EmptyState = "No hay filas para estos filtros.";
+
     static HumanResourcesReportPdfRenderer() => ElevantPdfFontResolver.EnsureRegistered();
 
     public byte[] Render(HumanResourcesReportSnapshot snapshot, string stationCode)
@@ -20,7 +30,7 @@ public sealed class HumanResourcesReportPdfRenderer : IHumanResourcesReportPdfRe
             throw new ArgumentException("The report snapshot is incomplete.", nameof(snapshot));
 
         using var document = new PdfDocument();
-        document.Info.Title = $"Reporte {snapshot.Kind} · {stationCode}";
+        document.Info.Title = $"{HumanResourcesReportLabels.Title(snapshot.Kind)} · {stationCode}";
         document.Info.Author = "ELEVANT";
         document.Info.Subject = "Gestión Humana · datos autorizados";
         var heading = ElevantPdfFonts.Regular(15);
@@ -39,16 +49,13 @@ public sealed class HumanResourcesReportPdfRenderer : IHumanResourcesReportPdfRe
             graphics.DrawRectangle(new XSolidBrush(navy), 0, 0, page.Width.Point, 88);
             graphics.DrawString("ELEVANT · GESTIÓN HUMANA", heading, XBrushes.White,
                 new XRect(42, 26, 510, 28), XStringFormats.TopLeft);
-            graphics.DrawString($"{snapshot.Kind} · {stationCode}", heading,
+            graphics.DrawString($"{HumanResourcesReportLabels.Title(snapshot.Kind)} · {stationCode}", heading,
                 new XSolidBrush(navy), new XRect(42, 107, 510, 28), XStringFormats.TopLeft);
-            graphics.DrawString($"Periodo {snapshot.From:yyyy-MM-dd} – {snapshot.To:yyyy-MM-dd}  ·  " +
-                $"Generado {snapshot.AsOf.ToUniversalTime():yyyy-MM-dd HH:mm} UTC  ·  " +
-                $"{snapshot.RowCount.ToString(CultureInfo.InvariantCulture)} filas",
+            graphics.DrawString($"Período {Period(snapshot)}  ·  Generado {Generated(snapshot)}  ·  {RowCount(snapshot)}",
                 body, new XSolidBrush(muted), new XRect(42, 139, 510, 18),
                 XStringFormats.TopLeft);
             if (snapshot.Kind == HumanResourcesReportKind.Expirations)
-                graphics.DrawString(
-                    $"Clase: {snapshot.DocumentKind ?? "Todas"}  ·  Vigencia: {snapshot.Validity ?? "Todas"}",
+                graphics.DrawString(Filters(snapshot),
                     body, new XSolidBrush(muted), new XRect(42, 158, 510, 18),
                     XStringFormats.TopLeft);
             var y = 190d;
@@ -60,6 +67,9 @@ public sealed class HumanResourcesReportPdfRenderer : IHumanResourcesReportPdfRe
                 DrawLines(graphics, headers[column], body, navy,
                     42 + column * width, y, width, 0, headerLines, lineHeight);
             y += headerLines * lineHeight + 12;
+            if (snapshot.Rows.Count == 0)
+                graphics.DrawString(EmptyState, body, new XSolidBrush(muted),
+                    new XRect(42, y, page.Width.Point - 84, lineHeight), XStringFormats.TopLeft);
             while (rowIndex < snapshot.Rows.Count)
             {
                 var availableLines = (int)Math.Floor(
@@ -92,6 +102,27 @@ public sealed class HumanResourcesReportPdfRenderer : IHumanResourcesReportPdfRe
         document.Save(output, false);
         return output.ToArray();
     }
+
+    /// <summary>The period of the filter, «02/12/2099 – 31/12/2099».</summary>
+    internal static string Period(HumanResourcesReportSnapshot snapshot) =>
+        $"{Date(snapshot.From)} – {Date(snapshot.To)}";
+
+    /// <summary>When the snapshot was read, «05/10/2026 08:00 (hora local)»: the station's zone, else AVIAM's calendar.</summary>
+    internal static string Generated(HumanResourcesReportSnapshot snapshot)
+    {
+        var local = TimeZoneInfo.ConvertTime(snapshot.AsOf, BusinessCalendar.Zone(snapshot.TimeZone));
+        return $"{local.ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)} (hora local)";
+    }
+
+    /// <summary>«Clase: Habilitaciones · Vigencia: Vigentes»: the filters of the expirations report in Spanish.</summary>
+    internal static string Filters(HumanResourcesReportSnapshot snapshot) =>
+        $"Clase: {HumanResourcesReportLabels.DocumentKindFilter(snapshot.DocumentKind)} · " +
+        $"Vigencia: {HumanResourcesReportLabels.Validity(snapshot.Validity)}";
+
+    private static string RowCount(HumanResourcesReportSnapshot snapshot) => snapshot.RowCount == 1
+        ? "1 fila" : $"{snapshot.RowCount.ToString(CultureInfo.InvariantCulture)} filas";
+
+    private static string Date(DateOnly value) => value.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
 
     internal static IReadOnlyList<string> WrapCellText(XGraphics graphics,
         string? value, XFont font, double width)

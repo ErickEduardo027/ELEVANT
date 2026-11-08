@@ -8,6 +8,7 @@ import {
   hasEstimatedDelay,
   isInitialAssignmentCandidate,
   isPendingAssignment,
+  isTurnaroundChangeCandidate,
   mapOccPlanningSnapshot,
 } from './planningMappers';
 
@@ -232,6 +233,14 @@ describe('resource and operational derivations', () => {
     expect(isPendingAssignment({ resourceState: { standAssigned: true, agentsAssigned: false } })).toBe(true);
   });
 
+  it('never counts a cancelled, diverted or completed flight as pending assignment (3-A)', () => {
+    const released = { resourceState: { standAssigned: false, agentsAssigned: false } };
+    for (const status of ['Cancelled', 'Diverted', 'Completed'])
+      expect(isPendingAssignment({ ...released, status })).toBe(false);
+    expect(isPendingAssignment({ ...released, status: 'Confirmed' })).toBe(true);
+    expect(isPendingAssignment({ ...released, status: 'InProgress' })).toBe(true);
+  });
+
   it('offers initial assignment only for an assignable turnaround and planned window', () => {
     const candidate = {
       status: 'Confirmed',
@@ -244,7 +253,10 @@ describe('resource and operational derivations', () => {
     };
 
     expect(isInitialAssignmentCandidate(candidate)).toBe(true);
+    // 3-C: the recorded arrival (InProgress) keeps the planned operation assignable.
+    expect(isInitialAssignmentCandidate({ ...candidate, status: 'InProgress' })).toBe(true);
     expect(isInitialAssignmentCandidate({ ...candidate, status: 'Cancelled' })).toBe(false);
+    expect(isInitialAssignmentCandidate({ ...candidate, status: 'Diverted' })).toBe(false);
     expect(isInitialAssignmentCandidate({ ...candidate, operationStatus: 'Assigned' })).toBe(false);
     expect(isInitialAssignmentCandidate({ ...candidate, assignedAgents: [{}] })).toBe(false);
     expect(
@@ -263,6 +275,20 @@ describe('resource and operational derivations', () => {
       })
     ).toBe(false);
     expect(isInitialAssignmentCandidate(null)).toBe(false);
+  });
+
+  it('offers the flight changes only before the operation starts on an open flight (3-A)', () => {
+    const flight = { status: 'Confirmed', operationStatus: 'Planned' };
+
+    expect(isTurnaroundChangeCandidate(flight)).toBe(true);
+    expect(isTurnaroundChangeCandidate({ ...flight, operationStatus: 'Assigned' })).toBe(true);
+    expect(isTurnaroundChangeCandidate({ ...flight, status: 'InProgress' })).toBe(true);
+    expect(isTurnaroundChangeCandidate({ ...flight, operationStatus: 'InProgress' })).toBe(false);
+    expect(isTurnaroundChangeCandidate({ ...flight, operationStatus: 'Completed' })).toBe(false);
+    expect(isTurnaroundChangeCandidate({ ...flight, status: 'Cancelled' })).toBe(false);
+    expect(isTurnaroundChangeCandidate({ ...flight, status: 'Diverted' })).toBe(false);
+    expect(isTurnaroundChangeCandidate({ ...flight, status: 'Completed' })).toBe(false);
+    expect(isTurnaroundChangeCandidate(null)).toBe(false);
   });
 
   it('detects a delay only from an explicit delayed status or a later estimate', () => {

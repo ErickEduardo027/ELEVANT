@@ -7,12 +7,14 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Card, PrimaryButton, StatusPill } from '../../components/ui';
+import { incidentStatusLabel } from '../../features/assigned-operations/presentation';
 import { getAssignedOperations } from '../../services/assigned-operations';
 import { MobileServiceError } from '../../services/mobile-auth';
 import {
   loadRampIncidentCenter, reserveRampIncident,
   type RampIncidentCenter, type RampIncidentSeverity, type RampIncidentType,
 } from '../../services/ramp-incidents';
+import { serverNow } from '../../synchronization/server-clock';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
 import { formatLocalDateTime } from '../../utils/date-format';
@@ -128,8 +130,9 @@ export default function IncidentScreen() {
     setFormError(null);
     setSending(true);
     try {
+      // 3-N18: the moment of the report by ELEVANT's clock, even when the tablet's runs ahead.
       const reserved = await reserveRampIncident(id, {
-        incidentType, severity, description: detail, occurredAt: new Date().toISOString(),
+        incidentType, severity, description: detail, occurredAt: serverNow().toISOString(),
       });
       setCenter(current => current
         ? { ...current, outbox: reserved }
@@ -261,7 +264,7 @@ export default function IncidentScreen() {
           {incidentsNewestFirst.map(incident => (
             <Card key={incident.id} style={styles.reportCard}>
               <View style={styles.reportTop}>
-                <StatusPill text={incident.status === 'Open' ? 'REGISTRADA' : incident.status.toUpperCase()} tone="green" />
+                <StatusPill text={incidentStatusLabel(incident.status).toUpperCase()} tone="green" />
                 <Text style={styles.time}>{displayTime(incident.reportedAt)}</Text>
               </View>
               <Text style={styles.reportTitle}>{labelFor(incident.incidentType)} · {labelFor(incident.severity)}</Text>

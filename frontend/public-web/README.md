@@ -32,7 +32,10 @@ tiempos reales y el conteo de incidencias de esa entrega. No expone notas,
 identidades de agentes ni descripciones internas. Antes de la aprobación
 muestra un estado vacío real; una operación de otro tenant responde 404.
 Si esa lectura falla temporalmente, el vuelo autorizado permanece visible y
-la evidencia ofrece su propio reintento.
+la evidencia ofrece su propio reintento. La aprobación de OCC, el inicio y el
+fin reales y las firmas de la Orden de Servicio se muestran en la hora local de
+la estación con su sufijo «(hora local PUJ)», como el PDF firmado
+(`formatLocalDateTime` de `src/lib/business-day.ts`); la API sigue enviando UTC.
 La nueva ruta aún no forma parte de la API promovida en Development.
 La ruta separada `/dev-airline` fue retirada. Inicio y vuelos ya no montan la
 secuencia sintética del prototipo. Contratos consulta versiones aprobadas reales,

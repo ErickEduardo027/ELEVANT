@@ -24,9 +24,22 @@ public sealed record RampExecutionResponse(Guid ReceiptId, Guid OperationId, IRe
 
 public sealed record RecordRampMilestoneRequest(DateTimeOffset OccurredAt);
 
+/// <param name="PassengersIn">Passengers who arrive.</param>
+/// <param name="PassengersOut">Passengers who leave.</param>
+/// <param name="MtowKg">Maximum take-off weight in kilograms.</param>
 /// <param name="AircraftRegistration">Correction typed once on the ramp; null keeps the current one.</param>
+/// <param name="AircraftTypeId">
+/// The aircraft type the agent sees on the ramp (3-B); null keeps the current one, so an older tablet's command keeps
+/// its meaning. Locked from the first submission.
+/// </param>
 public sealed record UpdateRampFlightDataRequest(int? PassengersIn, int? PassengersOut, int? MtowKg,
-    string? AircraftRegistration);
+    string? AircraftRegistration, Guid? AircraftTypeId = null);
+
+/// <summary>An active aircraft type of the shared catalog, as the tablet offers it (3-B).</summary>
+public sealed record RampAircraftTypeResponse(Guid Id, string IcaoCode, string? IataCode, string Manufacturer, string Model);
+
+/// <summary>The active aircraft types the agent can choose on the ramp, by manufacturer and model.</summary>
+public sealed record RampAircraftTypesResponse(IReadOnlyList<RampAircraftTypeResponse> AircraftTypes);
 
 public sealed record RampReviewFeedbackResponse(
     Guid SubmissionId,

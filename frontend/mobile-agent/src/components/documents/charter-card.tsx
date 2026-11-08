@@ -26,7 +26,8 @@ const quantityOf = (text: string) => {
 /**
  * Charter without contract (ADR-0033): the carrier asks for services at Finance's base tariff and
  * leaves its address and who pays. Everything is saved on the device first and reaches the
- * «Solicitud de Servicio» that the representative signs with an ID or passport.
+ * «Solicitud de Servicio» that the representative signs with an ID or passport. Once Finance confirmed the prepayment
+ * no service is added (3-N24, `charter_prepayment_confirmed`) until Finance reopens the quotation.
  */
 export function CharterCard({ operationId, editable, existingServiceIds }: {
   operationId: string; editable: boolean; existingServiceIds: readonly string[];
@@ -80,8 +81,17 @@ export function CharterCard({ operationId, editable, existingServiceIds }: {
             editable={editable} address={charter.carrierAddress ?? ''} payableBy={charter.chargesPayableBy ?? ''} queued={detailsQueued} />
           <Text style={styles.section}>Servicios solicitados</Text>
           {charter.catalog.length === 0 && <Text style={styles.hint}>Finanzas no tiene tarifas base activas.</Text>}
+          {confirmed && editable && (
+            <View style={styles.notice}>
+              <Ionicons name="lock-closed-outline" size={20} color={colors.warning} />
+              <Text style={styles.noticeText}>
+                Prepago confirmado: pide a Finanzas una nueva cotización para agregar servicios.
+              </Text>
+            </View>
+          )}
           {charter.catalog.map(item => (
-            <CatalogRow key={item.serviceDefinitionId} item={item} currency={charter.currencyCode} editable={editable}
+            <CatalogRow key={item.serviceDefinitionId} item={item} currency={charter.currencyCode}
+              editable={editable && !confirmed}
               status={existingServiceIds.includes(item.serviceDefinitionId) ? 'added' : queuedServices.has(item.serviceDefinitionId) ? 'queued' : 'open'}
               onAdd={quantity => {
                 void addCharterService(operationId, item.serviceDefinitionId, quantity);

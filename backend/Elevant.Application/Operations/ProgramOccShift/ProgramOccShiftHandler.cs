@@ -45,6 +45,6 @@ public sealed class ProgramOccShiftHandler(
                 OccShiftWriteFailure.NotFound => OccPlanningFailure.NotFound,
                 OccShiftWriteFailure.Conflict => OccPlanningFailure.Conflict,
                 _ => throw new InvalidOperationException("Unsupported OCC shift write failure."),
-            });
+            }, result.Code);
     }
 }

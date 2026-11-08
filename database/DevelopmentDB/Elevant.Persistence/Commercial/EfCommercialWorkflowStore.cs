@@ -431,14 +431,31 @@ internal sealed class EfCommercialWorkflowStore(
                         "airline_has_portal_account");
                 airlineId = existingId;
             }
+            else if (await context.Airlines.AnyAsync(item =>
+                         profile.IataCode != null && item.IataCode == profile.IataCode || item.IcaoCode == profile.IcaoCode,
+                         cancellationToken))
+            {
+                // 3-N21: the carrier OCC registered for a charter becomes this airline; any other holder of the codes is
+                // a different airline.
+                var linked = await OccCreatedAirlineAsync(profile.IcaoCode, profile.IataCode, cancellationToken);
+                if (linked is null)
+                    return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "airline_code_in_use");
+                var (occAirline, occOrganization) = linked.Value;
+                CommercialAuditWriter.Add(context, actorDatabaseId, "commercial.airline.linked", "ref.airlines",
+                    occAirline.PublicId, $"Solicitud {request.RequestCode}",
+                    new AuditFieldChangeData("airline.name", occAirline.Name, profile.DisplayName),
+                    new AuditFieldChangeData("airline.iata", occAirline.IataCode, occAirline.IataCode ?? profile.IataCode));
+                occAirline.IataCode ??= profile.IataCode;
+                occAirline.Name = profile.DisplayName;
+                occAirline.UpdatedAt = now;
+                occOrganization.LegalName = profile.LegalName!;
+                occOrganization.DisplayName = profile.DisplayName.Length <= 120 ? profile.DisplayName : profile.DisplayName[..120];
+                occOrganization.UpdatedAt = now;
+                airlineId = occAirline.Id;
+                profile.CanonicalAirlineId = airlineId;
+            }
             else
             {
-                var iata = profile.IataCode;
-                var icao = profile.IcaoCode;
-                if (await context.Airlines.AnyAsync(item =>
-                    iata != null && item.IataCode == iata || item.IcaoCode == icao,
-                    cancellationToken))
-                    return CommercialWorkflowResult.Failed(CommercialWorkflowFailure.Conflict, "airline_code_in_use");
                 var organization = new Organization
                 {
                     PublicId = Guid.CreateVersion7(),
@@ -631,6 +648,26 @@ internal sealed class EfCommercialWorkflowStore(
             !context.Contracts.Any(contract => contract.OriginatingServiceRequestId == other.Id &&
                 (contract.Status == ContractStatus.Terminated || contract.Status == ContractStatus.Expired)),
             cancellationToken);
+    }
+
+    /// <summary>
+    /// The carrier OCC registered for a charter with these codes (3-N21): its organization starts with «OCC-», it never
+    /// had a contract nor portal accounts, and its designators agree with the verified profile. Null otherwise.
+    /// </summary>
+    private async Task<(Airline Airline, Organization Organization)?> OccCreatedAirlineAsync(string? icao, string? iata,
+        CancellationToken cancellationToken)
+    {
+        var holders = await context.Airlines.Where(item => iata != null && item.IataCode == iata || item.IcaoCode == icao)
+            .ToArrayAsync(cancellationToken);
+        if (holders.Length != 1 || holders[0].IcaoCode != icao || (holders[0].IataCode is { } code && code != iata))
+            return null;
+        var airline = holders[0];
+        var organization = await context.Organizations.SingleAsync(item => item.Id == airline.OrganizationId, cancellationToken);
+        if (!organization.Code.StartsWith("OCC-", StringComparison.Ordinal) ||
+            await context.Contracts.AnyAsync(contract => contract.AirlineId == airline.Id, cancellationToken) ||
+            await HasPortalAccountsAsync(airline.Id, cancellationToken))
+            return null;
+        return (airline, organization);
     }
 
     /// <summary>Active portal accounts of the airline's organization, invited ones included.</summary>

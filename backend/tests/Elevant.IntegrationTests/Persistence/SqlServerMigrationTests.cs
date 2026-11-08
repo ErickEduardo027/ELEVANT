@@ -4468,9 +4468,8 @@ public sealed partial class SqlServerMigrationTests
         {
             var readStore = planningScope.ServiceProvider.GetRequiredService<IOccPlanningReadStore>();
             var stationPublicId = Guid.Parse("20000000-0000-7000-8000-000000000003");
-            Assert.Equal(
-                new DateOnly(2026, 8, 19),
-                await readStore.GetLatestOperationDateAsync(stationPublicId, cancellationToken));
+            // Without a date the planning opens the station's today (3-N17); the zone decides it.
+            Assert.Equal("America/Santo_Domingo", await readStore.GetStationTimeZoneAsync(stationPublicId, cancellationToken));
 
             var snapshot = await readStore.GetSnapshotAsync(
                 stationPublicId,
@@ -4766,8 +4765,9 @@ public sealed partial class SqlServerMigrationTests
             var overlappingWindowRiley = Assert.Single(
                 overlappingWindowOptions.AgentCandidates,
                 candidate => candidate.EmployeeNumber == "DEV-RA-001");
-            Assert.True(overlappingWindowRiley.HasAssignmentConflict);
-            Assert.Contains(
+            // 3-D: one overlapping operation is one of the three an agent may carry at once.
+            Assert.False(overlappingWindowRiley.HasAssignmentConflict);
+            Assert.DoesNotContain(
                 "assignment_conflict",
                 OccAgentEligibilityPolicy.Evaluate(overlappingWindowRiley)
                     .EligibilityReasons);
@@ -5575,8 +5575,9 @@ public sealed partial class SqlServerMigrationTests
         Assert.True(shiftReplay.IsSuccess);
         Assert.True(shiftReplay.Replayed);
         Assert.Equal(shift.ShiftId, shiftReplay.ShiftId);
-        Assert.Equal(OccShiftWriteFailure.Conflict,
-            (await ProgramShiftAsync(shiftRequest with { EndsAtLocal = new TimeOnly(13, 0) })).Failure);
+        // 3-E: another shift that day is adjusted, never doubled; the conflict names it for the screen.
+        var otherHours = await ProgramShiftAsync(shiftRequest with { EndsAtLocal = new TimeOnly(13, 0) });
+        Assert.Equal((OccShiftWriteFailure.Conflict, "shift_day_taken"), (otherHours.Failure, otherHours.Code));
         Assert.Equal(OccShiftWriteFailure.NotFound,
             (await ProgramShiftAsync(shiftRequest with { AllowedStationIds = [] })).Failure);
         await using (var beforeAssignment = CreateContext(database.ConnectionString))
@@ -5815,8 +5816,34 @@ public sealed partial class SqlServerMigrationTests
                 .ToArrayAsync(cancellationToken));
         }
 
+        // 3-D: an agent carries up to three simultaneous operations and one that holds the agent without a valid
+        // window counts as overlapping (it fails closed). Two more operations of the agent overlap the flight, so the
+        // windowless third one is one too many; they are cancelled once the windows are back.
+        var capacityOperations = new List<long>();
         await using (var mutationContext = CreateContext(database.ConnectionString))
         {
+            var fixture = await ReleaseFixtureAsync(mutationContext, cancellationToken);
+            var target = await mutationContext.GroundOperations.AsNoTracking()
+                .Where(item => item.Id == operationId)
+                .Select(item => new { item.PlannedStartAt, item.PlannedEndAt })
+                .SingleAsync(cancellationToken);
+            var targetDate = await mutationContext.Turnarounds.AsNoTracking()
+                .Where(item => item.Id == turnaroundInternalId)
+                .Select(item => item.OperationDate)
+                .SingleAsync(cancellationToken);
+            foreach (var code in new[] { "CAPACITY-OVERLAP-1", "CAPACITY-OVERLAP-2" })
+            {
+                var overlapping = await AddAgentOperationAsync(mutationContext, fixture, code, targetDate,
+                    fixture.AgentKey, GroundOperationStatus.Assigned, cancellationToken);
+                await mutationContext.GroundOperations
+                    .Where(item => item.Id == overlapping)
+                    .ExecuteUpdateAsync(
+                        setters => setters
+                            .SetProperty(item => item.PlannedStartAt, target.PlannedStartAt)
+                            .SetProperty(item => item.PlannedEndAt, target.PlannedEndAt),
+                        cancellationToken);
+                capacityOperations.Add(overlapping);
+            }
             await mutationContext.GroundOperations
                 .Where(item => item.Id == activeAssignmentOperationId)
                 .ExecuteUpdateAsync(
@@ -5861,6 +5888,12 @@ public sealed partial class SqlServerMigrationTests
                     setters => setters
                         .SetProperty(item => item.PlannedStartAt, activeAssignmentStart)
                         .SetProperty(item => item.PlannedEndAt, activeAssignmentEnd),
+                    cancellationToken);
+            // A cancelled operation no longer holds its agent: the rest of the test starts from the seeded load.
+            await mutationContext.GroundOperations
+                .Where(item => capacityOperations.Contains(item.Id))
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(item => item.CurrentStatus, GroundOperationStatus.Cancelled),
                     cancellationToken);
         }
 
@@ -7154,6 +7187,16 @@ public sealed partial class SqlServerMigrationTests
 
         if (reviewOutcome == "Approved")
         {
+            // 3-N02: OCC approves only the Service Order the airline and AVIAM signed on the ramp.
+            Assert.Equal(ServiceOrderStates.NeverSigned, reviewDetail.ServiceOrderState);
+            Assert.Equal("service_order_unsigned",
+                (await DecideAsync(occAccountId, reviewDetail.ConcurrencyToken, "Approved")).Code);
+            await SignServiceOrderAsync(provider, accountId, stationId, operationId, installationId, cancellationToken);
+            await using (var signedScope = provider.CreateAsyncScope())
+                reviewDetail = (await signedScope.ServiceProvider.GetRequiredService<IOccReviewStore>()
+                    .GetDetailAsync(operationId, [stationId], cancellationToken))!;
+            Assert.Equal(ServiceOrderStates.FullySigned, reviewDetail.ServiceOrderState);
+
             // ADR-0034: OCC adds a charge and takes it back, each with a reason; every change moves the
             // review version, so a decision prepared on the old charges is refused.
             async Task<OccReviewChargeAdjustResult> AdjustAsync(string token, Guid? serviceId, Guid? chargeId,
@@ -7179,6 +7222,8 @@ public sealed partial class SqlServerMigrationTests
                     .GetDetailAsync(operationId, [stationId], cancellationToken))!;
             var occMark = Assert.Single(reviewDetail.Close!.Charges, charge => charge.Source == "Occ");
             Assert.Equal("Cargo administrativo acordado", occMark.Reason);
+            // OCC's charge after the signature is its recorded correction of the signed order.
+            Assert.Equal(ServiceOrderStates.Corrected, reviewDetail.ServiceOrderState);
             var removed = await AdjustAsync(reviewDetail.ConcurrencyToken, null, null, occMark.MarkId,
                 "Se cobra en otra factura");
             Assert.True(removed.IsSuccess);
@@ -7188,6 +7233,7 @@ public sealed partial class SqlServerMigrationTests
                 reviewDetail = (await adjustedScope.ServiceProvider.GetRequiredService<IOccReviewStore>()
                     .GetDetailAsync(operationId, [stationId], cancellationToken))!;
             Assert.DoesNotContain(reviewDetail.Close!.Charges, charge => charge.Source == "Occ");
+            Assert.Equal(ServiceOrderStates.FullySigned, reviewDetail.ServiceOrderState);
             await using var adjustCheck = CreateContext(database.ConnectionString);
             Assert.Equal(2, await adjustCheck.AuditEntries.AsNoTracking().CountAsync(item =>
                 item.Action == "occ.operation.charge.added" || item.Action == "occ.operation.charge.removed",
@@ -7371,15 +7417,22 @@ public sealed partial class SqlServerMigrationTests
                 .SingleAsync(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Service,
                     cancellationToken);
             // The NIGHT surcharge the agent marked is billed as its own line under the service (15 %, ADR-0034).
-            var nightLine = await inspection.PreinvoiceLines.AsNoTracking()
-                .SingleAsync(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Charge,
-                    cancellationToken);
-            Assert.Equal(line.Id, nightLine.ParentLineId);
-            Assert.Equal("NIGHT", nightLine.ServiceCode);
+            // The operation starts when the test runs, and ELEVANT marks HOLIDAY on its own when that is a Sunday or a
+            // Finance holiday between 06:00 and 21:59 station time: that line, when present, is the only other charge,
+            // so the test holds on any day.
+            var chargeLines = await inspection.PreinvoiceLines.AsNoTracking()
+                .Where(item => item.PreinvoiceId == draft.Id && item.Kind == PreinvoiceLineKind.Charge)
+                .ToArrayAsync(cancellationToken);
+            var nightLine = Assert.Single(chargeLines, item => item.ServiceCode == "NIGHT");
+            var holidayLines = chargeLines.Where(item => item.ServiceCode == "HOLIDAY").ToArray();
+            Assert.InRange(holidayLines.Length, 0, 1);
+            Assert.Equal(1 + holidayLines.Length, chargeLines.Length);
+            Assert.All(chargeLines, item => Assert.Equal(line.Id, item.ParentLineId));
+            var holidayAmount = holidayLines.Sum(item => item.Amount);
             Assert.Equal(decimal.Round(line.Amount * 0.15m, 4), nightLine.Amount);
             Assert.Equal(nightLine.Amount, nightLine.ComputedAmount);
             Assert.Equal(PreinvoiceStatus.Draft, draft.Status);
-            Assert.Equal(draft.Total, line.Amount + nightLine.Amount);
+            Assert.Equal(draft.Total, line.Amount + nightLine.Amount + holidayAmount);
             Assert.Equal(1m, line.ExecutedQuantity);
             Assert.True(line.UnitPrice > 0);
             Assert.Equal(approvedServiceName, line.ServiceName);
@@ -7400,11 +7453,13 @@ public sealed partial class SqlServerMigrationTests
                 Assert.NotNull(detail);
                 Assert.Equal(draft.Total, detail.Total);
                 Assert.Equal(baggageServiceId, Assert.Single(detail.Lines, item => item.Kind == "Service").OperationServiceId);
-                Assert.Equal("Charge", Assert.Single(detail.Lines, item => item.ParentLineId != null).Kind);
+                Assert.Equal(chargeLines.Length, detail.Lines.Count(item => item.ParentLineId != null));
+                Assert.All(detail.Lines.Where(item => item.ParentLineId != null),
+                    item => Assert.Equal("Charge", item.Kind));
 
                 // Finance edits the surcharge and adds a discount before sending; computed values are kept.
                 var edits = readScope.ServiceProvider.GetRequiredService<IPreinvoiceLineEditStore>();
-                var charge = Assert.Single(detail.Lines, item => item.Kind == "Charge");
+                var charge = Assert.Single(detail.Lines, item => item.Kind == "Charge" && item.ServiceCode == "NIGHT");
                 Assert.Equal(FinanceCatalogFailure.Invalid, (await edits.EditLineAsync(financeAccountId, detail.Id,
                     charge.Id, new EditPreinvoiceLineInput(10m, false, "", detail.Version!), cancellationToken)).Failure);
                 Assert.Equal(FinanceCatalogFailure.Conflict, (await edits.EditLineAsync(financeAccountId, detail.Id,
@@ -7422,12 +7477,13 @@ public sealed partial class SqlServerMigrationTests
                     new AddPreinvoiceAdjustmentInput("Descuento por demora propia", -5m, "Compensación comercial",
                         edited.Version!), cancellationToken)).IsSuccess);
                 edited = (await drafts.GetAsync(financeAccountId, detail.Id, cancellationToken))!;
-                var editedCharge = Assert.Single(edited.Lines, item => item.Kind == "Charge");
+                var editedCharge = Assert.Single(edited.Lines,
+                    item => item.Kind == "Charge" && item.ServiceCode == "NIGHT");
                 Assert.Equal(10m, editedCharge.Amount);
                 Assert.Equal(charge.Amount, editedCharge.ComputedAmount);
                 Assert.NotNull(editedCharge.EditedAt);
                 Assert.Equal(-5m, Assert.Single(edited.Lines, item => item.Kind == "Adjustment").Amount);
-                Assert.Equal(line.Amount + 10m - 5m, edited.Total);
+                Assert.Equal(line.Amount + 10m - 5m + holidayAmount, edited.Total);
                 Assert.Null(await drafts.GetAsync(occAccountId,
                     created.DraftId.Value, cancellationToken));
             }
@@ -7442,8 +7498,8 @@ public sealed partial class SqlServerMigrationTests
                 var item = Assert.Single(page.Preinvoices);
                 Assert.Equal(created.DraftId, item.Id);
                 Assert.Equal("Draft", item.Status);
-                Assert.Equal(3, item.LineCount);
-                Assert.Equal(line.Amount + 5m, item.Total);
+                Assert.Equal(3 + holidayLines.Length, item.LineCount);
+                Assert.Equal(line.Amount + 5m + holidayAmount, item.Total);
                 Assert.Null(await list.ListAsync(occAccountId, stationId, 1, 20,
                     cancellationToken));
                 Assert.Null(await list.ListAsync(financeAccountId, Guid.NewGuid(), 1, 20,
@@ -7516,9 +7572,10 @@ public sealed partial class SqlServerMigrationTests
                 Assert.NotNull(published);
                 Assert.Equal("Submitted", published.Status);
                 Assert.Equal(draft.Total, published.Total);
-                Assert.Equal(3, published.Lines.Count);
+                Assert.Equal(3 + holidayLines.Length, published.Lines.Count);
                 var snapshot = Assert.Single(published.Lines, item => item.Kind == "Service");
-                Assert.Equal(snapshot.Id, Assert.Single(published.Lines, item => item.Kind == "Charge").ParentLineId);
+                Assert.Equal(snapshot.Id, Assert.Single(published.Lines,
+                    item => item.Kind == "Charge" && item.ServiceCode == "NIGHT").ParentLineId);
                 Assert.Equal("Compensación comercial",
                     Assert.Single(published.Lines, item => item.Kind == "Adjustment").Reason);
                 Assert.Equal(line.OperationCode, snapshot.OperationCode);
@@ -7718,9 +7775,11 @@ public sealed partial class SqlServerMigrationTests
             var invoiceLines = await inspection.NonFiscalInvoiceLines.AsNoTracking()
                 .Where(item => item.InvoiceId == invoice.Id).OrderBy(item => item.LineNumber)
                 .ToArrayAsync(cancellationToken);
-            Assert.Equal([PreinvoiceLineKind.Service, PreinvoiceLineKind.Charge, PreinvoiceLineKind.Adjustment],
+            Assert.Equal([PreinvoiceLineKind.Service,
+                    .. Enumerable.Repeat(PreinvoiceLineKind.Charge, chargeLines.Length), PreinvoiceLineKind.Adjustment],
                 invoiceLines.Select(item => item.Kind));
-            Assert.Equal(invoiceLines[0].LineNumber, invoiceLines[1].ParentLineNumber);
+            Assert.All(invoiceLines.Where(item => item.Kind == PreinvoiceLineKind.Charge),
+                item => Assert.Equal(invoiceLines[0].LineNumber, item.ParentLineNumber));
             Assert.NotNull(invoice.DueDate);
             Assert.Equal(30, invoice.PaymentTermDays);
             var invoiceLine = invoiceLines[0];
@@ -7749,7 +7808,7 @@ public sealed partial class SqlServerMigrationTests
                     financeAccountId, created.DraftId.Value, cancellationToken);
                 Assert.NotNull(financeInvoice);
                 Assert.Equal(invoice.Number, financeInvoice.Number);
-                Assert.Equal(3, financeInvoice.Lines.Count);
+                Assert.Equal(3 + holidayLines.Length, financeInvoice.Lines.Count);
                 Assert.Equal(line.Amount, financeInvoice.Lines[0].Amount);
                 var airlineInvoice = await reader.GetForAirlineAsync(
                     airlineOrganizationId, created.DraftId.Value, cancellationToken);
@@ -7847,7 +7906,8 @@ public sealed partial class SqlServerMigrationTests
                 var period = new FinanceReportFilter(today.AddDays(-1), today.AddDays(1), stationId, null, null);
                 var revenue = (await reports.GetAsync(financeAccountId, "revenue", period, cancellationToken))!;
                 var revenueRow = Assert.Single(revenue.Rows);
-                Assert.Equal("10.00", revenueRow[5]);
+                Assert.Equal((10m + holidayAmount).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture),
+                    revenueRow[5]);
                 Assert.Equal("-5.00", revenueRow[6]);
                 Assert.Equal(invoice.Total.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), revenueRow[7]);
                 Assert.Empty((await reports.GetAsync(financeAccountId, "receivables", period, cancellationToken))!.Rows);

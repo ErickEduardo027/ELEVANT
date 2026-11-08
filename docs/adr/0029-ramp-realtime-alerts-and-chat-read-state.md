@@ -60,6 +60,15 @@ dos veces.
 `assignment_released` y `deviation_reported` quedan nombrados en los clientes para los bloques 2
 y 3; este bloque todavía no los emite.
 
+> **Actualización (8 de noviembre de 2026).** La liberación del agente, el relevo, la
+> reasignación por cambio de posición y la cancelación o el desvío de un vuelo avisan
+> `assignment_released` al agente que sale; el relevo y la reasignación, `operation_assigned` al
+> que entra. `flight_changed` avisa también la corrección de la llegada. OCC recibe tipos nuevos
+> que nunca llegan a la tablet: `flight_cancelled_by_provider`, `flight_diverted_by_provider`,
+> `stand_change_unassigned` y `contract_not_in_force`. `occ_review` lo emiten además la
+> evidencia tardía, la reapertura, las incidencias de OCC y la exclusión de facturación. Ver
+> [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 ### Estado de lectura del chat
 
 - Nueva tabla `ops.operation_message_reads`: un cursor por (cuenta, operación) con el último
@@ -83,6 +92,13 @@ y 3; este bloque todavía no los emite.
   - el resto como información.
   - Nunca se repiten los avisos antiguos al abrir la aplicación.
 - La cola de Revisión se recarga sola con `occ_review`, sin perder lo que muestra.
+
+  > **Actualización (8 de noviembre de 2026).** La evaluación del ciclo encontró que el aviso
+  > llegaba, pero la pantalla de Revisión no lo escuchaba (hueco 3-N23). Ahora
+  > `useOccReviewChangeVersion` escucha `occ_review`: la cola, el detalle y el panel de
+  > incidencias se releen sin pasar a «cargando», y una decisión preparada se descarta si cambió
+  > la versión. Ver
+  > [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
 - El chat muestra:
   - las insignias de no leídos y el agente;
   - «✓ Enviado» o «✓✓ Visto» en los mensajes propios.

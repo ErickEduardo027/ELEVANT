@@ -41,6 +41,8 @@ Erick pidió eliminar la prefactura y facturar directamente las operaciones comp
 - El mismo `requestId` devuelve la factura ya emitida (`200`, `replayed`); la primera vez responde `201`.
 - El motivo llega en `reasons` de Problem Details.
 
+> **Actualización (8 de noviembre de 2026).** «Servicio completado» es ahora un servicio facturable (`ServiceBillability`): completado o en excepción, con cantidad ejecutada, que OCC no excluyó en la revisión. «Por facturar», el borrador interno y la emisión bloquean con `charge_excluded_by_contract` un servicio que lleva un cargo que su contrato excluye, hasta que OCC reabra la revisión y lo quite. Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 **4. Charter.** Si la escala tiene un `CharterAgreement` con el prepago **confirmado** en la moneda de la factura, al emitir se registra un cobro (`PREPAGO {referencia}`) por el monto prepagado y se aplica a la factura hasta su total. Lo que sobre queda disponible como saldo a favor; lo que falte se paga después (bloque 2).
 
 **5. Avisos.** Correo «Factura emitida» a las cuentas activas del portal de la aerolínea y a su correo de facturación, con el PDF adjunto (se genera al enviar, `invoice:{id}`). Tiempo real: `airline_treasury`, `finance_approved_services` y `finance_receipts`.

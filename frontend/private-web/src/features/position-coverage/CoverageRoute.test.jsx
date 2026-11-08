@@ -39,7 +39,7 @@ it('assigns stands to an agent and explains every broken rule in Spanish', async
   fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
   expect(await screen.findByText(/necesita un mentor experimentado/)).toBeInTheDocument();
   expect(createOccCoverage).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'ag-1', terminalId: 't-a',
-    standIds: ['s-A01', 's-A02'], isReinforcement: false }));
+    standIds: ['s-A01', 's-A02'], isReinforcement: false }), { idempotencyKey: expect.any(String) });
 
   const covered = { ...board, stands: [stand('A01', 't-a', { coveredBy: ['Riley Ramp'] }), ...board.stands.slice(1)],
     coverages: [{ id: 'cv-1', agentId: 'ag-1', agentName: 'Riley Ramp', terminalId: 't-a', terminalCode: 'A',
@@ -51,7 +51,41 @@ it('assigns stands to an agent and explains every broken rule in Spanish', async
   expect(await within(day).findByText('Riley Ramp')).toBeInTheDocument();
   releaseOccCoverage.mockResolvedValueOnce(board);
   fireEvent.click(within(day).getByRole('button', { name: 'Liberar' }));
-  expect(releaseOccCoverage).toHaveBeenCalledWith('cv-1', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/));
+  expect(releaseOccCoverage).toHaveBeenCalledWith('cv-1', expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    { idempotencyKey: expect.any(String) });
+});
+
+it('retries an uncertain coverage with the same key and re-reads the board on a conflict (3-J)', async () => {
+  loadOccCoverage.mockResolvedValue(board);
+  createOccCoverage
+    .mockRejectedValueOnce(Object.assign(new Error('No fue posible completar la acción. Intenta de nuevo.'), { status: null }))
+    .mockRejectedValueOnce(Object.assign(new Error('Ese envío ya se usó con otros datos.'), { status: 409,
+      code: 'idempotency_conflict', reasons: [] }))
+    .mockResolvedValueOnce(board);
+  render(<CoverageRoute />);
+  const form = await screen.findByRole('form', { name: 'Asignar posiciones' });
+  fireEvent.change(within(form).getByLabelText('Agente'), { target: { value: 'ag-1' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'A01' }));
+  fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
+  expect(await screen.findByText('No fue posible completar la acción. Intenta de nuevo.')).toBeInTheDocument();
+  // The same coverage after an answer that never came: the same key, so the server never covers twice.
+  fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
+  expect(await screen.findByText('Ese envío ya se usó con otros datos.')).toBeInTheDocument();
+  const [first, second] = createOccCoverage.mock.calls.map(call => call[1].idempotencyKey);
+  expect(second).toBe(first);
+  // A conflict settles the intent and the board is read again; the next attempt is a new intent.
+  await waitFor(() => expect(loadOccCoverage).toHaveBeenCalledTimes(2));
+  fireEvent.click(within(form).getByRole('button', { name: 'Asignar posiciones' }));
+  await waitFor(() => expect(createOccCoverage).toHaveBeenCalledTimes(3));
+  expect(createOccCoverage.mock.calls[2][1].idempotencyKey).not.toBe(first);
+});
+
+it('says when the account cannot see the coverage instead of offering a retry', async () => {
+  loadOccCoverage.mockRejectedValue(Object.assign(new Error('Tu acceso no permite gestionar la cobertura de posiciones.'),
+    { status: 403 }));
+  render(<CoverageRoute />);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Tu acceso no permite ver la cobertura de posiciones de esta estación.');
+  expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull();
 });
 
 it('switches terminals and shows the bridge stands of terminal B', async () => {
@@ -82,12 +116,12 @@ it('explains in Configuración why a stand in use stays active, and where new st
 });
 
 it('keeps the key of an uncertain stand change and reads the board again when the stand changed meanwhile (2-A)', async () => {
-  const { translateCoverageError } = await vi.importActual('../../services/occCoverageService');
+  const { STAND_PROBLEM_MESSAGES, translateCoverageError } = await vi.importActual('../../services/occCoverageService');
   const renamed = { ...board, stands: [stand('A01', 't-a', { version: 'v-A01-b' }), ...board.stands.slice(1)] };
   loadOccCoverage.mockResolvedValueOnce(board).mockResolvedValueOnce(renamed);
   updateOccStandAttributes.mockRejectedValueOnce(Object.assign(new Error('No fue posible completar la acción. Intenta de nuevo.'),
     { status: null, reasons: [] }))
-    .mockRejectedValueOnce(translateCoverageError({ status: 409, code: 'version_conflict' }));
+    .mockRejectedValueOnce(translateCoverageError({ status: 409, code: 'version_conflict' }, STAND_PROBLEM_MESSAGES));
   render(<CoverageRoute />);
   fireEvent.click(await screen.findByRole('button', { name: 'Configuración' }));
   const stands = screen.getByRole('region', { name: 'Atributos de las posiciones' });

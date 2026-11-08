@@ -2,6 +2,7 @@ using System.Data;
 using System.Globalization;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Workforce;
@@ -16,6 +17,8 @@ internal sealed class EfHumanResourcesReportStore(
     ElevantDbContext context, IActorContextResolver actors, TimeProvider timeProvider)
     : IHumanResourcesReportStore
 {
+    private static readonly CultureInfo Spanish = CultureInfo.GetCultureInfo("es-DO");
+
     public async Task<HumanResourcesReportFailure?> RecordExportAsync(
         Guid actorId, Guid stationId, HumanResourcesReportKind kind,
         DateOnly startDate, DateOnly endDate, string format, int rowCount,
@@ -88,13 +91,20 @@ internal sealed class EfHumanResourcesReportStore(
             await using var transaction = await context.Database.BeginTransactionAsync(
                 IsolationLevel.Serializable, cancellationToken);
             var asOf = timeProvider.GetUtcNow();
+            // 3-N16: the export reads in the station's calendar. A missing station or a refused actor is answered by
+            // the first page, in the order the pages check them (role, then station).
+            var station = await context.Stations.AsNoTracking()
+                .Where(item => item.PublicId == stationId && item.IsActive)
+                .Select(item => new { item.Code, item.IanaTimeZone })
+                .SingleOrDefaultAsync(cancellationToken);
+            var zone = BusinessCalendar.Zone(station?.IanaTimeZone);
             var rows = new List<IReadOnlyList<HumanResourcesReportCell>>();
             IReadOnlyList<string> columns = kind switch
             {
                 HumanResourcesReportKind.Expirations =>
                     ["Agente", "Empleado", "Clase", "Documento", "Vence"],
                 HumanResourcesReportKind.AccountMovements =>
-                    ["Fecha UTC", "Agente", "Empleado", "Movimiento"],
+                    ["Fecha y hora local", "Agente", "Empleado", "Movimiento"],
                 HumanResourcesReportKind.StaffDistribution =>
                     ["Fecha", "Agente", "Empleado", "Terminal", "Puesto", "Inicio", "Fin"],
                 HumanResourcesReportKind.QualificationCoverage =>
@@ -120,9 +130,10 @@ internal sealed class EfHumanResourcesReportStore(
                             (IReadOnlyList<HumanResourcesReportCell>)[
                                 new(item.AgentName, HumanResourcesReportCellType.Text),
                                 new(item.EmployeeNumber, HumanResourcesReportCellType.Text),
-                                new(item.Kind, HumanResourcesReportCellType.Text),
-                                new(item.Code, HumanResourcesReportCellType.Text),
-                                new(item.ExpiresOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                                new(HumanResourcesReportLabels.DocumentKind(item.Kind), HumanResourcesReportCellType.Text),
+                                new(item.Kind == "Permit" ? HumanResourcesReportLabels.PermitType(item.Code) : item.Code,
+                                    HumanResourcesReportCellType.Text),
+                                new(item.ExpiresOn.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                                     HumanResourcesReportCellType.Date),
                             ]).ToArray() ?? [];
                         break;
@@ -135,11 +146,11 @@ internal sealed class EfHumanResourcesReportStore(
                         hasMore = result.Page?.HasMore ?? false;
                         pageRows = result.Page?.Rows.Select(item =>
                             (IReadOnlyList<HumanResourcesReportCell>)[
-                                new(item.OccurredAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                                new(TimeZoneInfo.ConvertTime(item.OccurredAt, zone).ToString("dd/MM/yyyy HH:mm", Spanish),
                                     HumanResourcesReportCellType.DateTime),
                                 new(item.AgentName, HumanResourcesReportCellType.Text),
                                 new(item.EmployeeNumber, HumanResourcesReportCellType.Text),
-                                new(item.Kind, HumanResourcesReportCellType.Text),
+                                new(HumanResourcesReportLabels.Movement(item.Kind), HumanResourcesReportCellType.Text),
                             ]).ToArray() ?? [];
                         break;
                     }
@@ -151,7 +162,7 @@ internal sealed class EfHumanResourcesReportStore(
                         hasMore = result.Page?.HasMore ?? false;
                         pageRows = result.Page?.Rows.Select(item =>
                             (IReadOnlyList<HumanResourcesReportCell>)[
-                                new(item.WorkDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                                new(item.WorkDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
                                     HumanResourcesReportCellType.Date),
                                 new(item.AgentName, HumanResourcesReportCellType.Text),
                                 new(item.EmployeeNumber, HumanResourcesReportCellType.Text),
@@ -193,18 +204,16 @@ internal sealed class EfHumanResourcesReportStore(
                 page++;
             }
 
-            var stationCode = await context.Stations.AsNoTracking()
-                .Where(item => item.PublicId == stationId && item.IsActive)
-                .Select(item => item.Code)
-                .SingleAsync(cancellationToken);
+            // The first page found the station active inside this serializable transaction.
             await transaction.CommitAsync(cancellationToken);
             return new HumanResourcesReportSnapshotResult(
                 new HumanResourcesReportSnapshot(kind, stationId, startDate,
                     endDate, asOf, columns, rows)
                 {
-                    StationCode = stationCode,
+                    StationCode = station!.Code,
                     DocumentKind = documentKind,
                     Validity = validity,
+                    TimeZone = station.IanaTimeZone,
                 }, null);
         });
     }
@@ -247,8 +256,7 @@ internal sealed class EfHumanResourcesReportStore(
         if (station is null)
             return new(null, HumanResourcesReportFailure.ForbiddenStation);
 
-        var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(
-            asOf, TimeZoneInfo.FindSystemTimeZoneById(station.IanaTimeZone)).DateTime);
+        var localToday = BusinessCalendar.Today(asOf, station.IanaTimeZone);
 
         var qualifications =
             from cycle in context.QualificationCycles.AsNoTracking()
@@ -477,7 +485,7 @@ internal sealed class EfHumanResourcesReportStore(
         if (station is null)
             return new(null, HumanResourcesReportFailure.ForbiddenStation);
 
-        var zone = TimeZoneInfo.FindSystemTimeZoneById(station.IanaTimeZone);
+        var zone = BusinessCalendar.Zone(station.IanaTimeZone);
         var utcStart = startDate == DateOnly.MinValue
             ? DateTimeOffset.MinValue
             : new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(

@@ -157,9 +157,12 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
     };
     const result = await run(`import-${arrival.proposalId}`,
       () => importKeys.current.run('import', command, key => importOccFlightProposals(command, key)),
-      answer => (view === 'Charter'
-        ? `Charter importado (${answer.operationCode}). Finanzas confirma el prepago en «Charters sin contrato».`
-        : `Escala importada (${answer.operationCode}).`));
+      // 3-N07: a flight OCC already planned by hand takes the provider's proposal instead of being duplicated.
+      answer => (answer.linked
+        ? `La propuesta se vinculó a la escala ya planificada (${answer.operationCode}); no se creó otra.`
+        : view === 'Charter'
+          ? `Charter importado (${answer.operationCode}). Finanzas confirma el prepago en «Charters sin contrato».`
+          : `Escala importada (${answer.operationCode}).`));
     if (result) onImported?.();
   }
 

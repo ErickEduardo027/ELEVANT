@@ -32,9 +32,64 @@ public sealed class HumanResourcesReportRendererTests
         Assert.Contains(cells, cell => cell.InnerText == "=SUM(1,1)" &&
             cell.DataType?.Value == CellValues.InlineString);
         Assert.Contains(cells, cell => cell.InnerText ==
-            "Clase: Qualification; Vigencia: Current" &&
+            "Clase: Habilitaciones · Vigencia: Vigentes" &&
             cell.DataType?.Value == CellValues.InlineString);
         Assert.Equal(101, cells.Count(cell => cell.InnerText == "2099-12-31"));
+    }
+
+    [Fact]
+    public void XlsxHeadingIsSpanishAndSaysWhenItWasGeneratedInTheStationsLocalTime()
+    {
+        // 12:00Z is 08:00 in Punta Cana (3-N16); the filter codes stay in the snapshot for the audit only.
+        var snapshot = Snapshot(1, "Agente") with
+        {
+            DocumentKind = "Qualification", Validity = "Current", TimeZone = "America/Santo_Domingo",
+        };
+        using var stream = new MemoryStream(new HumanResourcesReportXlsxRenderer().Render(snapshot, "PUJ"));
+        using var spreadsheet = SpreadsheetDocument.Open(stream, false);
+        var texts = spreadsheet.WorkbookPart!.WorksheetParts.Single().Worksheet!.Descendants<Cell>()
+            .Select(cell => cell.InnerText).ToArray();
+        Assert.Contains("Vigencias de habilitaciones y permisos", texts);
+        Assert.Contains("Período: 02/12/2099 – 31/12/2099", texts);
+        Assert.Contains("Clase: Habilitaciones · Vigencia: Vigentes", texts);
+        Assert.Contains("Generado: 05/10/2026 08:00 (hora local)", texts);
+        Assert.DoesNotContain(texts, text => text.Contains("Qualification", StringComparison.Ordinal) ||
+            text.Contains("Current", StringComparison.Ordinal) || text.Contains("UTC", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void PdfTitleFiltersAndGenerationTimeAreSpanishAndLocal()
+    {
+        var snapshot = Snapshot(1, "Agente de prueba") with
+        {
+            DocumentKind = "Permit", TimeZone = "America/Santo_Domingo",
+        };
+        var bytes = new HumanResourcesReportPdfRenderer().Render(snapshot, "PUJ");
+        using (var report = PdfReader.Open(new MemoryStream(bytes), PdfDocumentOpenMode.Import))
+            Assert.Equal("Vigencias de habilitaciones y permisos · PUJ", report.Info.Title);
+        var text = PdfFontInspector.Text(bytes);
+        Assert.Contains("Vigencias de habilitaciones y permisos · PUJ", text);
+        Assert.Contains("Período 02/12/2099 – 31/12/2099", text);
+        Assert.Contains("Generado 05/10/2026 08:00 (hora local)", text);
+        Assert.Contains("1 fila", text);
+        Assert.Contains("Clase: Permisos · Vigencia: Todas", text);
+        Assert.DoesNotContain("Expirations", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("UTC", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnEmptyPdfSaysThereAreNoRowsForTheFilters()
+    {
+        var snapshot = new HumanResourcesReportSnapshot(HumanResourcesReportKind.AccountMovements, Guid.NewGuid(),
+            new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 30),
+            new DateTimeOffset(2026, 10, 5, 12, 0, 0, TimeSpan.Zero),
+            ["Fecha y hora local", "Agente", "Empleado", "Movimiento"], []);
+        var text = PdfFontInspector.Text(new HumanResourcesReportPdfRenderer().Render(snapshot, "PUJ"));
+        Assert.Contains("Movimientos de cuenta · PUJ", text);
+        Assert.Contains("No hay filas para estos filtros.", text);
+        Assert.Contains("0 filas", text);
+        // Without a zone the time is AVIAM's calendar, never the host's.
+        Assert.Contains("Generado 05/10/2026 08:00 (hora local)", text);
     }
 
     [Theory]

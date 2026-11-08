@@ -110,6 +110,28 @@ verificado;
   para no gastar nunca unidades de pago. Las fases 3 y 4 todavía tienen pasos
   `test.fixme`.
 
+Desde la fase 3 del ciclo (código de `f2d5c52c`, también posterior al commit
+verificado;
+[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)):
+
+- **Pasos de la fase 3.** Ya no queda ningún `test.fixme` en las
+  [pruebas de la fase 3](../../frontend/public-web/tests/e2e-cycle/fase3-operacion.spec.ts):
+  los pasos de los huecos 3-A a 3-K son pruebas reales, y un paso final
+  comprueba los reportes de OCC y de Gestión Humana. Solo la fase 4 conserva
+  pasos `test.fixme`.
+- **Franja horaria.** El recorrido corre entre las 08:30 y las 22:30 de la hora
+  local, porque la fase 2 elige la plantilla de turno del agente sintético que
+  cubre el vuelo de la corrida. Los pasos de la fase 3 que necesitan otra
+  ventana libre en ese turno se saltan con su motivo cuando ya no queda, y el
+  que reabre la aprobación se salta si la operación del ciclo ya está en una
+  prefactura.
+- **Corrida registrada.** El 8 de noviembre de 2026 las fases 1 a 3 pasaron
+  enteras contra el stack local recreado con la rama completa: 52 de 52
+  pasos (14, 18 y 20). Varias corridas el mismo día agotan las ventanas libres
+  del agente sintético. Para una corrida limpia se recrea el stack (`down -v`)
+  y se aparta `passwords.json` del estado del arnés, porque el seed vuelve a
+  las contraseñas iniciales.
+
 ## Qué agrega cada workflow activo
 
 ### Backend CI

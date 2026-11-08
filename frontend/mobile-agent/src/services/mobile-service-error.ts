@@ -39,11 +39,61 @@ const messages: Record<MobileServiceErrorCode, string> = {
   cancelled: 'La solicitud fue cancelada.',
 };
 
+/**
+ * The Problem Details codes the tablet explains in Spanish (phase 3, block B). The server's title is never shown; a
+ * code this version does not know keeps the message of its status, as the deployed APK does.
+ */
+const problemMessages: ReadonlyMap<string, string> = new Map([
+  // 3-N04: the airline's contract stopped being in force before the operation started.
+  ['contract_not_in_force',
+    'El contrato de la aerolínea no está vigente. No inicies la operación y avisa a OCC.'],
+  // Phase 3 block C: the tablet's evidence and its times (3-I, 3-N25, 3-N09).
+  ['time_outside_operation_window',
+    'La hora queda fuera de la ventana de la operación. Revísala y corrígela.'],
+  ['milestone_out_of_order', 'Bloqueo debe ser anterior al Push-back.'],
+  ['service_time_out_of_order',
+    'La hora del servicio es anterior a su último cambio registrado. Revisa la hora y vuelve a registrarlo.'],
+  ['ramp_operation_state_conflict',
+    'La operación ya no admite este registro: está entregada, aprobada o en otro estado.'],
+  ['invalid_ramp_command', 'ELEVANT no aceptó el registro. Revisa los datos e inténtalo de nuevo.'],
+  ['idempotency_conflict', 'Este registro ya se envió con otros datos. Revísalo en Sincronización.'],
+  // 3-N06: the tablet's own reasons not to hand the operation off to OCC yet.
+  ['pending_queue', 'Faltan registros por enviar a ELEVANT. Abre Sincronización y espera a que se envíen.'],
+  ['service_order_unsigned', 'Falta firmar la Orden de Servicio (aerolínea y AVIAM) sobre su contenido actual.'],
+  // 3-N06: a walk-around photo that does not reach ELEVANT never holds the hand-off without a way out.
+  ['walkaround_photo_unavailable',
+    'ELEVANT no pudo guardar la foto; la tablet la reintenta sola. Para entregar la operación sin ella, descártala.'],
+  ['walkaround_photo_unreadable',
+    'No se pudo leer la foto guardada en la tablet. Descártala: el daño queda marcado sin foto.'],
+  ['damage_mark_refused',
+    'ELEVANT rechazó la marca de este daño: descarta la foto y, si hace falta, vuelve a marcar el daño con su foto.'],
+  // 3-N24: Finance confirmed the charter's prepayment; a new service needs a new quotation first.
+  ['charter_prepayment_confirmed',
+    'El prepago del charter ya está confirmado: pide a Finanzas una nueva cotización para agregar servicios.'],
+]);
+
+/** Whether the message of this failure names its cause from a Problem Details code (not only its status). */
+export function explainsProblem(error: MobileServiceError) {
+  return error.problemCode !== undefined && problemMessages.has(error.problemCode);
+}
+
 type MobileServiceErrorOptions = Readonly<{
   status?: number;
   traceId?: string;
   retryable?: boolean;
+  problemCode?: string;
 }>;
+
+/** A Problem Details code as the API sends it (snake_case), or undefined. */
+function safeProblemCode(value: string | undefined) {
+  return typeof value === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(value)
+    ? value
+    : undefined;
+}
+
+function messageFor(code: MobileServiceErrorCode, problemCode: string | undefined) {
+  return (problemCode === undefined ? undefined : problemMessages.get(problemCode)) ?? messages[code];
+}
 
 function safeTraceId(value: string | undefined) {
   if (typeof value !== 'string') return undefined;
@@ -59,16 +109,22 @@ export class MobileServiceError extends Error {
   readonly status: number | undefined;
   readonly traceId: string | undefined;
   readonly retryable: boolean;
+  /**
+   * The Problem Details code the API sent (`contract_not_in_force`, 3-N04), so a screen explains the cause; `code`
+   * stays the kind of failure every screen already handles.
+   */
+  readonly problemCode: string | undefined;
 
   constructor(
     code: MobileServiceErrorCode,
     options: MobileServiceErrorOptions = {},
   ) {
-    super(messages[code]);
+    super(messageFor(code, safeProblemCode(options.problemCode)));
     this.name = 'MobileServiceError';
     this.code = code;
     this.status = Number.isInteger(options.status) ? options.status : undefined;
     this.traceId = safeTraceId(options.traceId);
+    this.problemCode = safeProblemCode(options.problemCode);
     this.retryable =
       options.retryable ??
       [
@@ -138,16 +194,20 @@ export function asMobileServiceError(
         traceId: error.traceId,
       });
     }
+    // 3-N04: the Problem Details code travels with the failure, so a screen names the cause (the contract that is no
+    // longer in force) while every screen keeps reacting to the kind of failure it already knows.
     if (error.status === 404) {
       return new MobileServiceError('not_found', {
         status: error.status,
         traceId: error.traceId,
+        problemCode: error.code,
       });
     }
     if (error.status === 409) {
       return new MobileServiceError('conflict', {
         status: error.status,
         traceId: error.traceId,
+        problemCode: error.code,
       });
     }
 
@@ -155,6 +215,7 @@ export function asMobileServiceError(
       status: error.status,
       traceId: error.traceId,
       retryable: error.status >= 500 || error.status === 429,
+      problemCode: error.code,
     });
   }
 

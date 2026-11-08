@@ -39,6 +39,21 @@ export function serviceStatusLabel(status: string) {
   return serviceStatusLabels[status] ?? 'Estado por confirmar';
 }
 
+// 3-G: OCC takes an incident into review, resolves it or closes it while the flight is still on the ramp.
+const incidentStatusLabels: Record<string, string> = {
+  Open: 'Registrada',
+  InReview: 'En revisión de OCC',
+  Resolved: 'Resuelta',
+  Closed: 'Cerrada',
+};
+
+/** The state of an incident in Spanish, never its code. */
+export function incidentStatusLabel(status: string) {
+  return Object.prototype.hasOwnProperty.call(incidentStatusLabels, status)
+    ? incidentStatusLabels[status]
+    : 'Estado por confirmar';
+}
+
 export function serviceStatusTone(status: string): OperationStatusTone {
   if (status === 'Completed') return 'green';
   if (status === 'InProgress' || status === 'Planned') return 'orange';

@@ -3,13 +3,21 @@ namespace Elevant.Application.Abstractions.Operations;
 /// <summary>Why a master-data command failed; the result's code names the cause (2-A).</summary>
 public enum MasterDataFailure { Forbidden, NotFound, Invalid, Conflict }
 
-/// <summary>Outcome of a master-data read or command: the value, or the failure with its stable code.</summary>
-public sealed record MasterDataResult<T>(T? Value, MasterDataFailure? Failure, string? Code, bool Replayed = false)
+/// <summary>
+/// Outcome of a master-data read or command: the value, or the failure with its stable code. A refused rule may
+/// name what it breaks (<see cref="Reasons"/>, 3-A) and a taken unique value the record that holds it
+/// (<see cref="ExistingId"/>, <c>airline_code_in_use</c>, 3-N21).
+/// </summary>
+public sealed record MasterDataResult<T>(T? Value, MasterDataFailure? Failure, string? Code, bool Replayed = false,
+    IReadOnlyList<string>? Reasons = null, Guid? ExistingId = null)
     where T : class
 {
     public static MasterDataResult<T> Success(T value, bool replayed = false) => new(value, null, null, replayed);
 
     public static MasterDataResult<T> Failed(MasterDataFailure failure, string code) => new(null, failure, code);
+
+    public static MasterDataResult<T> Failed(MasterDataFailure failure, string code, IReadOnlyList<string>? reasons,
+        Guid? existingId = null) => new(null, failure, code, false, reasons is { Count: > 0 } ? reasons : null, existingId);
 }
 
 /// <summary>The airport a station operates at (<c>ref.airports</c>).</summary>

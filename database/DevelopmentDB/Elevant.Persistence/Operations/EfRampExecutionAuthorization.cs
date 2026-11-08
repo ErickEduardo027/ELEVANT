@@ -179,6 +179,14 @@ internal sealed class EfRampExecutionAuthorization(
             return null;
         }
 
+        // 3-N03: once the agent started it, the operation follows its agent until it ends: the open assignment and the
+        // station scope authorize it, even if OCC moved the flight to a terminal outside the agent's scope or the stand
+        // was deactivated. Handing it to someone else is an explicit handover (3-F).
+        if (OperationOccupancyRules.HasStarted(operation.ActualStartAt))
+        {
+            return ToScope(operation, scope);
+        }
+
         var stand = await (
                 from assignment in context.Set<StandAssignment>().AsNoTracking()
                 join item in context.Stands.AsNoTracking()
@@ -217,14 +225,16 @@ internal sealed class EfRampExecutionAuthorization(
             }
         }
 
-        return new RampOperationExecutionScope(
-            operation,
-            scope.TurnaroundPublicId,
-            scope.OperationDate,
-            scope.TurnaroundStatus,
-            scope.StationInternalId,
-            scope.AirlineOrganizationInternalId);
+        return ToScope(operation, scope);
     }
+
+    private static RampOperationExecutionScope ToScope(GroundOperation operation, OperationScopeProjection scope) => new(
+        operation,
+        scope.TurnaroundPublicId,
+        scope.OperationDate,
+        scope.TurnaroundStatus,
+        scope.StationInternalId,
+        scope.AirlineOrganizationInternalId);
 
     private sealed record ActorProfile(
         long AccountInternalId,

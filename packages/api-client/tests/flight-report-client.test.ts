@@ -36,6 +36,25 @@ describe("Flight Report client (ADR-0031)", () => {
       aircraftRegistration: "HI1099" });
   });
 
+  it("sends the aircraft type only when the tablet has one, so an older command keeps its receipt hash (3-B)", async () => {
+    const bodies: string[] = [];
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async (_input, init) => {
+      bodies.push(String(init?.body ?? ""));
+      return Response.json(execution);
+    } });
+    const typeId = "60000000-0000-7000-8000-000000000001";
+    await client.updateRampFlightData(operationId, { passengersIn: 150, passengersOut: 148, mtowKg: 78000,
+      aircraftRegistration: null, aircraftTypeId: typeId }, installationId, key);
+    await client.updateRampFlightData(operationId, { passengersIn: 150, passengersOut: 148, mtowKg: 78000,
+      aircraftRegistration: null, aircraftTypeId: null }, installationId, key);
+    expect(JSON.parse(bodies[0]!)).toEqual({ passengersIn: 150, passengersOut: 148, mtowKg: 78000, aircraftRegistration: null,
+      aircraftTypeId: typeId });
+    expect(Object.keys(JSON.parse(bodies[1]!))).toEqual(["passengersIn", "passengersOut", "mtowKg", "aircraftRegistration"]);
+    await expect(client.updateRampFlightData(operationId, { passengersIn: null, passengersOut: null, mtowKg: null,
+      aircraftRegistration: null, aircraftTypeId: "A320" }, installationId, key)).rejects.toThrow(TypeError);
+    expect(bodies).toHaveLength(2);
+  });
+
   it("rejects unknown codes, impossible data and deviations without a delay code before calling", async () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => { throw new Error("must not call"); } });

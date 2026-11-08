@@ -39,10 +39,22 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
             async (scope, ct) =>
             {
                 var operation = scope.Operation.Operation;
-                var occurredAt = Truncate(request.OccurredAt);
-                if (!RampExecutionPolicy.CanRecordMilestone(scope.Operation.TurnaroundStatus, operation.CurrentStatus,
-                        operation.ActualStartAt, operation.ActualEndAt, occurredAt, scope.Now))
-                    return null;
+                var tapped = Truncate(request.OccurredAt);
+                // 3-N25: one window for every tablet time (from the start or the recorded arrival to the close) and
+                // block-on never after push-back; 3-N06: late evidence while OCC reviews the hand-off; 3-N09: a fact
+                // of the flight, so a correction round closes it at the first hand-off.
+                var window = await RampEvidenceWindowReader.ReadAsync(context, operation, RampEvidenceKind.Milestone,
+                    scope.Now, ct);
+                var recorded = await context.Set<OperationMilestone>().AsNoTracking()
+                    .Where(item => item.GroundOperationId == operation.Id && item.Code != request.Code &&
+                        item.ActualAt != null &&
+                        (item.Code == RampEvidenceTimePolicy.BlockOn || item.Code == RampEvidenceTimePolicy.Pushback))
+                    .ToDictionaryAsync(item => item.Code, item => item.ActualAt!.Value, ct);
+                if (RampExecutionPolicy.MilestoneRejection(scope.Operation.TurnaroundStatus, operation.CurrentStatus,
+                        operation.ActualStartAt, operation.ActualEndAt, request.Code, tapped, window, recorded,
+                        scope.Now) is { } rejection)
+                    return rejection;
+                var occurredAt = RampEvidenceTimePolicy.Clamp(tapped, scope.Now);
                 var milestone = await context.Set<OperationMilestone>()
                     .SingleOrDefaultAsync(item => item.GroundOperationId == operation.Id && item.Code == request.Code, ct);
                 var previous = milestone?.ActualAt;
@@ -63,21 +75,40 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
                 {
                     code = request.Code, occurredAt, previous, installationId = request.InstallationId,
                 });
-                return true;
+                await PendingSubmissionEvidenceRefresher.RefreshAsync(context, scope.Actor, scope.Operation, scope.Now,
+                    "milestone", request.RequestId, ct);
+                return null;
             }, cancellationToken);
 
     public Task<RampExecutionWriteResult> UpdateFlightDataAsync(RampFlightDataWriteRequest request,
         CancellationToken cancellationToken = default) =>
         RunAsync(FlightDataCommand, request.ActorAccountId, request.AllowedStationIds, request.OperationId,
-            request.InstallationId, request.IdempotencyKey,
-            Hash(new { command = FlightDataCommand, operationId = request.OperationId, request.PassengersIn,
-                request.PassengersOut, request.MtowKg, request.AircraftRegistration }),
+            request.InstallationId, request.IdempotencyKey, FlightDataHash(request),
             async (scope, ct) =>
             {
                 var operation = scope.Operation.Operation;
                 if (!RampExecutionPolicy.CanUpdateFlightData(scope.Operation.TurnaroundStatus, operation.CurrentStatus,
                         operation.ActualStartAt, operation.ActualEndAt))
-                    return null;
+                    return ConflictCode;
+                var turnaround = await context.Turnarounds.SingleAsync(item => item.Id == operation.TurnaroundId, ct);
+                // 3-B: the aircraft type the agent sees on the ramp, typed once; frozen from the first submission. The
+                // tablet records what is there: the stand rules are OCC's, never a reason to refuse the agent.
+                long? previousType = turnaround.AircraftTypeId;
+                if (request.AircraftTypeId is { } typeId)
+                {
+                    var type = await context.AircraftTypes.AsNoTracking().Where(item => item.PublicId == typeId)
+                        .Select(item => new { item.Id, item.IsActive }).SingleOrDefaultAsync(ct);
+                    if (type is null || (!type.IsActive && type.Id != turnaround.AircraftTypeId))
+                        return RampExecutionCodes.AircraftTypeUnavailable;
+                    if (type.Id != turnaround.AircraftTypeId)
+                    {
+                        if (await context.OperationSubmissions.AsNoTracking()
+                                .AnyAsync(item => item.GroundOperationId == operation.Id, ct))
+                            return RampExecutionCodes.AircraftTypeLocked;
+                        turnaround.AircraftTypeId = type.Id;
+                        turnaround.UpdatedAt = scope.Now;
+                    }
+                }
                 var before = new { operation.PassengersIn, operation.PassengersOut, operation.MtowKg };
                 operation.PassengersIn = request.PassengersIn;
                 operation.PassengersOut = request.PassengersOut;
@@ -87,7 +118,6 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
                 if (request.AircraftRegistration is not null)
                 {
                     // Corrected once on the ramp, it propagates to the turnaround and every form.
-                    var turnaround = await context.Turnarounds.SingleAsync(item => item.Id == operation.TurnaroundId, ct);
                     previousRegistration = turnaround.AircraftRegistration;
                     if (!string.Equals(previousRegistration, request.AircraftRegistration, StringComparison.Ordinal))
                     {
@@ -99,13 +129,34 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
                 {
                     before, request.PassengersIn, request.PassengersOut, request.MtowKg,
                     registration = request.AircraftRegistration, previousRegistration, installationId = request.InstallationId,
+                    aircraftTypeId = request.AircraftTypeId, previousAircraftTypeId = previousType,
+                    currentAircraftTypeId = turnaround.AircraftTypeId,
                 });
-                return true;
+                await PendingSubmissionEvidenceRefresher.RefreshAsync(context, scope.Actor, scope.Operation, scope.Now,
+                    "flight_data", request.RequestId, ct);
+                return null;
             }, cancellationToken);
 
+    /// <summary>
+    /// The receipt hash of a flight-data command. Without an aircraft type the canonical payload is byte for byte the
+    /// one of the first version, so a command the deployed APK queued offline replays instead of conflicting (3-B).
+    /// </summary>
+    internal static string FlightDataHash(RampFlightDataWriteRequest request) => request.AircraftTypeId is { } typeId
+        ? Hash(new { command = FlightDataCommand, operationId = request.OperationId, request.PassengersIn,
+            request.PassengersOut, request.MtowKg, request.AircraftRegistration, aircraftTypeId = typeId })
+        : Hash(new { command = FlightDataCommand, operationId = request.OperationId, request.PassengersIn,
+            request.PassengersOut, request.MtowKg, request.AircraftRegistration });
+
+    /// <summary>The receipt code of a refused command whose cause the tablet does not act on.</summary>
+    private const string ConflictCode = "conflict";
+
+    /// <summary>
+    /// Runs one device-scoped command; <paramref name="apply"/> is its work, which answers null when it applied and
+    /// otherwise the code of the rejection the receipt keeps.
+    /// </summary>
     private async Task<RampExecutionWriteResult> RunAsync(string commandType, Guid accountId,
         IReadOnlyCollection<Guid> stations, Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
-        Func<Scope, CancellationToken, Task<bool?>> apply, CancellationToken cancellationToken)
+        Func<Scope, CancellationToken, Task<string?>> apply, CancellationToken cancellationToken)
     {
         RampExecutionWriteResult? attempt = null;
         try
@@ -139,7 +190,7 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
 
     private async Task<RampExecutionWriteResult> InsideAsync(string commandType, Guid accountId,
         IReadOnlyCollection<Guid> stations, Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
-        Func<Scope, CancellationToken, Task<bool?>> apply, CancellationToken cancellationToken)
+        Func<Scope, CancellationToken, Task<string?>> apply, CancellationToken cancellationToken)
     {
         var authorization = new EfRampExecutionAuthorization(context, timeProvider);
         var actorResult = await authorization.ResolveActorAsync(accountId, stations, installationId, cancellationToken);
@@ -167,7 +218,8 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
         if (operation is null) return await RejectAsync(receipt, "not_found", now, cancellationToken);
 
         var scope = new Scope(actor, operation, receipt, now);
-        if (await apply(scope, cancellationToken) is not true) return await RejectAsync(receipt, "conflict", now, cancellationToken);
+        if (await apply(scope, cancellationToken) is { } rejection)
+            return await RejectAsync(receipt, rejection, now, cancellationToken);
         await RampOperationChangeWriter.AnnounceAsync(context, operation.Operation.Id, now, false, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
 
@@ -220,12 +272,19 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
         receipt.Status = MobileCommandStatus.Rejected;
         receipt.ProcessedAt = now;
         receipt.ErrorCode = errorCode;
-        receipt.ErrorMessage = errorCode == "not_found"
-            ? "The ramp operation was not found." : "The Flight Report entry conflicts with the operation.";
+        receipt.ErrorMessage = errorCode switch
+        {
+            "not_found" => "The ramp operation was not found.",
+            RampExecutionCodes.AircraftTypeUnavailable => "The aircraft type is not available.",
+            RampExecutionCodes.AircraftTypeLocked => "The aircraft type is locked since the first submission.",
+            RampProblemCodes.TimeOutsideOperationWindow => "The recorded time is outside the operation's window.",
+            RampProblemCodes.MilestoneOutOfOrder => "Block-on would come after push-back.",
+            _ => "The Flight Report entry conflicts with the operation.",
+        };
         receipt.UpdatedAt = now;
         await context.SaveChangesAsync(cancellationToken);
         return RampExecutionWriteResult.Failed(errorCode == "not_found"
-            ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict, receipt.PublicId);
+            ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict, receipt.PublicId, errorCode);
     }
 
     private static RampExecutionWriteResult Replay(MobileCommandReceipt receipt, string commandType, long accountId,
@@ -238,7 +297,7 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
                 ?? throw new InvalidOperationException("The stored Flight Report result is invalid."), receipt.PublicId);
         if (receipt.Status == MobileCommandStatus.Rejected)
             return RampExecutionWriteResult.Failed(receipt.ErrorCode == "not_found"
-                ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict, receipt.PublicId);
+                ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict, receipt.PublicId, receipt.ErrorCode);
         return RampExecutionWriteResult.Failed(RampExecutionWriteFailure.Conflict);
     }
 

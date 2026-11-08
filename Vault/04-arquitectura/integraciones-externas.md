@@ -77,6 +77,29 @@ la fase 2 del ciclo (`50e7778f`;
   ([`compose.development.api.yml`](../../backend/compose.development.api.yml))
   no lo define, así que allí el feed sigue siendo AeroDataBox.
 
+### Fase 3: el feed y las escalas que planifica OCC
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c`) y la corrección de los hallazgos pendientes de
+la revisión de su bloque A (`52141adb`), que esa verificación no cubre
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+Lo que informa el proveedor nunca reemplaza una decisión de OCC:
+
+- **Sin escalas duplicadas.** Importar un par que coincide con una escala
+  abierta de la misma estación, aerolínea, número de vuelo normalizado y día
+  local lo vincula a esa escala (`linked`) y completa la matrícula si falta y
+  el tipo de avión si la escala no lo tiene, siempre que el tipo no esté fijo y
+  la posición que ya ocupa lo admita (si no lo admite, `409 stand_unavailable`
+  con `reasons`, como la llegada y «Editar vuelo»); el alta manual del mismo
+  vuelo se rechaza (`flight_already_planned`).
+- **La llegada de OCC prevalece.** Desde que OCC registra la llegada, el tramo
+  es `Manual` y las lecturas siguientes ya no reescriben su hora real.
+- **Cancelado o desviado.** Si el proveedor informa cancelado o desviado un
+  vuelo importado, OCC recibe un aviso una sola vez y decide; el feed no cambia
+  la escala.
+- **Código legible.** La escala importada recibe el código
+  `{ESTACIÓN}-{AAAAMMDD}-{NNN}`, como la manual.
+
 Private Web sí descarga estilos/tiles cartográficos públicos directamente en el navegador. Esa dependencia visual es real y está limitada por CSP, pero no suministra información operacional canónica ni rompe la regla que prohíbe consultar proveedores de aviación desde los clientes.
 
 ## Inventario por estado
@@ -86,7 +109,7 @@ Private Web sí descarga estilos/tiles cartográficos públicos directamente en 
 | AeroDataBox FIDS | Implementado ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)) | Worker y «Actualizar ahora» del servidor, con presupuesto de unidades | Ninguna pantalla llama al proveedor; sin clave no hay llamadas. |
 | FlightAware/AeroAPI | Objetivo con shell | Binding de opciones únicamente | No hay `HttpClient`, adapter, autenticación, request, respuesta, caché o tráfico real. |
 | Puerto `IFlightInformationProvider` | Implementado como interfaz | Ningún consumidor/implementación registrado | La existencia del puerto no devuelve vuelos ni valida el contrato del proveedor. |
-| Referencias externas en turnaround/flight leg | Implementadas | La importación de OCC las completa con `AeroDataBox` y la referencia del tramo; las lecturas posteriores actualizan horas estimadas y reales. Con el proveedor simulado del arnés E2E, el proveedor es `Simulated` | No hay reconciliación automática con escalas manuales. |
+| Referencias externas en turnaround/flight leg | Implementadas | La importación de OCC las completa con `AeroDataBox` y la referencia del tramo; las lecturas posteriores actualizan horas estimadas y reales. Con el proveedor simulado del arnés E2E, el proveedor es `Simulated` | No hay reconciliación automática con escalas manuales. *Posterior al commit verificado: desde la fase 3, la importación se vincula a la escala abierta del mismo vuelo y día local, y no se actualiza un tramo cuya llegada registró OCC.* |
 | OpenFreeMap/OpenMapTiles/MapLibre demo | Implementado en Private Web | El navegador carga estilos/tiles para mapas; CSP permite orígenes concretos | No son fuente de estado operativo ni integración de vuelos. |
 | Object storage S3-compatible | Diferido | Ninguno | No hay bucket, adapter, metadata contractual, uploads ni persistencia binaria aprobada. |
 | Chat/notificaciones externas | Diferido o prototipo | Stores/adaptadores de prototipo y hubs vacíos | No hay proveedor, contrato backend o entrega durable real. |

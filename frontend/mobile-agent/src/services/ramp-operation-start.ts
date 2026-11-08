@@ -1,20 +1,25 @@
 import type { RampOperationStartResponse } from '@elevant/api-client';
-import { createMobileAgentApiClient } from '../config/elevant-api';
-import { getOrCreateRampStartCommandIfCurrent } from '../storage/mobile-session';
-import {
-  getMobileSessionRequestContext,
-  MobileServiceError,
-  rejectMobileSessionRequest,
-} from './mobile-auth';
-import { registerCurrentMobileDevice } from './mobile-device';
-import { asMobileServiceError } from './mobile-service-error';
+import { serverNow } from '../synchronization/server-clock';
+import { readOperationQueue, sendFlightReportCommand } from './flight-report';
+import { MobileServiceError } from './mobile-service-error';
 
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type StartAssignedRampOperationOptions = Readonly<{
+  /** Kept for the screens' request lifecycle; a start saved on the device is never cancelled by leaving the screen. */
   signal?: AbortSignal;
+  /** The station's time zone, so «Sincronización» shows the tapped time as the station's local time. */
+  timeZone?: string;
 }>;
+
+/**
+ * What happened to «Iniciar» (3-I): ELEVANT confirmed it, or it is saved on the device with the tapped time and goes
+ * out on its own when there is signal. A refusal is thrown with its Problem Details code.
+ */
+export type RampStartOutcome =
+  | Readonly<{ state: 'confirmed'; response: RampOperationStartResponse }>
+  | Readonly<{ state: 'queued'; startedAt: string | null; issue?: MobileServiceError }>;
 
 function isUuid(value: unknown): value is string {
   return (
@@ -24,59 +29,32 @@ function isUuid(value: unknown): value is string {
   );
 }
 
+/**
+ * «Iniciar» an assigned operation. The tap is stamped with ELEVANT's clock (3-N18) and saved in the device's queue
+ * before anything is sent (3-I), so a tablet without signal starts the operation and records its milestones and
+ * services; the server keeps the tapped time. A start already waiting on the device is sent again with its key; one
+ * ELEVANT refused is replaced, in its turn, by the new tap.
+ */
 export async function startAssignedRampOperation(
   operationId: string,
   options: StartAssignedRampOperationOptions = {},
-): Promise<RampOperationStartResponse> {
+): Promise<RampStartOutcome> {
   if (!isUuid(operationId)) throw new MobileServiceError('request_failed');
 
-  const context = await getMobileSessionRequestContext();
-
-  try {
-    const command = await getOrCreateRampStartCommandIfCurrent(
-      context.sessionId,
-      context.session.actor.accountId,
-      operationId,
-    );
-    if (command.kind !== 'current') {
-      throw new MobileServiceError('cancelled');
-    }
-
-    const device = await registerCurrentMobileDevice(
-      { accessToken: context.accessToken },
-      options,
-    );
-    const confirmedContext = await getMobileSessionRequestContext();
-    if (confirmedContext.sessionId !== context.sessionId) {
-      throw new MobileServiceError('cancelled');
-    }
-
-    const response = await createMobileAgentApiClient({
-      getAccessToken: () => confirmedContext.accessToken,
-    }).startRampOperation(
-      operationId,
-      device.installationId,
-      command.idempotencyKey,
-      { signal: options.signal },
-    );
-    const finalContext = await getMobileSessionRequestContext();
-    if (finalContext.sessionId !== context.sessionId) {
-      throw new MobileServiceError('cancelled');
-    }
+  const waiting = (await readOperationQueue(operationId)).start;
+  const command = waiting?.state === 'pending' && waiting.command.kind === 'start'
+    ? waiting.command
+    : { kind: 'start' as const, operationId: operationId.toLowerCase(), occurredAt: serverNow().toISOString(),
+      ...(options.timeZone ? { timeZone: options.timeZone } : {}) };
+  const sent = await sendFlightReportCommand(command, waiting?.state === 'pending'
+    ? { idempotencyKey: waiting.idempotencyKey }
+    : waiting ? { replaces: waiting.idempotencyKey } : {});
+  if (sent.state === 'sent') {
+    const response = sent.result as RampOperationStartResponse;
     if (response.operation.id.toLowerCase() !== operationId.toLowerCase()) {
       throw new MobileServiceError('malformed_response');
     }
-
-    return response;
-  } catch (error) {
-    const normalized = asMobileServiceError(error);
-    if (
-      normalized.code === 'unauthenticated' ||
-      normalized.code === 'forbidden'
-    ) {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
-      if (!cleared) throw new MobileServiceError('cancelled');
-    }
-    throw normalized;
+    return { state: 'confirmed', response };
   }
+  return { state: 'queued', startedAt: command.occurredAt, ...(sent.issue ? { issue: sent.issue } : {}) };
 }

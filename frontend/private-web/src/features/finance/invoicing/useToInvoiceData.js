@@ -34,8 +34,15 @@ function validRange(from, to) {
 const round2 = value => Math.round((value + Number.EPSILON) * 100) / 100;
 
 /**
- * One row per approved operation not yet invoiced (ADR-0035). It can be invoiced when every completed
- * service is ready; the amount is an estimate before packages and minimums, the invoice values it.
+ * What the e-CF bills of a service, as the server decides it (ServiceBillability, 3-N11): completed or in exception,
+ * with an executed quantity, unless OCC excluded it from billing in the review.
+ */
+const isBilled = service => ['Completed', 'Exception'].includes(service.executionStatus) &&
+  service.executedQuantity > 0 && service.blockingReason !== 'excluded_in_review';
+
+/**
+ * One row per approved operation not yet invoiced (ADR-0035). It can be invoiced when every service the
+ * invoice bills is ready; the amount is an estimate before packages and minimums, the invoice values it.
  */
 export function groupOperations(services) {
   const groups = new Map();
@@ -50,7 +57,7 @@ export function groupOperations(services) {
     if (service.ready) {
       group.currency ??= service.frozenCurrency;
       group.estimate = round2(group.estimate + (service.amount ?? 0));
-    } else if (service.executionStatus === 'Completed' && !group.blockingReason) {
+    } else if (isBilled(service) && !group.blockingReason) {
       group.blockingReason = service.blockingReason ?? 'requires_review';
     }
     groups.set(service.operationId, group);

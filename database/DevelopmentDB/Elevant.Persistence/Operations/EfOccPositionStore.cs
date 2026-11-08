@@ -1,6 +1,8 @@
+using System.Data;
 using System.Text.RegularExpressions;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
@@ -8,15 +10,20 @@ using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Realtime;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Operations;
 
 /// <summary>
 /// Stand occupancy projected from the active stand assignments and the actual arrival time of each
-/// turnaround. OCC records the arrival and assigns, reassigns or releases stands; every change is
-/// audited and announced to the station's OCC through <c>occ_planning</c>.
+/// turnaround. OCC records (or corrects, with a reason) the arrival and assigns, reassigns or releases
+/// stands; every change is audited and announced to the station's OCC through <c>occ_planning</c>. The
+/// three commands run in one serializable transaction with the stand locked, take an optional
+/// Idempotency-Key and the turnaround version (3-N10), and fail with a stable code.
 /// </summary>
 internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActorContextResolver actors,
     TimeProvider timeProvider) : IOccPositionStore
@@ -26,6 +33,10 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
 
     [GeneratedRegex("^[A-Z0-9-]{2,10}$")]
     private static partial Regex Registration();
+
+    private const string ArrivalAction = "occ.turnaround.arrival";
+    private const string AssignAction = "occ.stand.assign";
+    private const string ReleaseAction = "occ.stand.release";
 
     private sealed record Context(ActorContext Actor, long AccountId, long TurnaroundId, long StationId, Guid StationPublicId,
         DateOnly OperationDate, Turnaround Turnaround);
@@ -84,115 +95,137 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
     }
 
     public async Task<OccPositionResult> RecordArrivalAsync(Guid actorId, Guid turnaroundId, RecordArrivalInput input,
-        CancellationToken cancellationToken = default)
+        OccPositionCommand command, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(command);
         var registration = input.AircraftRegistration?.Trim().ToUpperInvariant();
-        if (registration is null || !Registration().IsMatch(registration)) return new(null, OccPositionFailure.Invalid);
-        var scope = await ScopeAsync(actorId, turnaroundId, cancellationToken);
-        if (scope.Failure is { } failure) return new(null, failure);
-        var current = scope.Context!;
-        var now = Now();
-        var arrivedAt = input.ArrivedAt?.ToUniversalTime() ?? now;
-        // An arrival cannot be in the future nor days before the operation.
-        if (arrivedAt > now.AddMinutes(5) || DateOnly.FromDateTime(arrivedAt.UtcDateTime) < current.OperationDate.AddDays(-1))
-            return new(null, OccPositionFailure.Invalid);
-        if (current.Turnaround.CurrentStatus is TurnaroundStatus.Cancelled or TurnaroundStatus.Diverted or TurnaroundStatus.Completed)
-            return new(null, OccPositionFailure.Conflict);
-        var leg = await context.FlightLegs.SingleOrDefaultAsync(item => item.TurnaroundId == current.TurnaroundId &&
-            item.Direction == FlightDirection.Arrival, cancellationToken);
-        if (leg is null) return new(null, OccPositionFailure.Conflict);
-        leg.ActualAt = Truncate(arrivedAt);
-        leg.UpdatedAt = now;
-        current.Turnaround.AircraftRegistration = registration;
-        current.Turnaround.UpdatedAt = now;
-        if (current.Turnaround.CurrentStatus is TurnaroundStatus.Scheduled or TurnaroundStatus.Confirmed)
+        if (registration is null || !Registration().IsMatch(registration) || input.AircraftTypeId == Guid.Empty)
+            return Failed(OccPositionFailure.Invalid, "invalid_position_request");
+        var requestedAt = input.ArrivedAt is { } value ? Truncate(value.ToUniversalTime()) : (DateTimeOffset?)null;
+        var note = input.Reason?.Trim();
+        var payload = new { turnaroundId, registration, arrivedAt = requestedAt, input.AircraftTypeId, reason = note };
+        return await RunAsync(actorId, turnaroundId, command, ArrivalAction, payload, async (current, now) =>
         {
-            context.Set<TurnaroundStatusEvent>().Add(new TurnaroundStatusEvent
+            var arrivedAt = requestedAt ?? now;
+            // An arrival cannot be in the future nor days before the operation.
+            if (arrivedAt > now.AddMinutes(5) || DateOnly.FromDateTime(arrivedAt.UtcDateTime) < current.OperationDate.AddDays(-1))
+                return Outcome.Fail(OccPositionFailure.Invalid, "invalid_position_request");
+            var turnaround = current.Turnaround;
+            if (OccTurnaroundRules.IsClosed(turnaround.CurrentStatus))
+                return Outcome.Fail(OccPositionFailure.Conflict, "turnaround_closed");
+            var leg = await context.FlightLegs.SingleOrDefaultAsync(item => item.TurnaroundId == current.TurnaroundId &&
+                item.Direction == FlightDirection.Arrival, cancellationToken);
+            if (leg is null) return Outcome.Fail(OccPositionFailure.Conflict, "invalid_position_request");
+            var operation = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == current.TurnaroundId)
+                .Select(item => new { item.Id, item.CurrentStatus, item.PlannedStartAt, item.PlannedEndAt })
+                .FirstOrDefaultAsync(cancellationToken);
+            var submitted = operation is not null && await context.OperationSubmissions.AsNoTracking()
+                .AnyAsync(item => item.GroundOperationId == operation.Id, cancellationToken);
+            // 3-N08: from the first submission the arrival is evidence, whoever wrote it (OCC or the flight feed) and even
+            // when the leg has no time yet: DELAY and the close were priced with it.
+            if (!OccTurnaroundRules.CanCorrectArrival(turnaround.CurrentStatus, operation?.CurrentStatus, submitted))
+                return Outcome.Fail(OccPositionFailure.Conflict, "arrival_locked");
+            // Before it, a time already on the leg is replaced with its reason: OCC's record always, the feed's when OCC
+            // records another one. The leg's first time, or the feed's kept as it is, needs none.
+            var recordedAt = Truncate(arrivedAt);
+            var previous = leg.ActualAt;
+            string? reason = null;
+            if (OccTurnaroundRules.ArrivalNeedsReason(previous, leg.Source == OperationalDataSource.Manual, recordedAt))
             {
-                TurnaroundId = current.TurnaroundId, FromStatus = current.Turnaround.CurrentStatus,
-                ToStatus = TurnaroundStatus.InProgress, OccurredAt = now, ActorAccountId = current.AccountId,
-                Source = OperationalDataSource.Manual, Reason = "Llegada registrada por OCC.",
-            });
-            current.Turnaround.CurrentStatus = TurnaroundStatus.InProgress;
-        }
-        return await SaveAsync(current, "occ.turnaround.arrived", $"{registration} {leg.ActualAt:O}", cancellationToken);
+                reason = OccTurnaroundRules.Reason(note);
+                if (reason is null) return Outcome.Fail(OccPositionFailure.Invalid, "reason_required");
+            }
+            // 3-B: the aircraft type seen on arrival, typed once; frozen from the first submission.
+            if (input.AircraftTypeId is { } typeId)
+            {
+                var type = await context.AircraftTypes.AsNoTracking().Where(item => item.PublicId == typeId)
+                    .Select(item => new { item.Id, item.IsActive, item.SizeCategory }).SingleOrDefaultAsync(cancellationToken);
+                if (type is null || (!type.IsActive && type.Id != turnaround.AircraftTypeId))
+                    return Outcome.Fail(OccPositionFailure.Conflict, "aircraft_type_unavailable");
+                if (type.Id != turnaround.AircraftTypeId)
+                {
+                    if (OccTurnaroundRules.IsAircraftTypeLocked(operation?.CurrentStatus, submitted))
+                        return Outcome.Fail(OccPositionFailure.Conflict, "aircraft_type_locked");
+                    var reasons = await StandAvailability.SizeReasonsAsync(context, current.StationId, current.TurnaroundId,
+                        operation?.PlannedStartAt, operation?.PlannedEndAt, type.SizeCategory, cancellationToken);
+                    if (reasons.Count > 0) return Outcome.Fail(OccPositionFailure.Conflict, "stand_unavailable", reasons);
+                    turnaround.AircraftTypeId = type.Id;
+                }
+            }
+            leg.ActualAt = recordedAt;
+            // OCC's time prevails: the feed no longer rewrites this leg's actual time.
+            leg.Source = OperationalDataSource.Manual;
+            leg.UpdatedAt = now;
+            turnaround.AircraftRegistration = registration;
+            turnaround.UpdatedAt = now;
+            if (turnaround.CurrentStatus is TurnaroundStatus.Scheduled or TurnaroundStatus.Confirmed)
+            {
+                context.Set<TurnaroundStatusEvent>().Add(new TurnaroundStatusEvent
+                {
+                    TurnaroundId = current.TurnaroundId, FromStatus = turnaround.CurrentStatus,
+                    ToStatus = TurnaroundStatus.InProgress, OccurredAt = now, ActorAccountId = current.AccountId,
+                    Source = OperationalDataSource.Manual, Reason = "Llegada registrada por OCC.",
+                });
+                turnaround.CurrentStatus = TurnaroundStatus.InProgress;
+            }
+            return reason is null
+                ? await AnnounceAsync(current, "occ.turnaround.arrived", $"{registration} {leg.ActualAt:O}", now, cancellationToken)
+                : await AnnounceAsync(current, "occ.turnaround.arrival_corrected",
+                    $"{reason} ({previous:O} -> {leg.ActualAt:O})", now, cancellationToken);
+        }, cancellationToken);
     }
 
     public async Task<OccPositionResult> AssignAsync(Guid actorId, Guid turnaroundId, Guid standId, string? reason,
-        CancellationToken cancellationToken = default)
+        OccPositionCommand command, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(command);
         var note = reason?.Trim();
-        if (note is { Length: > 500 }) return new(null, OccPositionFailure.Invalid);
-        var scope = await ScopeAsync(actorId, turnaroundId, cancellationToken);
-        if (scope.Failure is { } failure) return new(null, failure);
-        var current = scope.Context!;
-        if (current.Turnaround.CurrentStatus is TurnaroundStatus.Cancelled or TurnaroundStatus.Diverted or TurnaroundStatus.Completed)
-            return new(null, OccPositionFailure.Conflict);
-        var stand = await context.Stands.AsNoTracking()
-            .Where(item => item.PublicId == standId && item.StationId == current.StationId && item.IsActive)
-            .Select(item => new { item.Id, item.Code, item.MaxAircraftSize }).SingleOrDefaultAsync(cancellationToken);
-        if (stand is null) return new(null, OccPositionFailure.NotFound);
-        var window = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == current.TurnaroundId)
-            .Select(item => new { item.PlannedStartAt, item.PlannedEndAt }).FirstOrDefaultAsync(cancellationToken);
-        // Combined stands (ADR-0030): an impossible combination is rejected with the rule it breaks.
-        var occupied = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
-                              join operation in context.GroundOperations.AsNoTracking() on assignment.TurnaroundId equals operation.TurnaroundId
-                              join parked in context.Stands.AsNoTracking() on assignment.StandId equals parked.Id
-                              join turnaround in context.Turnarounds.AsNoTracking() on assignment.TurnaroundId equals turnaround.Id
-                              from type in context.AircraftTypes.AsNoTracking().Where(type => type.Id == turnaround.AircraftTypeId).DefaultIfEmpty()
-                              where parked.StationId == current.StationId && assignment.AssignedTo == null &&
-                                    assignment.TurnaroundId != current.TurnaroundId &&
-                                    operation.CurrentStatus != GroundOperationStatus.Cancelled &&
-                                    (window == null || window.PlannedStartAt == null || window.PlannedEndAt == null ||
-                                     operation.PlannedStartAt == null || operation.PlannedEndAt == null ||
-                                     (operation.PlannedStartAt < window.PlannedEndAt && window.PlannedStartAt < operation.PlannedEndAt))
-                              select new { parked.Id, parked.Code, Size = type == null ? null : type.SizeCategory })
-            .ToArrayAsync(cancellationToken);
-        var rules = await context.Set<StandConstraint>().AsNoTracking()
-            .Where(item => item.StationId == current.StationId && item.IsActive)
-            .Select(item => new { item.StandId, item.AffectedStandId, item.Kind }).ToArrayAsync(cancellationToken);
-        var aircraftSize = current.Turnaround.AircraftTypeId is { } aircraftTypeId
-            ? await context.AircraftTypes.AsNoTracking().Where(item => item.Id == aircraftTypeId)
-                .Select(item => item.SizeCategory).SingleOrDefaultAsync(cancellationToken)
-            : null;
-        var broken = StandConstraintPolicy.Evaluate(new StandPlacement(stand.Id, stand.Code, stand.MaxAircraftSize, aircraftSize),
-            occupied.Select(item => new OccupiedStand(item.Id, item.Code, item.Size)).ToArray(),
-            rules.Select(item => new StandRule(item.StandId, item.AffectedStandId, item.Kind)).ToArray());
-        if (broken.Count > 0) return new(null, OccPositionFailure.Conflict, broken);
-        // Same rule as manual planning: no other active assignment whose window overlaps this one.
-        var overlaps = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
-                              join operation in context.GroundOperations.AsNoTracking() on assignment.TurnaroundId equals operation.TurnaroundId
-                              where assignment.StandId == stand.Id && assignment.AssignedTo == null &&
-                                    assignment.TurnaroundId != current.TurnaroundId &&
-                                    operation.CurrentStatus != GroundOperationStatus.Cancelled &&
-                                    (window == null || window.PlannedStartAt == null || window.PlannedEndAt == null ||
-                                     operation.PlannedStartAt == null || operation.PlannedEndAt == null ||
-                                     (operation.PlannedStartAt < window.PlannedEndAt && window.PlannedStartAt < operation.PlannedEndAt))
-                              select assignment.Id).AnyAsync(cancellationToken);
-        if (overlaps) return new(null, OccPositionFailure.Conflict);
-        var now = Now();
-        var active = await context.Set<StandAssignment>()
-            .SingleOrDefaultAsync(item => item.TurnaroundId == current.TurnaroundId && item.AssignedTo == null, cancellationToken);
-        if (active?.StandId == stand.Id) return new(await BoardFor(current, cancellationToken), null);
-        // Closing the previous assignment and opening the new one commit together: one active
-        // assignment per turnaround is a filtered unique index.
-        return await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        if (note is { Length: > 500 } || standId == Guid.Empty) return Failed(OccPositionFailure.Invalid, "invalid_position_request");
+        var payload = new { turnaroundId, standId, reason = note };
+        return await RunAsync(actorId, turnaroundId, command, AssignAction, payload, async (current, now) =>
         {
-            await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+            if (OccTurnaroundRules.IsClosed(current.Turnaround.CurrentStatus))
+                return Outcome.Fail(OccPositionFailure.Conflict, "turnaround_closed");
+            // 3-N10: the stand row is locked first and every check below runs in this serializable transaction, so a
+            // concurrent assignment of another flight waits and then sees this one.
+            await StandAvailability.LockAsync(context, standId, cancellationToken);
+            var stand = await context.Stands.AsNoTracking()
+                .Where(item => item.PublicId == standId && item.StationId == current.StationId && item.IsActive)
+                .Select(item => new { item.Id, item.Code, item.MaxAircraftSize }).SingleOrDefaultAsync(cancellationToken);
+            if (stand is null) return Outcome.Fail(OccPositionFailure.NotFound, "not_found");
+            var window = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == current.TurnaroundId)
+                .Select(item => new { item.PlannedStartAt, item.PlannedEndAt }).FirstOrDefaultAsync(cancellationToken);
+            // Combined stands (ADR-0030): an impossible combination is rejected with the rule it breaks. The flights that
+            // hold a stand are the one query of StandAvailability: an approved or closed flight no longer does (3-D).
+            var occupied = await StandAvailability.Occupying(context, current.StationId, window?.PlannedStartAt,
+                    window?.PlannedEndAt, current.TurnaroundId)
+                .Select(item => new { Id = item.StandId, Code = item.StandCode, Size = item.AircraftSize })
+                .ToArrayAsync(cancellationToken);
+            var rules = await context.Set<StandConstraint>().AsNoTracking()
+                .Where(item => item.StationId == current.StationId && item.IsActive)
+                .Select(item => new { item.StandId, item.AffectedStandId, item.Kind }).ToArrayAsync(cancellationToken);
+            var aircraftSize = current.Turnaround.AircraftTypeId is { } aircraftTypeId
+                ? await context.AircraftTypes.AsNoTracking().Where(item => item.Id == aircraftTypeId)
+                    .Select(item => item.SizeCategory).SingleOrDefaultAsync(cancellationToken)
+                : null;
+            var broken = StandConstraintPolicy.Evaluate(new StandPlacement(stand.Id, stand.Code, stand.MaxAircraftSize, aircraftSize),
+                occupied.Select(item => new OccupiedStand(item.Id, item.Code, item.Size)).ToArray(),
+                rules.Select(item => new StandRule(item.StandId, item.AffectedStandId, item.Kind)).ToArray());
+            if (broken.Count > 0) return Outcome.Fail(OccPositionFailure.Conflict, "stand_unavailable", broken);
+            // Same rule as manual planning: no other active assignment whose window overlaps this one.
+            if (occupied.Any(item => item.Id == stand.Id))
+                return Outcome.Fail(OccPositionFailure.Conflict, "stand_unavailable", ["stand_taken"]);
+            var active = await context.Set<StandAssignment>()
+                .SingleOrDefaultAsync(item => item.TurnaroundId == current.TurnaroundId && item.AssignedTo == null, cancellationToken);
+            if (active?.StandId == stand.Id) return Outcome.Unchanged;
+            // Closing the previous assignment and opening the new one commit together: one active assignment per
+            // turnaround is a filtered unique index, so the closing is saved first.
             if (active is not null)
             {
                 active.AssignedTo = Max(now, active.AssignedFrom);
                 active.UpdatedAt = now;
-                try
-                {
-                    await context.SaveChangesAsync(cancellationToken);
-                }
-                catch (DbUpdateException)
-                {
-                    context.ChangeTracker.Clear();
-                    return new OccPositionResult(null, OccPositionFailure.Conflict);
-                }
+                await context.SaveChangesAsync(cancellationToken);
             }
             context.Set<StandAssignment>().Add(new StandAssignment
             {
@@ -201,27 +234,29 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 Reason = string.IsNullOrEmpty(note) ? (active is null ? "Asignada por OCC." : "Reasignada por OCC.") : note,
                 CreatedAt = now, UpdatedAt = now,
             });
-            // The flight follows the agent covering the new stand (ADR-0030).
-            await CoverageReassignment.FollowStandAsync(context, current.TurnaroundId, current.StationId, stand.Id,
-                current.AccountId, now, cancellationToken);
-            var result = await SaveAsync(current, active is null ? "occ.stand.assigned" : "occ.stand.reassigned",
-                stand.Code, cancellationToken, commit: transaction);
-            return result;
-        });
+            current.Turnaround.UpdatedAt = now;
+            // The flight follows the agent covering the new stand (ADR-0030), under the manual assignment's rules (3-N05).
+            await CoverageReassignment.FollowStandAsync(context, timeProvider, current.TurnaroundId, current.StationId,
+                stand.Id, current.AccountId, now, cancellationToken);
+            return await AnnounceAsync(current, active is null ? "occ.stand.assigned" : "occ.stand.reassigned", stand.Code, now,
+                cancellationToken);
+        }, cancellationToken);
     }
 
-    public async Task<OccPositionResult> ReleaseAsync(Guid actorId, Guid turnaroundId, CancellationToken cancellationToken = default)
+    public async Task<OccPositionResult> ReleaseAsync(Guid actorId, Guid turnaroundId, OccPositionCommand command,
+        CancellationToken cancellationToken = default)
     {
-        var scope = await ScopeAsync(actorId, turnaroundId, cancellationToken);
-        if (scope.Failure is { } failure) return new(null, failure);
-        var current = scope.Context!;
-        var active = await context.Set<StandAssignment>()
-            .SingleOrDefaultAsync(item => item.TurnaroundId == current.TurnaroundId && item.AssignedTo == null, cancellationToken);
-        if (active is null) return new(await BoardFor(current, cancellationToken), null);
-        var now = Now();
-        active.AssignedTo = Max(now, active.AssignedFrom);
-        active.UpdatedAt = now;
-        return await SaveAsync(current, "occ.stand.released", null, cancellationToken);
+        ArgumentNullException.ThrowIfNull(command);
+        return await RunAsync(actorId, turnaroundId, command, ReleaseAction, new { turnaroundId }, async (current, now) =>
+        {
+            var active = await context.Set<StandAssignment>()
+                .SingleOrDefaultAsync(item => item.TurnaroundId == current.TurnaroundId && item.AssignedTo == null, cancellationToken);
+            if (active is null) return Outcome.Unchanged;
+            active.AssignedTo = Max(now, active.AssignedFrom);
+            active.UpdatedAt = now;
+            current.Turnaround.UpdatedAt = now;
+            return await AnnounceAsync(current, "occ.stand.released", null, now, cancellationToken);
+        }, cancellationToken);
     }
 
     private static bool Allowed(ActorContext? actor, string permission) =>
@@ -236,27 +271,141 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
 
     private static DateTimeOffset Max(DateTimeOffset left, DateTimeOffset right) => left > right ? left : right;
 
-    private async Task<(Context? Context, OccPositionFailure? Failure)> ScopeAsync(Guid actorId, Guid turnaroundId,
+    private static OccPositionResult Failed(OccPositionFailure failure, string code, IReadOnlyList<string>? reasons = null) =>
+        new(null, failure, reasons is { Count: > 0 } ? reasons : null, code);
+
+    /// <summary>What a command step did: changed the turnaround, nothing to change, or the failure that rolls it back.</summary>
+    private sealed record Outcome(OccPositionFailure? Failure, string? Code, IReadOnlyList<string>? Reasons)
+    {
+        public static Outcome Done { get; } = new(null, null, null);
+
+        public static Outcome Unchanged { get; } = new(null, null, null);
+
+        public static Outcome Fail(OccPositionFailure failure, string code, IReadOnlyList<string>? reasons = null) =>
+            new(failure, code, reasons);
+    }
+
+    /// <summary>
+    /// One positions command (3-N10): the receipt of its Idempotency-Key, the turnaround version it expects, the work
+    /// and the commit in one serializable transaction. Without a key (older screens) the same transaction still runs.
+    /// A replay answers the current board without repeating audit or notices; any other use of the key is
+    /// <c>idempotency_conflict</c>; a stale version is <c>version_conflict</c>.
+    /// </summary>
+    private async Task<OccPositionResult> RunAsync(Guid actorId, Guid turnaroundId, OccPositionCommand command, string action,
+        object payload, Func<Context, DateTimeOffset, Task<Outcome>> work, CancellationToken cancellationToken)
+    {
+        if (command.IdempotencyKey == Guid.Empty) return Failed(OccPositionFailure.Invalid, "idempotency_key_required");
+        if (command.IdempotencyKey is not null && string.IsNullOrWhiteSpace(command.ExpectedVersion))
+            return Failed(OccPositionFailure.Invalid, "expected_version_required");
+        var scope = await ScopeAsync(actorId, turnaroundId, cancellationToken);
+        if (scope.Failure is { } failure)
+            return Failed(failure, failure == OccPositionFailure.Forbidden ? "forbidden" : "not_found");
+        var found = scope.Scope!;
+        var hash = CommercialCommandReceipts.Hash(new { action, payload, expected = command.ExpectedVersion });
+        try
+        {
+            var outcome = await context.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                context.ChangeTracker.Clear();
+                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
+                    cancellationToken);
+                if (command.IdempotencyKey is { } key)
+                {
+                    var prior = await CommercialCommandReceipts.FindAsync(context, key, found.AccountId, action, hash,
+                        cancellationToken);
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+                        return Outcome.Fail(OccPositionFailure.Conflict, "idempotency_conflict");
+                    if (prior.Outcome == CommercialCommandReceipts.Outcome.Replay) return Outcome.Unchanged;
+                }
+                var turnaround = await context.Turnarounds.SingleAsync(item => item.Id == found.TurnaroundId, cancellationToken);
+                if (command.ExpectedVersion is { } expected && Version(turnaround.RowVersion) != expected)
+                    return Outcome.Fail(OccPositionFailure.Conflict, "version_conflict");
+                var now = Now();
+                var done = await work(found with { Turnaround = turnaround }, now);
+                if (done.Failure is not null)
+                {
+                    await transaction.RollbackAsync(cancellationToken);
+                    context.ChangeTracker.Clear();
+                    return done;
+                }
+                if (command.IdempotencyKey is { } receipt)
+                    CommercialCommandReceipts.Add(context, receipt, found.AccountId, action, hash, turnaroundId, now);
+                await context.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return done;
+            });
+            context.ChangeTracker.Clear();
+            return outcome.Failure is { } refused
+                ? Failed(refused, outcome.Code!, outcome.Reasons)
+                : await AnsweredAsync(found, cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            context.ChangeTracker.Clear();
+            return Failed(OccPositionFailure.Conflict, "version_conflict");
+        }
+        catch (DbUpdateException exception) when (command.IdempotencyKey is { } key &&
+                                                   CommercialCommandReceipts.IsDuplicateKey(exception))
+        {
+            // A concurrent command with the same key committed first.
+            context.ChangeTracker.Clear();
+            var concurrent = await CommercialCommandReceipts.FindAsync(context, key, found.AccountId, action, hash,
+                cancellationToken);
+            return concurrent.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? await AnsweredAsync(found, cancellationToken)
+                : Failed(OccPositionFailure.Conflict, "idempotency_conflict");
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
+        {
+            // The filtered unique index allows one active assignment per turnaround.
+            context.ChangeTracker.Clear();
+            return Failed(OccPositionFailure.Conflict, "stand_unavailable", ["stand_taken"]);
+        }
+        catch (Exception exception) when (exception is RetryLimitExceededException or SqlException &&
+                                          exception.GetBaseException() is SqlException { Number: 1205 or 3960 })
+        {
+            // A deadlock that kept repeating: the screen re-reads and decides again.
+            context.ChangeTracker.Clear();
+            return Failed(OccPositionFailure.Conflict, "version_conflict");
+        }
+    }
+
+    /// <summary>The board of the turnaround's day and the turnaround's version after the command.</summary>
+    private async Task<OccPositionResult> AnsweredAsync(Context current, CancellationToken cancellationToken)
+    {
+        var rowVersion = await context.Turnarounds.AsNoTracking().Where(item => item.Id == current.TurnaroundId)
+            .Select(item => item.RowVersion).SingleAsync(cancellationToken);
+        return new(await BoardFor(current, cancellationToken), null, null, null, Version(rowVersion));
+    }
+
+    private static string Version(byte[] rowVersion) => Convert.ToBase64String(rowVersion);
+
+    private async Task<(Context? Scope, OccPositionFailure? Failure)> ScopeAsync(Guid actorId, Guid turnaroundId,
         CancellationToken cancellationToken)
     {
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (!Allowed(actor, AssignPermission)) return (null, OccPositionFailure.Forbidden);
-        var turnaround = await context.Turnarounds.SingleOrDefaultAsync(item => item.PublicId == turnaroundId, cancellationToken);
+        var turnaround = await context.Turnarounds.AsNoTracking().Where(item => item.PublicId == turnaroundId)
+            .Select(item => new { item.Id, item.StationId, item.OperationDate }).SingleOrDefaultAsync(cancellationToken);
         if (turnaround is null) return (null, OccPositionFailure.NotFound);
         var station = await context.Stations.AsNoTracking().Where(item => item.Id == turnaround.StationId)
             .Select(item => new { item.PublicId }).SingleAsync(cancellationToken);
         if (!actor!.StationScopes.Any(scope => scope.StationId == station.PublicId)) return (null, OccPositionFailure.NotFound);
         var accountId = await context.Users.AsNoTracking().Where(user => user.PublicId == actorId)
             .Select(user => user.Id).SingleAsync(cancellationToken);
+        // The turnaround itself is read again, tracked, inside the command's transaction.
         return (new Context(actor, accountId, turnaround.Id, turnaround.StationId, station.PublicId, turnaround.OperationDate,
-            turnaround), null);
+            null!), null);
     }
 
-    private async Task<OccPositionResult> SaveAsync(Context current, string action, string? reason,
-        CancellationToken cancellationToken, Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? commit = null)
+    /// <summary>
+    /// Audits the change and announces it to the station's OCC and the operation's tablets; the assigned agents learn
+    /// when the flight moved or its arrival was corrected (ADR-0029). Each change has its own audit id, so a flight moved
+    /// twice notifies twice (notices are unique per source). The caller saves.
+    /// </summary>
+    private async Task<Outcome> AnnounceAsync(Context current, string action, string? reason, DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        var now = Now();
-        // Each change has its own audit id, so a flight moved twice notifies twice (notices are unique per source).
         var changeId = Guid.CreateVersion7();
         context.AuditEntries.Add(new AuditEntry
         {
@@ -266,7 +415,6 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
             CorrelationId = Guid.CreateVersion7(), Reason = reason,
         });
         await OccPlanningChangeWriter.AddForStationAsync(context, current.StationId, current.StationPublicId, now, cancellationToken);
-        // ADR-0029: the assigned agent learns at once when the airport moves the flight to another stand.
         var operationId = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == current.TurnaroundId)
             .Select(item => (long?)item.Id).FirstOrDefaultAsync(cancellationToken);
         if (operationId is { } groundOperationId)
@@ -276,23 +424,7 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 await OperationalNotificationWriter.NotifyAssignedAgentsAsync(context, current.StationId, groundOperationId,
                     changeId, "flight_changed", now, current.AccountId, cancellationToken);
         }
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            context.ChangeTracker.Clear();
-            return new(null, OccPositionFailure.Conflict);
-        }
-        catch (DbUpdateException)
-        {
-            // The filtered unique index allows one active assignment per turnaround.
-            context.ChangeTracker.Clear();
-            return new(null, OccPositionFailure.Conflict);
-        }
-        if (commit is not null) await commit.CommitAsync(cancellationToken);
-        return new(await BoardFor(current, cancellationToken), null);
+        return Outcome.Done;
     }
 
     private async Task<OccPositionBoardData> BoardFor(Context current, CancellationToken cancellationToken)
@@ -317,9 +449,9 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 .Where(item => item.StationId == stationId && item.IsActive)
                 .Select(item => new { item.StandId, item.AffectedStandId, item.Kind }).ToArrayAsync(cancellationToken))
             .Select(item => new StandRule(item.StandId, item.AffectedStandId, item.Kind)).ToArray();
-        var zone = TimeZoneInfo.FindSystemTimeZoneById(await context.Stations.AsNoTracking().Where(item => item.Id == stationId)
-            .Select(item => item.IanaTimeZone).SingleAsync(cancellationToken));
-        var dayStart = new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(operationDate.ToDateTime(TimeOnly.MinValue), zone), TimeSpan.Zero);
+        var zone = await context.Stations.AsNoTracking().Where(item => item.Id == stationId)
+            .Select(item => item.IanaTimeZone).SingleAsync(cancellationToken);
+        var dayStart = BusinessCalendar.StartOfDay(operationDate, zone).ToUniversalTime();
         var dayEnd = dayStart.AddDays(1);
         var coverage = (await (from item in context.Set<PositionCoverage>().AsNoTracking()
                                join coveredStand in context.Set<PositionCoverageStand>().AsNoTracking() on item.Id equals coveredStand.PositionCoverageId

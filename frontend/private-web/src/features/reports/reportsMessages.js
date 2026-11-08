@@ -16,6 +16,7 @@ export const reportsMessages = {
     exportAs: 'Exportar {format}',
     exporting: 'Exportando…',
     exportFailed: 'No se pudo exportar: {message}',
+    pdfTooLarge: 'El PDF admite hasta 5 000 filas: exporte a Excel o CSV, o acote el período.',
     generatedAt: 'Generado {date}',
   },
   en: {
@@ -35,6 +36,7 @@ export const reportsMessages = {
     exportAs: 'Export {format}',
     exporting: 'Exporting…',
     exportFailed: 'The export failed: {message}',
+    pdfTooLarge: 'A PDF holds up to 5,000 rows: export to Excel or CSV, or narrow the period.',
     generatedAt: 'Generated {date}',
   },
 };

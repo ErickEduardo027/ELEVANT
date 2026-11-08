@@ -50,6 +50,8 @@ El catálogo se replica en `packages/api-client` (`FLIGHT_REPORT_MILESTONES`), y
 - Volver a enviar un hito corrige su hora.
 - Se audita `ramp.operation.milestone.recorded`, y avisa `ramp_operations`, `occ_planning` y `occ_review` (ADR-0029).
 
+> **Actualización (8 de noviembre de 2026).** La hora de un hito ya no se acepta por un límite fijo de 24 horas: debe caer en la ventana de la operación, desde el inicio o la llegada registrada, lo que ocurrió primero, hasta su cierre (ahora; mientras OCC revisa, el fin de la operación, y en una ronda de corrección, la primera entrega), con 2 minutos de tolerancia (`time_outside_operation_window`). El bloqueo nunca va después del push-back (`milestone_out_of_order`). Los daños y las incidencias abren igual, pero en una ronda de corrección se aceptan hasta ahora, porque la tablet los registra con la hora actual, y mientras OCC revisa un daño cierra en la entrega en revisión. Una transición de servicio va de la apertura de esa ventana a ahora más 2 minutos, sin el cierre, y nunca es anterior a la transición previa del servicio (`service_time_out_of_order`). Mientras OCC revisa, el servidor acepta los hitos, los daños y los datos del vuelo capturados antes de la entrega y recalcula la evidencia. Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
 ### Datos del vuelo escritos una vez
 
 **Campos.** `ops.ground_operations` gana `passengers_in`, `passengers_out` y `mtow_kg`, con restricciones de rango: 0–999 pasajeros y 1 000–700 000 kg.
@@ -57,6 +59,8 @@ El catálogo se replica en `packages/api-client` (`FLIGHT_REPORT_MILESTONES`), y
 **Endpoint.** `PUT ramp/operations/{id}/flight-data`. Su corrección de matrícula actualiza la del turnaround, de modo que todos los formularios la toman de un único sitio.
 
 **Lectura.** La consulta de la tablet (`GET ramp/operations`) devuelve los hitos, en el orden del formulario, y los datos del vuelo.
+
+> **Actualización (8 de noviembre de 2026).** «Datos del vuelo» captura también el tipo de avión, opcional (`aircraftTypeId`), de la lista `GET ramp/aircraft-types`. Sin el campo se conserva el tipo actual y el hash del recibo es el de la versión anterior; el tipo queda fijo desde la primera entrega (`aircraft_type_locked`). La consulta de la tablet trae las operaciones activas y las que OCC aprobó en las últimas 48 horas (desde la aprobación, no desde el fin de la operación), con las activas primero, y una operación iniciada sigue en el alcance de su agente aunque cambien su posición o su terminal. Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
 
 ### Desviación con código IATA
 
@@ -85,6 +89,8 @@ Los almacenes de checklist y de entrega aceptan cualquiera de los dos, así que 
 - Si el servidor rechaza un elemento, este queda «por revisar» y nunca se reintenta a ciegas.
 
 **Envío.** El envío se dispara al tocar, al recuperar la señal (`@react-native-community/netinfo`) y desde «Sincronización».
+
+> **Actualización (8 de noviembre de 2026).** La misma cola lleva ahora el inicio, las transiciones de servicio, los cargos, el envío del checklist y el chat, en orden FIFO por operación. El inicio y los servicios viajan con la hora del toque (`startedAt` y `occurredAt`), corregida con el reloj de ELEVANT que la tablet toma de la cabecera `Date`. La cola se vacía también al abrir la app, al volver a primer plano y cada minuto. Un `401`, un `403` o el cierre de sesión ya no borran lo que ELEVANT no confirmó: queda en la tablet ligado a su cuenta. La entrega no sale mientras quede algo pendiente o rechazado de la operación, ni con la Orden de Servicio sin las dos firmas sobre su contenido actual. Ver [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
 
 **Pantalla de operación por fases**
 - Barra de progreso de cuatro fases.

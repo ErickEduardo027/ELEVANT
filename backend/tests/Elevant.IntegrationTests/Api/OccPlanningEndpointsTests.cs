@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Application.Operations;
 using Elevant.Domain.Enumerations;
@@ -50,15 +51,17 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         var state = new OccState
         {
             Actor = CreateActor(),
-            LatestDate = FixtureDate,
             Snapshot = CreateSnapshot(),
         };
         await using var application = CreateApplication(state);
         using var client = CreateAuthenticatedClient(application);
 
+        // 3-N17: without a date the server opens today in the station's calendar.
+        var before = BusinessCalendar.Today(DateTimeOffset.UtcNow, "America/Santo_Domingo");
         using var response = await client.GetAsync(
             "/api/v1/occ/planning",
             TestContext.Current.CancellationToken);
+        var after = BusinessCalendar.Today(DateTimeOffset.UtcNow, "America/Santo_Domingo");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         AssertPrivateResponse(response);
@@ -72,8 +75,8 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         Assert.Equal("2026-08-19", root.GetProperty("date").GetString());
         Assert.Equal("DEV-TAT-0002", root.GetProperty("turnarounds")[0].GetProperty("operationCode").GetString());
         Assert.False(root.TryGetProperty("Turnarounds", out _));
-        Assert.Equal(StationId, state.LatestDateStationId);
-        Assert.Equal((StationId, FixtureDate), state.SnapshotRequest);
+        Assert.Equal(StationId, state.SnapshotRequest!.Value.StationId);
+        Assert.Contains(state.SnapshotRequest.Value.Date, new[] { before, after });
     }
 
     [Fact]
@@ -761,6 +764,68 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
     }
 
     [Fact]
+    public async Task ShiftProgrammingNamesTheShiftTheAgentAlreadyHasThatDay()
+    {
+        // 3-E: another shift that day is adjusted, never doubled; the code tells the screen to offer the adjustment.
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            ShiftWriteResult = OccShiftWriteResult.Failed(OccShiftWriteFailure.Conflict, "shift_day_taken"),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+
+        using var response = await client.PostAsJsonAsync(
+            $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/shift",
+            new { agentId = AgentId, startsAtLocal = "08:00:00", endsAtLocal = "13:00:00" },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("shift_day_taken", problem.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
+    public async Task OccReadsTheAgentsShiftOfTheFlightsDay()
+    {
+        var shiftId = Guid.NewGuid();
+        var state = new OccState
+        {
+            Actor = CreateActor(),
+            AgentShiftResult = OccAgentShiftReadResult.Found(new OccAgentShiftData(shiftId, AgentId,
+                new DateOnly(2026, 11, 9), new TimeOnly(8, 0), new TimeOnly(12, 0), "A", "AAAAAAAAB9E=")),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        var route = $"/api/v1/occ/planning/turnarounds/{TurnaroundId:D}/agents/{AgentId:D}/shift";
+
+        using (var response = await client.GetAsync(route, TestContext.Current.CancellationToken))
+        {
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            AssertPrivateResponse(response);
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
+                TestContext.Current.CancellationToken));
+            Assert.Equal(["shiftId", "agentId", "workDate", "startsAtLocal", "endsAtLocal", "terminalCode", "version"],
+                json.RootElement.EnumerateObject().Select(property => property.Name).ToArray());
+            Assert.Equal(shiftId, json.RootElement.GetProperty("shiftId").GetGuid());
+            Assert.Equal("12:00:00", json.RootElement.GetProperty("endsAtLocal").GetString());
+        }
+        Assert.Equal([StationId], state.AgentShiftRequest!.AllowedStationIds);
+        Assert.Equal((TurnaroundId, AgentId), (state.AgentShiftRequest.TurnaroundId, state.AgentShiftRequest.AgentId));
+
+        // No shift that day: a coded 404, so the screen offers «Programar turno».
+        var none = new OccState { Actor = CreateActor() };
+        await using var withoutShift = CreateApplication(none);
+        using var noShiftClient = CreateAuthenticatedClient(withoutShift);
+        using var missing = await noShiftClient.GetAsync(route, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        using var problem = JsonDocument.Parse(await missing.Content.ReadAsStringAsync(
+            TestContext.Current.CancellationToken));
+        Assert.Equal("shift_not_found", problem.RootElement.GetProperty("code").GetString());
+    }
+
+    [Fact]
     public async Task ShiftProgrammingRejectsUnknownBodyMembers()
     {
         var state = new OccState { Actor = CreateActor() };
@@ -977,8 +1042,6 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
     {
         public ActorContext? Actor { get; init; }
 
-        public DateOnly? LatestDate { get; init; }
-
         public OccPlanningSnapshotData? Snapshot { get; init; }
 
         public OccPlanningOptionsSourceData? Options { get; init; }
@@ -987,8 +1050,6 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
 
         public OccAssignmentWriteResult AssignmentWriteResult { get; init; } =
             OccAssignmentWriteResult.Failed(OccAssignmentWriteFailure.Conflict);
-
-        public Guid? LatestDateStationId { get; private set; }
 
         public (Guid StationId, DateOnly Date)? SnapshotRequest { get; private set; }
 
@@ -1017,15 +1078,6 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(Actor);
-        }
-
-        public Task<DateOnly?> GetLatestOperationDateAsync(
-            Guid stationId,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            LatestDateStationId = stationId;
-            return Task.FromResult(LatestDate);
         }
 
         public Task<OccPlanningSnapshotData?> GetSnapshotAsync(
@@ -1090,5 +1142,16 @@ public sealed class OccPlanningEndpointsTests(ElevantApiFactory factory)
             return Task.FromResult(ShiftWriteResult);
         }
 
+        public OccAgentShiftReadRequest? AgentShiftRequest { get; private set; }
+
+        public OccAgentShiftReadResult AgentShiftResult { get; init; } =
+            OccAgentShiftReadResult.Failed(OccAgentShiftReadFailure.ShiftNotFound);
+
+        public Task<OccAgentShiftReadResult> GetAgentShiftAsync(
+            OccAgentShiftReadRequest request, CancellationToken cancellationToken = default)
+        {
+            AgentShiftRequest = request;
+            return Task.FromResult(AgentShiftResult);
+        }
     }
 }

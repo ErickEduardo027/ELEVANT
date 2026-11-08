@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Elevant.Contracts.Operations;
 
 public sealed record OccCoverageTerminalResponse(Guid TerminalId, string Code, string Name, int MaxStandsPerAgent,
@@ -54,3 +56,22 @@ public sealed record RampOwnCoverageResponse(Guid Id, string StationCode, string
     DateTimeOffset StartsAt, DateTimeOffset EndsAt, string? Partner, string? VehicleCode, bool IsReinforcement);
 
 public sealed record RampOwnCoverageListResponse(IReadOnlyList<RampOwnCoverageResponse> Coverages);
+
+/// <summary>
+/// «Relevar agente» (3-F): the agent who works the operation now and the agents of the station evaluated with OCC's
+/// assignment rules for what is left of it (from <c>remainingFrom</c> to <c>remainingUntil</c>).
+/// </summary>
+public sealed record OccHandoverOptionsResponse(Guid TurnaroundId, Guid OperationId, string OperationStatus,
+    Guid CurrentAssignmentId, Guid CurrentAgentId, string CurrentAgentName, DateTimeOffset RemainingFrom,
+    DateTimeOffset RemainingUntil, IReadOnlyList<OccAgentOptionResponse> Agents);
+
+/// <summary>
+/// Hands an operation in progress or returned to <c>agentId</c> (3-F). <c>expectedAssignmentId</c> is the assignment OCC
+/// saw (another one is <c>assignment_changed</c>); the reason has 5 to 500 characters. Sent with an Idempotency-Key.
+/// </summary>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
+public sealed record HandOverOccOperationRequest(Guid AgentId, Guid ExpectedAssignmentId, string? Reason);
+
+/// <summary>The handed-over operation's new assignment; <c>replayed</c> when the same key repeated the command.</summary>
+public sealed record OccOperationHandoverResponse(Guid TurnaroundId, Guid AssignmentId, Guid AgentId, Guid PreviousAgentId,
+    bool Replayed);

@@ -178,6 +178,8 @@ Una colocación imposible se rechaza. En el mapa, la posición anulada aparece i
 
 OCC también puede liberar al agente manualmente; la operación vuelve a `Planned`.
 
+Desde la fase 3 del ciclo, la reasignación aplica toda la elegibilidad de la asignación y una operación iniciada se releva en lugar de liberarse: ver [La operación](#la-operación-fase-3-del-ciclo).
+
 **Verificación.** La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.Coverage.cs) cubre:
 - reglas;
 - configuración;
@@ -243,6 +245,8 @@ La [política](../../backend/Elevant.Application/Operations/AutomaticSurcharges.
 - Las incidencias quedan resueltas.
 - La escala pasa a `Completed` cuando todas sus operaciones están aprobadas.
 
+Desde la fase 3 del ciclo, aprobar exige la Orden de Servicio firmada, y las incidencias abiertas o en revisión se resuelven con la nota fija de la aprobación; las que OCC ya resolvió o cerró conservan su nota y su autor: ver [La operación](#la-operación-fase-3-del-ciclo).
+
 **Cierre operacional del día.** El reporte `daily-close` de OCC muestra, por vuelo:
 
 - horarios programados y reales;
@@ -291,6 +295,78 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
   carnet del mentor. Planificación marca al agente asignado que ya no está
   apto (inactivo, ausente o sin carnet o licencia vigente) mediante una
   proyección que no libera nada.
+
+No se ha verificado en el VPS.
+
+## La operación (fase 3 del ciclo)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 3 del ciclo (`f2d5c52c`) y las correcciones de la revisión de sus
+bloques A, B y C (`34e90aad`) y D (`3b749a94`), que esa verificación no cubre
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+
+- **Cambios de una escala.** OCC reprograma, cancela o desvía una escala antes
+  de que su operación inicie, con motivo, la versión que vio y el permiso
+  `operations.planning.update`. Cancelar o desviar cierra la posición, libera a
+  los agentes y deja la operación `Cancelled`; nada se borra. El mismo vuelo de
+  la aerolínea se planifica una sola vez por día local: el alta manual y
+  «Editar vuelo» rechazan un número que ya vuela otra escala abierta ese día
+  (`flight_already_planned`), y la importación del feed se vincula a la escala
+  que ya existe. Las escalas nuevas reciben el código
+  `{ESTACIÓN}-{AAAAMMDD}-{NNN}`.
+- **Llegada.** OCC la registra con la hora local que escribe (si no la toca y el
+  vuelo aún no tiene hora, la del servidor al guardar) y, si quiere, el tipo de
+  avión; desde ese registro el tramo es `Manual` y el feed ya no reescribe su
+  hora real. Reemplazar una hora que el tramo ya tiene pide motivo (la de OCC
+  siempre; la del feed, si se cambia). Registrar o corregir la llegada solo vale
+  hasta la primera entrega (`arrival_locked`). Con la llegada registrada (escala
+  `InProgress`), la operación todavía se asigna mientras siga `Planned`.
+- **Ocupación.** Una sola regla
+  ([`OperationOccupancyRules`](../../backend/Elevant.Application/Operations/OperationOccupancyRules.cs)):
+  un agente lleva hasta tres operaciones simultáneas (con ventanas que se
+  solapan) asignadas, en curso o devueltas, y una posición queda tomada salvo
+  que la operación esté aprobada o cancelada o la escala cerrada. Desde la
+  entrega la operación ya no ocupa al agente, y al aprobar deja libre la
+  posición por el estado, sin cerrar las filas. Asignar una posición en el mapa
+  la bloquea dentro de una transacción serializable, así que dos vuelos nunca
+  toman la misma.
+- **El vuelo sigue a la posición solo con un agente elegible.** La
+  reasignación aplica toda la elegibilidad. Si nadie la cumple, la operación se
+  queda con el agente anterior si sigue siendo elegible; si no, vuelve a
+  `Planned` y OCC recibe `stand_change_unassigned`. La cobertura exige el
+  alcance del agente en la terminal.
+- **Relevo.** OCC pasa una operación en curso o devuelta a otro agente
+  elegible, con motivo; la operación conserva su estado y su evidencia. Una
+  operación iniciada sigue a su agente aunque cambien su posición o su terminal.
+- **Contrato.** La tablet no inicia una operación si ningún contrato cubre ya su
+  fecha, salvo un charter, y OCC recibe un aviso por cada operación sin iniciar
+  cuando un contrato deja de estar en vigor.
+- **Evidencia.** Hitos, daños e incidencias caen en la ventana de la operación,
+  desde el inicio o la llegada registrada hasta su cierre, y el bloqueo nunca va
+  después del push-back. Una transición de servicio va de la apertura de esa
+  ventana a ahora más 2 minutos, sin el cierre, y nunca es anterior a la
+  transición previa del servicio (`service_time_out_of_order`). Mientras OCC
+  revisa se acepta la evidencia capturada antes de la entrega, que recalcula los
+  recargos y obliga a releer; el reenvío de una corrección mide el tiempo en
+  tierra hasta la primera entrega y los servicios con las transiciones
+  registradas hasta el reenvío, las de la corrección incluidas. En la ronda de
+  corrección los hitos cierran en la primera entrega, y los daños, las
+  incidencias y las desviaciones se aceptan con la hora actual.
+- **Revisión.** Aprobar exige la Orden de Servicio firmada o corregida por OCC,
+  y una corrección de OCC después de la firma queda como una versión corregida
+  con su motivo. OCC excluye de la facturación un servicio en excepción con
+  cantidad ejecutada, reabre como revisión nueva una aprobación de la que nada
+  se facturó y gestiona las incidencias con nota e historial
+  (`ops.incident_status_events`). Al aprobar, las incidencias abiertas o en
+  revisión se resuelven con la nota fija de la aprobación; las que OCC ya
+  resolvió o cerró conservan su nota y su autor. Desde la aprobación o la
+  cancelación OCC solo resuelve o cierra las incidencias, sin pasarlas a
+  revisión, así que la resolución de la aprobación se mantiene hasta que OCC
+  reabra la revisión.
+- **Charter.** Un servicio no realizado no suma al prepago, y con el prepago
+  confirmado no se agregan servicios hasta que Finanzas reabra la cotización.
+  OCC da de alta la aerolínea mínima de un charter, que una aprobación
+  comercial posterior completa.
 
 No se ha verificado en el VPS.
 

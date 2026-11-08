@@ -41,6 +41,8 @@ jest.mock('expo-crypto', () => ({
 const {
   assignedOperationsCacheKey,
   clearStoredMobileSession,
+  clearStoredMobileSessionIfCurrent,
+  countPendingEvidence,
   getOrCreateRampChecklistSubmitCommandIfCurrent,
   getOrCreateRampServiceTransitionCommandIfCurrent,
   getOrCreateRampOperationSubmitCommandIfCurrent,
@@ -61,6 +63,8 @@ const {
   removeRampOperationSubmitCommandIfCurrent,
   updateRampIncidentOutboxItemIfCurrent,
   writeAssignedOperationsCacheIfCurrent,
+  writeRampChecklistCacheIfCurrent,
+  writeRampOperationChargesCacheIfCurrent,
   writeStoredMobileSession,
 } = require('../src/storage/mobile-session');
 const AsyncStorage = require('@react-native-async-storage/async-storage').default;
@@ -109,7 +113,7 @@ test('keeps only the compact credential envelope in SecureStore', async () => {
   expect(JSON.parse(metadataRaw).metadata).toEqual(largeMetadata);
 });
 
-test('keeps one account-scoped chat command stable across retries and purges it on logout', async () => {
+test('keeps one account-scoped chat command stable across retries and for the same account after logout (3-N12)', async () => {
   const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
   const first = await reserveOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, ' Puente listo ');
   expect(first).toMatchObject({ kind: 'current', command: { content: 'Puente listo' } });
@@ -121,12 +125,18 @@ test('keeps one account-scoped chat command stable across retries and purges it 
     first.command.idempotencyKey)).toBe('cleared');
   expect(await readOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A))
     .toEqual({ kind: 'current', command: null });
-  await reserveOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, 'Otro mensaje');
+  const kept = await reserveOperationChatCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, 'Otro mensaje');
   await clearStoredMobileSession();
-  expect([...mockAsyncData.keys()].some(key => key.startsWith('elevant:mobile:operation-chat-command:v1:'))).toBe(false);
+  expect([...mockAsyncData.keys()].some(key => key.startsWith('elevant:mobile:operation-chat-command:v1:'))).toBe(true);
+  const otherSession = await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+  await expect(readOperationChatCommandIfCurrent(otherSession, ACCOUNT_B, OPERATION_A))
+    .resolves.toEqual({ kind: 'current', command: null });
+  await clearStoredMobileSession();
+  const nextSession = await writeStoredMobileSession('token-a-next', metadata(ACCOUNT_A));
+  await expect(readOperationChatCommandIfCurrent(nextSession, ACCOUNT_A, OPERATION_A)).resolves.toEqual(kept);
 });
 
-test('purges pending attendance observations on logout', async () => {
+test('keeps pending attendance observations of the account on logout (3-N12)', async () => {
   const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
   const key = `elevant:mobile:attendance-draft-pending:v1:${sessionId}:${ACCOUNT_A}:${OPERATION_A}:${CHECKLIST_A}`;
   mockAsyncData.set(key, JSON.stringify({ schemaVersion: 1,
@@ -134,7 +144,7 @@ test('purges pending attendance observations on logout', async () => {
     request: { expectedRevision: 0, incidentNote: 'Observación privada' },
   }));
   await clearStoredMobileSession();
-  expect(mockAsyncData.has(key)).toBe(false);
+  expect(mockAsyncData.has(key)).toBe(true);
 });
 
 test('prevents an old request from repopulating cache after account change', async () => {
@@ -230,7 +240,7 @@ test('keeps one installation identity outside the login session lifecycle', asyn
   await expect(readOrCreateMobileInstallationId()).resolves.toBe(installationId);
 });
 
-test('reuses a start idempotency key per account and operation until logout', async () => {
+test('reuses a start idempotency key per account and operation, also after the same account signs in again', async () => {
   const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
   const first = await getOrCreateRampStartCommandIfCurrent(
     sessionId,
@@ -254,13 +264,14 @@ test('reuses a start idempotency key per account and operation until logout', as
     'token-a-next',
     metadata(ACCOUNT_A),
   );
+  // 3-N12: the reservation outlives the session, so a start that may have reached ELEVANT keeps its key.
   await expect(
     getOrCreateRampStartCommandIfCurrent(
       nextSessionId,
       ACCOUNT_A,
       OPERATION_A,
     ),
-  ).resolves.not.toEqual(first);
+  ).resolves.toEqual(first);
 });
 
 test('namespaces checklist drafts by account, operation, and checklist', async () => {
@@ -329,7 +340,11 @@ test('reserves multiple incident reports before network and preserves FIFO keys'
   await clearStoredMobileSession();
   await expect(readRampIncidentOutboxIfCurrent(sessionId, ACCOUNT_A, OPERATION_A))
     .resolves.toEqual({ kind: 'not-current' });
-  expect([...mockAsyncData.keys()].some(key => key.includes('ramp-incident-outbox'))).toBe(false);
+  // 3-N12: the unsent report stays on the device until the same account signs in and sends it.
+  expect([...mockAsyncData.keys()].some(key => key.includes('ramp-incident-outbox'))).toBe(true);
+  const nextSessionId = await writeStoredMobileSession('token-a-next', metadata(ACCOUNT_A));
+  await expect(readRampIncidentOutboxIfCurrent(nextSessionId, ACCOUNT_A, OPERATION_A))
+    .resolves.toEqual({ kind: 'current', items: removed.items });
 });
 
 test('does not overwrite a malformed incident outbox or lose reserved reports', async () => {
@@ -342,7 +357,7 @@ test('does not overwrite a malformed incident outbox or lose reserved reports', 
   expect(mockAsyncData.get(key)).toBe('{invalid');
 });
 
-test('freezes one operation handoff per account and scrubs it on logout', async () => {
+test('freezes one operation handoff per account and keeps it after logout (3-N12)', async () => {
   const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
   const first = await getOrCreateRampOperationSubmitCommandIfCurrent(
     sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ agentNote: 'Listo' }));
@@ -359,7 +374,10 @@ test('freezes one operation handoff per account and scrubs it on logout', async 
     sessionId, ACCOUNT_A, OPERATION_A, '90000000-0000-4000-8000-000000000001'))
     .toBe('changed');
   await clearStoredMobileSession();
-  expect([...mockAsyncData.keys()].some(key => key.includes('ramp-operation-submit'))).toBe(false);
+  expect([...mockAsyncData.keys()].some(key => key.includes('ramp-operation-submit'))).toBe(true);
+  const nextSessionId = await writeStoredMobileSession('token-a-next', metadata(ACCOUNT_A));
+  await expect(readRampOperationSubmitCommandIfCurrent(nextSessionId, ACCOUNT_A, OPERATION_A))
+    .resolves.toMatchObject({ kind: 'current', command: { idempotencyKey: first.idempotencyKey } });
 });
 
 test('freezes checklist payload and idempotency key before an uncertain request', async () => {
@@ -424,7 +442,7 @@ test('fails closed instead of minting a new key over a corrupt pending command',
   ).rejects.toThrow('Mobile session storage is unavailable.');
 });
 
-test('uses one frozen service command per target status and clears execution data on logout', async () => {
+test('uses one frozen service command per target status; logout keeps it and drops the caches (3-N12)', async () => {
   const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
   const startPayload = JSON.stringify({ targetStatus: 'InProgress' });
   const completePayload = JSON.stringify({ targetStatus: 'Completed', executedQuantity: 2 });
@@ -458,17 +476,19 @@ test('uses one frozen service command per target status and clears execution dat
       JSON.stringify({ targetStatus: 'InProgress', note: 'changed' }),
     ),
   ).resolves.toEqual(start);
+  await writeRampOperationChargesCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ charges: [] }));
+  await writeRampChecklistCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ checklistId: CHECKLIST_A }));
 
   await clearStoredMobileSession();
   expect(
-    [...mockAsyncData.keys()].some(key => key.includes('ramp-checklist')),
+    [...mockAsyncData.keys()].some(key => key.includes('ramp-checklist-cache') || key.includes('ramp-operation-charges')),
   ).toBe(false);
   expect(
-    [...mockAsyncData.keys()].some(key => key.includes('ramp-service-transition')),
-  ).toBe(false);
+    [...mockAsyncData.keys()].filter(key => key.includes('ramp-service-transition')),
+  ).toHaveLength(2);
 });
 
-test('removes account-scoped execution data when the owning session expires', async () => {
+test('keeps the unsent execution data of an expired session and drops its caches (3-N12)', async () => {
   const sessionId = await writeStoredMobileSession(
     'token-a',
     metadata(ACCOUNT_A),
@@ -488,6 +508,7 @@ test('removes account-scoped execution data when the owning session expires', as
     'InProgress',
     JSON.stringify({ targetStatus: 'InProgress' }),
   );
+  await writeRampOperationChargesCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ charges: [] }));
 
   const metadataEnvelope = JSON.parse(mockAsyncData.get(METADATA_KEY));
   metadataEnvelope.metadata.expiresAt = new Date(Date.now() - 1_000).toISOString();
@@ -497,10 +518,57 @@ test('removes account-scoped execution data when the owning session expires', as
     kind: 'expired',
     accountId: ACCOUNT_A,
   });
+  expect(mockSecureData.has(CREDENTIAL_KEY)).toBe(false);
   expect(
-    [...mockAsyncData.keys()].some(key => key.includes('ramp-checklist')),
+    [...mockAsyncData.keys()].some(key => key.includes('ramp-operation-charges')),
   ).toBe(false);
+  expect(
+    [...mockAsyncData.keys()].some(key => key.includes('ramp-checklist-draft')),
+  ).toBe(true);
   expect(
     [...mockAsyncData.keys()].some(key => key.includes('ramp-service-transition')),
-  ).toBe(false);
+  ).toBe(true);
+});
+
+test('a revoked session keeps every unsent record bound to its account; only that account counts it as its own (3-N12)', async () => {
+  const sessionId = await writeStoredMobileSession('token-a', metadata(ACCOUNT_A));
+  const queued = key => ({ idempotencyKey: key, command: { kind: 'milestone', operationId: OPERATION_A,
+    code: 'BLOCK_ON', occurredAt: '2026-11-07T20:00:00.000Z' }, createdAt: '2026-11-07T20:00:00.000Z', state: 'pending',
+    attempts: 0 });
+  mockAsyncData.set(`elevant.flightReportOutbox.v1.${ACCOUNT_A}`, JSON.stringify([
+    queued('91000000-0000-4000-8000-000000000001'), { ...queued('91000000-0000-4000-8000-000000000002'), state: 'blocked' }]));
+  await reserveRampIncidentOutboxItemIfCurrent(sessionId, ACCOUNT_A, OPERATION_A,
+    JSON.stringify({ incidentType: 'Safety', severity: 'High', description: 'Derrame de combustible', occurredAt: '2026-11-07T20:00:00Z' }));
+  await getOrCreateRampServiceTransitionCommandIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, SERVICE_A, 'Completed',
+    JSON.stringify({ targetStatus: 'Completed', executedQuantity: 1 }));
+  mockAsyncData.set(`elevant:mobile:attendance-draft-pending:v1:${sessionId}:${ACCOUNT_A}:${OPERATION_A}:${CHECKLIST_A}`,
+    JSON.stringify({ schemaVersion: 1, idempotencyKey: '82000000-0000-4000-8000-000000000001',
+      request: { expectedRevision: 0, incidentNote: 'Llegué tarde por el puente' } }));
+  // A draft is not a record sent anywhere: it is kept but not counted.
+  await writeRampChecklistDraftIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, CHECKLIST_A, JSON.stringify({ answers: {} }));
+  await writeRampOperationChargesCacheIfCurrent(sessionId, ACCOUNT_A, OPERATION_A, JSON.stringify({ charges: [] }));
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, others: 0 });
+
+  // ELEVANT answers 401: the credential, its metadata and the caches go; what the agent recorded stays.
+  await expect(clearStoredMobileSessionIfCurrent(sessionId)).resolves.toBe(true);
+  expect(mockSecureData.has(CREDENTIAL_KEY)).toBe(false);
+  expect(mockAsyncData.has(METADATA_KEY)).toBe(false);
+  expect([...mockAsyncData.keys()].some(key => key.includes('ramp-operation-charges'))).toBe(false);
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 0, others: 5 });
+
+  // Another agent on the same tablet neither reads nor counts them as its own.
+  const otherSession = await writeStoredMobileSession('token-b', metadata(ACCOUNT_B));
+  await expect(readRampIncidentOutboxIfCurrent(otherSession, ACCOUNT_B, OPERATION_A))
+    .resolves.toEqual({ kind: 'current', items: [] });
+  mockAsyncData.set(`elevant.flightReportOutbox.v1.${ACCOUNT_B}`, JSON.stringify([queued('91000000-0000-4000-8000-000000000003')]));
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 1, others: 5 });
+  await clearStoredMobileSession();
+
+  // The same account signs in again and finds its records.
+  const nextSession = await writeStoredMobileSession('token-a-next', metadata(ACCOUNT_A));
+  await expect(countPendingEvidence()).resolves.toEqual({ current: 5, others: 1 });
+  await expect(readRampIncidentOutboxIfCurrent(nextSession, ACCOUNT_A, OPERATION_A))
+    .resolves.toMatchObject({ kind: 'current', items: [{ state: 'pending' }] });
+  await expect(readRampChecklistDraftIfCurrent(nextSession, ACCOUNT_A, OPERATION_A, CHECKLIST_A))
+    .resolves.toEqual({ kind: 'current', value: JSON.stringify({ answers: {} }) });
 });

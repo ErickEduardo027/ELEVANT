@@ -244,6 +244,7 @@ internal sealed class EfPreinvoiceDraftStore(
                 service.CurrentStatus, service.ContractedQuantity,
                 service.ExecutedQuantity, service.BillingUnitSnapshot,
                 service.UnitPriceSnapshot, service.CurrencyCodeSnapshot,
+                service.BillingExcludedAt,
             }).ToArrayAsync(cancellationToken);
         if (rows.Length != requestedIds.Length)
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.NotFound);
@@ -259,7 +260,7 @@ internal sealed class EfPreinvoiceDraftStore(
                 .Where(mark => serviceInternalIds.Contains(mark.OperationServiceId) && mark.RemovedAt == null)
                 .Select(mark => new { mark.OperationServiceId, mark.PublicId }).ToArrayAsync(cancellationToken))
             .ToLookup(mark => mark.OperationServiceId, mark => mark.PublicId);
-        var approvedRows = rows.Select(row =>
+        var frozen = rows.Select(row =>
         {
             OccReviewServiceData? evidence = null;
             IReadOnlyList<ServiceChargeEvidence> frozenCharges = [];
@@ -276,6 +277,15 @@ internal sealed class EfPreinvoiceDraftStore(
             }
             catch (JsonException) { }
             catch (InvalidOperationException) { }
+            return (Row: row, Evidence: evidence, Charges: frozenCharges, Timing: frozenTiming);
+        }).ToArray();
+        // 3-N29: a frozen charge the service's contract excludes blocks it; it is never valued at zero in silence.
+        var carryingExcluded = await ContractChargeExclusions.ServicesCarryingExcludedAsync(context,
+            frozen.SelectMany(item => item.Charges.Select(charge => (item.Row.ServiceId, charge.ChargeId))).ToArray(),
+            cancellationToken);
+        var approvedRows = frozen.Select(item =>
+        {
+            var (row, evidence, frozenCharges, frozenTiming) = item;
             var matches = evidence is not null &&
                 liveMarks[row.ServiceId].Order().SequenceEqual(frozenCharges.Select(charge => charge.MarkId).Order()) &&
                 evidence.Status == row.CurrentStatus.ToString() &&
@@ -285,7 +295,8 @@ internal sealed class EfPreinvoiceDraftStore(
             var valuation = matches
                 ? FinanceApprovedServicePolicy.Evaluate(row.CurrentStatus,
                     row.ExecutedQuantity, row.UnitPriceSnapshot,
-                    row.CurrencyCodeSnapshot, row.BillingUnitSnapshot)
+                    row.CurrencyCodeSnapshot, row.BillingUnitSnapshot, row.BillingExcludedAt is not null,
+                    carryingExcluded.Contains(row.ServiceId))
                 : new FinanceServiceValuation(false, "approved_evidence_mismatch", null);
             return new
             {
@@ -294,9 +305,14 @@ internal sealed class EfPreinvoiceDraftStore(
                     row.CurrencyCodeSnapshot, valuation.Ready, valuation.Amount),
                 Code = evidence?.Code ?? row.Code,
                 Name = evidence?.Name ?? row.Name,
-                Charges = frozenCharges, Timing = frozenTiming,
+                Charges = frozenCharges, Timing = frozenTiming, valuation.BlockingReason,
             };
         }).ToArray();
+        // OCC's exclusion (3-N11) and a charge the contract excludes (3-N29) name themselves instead of a generic
+        // unbillable line: the way out is in OCC's review.
+        if (approvedRows.FirstOrDefault(item => item.BlockingReason is "excluded_in_review" or
+                "charge_excluded_by_contract") is { } blocked)
+            return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, blocked.BlockingReason);
         var evaluated = PreinvoiceDraftPolicy.Evaluate(
             request.StationId, request.From, request.To,
             approvedRows.Select(item => item.Candidate).ToArray());

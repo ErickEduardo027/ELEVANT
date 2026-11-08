@@ -48,16 +48,24 @@ public sealed class HumanResourcesReportEndpointsTests(ElevantApiFactory factory
         AssertPrivate(missingStation);
         Assert.DoesNotContain("Agente de prueba", await missingStation.Content.ReadAsStringAsync(
             TestContext.Current.CancellationToken), StringComparison.Ordinal);
+        Assert.Equal("station_unavailable", await CodeAsync(missingStation));
+        using var missingExport = await client.GetAsync(Export("xlsx"), TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, missingExport.StatusCode);
+        Assert.Equal("station_unavailable", await CodeAsync(missingExport));
 
         state.Failure = HumanResourcesReportFailure.ForbiddenRole;
         using var forbidden = await client.GetAsync(Query(), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        // A refused role stays a bare 403 (3-N13).
+        Assert.Null(await CodeAsync(forbidden));
 
         state.Failure = HumanResourcesReportFailure.TooLarge;
         using var oversized = await client.GetAsync(Export("pdf"), TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.UnprocessableEntity, oversized.StatusCode);
         AssertPrivate(oversized);
         Assert.NotEqual("application/pdf", oversized.Content.Headers.ContentType?.MediaType);
+        Assert.Equal("report_too_large", await CodeAsync(oversized));
+        Assert.Equal(0, state.AuditCount);
     }
 
     [Fact]
@@ -115,6 +123,22 @@ public sealed class HumanResourcesReportEndpointsTests(ElevantApiFactory factory
         using var response = await client.GetAsync($"{Route}?stationId={StationId}&{query}",
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("invalid_report_query", await CodeAsync(response));
+        Assert.Equal(0, state.ReadCount);
+    }
+
+    [Theory]
+    [InlineData("/api/v1/human-resources/reports/expirations?from=2026-10-01&to=2026-10-30")]
+    [InlineData("/api/v1/human-resources/reports/account-movements?stationId=20000000-0000-7000-8000-000000000003&from=octubre&to=2026-10-30")]
+    [InlineData("/api/v1/human-resources/reports/expirations/export?stationId=20000000-0000-7000-8000-000000000003&from=2026-10-01&to=2026-10-30")]
+    public async Task AMalformedQueryIsCodedBeforeReadingStore(string route)
+    {
+        var state = new StubStore();
+        await using var app = Application(state);
+        using var client = Authenticated(app);
+        using var response = await client.GetAsync(route, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("invalid_report_query", await CodeAsync(response));
         Assert.Equal(0, state.ReadCount);
     }
 
@@ -187,6 +211,13 @@ public sealed class HumanResourcesReportEndpointsTests(ElevantApiFactory factory
             TestContext.Current.CancellationToken);
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         AssertPrivate(response);
+        Assert.Equal("invalid_report_query", await CodeAsync(response));
+    }
+
+    private static async Task<string?> CodeAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        return body.TryGetProperty("code", out var code) ? code.GetString() : null;
     }
 
     private static string Query() =>

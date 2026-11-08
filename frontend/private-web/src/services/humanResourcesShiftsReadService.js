@@ -59,6 +59,15 @@ async function authenticated(call) {
 export const removeHumanResourcesShift = (id, version, idempotencyKey) =>
   authenticated(client => client.removeHumanResourcesShift(id, version, idempotencyKey));
 
+/**
+ * «Ajustar horario» (3-E): Gestión Humana and OCC change the local hours of a shift of today or later with the reason,
+ * the shift's `version` (`expectedVersion`) and the intent's Idempotency-Key. The adjusted shift keeps covering the
+ * agent's coverages and operations (`shift_uncovers_work`); a past shift (`shift_in_past`) or one whose attendance was
+ * validated (`attendance_validated`) stays as it is. The error keeps its status and code for the screen.
+ */
+export const adjustHumanResourcesShift = (id, command, idempotencyKey) =>
+  authenticated(client => client.adjustHumanResourcesShift(id, command, idempotencyKey));
+
 /** «¿Puede operar?» of every active ramp agent (ADR-0026). */
 export const listRampAgentReadiness = () => authenticated(client => client.listRampAgentReadiness());
 

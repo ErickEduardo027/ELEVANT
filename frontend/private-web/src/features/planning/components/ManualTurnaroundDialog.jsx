@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { createManualTurnaround, getManualTurnaroundOptions } from '../../../services/planningService';
+import { createCharterAirline, createManualTurnaround, getManualTurnaroundOptions } from '../../../services/planningService';
+import { stationLocalToUtc } from '../../../services/businessDay';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
+import { problemMessage } from '../../../services/problemMessages';
 import { useTranslation } from '../../../i18n/LanguageScope';
-import { planningMessages } from '../planningMessages';
+import { planningMessages, TURNAROUND_PROBLEM_MESSAGES } from '../planningMessages';
 
 function newUuid() {
   if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -18,6 +21,77 @@ const EMPTY_FORM = {
 };
 
 const fieldClass = 'w-full rounded-lg border border-black/15 bg-white px-3 py-2 text-sm text-ink-900 outline-none focus:border-accent-600 focus:ring-2 focus:ring-accent-600/20 dark:border-white/15 dark:bg-surface-dark-card dark:text-text-primary-dark';
+const EMPTY_CHARTER_AIRLINE = { name: '', icaoCode: '', iataCode: '' };
+
+/**
+ * The minimal carrier of a charter that is not registered yet (3-N21): name, ICAO designator and optional IATA one.
+ * Contratos completes it if the airline later signs a contract; a code already registered is never duplicated.
+ */
+function CharterAirlineForm({ onCreated, onExisting, onCancel }) {
+  const { t } = useTranslation(planningMessages);
+  const [airline, setAirline] = useState(EMPTY_CHARTER_AIRLINE);
+  const [status, setStatus] = useState('idle');
+  const [error, setError] = useState('');
+  const keys = useRef(createCommandKeyHolder());
+  const nameRef = useRef(null);
+
+  useEffect(() => { nameRef.current?.focus(); }, []);
+
+  async function register() {
+    if (status === 'submitting') return;
+    const command = { name: airline.name, icaoCode: airline.icaoCode, iataCode: airline.iataCode || null };
+    setStatus('submitting');
+    setError('');
+    try {
+      const created = await keys.current.run('create-charter-airline', command,
+        idempotencyKey => createCharterAirline(command, idempotencyKey));
+      setStatus('idle');
+      onCreated(created);
+    } catch (failure) {
+      setStatus('idle');
+      if (failure?.code === 'airline_code_in_use') {
+        setError(onExisting(command) ?? '');
+        return;
+      }
+      setError(problemMessage(failure, TURNAROUND_PROBLEM_MESSAGES));
+    }
+  }
+
+  const update = (name, value) => {
+    setAirline(current => ({ ...current, [name]: value }));
+    setError('');
+  };
+  // Enter registers the airline instead of submitting the flight around it.
+  const onKeyDown = event => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    void register();
+  };
+
+  return (
+    <div role="group" aria-labelledby="charter-airline-title" className="mt-2 space-y-2 rounded-lg border border-accent-600/20 bg-accent-600/5 p-3">
+      <p id="charter-airline-title" className="text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{t('manual.charterAirlineTitle')}</p>
+      <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('manual.charterAirlineHint')}</p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark sm:col-span-3">{t('manual.charterAirlineName')}
+          <input ref={nameRef} maxLength={160} value={airline.name} onKeyDown={onKeyDown} onChange={event => update('name', event.target.value)} className={`${fieldClass} mt-1`} />
+        </label>
+        <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.charterAirlineIcao')}
+          <input maxLength={3} value={airline.icaoCode} onKeyDown={onKeyDown} onChange={event => update('icaoCode', event.target.value.toUpperCase())} className={`${fieldClass} mt-1 font-mono uppercase`} />
+        </label>
+        <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.charterAirlineIata')}
+          <input maxLength={2} value={airline.iataCode} onKeyDown={onKeyDown} onChange={event => update('iataCode', event.target.value.toUpperCase())} className={`${fieldClass} mt-1 font-mono uppercase`} />
+        </label>
+      </div>
+      {error && <p role="alert" className="text-xs text-status-danger">{error}</p>}
+      <div className="flex flex-wrap justify-end gap-2">
+        <button type="button" onClick={onCancel} disabled={status === 'submitting'} className="rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold text-ink-900 disabled:opacity-50 dark:border-white/15 dark:text-text-primary-dark">{t('manual.charterAirlineCancel')}</button>
+        <button type="button" onClick={() => void register()} disabled={status === 'submitting'} className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+          {status === 'submitting' ? t('manual.charterAirlineSubmitting') : t('manual.charterAirlineSubmit')}</button>
+      </div>
+    </div>
+  );
+}
 
 export default function ManualTurnaroundDialog({ stationId, initialDate, onCreated, onClose }) {
   const { t } = useTranslation(planningMessages);
@@ -29,6 +103,10 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
   const [submitStatus, setSubmitStatus] = useState('idle');
   const [formError, setFormError] = useState('');
   const [charter, setCharter] = useState(false);
+  const [showCharterAirline, setShowCharterAirline] = useState(false);
+  const [charterNotice, setCharterNotice] = useState('');
+  // The carrier just registered (3-N21) is selected once the options read after it list it.
+  const pendingAirlineId = useRef(null);
   const airlineChoices = (charter ? options?.charterAirlines : options?.airlines) ?? [];
   const idempotencyId = useRef(null);
   const dialogRef = useRef(null);
@@ -54,6 +132,12 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
         if (controller.signal.aborted) return;
         setOptions(value);
         setOptionsStatus('success');
+        const pending = pendingAirlineId.current;
+        pendingAirlineId.current = null;
+        if (pending && (value.charterAirlines ?? []).some(airline => airline.id === pending)) {
+          idempotencyId.current = null;
+          setForm(current => ({ ...current, airlineId: pending }));
+        }
       })
       .catch(error => {
         if (controller.signal.aborted || error?.name === 'AbortError') return;
@@ -61,6 +145,31 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
       });
     return () => controller.abort();
   }, [stationId, date, optionsRetry]);
+
+  function charterAirlineCreated(airline) {
+    setShowCharterAirline(false);
+    setCharterNotice(t('manual.charterAirlineCreated', { name: airline.name }));
+    pendingAirlineId.current = airline.id;
+    setOptionsRetry(value => value + 1);
+  }
+
+  /** A code already registered: the airline is selected when it can fly as a charter, never duplicated. */
+  function charterAirlineExisting(command) {
+    const iata = command.iataCode?.trim().toUpperCase() ?? '';
+    const name = command.name.trim().split(/\s+/).join(' ').toLowerCase();
+    const matches = airline => (iata && airline.iataCode === iata) || airline.name.toLowerCase() === name;
+    const charterMatch = (options?.charterAirlines ?? []).find(matches);
+    if (charterMatch) {
+      setShowCharterAirline(false);
+      setCharterNotice(t('manual.charterAirlineExisting'));
+      updateField('airlineId', charterMatch.id);
+      return null;
+    }
+    if ((options?.airlines ?? []).some(matches)) return t('manual.charterAirlineContracted');
+    // Registered meanwhile under another name: the list is read again so OCC can pick it.
+    setOptionsRetry(value => value + 1);
+    return t('manual.charterAirlineInUse');
+  }
 
   function updateField(name, value) {
     idempotencyId.current = null;
@@ -77,8 +186,10 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
   async function submit(event) {
     event.preventDefault();
     if (optionsStatus !== 'success' || !airlineChoices.length || submitStatus === 'submitting') return;
-    const arrival = new Date(`${form.arrivalScheduledAt}:00.000Z`);
-    const departure = new Date(`${form.departureScheduledAt}:00.000Z`);
+    // Typed in the station's local time, sent in UTC (3-N19).
+    const zone = options?.station?.ianaTimeZone ?? null;
+    const arrival = new Date(stationLocalToUtc(form.arrivalScheduledAt, zone) ?? Number.NaN);
+    const departure = new Date(stationLocalToUtc(form.departureScheduledAt, zone) ?? Number.NaN);
     if (!form.airlineId || !form.standId || !form.arrivalOriginIata || !form.departureDestinationIata ||
         Number.isNaN(arrival.getTime()) || Number.isNaN(departure.getTime()) ||
         departure <= arrival || departure - arrival > 24 * 60 * 60 * 1000) {
@@ -119,6 +230,8 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
             ? 'manual.aircraftTypeUnavailable'
           : error?.problemCode === 'stand_unavailable'
             ? 'manual.standTooSmall'
+          : error?.problemCode === 'flight_already_planned'
+            ? 'manual.flightAlreadyPlanned'
           : error?.status === 409
             ? 'manual.conflict'
             : 'manual.error');
@@ -146,6 +259,7 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
 
   const selectableAirports = (options?.airports ?? []).filter(airport =>
     airport.iataCode !== options?.stationAirport?.iataCode);
+  const stationLabel = options?.station?.code ?? t('manual.theStation');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/60 p-3 sm:p-6">
@@ -175,11 +289,20 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
             </label>
             <div className="sm:col-span-2">
               <label className="flex items-center gap-2 text-sm font-medium text-ink-900 dark:text-text-primary-dark">
-                <input type="checkbox" checked={charter} onChange={event => { setCharter(event.target.checked); updateField('airlineId', ''); }}
+                <input type="checkbox" checked={charter} onChange={event => {
+                  setCharter(event.target.checked); setShowCharterAirline(false); setCharterNotice(''); updateField('airlineId', '');
+                }}
                   className="h-4 w-4 rounded border-black/20 text-accent-600 focus:ring-accent-600" />
                 {t('manual.charterToggle')}
               </label>
               {charter && <p className="mt-1 text-xs text-status-warning">{t(airlineChoices.length ? 'manual.charterHint' : 'manual.noCharterAirlines')}</p>}
+              {charter && charterNotice && <p role="status" className="mt-1 text-xs font-semibold text-accent-600">{charterNotice}</p>}
+              {charter && optionsStatus === 'success' && !showCharterAirline &&
+                <button type="button" onClick={() => { setShowCharterAirline(true); setCharterNotice(''); }}
+                  className="mt-1 text-xs font-semibold text-accent-600 underline">{t('manual.newCharterAirline')}</button>}
+              {charter && showCharterAirline &&
+                <CharterAirlineForm onCreated={charterAirlineCreated} onExisting={charterAirlineExisting}
+                  onCancel={() => setShowCharterAirline(false)} />}
             </div>
             <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.stand')}
               <select required value={form.standId} onChange={event => updateField('standId', event.target.value)} className={`${fieldClass} mt-1`}>
@@ -228,14 +351,14 @@ export default function ManualTurnaroundDialog({ stationId, initialDate, onCreat
                 {selectableAirports.map(airport => <option key={airport.id} value={airport.iataCode}>{airport.iataCode} · {airport.name}</option>)}
               </select>
             </label>
-            <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.arrivalScheduled')}
+            <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.arrivalScheduled', { station: stationLabel })}
               <input required type="datetime-local" value={form.arrivalScheduledAt} onChange={event => updateField('arrivalScheduledAt', event.target.value)} className={`${fieldClass} mt-1`} />
             </label>
-            <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.departureScheduled')}
+            <label className="block text-xs font-medium text-text-secondary-light dark:text-text-secondary-dark">{t('manual.departureScheduled', { station: stationLabel })}
               <input required type="datetime-local" value={form.departureScheduledAt} onChange={event => updateField('departureScheduledAt', event.target.value)} className={`${fieldClass} mt-1`} />
             </label>
           </div>
-          <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('manual.utcHint', { station: options?.station?.code ?? t('manual.theStation'), zone: options?.station?.ianaTimeZone ?? t('manual.stationZone') })}</p>
+          <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">{t('manual.localHint', { station: stationLabel, zone: options?.station?.ianaTimeZone ?? t('manual.stationZone') })}</p>
           {formError && <p role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger/5 p-3 text-sm text-status-danger">{t(formError)}</p>}
           <div className="flex flex-wrap justify-end gap-2 border-t border-black/10 pt-4 dark:border-white/10">
             <button type="button" onClick={onClose} className="rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold text-ink-900 dark:border-white/15 dark:text-text-primary-dark">{t('manual.cancel')}</button>

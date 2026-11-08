@@ -2,7 +2,10 @@ using System.Globalization;
 using System.Text.Json;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Common;
+using Elevant.Application.Finance;
 using Elevant.Application.Identity;
+using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -26,7 +29,8 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
     public async Task<OccReportResult> ReadAsync(Guid actorId, OccReportKind kind, Guid stationId, DateOnly from,
         DateOnly to, int page, int limit, CancellationToken cancellationToken = default)
     {
-        if (!Enum.IsDefined(kind) || page < 1 || limit is < 1 or > 5000 || !OccReportCatalog.ValidRange(from, to))
+        if (!Enum.IsDefined(kind) || page < 1 || limit is < 1 or > OccReportCatalog.MaxExportRows ||
+            (long)(page - 1) * limit > int.MaxValue || !OccReportCatalog.ValidRange(from, to))
             throw new ArgumentException("The report query is invalid.");
         var actor = await actors.ResolveAsync(actorId, cancellationToken);
         if (!Allowed(actor, "operations.reports.read", stationId))
@@ -36,7 +40,8 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
             .Select(item => new { item.Id, item.Code, item.IanaTimeZone })
             .SingleOrDefaultAsync(cancellationToken);
         if (station is null) return new(null, OccReportFailure.StationNotFound);
-        var zone = TimeZoneInfo.FindSystemTimeZoneById(station.IanaTimeZone);
+        // The station's calendar (2-F): an unknown zone falls back to AVIAM's, never to the host's.
+        var zone = BusinessCalendar.Zone(station.IanaTimeZone);
 
         var operations = await (from turnaround in context.Turnarounds.AsNoTracking()
                                 join operation in context.GroundOperations.AsNoTracking() on turnaround.Id equals operation.TurnaroundId
@@ -54,7 +59,7 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
         {
             OccReportKind.Operations => await OperationsAsync(operations, ids, zone, cancellationToken),
             OccReportKind.TurnaroundTimes => TurnaroundTimes(operations),
-            OccReportKind.ServicesByAirline => await ServicesAsync(operations, ids, cancellationToken),
+            OccReportKind.ServicesByAirline => await ServicesAsync(operations, cancellationToken),
             OccReportKind.Reviews => await ReviewsAsync(operations, ids, zone, cancellationToken),
             OccReportKind.DailyClose => await DailyCloseAsync(operations, ids, zone, cancellationToken),
             _ => await ProductivityAsync(operations, ids, cancellationToken),
@@ -62,7 +67,7 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
         var slice = rows.Skip((page - 1) * limit).Take(limit + 1).ToArray();
         var definition = OccReportCatalog.All.Single(item => item.Kind == kind);
         return new(new OccReportTable(definition, stationId, station.Code, from, to, timeProvider.GetUtcNow(),
-            slice.Take(limit).ToArray(), page, limit, slice.Length > limit), null);
+            slice.Take(limit).ToArray(), page, limit, slice.Length > limit) { TimeZoneId = station.IanaTimeZone }, null);
     }
 
     public async Task<OccReportFailure?> RecordExportAsync(Guid actorId, OccReportKind kind, Guid stationId,
@@ -96,23 +101,46 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
             membership.Kind == MembershipKind.InternalStaff) &&
         actor.StationScopes.Any(scope => scope.StationId == stationId);
 
+    /// <summary>One assignment of record with its agent, for the work attribution of the reports (3-N14).</summary>
+    private sealed record AssignmentRow(long OperationId, long AgentId, string EmployeeNumber, string Name,
+        DateTimeOffset AssignedAt, DateTimeOffset? ReleasedAt);
+
+    /// <summary>Every assignment of the operations, released ones included: the attribution decides who worked.</summary>
+    private Task<AssignmentRow[]> AssignmentsAsync(long[] ids, CancellationToken cancellationToken) =>
+        (from assignment in context.OperationAgentAssignments.AsNoTracking()
+         join agent in context.RampAgents.AsNoTracking() on assignment.RampAgentId equals agent.Id
+         join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
+         where ids.Contains(assignment.GroundOperationId)
+         select new AssignmentRow(assignment.GroundOperationId, agent.Id, agent.EmployeeNumber,
+             person.FirstName + " " + person.LastName, assignment.AssignedAt, assignment.ReleasedAt))
+        .ToArrayAsync(cancellationToken);
+
+    /// <summary>Who worked the operation and their minutes (<see cref="OperationWorkAttribution"/>).</summary>
+    private static IReadOnlyList<OperationWorkAttribution.AgentWork> Attribution(OperationRow operation,
+        IEnumerable<AssignmentRow> assignments) =>
+        OperationWorkAttribution.Attribute(assignments.Select(item =>
+                new OperationWorkAttribution.Assignment(item.AgentId, item.AssignedAt, item.ReleasedAt)),
+            operation.ActualStart, operation.ActualEnd);
+
     private async Task<List<IReadOnlyList<OccReportCell>>> OperationsAsync(OperationRow[] operations, long[] ids,
         TimeZoneInfo zone, CancellationToken cancellationToken)
     {
-        var agents = (await (from assignment in context.OperationAgentAssignments.AsNoTracking()
-                             join agent in context.RampAgents.AsNoTracking() on assignment.RampAgentId equals agent.Id
-                             join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
-                             where ids.Contains(assignment.GroundOperationId) && assignment.ReleasedAt == null
-                             select new { assignment.GroundOperationId, Name = person.FirstName + " " + person.LastName })
-                .ToArrayAsync(cancellationToken))
-            .ToLookup(item => item.GroundOperationId, item => item.Name);
-        return operations.Select(item => (IReadOnlyList<OccReportCell>)
-        [
-            Text(Date(item.Date)), Text(item.Code), Text(item.Airline), Text(item.Registration ?? "—"),
-            Text(Status(item.Status)), Text(Time(item.PlannedStart, zone)), Text(Time(item.PlannedEnd, zone)),
-            Text(Time(item.ActualStart, zone)), Text(Time(item.ActualEnd, zone)),
-            Text(agents[item.Id].Any() ? string.Join(", ", agents[item.Id].Order()) : "Sin asignar"),
-        ]).ToList();
+        // «Agentes» lists who worked the operation (3-N14): its assigned agents before the start, then whoever worked
+        // a stretch of it, a handover included; an agent released before the start does not appear.
+        var assignments = (await AssignmentsAsync(ids, cancellationToken)).ToLookup(item => item.OperationId);
+        return operations.Select(item =>
+        {
+            var names = assignments[item.Id].GroupBy(row => row.AgentId).ToDictionary(group => group.Key,
+                group => group.First().Name);
+            var agents = Attribution(item, assignments[item.Id]).Select(work => names[work.AgentId]).Order().ToArray();
+            return (IReadOnlyList<OccReportCell>)
+            [
+                Text(Date(item.Date)), Text(item.Code), Text(item.Airline), Text(item.Registration ?? "—"),
+                Text(OperationLabels.Status(item.Status)), Text(Time(item.PlannedStart, zone)), Text(Time(item.PlannedEnd, zone)),
+                Text(Time(item.ActualStart, zone)), Text(Time(item.ActualEnd, zone)),
+                Text(agents.Length > 0 ? string.Join(", ", agents) : "Sin asignar"),
+            ];
+        }).ToList();
     }
 
     private static List<IReadOnlyList<OccReportCell>> TurnaroundTimes(OperationRow[] operations) =>
@@ -129,21 +157,34 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
                 ];
             }).ToList();
 
-    private async Task<List<IReadOnlyList<OccReportCell>>> ServicesAsync(OperationRow[] operations, long[] ids,
+    /// <summary>
+    /// What was executed for each airline is what Finance bills (3-N15): the billable services of the operations OCC
+    /// approved, with the one rule of <see cref="ServiceBillability"/> (OCC's exclusion included). Planned, not
+    /// performed, cancelled or unreviewed work does not count, so the report matches «Por facturar».
+    /// </summary>
+    private async Task<List<IReadOnlyList<OccReportCell>>> ServicesAsync(OperationRow[] operations,
         CancellationToken cancellationToken)
     {
-        var airlineOf = operations.ToDictionary(item => item.Id, item => item.Airline);
-        var services = await (from service in context.OperationServices.AsNoTracking()
+        var approved = operations.Where(item => item.Status == GroundOperationStatus.Approved).ToArray();
+        var airlineOf = approved.ToDictionary(item => item.Id, item => item.Airline);
+        var ids = approved.Select(item => item.Id).ToArray();
+        var services = await (from service in context.OperationServices.AsNoTracking().Where(ServiceBillability.Billable)
                               join definition in context.ServiceDefinitions.AsNoTracking() on service.ServiceDefinitionId equals definition.Id
-                              where ids.Contains(service.GroundOperationId) && service.CurrentStatus != ServiceExecutionStatus.NotPerformed
+                              where ids.Contains(service.GroundOperationId)
                               select new { service.GroundOperationId, definition.Name, service.BillingUnitSnapshot,
                                   service.ContractedQuantity, service.ExecutedQuantity })
             .ToArrayAsync(cancellationToken);
+        // 3-N26: the unit as Finance names it in its catalog («Operación»), not the code the rate snapshot keeps.
+        var unitCodes = services.Select(item => item.BillingUnitSnapshot).Distinct().ToArray();
+        var unitNames = await context.BillingUnits.AsNoTracking().Where(unit => unitCodes.Contains(unit.Code))
+            .ToDictionaryAsync(unit => unit.Code, unit => unit.Name, StringComparer.OrdinalIgnoreCase, cancellationToken);
+        string Unit(string code) => unitNames.TryGetValue(code, out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name.Trim() : OperationLabels.BillingUnit(code);
         return services.GroupBy(item => (Airline: airlineOf[item.GroundOperationId], item.Name, item.BillingUnitSnapshot))
             .OrderBy(group => group.Key.Airline, StringComparer.CurrentCulture).ThenBy(group => group.Key.Name, StringComparer.CurrentCulture)
             .Select(group => (IReadOnlyList<OccReportCell>)
             [
-                Text(group.Key.Airline), Text(group.Key.Name), Text(group.Key.BillingUnitSnapshot),
+                Text(group.Key.Airline), Text(group.Key.Name), Text(Unit(group.Key.BillingUnitSnapshot)),
                 OccReportCell.Number(group.Select(item => item.GroundOperationId).Distinct().Count()),
                 OccReportCell.Number(group.Sum(item => item.ContractedQuantity)),
                 OccReportCell.Number(group.Sum(item => item.ExecutedQuantity)),
@@ -174,33 +215,38 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
                 OccReportCell.Number(item.RevisionNumber), Text(item.Outcome == ReviewOutcome.Approved ? "Aprobada" : "Devuelta"),
                 Text(string.IsNullOrWhiteSpace(item.Reason) ? "—" : item.Reason.Trim()), Text(DateTime(item.DecidedAt, zone)),
                 Text(reported.Length == 0 ? "Ninguna"
-                    : string.Join("; ", reported.Select(incident => $"{incident.IncidentType} ({Severity(incident.Severity)})"))),
+                    : string.Join("; ", reported.Select(incident =>
+                        OperationLabels.Incident(incident.IncidentType, incident.Severity)))),
             ];
         }).ToList();
     }
 
+    /// <summary>
+    /// Each agent's operations and minutes as <see cref="OperationWorkAttribution"/> attributes them (3-N14): an agent
+    /// released before the start counts nothing and, in a handover, each agent adds the minutes of their own stretch.
+    /// </summary>
     private async Task<List<IReadOnlyList<OccReportCell>>> ProductivityAsync(OperationRow[] operations, long[] ids,
         CancellationToken cancellationToken)
     {
-        var byId = operations.ToDictionary(item => item.Id);
-        var assignments = await (from assignment in context.OperationAgentAssignments.AsNoTracking()
-                                 join agent in context.RampAgents.AsNoTracking() on assignment.RampAgentId equals agent.Id
-                                 join person in context.Persons.AsNoTracking() on agent.PersonId equals person.Id
-                                 where ids.Contains(assignment.GroundOperationId)
-                                 select new { assignment.GroundOperationId, agent.Id, agent.EmployeeNumber,
-                                     Name = person.FirstName + " " + person.LastName })
-            .ToArrayAsync(cancellationToken);
-        return assignments.GroupBy(item => (item.Id, item.Name, item.EmployeeNumber))
-            .OrderBy(group => group.Key.Name, StringComparer.CurrentCulture)
+        var assignments = await AssignmentsAsync(ids, cancellationToken);
+        var agents = assignments.GroupBy(item => item.AgentId)
+            .ToDictionary(group => group.Key, group => (group.First().Name, group.First().EmployeeNumber));
+        var byOperation = assignments.ToLookup(item => item.OperationId);
+        var work = operations.SelectMany(operation => Attribution(operation, byOperation[operation.Id])
+            .Select(item => (Operation: operation, item.AgentId, item.Minutes))).ToArray();
+        return work.GroupBy(item => item.AgentId)
+            .OrderBy(group => agents[group.Key].Name, StringComparer.CurrentCulture)
+            .ThenBy(group => agents[group.Key].EmployeeNumber, StringComparer.Ordinal)
             .Select(group =>
             {
-                var worked = group.Select(item => item.GroundOperationId).Distinct().Select(id => byId[id]).ToArray();
+                var (name, employeeNumber) = agents[group.Key];
+                var worked = group.ToArray();
                 return (IReadOnlyList<OccReportCell>)
                 [
-                    Text(group.Key.Name), Text(group.Key.EmployeeNumber), OccReportCell.Number(worked.Length),
-                    OccReportCell.Number(worked.Count(item => item.Status == GroundOperationStatus.Approved)),
-                    OccReportCell.Number(worked.Count(item => item.Status == GroundOperationStatus.Returned)),
-                    OccReportCell.Number(worked.Sum(item => Minutes(item.ActualStart, item.ActualEnd) ?? 0)),
+                    Text(name), Text(employeeNumber), OccReportCell.Number(worked.Length),
+                    OccReportCell.Number(worked.Count(item => item.Operation.Status == GroundOperationStatus.Approved)),
+                    OccReportCell.Number(worked.Count(item => item.Operation.Status == GroundOperationStatus.Returned)),
+                    OccReportCell.Number(worked.Sum(item => item.Minutes)),
                 ];
             }).ToList();
     }
@@ -266,7 +312,7 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
                 allowed is { } allowance ? OccReportCell.Number(allowance) : Text("—"),
                 Text(delays.Length == 0 ? "—" : string.Join(", ", delays)),
                 OccReportCell.Number(reported.Length),
-                Text(Status(item.Status)),
+                Text(OperationLabels.Status(item.Status)),
             ];
         }).ToList();
     }
@@ -283,26 +329,4 @@ internal sealed class EfOccReportStore(ElevantDbContext context, IActorContextRe
 
     private static string DateTime(DateTimeOffset value, TimeZoneInfo zone) =>
         TimeZoneInfo.ConvertTime(value, zone).ToString("dd/MM/yyyy HH:mm", Spanish);
-
-    private static string Status(GroundOperationStatus status) => status switch
-    {
-        GroundOperationStatus.Planned => "Planificada",
-        GroundOperationStatus.Assigned => "Asignada",
-        GroundOperationStatus.InProgress => "En curso",
-        GroundOperationStatus.PendingReview => "Pendiente de revisión",
-        GroundOperationStatus.InReview => "En revisión",
-        GroundOperationStatus.Approved => "Aprobada",
-        GroundOperationStatus.Returned => "Devuelta",
-        GroundOperationStatus.Cancelled => "Cancelada",
-        _ => status.ToString(),
-    };
-
-    private static string Severity(IncidentSeverity severity) => severity switch
-    {
-        IncidentSeverity.Low => "baja",
-        IncidentSeverity.Medium => "media",
-        IncidentSeverity.High => "alta",
-        IncidentSeverity.Critical => "crítica",
-        _ => severity.ToString(),
-    };
 }

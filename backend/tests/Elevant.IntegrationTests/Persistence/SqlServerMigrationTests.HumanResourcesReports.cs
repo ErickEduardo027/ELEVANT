@@ -135,6 +135,30 @@ public sealed partial class SqlServerMigrationTests
             DateOnly.MaxValue, DateOnly.MaxValue, 1, 20, cancellationToken);
         Assert.Empty(finalCalendarDay.Page!.Rows);
 
+        // 3-N16: the export writes each movement in Spanish at the station's local time. A deactivation at 01:00Z on
+        // 6 October happened at 21:00 on 5 October in Punta Cana; the JSON page keeps its codes and its UTC instant.
+        context.AuditEntries.Add(new AuditEntry
+        {
+            PublicId = Guid.CreateVersion7(), OccurredAt = new DateTimeOffset(2026, 10, 6, 1, 0, 0, TimeSpan.Zero),
+            ActorType = AuditActorType.Account, Action = "governance.user.deactivated", EntityType = "iam.accounts",
+            EntityPublicId = agentAccountId, StationId = stationInternalId, Source = AuditSource.Api,
+            CorrelationId = Guid.CreateVersion7(),
+        });
+        await context.SaveChangesAsync(cancellationToken);
+        var movementPage = await store.ListAccountMovementsAsync(hrId, stationId,
+            new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 30), 1, 20, cancellationToken);
+        Assert.Equal(["Created", "Deactivated"], movementPage.Page!.Rows.Select(row => row.Kind));
+        var movementExport = await store.ReadSnapshotAsync(hrId, stationId,
+            HumanResourcesReportKind.AccountMovements, new DateOnly(2026, 10, 1), new DateOnly(2026, 10, 30), 5000,
+            cancellationToken: cancellationToken);
+        Assert.Null(movementExport.Failure);
+        Assert.Equal("Fecha y hora local", movementExport.Snapshot!.Columns[0]);
+        Assert.Equal(
+            [["05/10/2026 08:00", "Alta de cuenta"], ["05/10/2026 21:00", "Cuenta desactivada"]],
+            movementExport.Snapshot.Rows.Select(row => new[] { row[0].Value, row[3].Value }));
+        Assert.Equal(await context.Stations.Where(item => item.PublicId == stationId)
+            .Select(item => item.IanaTimeZone).SingleAsync(cancellationToken), movementExport.Snapshot.TimeZone);
+
         var agentInternalId = await context.RampAgents.Where(item =>
             item.PublicId == Guid.Parse("50000000-0000-7000-8000-000000000001"))
             .Select(item => item.Id).SingleAsync(cancellationToken);
@@ -177,6 +201,15 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(102, snapshot.Snapshot!.Rows.Count);
         Assert.Equal(102, snapshot.Snapshot.RowCount);
         Assert.Equal("PUJ", snapshot.Snapshot.StationCode);
+        // 3-N16: the export reads in Spanish («Habilitación», «Carnet aeroportuario») with the date as the screen shows
+        // it; the pages above keep the codes they filter by.
+        var cells = snapshot.Snapshot.Rows.SelectMany(row => row.Select(cell => cell.Value)).ToHashSet();
+        Assert.Contains("Habilitación", cells);
+        Assert.Contains("Permiso", cells);
+        Assert.Contains("31/12/2099", cells);
+        Assert.Contains(snapshot.Snapshot.Rows, row => row[2].Value == "Permiso" &&
+            row[3].Value is "Carnet aeroportuario" or "Licencia de conducir en rampa");
+        Assert.DoesNotContain(cells, value => value is "Qualification" or "Permit" or "AirportId" or "RampDriverLicense");
         var filteredSnapshot = await store.ReadSnapshotAsync(hrId, stationId,
             HumanResourcesReportKind.Expirations, from, to, 5000,
             "Qualification", "Current", cancellationToken);

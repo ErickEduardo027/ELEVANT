@@ -102,19 +102,32 @@ const FLIGHT_FEED_CODES = ["invalid_flight_feed_query", "invalid_flight_import",
   "flight_proposal_passed"] as const;
 /**
  * Planning a flight with its aircraft type and stand (phase 2, block C): an inactive or unknown aircraft type, and a
- * stand that is inactive, of another station or taken in the window (the rules it breaks come in `reasons`).
+ * stand that is inactive, of another station or taken in the window (the rules it breaks come in `reasons`). Phase 3,
+ * block A: a flight changes only before its operation starts or while it is open (3-A), its assigned agent must still
+ * cover the new window (`reasons`), a recorded arrival and the aircraft type are frozen from the first submission
+ * (3-N08, 3-B), the same flight is planned once (3-N07), and the positions map and the charter carrier name their
+ * invalid requests (3-N10, 3-N21). Phase 3, block B: OCC releases the agent it saw (`assignment_changed`) of an
+ * operation not started yet, hands an operation in progress or returned to another eligible agent (3-F), reads the
+ * agent's shift of the flight's day (3-E), and the coverage commands name their invalid requests and broken rules
+ * (3-J).
  */
-const PLANNING_CODES = ["aircraft_type_unavailable", "stand_unavailable"] as const;
+const PLANNING_CODES = ["aircraft_type_unavailable", "stand_unavailable", "operation_started", "turnaround_closed",
+  "assigned_agent_unavailable", "invalid_turnaround_change", "arrival_locked", "aircraft_type_locked",
+  "flight_already_planned", "invalid_charter_airline", "invalid_position_request", "assignment_changed",
+  "handover_not_allowed", "same_agent", "agent_not_eligible", "invalid_handover", "shift_not_found",
+  "invalid_coverage_request", "coverage_rejected"] as const;
 /**
  * Gestión Humana (phase 2, block D): the one release path of a ramp agent, which an operation in progress or returned
  * refuses (2-N06, 2-N08); the availability requests and the cancellation or shortening of an approved absence
  * (2-N22); the shifts that are past, still worked or on an approved absence (2-N11, 2-N24); and the planning board's
- * readiness query (2-N25).
+ * readiness query (2-N25). Phase 3, block B: an adjusted shift keeps covering the agent's work and a validated
+ * attendance freezes it (3-E).
  */
 const HUMAN_RESOURCES_CODES = ["agent_has_operation_in_progress", "invalid_availability_request", "agent_unavailable",
   "availability_overlap", "availability_request_closed", "absence_not_approved", "absence_started", "absence_ended",
   "absence_end_invalid", "invalid_absence_amendment", "invalid_shift", "shift_scope_missing", "shift_day_taken",
-  "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query"] as const;
+  "shift_on_approved_absence", "shift_in_past", "shift_in_use", "invalid_readiness_query", "shift_uncovers_work",
+  "attendance_validated"] as const;
 /**
  * Access (phase 2, block E): shared tablets that pass between agents, are released at sign-out and that OCC frees or
  * revokes (2-N02); the airline's representatives and signers, the only ones that sign contracts and submit the JAC
@@ -127,18 +140,54 @@ const ACCESS_CODES = ["device_revoked", "device_in_use_by_active_agent", "device
   "last_representative", "invalid_portal_user", "employee_transferred", "requester_no_longer_administrator",
   "legacy_governance_retired", "access_request_closed", "invalid_governance_data", "governance_conflict",
   "protected_user"] as const;
+/**
+ * Tablet evidence (phase 3, block C): every ramp command answers a code. A tablet time outside the operation's window
+ * (from its start, or the recorded arrival, to its close: now, the hand-off under review or the first hand-off of a
+ * correction round) or before the service's last transition (3-I, 3-N25, 3-N09), block-on after push-back (3-N25), a
+ * command the operation's state does not take and a malformed request. A reused key keeps the common
+ * `idempotency_conflict` and a missing operation `not_found`.
+ */
+const RAMP_EVIDENCE_CODES = ["time_outside_operation_window", "milestone_out_of_order", "service_time_out_of_order",
+  "ramp_operation_state_conflict", "invalid_ramp_command"] as const;
+/**
+ * OCC review (phase 3, block D): a malformed review command; OCC approves only the Service Order the airline and AVIAM
+ * signed, or its recorded correction (3-N02); the hand-off was decided already; a reopening needs an approval nothing
+ * was invoiced from and a reopened revision is never returned to the ramp (3-H); only a service in exception with an
+ * executed quantity is excluded from billing (3-N11); a charge the contract excludes, that does not apply, already
+ * marked or already removed (3-N29). A closed review is `review_closed` (AIRLINE_PERMIT_CODES).
+ */
+const OCC_REVIEW_CODES = ["invalid_review_request", "service_order_unsigned", "service_order_stale",
+  "review_already_decided", "review_not_approved", "reopened_review_cannot_return", "already_invoiced",
+  "billing_exclusion_not_allowed", "charge_excluded_by_contract", "charge_not_applicable", "charge_already_marked",
+  "charge_already_removed"] as const;
+/**
+ * OCC's incidents (phase 3, block D, 3-G): a state change the incident does not take (a closed one is final), an
+ * incomplete report, a time in the future or before the operation's window, an operation approved or cancelled (no
+ * report, no incident taken back into review) and a command with a version that is not a strong ETag.
+ */
+const OCC_INCIDENT_CODES = ["incident_transition_invalid", "incident_report_invalid", "incident_occurred_at_invalid",
+  "operation_closed", "invalid_incident_request"] as const;
+/** Charter (phase 3, block D, 3-N24): no service is added on a confirmed prepayment; only a confirmed one is reopened. */
+const CHARTER_CODES = ["charter_prepayment_confirmed", "charter_prepayment_not_confirmed"] as const;
+/**
+ * OCC and Gestión Humana reports (phase 3, block E, 3-N13): an export over its row limit is refused, never cut; a
+ * malformed or out-of-range query; an unknown report; a station outside the caller's scope or no longer active.
+ */
+const REPORT_CODES = ["report_too_large", "invalid_report_query", "report_not_found", "station_unavailable"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
   (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number] |
   (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
   (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
-  (typeof ACCESS_CODES)[number];
+  (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number] | (typeof OCC_REVIEW_CODES)[number] |
+  (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number] | (typeof REPORT_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
-  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES];
+  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES, ...OCC_REVIEW_CODES,
+  ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",
@@ -154,7 +203,14 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   // (phase 2, block C, 2-A).
   "stand_in_use", "terminal_inactive",
   // A mentor on an approved absence or without a current airport permit accompanies nobody (phase 2, block D, 2-N23).
-  "mentor_absent", "mentor_permit_required"] as const;
+  "mentor_absent", "mentor_permit_required",
+  // A rescheduled flight's agent would carry a fourth simultaneous operation (phase 3, block A, 3-A).
+  "simultaneous_limit",
+  // A coverage needs the agent's current scope in its terminal, as the tablet does (phase 3, block B, 3-N05).
+  "terminal_scope_missing",
+  // The e-CF issuance names the service that blocks it: a charge its contract excludes (3-N29) or a service OCC
+  // excluded from billing in the review (3-N11) (phase 3, block D).
+  "charge_excluded_by_contract", "excluded_in_review"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

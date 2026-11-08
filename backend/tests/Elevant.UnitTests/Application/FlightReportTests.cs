@@ -20,22 +20,35 @@ public sealed class FlightReportTests
         Assert.All(IataDelayCodes.All, code => Assert.Matches("^[0-9]{2}$", code.Code));
     }
 
+    // 3-N25: the operation's window replaces the fixed 24-hour limit; the start already was bounded to a day.
     [Theory]
     [InlineData(0, true)]
-    [InlineData(-23, true)]
-    [InlineData(-25, false)]
+    [InlineData(-29, true)]
+    [InlineData(-31, false)]
     [InlineData(1, false)]
-    public void AMilestoneIsAcceptedWithinTheOfflineWindow(int hours, bool expected) =>
+    public void AMilestoneIsAcceptedWithinTheOperationWindow(int hours, bool expected)
+    {
+        var start = Now.AddHours(-30);
         Assert.Equal(expected, RampExecutionPolicy.CanRecordMilestone(TurnaroundStatus.InProgress,
-            GroundOperationStatus.InProgress, Now.AddHours(-30), null, Now.AddHours(hours), Now));
+            GroundOperationStatus.InProgress, start, null, Now.AddHours(hours),
+            RampEvidenceTimePolicy.WindowFor(start, null, null, Now)));
+    }
 
     [Fact]
-    public void MilestonesNeedAStartedOperationThatIsNotSubmitted()
+    public void MilestonesNeedAStartedOperationAndOnlyLateOnesCapturedBeforeTheHandOff()
     {
+        var start = Now.AddHours(-2);
+        var handOff = Now.AddMinutes(-20);
+        var review = RampEvidenceTimePolicy.WindowFor(start, null, handOff, Now);
         Assert.False(RampExecutionPolicy.CanRecordMilestone(TurnaroundStatus.InProgress, GroundOperationStatus.Assigned,
-            null, null, Now, Now));
+            null, null, Now, RampEvidenceTimePolicy.WindowFor(Now, null, null, Now)));
+        // 3-N06: captured before the hand-off, received while OCC reviews it.
+        Assert.True(RampExecutionPolicy.CanRecordMilestone(TurnaroundStatus.InProgress, GroundOperationStatus.PendingReview,
+            start, handOff, handOff.AddMinutes(-5), review));
         Assert.False(RampExecutionPolicy.CanRecordMilestone(TurnaroundStatus.InProgress, GroundOperationStatus.PendingReview,
-            Now.AddHours(-1), Now, Now, Now));
+            start, handOff, Now, review));
+        Assert.False(RampExecutionPolicy.CanRecordMilestone(TurnaroundStatus.InProgress, GroundOperationStatus.Approved,
+            start, handOff, handOff.AddMinutes(-5), review));
     }
 
     [Theory]

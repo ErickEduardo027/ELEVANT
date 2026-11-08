@@ -19,6 +19,7 @@ namespace Elevant.Api.Controllers;
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[RampProblemDetails]
 [Route("api/v{version:apiVersion}/ramp/operations")]
 public sealed class RampDocumentsController(OperationDocumentHandler handler) : ControllerBase
 {
@@ -62,13 +63,16 @@ public sealed class RampDocumentsController(OperationDocumentHandler handler) : 
         if (!Enum.TryParse<OperationDocumentKind>(kind, false, out var documentKind) ||
             !Enum.TryParse<OperationSignatureRole>(role, false, out var signatureRole))
             return Failure(RampOperationsFailure.InvalidRequest);
-        var (data, failure) = await handler.SignAsync(accountId, operationId, documentKind, signatureRole,
+        var (data, failure, code) = await handler.SignAsync(accountId, operationId, documentKind, signatureRole,
             request.SignerName, request.DocumentSha256, request.Strokes, DateTimeOffset.UtcNow, installationId,
             idempotencyKey, HttpContext.TraceIdentifier, cancellationToken, request.SignerIdentification);
-        return failure is { } error ? Failure(error) : Ok(OperationDocumentResponseMapper.Map(data!));
+        return failure is { } error ? Failure(error, code) : Ok(OperationDocumentResponseMapper.Map(data!));
     }
 
-    /// <summary>Marks a damage found in the 360° walk-around; the id comes from the tablet.</summary>
+    /// <summary>
+    /// Marks a damage found in the 360° walk-around; the id comes from the tablet. Its time must fit the operation's
+    /// window (409 <c>time_outside_operation_window</c>, 3-N25).
+    /// </summary>
     [RequestSizeLimit(MarkLimitBytes)]
     [HttpPut("{operationId:guid}/damage-marks/{markId:guid}", Name = "RecordRampDamageMark")]
     [Consumes("application/json")]
@@ -87,9 +91,10 @@ public sealed class RampDocumentsController(OperationDocumentHandler handler) : 
         CancellationToken cancellationToken)
     {
         if (!TryGetAccountId(out var accountId)) return Failure(RampOperationsFailure.Unauthorized);
-        var (data, failure) = await handler.RecordDamageMarkAsync(accountId, operationId, markId, request.X, request.Y,
-            request.Note, request.ReportedAt, installationId, idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
-        return failure is { } error ? Failure(error) : Ok(OperationDocumentResponseMapper.Map(data!));
+        var (data, failure, code) = await handler.RecordDamageMarkAsync(accountId, operationId, markId, request.X,
+            request.Y, request.Note, request.ReportedAt, installationId, idempotencyKey, HttpContext.TraceIdentifier,
+            cancellationToken);
+        return failure is { } error ? Failure(error, code) : Ok(OperationDocumentResponseMapper.Map(data!));
     }
 
     /// <summary>Attaches the photo of a marked damage: JPEG or PNG, one per mark; the same bytes again are a retry.</summary>
@@ -115,9 +120,9 @@ public sealed class RampDocumentsController(OperationDocumentHandler handler) : 
         if (buffer.Length > OperationDocumentRules.MaxPhotoBytes) return Failure(RampOperationsFailure.InvalidRequest);
         try
         {
-            var (data, failure) = await handler.AttachDamagePhotoAsync(accountId, operationId, markId, buffer.ToArray(),
-                installationId, HttpContext.TraceIdentifier, cancellationToken);
-            return failure is { } error ? Failure(error) : Ok(OperationDocumentResponseMapper.Map(data!));
+            var (data, failure, code) = await handler.AttachDamagePhotoAsync(accountId, operationId, markId,
+                buffer.ToArray(), installationId, HttpContext.TraceIdentifier, cancellationToken);
+            return failure is { } error ? Failure(error, code) : Ok(OperationDocumentResponseMapper.Map(data!));
         }
         catch (OperationalEvidenceUnavailableException)
         {
@@ -128,19 +133,8 @@ public sealed class RampDocumentsController(OperationDocumentHandler handler) : 
     private bool TryGetAccountId(out Guid accountId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) && accountId != Guid.Empty;
 
-    private ActionResult<OperationDocumentsResponse> Failure(RampOperationsFailure failure)
-    {
-        if (failure == RampOperationsFailure.Unauthorized) Response.Headers.WWWAuthenticate = "Bearer";
-        var (status, title) = failure switch
-        {
-            RampOperationsFailure.Unauthorized => (StatusCodes.Status401Unauthorized, "Authentication failed."),
-            RampOperationsFailure.Forbidden => (StatusCodes.Status403Forbidden, "Access to the ramp operation is forbidden."),
-            RampOperationsFailure.InvalidRequest => (StatusCodes.Status400BadRequest, "The form entry is invalid."),
-            RampOperationsFailure.NotFound => (StatusCodes.Status404NotFound, "The ramp operation was not found."),
-            _ => (StatusCodes.Status409Conflict, "The form changed or the entry conflicts with the operation; read it again."),
-        };
-        return Problem(status, title);
-    }
+    private ObjectResult Failure(RampOperationsFailure failure, string? code = null) =>
+        RampProblems.Failure(this, failure, code);
 
     private ObjectResult Problem(int status, string title) =>
         new(new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path }) { StatusCode = status };

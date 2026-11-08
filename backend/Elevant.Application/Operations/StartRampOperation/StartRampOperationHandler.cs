@@ -59,7 +59,8 @@ public sealed class StartRampOperationHandler(
                 command.InstallationId,
                 command.IdempotencyKey,
                 command.CorrelationId,
-                command.RequestId),
+                command.RequestId,
+                command.StartedAt?.ToUniversalTime()),
             cancellationToken);
 
         return result.IsSuccess
@@ -73,6 +74,8 @@ public sealed class StartRampOperationHandler(
                     RampOperationsFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "Unsupported ramp operation start failure."),
-            });
+            }, result.Failure == RampOperationStartWriteFailure.IdempotencyKeyConflict
+                ? RampProblemCodes.IdempotencyConflict
+                : result.Code);
     }
 }

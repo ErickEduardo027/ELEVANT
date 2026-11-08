@@ -3,6 +3,7 @@ const mockContext = jest.fn();
 const mockRegister = jest.fn();
 const mockReject = jest.fn();
 let mockItems = [];
+let mockOperations = [];
 
 jest.mock('@elevant/api-client', () => ({
   ElevantApiError: class ElevantApiError extends Error {
@@ -19,6 +20,7 @@ jest.mock('../src/config/elevant-api', () => ({
 }));
 jest.mock('../src/storage/mobile-session', () => ({
   readRampIncidentOutboxIfCurrent: jest.fn(async () => ({ kind: 'current', items: mockItems })),
+  listRampIncidentOutboxOperationsIfCurrent: jest.fn(async () => ({ kind: 'current', operationIds: mockOperations })),
   reserveRampIncidentOutboxItemIfCurrent: jest.fn(async (_session, _account, _operation, payload) => {
     mockItems.push({
       idempotencyKey: '82000000-0000-4000-8000-000000000031',
@@ -46,7 +48,7 @@ jest.mock('../src/services/mobile-device', () => ({
 }));
 
 const { ElevantApiError } = require('@elevant/api-client');
-const { loadRampIncidentCenter, reserveRampIncident } = require('../src/services/ramp-incidents');
+const { flushPendingRampIncidents, loadRampIncidentCenter, reserveRampIncident } = require('../src/services/ramp-incidents');
 const ACCOUNT = '20000000-0000-4000-8000-000000000001';
 const OPERATION = '70000000-0000-4000-8000-000000000005';
 const KEY = '82000000-0000-4000-8000-000000000031';
@@ -60,6 +62,7 @@ const report = {
 beforeEach(() => {
   jest.clearAllMocks();
   mockItems = [];
+  mockOperations = [];
   mockContext.mockResolvedValue({
     sessionId: '30000000-0000-4000-8000-000000000001',
     accessToken: 'test-token',
@@ -142,4 +145,27 @@ test('revoked session cannot expose queued reports to a new account', async () =
   await expect(loadRampIncidentCenter(OPERATION)).rejects.toMatchObject({ code: 'forbidden' });
   expect(mockReject).toHaveBeenCalled();
   expect(mockApi.reportRampIncident).not.toHaveBeenCalled();
+});
+
+describe('reconnection (3-I)', () => {
+  test('sends the reports this account left on the device, without opening the incident screen', async () => {
+    await reserveRampIncident(OPERATION, report);
+    mockOperations = [OPERATION];
+    await expect(flushPendingRampIncidents()).resolves.toBeUndefined();
+    expect(mockApi.reportRampIncident).toHaveBeenCalledWith(OPERATION, report,
+      '81000000-0000-4000-8000-000000000001', KEY, { signal: undefined });
+    expect(mockItems).toEqual([]);
+  });
+
+  test('without signal nothing is sent and nothing is thrown; an operation without pending reports is skipped', async () => {
+    mockOperations = [OPERATION];
+    await flushPendingRampIncidents();
+    expect(mockApi.getRampIncidents).not.toHaveBeenCalled();
+
+    await reserveRampIncident(OPERATION, report);
+    mockApi.getRampIncidents.mockRejectedValue({ mockNetwork: true });
+    await expect(flushPendingRampIncidents()).resolves.toBeUndefined();
+    expect(mockApi.reportRampIncident).not.toHaveBeenCalled();
+    expect(mockItems).toHaveLength(1);
+  });
 });
