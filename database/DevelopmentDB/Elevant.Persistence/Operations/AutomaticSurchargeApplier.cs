@@ -10,21 +10,28 @@ namespace Elevant.Persistence.Operations;
 /// <summary>
 /// Marks the automatic surcharges on the operation's billable services right before its evidence is frozen for OCC
 /// (ADR-0034). A charge per service applies to every eligible service (night, Sunday/holiday); an hourly charge of the
-/// whole operation (package exceeded, delay) goes once, on its first eligible service. Nothing is marked twice, the
-/// contract's exclusions are respected (<see cref="ContractChargeExclusions"/>) and a charge OCC already removed from a
-/// service is not marked again on a later hand-off. A service is eligible when it is billed
-/// (<see cref="ServiceBillability"/>, 3-N11): completed or in exception with an executed quantity, not excluded by OCC.
+/// whole operation (package exceeded, delay) goes once, on its first eligible service: a completed one before one in
+/// exception, by line. Nothing is marked twice, the contract's exclusions are respected
+/// (<see cref="ContractChargeExclusions"/>) and a charge OCC already removed from a service is not marked again on a
+/// later hand-off. A service is eligible when it is billed (<see cref="ServiceBillability"/>, 3-N11): completed or in
+/// exception with an executed quantity, not excluded by OCC; when OCC excludes the one that carries a charge of the
+/// whole operation, the charge moves to the next eligible one (<see cref="RelocateOperationSurchargesAsync"/>).
 /// <see cref="PlanAsync"/> decides the marks and
 /// <see cref="ApplyAsync(ElevantDbContext, long, DateTimeOffset, DateTimeOffset, CancellationToken)"/> writes them; the Service Order shows the plan
 /// before the hand-off (<see cref="ProjectAsync"/>, 3-N02), so what the agent and the airline sign is what is frozen.
 /// </summary>
 internal static class AutomaticSurchargeApplier
 {
-    private static readonly HashSet<string> OncePerOperation =
-        [AutomaticSurchargeCodes.Overtime, AutomaticSurchargeCodes.Delay];
+    private static readonly string[] OncePerOperation = [AutomaticSurchargeCodes.Overtime, AutomaticSurchargeCodes.Delay];
 
     /// <summary>The reason a recalculation retires an automatic surcharge (3-N09, 3-N06).</summary>
     public const string RecalculatedReason = "Recalculado con las horas corregidas";
+
+    /// <summary>
+    /// The reason a charge of the whole operation leaves the service OCC excluded from billing for the next billable one
+    /// (3-N11). OCC retires it with its exclusion; it is a move, not a removal.
+    /// </summary>
+    public const string RelocatedReason = "Trasladado a otro servicio al excluir este de la facturación";
 
     /// <summary>A surcharge the times justify on a service that does not carry it yet.</summary>
     internal sealed record PlannedSurcharge(long OperationServiceId, long ChargeDefinitionId, string Code);
@@ -72,7 +79,7 @@ internal static class AutomaticSurchargeApplier
             .Where(service => service.GroundOperationId == operationId)
             .Where(ServiceBillability.Billable)
             .OrderBy(service => service.LineNumber)
-            .Select(service => new { service.Id, service.ServiceDefinitionId })
+            .Select(service => new { service.Id, service.ServiceDefinitionId, service.CurrentStatus })
             .ToArrayAsync(cancellationToken);
         var serviceIds = services.Select(service => service.Id).ToArray();
         var chargeIds = charges.Select(charge => charge.Id).ToArray();
@@ -82,7 +89,11 @@ internal static class AutomaticSurchargeApplier
         var exclusions = await ContractChargeExclusions.ForServicesAsync(context, serviceIds, cancellationToken);
         var marks = await context.OperationServiceCharges.AsNoTracking()
             .Where(mark => serviceIds.Contains(mark.OperationServiceId))
-            .Select(mark => new { mark.OperationServiceId, mark.ChargeDefinitionId, mark.RemovedAt, mark.RemovedByAccountId })
+            .Select(mark => new
+            {
+                mark.OperationServiceId, mark.ChargeDefinitionId, mark.RemovedAt, mark.RemovedByAccountId,
+                mark.AdjustmentReason,
+            })
             .ToArrayAsync(cancellationToken);
 
         var planned = new List<PlannedSurcharge>();
@@ -94,20 +105,100 @@ internal static class AutomaticSurchargeApplier
                     link.ChargeDefinitionId == charge.Id && link.ServiceDefinitionId == service.ServiceDefinitionId)) &&
                 !exclusions.Contains(service.Id, charge.Id) &&
                 !marks.Any(mark => mark.OperationServiceId == service.Id && mark.ChargeDefinitionId == charge.Id &&
-                    (mark.RemovedAt == null || mark.RemovedByAccountId != null)))
+                    Holds(mark.RemovedAt, mark.RemovedByAccountId, mark.AdjustmentReason)))
                 .ToArray();
             if (OncePerOperation.Contains(code))
             {
                 // Already on another service (by the agent or a previous hand-off): the operation has it.
                 if (marks.Any(mark => mark.ChargeDefinitionId == charge.Id &&
-                        (mark.RemovedAt == null || mark.RemovedByAccountId != null)))
+                        Holds(mark.RemovedAt, mark.RemovedByAccountId, mark.AdjustmentReason)))
                     continue;
-                eligible = eligible.Take(1).ToArray();
+                // 3-N11: on a completed service before one in exception, which OCC may still exclude from billing.
+                eligible = eligible.OrderBy(service => service.CurrentStatus != ServiceExecutionStatus.Completed)
+                    .Take(1).ToArray();
             }
             planned.AddRange(eligible.Select(service => new PlannedSurcharge(service.Id, charge.Id, code)));
         }
         return planned;
     }
+
+    /// <summary>
+    /// 3-N11: OCC excludes <paramref name="excludedServiceId"/> from billing. The automatic charges of the whole
+    /// operation it carries (package exceeded, delay) move to the next billable service that takes them (a completed
+    /// one before one in exception, by line; the charge applies to it, its contract does not exclude it and OCC did not
+    /// remove it from it), so the operation still bills them once: OCC (<paramref name="accountId"/>) retires the mark
+    /// on the excluded service with <see cref="RelocatedReason"/> and an automatic one is marked on the other service.
+    /// A charge stays where it is when another billable service already carries it or none takes it. Returns the codes
+    /// moved; the caller saves.
+    /// </summary>
+    public static async Task<IReadOnlyList<string>> RelocateOperationSurchargesAsync(ElevantDbContext context,
+        long operationId, long excludedServiceId, long accountId, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        // Tracked: a no-tracking source anywhere in the query would leave the retired marks unsaved.
+        var moving = await (from mark in context.OperationServiceCharges.AsTracking()
+                            join charge in context.ChargeDefinitions on mark.ChargeDefinitionId equals charge.Id
+                            where mark.OperationServiceId == excludedServiceId && mark.RemovedAt == null &&
+                                  mark.Source == ChargeMarkSource.Automatic && OncePerOperation.Contains(charge.Code)
+                            orderby mark.AppliedAt, mark.Id
+                            select new { Mark = mark, charge.Code, charge.AppliesToAllServices })
+            .ToListAsync(cancellationToken);
+        if (moving.Count == 0) return [];
+        // The excluded service is still billable in the database until the caller saves its exclusion.
+        var services = await context.OperationServices.AsNoTracking()
+            .Where(service => service.GroundOperationId == operationId && service.Id != excludedServiceId)
+            .Where(ServiceBillability.Billable)
+            .OrderBy(service => service.LineNumber)
+            .Select(service => new { service.Id, service.ServiceDefinitionId, service.CurrentStatus })
+            .ToArrayAsync(cancellationToken);
+        var serviceIds = services.Select(service => service.Id).ToArray();
+        var chargeIds = moving.Select(item => item.Mark.ChargeDefinitionId).Distinct().ToArray();
+        var links = await context.ChargeDefinitionServices.AsNoTracking()
+            .Where(link => chargeIds.Contains(link.ChargeDefinitionId))
+            .Select(link => new { link.ChargeDefinitionId, link.ServiceDefinitionId }).ToArrayAsync(cancellationToken);
+        var exclusions = await ContractChargeExclusions.ForServicesAsync(context, serviceIds, cancellationToken);
+        var marks = await context.OperationServiceCharges.AsNoTracking()
+            .Where(mark => serviceIds.Contains(mark.OperationServiceId) && chargeIds.Contains(mark.ChargeDefinitionId))
+            .Select(mark => new
+            {
+                mark.OperationServiceId, mark.ChargeDefinitionId, mark.RemovedAt, mark.RemovedByAccountId,
+                mark.AdjustmentReason,
+            })
+            .ToArrayAsync(cancellationToken);
+
+        var moved = new List<string>();
+        foreach (var item in moving)
+        {
+            var chargeId = item.Mark.ChargeDefinitionId;
+            if (marks.Any(mark => mark.ChargeDefinitionId == chargeId && mark.RemovedAt == null)) continue;
+            var target = services.Where(service =>
+                    (item.AppliesToAllServices || links.Any(link =>
+                        link.ChargeDefinitionId == chargeId && link.ServiceDefinitionId == service.ServiceDefinitionId)) &&
+                    !exclusions.Contains(service.Id, chargeId) &&
+                    !marks.Any(mark => mark.OperationServiceId == service.Id && mark.ChargeDefinitionId == chargeId &&
+                        Holds(mark.RemovedAt, mark.RemovedByAccountId, mark.AdjustmentReason)))
+                .OrderBy(service => service.CurrentStatus != ServiceExecutionStatus.Completed)
+                .FirstOrDefault();
+            if (target is null) continue;
+            item.Mark.RemovedAt = now;
+            item.Mark.RemovedByAccountId = accountId;
+            item.Mark.AdjustmentReason = RelocatedReason;
+            item.Mark.UpdatedAt = now;
+            context.OperationServiceCharges.Add(new OperationServiceCharge
+            {
+                PublicId = Guid.CreateVersion7(), OperationServiceId = target.Id, ChargeDefinitionId = chargeId,
+                Source = ChargeMarkSource.Automatic, AppliedAt = now, CreatedAt = now, UpdatedAt = now,
+            });
+            moved.Add(item.Code);
+        }
+        return moved;
+    }
+
+    /// <summary>
+    /// Whether a mark keeps its charge off its service on a later hand-off: it is active, or OCC removed it on purpose.
+    /// A mark moved off a service OCC excluded from billing (<see cref="RelocatedReason"/>) was not removed.
+    /// </summary>
+    private static bool Holds(DateTimeOffset? removedAt, long? removedByAccountId, string? reason) =>
+        removedAt is null || (removedByAccountId is not null && reason != RelocatedReason);
 
     /// <summary>
     /// The charges the Service Order shows before the hand-off (3-N02): the marks on the services now, plus the

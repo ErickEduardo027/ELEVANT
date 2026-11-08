@@ -162,10 +162,11 @@ const OCC_REVIEW_CODES = ["invalid_review_request", "service_order_unsigned", "s
   "charge_already_removed"] as const;
 /**
  * OCC's incidents (phase 3, block D, 3-G): a state change the incident does not take (a closed one is final), an
- * incomplete report, a time in the future or before the operation's window, and an operation approved or cancelled.
+ * incomplete report, a time in the future or before the operation's window, an operation approved or cancelled (no
+ * report, no incident taken back into review) and a command with a version that is not a strong ETag.
  */
 const OCC_INCIDENT_CODES = ["incident_transition_invalid", "incident_report_invalid", "incident_occurred_at_invalid",
-  "operation_closed"] as const;
+  "operation_closed", "invalid_incident_request"] as const;
 /** Charter (phase 3, block D, 3-N24): no service is added on a confirmed prepayment; only a confirmed one is reopened. */
 const CHARTER_CODES = ["charter_prepayment_confirmed", "charter_prepayment_not_confirmed"] as const;
 /**
@@ -205,7 +206,10 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   // A rescheduled flight's agent would carry a fourth simultaneous operation (phase 3, block A, 3-A).
   "simultaneous_limit",
   // A coverage needs the agent's current scope in its terminal, as the tablet does (phase 3, block B, 3-N05).
-  "terminal_scope_missing"] as const;
+  "terminal_scope_missing",
+  // The e-CF issuance names the service that blocks it: a charge its contract excludes (3-N29) or a service OCC
+  // excluded from billing in the review (3-N11) (phase 3, block D).
+  "charge_excluded_by_contract", "excluded_in_review"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

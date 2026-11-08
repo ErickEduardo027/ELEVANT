@@ -64,10 +64,20 @@ describe('occIncidentsService (3-G)', () => {
     mocks.change.mockRejectedValueOnce(problem(409, 'incident_transition_invalid'));
     await expect(changeOccIncidentStatus(incidentId, { status: 'Resolved', note: 'Resuelta con la aerolínea' }, 'AAAA', key))
       .rejects.toMatchObject({ message: 'La incidencia ya no admite ese cambio. Se actualizó la lista.' });
+    // A version the server cannot read is a malformed request, not a refused change.
+    mocks.change.mockRejectedValueOnce(problem(400, 'invalid_incident_request'));
+    await expect(changeOccIncidentStatus(incidentId, { status: 'Resolved', note: 'Resuelta con la aerolínea' }, 'AAAA', key))
+      .rejects.toMatchObject({ status: 400, code: 'invalid_incident_request',
+        message: 'La versión de la incidencia no es válida. Actualice la lista antes de cambiarla.' });
+    const closed = 'La operación ya está aprobada o cancelada: sus incidencias quedan como historia y solo se ' +
+      'resuelven o se cierran. Se actualizó la lista.';
     mocks.report.mockRejectedValueOnce(problem(409, 'operation_closed'));
     await expect(reportOccIncident(operationId, report, key)).rejects.toMatchObject({
-      status: 409, code: 'operation_closed',
-      message: 'La operación ya está aprobada o cancelada: sus incidencias quedan como historia.' });
+      status: 409, code: 'operation_closed', message: closed });
+    // A resolved incident of an approved or cancelled operation is not taken back into review.
+    mocks.change.mockRejectedValueOnce(problem(409, 'operation_closed'));
+    await expect(changeOccIncidentStatus(incidentId, { status: 'InReview', note: 'La aerolínea pidió revisarla' }, 'AAAA',
+      key)).rejects.toMatchObject({ status: 409, code: 'operation_closed', message: closed });
     mocks.list.mockRejectedValueOnce(problem(403, undefined));
     await expect(loadOccIncidents(operationId)).rejects.toMatchObject({ status: 403,
       message: 'Su acceso no incluye las incidencias de esta operación.' });

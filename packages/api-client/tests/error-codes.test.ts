@@ -81,10 +81,12 @@ describe("Problem Details codes", () => {
       "review_not_approved", "reopened_review_cannot_return", "already_invoiced", "billing_exclusion_not_allowed",
       "charge_excluded_by_contract", "charge_not_applicable", "charge_already_marked", "charge_already_removed",
       "incident_transition_invalid", "incident_report_invalid", "incident_occurred_at_invalid", "operation_closed",
-      "charter_prepayment_confirmed", "charter_prepayment_not_confirmed", "review_closed"])
+      "invalid_incident_request", "charter_prepayment_confirmed", "charter_prepayment_not_confirmed", "review_closed"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
-    // already_invoiced is also the reason the e-CF issuance names (ADR-0035).
-    expect(ELEVANT_RULE_REASONS).toContain("already_invoiced");
+    // already_invoiced is also the reason the e-CF issuance names (ADR-0035), and so are a charge the contract
+    // excludes (3-N29) and a service OCC excluded from billing (3-N11).
+    for (const reason of ["already_invoiced", "charge_excluded_by_contract", "excluded_in_review"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
   });
 
   it("knows the report codes of phase 3 (block E)", () => {

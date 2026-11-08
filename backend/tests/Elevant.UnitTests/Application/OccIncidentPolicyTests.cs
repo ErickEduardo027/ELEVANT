@@ -29,6 +29,30 @@ public sealed class OccIncidentPolicyTests
     }
 
     [Theory]
+    [InlineData(GroundOperationStatus.PendingReview, IncidentStatus.Resolved, IncidentStatus.InReview, true)]
+    [InlineData(GroundOperationStatus.Returned, IncidentStatus.Open, IncidentStatus.InReview, true)]
+    [InlineData(GroundOperationStatus.Approved, IncidentStatus.Resolved, IncidentStatus.InReview, false)]
+    [InlineData(GroundOperationStatus.Cancelled, IncidentStatus.Open, IncidentStatus.InReview, false)]
+    [InlineData(GroundOperationStatus.Approved, IncidentStatus.Open, IncidentStatus.Resolved, true)]
+    [InlineData(GroundOperationStatus.Cancelled, IncidentStatus.InReview, IncidentStatus.Resolved, true)]
+    [InlineData(GroundOperationStatus.Approved, IncidentStatus.Resolved, IncidentStatus.Closed, true)]
+    [InlineData(GroundOperationStatus.Approved, IncidentStatus.Open, IncidentStatus.Closed, false)]
+    public void AnApprovedOrCancelledOperationOnlyResolvesOrClosesItsIncidents(GroundOperationStatus operation,
+        IncidentStatus from, IncidentStatus to, bool allowed) =>
+        Assert.Equal(allowed, OccIncidentPolicy.CanTransition(from, to, operation));
+
+    [Fact]
+    public void TheNextStatesOfAnApprovedOperationLeadToTheClose()
+    {
+        Assert.Equal([IncidentStatus.Closed],
+            OccIncidentPolicy.NextStatuses(IncidentStatus.Resolved, GroundOperationStatus.Approved));
+        Assert.Equal([IncidentStatus.Resolved],
+            OccIncidentPolicy.NextStatuses(IncidentStatus.Open, GroundOperationStatus.Cancelled));
+        Assert.Equal([IncidentStatus.InReview, IncidentStatus.Closed],
+            OccIncidentPolicy.NextStatuses(IncidentStatus.Resolved, GroundOperationStatus.PendingReview));
+    }
+
+    [Theory]
     [InlineData("Open", IncidentStatus.Open)]
     [InlineData("Resolved", IncidentStatus.Resolved)]
     [InlineData("resolved", null)]

@@ -12,8 +12,9 @@ namespace Elevant.Api.Controllers;
 /// <summary>
 /// OCC manages the incidents of an operation of its stations (3-G) under <c>operations.incidents.*</c>: the live list,
 /// its own reports and the state changes with their note and history. Every command takes an Idempotency-Key; a state
-/// change also the incident's ETag in If-Match (missing: 428 <c>expected_version_required</c>; stale: 412
-/// <c>version_conflict</c>). Failures carry a stable code and a Spanish title.
+/// change also the incident's ETag in If-Match (missing: 428 <c>expected_version_required</c>; not a strong ETag: 400
+/// <c>invalid_incident_request</c>; stale: 412 <c>version_conflict</c>). Failures carry a stable code and a Spanish
+/// title.
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
@@ -86,8 +87,8 @@ public sealed class OccIncidentsController(IOccIncidentStore store) : Controller
     {
         if (!MasterDataHttp.TryActor(User, out var actorId)) return Unauthenticated();
         if (!TryVersion(ifMatch, out var version))
-            return MasterDataHttp.Coded(this, StatusCodes.Status400BadRequest, "La versión enviada en If-Match no es válida.",
-                OccIncidentCodes.TransitionInvalid);
+            return MasterDataHttp.Coded(this, StatusCodes.Status400BadRequest, Title(OccIncidentCodes.RequestInvalid),
+                OccIncidentCodes.RequestInvalid);
         var result = await store.ChangeStatusAsync(actorId, incidentId,
             new OccIncidentStatusInput(request.Status, request.Note, version), idempotencyKey, cancellationToken);
         if (result.Failure is { } failure) return Problem(failure, result.Code);
@@ -138,6 +139,7 @@ public sealed class OccIncidentsController(IOccIncidentStore store) : Controller
         OccIncidentCodes.ReportInvalid => "Los datos de la incidencia no son válidos.",
         OccIncidentCodes.OccurredAtInvalid => "La hora de la incidencia está en el futuro o antes de la operación.",
         OccIncidentCodes.OperationClosed => "La operación ya está aprobada o cancelada.",
+        OccIncidentCodes.RequestInvalid => "La versión enviada en If-Match no es válida.",
         _ => "La incidencia cambió mientras la revisaba. Vuelva a cargarla.",
     };
 
