@@ -29,3 +29,19 @@ export function formatLocalDateTime(value: string | null | undefined) {
   if (Number.isNaN(date.getTime())) return '—';
   return dateTimeFormat(DATE_TIME).format(date);
 }
+
+/**
+ * Fecha y hora corta en la hora local de la estación. Sin zona conocida (un registro guardado por una versión anterior)
+ * se usa la del equipo.
+ */
+export function formatStationDateTime(value: string | null | undefined, timeZone?: string) {
+  if (!timeZone) return formatLocalDateTime(value);
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  try {
+    return dateTimeFormat({ ...DATE_TIME, timeZone }).format(date);
+  } catch {
+    return dateTimeFormat(DATE_TIME).format(date);
+  }
+}

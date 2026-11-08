@@ -13,6 +13,7 @@ import {
   loadRampIncidentCenter, reserveRampIncident,
   type RampIncidentCenter, type RampIncidentSeverity, type RampIncidentType,
 } from '../../services/ramp-incidents';
+import { serverNow } from '../../synchronization/server-clock';
 import { colors } from '../../theme/colors';
 import { resetToLogin } from '../../utils/session-navigation';
 import { formatLocalDateTime } from '../../utils/date-format';
@@ -128,8 +129,9 @@ export default function IncidentScreen() {
     setFormError(null);
     setSending(true);
     try {
+      // 3-N18: the moment of the report by ELEVANT's clock, even when the tablet's runs ahead.
       const reserved = await reserveRampIncident(id, {
-        incidentType, severity, description: detail, occurredAt: new Date().toISOString(),
+        incidentType, severity, description: detail, occurredAt: serverNow().toISOString(),
       });
       setCenter(current => current
         ? { ...current, outbox: reserved }

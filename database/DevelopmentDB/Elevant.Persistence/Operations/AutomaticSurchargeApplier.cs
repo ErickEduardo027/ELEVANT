@@ -18,15 +18,26 @@ internal static class AutomaticSurchargeApplier
     private static readonly HashSet<string> OncePerOperation =
         [AutomaticSurchargeCodes.Overtime, AutomaticSurchargeCodes.Delay];
 
+    /// <summary>The reason a recalculation retires an automatic surcharge (3-N09, 3-N06).</summary>
+    public const string RecalculatedReason = "Recalculado con las horas corregidas";
+
+    public static Task<IReadOnlyList<string>> ApplyAsync(ElevantDbContext context, long operationId,
+        DateTimeOffset now, CancellationToken cancellationToken) =>
+        ApplyAsync(context, operationId, now, now, cancellationToken);
+
+    /// <summary>
+    /// Marks the surcharges the times justify; <c>handedOffAt</c> ends the operation when push-back was not recorded
+    /// (its first hand-off) and <c>now</c> is when the marks are written.
+    /// </summary>
     public static async Task<IReadOnlyList<string>> ApplyAsync(ElevantDbContext context, long operationId,
-        DateTimeOffset now, CancellationToken cancellationToken)
+        DateTimeOffset handedOffAt, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var charges = await context.ChargeDefinitions.AsNoTracking()
             .Where(charge => charge.IsActive && AutomaticSurchargeCodes.All.Contains(charge.Code))
             .Select(charge => new { charge.Id, charge.Code, charge.AppliesToAllServices, charge.GraceMinutes })
             .ToArrayAsync(cancellationToken);
         if (charges.Length == 0) return [];
-        var facts = await OperationCloseFacts.LoadAsync(context, operationId, now, cancellationToken);
+        var facts = await OperationCloseFacts.LoadAsync(context, operationId, handedOffAt, cancellationToken);
         var grace = charges.ToDictionary(charge => charge.Code, charge => charge.GraceMinutes);
         var codes = AutomaticSurchargePolicy.Detect(facts.ToSurchargeInput(), grace);
         if (codes.Count == 0) return [];
@@ -87,4 +98,47 @@ internal static class AutomaticSurchargeApplier
         }
         return applied;
     }
+
+    /// <summary>
+    /// Recalculates the automatic surcharges with the times as they are now (3-N09: a correction round resubmitted, 3-N06:
+    /// late evidence while OCC reviews): marks the ones the times now justify and retires the active automatic marks
+    /// they no longer justify. Only ELEVANT's own active marks are retired, by the agent whose corrected times decided
+    /// it and with <see cref="RecalculatedReason"/>; the agent's and OCC's marks are never touched, and a later
+    /// recalculation may mark a retired one again. <c>handedOffAt</c> ends the operation when push-back was not
+    /// recorded (its first hand-off); <c>rampAgentId</c> is the agent whose command triggered the recalculation.
+    /// </summary>
+    public static async Task<ReconciledSurcharges> ReconcileAsync(ElevantDbContext context, long operationId,
+        DateTimeOffset handedOffAt, DateTimeOffset now, long rampAgentId, CancellationToken cancellationToken)
+    {
+        var charges = await context.ChargeDefinitions.AsNoTracking()
+            .Where(charge => AutomaticSurchargeCodes.All.Contains(charge.Code))
+            .Select(charge => new { charge.Id, charge.Code, charge.GraceMinutes })
+            .ToArrayAsync(cancellationToken);
+        var facts = await OperationCloseFacts.LoadAsync(context, operationId, handedOffAt, cancellationToken);
+        var detected = AutomaticSurchargePolicy.Detect(facts.ToSurchargeInput(),
+            charges.ToDictionary(charge => charge.Code, charge => charge.GraceMinutes));
+        var staleChargeIds = charges.Where(charge => !detected.Contains(charge.Code)).Select(charge => charge.Id).ToArray();
+        // Tracked: a no-tracking source anywhere in the query would leave the retired marks unsaved.
+        var stale = await (from mark in context.OperationServiceCharges.AsTracking()
+                           join service in context.OperationServices on mark.OperationServiceId equals service.Id
+                           where service.GroundOperationId == operationId &&
+                                 mark.Source == ChargeMarkSource.Automatic && mark.RemovedAt == null &&
+                                 staleChargeIds.Contains(mark.ChargeDefinitionId)
+                           select mark).ToListAsync(cancellationToken);
+        foreach (var mark in stale)
+        {
+            mark.RemovedAt = now;
+            mark.RemovedByRampAgentId = rampAgentId;
+            mark.AdjustmentReason = RecalculatedReason;
+            mark.UpdatedAt = now;
+        }
+        var retired = charges.Where(charge => stale.Any(mark => mark.ChargeDefinitionId == charge.Id))
+            .Select(charge => charge.Code).ToArray();
+        await context.SaveChangesAsync(cancellationToken);
+        var applied = await ApplyAsync(context, operationId, handedOffAt, now, cancellationToken);
+        return new ReconciledSurcharges(applied, retired);
+    }
 }
+
+/// <summary>What a recalculation of the automatic surcharges marked and retired, by charge code.</summary>
+internal sealed record ReconciledSurcharges(IReadOnlyList<string> Applied, IReadOnlyList<string> Retired);

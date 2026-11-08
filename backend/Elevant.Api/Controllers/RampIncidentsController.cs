@@ -16,6 +16,7 @@ namespace Elevant.Api.Controllers;
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[RampProblemDetails]
 [Route("api/v{version:apiVersion}/ramp/operations/{operationId:guid}/incidents")]
 public sealed class RampIncidentsController(RampIncidentHandler handler) : ControllerBase
 {
@@ -31,9 +32,9 @@ public sealed class RampIncidentsController(RampIncidentHandler handler) : Contr
         [FromRoute] Guid operationId,
         CancellationToken cancellationToken)
     {
-        if (!TryGetAccountId(out var accountId)) return UnauthorizedResult<GetRampIncidentsResponse>();
+        if (!TryGetAccountId(out var accountId)) return RampProblems.Failure(this, RampOperationsFailure.Unauthorized);
         var result = await handler.GetAsync(accountId, operationId, cancellationToken);
-        if (!result.IsSuccess) return FailureResult<GetRampIncidentsResponse>(result.Failure!.Value);
+        if (!result.IsSuccess) return RampProblems.Failure(this, result.Failure!.Value);
         return Ok(new GetRampIncidentsResponse(
             operationId,
             result.Incidents!.Select(incident => new RampIncidentResponse(
@@ -47,7 +48,10 @@ public sealed class RampIncidentsController(RampIncidentHandler handler) : Contr
                 incident.DelayCode)).ToArray()));
     }
 
-    /// <summary>Atomically reports one incident without duplicating offline retries.</summary>
+    /// <summary>
+    /// Atomically reports one incident without duplicating offline retries. Its time must fit the operation's window
+    /// (409 <c>time_outside_operation_window</c>, 3-N25).
+    /// </summary>
     [RequestSizeLimit(ReportBodyLimitBytes)]
     [HttpPost(Name = "ReportRampIncident")]
     [Consumes("application/json")]
@@ -67,12 +71,11 @@ public sealed class RampIncidentsController(RampIncidentHandler handler) : Contr
         [FromBody, BindRequired] ReportRampIncidentRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryGetAccountId(out var accountId)) return UnauthorizedResult<RampIncidentReceiptResponse>();
+        if (!TryGetAccountId(out var accountId)) return RampProblems.Failure(this, RampOperationsFailure.Unauthorized);
         if (!Enum.TryParse<IncidentSeverity>(request.Severity, false, out var severity) ||
             !Enum.IsDefined(severity))
         {
-            return ProblemResult<RampIncidentReceiptResponse>(
-                StatusCodes.Status400BadRequest, "The incident report is invalid.");
+            return RampProblems.InvalidCommand(this);
         }
 
         var result = await handler.ReportAsync(
@@ -87,7 +90,7 @@ public sealed class RampIncidentsController(RampIncidentHandler handler) : Contr
             HttpContext.TraceIdentifier,
             cancellationToken,
             request.DelayCode);
-        if (!result.IsSuccess) return FailureResult<RampIncidentReceiptResponse>(result.Failure!.Value);
+        if (!result.IsSuccess) return RampProblems.Failure(this, result.Failure!.Value, result.Code);
         var receipt = result.Receipt!;
         return Ok(new RampIncidentReceiptResponse(
             receipt.ReceiptId,
@@ -102,27 +105,4 @@ public sealed class RampIncidentsController(RampIncidentHandler handler) : Contr
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
 
-    private ActionResult<T> FailureResult<T>(RampOperationsFailure failure) => failure switch
-    {
-        RampOperationsFailure.Unauthorized => UnauthorizedResult<T>(),
-        RampOperationsFailure.Forbidden => ProblemResult<T>(403, "Incident access is forbidden."),
-        RampOperationsFailure.InvalidRequest => ProblemResult<T>(400, "The incident request is invalid."),
-        RampOperationsFailure.NotFound => ProblemResult<T>(404, "The ramp operation was not found."),
-        RampOperationsFailure.Conflict => ProblemResult<T>(409, "The incident request conflicts with current operational data."),
-        _ => throw new ArgumentOutOfRangeException(nameof(failure)),
-    };
-
-    private ActionResult<T> UnauthorizedResult<T>()
-    {
-        Response.Headers.WWWAuthenticate = "Bearer";
-        return ProblemResult<T>(401, "Authentication failed.");
-    }
-
-    private ActionResult<T> ProblemResult<T>(int statusCode, string title) =>
-        new ObjectResult(new ProblemDetails
-        {
-            Status = statusCode,
-            Title = title,
-            Instance = HttpContext.Request.Path,
-        }) { StatusCode = statusCode };
 }

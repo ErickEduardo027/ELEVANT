@@ -4,11 +4,10 @@ import type {
 } from '@elevant/api-client';
 import { createMobileAgentApiClient } from '../config/elevant-api';
 import {
-  getOrCreateRampServiceChargeCommandIfCurrent,
   readRampOperationChargesCacheIfCurrent,
-  removeRampServiceChargeCommandIfCurrent,
   writeRampOperationChargesCacheIfCurrent,
 } from '../storage/mobile-session';
+import { sendFlightReportCommand } from './flight-report';
 import {
   getMobileSessionRequestContext,
   MobileServiceError,
@@ -102,59 +101,30 @@ export async function getRampOperationCharges(
 }
 
 /**
- * Marks or unmarks one charge. The idempotency key is reserved per service,
- * charge and action before sending, so retrying after a lost response replays
- * the same command instead of adding a second mark.
+ * Marks or unmarks one charge. The command is saved in the device's queue before anything is sent (3-I) and goes out
+ * in its order, after the operation's start and service transitions, with its stable key: a retry never doubles a
+ * mark. Answers the service's charges as ELEVANT confirmed them, or null while the command waits on the device. A
+ * refusal is thrown with its Problem Details code and leaves the queue.
  */
 export async function changeRampServiceCharge(
   operationId: string,
   serviceId: string,
   chargeId: string,
   action: RampServiceChargeAction,
-  options: { signal?: AbortSignal } = {},
-): Promise<RampServiceChargesResponse> {
+  options: { signal?: AbortSignal; chargeName?: string } = {},
+): Promise<RampServiceChargesResponse | null> {
   if (!isUuid(operationId) || !isUuid(serviceId) || !isUuid(chargeId) ||
     (action !== 'Apply' && action !== 'Remove')) {
     throw new MobileServiceError('request_failed');
   }
-  const context = await getMobileSessionRequestContext();
-  const accountId = context.session.actor.accountId;
-  const payload = JSON.stringify({ chargeId: chargeId.toLowerCase(), action });
-  let reservedKey: string | undefined;
-  try {
-    const command = await getOrCreateRampServiceChargeCommandIfCurrent(
-      context.sessionId, accountId, operationId, serviceId, chargeId, action, payload,
-    );
-    if (command.kind !== 'current') throw new MobileServiceError('cancelled');
-    reservedKey = command.idempotencyKey;
-    const device = await registerCurrentMobileDevice({ accessToken: context.accessToken }, options);
-    const confirmed = await confirmSameSession(context.sessionId);
-    const response = await apiClient(confirmed.accessToken).applyRampServiceCharge(
-      operationId,
-      serviceId,
-      { chargeId: chargeId.toLowerCase(), action },
-      device.installationId,
-      command.idempotencyKey,
-      { signal: options.signal },
-    );
-    await confirmSameSession(context.sessionId);
-    const removed = await removeRampServiceChargeCommandIfCurrent(
-      context.sessionId, accountId, operationId, serviceId, chargeId, action, command.idempotencyKey,
-    );
-    if (removed === 'not-current') throw new MobileServiceError('cancelled');
-    return response.service;
-  } catch (error) {
-    const normalized = asMobileServiceError(error);
-    if (reservedKey && (normalized.code === 'not_found' || normalized.code === 'conflict' ||
-      normalized.status === 400)) {
-      await removeRampServiceChargeCommandIfCurrent(
-        context.sessionId, accountId, operationId, serviceId, chargeId, action, reservedKey,
-      ).catch(() => undefined);
-    }
-    if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
-      if (!cleared) throw new MobileServiceError('cancelled');
-    }
-    throw normalized;
+  const sent = await sendFlightReportCommand({
+    kind: 'serviceCharge', operationId: operationId.toLowerCase(), serviceId: serviceId.toLowerCase(),
+    chargeId: chargeId.toLowerCase(), action, ...(options.chargeName ? { chargeName: options.chargeName } : {}),
+  }, { discardRefused: true });
+  if (sent.state === 'queued') return null;
+  const response = sent.result as { service?: RampServiceChargesResponse } | null;
+  if (!response?.service || response.service.serviceId.toLowerCase() !== serviceId.toLowerCase()) {
+    throw new MobileServiceError('malformed_response');
   }
+  return response.service;
 }

@@ -8,7 +8,13 @@ import {
   readRampOperationSubmitCommandIfCurrent,
   removeRampOperationSubmitCommandIfCurrent,
 } from '../storage/mobile-session';
+import {
+  HANDOFF_PENDING_QUEUE,
+  HANDOFF_SERVICE_ORDER_UNSIGNED,
+  isServiceOrderSigned,
+} from '../features/assigned-operations/handoff';
 import { getAssignedOperations } from './assigned-operations';
+import { flushFlightReport, loadOperationDocuments, readOperationQueue } from './flight-report';
 import {
   getMobileSessionRequestContext,
   MobileServiceError,
@@ -90,10 +96,23 @@ async function assertCanonicalReadiness(operationId: string, signal?: AbortSigna
   const checklist = await getRampOperationChecklist(operationId, { signal });
   if (checklist.checklist.status !== 'Submitted') throw new MobileServiceError('conflict');
 
+  // 3-N06: the milestones, flight data, damages, signatures, services and messages must reach ELEVANT before the
+  // execution window closes; what is still on the device, or was refused, holds the hand-off.
+  await flushFlightReport();
+  const queue = await readOperationQueue(operationId);
+  if (queue.pending + queue.blocked > 0) {
+    throw new MobileServiceError('conflict', { problemCode: HANDOFF_PENDING_QUEUE });
+  }
+
   // A local report must reach the server before closing the execution window.
   const incidents = await loadRampIncidentCenter(operationId, { signal });
   if (!incidents.online || incidents.issue || incidents.outbox.length > 0) {
     throw incidents.issue ?? new MobileServiceError('conflict');
+  }
+
+  // 3-N06: what OCC approves and Finance invoices is the Service Order the airline and AVIAM signed.
+  if (!isServiceOrderSigned(await loadOperationDocuments(operationId))) {
+    throw new MobileServiceError('conflict', { problemCode: HANDOFF_SERVICE_ORDER_UNSIGNED });
   }
 }
 

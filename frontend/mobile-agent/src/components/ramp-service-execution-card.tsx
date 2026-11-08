@@ -36,6 +36,7 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
   notice,
   onTransition,
   pending,
+  queue,
   service,
 }: {
   readonly actionable: boolean;
@@ -45,6 +46,11 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
   readonly notice?: ServiceExecutionNotice;
   readonly onTransition: (request: TransitionRampOperationServiceRequest) => void;
   readonly pending?: RampServicePendingTransition;
+  /**
+   * 3-I: the service's last transition waits in the device's queue (the card already shows its target status), or
+   * ELEVANT refused one, with its message.
+   */
+  readonly queue?: Readonly<{ tone: 'device' | 'blocked'; message?: string }>;
   readonly service: RampOperationServiceResponse;
 }) {
   const [target, setTarget] = useState<TerminalTarget | null>(
@@ -125,6 +131,24 @@ export const RampServiceExecutionCard = memo(function RampServiceExecutionCard({
           tone={serviceStatusTone(service.status)}
         />
       </View>
+
+      {queue && (
+        <View
+          accessibilityLiveRegion="polite"
+          style={[styles.queueHint, queue.tone === 'blocked' && styles.queueHintBlocked]}
+        >
+          <Ionicons
+            name={queue.tone === 'blocked' ? 'alert-circle' : 'phone-portrait-outline'}
+            size={18}
+            color={queue.tone === 'blocked' ? colors.danger : colors.warning}
+          />
+          <Text style={[styles.queueHintText, queue.tone === 'blocked' && styles.queueHintTextBlocked]}>
+            {queue.tone === 'blocked'
+              ? `Rechazado por ELEVANT. ${queue.message ?? ''} Revísalo en Sincronización.`
+              : 'En el dispositivo · se envía a ELEVANT en cuanto haya señal, con la hora en que lo tocaste.'}
+          </Text>
+        </View>
+      )}
 
       {terminal && correctionMode && (
         <View style={styles.executionArea}>
@@ -451,6 +475,10 @@ function targetShortLabel(target: TerminalTarget) {
 
 const styles = StyleSheet.create({
   card: { gap: 14 },
+  queueHint: { padding: 10, borderRadius: 12, backgroundColor: colors.paleOrange, flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  queueHintBlocked: { backgroundColor: '#FBEAEA' },
+  queueHintText: { flex: 1, color: colors.warning, fontSize: 12, fontWeight: '800', lineHeight: 17 },
+  queueHintTextBlocked: { color: colors.danger },
   heading: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   number: { width: 31, height: 31, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.paleBlue },
   numberText: { color: colors.navy, fontSize: 12, fontWeight: '900' },

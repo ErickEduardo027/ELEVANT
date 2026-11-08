@@ -472,5 +472,6 @@ export {
   type SessionStationScopeResponse,
   type SubmitRampOperationChecklistRequest,
   type SystemPingResponse,
+  type StartRampOperationRequest,
   type TransitionRampOperationServiceRequest,
 } from "../generated/elevant-api";

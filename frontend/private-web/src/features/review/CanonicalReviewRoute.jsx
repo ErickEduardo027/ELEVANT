@@ -290,7 +290,8 @@ function ReviewStation({ stationId, selectedId, onSelectOperation }) {
           <ReviewEvidence detail={detail.data} />
           {detail.data.close && <OperationCloseSection detail={detail.data} disabled={busy}
             onChanged={text => { setMessage({ kind: 'success', text }); setRefreshVersion(value => value + 1); }} />}
-          <OperationDocumentsSection key={detail.data.operationId} operationId={detail.data.operationId} />
+          <OperationDocumentsSection key={detail.data.operationId} operationId={detail.data.operationId}
+            timeZone={detail.data.ianaTimeZone} />
           <HistoricalSubmissions operationId={detail.data.operationId} currentSubmissionId={detail.data.submissionId} timeZone={detail.data.ianaTimeZone} />
           {detail.data.decision && <p className="rounded-xl bg-accent-600/10 p-3 text-sm">{t('detail.decision')}<strong>{statusLabel(detail.data.decision.outcome)}</strong> · {dateTime(detail.data.decision.decidedAt, detail.data.ianaTimeZone, locale)}{detail.data.decision.reason ? ` — ${detail.data.decision.reason}` : ''}</p>}
           {detail.data.status === 'PendingReview' && <div className="space-y-3 border-t border-black/10 pt-4 dark:border-white/10">

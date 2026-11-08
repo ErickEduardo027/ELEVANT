@@ -89,15 +89,21 @@ public sealed record DamageMarkWriteRequest(Guid ActorAccountId, IReadOnlyCollec
 public sealed record DamagePhotoWriteRequest(Guid ActorAccountId, IReadOnlyCollection<Guid> AllowedStationIds,
     Guid OperationId, Guid MarkId, byte[] Content, string ContentType, Guid InstallationId, string? RequestId);
 
+/// <summary>
+/// Outcome of a form write from the tablet. <c>Code</c> is the receipt code of a refusal (the rule a write broke,
+/// <c>time_outside_operation_window</c> for a damage outside the operation's window, phase 3 block C); a replay of the
+/// device receipt answers the same one.
+/// </summary>
 public sealed record OperationDocumentWriteResult(OperationDocumentsView? Data, RampExecutionWriteFailure? Failure,
-    Guid? CommitReceiptId)
+    Guid? CommitReceiptId, string? Code = null)
 {
     public bool IsSuccess => Data is not null;
 
     public static OperationDocumentWriteResult Success(OperationDocumentsView data, Guid? receiptId) => new(data, null, receiptId);
 
-    public static OperationDocumentWriteResult Failed(RampExecutionWriteFailure failure, Guid? receiptId = null) =>
-        new(null, failure, receiptId);
+    public static OperationDocumentWriteResult Failed(RampExecutionWriteFailure failure, Guid? receiptId = null,
+        string? code = null) =>
+        new(null, failure, receiptId, code);
 }
 
 /// <summary>The private object storage for walk-around photos is not configured or failed.</summary>
@@ -229,7 +235,7 @@ public sealed class OperationDocumentHandler(IActorContextResolver actors, IOper
         return view is null ? (null, RampOperationsFailure.NotFound) : (view, null);
     }
 
-    public async Task<(OperationDocumentsView? Data, RampOperationsFailure? Failure)> SignAsync(Guid accountId,
+    public async Task<(OperationDocumentsView? Data, RampOperationsFailure? Failure, string? Code)> SignAsync(Guid accountId,
         Guid operationId, OperationDocumentKind kind, OperationSignatureRole role, string? signerName, string? documentSha256,
         IReadOnlyList<IReadOnlyList<decimal>>? strokes, DateTimeOffset signedAt, Guid installationId, Guid idempotencyKey,
         string? requestId, CancellationToken cancellationToken = default, string? signerIdentification = null)
@@ -245,39 +251,41 @@ public sealed class OperationDocumentHandler(IActorContextResolver actors, IOper
             !identificationValid ||
             normalized is null || !OperationDocumentRules.IsSha256(documentSha256) ||
             !Enum.IsDefined(kind) || !OperationDocumentRules.RolesFor(kind).Contains(role))
-            return (null, RampOperationsFailure.InvalidRequest);
+            return (null, RampOperationsFailure.InvalidRequest, null);
         var (stations, failure) = await RampStationsAsync(accountId, cancellationToken);
-        if (failure is not null) return (null, failure);
+        if (failure is not null) return (null, failure, null);
         return Map(await store.SignAsync(new OperationDocumentSignRequest(accountId, stations!, operationId, kind, role, name,
             documentSha256!, normalized, signedAt.ToUniversalTime(), installationId, idempotencyKey, requestId, identification),
             cancellationToken));
     }
 
-    public async Task<(OperationDocumentsView? Data, RampOperationsFailure? Failure)> RecordDamageMarkAsync(Guid accountId,
+    public async Task<(OperationDocumentsView? Data, RampOperationsFailure? Failure, string? Code)> RecordDamageMarkAsync(
+        Guid accountId,
         Guid operationId, Guid markId, decimal x, decimal y, string? note, DateTimeOffset reportedAt, Guid installationId,
         Guid idempotencyKey, string? requestId, CancellationToken cancellationToken = default)
     {
         var text = note?.Trim();
         if (operationId == Guid.Empty || markId == Guid.Empty || installationId == Guid.Empty ||
             idempotencyKey == Guid.Empty || x is < 0 or > 1 || y is < 0 or > 1 || text is not { Length: >= 3 and <= 500 })
-            return (null, RampOperationsFailure.InvalidRequest);
+            return (null, RampOperationsFailure.InvalidRequest, null);
         var (stations, failure) = await RampStationsAsync(accountId, cancellationToken);
-        if (failure is not null) return (null, failure);
+        if (failure is not null) return (null, failure, null);
         return Map(await store.RecordDamageMarkAsync(new DamageMarkWriteRequest(accountId, stations!, operationId, markId,
             decimal.Round(x, 4), decimal.Round(y, 4), text, reportedAt.ToUniversalTime(), installationId, idempotencyKey,
             requestId), cancellationToken));
     }
 
-    public async Task<(OperationDocumentsView? Data, RampOperationsFailure? Failure)> AttachDamagePhotoAsync(Guid accountId,
+    public async Task<(OperationDocumentsView? Data, RampOperationsFailure? Failure, string? Code)> AttachDamagePhotoAsync(
+        Guid accountId,
         Guid operationId, Guid markId, byte[] content, Guid installationId, string? requestId,
         CancellationToken cancellationToken = default)
     {
         var contentType = content.Length is > 0 and <= OperationDocumentRules.MaxPhotoBytes
             ? OperationDocumentRules.SniffPhoto(content) : null;
         if (operationId == Guid.Empty || markId == Guid.Empty || installationId == Guid.Empty || contentType is null)
-            return (null, RampOperationsFailure.InvalidRequest);
+            return (null, RampOperationsFailure.InvalidRequest, null);
         var (stations, failure) = await RampStationsAsync(accountId, cancellationToken);
-        if (failure is not null) return (null, failure);
+        if (failure is not null) return (null, failure, null);
         return Map(await store.AttachDamagePhotoAsync(new DamagePhotoWriteRequest(accountId, stations!, operationId, markId,
             content, contentType, installationId, requestId), cancellationToken));
     }
@@ -348,14 +356,16 @@ public sealed class OperationDocumentHandler(IActorContextResolver actors, IOper
         return stations.Length == 0 ? (null, OccReviewFailure.NotFound) : (stations, null);
     }
 
-    private static (OperationDocumentsView?, RampOperationsFailure?) Map(OperationDocumentWriteResult result) => result.IsSuccess
-        ? (result.Data, null)
-        : (null, result.Failure switch
-        {
-            RampExecutionWriteFailure.Forbidden => RampOperationsFailure.Forbidden,
-            RampExecutionWriteFailure.NotFound => RampOperationsFailure.NotFound,
-            _ => RampOperationsFailure.Conflict,
-        });
+    /// <summary>A tablet write's outcome with the Problem Details code of a refusal (phase 3, block C).</summary>
+    private static (OperationDocumentsView?, RampOperationsFailure?, string?) Map(OperationDocumentWriteResult result) =>
+        result.IsSuccess
+            ? (result.Data, null, null)
+            : (null, result.Failure switch
+            {
+                RampExecutionWriteFailure.Forbidden => RampOperationsFailure.Forbidden,
+                RampExecutionWriteFailure.NotFound => RampOperationsFailure.NotFound,
+                _ => RampOperationsFailure.Conflict,
+            }, RampExecutionHandler.CodeOf(result.Failure, result.Code));
 }
 
 /// <summary>

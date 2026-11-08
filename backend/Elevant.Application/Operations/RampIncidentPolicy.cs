@@ -24,18 +24,28 @@ public static class RampIncidentPolicy
         occurredAt != default &&
         occurredAt.Year >= 2000;
 
+    /// <summary>
+    /// Why an incident report is refused, or null: it belongs to a running operation and its time fits the same window
+    /// as the milestones and the damages (3-N25), with the clock tolerance on both ends; the store clamps it to the
+    /// server's clock.
+    /// </summary>
+    public static string? ReportRejection(
+        TurnaroundStatus turnaroundStatus,
+        GroundOperationStatus operationStatus,
+        DateTimeOffset? actualStartAt,
+        DateTimeOffset? actualEndAt,
+        DateTimeOffset occurredAt,
+        RampEvidenceWindow window) =>
+        !RampOperationExecutionPolicy.CanExecute(turnaroundStatus, operationStatus, actualStartAt, actualEndAt)
+            ? RampProblemCodes.GenericConflict
+            : RampEvidenceTimePolicy.CheckEvidence(occurredAt.ToUniversalTime(), window);
+
     public static bool CanReport(
         TurnaroundStatus turnaroundStatus,
         GroundOperationStatus operationStatus,
         DateTimeOffset? actualStartAt,
         DateTimeOffset? actualEndAt,
         DateTimeOffset occurredAt,
-        DateTimeOffset now) =>
-        RampOperationExecutionPolicy.CanExecute(
-            turnaroundStatus,
-            operationStatus,
-            actualStartAt,
-            actualEndAt) &&
-        occurredAt.ToUniversalTime() >= actualStartAt!.Value.ToUniversalTime() &&
-        occurredAt.ToUniversalTime() <= now.ToUniversalTime();
+        RampEvidenceWindow window) =>
+        ReportRejection(turnaroundStatus, operationStatus, actualStartAt, actualEndAt, occurredAt, window) is null;
 }

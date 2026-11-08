@@ -414,6 +414,7 @@ import {
   getAttachRampDamagePhotoUrl,
   getGetOccOperationDocumentsUrl,
   getGetOccOperationDocumentPdfUrl,
+  getGetOccDamagePhotoUrl,
   getGetAirlineServiceOrderUrl,
   getGetAirlineServiceOrderPdfUrl,
   getGetRampCharterUrl,
@@ -650,6 +651,7 @@ import {
   type ProvisioningTaskData,
   type CommercialAccountResponse,
   type SubmitRampOperationChecklistRequest,
+  type StartRampOperationRequest,
   type SystemPingResponse,
   type TransitionRampOperationServiceRequest,
 } from "../generated/elevant-api";
@@ -1346,11 +1348,16 @@ export interface ElevantApiClient {
     request: RegisterMobileDeviceRequest,
     options?: RegisterMobileDeviceOptions,
   ): Promise<RegisterMobileDeviceResponse>;
+  /**
+   * «Iniciar». Without `request` the command is the first version's (no body); with it, the tablet sends the
+   * moment the agent tapped it, possibly from its offline queue (3-I).
+   */
   startRampOperation(
     operationId: string,
     installationId: string,
     idempotencyKey: string,
     options?: StartRampOperationOptions,
+    request?: StartRampOperationRequest,
   ): Promise<RampOperationStartResponse>;
   getRampOperationChecklist(
     operationId: string,
@@ -1702,6 +1709,11 @@ export interface ElevantApiClient {
   /** OCC: the current form as PDF, signatures and walk-around photos included. */
   downloadOccOperationDocument(operationId: string, kind: OperationDocumentKind,
     options?: GetHumanResourcesReportOptions): Promise<Blob>;
+  /**
+   * OCC: the photo of one walk-around damage mark (3-K), JPEG or PNG only, read on demand when OCC opens it. Anything
+   * else the server answers is a malformed response.
+   */
+  getOccDamagePhoto(operationId: string, markId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
   /** Airline portal: the latest Service Order its representative signed. */
   getAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<AirlineServiceOrderResponse>;
   downloadAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions): Promise<Blob>;
@@ -2737,6 +2749,8 @@ const rampServiceTargetStatuses = [
   "Exception",
 ] as const;
 const maximumExecutedQuantityExclusive = 100_000_000_000_000;
+/** A walk-around photo is at most 6 MiB, the limit the server takes on upload (OperationDocumentRules.MaxPhotoBytes). */
+const MAXIMUM_DAMAGE_PHOTO_BYTES = 6 * 1024 * 1024;
 
 function isOneOf<const TValue extends readonly string[]>(
   value: unknown,
@@ -5438,17 +5452,28 @@ function hasAtMostFourDecimalPlaces(value: number) {
   return Number.isInteger(exponent) && Math.max(0, decimalPlaces - exponent) <= 4;
 }
 
+/** The optional body of «Iniciar» (3-I): only the tapped time, and only when there is one. */
+function validatedStartRequest(request: StartRampOperationRequest): StartRampOperationRequest {
+  if (!isRecord(request) || !hasOnlyKeys(request, ["startedAt"]) ||
+    !isOptionalNullable(request.startedAt, isDateTimeOffset)) {
+    throw new TypeError("Ramp operation start is invalid.");
+  }
+  return typeof request.startedAt === "string" ? { startedAt: request.startedAt } : {};
+}
+
 function validatedServiceTransitionRequest(
   request: TransitionRampOperationServiceRequest,
 ): TransitionRampOperationServiceRequest {
   if (
     !isRecord(request) ||
-    !hasOnlyKeys(request, ["targetStatus", "executedQuantity", "note"]) ||
+    !hasOnlyKeys(request, ["targetStatus", "executedQuantity", "note", "occurredAt"]) ||
     !isOneOf(request.targetStatus, rampServiceTargetStatuses) ||
     !isOptionalNullable(
       request.note,
       (note) => typeof note === "string" && note.length <= 1_000,
-    )
+    ) ||
+    // 3-I: the moment the agent tapped it; without it the server's time applies, as for the first version.
+    !isOptionalNullable(request.occurredAt, isDateTimeOffset)
   ) {
     throw new TypeError("Ramp service transition is invalid.");
   }
@@ -5486,6 +5511,7 @@ function validatedServiceTransitionRequest(
     targetStatus: request.targetStatus,
     ...(quantity === undefined ? {} : { executedQuantity: quantity }),
     ...(request.note === undefined ? {} : { note: request.note }),
+    ...(typeof request.occurredAt === "string" ? { occurredAt: request.occurredAt } : {}),
   };
 }
 
@@ -7483,19 +7509,24 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       installationId: string,
       idempotencyKey: string,
       options?: StartRampOperationOptions,
+      request?: StartRampOperationRequest,
     ) {
       const operation = validatedUuid(operationId, "operationId");
       const installation = validatedUuid(installationId, "installationId");
       const commandKey = validatedUuid(idempotencyKey, "idempotencyKey");
+      const start = request === undefined ? undefined : validatedStartRequest(request);
       const headers = headersFrom(options?.headers, "Request headers");
       headers.set("x-elevant-installation-id", installation);
       headers.set("idempotency-key", commandKey);
+      // Without a tapped time the request stays the first version's: no body and no content type.
+      if (start?.startedAt !== undefined) headers.set("content-type", "application/json");
       const result = await execute(
         getStartRampOperationUrl(operation),
         {
           ...options,
           method: "POST",
           headers,
+          ...(start?.startedAt === undefined ? {} : { body: JSON.stringify(start) }),
         },
         true,
       );
@@ -8365,6 +8396,28 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isOperationDocumentKind(kind)) throw new TypeError("The form kind is invalid.");
       return executeReportDocument(getGetOccOperationDocumentPdfUrl(validatedUuid(operationId, "operationId"), kind),
         "pdf", options);
+    },
+    async getOccDamagePhoto(operationId: string, markId: string, options?: GetHumanResourcesReportOptions) {
+      const path = getGetOccDamagePhotoUrl(validatedUuid(operationId, "operationId"), validatedUuid(markId, "markId"));
+      const response = await send(path, { ...options, method: "GET" }, true);
+      const mime = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+      if (mime !== "image/jpeg" && mime !== "image/png") throw malformedResponse(response.status);
+      const declaredLength = response.headers.get("content-length");
+      if (declaredLength && Number(declaredLength) > MAXIMUM_DAMAGE_PHOTO_BYTES) throw malformedResponse(response.status);
+      let bytes: ArrayBuffer;
+      try {
+        bytes = await response.arrayBuffer();
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        throw malformedResponse(response.status);
+      }
+      // The bytes must be the image the header names: the same magic numbers the server sniffs on upload (ADR-0032).
+      const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 8));
+      const signature = mime === "image/jpeg" ? [0xff, 0xd8, 0xff] : [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+      if (bytes.byteLength > MAXIMUM_DAMAGE_PHOTO_BYTES || bytes.byteLength < signature.length ||
+          !signature.every((value, index) => header[index] === value))
+        throw malformedResponse(response.status);
+      return new Blob([bytes], { type: mime });
     },
     async getAirlineServiceOrder(operationId: string, options?: GetHumanResourcesReportOptions) {
       const operation = validatedUuid(operationId, "operationId");

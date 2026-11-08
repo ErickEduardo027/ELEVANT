@@ -19,9 +19,11 @@ import {
   getMobileSession,
   loginMobileAgent,
   MobileServiceError,
+  readUnsentRecords,
 } from '../services/mobile-auth';
 import { colors } from '../theme/colors';
 import { exitApplication } from '../utils/app-exit';
+import { loginPendingEvidenceNotice } from '../utils/pending-evidence';
 
 export default function LoginScreen() {
   const { notice } = useLocalSearchParams<{ notice?: string }>();
@@ -31,7 +33,19 @@ export default function LoginScreen() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [error, setError] = useState('');
+  const [unsent, setUnsent] = useState(0);
   const requestRef = useRef<AbortController | null>(null);
+
+  // 3-N12: what an ended session left unsent stays on the tablet; the agent is told before signing in.
+  useEffect(() => {
+    let mounted = true;
+    void readUnsentRecords().then(count => {
+      if (mounted && count) setUnsent(count.current + count.others);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [notice]);
 
   useEffect(() => {
     let mounted = true;
@@ -79,6 +93,7 @@ export default function LoginScreen() {
     : notice === 'access_revoked'
       ? 'Tu cuenta ya no tiene un perfil operativo válido. Contacta a AVIAM antes de reintentar.'
       : '';
+  const evidenceNotice = loginPendingEvidenceNotice(unsent, notice);
 
   // Mientras se lee la sesión guardada no se muestra el formulario: si existe,
   // la app pasa directo al inicio sin parpadear la pantalla de acceso.
@@ -123,6 +138,13 @@ export default function LoginScreen() {
             <View accessibilityLiveRegion="polite" style={styles.noticeBox}>
               <Ionicons name="time-outline" size={19} color={colors.warning} />
               <Text style={styles.noticeText}>{sessionNotice}</Text>
+            </View>
+          )}
+
+          {!!evidenceNotice && (
+            <View accessibilityLiveRegion="polite" style={styles.noticeBox}>
+              <Ionicons name="cloud-upload-outline" size={19} color={colors.warning} />
+              <Text style={styles.noticeText}>{evidenceNotice}</Text>
             </View>
           )}
 

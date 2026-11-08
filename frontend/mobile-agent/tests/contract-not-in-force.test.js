@@ -31,6 +31,13 @@ jest.mock('expo-router', () => ({
   useFocusEffect: callback => require('react').useEffect(callback, [callback]),
 }));
 jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
+// 3-I: the screen projects the device's queue; here it is empty.
+jest.mock('@react-native-async-storage/async-storage', () => ({
+  getItem: jest.fn(async () => null), setItem: jest.fn(async () => {}), removeItem: jest.fn(async () => {}),
+}));
+jest.mock('../src/services/flight-report', () => ({
+  subscribeFlightReport: listener => { listener({ items: [], revisions: {} }); return () => {}; },
+}));
 jest.mock('../src/services/mobile-change-feed', () => ({ subscribeMobileChanges: () => () => {} }));
 jest.mock('../src/components/flight-report/connection-badge', () => ({ ConnectionBadge: () => null }));
 jest.mock('../src/components/documents/operation-documents', () => ({ DocumentsPanel: () => null, WalkaroundCard: () => null }));

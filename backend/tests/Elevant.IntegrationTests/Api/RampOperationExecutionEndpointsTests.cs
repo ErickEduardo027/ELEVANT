@@ -374,6 +374,67 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         AssertPrivateResponse(response);
         Assert.Null(state.ServiceTransitionRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("invalid_ramp_command", problem.GetProperty("code").GetString());
+    }
+
+    // 3-I: the tapped time travels to the store in UTC and a broken time rule answers its code.
+    [Fact]
+    public async Task ServiceTransitionCarriesTheTappedTimeAndNamesTheRuleItBreaks()
+    {
+        var state = new ExecutionState
+        {
+            Actor = CreateActor(),
+            ServiceTransitionResult = RampOperationServiceTransitionWriteResult.Failed(
+                RampOperationServiceTransitionWriteFailure.Conflict, ReceiptId, "service_time_out_of_order"),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        const string json = """
+            {"targetStatus":"InProgress","executedQuantity":null,"note":null,"occurredAt":"2026-09-17T08:30:00-04:00"}
+            """;
+        using var request = CreateServiceTransitionRequest(json: json);
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("service_time_out_of_order", problem.GetProperty("code").GetString());
+        var captured = Assert.IsType<RampOperationServiceTransitionWriteRequest>(state.ServiceTransitionRequest);
+        Assert.Equal(new DateTimeOffset(2026, 9, 17, 12, 30, 0, TimeSpan.Zero), captured.OccurredAt);
+    }
+
+    // 3-N25: a milestone outside the operation's window, or a block-on after the push-back, keeps the 409 the deployed
+    // APK explains and names the rule it breaks with a Spanish title; the tapped time reaches the store in UTC.
+    [Theory]
+    [InlineData("milestone_out_of_order", "El bloqueo debe ser anterior al push-back.")]
+    [InlineData("time_outside_operation_window", "La hora queda fuera de la ventana de la operación.")]
+    public async Task MilestoneRefusalsKeepTheir409AndNameTheRuleTheyBreak(string code, string title)
+    {
+        var state = new ExecutionState
+        {
+            Actor = CreateActor(),
+            MilestoneResult = RampExecutionWriteResult.Failed(RampExecutionWriteFailure.Conflict, ReceiptId, code),
+        };
+        await using var application = CreateApplication(state);
+        using var client = CreateAuthenticatedClient(application);
+        using var request = new HttpRequestMessage(HttpMethod.Put,
+            $"/api/v1/ramp/operations/{OperationId:D}/milestones/BLOCK_ON")
+        {
+            Content = new StringContent("""{"occurredAt":"2026-09-17T08:30:00-04:00"}""", Encoding.UTF8,
+                "application/json"),
+        };
+        AddCommandHeaders(request, InstallationId.ToString("D"), IdempotencyKey.ToString("D"));
+
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        AssertPrivateResponse(response);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal((code, title), (problem.GetProperty("code").GetString(), problem.GetProperty("title").GetString()));
+        var captured = Assert.IsType<RampMilestoneWriteRequest>(state.MilestoneRequest);
+        Assert.Equal(("BLOCK_ON", new DateTimeOffset(2026, 9, 17, 12, 30, 0, TimeSpan.Zero)),
+            (captured.Code, captured.OccurredAt));
     }
 
     [Fact]
@@ -675,7 +736,9 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
             services.RemoveAll<IRampOperationServiceCommandStore>();
             services.RemoveAll<IRampIncidentStore>();
             services.RemoveAll<IRampOperationSubmissionStore>();
+            services.RemoveAll<IRampExecutionCommandStore>();
             services.AddSingleton(state);
+            services.AddScoped<IRampExecutionCommandStore>(_ => state);
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IRampOperationChecklistReadStore>(_ => state);
             services.AddScoped<IRampOperationChecklistCommandStore>(_ => state);
@@ -856,9 +919,15 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
         IRampOperationServiceCommandStore,
         IRampIncidentStore,
         IRampOperationSubmissionStore,
-        IRampOperationCorrectionStore
+        IRampOperationCorrectionStore,
+        IRampExecutionCommandStore
     {
         public ActorContext? Actor { get; init; }
+
+        public RampExecutionWriteResult MilestoneResult { get; init; } =
+            RampExecutionWriteResult.Failed(RampExecutionWriteFailure.Conflict);
+
+        public RampMilestoneWriteRequest? MilestoneRequest { get; private set; }
 
         public RampOperationChecklistReadResult ChecklistReadResult { get; init; } =
             RampOperationChecklistReadResult.Failed(RampOperationChecklistReadFailure.NotFound);
@@ -964,5 +1033,17 @@ public sealed class RampOperationExecutionEndpointsTests(ElevantApiFactory facto
             return Task.FromResult(CorrectionResult);
         }
 
+        public Task<RampExecutionWriteResult> RecordMilestoneAsync(
+            RampMilestoneWriteRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            MilestoneRequest = request;
+            return Task.FromResult(MilestoneResult);
+        }
+
+        public Task<RampExecutionWriteResult> UpdateFlightDataAsync(
+            RampFlightDataWriteRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

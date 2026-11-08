@@ -89,15 +89,32 @@ public static partial class RampExecutionPolicy
         mtowKg is null or (>= 1_000 and <= 700_000) &&
         IsValidRegistration(registration);
 
-    /// <summary>A milestone belongs to a started, not yet submitted operation, at a plausible time.</summary>
-    public static bool CanRecordMilestone(TurnaroundStatus turnaroundStatus, GroundOperationStatus operationStatus,
-        DateTimeOffset? actualStartAt, DateTimeOffset? actualEndAt, DateTimeOffset occurredAt, DateTimeOffset now) =>
-        RampOperationExecutionPolicy.CanExecute(turnaroundStatus, operationStatus, actualStartAt, actualEndAt) &&
-        occurredAt <= now + FutureTolerance && occurredAt >= now - MaxOfflineDelay;
+    /// <summary>
+    /// Why a milestone is refused, or null when it is recorded: the operation takes evidence (live, or late while OCC
+    /// reviews it, 3-N06), the time fits the operation's window (3-N25, <see cref="RampEvidenceTimePolicy"/>) and,
+    /// stored clamped to the server's clock, block-on never comes after push-back (<c>recorded</c> holds the
+    /// operation's other recorded milestones, by code).
+    /// </summary>
+    public static string? MilestoneRejection(TurnaroundStatus turnaroundStatus, GroundOperationStatus operationStatus,
+        DateTimeOffset? actualStartAt, DateTimeOffset? actualEndAt, string code, DateTimeOffset occurredAt,
+        RampEvidenceWindow window, IReadOnlyDictionary<string, DateTimeOffset> recorded, DateTimeOffset now) =>
+        !RampOperationExecutionPolicy.AcceptsEvidence(turnaroundStatus, operationStatus, actualStartAt, actualEndAt)
+            ? RampProblemCodes.GenericConflict
+            : RampEvidenceTimePolicy.CheckEvidence(occurredAt, window) is { } outside ? outside
+            : !RampEvidenceTimePolicy.IsInOrder(code, RampEvidenceTimePolicy.Clamp(occurredAt, now), recorded)
+                ? RampProblemCodes.MilestoneOutOfOrder
+            : null;
 
+    /// <summary>A milestone belongs to a started operation (or one OCC still reviews) and fits its window.</summary>
+    public static bool CanRecordMilestone(TurnaroundStatus turnaroundStatus, GroundOperationStatus operationStatus,
+        DateTimeOffset? actualStartAt, DateTimeOffset? actualEndAt, DateTimeOffset occurredAt, RampEvidenceWindow window) =>
+        MilestoneRejection(turnaroundStatus, operationStatus, actualStartAt, actualEndAt, string.Empty, occurredAt, window,
+            new Dictionary<string, DateTimeOffset>(), window.Closes) is null;
+
+    /// <summary>Flight data has no time: it is taken while the operation runs and, late, while OCC reviews it (3-N06).</summary>
     public static bool CanUpdateFlightData(TurnaroundStatus turnaroundStatus, GroundOperationStatus operationStatus,
         DateTimeOffset? actualStartAt, DateTimeOffset? actualEndAt) =>
-        RampOperationExecutionPolicy.CanExecute(turnaroundStatus, operationStatus, actualStartAt, actualEndAt);
+        RampOperationExecutionPolicy.AcceptsEvidence(turnaroundStatus, operationStatus, actualStartAt, actualEndAt);
 }
 
 /// <summary>Milestones and flight data from the tablet: shape, actor and station checks, then the store.</summary>
@@ -155,5 +172,15 @@ public sealed class RampExecutionHandler(IActorContextResolver actors, IRampExec
             RampExecutionWriteFailure.Forbidden => RampOperationsFailure.Forbidden,
             RampExecutionWriteFailure.NotFound => RampOperationsFailure.NotFound,
             _ => RampOperationsFailure.Conflict,
-        }, RampExecutionCodes.IsExplained(result.Code) ? result.Code : null);
+        }, CodeOf(result.Failure, result.Code));
+
+    /// <summary>
+    /// The Problem Details code of a refused tablet write (3-B, phase 3 block C): a reused key is
+    /// <c>idempotency_conflict</c>, the rule a write broke travels as is and the generic receipt codes are explained by
+    /// their status.
+    /// </summary>
+    internal static string? CodeOf(RampExecutionWriteFailure? failure, string? code) =>
+        failure == RampExecutionWriteFailure.IdempotencyKeyConflict
+            ? RampProblemCodes.IdempotencyConflict
+            : failure is RampExecutionWriteFailure.Forbidden ? null : RampProblemCodes.PublicCode(code);
 }

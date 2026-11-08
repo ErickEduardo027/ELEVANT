@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
+import {
+  flightReportOutboxAccount,
+  parseFlightReportOutbox,
+} from '../synchronization/flight-report-outbox';
 
 const ENVELOPE_SCHEMA_VERSION = 1 as const;
 const RAMP_EXECUTION_COMMAND_SCHEMA_VERSION = 1 as const;
@@ -26,6 +30,8 @@ const RAMP_CORRECTION_COMMAND_PREFIX =
   'elevant:mobile:ramp-correction-command:v1:';
 const RAMP_INCIDENT_OUTBOX_PREFIX = 'elevant:mobile:ramp-incident-outbox:v1:';
 const OPERATION_CHAT_COMMAND_PREFIX = 'elevant:mobile:operation-chat-command:v1:';
+/** Last server copy of an operation's checklist, so the agent opens it without signal (3-I); a cache only. */
+const RAMP_CHECKLIST_CACHE_PREFIX = 'elevant:mobile:ramp-checklist-cache:v1:';
 const ATTENDANCE_DRAFT_PENDING_PREFIX = 'elevant:mobile:attendance-draft-pending:v1:';
 const RAMP_INCIDENT_OUTBOX_SCHEMA_VERSION = 1 as const;
 const MAXIMUM_INCIDENT_OUTBOX_ITEMS = 25;
@@ -271,24 +277,61 @@ function allAssignedOperationCacheKeys(appKeys: readonly string[]) {
   );
 }
 
-function allRampStartCommandKeys(appKeys: readonly string[]) {
-  return appKeys.filter((key) => key.startsWith(RAMP_START_COMMAND_PREFIX));
-}
-
-function allRampExecutionKeys(appKeys: readonly string[]) {
+/** Copies of ELEVANT's data for one operation: they leave with the session, they are not the agent's records. */
+function allRampCacheKeys(appKeys: readonly string[]) {
   return appKeys.filter(
     (key) =>
-      key.startsWith(RAMP_CHECKLIST_DRAFT_PREFIX) ||
-      key.startsWith(RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX) ||
-      key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX) ||
-      key.startsWith(RAMP_SERVICE_CHARGE_COMMAND_PREFIX) ||
       key.startsWith(RAMP_OPERATION_CHARGES_CACHE_PREFIX) ||
-      key.startsWith(RAMP_OPERATION_SUBMIT_COMMAND_PREFIX) ||
-      key.startsWith(RAMP_CORRECTION_COMMAND_PREFIX) ||
-      key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX) ||
-      key.startsWith(OPERATION_CHAT_COMMAND_PREFIX) ||
-      key.startsWith(ATTENDANCE_DRAFT_PENDING_PREFIX),
+      key.startsWith(RAMP_CHECKLIST_CACHE_PREFIX),
   );
+}
+
+/**
+ * What the agent recorded and ELEVANT has not confirmed yet, keyed by `<prefix><accountId>:…` (3-N12): commands an
+ * older version reserved, the hand-off and correction commands and the incident reports. They survive the end of the
+ * session; only the same account reads and sends them when it signs in again.
+ */
+const ACCOUNT_EVIDENCE_PREFIXES = [
+  RAMP_START_COMMAND_PREFIX,
+  RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX,
+  RAMP_SERVICE_TRANSITION_COMMAND_PREFIX,
+  RAMP_SERVICE_CHARGE_COMMAND_PREFIX,
+  RAMP_OPERATION_SUBMIT_COMMAND_PREFIX,
+  RAMP_CORRECTION_COMMAND_PREFIX,
+  RAMP_INCIDENT_OUTBOX_PREFIX,
+  OPERATION_CHAT_COMMAND_PREFIX,
+] as const;
+
+/** The account that owns an unsent record kept on the device, or undefined for any other key (3-N12). */
+function evidenceOwner(key: string): string | undefined {
+  const queueOwner = flightReportOutboxAccount(key);
+  if (queueOwner) return queueOwner;
+  const prefix = ACCOUNT_EVIDENCE_PREFIXES.find(candidate => key.startsWith(candidate));
+  if (prefix) {
+    const accountId = key.slice(prefix.length).split(':')[0];
+    return isUuid(accountId) ? accountId.toLowerCase() : undefined;
+  }
+  // An attendance observation is keyed by the session that reserved it, then by its account.
+  if (key.startsWith(ATTENDANCE_DRAFT_PENDING_PREFIX)) {
+    const accountId = key.slice(ATTENDANCE_DRAFT_PENDING_PREFIX.length).split(':')[1];
+    return isUuid(accountId) ? accountId.toLowerCase() : undefined;
+  }
+  return undefined;
+}
+
+/** How many unsent records one kept key holds: every queued item, otherwise the one command it reserves. */
+function evidenceRecords(key: string, raw: string | null) {
+  if (raw === null) return 0;
+  if (flightReportOutboxAccount(key)) return parseFlightReportOutbox(raw).length;
+  if (key.startsWith(RAMP_INCIDENT_OUTBOX_PREFIX)) {
+    try {
+      return parseRampIncidentOutbox(raw).length;
+    } catch {
+      // Unreadable, yet still on the device: it is not hidden from the count.
+      return 1;
+    }
+  }
+  return 1;
 }
 
 function staleAsyncKeys(appKeys: readonly string[]) {
@@ -303,6 +346,12 @@ function staleAsyncKeys(appKeys: readonly string[]) {
   ];
 }
 
+/**
+ * Removes the credential, its metadata, what the prototype left behind and the copies of ELEVANT's data. What the
+ * agent recorded and ELEVANT has not confirmed stays on the device bound to its account (3-N12): a revoked or expired
+ * session and a sign-out never lose unsent evidence (the Flight Report queue, the incident reports, the reserved
+ * commands, the drafts and the attendance observations), and only the same account reads and sends it again.
+ */
 async function removeSessionAndCaches(appKeys: readonly string[]) {
   const results = await Promise.allSettled([
     SecureStore.deleteItemAsync(SESSION_CREDENTIAL_KEY),
@@ -311,8 +360,7 @@ async function removeSessionAndCaches(appKeys: readonly string[]) {
     AsyncStorage.multiRemove([
       SESSION_METADATA_KEY,
       ...new Set(staleAsyncKeys(appKeys)),
-      ...allRampStartCommandKeys(appKeys),
-      ...allRampExecutionKeys(appKeys),
+      ...allRampCacheKeys(appKeys),
     ]),
   ]);
 
@@ -1237,6 +1285,209 @@ export async function removeRampCorrectionCommandIfCurrent(
   return removeRampExecutionCommandIfCurrent(
     sessionId, accountId, rampCorrectionCommandKey(accountId, operationId),
     expectedIdempotencyKey);
+}
+
+function rampChecklistCacheKey(accountId: string, operationId: string) {
+  assertRampExecutionIds(accountId, operationId);
+  return `${RAMP_CHECKLIST_CACHE_PREFIX}${accountId.toLowerCase()}:${operationId.toLowerCase()}`;
+}
+
+/** Last server copy of an operation's checklist (3-I): the agent opens it without signal; a cache only. */
+export async function readRampChecklistCacheIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+): Promise<CurrentRampExecutionValue> {
+  return readRampExecutionValueIfCurrent(sessionId, accountId, rampChecklistCacheKey(accountId, operationId));
+}
+
+export async function writeRampChecklistCacheIfCurrent(
+  sessionId: string,
+  accountId: string,
+  operationId: string,
+  value: string,
+): Promise<'written' | 'not-current'> {
+  const key = rampChecklistCacheKey(accountId, operationId);
+  if (!isJsonObjectString(value)) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return 'not-current';
+      await AsyncStorage.setItem(key, value);
+      return 'written';
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+/** The operations of this account with incident reports still on the device (3-I sends them when signal returns). */
+export async function listRampIncidentOutboxOperationsIfCurrent(
+  sessionId: string,
+  accountId: string,
+): Promise<Readonly<{ kind: 'current'; operationIds: readonly string[] }> | Readonly<{ kind: 'not-current' }>> {
+  assertRampExecutionIds(accountId);
+  const prefix = `${RAMP_INCIDENT_OUTBOX_PREFIX}${accountId.toLowerCase()}:`;
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return { kind: 'not-current' };
+      const operationIds = (await AsyncStorage.getAllKeys())
+        .filter(key => key.startsWith(prefix))
+        .map(key => key.slice(prefix.length))
+        .filter(isUuid)
+        .map(operationId => operationId.toLowerCase());
+      return { kind: 'current', operationIds };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+/** A command an older version reserved in its own key, before 3-I moved it into the Flight Report queue. */
+export type LegacyRampCommand = Readonly<{
+  storageKey: string;
+  idempotencyKey: string;
+  kind: 'start' | 'serviceTransition' | 'serviceCharge' | 'checklistSubmit' | 'chatMessage';
+  operationId: string;
+  /** The service of a transition or a charge. */
+  serviceId?: string;
+  /** The reserved body (JSON) of a transition, a charge or a checklist, or the content of a chat message. */
+  payload?: string;
+}>;
+
+export type CurrentLegacyRampCommands =
+  | Readonly<{ kind: 'current'; commands: readonly LegacyRampCommand[] }>
+  | Readonly<{ kind: 'not-current' }>;
+
+function legacyRampCommand(accountId: string, key: string, raw: string | null): LegacyRampCommand | null {
+  const account = accountId.toLowerCase();
+  const parts = (prefix: string, count: number) => {
+    if (!key.startsWith(`${prefix}${account}:`)) return null;
+    const values = key.slice(prefix.length + account.length + 1).split(':');
+    return values.length === count ? values : null;
+  };
+  const start = parts(RAMP_START_COMMAND_PREFIX, 1);
+  if (start) {
+    return isUuid(start[0]) && isUuid(raw)
+      ? { storageKey: key, idempotencyKey: raw.toLowerCase(), kind: 'start', operationId: start[0].toLowerCase() }
+      : null;
+  }
+  const chat = parts(OPERATION_CHAT_COMMAND_PREFIX, 1);
+  if (chat) {
+    const parsed = parseJson(raw);
+    return isUuid(chat[0]) && isRecord(parsed) && isUuid(parsed.idempotencyKey) && typeof parsed.content === 'string' &&
+      parsed.content.trim().length > 0 && parsed.content.length <= 2_000
+      ? { storageKey: key, idempotencyKey: parsed.idempotencyKey.toLowerCase(), kind: 'chatMessage',
+        operationId: chat[0].toLowerCase(), payload: parsed.content }
+      : null;
+  }
+  const command = (kind: LegacyRampCommand['kind'], ids: readonly string[] | null) => {
+    if (!ids || !ids.slice(0, kind === 'checklistSubmit' ? 2 : kind === 'serviceTransition' ? 2 : 3).every(isUuid)) return null;
+    const stored = parseRampExecutionCommand(raw);
+    if (!stored) return null;
+    return {
+      storageKey: key, idempotencyKey: stored.idempotencyKey, kind, operationId: ids[0].toLowerCase(),
+      ...(kind === 'checklistSubmit' ? {} : { serviceId: ids[1].toLowerCase() }), payload: stored.payload,
+    } satisfies LegacyRampCommand;
+  };
+  if (key.startsWith(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX))
+    return command('serviceTransition', parts(RAMP_SERVICE_TRANSITION_COMMAND_PREFIX, 3));
+  if (key.startsWith(RAMP_SERVICE_CHARGE_COMMAND_PREFIX))
+    return command('serviceCharge', parts(RAMP_SERVICE_CHARGE_COMMAND_PREFIX, 4));
+  if (key.startsWith(RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX))
+    return command('checklistSubmit', parts(RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX, 2));
+  return null;
+}
+
+const LEGACY_COMMAND_PREFIXES = [RAMP_START_COMMAND_PREFIX, RAMP_SERVICE_TRANSITION_COMMAND_PREFIX,
+  RAMP_SERVICE_CHARGE_COMMAND_PREFIX, RAMP_CHECKLIST_SUBMIT_COMMAND_PREFIX, OPERATION_CHAT_COMMAND_PREFIX];
+
+/**
+ * The start, service transitions, charges, checklist submissions and chat messages of this account that an older
+ * version reserved in their own keys (3-I moves them into the Flight Report queue once, with the same key, so the
+ * queue sends exactly what was reserved). A malformed reservation is left where it is.
+ */
+export async function readLegacyRampCommandsIfCurrent(
+  sessionId: string,
+  accountId: string,
+): Promise<CurrentLegacyRampCommands> {
+  assertRampExecutionIds(accountId);
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return { kind: 'not-current' };
+      const account = accountId.toLowerCase();
+      const keys = (await AsyncStorage.getAllKeys()).filter(key =>
+        LEGACY_COMMAND_PREFIXES.some(prefix => key.startsWith(`${prefix}${account}:`)));
+      const commands: LegacyRampCommand[] = [];
+      for (const key of keys) {
+        const command = legacyRampCommand(account, key, await AsyncStorage.getItem(key));
+        if (command) commands.push(command);
+      }
+      return { kind: 'current', commands };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+/** Forgets a legacy reservation once the Flight Report queue holds it (3-I); only if it still has that key. */
+export async function removeLegacyRampCommandIfCurrent(
+  sessionId: string,
+  accountId: string,
+  storageKey: string,
+  idempotencyKey: string,
+): Promise<'removed' | 'changed' | 'not-current'> {
+  assertRampExecutionIds(accountId);
+  if (!isUuid(idempotencyKey)) throw new MobileSessionStorageError();
+  return withStorageLock(async () => {
+    try {
+      if (!(await currentAccountSessionUnlocked(sessionId, accountId))) return 'not-current';
+      const command = legacyRampCommand(accountId, storageKey, await AsyncStorage.getItem(storageKey));
+      if (!command || command.idempotencyKey !== idempotencyKey.toLowerCase()) return 'changed';
+      await AsyncStorage.removeItem(storageKey);
+      return 'removed';
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
+}
+
+export type PendingEvidenceCount = Readonly<{
+  /** Unsent records of the account signed in on this tablet (none without a session). */
+  current: number;
+  /** Unsent records of other accounts: kept for them, never shown, sent or discarded by this one. */
+  others: number;
+}>;
+
+/**
+ * How many records this tablet keeps that ELEVANT has not confirmed (3-N12): the Flight Report queue, the incident
+ * reports, the hand-off and correction commands, the attendance observations and the commands an older version
+ * reserved, split between the account signed in now and the others. A checklist draft is not counted: nothing was
+ * sent from it yet. It answers numbers only: nothing of another account's records leaves the storage.
+ */
+export async function countPendingEvidence(): Promise<PendingEvidenceCount> {
+  return withStorageLock(async () => {
+    try {
+      const state = await readStoredMobileSessionUnlocked();
+      const signedIn = state.kind === 'active' ? safeAccountId(state.metadata)?.toLowerCase() : undefined;
+      let current = 0;
+      let others = 0;
+      for (const key of await AsyncStorage.getAllKeys()) {
+        const owner = evidenceOwner(key);
+        if (!owner) continue;
+        const records = evidenceRecords(key, await AsyncStorage.getItem(key));
+        if (owner === signedIn) current += records;
+        else others += records;
+      }
+      return { current, others };
+    } catch (error) {
+      if (error instanceof MobileSessionStorageError) throw error;
+      throw new MobileSessionStorageError();
+    }
+  });
 }
 
 export async function clearStoredMobileSession() {

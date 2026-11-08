@@ -357,6 +357,28 @@ a 60 minutos y usa 15 por defecto.
   dispositivo repite el mismo rechazo y lo que ya está en curso termina con
   normalidad. Cuando un contrato se suspende, termina o vence, OCC recibe
   `contract_not_in_force` por cada operación que aún no inició.
+- Horas de la evidencia de la tablet (fase 3, bloque C; regla única en
+  `RampEvidenceTimePolicy`). `POST .../start` acepta un cuerpo opcional
+  `{ "startedAt" }` (sin cuerpo sigue siendo válido, como lo envía la APK
+  desplegada) y `POST .../services/{serviceId}/transition` un `occurredAt`
+  opcional: se guarda la hora del toque recortada al reloj del servidor, y el
+  recibo conserva la hora de llegada. El inicio no puede ser anterior a la
+  asignación ni de hace más de 24 h; una transición nunca es anterior a la
+  última del servicio (`service_time_out_of_order`). Hitos, daños e
+  incidencias caen entre el inicio o la llegada registrada, lo que ocurrió
+  primero, y el cierre (ahora; la entrega mientras OCC revisa; la primera
+  entrega en una ronda de corrección), con 2 minutos de tolerancia
+  (`time_outside_operation_window`), y el bloqueo nunca es posterior al
+  push-back (`milestone_out_of_order`). Sin esas horas el hash del recibo es el
+  de la versión anterior. Mientras OCC revisa se aceptan los hitos, daños y
+  datos del vuelo capturados antes de la entrega: se recalculan los recargos
+  automáticos y la evidencia congelada, y cambia el `ETag` de la revisión. El
+  reenvío de una corrección mide el tiempo en tierra hasta la primera entrega y
+  retira los recargos automáticos que ya no se detectan, nunca los de OCC.
+  Los `400`, `404` y `409` del inicio, los servicios, los hitos y datos del
+  vuelo, los documentos y las incidencias llevan `code` (`invalid_ramp_command`,
+  `not_found`, `ramp_operation_state_conflict`, `idempotency_conflict` o el de
+  la regla) y el recibo del dispositivo repite el mismo código.
 - `GET /api/v1/airline/portal/bootstrap` obtiene la aerolínea de la única
   membresía `AIRLINE_CLIENT` vigente del actor autenticado y proyecta solo
   estaciones cubiertas por una versión aprobada de contrato activo en la

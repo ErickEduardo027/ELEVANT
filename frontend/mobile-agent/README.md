@@ -17,8 +17,10 @@ La primera lectura canónica de Mobile Agent ya consume `Elevant.Api` mediante
   idempotente y conciliación contra la lectura canónica de la API.
 
 La entrega final a OCC y el chat por operación ya usan contratos canónicos e
-idempotencia. Las evidencias binarias y una outbox general permanecen
-deshabilitadas; la aplicación no convierte datos del prototipo en contratos.
+idempotencia. Desde el hueco 3-I el inicio, los servicios, los cargos, el
+checklist y el chat viajan por la misma cola del dispositivo que el Reporte de
+Vuelo (ver «Escrituras idempotentes y cola sin conexión»); la aplicación no
+convierte datos del prototipo en contratos.
 
 En esta rama de integración, la app reconcilia `GET /api/v1/changes` mientras
 está en primer plano: al volver de segundo plano y cada 25 segundos. El cursor
@@ -43,8 +45,11 @@ Un envío de respuesta incierta conserva en AsyncStorage el cuerpo y UUID
 originales bajo la sesión, cuenta, operación y asignación actuales; no lo
 reenvía automáticamente al reconectar. Una revisión `409` conserva el intento
 y muestra la versión canónica para que el agente decida entre descartarlo o
-usar la revisión actual antes de guardar otra vez. Al cerrar o revocar la sesión
-se eliminan esos comandos. Ni la nota ni el bearer se registran en logs.
+usar la revisión actual antes de guardar otra vez. Desde el hueco 3-N12 cerrar,
+vencer o revocar la sesión no elimina ese comando: queda ligado a la cuenta y,
+cuando la misma cuenta vuelve a entrar, pasa a la sesión nueva con su clave y su
+cuerpo para un reintento deliberado. Otra cuenta no lo ve. Ni la nota ni el
+bearer se registran en logs.
 
 El workflow activo `Mobile Agent CI` valida cada cambio del cliente o del paquete
 OpenAPI compartido con instalación bloqueada, lint, tipos y dos empaquetados
@@ -120,8 +125,16 @@ inconsistente se rechaza en cerrado. AsyncStorage conserva actor/expiración no
 secretos, la caché versionada por `accountId`, borradores del checklist y
 comandos pendientes namespaced por cuenta y operación. Nunca conserva el bearer
 token. Una sesión vencida se elimina en cerrado. Logout, `401` y `403` eliminan
-token, metadata, cachés, borradores, comandos pendientes y todo estado sensible
-heredado del prototipo.
+token, metadata, cachés (operaciones asignadas, cargos y checklist) y todo
+estado sensible heredado del prototipo. Desde el hueco 3-N12 no eliminan lo que
+el agente registró y ELEVANT aún no confirmó: la cola del Reporte de Vuelo y sus
+fotos, las incidencias, los comandos reservados, la entrega y la corrección, los
+borradores del checklist y las observaciones de asistencia quedan en la tablet
+ligados a su cuenta, y solo esa cuenta los lee y envía al volver a entrar. El
+acceso avisa cuántos registros guarda la tablet, el perfil avisa antes de cerrar
+sesión que se conservan y «Sincronización» indica los de otra cuenta, que no se
+pueden ver ni descartar. Nada se borra solo: el agente descarta únicamente sus
+propios registros rechazados.
 
 La caché se usa como fallback únicamente cuando `fetch` no alcanza la red y su
 antigüedad no supera 15 minutos. Un `401`, `403`, otro fallo HTTP, cancelación,
@@ -131,41 +144,66 @@ evitar que la interfaz quede bloqueada cuando una ruta privada deja de responder
 
 Las evidencias reales están deshabilitadas hasta definir almacenamiento S3-compatible, tamaño/tipos, retención y autorización. SQL Server no almacenará binarios; una futura tabla conservará solo metadatos y object keys.
 
-## Escrituras idempotentes y próxima sincronización offline
+## Escrituras idempotentes y cola sin conexión
 
-El inicio de operación, el envío del checklist, cada transición de servicio y
-la entrega final a OCC
-reservan el payload y la clave de idempotencia antes de tocar la red. Ante
-timeout, desconexión, `429` o `5xx`, la interfaz bloquea la edición incompatible
-y el siguiente intento reutiliza exactamente el mismo comando. Un rechazo
-determinístico descarta la reserva y obliga a consultar nuevamente el estado
-canónico. El error conserva el código de Problem Details: si el contrato de la
-aerolínea ya no está vigente (`409 contract_not_in_force`), el inicio lo
-explica en español y pide avisar a OCC; una versión anterior de la app muestra
-el conflicto genérico.
+Desde el hueco 3-I la tablet tiene una sola cola persistente por cuenta
+(`src/synchronization/flight-report-outbox.ts`). Cada toque se guarda primero
+en el dispositivo, con su clave de idempotencia estable, y sale después en
+orden FIFO por operación: inicio, transiciones de servicio, cargos, envío del
+checklist, chat, hitos, datos del vuelo, firmas, walk-around y charter. El
+inicio y los servicios llevan la hora del toque, corregida con el reloj de
+ELEVANT: el servidor la conserva aunque el comando llegue minutos u horas
+después, dentro de la ventana de la operación. La misma clave con el mismo
+cuerpo repite el mismo resultado; un comando que reservó una versión anterior
+se importa una vez con su clave y sin hora, para que su recibo coincida.
 
-La entrega a OCC requiere conexión, checklist enviado, servicios terminados y
-cola de incidencias sincronizada. El agente confirma explícitamente el cierre
-y puede agregar una nota opcional. Si se pierde la respuesta, la app congela la
-nota y reintenta el mismo comando; nunca genera una segunda entrega por
-incertidumbre. El estado confirmado pasa a `PendingReview`, donde la ejecución
-queda cerrada a nuevas escrituras del agente.
+Desde el hueco 3-N18 la tablet corrige su reloj con el de ELEVANT
+(`src/synchronization/server-clock.ts`). Cada respuesta trae la cabecera
+`Date`; si la ida y vuelta tardó menos de 5 segundos, la tablet calcula su
+desfase y lo guarda en el dispositivo, fuera de la sesión, para que «AHORA»
+siga corregido sin señal. Toda hora que captura la tablet sale de ese reloj:
+hitos y su ajuste, inicio, servicios, daños del walk-around, incidencias,
+desviaciones y observaciones de asistencia. Las pantallas siguen mostrándolas
+en la hora local de la estación. Si el desfase supera los 2 minutos que tolera
+ELEVANT, la insignia de conexión avisa que los registros se corrigen solos y
+pide revisar la hora del equipo.
+
+Las horas de los hitos se ajustan dentro de la ventana de la operación que mide
+ELEVANT: desde el inicio o la llegada registrada, lo que ocurrió primero, hasta
+ahora (huecos 3-N25 y 3-N09). En una ronda de corrección, cuando OCC devolvió la
+operación, un hito vacío no se graba con «AHORA»: abre el ajuste en la última
+hora registrada, con pasos de hasta una hora, porque los hechos del vuelo
+ocurrieron antes de la primera entrega. El reenvío mide el tiempo en tierra
+hasta esa primera entrega.
+
+La cola se vacía al abrir la app, al recuperar señal, al volver a primer plano
+y cada minuto mientras quede algo pendiente; después salen las incidencias
+guardadas. Sin señal o con la sesión revocada se detiene; una foto que ELEVANT
+no puede guardar ahora no detiene nada; cualquier otro fallo temporal retiene
+solo el resto de su operación. Un rechazo conserva su código de Problem
+Details, se explica en español y espera en «Sincronización» a que el agente lo
+revise. La pantalla de la operación muestra lo que espera en la cola aplicado
+sobre la vista de ELEVANT o su copia guardada, marcado «En el dispositivo».
+
+La entrega final a OCC sigue reservando su payload y su clave antes de tocar la
+red y requiere conexión, checklist enviado, servicios terminados y cola de
+incidencias sincronizada. Desde el hueco 3-N06 la tablet vacía antes su cola y
+no entrega mientras quede un registro pendiente o rechazado de la operación, ni
+mientras la Orden de Servicio no tenga las firmas de la aerolínea y de AVIAM
+sobre su contenido actual; la tarjeta de entrega dice qué falta. El servidor no
+rechaza esa entrega (la APK anterior sigue funcionando): mientras OCC revisa,
+acepta los hitos y daños capturados antes de la entrega, recalcula los recargos
+y la evidencia y OCC debe releer. El agente confirma explícitamente el cierre y
+puede agregar una nota opcional. Si se pierde la respuesta, la app congela la nota y
+reintenta el mismo comando; nunca genera una segunda entrega por
+incertidumbre. El estado confirmado pasa a `PendingReview`.
 
 Cada incidencia se guarda primero en una cola local acotada de 25 reportes por
 operación. Incluye tipo, impacto, descripción, hora UTC de ocurrencia y una
 clave estable. Se envía en orden y se conserva si falla la red, hay timeout o
 una respuesta incierta; la lectura canónica puede confirmar un envío cuya
 respuesta se perdió. Un rechazo determinístico queda visible como bloqueado,
-sin descartar un posible evento de seguridad. La cola se borra al cerrar o
-revocar la sesión; no incluye fotos ni otras evidencias binarias.
-
-Una futura outbox general para nuevas escrituras offline deberá conservar:
-
-- un identificador estable del dispositivo registrado;
-- una clave de idempotencia estable por comando;
-- tipo, payload/versionado y momento local;
-- estado pendiente/sincronizando/confirmado/requiere intervención;
-- intentos y último error sanitizado.
+sin descartar un posible evento de seguridad.
 
 El servidor registra la combinación dispositivo + clave y devuelve el mismo resultado ante reintentos. REST recupera el estado canónico después de reconectar; SignalR solo acelera avisos y puede llegar duplicado o fuera de orden.
 

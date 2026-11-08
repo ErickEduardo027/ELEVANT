@@ -246,7 +246,8 @@ public sealed class OccTurnaroundsEndpointsTests(ElevantApiFactory factory) : IC
                  {
                      ("aircraft_type_unavailable", "aircraft_type_unavailable"),
                      ("aircraft_type_locked", "aircraft_type_locked"),
-                     ("conflict", null),
+                     // Phase 3, block C: every ramp 409 carries a code; a generic refusal names the state conflict.
+                     ("conflict", "ramp_operation_state_conflict"),
                  })
         {
             commands.Code = code;

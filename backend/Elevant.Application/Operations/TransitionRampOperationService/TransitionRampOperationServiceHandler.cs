@@ -69,7 +69,8 @@ public sealed class TransitionRampOperationServiceHandler(
                 command.InstallationId,
                 command.IdempotencyKey,
                 command.CorrelationId,
-                command.RequestId),
+                command.RequestId,
+                command.OccurredAt?.ToUniversalTime()),
             cancellationToken);
 
         return result.IsSuccess
@@ -85,7 +86,9 @@ public sealed class TransitionRampOperationServiceHandler(
                     RampOperationsFailure.Conflict,
                 _ => throw new InvalidOperationException(
                     "Unsupported ramp operation service transition failure."),
-            });
+            }, result.Failure == RampOperationServiceTransitionWriteFailure.IdempotencyKeyConflict
+                ? RampProblemCodes.IdempotencyConflict
+                : result.Code);
     }
 
     private static Guid[] DistinctStationIds(ActorContext actor) =>

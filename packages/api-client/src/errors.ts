@@ -140,18 +140,27 @@ const ACCESS_CODES = ["device_revoked", "device_in_use_by_active_agent", "device
   "last_representative", "invalid_portal_user", "employee_transferred", "requester_no_longer_administrator",
   "legacy_governance_retired", "access_request_closed", "invalid_governance_data", "governance_conflict",
   "protected_user"] as const;
+/**
+ * Tablet evidence (phase 3, block C): every ramp command answers a code. A tablet time outside the operation's window
+ * (from its start, or the recorded arrival, to its close: now, the hand-off under review or the first hand-off of a
+ * correction round) or before the service's last transition (3-I, 3-N25, 3-N09), block-on after push-back (3-N25), a
+ * command the operation's state does not take and a malformed request. A reused key keeps the common
+ * `idempotency_conflict` and a missing operation `not_found`.
+ */
+const RAMP_EVIDENCE_CODES = ["time_outside_operation_window", "milestone_out_of_order", "service_time_out_of_order",
+  "ramp_operation_state_conflict", "invalid_ramp_command"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
   (typeof GOVERNANCE_ACCOUNT_CODES)[number] | (typeof CONTRACT_LIFECYCLE_CODES)[number] |
   (typeof AIRLINE_PERMIT_CODES)[number] | (typeof STATION_CODES)[number] | (typeof MASTER_DATA_CODES)[number] |
   (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
-  (typeof ACCESS_CODES)[number];
+  (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
-  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES];
+  ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

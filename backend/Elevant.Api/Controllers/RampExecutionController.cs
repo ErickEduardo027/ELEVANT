@@ -19,12 +19,17 @@ namespace Elevant.Api.Controllers;
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[RampProblemDetails]
 [Route("api/v{version:apiVersion}/ramp/operations")]
 public sealed class RampExecutionController(RampExecutionHandler handler) : ControllerBase
 {
     private const long BodyLimitBytes = 2 * 1024;
 
-    /// <summary>Records (or corrects) the time of one Flight Report milestone.</summary>
+    /// <summary>
+    /// Records (or corrects) the time of one Flight Report milestone. The time must fit the operation's window (from
+    /// its start or recorded arrival to its close, 409 <c>time_outside_operation_window</c>) and block-on never comes
+    /// after push-back (409 <c>milestone_out_of_order</c>, 3-N25).
+    /// </summary>
     [RequestSizeLimit(BodyLimitBytes)]
     [HttpPut("{operationId:guid}/milestones/{code}", Name = "RecordRampMilestone")]
     [Consumes("application/json")]
@@ -42,10 +47,10 @@ public sealed class RampExecutionController(RampExecutionHandler handler) : Cont
         [FromBody, BindRequired] RecordRampMilestoneRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryGetAccountId(out var accountId)) return Failure(RampOperationsFailure.Unauthorized);
-        var (data, failure, _) = await handler.RecordMilestoneAsync(accountId, operationId, code, request.OccurredAt,
+        if (!TryGetAccountId(out var accountId)) return RampProblems.Failure(this, RampOperationsFailure.Unauthorized);
+        var (data, failure, rule) = await handler.RecordMilestoneAsync(accountId, operationId, code, request.OccurredAt,
             installationId, idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
-        return failure is { } error ? Failure(error) : Ok(Map(data!));
+        return failure is { } error ? RampProblems.Failure(this, error, rule) : Ok(Map(data!));
     }
 
     /// <summary>
@@ -69,18 +74,11 @@ public sealed class RampExecutionController(RampExecutionHandler handler) : Cont
         [FromBody, BindRequired] UpdateRampFlightDataRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryGetAccountId(out var accountId)) return Failure(RampOperationsFailure.Unauthorized);
+        if (!TryGetAccountId(out var accountId)) return RampProblems.Failure(this, RampOperationsFailure.Unauthorized);
         var (data, failure, code) = await handler.UpdateFlightDataAsync(accountId, operationId, request.PassengersIn,
             request.PassengersOut, request.MtowKg, request.AircraftRegistration, request.AircraftTypeId, installationId,
             idempotencyKey, HttpContext.TraceIdentifier, cancellationToken);
-        return code switch
-        {
-            RampExecutionCodes.AircraftTypeUnavailable => RampProblems.Coded(this, StatusCodes.Status409Conflict,
-                "El tipo de avión ya no está disponible.", code),
-            RampExecutionCodes.AircraftTypeLocked => RampProblems.Coded(this, StatusCodes.Status409Conflict,
-                "El tipo de avión ya no se puede cambiar: la operación ya se entregó.", code),
-            _ => failure is { } error ? Failure(error) : Ok(Map(data!)),
-        };
+        return failure is { } error ? RampProblems.Failure(this, error, code) : Ok(Map(data!));
     }
 
     private static RampExecutionResponse Map(RampExecutionData data) => new(data.ReceiptId, data.OperationId,
@@ -89,19 +87,4 @@ public sealed class RampExecutionController(RampExecutionHandler handler) : Cont
 
     private bool TryGetAccountId(out Guid accountId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) && accountId != Guid.Empty;
-
-    private ActionResult<RampExecutionResponse> Failure(RampOperationsFailure failure)
-    {
-        if (failure == RampOperationsFailure.Unauthorized) Response.Headers.WWWAuthenticate = "Bearer";
-        var (status, title) = failure switch
-        {
-            RampOperationsFailure.Unauthorized => (StatusCodes.Status401Unauthorized, "Authentication failed."),
-            RampOperationsFailure.Forbidden => (StatusCodes.Status403Forbidden, "Access to the ramp operation is forbidden."),
-            RampOperationsFailure.InvalidRequest => (StatusCodes.Status400BadRequest, "The Flight Report entry is invalid."),
-            RampOperationsFailure.NotFound => (StatusCodes.Status404NotFound, "The ramp operation was not found."),
-            _ => (StatusCodes.Status409Conflict, "The Flight Report entry conflicts with the operation's current state."),
-        };
-        return new ObjectResult(new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path })
-            { StatusCode = status };
-    }
 }

@@ -2,7 +2,8 @@ namespace Elevant.Application.Operations.StartRampOperation;
 
 /// <summary>
 /// Outcome of «Iniciar»; <paramref name="Code"/> is the Problem Details code of a refusal the tablet explains
-/// (<c>contract_not_in_force</c>, 3-N04). The status stays the one the deployed APK knows.
+/// (<c>contract_not_in_force</c>, 3-N04; <c>time_outside_operation_window</c> and <c>idempotency_conflict</c>, 3-I).
+/// The status stays the one the deployed APK knows.
 /// </summary>
 public sealed record StartRampOperationResult(
     RampOperationStartData? Start,

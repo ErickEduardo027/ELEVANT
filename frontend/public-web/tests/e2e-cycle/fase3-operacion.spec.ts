@@ -9,7 +9,9 @@ import { API, loadRun, saveRun } from "./support/env";
 // operation and its Service Order in the portal. The gap steps (huecos 3-A, 3-B, 3-C) then reschedule,
 // cancel and divert flights, read the aircraft type the tablet typed and assign an agent after the arrival; then
 // (huecos 3-D, 3-E, 3-F, 3-J) the approval frees the agent and the stand, the agent carries up to three flights at once,
-// OCC adjusts the agent's shift of the day, hands a started operation over and repeats its coverage commands safely.
+// OCC adjusts the agent's shift of the day, hands a started operation over and repeats its coverage commands safely;
+// (huecos 3-I, 3-K) the tablet's queue sends the start and the services with the time they were tapped, and OCC opens
+// the photo of a walk-around damage in the review.
 
 type RunContract = { airline: string; approvedVersions: Array<{ stations: Array<{ id: string; code: string }> }> };
 type Leg = { flightNumber: string; scheduledAt: string };
@@ -56,6 +58,9 @@ const isOpen = (status: string) => !["Cancelled", "Diverted", "Completed"].inclu
 /** The run's flight numbers: the run's own flight takes these digits (and the next), each gap flight an offset. */
 const runDigits = (runId: string) => parseInt(runId.slice(-5), 36) % 9000 + 1000;
 const strokes = [[0.05, 0.6, 0.2, 0.2, 0.35, 0.75, 0.5, 0.3]];
+/** A 1×1 PNG: the walk-around photo the tablet uploads in the gap steps (hueco 3-K). */
+const PNG_PIXEL = Uint8Array.from(Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64"));
 
 /**
  * A 90-minute turnaround inside the agent's shift that ends as close to now as possible (the tablet
@@ -866,7 +871,104 @@ test("hueco 3-F · OCC pasa una operación iniciada a otro agente (relevo)", asy
 });
 test.fixme("hueco 3-G · OCC gestiona las incidencias de la operación", async () => {});
 test.fixme("hueco 3-H · OCC reabre una operación aprobada que aún no se facturó", async () => {});
-test.fixme("hueco 3-I · la tablet sin conexión encola inicio, servicios, cargos, checklist y chat con su hora", async () => {});
+test("hueco 3-I · la tablet sin conexión encola inicio, servicios, cargos, checklist y chat con su hora", async () => {
+  const { run, station } = runState();
+  const occ = await login("occ");
+  const offset = await freeOffset(station, [27, 29, 31]);
+  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 30);
+  if (offset === null || !window) {
+    test.skip(true, "No queda un número de vuelo libre o una ventana de 30 minutos en el turno del agente hoy.");
+    return;
+  }
+  const flight = await planFlight(occ, station, offset, window, { terminals: ["A"] });
+  expect((await assignAgent(occ, flight.turnaroundId)).status).toBe(200);
+  const device = await tablet();
+  const { operation, services } = await tabletOperation(device, flight.turnaroundId);
+  const mine = await device.get<{ operations: Array<{ operation: { id: string }; assignment: { assignedAt: string } }> }>(
+    "/ramp/operations");
+  const assignedAt = Date.parse(mine.data.operations.find(item => item.operation.id === operation.id)!.assignment.assignedAt);
+  // The tablet's queue sends each command later with the key it saved: the same key and body always replay.
+  const queued = <T>(key: string, method: string, route: string, body?: unknown) =>
+    call<T & Problem>(device.token, method, route, body, { ...device.device, "idempotency-key": key });
+  const startRoute = `/ramp/operations/${operation.id}/start`;
+
+  // A start tapped before the assignment it starts does not fit the operation: refused with its code, and the
+  // receipt repeats that refusal for the same key and body.
+  const early = crypto.randomUUID();
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const refused = await queued(early, "POST", startRoute, { startedAt: at(-30) });
+    expect([refused.status, refused.data.code]).toEqual([409, "time_outside_operation_window"]);
+  }
+  // «Iniciar» tapped right after the assignment reached the tablet, without signal, and sent seconds later from the
+  // queue: ELEVANT keeps the tapped time, not the moment it arrives.
+  const tapped = new Date(Math.ceil(assignedAt / 1000) * 1000 + 1000).toISOString();
+  while (Date.now() < Date.parse(tapped) + 3000) await new Promise(resolve => setTimeout(resolve, 250));
+  const startKey = crypto.randomUUID();
+  const started = await queued<{ receiptId: string; operation: { actualStartAt: string } }>(startKey, "POST", startRoute,
+    { startedAt: tapped });
+  expect(started.status).toBe(200);
+  expect(Date.parse(started.data.operation.actualStartAt)).toBe(Date.parse(tapped));
+  const replayed = await queued<{ receiptId: string }>(startKey, "POST", startRoute, { startedAt: tapped });
+  expect([replayed.status, replayed.data.receiptId]).toEqual([200, started.data.receiptId]);
+  const reused = await queued(startKey, "POST", startRoute, { startedAt: at(0) });
+  expect([reused.status, reused.data.code]).toEqual([409, "idempotency_conflict"]);
+
+  // The first service keeps its tapped times, in order; the others were not performed.
+  expect(services.length, "the contracted services reach the tablet").toBeGreaterThan(0);
+  const [first, ...others] = services;
+  const transition = `/ramp/operations/${operation.id}/services/${first.id}/transition`;
+  const begun = new Date(Date.parse(tapped) + 1000).toISOString();
+  expect((await queued(crypto.randomUUID(), "POST", transition,
+    { targetStatus: "InProgress", executedQuantity: null, note: null, occurredAt: begun })).status).toBe(200);
+  const backwards = await queued(crypto.randomUUID(), "POST", transition,
+    { targetStatus: "Completed", executedQuantity: 1, note: "Servicio completado", occurredAt: tapped });
+  expect([backwards.status, backwards.data.code]).toEqual([409, "service_time_out_of_order"]);
+  expect((await queued(crypto.randomUUID(), "POST", transition,
+    { targetStatus: "Completed", executedQuantity: 1, note: "Servicio completado", occurredAt: at(0) })).status).toBe(200);
+  for (const service of others)
+    await device.send(200, "POST", `/ramp/operations/${operation.id}/services/${service.id}/transition`,
+      { targetStatus: "NotPerformed", executedQuantity: 0, note: "No se prestó: vuelo de prueba del ciclo E2E." });
+
+  // A charge, the chat and the checklist go out from the queue too: sent twice with their key, they count once.
+  type Charges = { services: Array<{ serviceId: string; canEdit: boolean;
+    available: Array<{ id: string; allowMultiple: boolean }>; applied: Array<{ chargeId: string; source?: string }> }> };
+  const charges = await device.get<Charges>(`/ramp/operations/${operation.id}/charges`);
+  const editable = charges.data.services.find(item => item.canEdit && item.available.some(option => !option.allowMultiple) &&
+    item.applied.length === 0);
+  if (editable) {
+    const option = editable.available.find(item => !item.allowMultiple)!;
+    const chargeKey = crypto.randomUUID();
+    for (let attempt = 0; attempt < 2; attempt += 1)
+      expect((await queued(chargeKey, "POST", `/ramp/operations/${operation.id}/services/${editable.serviceId}/charges`,
+        { chargeId: option.id, action: "Apply" })).status).toBe(200);
+    const marked = await device.get<Charges>(`/ramp/operations/${operation.id}/charges`);
+    expect(marked.data.services.find(item => item.serviceId === editable.serviceId)!.applied
+      .filter(mark => mark.chargeId === option.id)).toHaveLength(1);
+  }
+  const content = `Sin señal en la posición (ciclo E2E, hueco 3-I, ${run.runId})`;
+  const messageKey = crypto.randomUUID();
+  for (let attempt = 0; attempt < 2; attempt += 1)
+    expect([200, 201]).toContain((await queued(messageKey, "POST", `/chat/conversations/${operation.id}/messages`,
+      { content })).status);
+  const thread = await device.get<{ messages: Array<{ content: string }> }>(`/chat/conversations/${operation.id}/messages`);
+  expect(thread.data.messages.filter(item => item.content === content)).toHaveLength(1);
+  const checklist = await device.get<{ checklist: { id: string; sections: Array<{ items: Array<{ id: string }> }> } }>(
+    `/ramp/operations/${operation.id}/checklist`);
+  const answers = { checklistId: checklist.data.checklist.id,
+    answers: checklist.data.checklist.sections.flatMap(section => section.items).map(item => ({ itemId: item.id, value: "Ok" })) };
+  const checklistKey = crypto.randomUUID();
+  for (let attempt = 0; attempt < 2; attempt += 1)
+    expect((await queued(checklistKey, "POST", `/ramp/operations/${operation.id}/checklist/submit`, answers)).status).toBe(200);
+
+  // The tablet reads the operation as ELEVANT keeps it and hands it to OCC, so it no longer holds the agent.
+  const after = await device.get<{ operations: Array<{ operation: { id: string; status: string; actualStartAt: string | null } }> }>(
+    "/ramp/operations");
+  const current = after.data.operations.find(item => item.operation.id === operation.id)!.operation;
+  expect([current.status, Date.parse(current.actualStartAt ?? "")]).toEqual(["InProgress", Date.parse(tapped)]);
+  await device.send([200, 201], "POST", `/ramp/operations/${operation.id}/submit`,
+    { agentNote: "Vuelo de prueba del ciclo E2E (hueco 3-I): registros enviados desde la cola del dispositivo." });
+});
+
 test("hueco 3-J · crear y liberar cobertura y liberar un agente son idempotentes", async ({ page }) => {
   const { run, station } = runState();
   const occ = await login("occ");
@@ -945,4 +1047,48 @@ test("hueco 3-J · crear y liberar cobertura y liberar un agente son idempotente
   expect([freed.data.turnaround.operation?.status, freed.data.turnaround.agents]).toEqual(["Planned", []]);
   await changeStatus(occ, flight.turnaroundId, "Cancelled", "Vuelo de prueba del ciclo E2E (hueco 3-J): se cancela al terminar.");
 });
-test.fixme("hueco 3-K · sin código muerto en la tablet ni en el cliente", async () => {});
+test("hueco 3-K · OCC ve la foto de un daño del walk-around en la revisión", async ({ page }) => {
+  const { run, station } = runState();
+  const occ = await login("occ");
+  const offset = await freeOffset(station, [21, 23, 25]);
+  const window = agentWindow(run.shift as Shift, await holdingWindows(station), 30);
+  if (offset === null || !window) {
+    test.skip(true, "No queda un número de vuelo libre o una ventana de 30 minutos en el turno del agente hoy.");
+    return;
+  }
+  const flight = await planFlight(occ, station, offset, window, { terminals: ["A"] });
+  expect((await assignAgent(occ, flight.turnaroundId)).status).toBe(200);
+  const device = await tablet();
+  const { operation } = await tabletOperation(device, flight.turnaroundId);
+  await device.send(200, "POST", `/ramp/operations/${operation.id}/start`);
+  // The walk-around: a damage on the silhouette and its photo, as the tablet's queue sends them.
+  const markId = crypto.randomUUID();
+  const note = "Abolladura en la puerta 2L (ciclo E2E, hueco 3-K)";
+  await device.send(200, "PUT", `/ramp/operations/${operation.id}/damage-marks/${markId}`,
+    { x: 0.42, y: 0.31, note, reportedAt: at(0) });
+  const upload = await fetch(`${API}/api/v1/ramp/operations/${operation.id}/damage-marks/${markId}/photo`, {
+    method: "PUT", body: PNG_PIXEL,
+    headers: { authorization: `Bearer ${device.token}`, "content-type": "image/png", ...device.device } });
+  expect([200, 503], "the photo is stored, or this stack has no photo storage").toContain(upload.status);
+  await handOffUnperformed(device, flight.turnaroundId);
+
+  // OCC reviews the hand-off: the damage with its note and the photo, read only when OCC opens it.
+  await loginPrivate(page, "occ");
+  await goPrivate(page, "/admin-occ/review");
+  const row = page.getByRole("row").filter({ hasText: flight.operationCode });
+  await expect(row).toBeVisible();
+  await row.getByRole("button").first().click();
+  const forms = page.getByRole("region", { name: "Detalle de entrega" }).getByRole("region", { name: "Formularios AVIAM" });
+  const mark = forms.getByRole("listitem").filter({ hasText: note });
+  await expect(mark).toBeVisible();
+  if (upload.status === 200) {
+    await mark.getByRole("button", { name: "Ver foto" }).click();
+    await expect(mark.getByRole("img", { name: "Foto del daño" })).toBeVisible();
+    const photo = await fetch(`${API}/api/v1/occ/operations/${operation.id}/damage-marks/${markId}/photo`,
+      { headers: { authorization: `Bearer ${occ}` } });
+    expect([photo.status, photo.headers.get("content-type")]).toEqual([200, "image/png"]);
+  } else {
+    await expect(mark).toContainText("Sin foto");
+  }
+  await snap(page, "fase3-hueco-3k-foto-dano");
+});

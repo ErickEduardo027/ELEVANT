@@ -17,13 +17,18 @@ namespace Elevant.Api.Controllers;
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[RampProblemDetails]
 [Route("api/v{version:apiVersion}/ramp/operations")]
 public sealed class RampOperationServicesController(
     TransitionRampOperationServiceHandler handler) : ControllerBase
 {
     private const long ServiceTransitionBodyLimitBytes = 8 * 1024;
 
-    /// <summary>Applies one audited, idempotent service status transition.</summary>
+    /// <summary>
+    /// Applies one audited, idempotent service status transition. The optional <c>occurredAt</c> is the moment the
+    /// agent tapped it (3-I): it must fit the operation's window and not precede the service's last transition (409
+    /// <c>time_outside_operation_window</c>, <c>service_time_out_of_order</c>).
+    /// </summary>
     [RequestSizeLimit(ServiceTransitionBodyLimitBytes)]
     [HttpPost(
         "{operationId:guid}/services/{serviceId:guid}/transition",
@@ -49,7 +54,7 @@ public sealed class RampOperationServicesController(
     {
         if (!TryGetAccountId(out var accountId))
         {
-            return UnauthorizedResult<RampOperationServiceTransitionResponse>();
+            return RampProblems.Failure(this, RampOperationsFailure.Unauthorized);
         }
 
         if (!Enum.TryParse<ServiceExecutionStatus>(
@@ -58,9 +63,7 @@ public sealed class RampOperationServicesController(
                 out var targetStatus) ||
             !Enum.IsDefined(targetStatus))
         {
-            return ProblemResult<RampOperationServiceTransitionResponse>(
-                StatusCodes.Status400BadRequest,
-                "The ramp operation service transition is invalid.");
+            return RampProblems.InvalidCommand(this);
         }
 
         var result = await handler.HandleAsync(
@@ -74,11 +77,12 @@ public sealed class RampOperationServicesController(
                 installationId,
                 idempotencyKey,
                 idempotencyKey,
-                HttpContext.TraceIdentifier),
+                HttpContext.TraceIdentifier,
+                request.OccurredAt),
             cancellationToken);
         if (!result.IsSuccess)
         {
-            return FailureResult<RampOperationServiceTransitionResponse>(result.Failure!.Value);
+            return RampProblems.Failure(this, result.Failure!.Value, result.Code);
         }
 
         var transition = result.Transition!;
@@ -96,43 +100,4 @@ public sealed class RampOperationServicesController(
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) &&
         accountId != Guid.Empty;
 
-    private ActionResult<T> FailureResult<T>(RampOperationsFailure failure) => failure switch
-    {
-        RampOperationsFailure.Unauthorized => UnauthorizedResult<T>(),
-        RampOperationsFailure.Forbidden => ProblemResult<T>(
-            StatusCodes.Status403Forbidden,
-            "Access to the ramp operation service is forbidden."),
-        RampOperationsFailure.InvalidRequest => ProblemResult<T>(
-            StatusCodes.Status400BadRequest,
-            "The ramp operation service transition is invalid."),
-        RampOperationsFailure.NotFound => ProblemResult<T>(
-            StatusCodes.Status404NotFound,
-            "The ramp operation service was not found."),
-        RampOperationsFailure.Conflict => ProblemResult<T>(
-            StatusCodes.Status409Conflict,
-            "The ramp operation service transition conflicts with current operational data."),
-        _ => throw new ArgumentOutOfRangeException(
-            nameof(failure),
-            failure,
-            "Unsupported failure."),
-    };
-
-    private ActionResult<T> UnauthorizedResult<T>()
-    {
-        Response.Headers.WWWAuthenticate = "Bearer";
-        return ProblemResult<T>(
-            StatusCodes.Status401Unauthorized,
-            "Authentication failed.");
-    }
-
-    private ActionResult<T> ProblemResult<T>(int statusCode, string title) =>
-        new ObjectResult(new ProblemDetails
-        {
-            Status = statusCode,
-            Title = title,
-            Instance = HttpContext.Request.Path,
-        })
-        {
-            StatusCode = statusCode,
-        };
 }

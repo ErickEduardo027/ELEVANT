@@ -6,14 +6,8 @@ import type {
   OperationalNotificationResponse,
 } from '@elevant/api-client';
 import { createMobileAgentApiClient } from '../config/elevant-api';
-import {
-  clearOperationChatCommandIfCurrent,
-  readOperationChatCommandIfCurrent,
-  reserveOperationChatCommandIfCurrent,
-  type CurrentOperationChatCommand,
-} from '../storage/mobile-session';
+import { readOperationQueue, sendFlightReportCommand } from './flight-report';
 import { getMobileSessionRequestContext, rejectMobileSessionRequest } from './mobile-auth';
-import { registerCurrentMobileDevice } from './mobile-device';
 import { asMobileServiceError, MobileServiceError } from './mobile-service-error';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,43 +58,38 @@ export function setOperationalNotificationRead(
     .setOperationalNotificationRead(notificationId, read, { signal }), signal);
 }
 
-export async function readPendingOperationMessage(operationId: string): Promise<CurrentOperationChatCommand> {
+/** A message to OCC still saved on the device (3-I): it goes out in its order when there is signal. */
+export type PendingOperationMessage = Readonly<{
+  idempotencyKey: string;
+  content: string;
+  /** «blocked» when ELEVANT refused it; the agent reviews it in «Sincronización». */
+  state: 'pending' | 'blocked';
+  createdAt: string;
+  lastError?: string;
+}>;
+
+/** The messages of this operation's chat still on the device, oldest first. */
+export async function readPendingOperationMessages(operationId: string): Promise<readonly PendingOperationMessage[]> {
   if (!uuidPattern.test(operationId)) throw new MobileServiceError('request_failed');
-  const context = await getMobileSessionRequestContext();
   try {
-    return await readOperationChatCommandIfCurrent(context.sessionId,
-      context.session.actor.accountId, operationId);
+    return (await readOperationQueue(operationId)).messages.flatMap(item => item.command.kind === 'chatMessage'
+      ? [{ idempotencyKey: item.idempotencyKey, content: item.command.content, state: item.state,
+        createdAt: item.createdAt, ...(item.lastError ? { lastError: item.lastError } : {}) }]
+      : []);
   } catch (error) { throw asMobileServiceError(error); }
 }
 
+/**
+ * Sends a message to OCC through the device's queue (3-I): saved first with its stable key, so a lost answer or a
+ * missing signal never loses nor doubles it. Answers ELEVANT's copy, or null while it waits on the device. A refusal
+ * is thrown with its Problem Details code and leaves the queue.
+ */
 export async function sendOperationalMessage(
-  operationId: string, content: string, signal?: AbortSignal,
-): Promise<OperationMessageResponse> {
+  operationId: string, content: string, _signal?: AbortSignal,
+): Promise<OperationMessageResponse | null> {
   if (!uuidPattern.test(operationId) || !content.trim() || content.length > 2_000)
     throw new MobileServiceError('request_failed');
-  const context = await getMobileSessionRequestContext();
-  try {
-    const reserved = await reserveOperationChatCommandIfCurrent(context.sessionId,
-      context.session.actor.accountId, operationId, content);
-    if (reserved.kind !== 'current' || !reserved.command) throw new MobileServiceError('cancelled');
-    const device = await registerCurrentMobileDevice({ accessToken: context.accessToken }, { signal });
-    const current = await getMobileSessionRequestContext();
-    if (current.sessionId !== context.sessionId) throw new MobileServiceError('cancelled');
-    const response = await createMobileAgentApiClient({ getAccessToken: () => current.accessToken })
-      .sendOperationalMessage(operationId, { content: reserved.command.content },
-        reserved.command.idempotencyKey, device.installationId, { signal });
-    const after = await getMobileSessionRequestContext();
-    if (after.sessionId !== context.sessionId) throw new MobileServiceError('cancelled');
-    const cleared = await clearOperationChatCommandIfCurrent(context.sessionId,
-      context.session.actor.accountId, operationId, reserved.command.idempotencyKey);
-    if (cleared !== 'cleared') throw new MobileServiceError('storage_unavailable');
-    return response;
-  } catch (error) {
-    const normalized = asMobileServiceError(error);
-    if (normalized.code === 'unauthenticated' || normalized.code === 'forbidden') {
-      const cleared = await rejectMobileSessionRequest(context.sessionId);
-      if (!cleared) throw new MobileServiceError('cancelled');
-    }
-    throw normalized;
-  }
+  const sent = await sendFlightReportCommand({ kind: 'chatMessage', operationId: operationId.toLowerCase(),
+    content: content.trim() }, { discardRefused: true });
+  return sent.state === 'sent' ? sent.result as OperationMessageResponse : null;
 }

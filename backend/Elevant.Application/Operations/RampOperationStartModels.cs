@@ -1,5 +1,9 @@
 namespace Elevant.Application.Operations;
 
+/// <summary>
+/// «Iniciar» as the store runs it. <c>StartedAt</c> is the tapped start (3-I), validated against the assignment and
+/// clamped to the server's clock; null records the server's time and keeps the receipt hash of the first version.
+/// </summary>
 public sealed record RampOperationStartWriteRequest(
     Guid ActorAccountId,
     IReadOnlyCollection<Guid> AllowedStationIds,
@@ -7,7 +11,8 @@ public sealed record RampOperationStartWriteRequest(
     Guid InstallationId,
     Guid IdempotencyKey,
     Guid CorrelationId,
-    string? RequestId);
+    string? RequestId,
+    DateTimeOffset? StartedAt = null);
 
 public sealed record RampOperationStartData(
     Guid ReceiptId,

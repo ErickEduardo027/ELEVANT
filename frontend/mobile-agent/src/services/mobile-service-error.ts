@@ -47,7 +47,25 @@ const problemMessages: ReadonlyMap<string, string> = new Map([
   // 3-N04: the airline's contract stopped being in force before the operation started.
   ['contract_not_in_force',
     'El contrato de la aerolínea no está vigente. No inicies la operación y avisa a OCC.'],
+  // Phase 3 block C: the tablet's evidence and its times (3-I, 3-N25, 3-N09).
+  ['time_outside_operation_window',
+    'La hora queda fuera de la ventana de la operación. Revísala y corrígela.'],
+  ['milestone_out_of_order', 'Bloqueo debe ser anterior al Push-back.'],
+  ['service_time_out_of_order',
+    'La hora del servicio es anterior a su último cambio registrado. Revisa la hora y vuelve a registrarlo.'],
+  ['ramp_operation_state_conflict',
+    'La operación ya no admite este registro: está entregada, aprobada o en otro estado.'],
+  ['invalid_ramp_command', 'ELEVANT no aceptó el registro. Revisa los datos e inténtalo de nuevo.'],
+  ['idempotency_conflict', 'Este registro ya se envió con otros datos. Revísalo en Sincronización.'],
+  // 3-N06: the tablet's own reasons not to hand the operation off to OCC yet.
+  ['pending_queue', 'Faltan registros por enviar a ELEVANT. Abre Sincronización y espera a que se envíen.'],
+  ['service_order_unsigned', 'Falta firmar la Orden de Servicio (aerolínea y AVIAM) sobre su contenido actual.'],
 ]);
+
+/** Whether the message of this failure names its cause from a Problem Details code (not only its status). */
+export function explainsProblem(error: MobileServiceError) {
+  return error.problemCode !== undefined && problemMessages.has(error.problemCode);
+}
 
 type MobileServiceErrorOptions = Readonly<{
   status?: number;

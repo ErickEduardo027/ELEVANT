@@ -8,6 +8,9 @@ const mockIncidents = jest.fn();
 const mockReadCommand = jest.fn();
 const mockGetCommand = jest.fn();
 const mockRemoveCommand = jest.fn();
+const mockFlush = jest.fn();
+const mockQueue = jest.fn();
+const mockDocuments = jest.fn();
 
 jest.mock('@elevant/api-client', () => ({
   ElevantApiError: class ElevantApiError extends Error {
@@ -48,6 +51,12 @@ jest.mock('../src/services/ramp-operation-checklist', () => ({
 jest.mock('../src/services/ramp-incidents', () => ({
   loadRampIncidentCenter: (...args) => mockIncidents(...args),
 }));
+// 3-N06: the hand-off waits for the device's queue and the signed Service Order.
+jest.mock('../src/services/flight-report', () => ({
+  flushFlightReport: (...args) => mockFlush(...args),
+  readOperationQueue: (...args) => mockQueue(...args),
+  loadOperationDocuments: (...args) => mockDocuments(...args),
+}));
 
 const { ElevantApiError } = require('@elevant/api-client');
 const {
@@ -75,6 +84,13 @@ function context(sessionId = SESSION_ID) {
   };
 }
 
+function serviceOrder(overrides = {}) {
+  return { operationId: OPERATION_ID, damageMarks: [], documents: [
+    { kind: 'FlightReport', isFullySigned: false, staleRoles: [] },
+    { kind: 'ServiceOrder', isFullySigned: true, staleRoles: [], ...overrides },
+  ] };
+}
+
 function assigned(status = 'InProgress', services = [{ status: 'Completed' }]) {
   return {
     source: 'network',
@@ -93,6 +109,9 @@ beforeEach(() => {
   mockAssigned.mockResolvedValue(assigned());
   mockChecklist.mockResolvedValue({ checklist: { status: 'Submitted' } });
   mockIncidents.mockResolvedValue({ online: true, outbox: [] });
+  mockFlush.mockResolvedValue(undefined);
+  mockQueue.mockResolvedValue({ pending: 0, blocked: 0 });
+  mockDocuments.mockResolvedValue(serviceOrder());
   mockApi.submitRampOperation.mockResolvedValue({
     operationId: OPERATION_ID,
     status: 'PendingReview',
@@ -180,4 +199,47 @@ test('revoked login clears the current session', async () => {
   await expect(submitRampOperation(OPERATION_ID, FROZEN))
     .rejects.toMatchObject({ code: 'unauthenticated' });
   expect(mockRejectSession).toHaveBeenCalledWith(SESSION_ID);
+});
+
+describe('hand-off readiness (3-N06)', () => {
+  test('sends the device queue first and checks it and the Service Order before reserving the hand-off', async () => {
+    await submitRampOperation(OPERATION_ID, FROZEN);
+    expect(mockFlush).toHaveBeenCalledTimes(1);
+    expect(mockQueue).toHaveBeenCalledWith(OPERATION_ID);
+    expect(mockDocuments).toHaveBeenCalledWith(OPERATION_ID);
+    expect(mockFlush.mock.invocationCallOrder[0]).toBeLessThan(mockQueue.mock.invocationCallOrder[0]);
+    expect(mockDocuments.mock.invocationCallOrder[0]).toBeLessThan(mockGetCommand.mock.invocationCallOrder[0]);
+  });
+
+  test.each([
+    ['records still on the device', { pending: 2, blocked: 0 }],
+    ['a record ELEVANT refused', { pending: 0, blocked: 1 }],
+  ])('holds the hand-off with %s', async (_description, queue) => {
+    mockQueue.mockResolvedValue(queue);
+    await expect(submitRampOperation(OPERATION_ID, FROZEN)).rejects.toMatchObject({ code: 'conflict',
+      problemCode: 'pending_queue',
+      message: 'Faltan registros por enviar a ELEVANT. Abre Sincronización y espera a que se envíen.' });
+    expect(mockGetCommand).not.toHaveBeenCalled();
+    expect(mockApi.submitRampOperation).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['without every signature', { isFullySigned: false }],
+    ['signed on an earlier content', { staleRoles: ['AirlineRepresentative'] }],
+  ])('holds the hand-off while the Service Order is %s', async (_description, order) => {
+    mockDocuments.mockResolvedValue(serviceOrder(order));
+    await expect(submitRampOperation(OPERATION_ID, FROZEN)).rejects.toMatchObject({ code: 'conflict',
+      problemCode: 'service_order_unsigned',
+      message: 'Falta firmar la Orden de Servicio (aerolínea y AVIAM) sobre su contenido actual.' });
+    expect(mockApi.submitRampOperation).not.toHaveBeenCalled();
+  });
+
+  test('an uncertain hand-off already reserved is replayed without the checks', async () => {
+    mockReadCommand.mockResolvedValue({ kind: 'current', command: COMMAND });
+    mockQueue.mockResolvedValue({ pending: 1, blocked: 0 });
+    await submitRampOperation(OPERATION_ID, FROZEN);
+    expect(mockQueue).not.toHaveBeenCalled();
+    expect(mockApi.submitRampOperation).toHaveBeenCalledWith(
+      OPERATION_ID, FROZEN, INSTALLATION_ID, IDEMPOTENCY_KEY, { signal: undefined });
+  });
 });

@@ -19,6 +19,12 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 
+  it("names the tablet evidence rules of phase 3 (block C)", () => {
+    for (const code of ["time_outside_operation_window", "milestone_out_of_order", "service_time_out_of_order",
+      "ramp_operation_state_conflict", "invalid_ramp_command", "idempotency_conflict", "not_found"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
   it("keeps the master data and flight feed codes of phase 2 (block C)", () => {
     for (const code of ["station_code_taken", "airport_has_station", "airport_icao_taken", "invalid_station",
       "invalid_time_zone", "airport_required", "time_zone_locked", "station_in_use", "terminal_code_taken",

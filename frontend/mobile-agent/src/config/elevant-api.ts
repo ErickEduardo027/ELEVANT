@@ -4,6 +4,7 @@ import {
   type ElevantApiClientOptions,
 } from '@elevant/api-client';
 import { readValidMobileAccessToken } from '../storage/mobile-session';
+import { observeServerDate } from '../synchronization/server-clock';
 
 export const MOBILE_REQUEST_TIMEOUT_MS = 15_000;
 
@@ -59,11 +60,19 @@ function networkAwareFetch(
       controller.abort();
     }, MOBILE_REQUEST_TIMEOUT_MS);
 
+    const sentAt = Date.now();
     try {
-      return await fetchImplementation(input, {
+      const response = await fetchImplementation(input, {
         ...init,
         signal: controller.signal,
       });
+      // 3-N18: every answer tells the tablet ELEVANT's time; a quick one corrects the device's clock.
+      try {
+        observeServerDate(response.headers?.get('date'), sentAt, Date.now());
+      } catch {
+        // A response without readable headers says nothing about the clock.
+      }
+      return response;
     } catch (error) {
       if (timedOut) throw new MobileAgentNetworkError('timeout');
       if (callerSignal?.aborted || isAbortError(error)) throw error;

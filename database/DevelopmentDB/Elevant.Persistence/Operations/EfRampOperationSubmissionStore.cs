@@ -197,8 +197,28 @@ internal sealed class EfRampOperationSubmissionStore(
         {
             return await RejectAsync(receipt, RampOperationsFailure.Conflict, "conflict", now, cancellationToken);
         }
-        // ADR-0034: the automatic surcharges are marked before the evidence OCC reviews is frozen.
-        var automaticSurcharges = await AutomaticSurchargeApplier.ApplyAsync(context, scope.Operation.Id, now, cancellationToken);
+        // 3-N09: the facts of the flight do not move to a resubmission. A correction round is measured to the first
+        // hand-off (push-back, when it is missing, ends there) and the operation keeps that end; the new revision
+        // records when it was resubmitted.
+        var handedOffAt = previous is null
+            ? now
+            : await RampEvidenceWindowReader.FirstSubmittedAtAsync(context, scope.Operation.Id, cancellationToken) ?? now;
+        // ADR-0034: the automatic surcharges are marked before the evidence OCC reviews is frozen; a resubmission also
+        // retires the automatic ones its corrected times no longer justify.
+        IReadOnlyList<string> automaticSurcharges;
+        IReadOnlyList<string> retiredSurcharges = [];
+        if (previous is null)
+        {
+            automaticSurcharges = await AutomaticSurchargeApplier.ApplyAsync(context, scope.Operation.Id, now,
+                cancellationToken);
+        }
+        else
+        {
+            var reconciled = await AutomaticSurchargeApplier.ReconcileAsync(context, scope.Operation.Id, handedOffAt, now,
+                actor.RampAgentInternalId, cancellationToken);
+            automaticSurcharges = reconciled.Applied;
+            retiredSurcharges = reconciled.Retired;
+        }
         await context.SaveChangesAsync(cancellationToken);
         var submission = new OperationSubmission
         {
@@ -211,7 +231,7 @@ internal sealed class EfRampOperationSubmissionStore(
             SubmittedAt = now,
             AgentNote = request.AgentNote,
             EvidenceJson = (await OperationSubmissionEvidence.CaptureAsync(
-                context, scope.Operation.Id, cancellationToken, now)).ToJson(),
+                context, scope.Operation.Id, cancellationToken, handedOffAt)).ToJson(),
             CreatedAt = now,
             UpdatedAt = now,
         };
@@ -222,7 +242,7 @@ internal sealed class EfRampOperationSubmissionStore(
             actor.AccountInternalId, cancellationToken);
 
         scope.Operation.CurrentStatus = GroundOperationStatus.PendingReview;
-        scope.Operation.ActualEndAt = now;
+        scope.Operation.ActualEndAt = handedOffAt;
         scope.Operation.UpdatedAt = now;
         context.Set<GroundOperationStatusEvent>().Add(new GroundOperationStatusEvent
         {
@@ -259,6 +279,8 @@ internal sealed class EfRampOperationSubmissionStore(
                 rampAgentId = actor.RampAgentPublicId,
                 installationId = device.InstallationId,
                 automaticSurcharges,
+                retiredSurcharges,
+                handedOffAt,
             }, JsonOptions),
         };
         context.AuditEntries.Add(audit);
@@ -269,7 +291,7 @@ internal sealed class EfRampOperationSubmissionStore(
         await RampOperationChangeWriter.AnnounceAsync(context, scope.Operation.Id, now, true, cancellationToken);
 
         var result = await CompleteReceiptAsync(
-            receipt, submission, checklist.PublicId, now, request.OperationId,
+            receipt, submission, checklist.PublicId, handedOffAt, request.OperationId,
             device, now, cancellationToken);
         context.AuditChanges.AddRange(
             new AuditChange
@@ -284,7 +306,7 @@ internal sealed class EfRampOperationSubmissionStore(
                 AuditEntryId = audit.Id,
                 PropertyName = nameof(GroundOperation.ActualEndAt),
                 OldValue = null,
-                NewValue = now.ToString("O"),
+                NewValue = handedOffAt.ToString("O"),
             });
         await context.SaveChangesAsync(cancellationToken);
         return result;

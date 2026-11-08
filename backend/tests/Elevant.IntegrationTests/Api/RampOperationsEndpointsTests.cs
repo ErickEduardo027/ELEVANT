@@ -129,8 +129,9 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>(
             TestContext.Current.CancellationToken);
         Assert.Equal(
-            "Access to ramp operations is forbidden.",
+            "La cuenta no tiene acceso a las operaciones de rampa.",
             problem.GetProperty("title").GetString());
+        Assert.False(problem.TryGetProperty("code", out _));
         Assert.DoesNotContain(
             "profile",
             problem.GetRawText(),
@@ -227,16 +228,59 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Null(state.StartRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>(TestContext.Current.CancellationToken);
+        Assert.Equal("invalid_ramp_command", problem.GetProperty("code").GetString());
+    }
+
+    // 3-I: the deployed APK posts no body; a newer tablet sends the tapped time; an unknown field is a coded 400.
+    [Fact]
+    public async Task StartTakesNoBodyOrTheTappedTimeAndRejectsUnknownFields()
+    {
+        var start = new RampOperationStartData(ReceiptId, new RampGroundOperationData(OperationId, "InProgress", null,
+            null, new DateTimeOffset(2026, 9, 17, 12, 30, 0, TimeSpan.Zero), null));
+        async Task<(HttpStatusCode Status, JsonElement Payload, RampOperationStartWriteRequest? Request)> PostAsync(
+            string? json)
+        {
+            var state = new RampState
+            {
+                Actor = CreateActor(),
+                StartResult = RampOperationStartWriteResult.Success(start, ReceiptId),
+            };
+            await using var application = CreateApplication(state);
+            using var client = CreateAuthenticatedClient(application);
+            using var request = CreateStartRequest();
+            if (json is not null)
+                request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+            return (response.StatusCode, await response.Content.ReadFromJsonAsync<JsonElement>(
+                TestContext.Current.CancellationToken), state.StartRequest);
+        }
+
+        var bodyless = await PostAsync(null);
+        Assert.Equal(HttpStatusCode.OK, bodyless.Status);
+        Assert.Null(bodyless.Request!.StartedAt);
+        var empty = await PostAsync("{}");
+        Assert.Equal(HttpStatusCode.OK, empty.Status);
+        Assert.Null(empty.Request!.StartedAt);
+        var tapped = await PostAsync("""{"startedAt":"2026-09-17T08:30:00-04:00"}""");
+        Assert.Equal(HttpStatusCode.OK, tapped.Status);
+        Assert.Equal(new DateTimeOffset(2026, 9, 17, 12, 30, 0, TimeSpan.Zero), tapped.Request!.StartedAt);
+        Assert.Equal(TimeSpan.Zero, tapped.Request.StartedAt!.Value.Offset);
+        var unknown = await PostAsync("""{"startedAt":"2026-09-17T08:30:00-04:00","agentId":"x"}""");
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.Status);
+        Assert.Equal("invalid_ramp_command", unknown.Payload.GetProperty("code").GetString());
+        Assert.Null(unknown.Request);
     }
 
     [Theory]
-    [InlineData(RampOperationStartWriteFailure.Forbidden, HttpStatusCode.Forbidden)]
-    [InlineData(RampOperationStartWriteFailure.NotFound, HttpStatusCode.NotFound)]
-    [InlineData(RampOperationStartWriteFailure.Conflict, HttpStatusCode.Conflict)]
-    [InlineData(RampOperationStartWriteFailure.IdempotencyKeyConflict, HttpStatusCode.Conflict)]
+    [InlineData(RampOperationStartWriteFailure.Forbidden, HttpStatusCode.Forbidden, null)]
+    [InlineData(RampOperationStartWriteFailure.NotFound, HttpStatusCode.NotFound, "not_found")]
+    [InlineData(RampOperationStartWriteFailure.Conflict, HttpStatusCode.Conflict, "ramp_operation_state_conflict")]
+    [InlineData(RampOperationStartWriteFailure.IdempotencyKeyConflict, HttpStatusCode.Conflict, "idempotency_conflict")]
     public async Task StartMapsStoreFailuresToStableHttpResponses(
         RampOperationStartWriteFailure failure,
-        HttpStatusCode expectedStatus)
+        HttpStatusCode expectedStatus,
+        string? expectedCode)
     {
         var state = new RampState
         {
@@ -256,6 +300,7 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>(
             TestContext.Current.CancellationToken);
         Assert.Equal((int)expectedStatus, problem.GetProperty("status").GetInt32());
+        Assert.Equal(expectedCode, problem.TryGetProperty("code", out var code) ? code.GetString() : null);
     }
 
     [Fact]
@@ -345,7 +390,10 @@ public sealed class RampOperationsEndpointsTests(ElevantApiFactory factory)
             .GetProperty("/api/v1/ramp/operations/{operationId}/start")
             .GetProperty("post");
         Assert.Equal("StartRampOperation", post.GetProperty("operationId").GetString());
-        Assert.False(post.TryGetProperty("requestBody", out _));
+        // 3-I: an optional body with the tapped time; the first version of the app posts none.
+        var body = post.GetProperty("requestBody");
+        Assert.False(body.TryGetProperty("required", out var required) && required.GetBoolean());
+        Assert.True(body.GetProperty("content").TryGetProperty("application/json", out _));
         var parameters = post.GetProperty("parameters").EnumerateArray().ToArray();
         Assert.Equal(3, parameters.Length);
         foreach (var name in new[]

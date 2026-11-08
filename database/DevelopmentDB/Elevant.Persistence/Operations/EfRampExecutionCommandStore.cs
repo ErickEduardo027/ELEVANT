@@ -39,10 +39,20 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
             async (scope, ct) =>
             {
                 var operation = scope.Operation.Operation;
-                var occurredAt = Truncate(request.OccurredAt);
-                if (!RampExecutionPolicy.CanRecordMilestone(scope.Operation.TurnaroundStatus, operation.CurrentStatus,
-                        operation.ActualStartAt, operation.ActualEndAt, occurredAt, scope.Now))
-                    return ConflictCode;
+                var tapped = Truncate(request.OccurredAt);
+                // 3-N25: one window for every tablet time (from the start or the recorded arrival to the close) and
+                // block-on never after push-back; 3-N06: late evidence while OCC reviews the hand-off.
+                var window = await RampEvidenceWindowReader.ReadAsync(context, operation, scope.Now, ct);
+                var recorded = await context.Set<OperationMilestone>().AsNoTracking()
+                    .Where(item => item.GroundOperationId == operation.Id && item.Code != request.Code &&
+                        item.ActualAt != null &&
+                        (item.Code == RampEvidenceTimePolicy.BlockOn || item.Code == RampEvidenceTimePolicy.Pushback))
+                    .ToDictionaryAsync(item => item.Code, item => item.ActualAt!.Value, ct);
+                if (RampExecutionPolicy.MilestoneRejection(scope.Operation.TurnaroundStatus, operation.CurrentStatus,
+                        operation.ActualStartAt, operation.ActualEndAt, request.Code, tapped, window, recorded,
+                        scope.Now) is { } rejection)
+                    return rejection;
+                var occurredAt = RampEvidenceTimePolicy.Clamp(tapped, scope.Now);
                 var milestone = await context.Set<OperationMilestone>()
                     .SingleOrDefaultAsync(item => item.GroundOperationId == operation.Id && item.Code == request.Code, ct);
                 var previous = milestone?.ActualAt;
@@ -63,6 +73,8 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
                 {
                     code = request.Code, occurredAt, previous, installationId = request.InstallationId,
                 });
+                await PendingSubmissionEvidenceRefresher.RefreshAsync(context, scope.Actor, scope.Operation, scope.Now,
+                    "milestone", request.RequestId, ct);
                 return null;
             }, cancellationToken);
 
@@ -118,6 +130,8 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
                     aircraftTypeId = request.AircraftTypeId, previousAircraftTypeId = previousType,
                     currentAircraftTypeId = turnaround.AircraftTypeId,
                 });
+                await PendingSubmissionEvidenceRefresher.RefreshAsync(context, scope.Actor, scope.Operation, scope.Now,
+                    "flight_data", request.RequestId, ct);
                 return null;
             }, cancellationToken);
 
@@ -261,6 +275,8 @@ internal sealed class EfRampExecutionCommandStore(ElevantDbContext context, Time
             "not_found" => "The ramp operation was not found.",
             RampExecutionCodes.AircraftTypeUnavailable => "The aircraft type is not available.",
             RampExecutionCodes.AircraftTypeLocked => "The aircraft type is locked since the first submission.",
+            RampProblemCodes.TimeOutsideOperationWindow => "The recorded time is outside the operation's window.",
+            RampProblemCodes.MilestoneOutOfOrder => "Block-on would come after push-back.",
             _ => "The Flight Report entry conflicts with the operation.",
         };
         receipt.UpdatedAt = now;

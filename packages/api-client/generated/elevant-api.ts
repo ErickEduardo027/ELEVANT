@@ -6292,6 +6292,11 @@ export interface SignOperationDocumentRequest {
   signerIdentification?: string | null;
 }
 
+export interface StartRampOperationRequest {
+  /** @nullable */
+  startedAt?: string | null;
+}
+
 export interface StationAirportData {
   id: string;
   iataCode: string;
@@ -6455,6 +6460,8 @@ export interface TransitionRampOperationServiceRequest {
      * @nullable
      */
   note?: string | null;
+  /** @nullable */
+  occurredAt?: string | null;
 }
 
 export interface UnbindMobileDeviceInput {
@@ -20305,7 +20312,8 @@ export const getRecordRampDamageMarkUrl = (operationId: string,
 }
 
 /**
- * @summary Marks a damage found in the 360° walk-around; the id comes from the tablet.
+ * @summary Marks a damage found in the 360° walk-around; the id comes from the tablet. Its time must fit the operation's
+window (409 `time_outside_operation_window`, 3-N25).
  */
 export const recordRampDamageMark = async (operationId: string,
     markId: string,
@@ -20378,7 +20386,9 @@ export const getRecordRampMilestoneUrl = (operationId: string,
 }
 
 /**
- * @summary Records (or corrects) the time of one Flight Report milestone.
+ * @summary Records (or corrects) the time of one Flight Report milestone. The time must fit the operation's window (from
+its start or recorded arrival to its close, 409 `time_outside_operation_window`) and block-on never comes
+after push-back (409 `milestone_out_of_order`, 3-N25).
  */
 export const recordRampMilestone = async (operationId: string,
     code: string,
@@ -20488,7 +20498,8 @@ export const getReportRampIncidentUrl = (operationId: string,) => {
 }
 
 /**
- * @summary Atomically reports one incident without duplicating offline retries.
+ * @summary Atomically reports one incident without duplicating offline retries. Its time must fit the operation's window
+(409 `time_outside_operation_window`, 3-N25).
  */
 export const reportRampIncident = async (operationId: string,
     reportRampIncidentRequest: ReportRampIncidentRequest, options?: RequestInit): Promise<RampIncidentReceiptResponse> => {
@@ -20655,16 +20666,26 @@ export const getStartRampOperationUrl = (operationId: string,) => {
 }
 
 /**
- * @summary Starts one operation assigned to the authenticated ramp agent.
+ * @summary Starts one operation assigned to the authenticated ramp agent. The body is optional (3-I): the first version
+of the app posts no body and the server's time applies; a newer one sends the moment the agent tapped
+«Iniciar», which must not precede the assignment nor be more than a day old (409
+`time_outside_operation_window`).
  */
-export const startRampOperation = async (operationId: string, options?: RequestInit): Promise<RampOperationStartResponse> => {
+export const startRampOperation = async (operationId: string,
+    startRampOperationRequest?: StartRampOperationRequest, options?: RequestInit): Promise<RampOperationStartResponse> => {
 
-  const res = await fetch(getStartRampOperationUrl(operationId),
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getStartRampOperationUrl(operationId),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(startRampOperationRequest)
   }
 )
 
@@ -20687,7 +20708,9 @@ export const getTransitionRampOperationServiceUrl = (operationId: string,
 }
 
 /**
- * @summary Applies one audited, idempotent service status transition.
+ * @summary Applies one audited, idempotent service status transition. The optional `occurredAt` is the moment the
+agent tapped it (3-I): it must fit the operation's window and not precede the service's last transition (409
+`time_outside_operation_window`, `service_time_out_of_order`).
  */
 export const transitionRampOperationService = async (operationId: string,
     serviceId: string,

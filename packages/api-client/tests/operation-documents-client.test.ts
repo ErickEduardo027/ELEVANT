@@ -56,6 +56,30 @@ describe("Operation documents client (ADR-0032)", () => {
     expect(requests[3]!.body).toBe(photo);
   });
 
+  it("reads the photo of a damage mark for OCC on demand, only as JPEG or PNG (3-K)", async () => {
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+    const requests: Array<{ url: string; method: string }> = [];
+    let answer = () => new Response(png, { status: 200, headers: { "content-type": "image/png" } });
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async (input, init) => {
+      requests.push({ url: String(input).replace("https://api.example.test", ""), method: String(init?.method) });
+      return answer();
+    } });
+    const photo = await client.getOccDamagePhoto(operationId, markId);
+    expect(photo.type).toBe("image/png");
+    expect(new Uint8Array(await photo.arrayBuffer())).toEqual(png);
+    expect(requests).toEqual([{ method: "GET", url: `/api/v1/occ/operations/${operationId}/damage-marks/${markId}/photo` }]);
+    // Anything but the image the header names is refused: an HTML page, or bytes that are not a JPEG.
+    answer = () => new Response("<html></html>", { status: 200, headers: { "content-type": "text/html" } });
+    await expect(client.getOccDamagePhoto(operationId, markId)).rejects.toMatchObject({ kind: "malformed-response" });
+    answer = () => new Response(png, { status: 200, headers: { "content-type": "image/jpeg" } });
+    await expect(client.getOccDamagePhoto(operationId, markId)).rejects.toMatchObject({ kind: "malformed-response" });
+    // A Problem Details failure keeps its status for the screen (503: the photo storage is unavailable).
+    answer = () => Response.json({ status: 503, title: "Walk-around photo storage is unavailable." },
+      { status: 503, headers: { "content-type": "application/problem+json" } });
+    await expect(client.getOccDamagePhoto(operationId, markId)).rejects.toMatchObject({ status: 503, kind: "http" });
+    await expect(client.getOccDamagePhoto("nope", markId)).rejects.toThrow(TypeError);
+  });
+
   it("refuses implausible signatures and marks before calling", async () => {
     const client = createElevantApiClient({ baseUrl: "https://api.example.test",
       fetch: async () => { throw new Error("must not call"); } });

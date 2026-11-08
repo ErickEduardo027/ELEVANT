@@ -94,6 +94,40 @@ public sealed class TransitionRampOperationServiceHandlerTests
         Assert.Equal(expected, result.Failure);
     }
 
+    // 3-I: the tapped transition travels in UTC; refusals keep their code and a reused key is coded.
+    [Fact]
+    public async Task TheTappedTimeTravelsInUtcAndARefusalKeepsItsCode()
+    {
+        var store = new StubStore(RampOperationServiceTransitionWriteResult.Failed(
+            RampOperationServiceTransitionWriteFailure.Conflict, RampExecutionTestData.ReceiptId,
+            RampProblemCodes.ServiceTimeOutOfOrder));
+        var handler = new TransitionRampOperationServiceHandler(
+            new RampExecutionActorResolver(RampExecutionTestData.CreateActor()), store);
+        var tapped = new DateTimeOffset(2026, 9, 17, 8, 30, 0, TimeSpan.FromHours(-4));
+
+        var result = await handler.HandleAsync(CreateCommand() with { OccurredAt = tapped },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(TimeSpan.Zero, store.Request!.OccurredAt!.Value.Offset);
+        Assert.Equal(tapped.UtcDateTime, store.Request.OccurredAt.Value.UtcDateTime);
+        Assert.Equal(RampProblemCodes.ServiceTimeOutOfOrder, result.Code);
+    }
+
+    [Fact]
+    public async Task WithoutATappedTimeNothingIsSentAndAReusedKeyIsCoded()
+    {
+        var store = new StubStore(RampOperationServiceTransitionWriteResult.Failed(
+            RampOperationServiceTransitionWriteFailure.IdempotencyKeyConflict));
+        var handler = new TransitionRampOperationServiceHandler(
+            new RampExecutionActorResolver(RampExecutionTestData.CreateActor()), store);
+
+        var result = await handler.HandleAsync(CreateCommand(), TestContext.Current.CancellationToken);
+
+        Assert.Null(store.Request!.OccurredAt);
+        Assert.Equal(RampOperationsFailure.Conflict, result.Failure);
+        Assert.Equal(RampProblemCodes.IdempotencyConflict, result.Code);
+    }
+
     private static TransitionRampOperationServiceCommand CreateCommand() => new(
         RampExecutionTestData.AccountId,
         RampExecutionTestData.OperationId,

@@ -1,17 +1,89 @@
 import { useEffect, useState } from 'react';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
+import { formatPlanningClock } from '../../planning/planningTime';
 import {
   DOCUMENT_TITLES,
   SIGNER_ROLES,
   downloadOccOperationDocument,
+  getOccDamagePhoto,
   getOccOperationDocuments,
 } from '../../../services/occDocumentsService';
 
 /**
- * «Formularios AVIAM» in the OCC review (ADR-0032): the forms generated from what the agent
- * captured, who already signed each one, and the PDF exactly as the airline receives it.
+ * The photo of one walk-around damage (3-K), read only when OCC opens it: loading, the photo, a recoverable error
+ * with «Reintentar», and the unauthorized state without it. The object URL is released when the photo closes.
  */
-export default function OperationDocumentsSection({ operationId }) {
+function DamagePhoto({ operationId, markId }) {
+  const [state, setState] = useState({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let url = null;
+    getOccDamagePhoto(operationId, markId, { signal: controller.signal })
+      .then(blob => {
+        if (controller.signal.aborted) return;
+        url = URL.createObjectURL(blob);
+        setState({ status: 'success', url });
+      })
+      .catch(error => { if (!isAbortError(error)) setState({ status: 'error', error }); });
+    return () => {
+      abortForEffectCleanup(controller);
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [operationId, markId, attempt]);
+
+  if (state.status === 'loading') return <p className="text-sm" role="status">Cargando foto…</p>;
+  if (state.status === 'error') {
+    return (
+      <div role="alert" className="space-y-2 text-sm">
+        <p>{state.error.message}</p>
+        {state.error.status !== 403 && (
+          <button type="button" onClick={() => { setState({ status: 'loading' }); setAttempt(value => value + 1); }}
+            className="min-h-11 rounded-lg border border-accent-600 px-3 py-2 font-semibold">Reintentar</button>
+        )}
+      </div>
+    );
+  }
+  // A blob: URL of bytes read with OCC's session: next/image cannot fetch nor optimize it.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={state.url} alt="Foto del daño" className="max-h-64 w-auto rounded-lg border border-black/10" />;
+}
+
+/** The damages marked on the silhouette, with their note, the station's local time and the photo on demand. */
+function DamageMarks({ operationId, marks, timeZone }) {
+  const [open, setOpen] = useState(null);
+  if (marks.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <h4 className="text-sm font-semibold">Daños del walk-around</h4>
+      <ul className="space-y-2">
+        {marks.map(mark => (
+          <li key={mark.id} className="space-y-2 rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p><span className="font-semibold">{formatPlanningClock(mark.reportedAt, timeZone)}</span> · {mark.note}</p>
+              {mark.hasPhoto ? (
+                <button type="button" aria-expanded={open === mark.id}
+                  onClick={() => setOpen(current => (current === mark.id ? null : mark.id))}
+                  className="min-h-11 rounded-lg border border-accent-600 px-3 py-2 font-semibold">
+                  {open === mark.id ? 'Ocultar foto' : 'Ver foto'}
+                </button>
+              ) : <span className="text-ink-600 dark:text-text-secondary-dark">Sin foto</span>}
+            </div>
+            {open === mark.id && <DamagePhoto operationId={operationId} markId={mark.id} />}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * «Formularios AVIAM» in the OCC review (ADR-0032): the forms generated from what the agent
+ * captured, who already signed each one, the PDF exactly as the airline receives it, and the damages of the
+ * walk-around with their photo (3-K) in the station's local time.
+ */
+export default function OperationDocumentsSection({ operationId, timeZone }) {
   const [state, setState] = useState({ status: 'loading' });
   const [downloading, setDownloading] = useState(null);
   const [downloadError, setDownloadError] = useState(null);
@@ -92,6 +164,9 @@ export default function OperationDocumentsSection({ operationId }) {
         </ul>
       )}
       {downloadError && <p role="alert" className="text-sm text-status-danger">{downloadError}</p>}
+      {state.status === 'success' && (
+        <DamageMarks operationId={operationId} marks={state.data.damageMarks} timeZone={timeZone} />
+      )}
     </section>
   );
 }

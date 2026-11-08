@@ -14,14 +14,19 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Operations;
 
-/// <summary>What a mobile command touched, or why it was refused, plus its device receipt.</summary>
+/// <summary>
+/// What a mobile command touched, or why it was refused, plus its device receipt. <c>Code</c> is the Problem Details
+/// code of a refusal the tablet explains (phase 3, block C): the rule the command broke, or <c>idempotency_conflict</c>
+/// for a reused key; null for the generic refusals explained by their status.
+/// </summary>
 internal sealed record RampReceiptOutcome(long OperationId, Guid OperationPublicId, RampExecutionWriteFailure? Failure,
-    Guid? ReceiptId)
+    Guid? ReceiptId, string? Code = null)
 {
     public bool IsSuccess => Failure is null;
 
-    public static RampReceiptOutcome Failed(RampExecutionWriteFailure failure, Guid? receiptId = null) =>
-        new(0, Guid.Empty, failure, receiptId);
+    public static RampReceiptOutcome Failed(RampExecutionWriteFailure failure, Guid? receiptId = null,
+        string? code = null) =>
+        new(0, Guid.Empty, failure, receiptId, code);
 }
 
 /// <summary>The scope a mobile command runs in: the agent, its device, the locked operation and the receipt.</summary>
@@ -39,9 +44,19 @@ internal sealed class RampReceiptRunner(ElevantDbContext context, TimeProvider t
     private static readonly TimeSpan ReceiptRetention = TimeSpan.FromDays(30);
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
+    public Task<RampReceiptOutcome> RunAsync(string commandType, Guid accountId, IReadOnlyCollection<Guid> stations,
+        Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
+        Func<RampReceiptScope, CancellationToken, Task<bool>> apply, CancellationToken cancellationToken) =>
+        RunAsync(commandType, accountId, stations, operationId, installationId, idempotencyKey, payloadHash,
+            async (scope, ct) => await apply(scope, ct) ? null : RampProblemCodes.GenericConflict, cancellationToken);
+
+    /// <summary>
+    /// Runs one command whose <paramref name="apply"/> answers null when it applied, or the code of the rule it broke.
+    /// The receipt keeps that code, so the same key with the same body replays the same refusal (phase 3, block C).
+    /// </summary>
     public async Task<RampReceiptOutcome> RunAsync(string commandType, Guid accountId, IReadOnlyCollection<Guid> stations,
         Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
-        Func<RampReceiptScope, CancellationToken, Task<bool>> apply, CancellationToken cancellationToken)
+        Func<RampReceiptScope, CancellationToken, Task<string?>> apply, CancellationToken cancellationToken)
     {
         RampReceiptOutcome? attempt = null;
         try
@@ -95,7 +110,7 @@ internal sealed class RampReceiptRunner(ElevantDbContext context, TimeProvider t
 
     private async Task<RampReceiptOutcome> InsideAsync(string commandType, Guid accountId,
         IReadOnlyCollection<Guid> stations, Guid operationId, Guid installationId, Guid idempotencyKey, string payloadHash,
-        Func<RampReceiptScope, CancellationToken, Task<bool>> apply, CancellationToken cancellationToken)
+        Func<RampReceiptScope, CancellationToken, Task<string?>> apply, CancellationToken cancellationToken)
     {
         var authorization = new EfRampExecutionAuthorization(context, timeProvider);
         var actorResult = await authorization.ResolveActorAsync(accountId, stations, installationId, cancellationToken);
@@ -121,10 +136,11 @@ internal sealed class RampReceiptRunner(ElevantDbContext context, TimeProvider t
         };
         context.MobileCommandReceipts.Add(receipt);
         var operation = await authorization.ResolveOperationAsync(actor, operationId, lockForUpdate: true, cancellationToken);
-        if (operation is null) return await RejectAsync(receipt, "not_found", now, cancellationToken);
+        if (operation is null) return await RejectAsync(receipt, RampProblemCodes.NotFound, now, cancellationToken);
 
         var scope = new RampReceiptScope(actor, operation, receipt, now);
-        if (!await apply(scope, cancellationToken)) return await RejectAsync(receipt, "conflict", now, cancellationToken);
+        if (await apply(scope, cancellationToken) is { } rejection)
+            return await RejectAsync(receipt, rejection, now, cancellationToken);
         await RampOperationChangeWriter.AnnounceAsync(context, operation.Operation.Id, now, false, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
 
@@ -147,22 +163,29 @@ internal sealed class RampReceiptRunner(ElevantDbContext context, TimeProvider t
         receipt.Status = MobileCommandStatus.Rejected;
         receipt.ProcessedAt = now;
         receipt.ErrorCode = errorCode;
-        receipt.ErrorMessage = errorCode == "not_found"
-            ? "The ramp operation was not found." : "The entry conflicts with the operation's current state.";
+        receipt.ErrorMessage = errorCode switch
+        {
+            RampProblemCodes.NotFound => "The ramp operation was not found.",
+            RampProblemCodes.TimeOutsideOperationWindow => "The recorded time is outside the operation's window.",
+            _ => "The entry conflicts with the operation's current state.",
+        };
         receipt.UpdatedAt = now;
         await context.SaveChangesAsync(cancellationToken);
-        return RampReceiptOutcome.Failed(errorCode == "not_found"
-            ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict, receipt.PublicId);
+        return Refused(receipt);
     }
+
+    /// <summary>A stored refusal, as first answered: the generic codes by status, any other one by its code.</summary>
+    private static RampReceiptOutcome Refused(MobileCommandReceipt receipt) => RampReceiptOutcome.Failed(
+        receipt.ErrorCode == RampProblemCodes.NotFound ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict,
+        receipt.PublicId, RampProblemCodes.PublicCode(receipt.ErrorCode));
 
     private async Task<RampReceiptOutcome> ReplayAsync(MobileCommandReceipt receipt, string commandType, long accountId,
         string payloadHash, CancellationToken cancellationToken)
     {
         if (receipt.AccountId != accountId || receipt.CommandType != commandType || receipt.PayloadHash != payloadHash)
-            return RampReceiptOutcome.Failed(RampExecutionWriteFailure.IdempotencyKeyConflict);
-        if (receipt.Status == MobileCommandStatus.Rejected)
-            return RampReceiptOutcome.Failed(receipt.ErrorCode == "not_found"
-                ? RampExecutionWriteFailure.NotFound : RampExecutionWriteFailure.Conflict, receipt.PublicId);
+            return RampReceiptOutcome.Failed(RampExecutionWriteFailure.IdempotencyKeyConflict,
+                code: RampProblemCodes.IdempotencyConflict);
+        if (receipt.Status == MobileCommandStatus.Rejected) return Refused(receipt);
         if (receipt.Status != MobileCommandStatus.Processed || string.IsNullOrWhiteSpace(receipt.ResultJson))
             return RampReceiptOutcome.Failed(RampExecutionWriteFailure.Conflict);
         var operationPublicId = JsonDocument.Parse(receipt.ResultJson).RootElement.GetProperty("operationId").GetGuid();

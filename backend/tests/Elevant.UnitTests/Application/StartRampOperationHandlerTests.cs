@@ -151,6 +151,38 @@ public sealed class StartRampOperationHandlerTests
         Assert.Null(result.Start);
     }
 
+    // 3-I: the tapped start travels in UTC and the refusal keeps the code the tablet explains.
+    [Fact]
+    public async Task TheTappedStartTravelsInUtcAndARefusalKeepsItsCode()
+    {
+        var store = new StubStore(RampOperationStartWriteResult.Failed(RampOperationStartWriteFailure.Conflict, ReceiptId,
+            RampProblemCodes.TimeOutsideOperationWindow));
+        var handler = new StartRampOperationHandler(new StubActorContextResolver(CreateActor()), store);
+        var tapped = new DateTimeOffset(2026, 9, 17, 8, 30, 0, TimeSpan.FromHours(-4));
+
+        var result = await handler.HandleAsync(CreateCommand() with { StartedAt = tapped },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(TimeSpan.Zero, store.Request!.StartedAt!.Value.Offset);
+        Assert.Equal(tapped.UtcDateTime, store.Request.StartedAt.Value.UtcDateTime);
+        Assert.Equal(RampOperationsFailure.Conflict, result.Failure);
+        Assert.Equal(RampProblemCodes.TimeOutsideOperationWindow, result.Code);
+    }
+
+    [Fact]
+    public async Task WithoutATappedTimeTheServerTimeAppliesAndAReusedKeyIsCoded()
+    {
+        var store = new StubStore(RampOperationStartWriteResult.Failed(
+            RampOperationStartWriteFailure.IdempotencyKeyConflict));
+        var handler = new StartRampOperationHandler(new StubActorContextResolver(CreateActor()), store);
+
+        var result = await handler.HandleAsync(CreateCommand(), TestContext.Current.CancellationToken);
+
+        Assert.Null(store.Request!.StartedAt);
+        Assert.Equal(RampOperationsFailure.Conflict, result.Failure);
+        Assert.Equal(RampProblemCodes.IdempotencyConflict, result.Code);
+    }
+
     [Fact]
     public async Task CancellationIsObservedBeforeResolvingActor()
     {
