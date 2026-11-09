@@ -67,7 +67,6 @@ internal sealed class EfAccountChangeReadStore(
         var hasReceiptsAccess = access?.Has("finance.receipts.read") == true;
         var hasPayablesAccess = access?.Has("finance.payables.read") == true || access?.Has("finance.suppliers.read") == true;
         var hasExpensesAccess = access?.Has("finance.expenses.read") == true || access?.Kind == DepartmentAssignmentKind.Administrator;
-        var hasFiscalAccess = access?.Has("finance.fiscal.read") == true;
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&
@@ -125,12 +124,9 @@ internal sealed class EfAccountChangeReadStore(
                 (change.Resource != "finance_receipts" || hasReceiptsAccess) &&
                 (change.Resource != "finance_payables" || hasPayablesAccess) &&
                 (change.Resource != "finance_expenses" || hasExpensesAccess) &&
-                (change.Resource != "finance_fiscal" || hasFiscalAccess) &&
-                (change.Resource != "finance_preinvoices" ||
-                    (hasFinanceAccess && change.StationId != null &&
-                     context.Preinvoices.Any(draft =>
-                         draft.PublicId == change.ResourceId &&
-                         draft.StationId == change.StationId))) &&
+                // 4-A: «Documentos fiscales» and the preinvoice screens were retired; nothing writes these hints any more
+                // and the ones already stored are never delivered.
+                change.Resource != "finance_fiscal" && change.Resource != "finance_preinvoices" &&
                 (change.Resource != "finance_tariffs" ||
                     (hasFinanceAccess && change.StationId != null &&
                      context.ContractVersions.Any(version =>

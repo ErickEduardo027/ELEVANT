@@ -27,24 +27,9 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var modeText = configuration["FinanceFiscal:Mode"] ?? "Off";
-        if (!Enum.TryParse<FiscalMode>(modeText, false, out var fiscalMode) || !Enum.IsDefined(fiscalMode))
-            throw new InvalidOperationException("FinanceFiscal:Mode is invalid.");
+        // 4-A, 4-N20: the fiscal simulation and the XML preflight were retired with «Documentos fiscales»; the
+        // simulated e-CF of the invoice (ADR-0035) needs no FinanceFiscal configuration.
         var environment = configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ?? "Production";
-        services.AddSingleton(new FinanceFiscalOptions { Mode = fiscalMode, Environment = environment });
-        var archiveMode = configuration["FinanceFiscal:ArchiveMode"] ?? "PrivateObjectStore";
-        if (archiveMode == "LocalDirectory")
-        {
-            if (environment is not ("Development" or "Test")) throw new InvalidOperationException("Local fiscal archive requires Development or Test.");
-            var directory = configuration["FinanceFiscal:ArchiveDirectory"];
-            if (string.IsNullOrWhiteSpace(directory)) throw new InvalidOperationException("An explicit private fiscal archive directory is required.");
-            services.AddSingleton<IFiscalArtifactArchive>(new FinanceFiscalFileArchive(directory));
-        }
-        else if (archiveMode != "PrivateObjectStore") throw new InvalidOperationException("FinanceFiscal:ArchiveMode is invalid.");
-        services.AddSingleton<IOfficialEcfXmlValidator, OfficialEcfXmlValidator>();
-        services.AddSingleton<IFiscalProvider, FinanceFiscalLocalSimulator>();
-        services.AddSingleton<IFiscalCallbackAuthenticator, FinanceFiscalRejectCallbacks>();
-        services.AddSingleton<IFiscalArtifactBuilder, FinanceFiscalArtifactBuilder>();
         services.AddFlightAwareShell(configuration);
         // Paid flight feed (ADR-0028): only the synchronizer calls it, within the unit budget.
         var aeroDataBox = configuration.GetSection(Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxOptions.SectionName)

@@ -15,7 +15,25 @@ public sealed class DepartmentAccessResolverTests
         Assert.True(access.Administers(Department.Contracts));
         Assert.False(access.Administers(Department.Finance));
         Assert.Equal(DepartmentPermissionCatalog.CodesOf(Department.Contracts).Order(), access.Permissions.Order());
-        Assert.False(access.Has("finance.preinvoices.manage"));
+        Assert.False(access.Has("finance.invoicing.issue"));
+    }
+
+    /// <summary>
+    /// 4-A: a Finance template saved before the preinvoice left the product keeps what it did: reading and issuing
+    /// invoices from «Por facturar»; editing preinvoices, the legacy payments, tax treatments and fiscal documents grant
+    /// nothing.
+    /// </summary>
+    [Fact]
+    public void StoredFinanceTemplateWithPreinvoiceGrantsResolvesToInvoicing()
+    {
+        var access = Resolve(new(DepartmentAssignmentKind.Member, Department.Finance, true, true),
+            profileGrants: ["finance.home.read", "finance.approved_services.read", "finance.approved_services.create",
+                "finance.preinvoices.read", "finance.preinvoices.update", "finance.preinvoices.issue",
+                "finance.reconciliation.read", "finance.reconciliation.create", "finance.taxes.read", "finance.fiscal.simulate"]);
+
+        Assert.NotNull(access);
+        Assert.Equal(["finance.home.read", "finance.invoicing.issue", "finance.invoicing.read", "finance.reconciliation.read"],
+            access.Permissions.Order(StringComparer.Ordinal));
     }
 
     [Fact]
@@ -57,7 +75,7 @@ public sealed class DepartmentAccessResolverTests
         Assert.True(access.Administers(Department.Finance));
         Assert.True(access.Has("human_resources.access_requests.validate"));
         Assert.True(access.Has("contracts.requests.approve"));
-        Assert.False(access.Has("finance.preinvoices.manage"));
+        Assert.False(access.Has("finance.invoicing.issue"));
         Assert.False(access.Has("operations.review.decide"));
     }
 

@@ -7,7 +7,7 @@ import { businessToday } from '../../../services/businessDay';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
-import { sundayWeek } from '../approved-services/useApprovedServicesData';
+import { sundayWeek } from './weeks';
 
 export const ITBIS_RATE = 0.18;
 /** The limits of one invoice until the server publishes them with the first page (4-N06). */

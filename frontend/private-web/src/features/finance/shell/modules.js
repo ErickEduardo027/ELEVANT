@@ -1,69 +1,70 @@
 import {
   HomeIcon,
+  PayablesIcon,
   PreInvoiceIcon,
-  ReconciliationIcon,
   ReportIcon,
-  TariffIcon,
+  SettingsIcon,
 } from '../components/icons';
-import { ShieldCheckIcon, UsersIcon } from '../../shell/components/icons';
+import { UsersIcon } from '../../shell/components/icons';
 
 export const FINANCE_MODULE_IDS = {
   HOME: 'finance-home',
   INVOICING: 'finance-invoicing',
   TO_INVOICE: 'finance-to-invoice',
-  PACKAGES: 'finance-packages',
-  TREASURY: 'finance-treasury',
-  STATEMENTS: 'finance-statements',
-  SUPPLIERS: 'finance-suppliers',
-  PAYABLES: 'finance-payables',
-  EXPENSES: 'finance-expenses',
-  FISCAL: 'finance-fiscal',
-  TAXES: 'finance-taxes',
-  CONTRACT_APPROVALS: 'finance-contract-approvals',
-  APPROVED_SERVICES: 'finance-approved-services',
-  CHARTERS: 'finance-charters',
-  CLOSE_RULES: 'finance-close-rules',
-  PREINVOICES: 'finance-preinvoices',
   RECONCILIATION: 'finance-reconciliation',
-  TARIFF_BOOKS: 'finance-tariff-books',
+  CHARTERS: 'finance-charters',
+  PAYABLES_GROUP: 'finance-payables-group',
+  PAYABLES: 'finance-payables',
+  SUPPLIERS: 'finance-suppliers',
+  EXPENSES: 'finance-expenses',
+  REPORTS: 'finance-reports',
+  CONFIGURATION: 'finance-configuration',
   TARIFFS: 'finance-tariffs',
   CHARGES: 'finance-charges',
+  PACKAGES: 'finance-packages',
+  CLOSE_RULES: 'finance-close-rules',
+  CONTRACT_APPROVALS: 'finance-contract-approvals',
   EXCHANGE_RATES: 'finance-exchange-rates',
   BILLING_UNITS: 'finance-billing-units',
-  REPORTS: 'finance-reports',
   USERS: 'finance-users',
 };
 
+/**
+ * The menu of the simplified Finance (4-A, ADR-0035 block 3): Inicio · Facturación · Cuentas por pagar · Reportes ·
+ * Configuración · Usuarios. «Cobros» and «Estados de cuenta» are tabs of «Facturas»; preinvoices, approved
+ * services, tax treatments and fiscal documents were retired with their permissions and endpoints.
+ */
 export const FINANCE_MODULES = [
-  { id: FINANCE_MODULE_IDS.HOME, permission: 'finance.home.read', label: 'Inicio', icon: HomeIcon, description: 'Resumen financiero y tareas pendientes.' },
+  { id: FINANCE_MODULE_IDS.HOME, permission: 'finance.home.read', label: 'Inicio', icon: HomeIcon, description: 'Indicadores de facturación, cobros y pendientes.' },
   {
-    id: FINANCE_MODULE_IDS.INVOICING, label: 'Facturación', icon: PreInvoiceIcon, description: 'Operaciones por facturar, facturas e-CF simuladas y charters.',
+    id: FINANCE_MODULE_IDS.INVOICING, label: 'Facturación', icon: PreInvoiceIcon, description: 'Operaciones por facturar, facturas e-CF simuladas con sus cobros y charters.',
     children: [
       { id: FINANCE_MODULE_IDS.TO_INVOICE, permission: 'finance.invoicing.read', label: 'Por facturar' },
       { id: FINANCE_MODULE_IDS.RECONCILIATION, permission: 'finance.reconciliation.read', label: 'Facturas' },
       { id: FINANCE_MODULE_IDS.CHARTERS, permission: 'finance.charters.read', label: 'Charters' },
     ],
   },
-  { id: FINANCE_MODULE_IDS.PACKAGES, permission: 'finance.packages.read', label: 'Paquetes', icon: TariffIcon, description: 'Coberturas, vigencias y bloques de excedentes.' },
-  { id: FINANCE_MODULE_IDS.CONTRACT_APPROVALS, permission: 'finance.contract_approvals.read', label: 'Aprobación de contratos', icon: ShieldCheckIcon, description: 'Contratos enviados por Contratos frente a la tarifa base.' },
-  { id: FINANCE_MODULE_IDS.CLOSE_RULES, permission: 'finance.close_rules.read', label: 'Reglas de cierre', icon: TariffIcon, description: 'Tiempo en tierra permitido por categoría de avión y calendario de festivos.' },
   {
-    id: FINANCE_MODULE_IDS.TARIFF_BOOKS, label: 'Tarifarios', icon: TariffIcon, description: 'Tarifa base, cargos, tasas de cambio y unidades de cobro.',
+    id: FINANCE_MODULE_IDS.PAYABLES_GROUP, label: 'Cuentas por pagar', icon: PayablesIcon, description: 'Facturas de proveedores, proveedores y gastos de empleados.',
+    children: [
+      { id: FINANCE_MODULE_IDS.PAYABLES, permission: 'finance.payables.read', label: 'Facturas de proveedores' },
+      { id: FINANCE_MODULE_IDS.SUPPLIERS, permission: 'finance.suppliers.read', label: 'Proveedores' },
+      { id: FINANCE_MODULE_IDS.EXPENSES, permission: 'finance.expenses.read', label: 'Gastos de empleados' },
+    ],
+  },
+  { id: FINANCE_MODULE_IDS.REPORTS, permission: 'finance.reports.read', label: 'Reportes', icon: ReportIcon, description: 'Ingresos, cuentas por cobrar, cobranza, cuentas por pagar, recargos y ventas.' },
+  {
+    id: FINANCE_MODULE_IDS.CONFIGURATION, label: 'Configuración', icon: SettingsIcon, description: 'Tarifarios, paquetes, reglas de cierre, aprobación de contratos, tasas de cambio y unidades de cobro.',
     children: [
       { id: FINANCE_MODULE_IDS.TARIFFS, permission: 'finance.tariffs.read', label: 'Tarifario de servicios' },
       { id: FINANCE_MODULE_IDS.CHARGES, permission: 'finance.charges.read', label: 'Tarifario de cargos' },
+      { id: FINANCE_MODULE_IDS.PACKAGES, permission: 'finance.packages.read', label: 'Paquetes' },
+      { id: FINANCE_MODULE_IDS.CLOSE_RULES, permission: 'finance.close_rules.read', label: 'Reglas de cierre' },
+      { id: FINANCE_MODULE_IDS.CONTRACT_APPROVALS, permission: 'finance.contract_approvals.read', label: 'Aprobación de contratos' },
       { id: FINANCE_MODULE_IDS.EXCHANGE_RATES, permission: 'finance.exchange_rates.read', label: 'Tasas de cambio' },
       { id: FINANCE_MODULE_IDS.BILLING_UNITS, permission: 'finance.billing_units.read', label: 'Unidades de cobro' },
     ],
   },
-  { id: FINANCE_MODULE_IDS.TREASURY, permission: 'finance.receipts.read', label: 'Cobros y aplicaciones', icon: ReconciliationIcon, description: 'Cobros, anticipos, aplicaciones, reversos y devoluciones.' },
-  { id: FINANCE_MODULE_IDS.STATEMENTS, permission: 'finance.statements.read', label: 'Estados de cuenta', icon: ReportIcon, description: 'Saldo y antigüedad a una fecha de corte.' },
-  { id: FINANCE_MODULE_IDS.SUPPLIERS, permission: 'finance.suppliers.read', label: 'Proveedores', icon: UsersIcon, description: 'Directorio y condiciones de proveedores.' },
-  { id: FINANCE_MODULE_IDS.PAYABLES, permission: 'finance.payables.read', label: 'Cuentas por pagar', icon: PreInvoiceIcon, description: 'Facturas de proveedores, aprobaciones y pagos.' },
-  { id: FINANCE_MODULE_IDS.EXPENSES, permission: 'finance.expenses.read', label: 'Gastos de empleados', icon: PreInvoiceIcon, description: 'Reembolsos con aprobación del departamento y Finanzas.' },
-  { id: FINANCE_MODULE_IDS.TAXES, permission: 'finance.taxes.read', label: 'Tratamientos tributarios', icon: TariffIcon, description: 'Configuración explícita y vigencias por concepto.' },
-  { id: FINANCE_MODULE_IDS.FISCAL, permission: 'finance.fiscal.read', label: 'Documentos fiscales', icon: ShieldCheckIcon, description: 'Simulación, archivo privado y seguimiento.' },
-  { id: FINANCE_MODULE_IDS.REPORTS, permission: 'finance.reports.read', label: 'Reportes', icon: ReportIcon, description: 'Ingresos, cobranza, antigüedad, cargos, disputas y tarifas.' },
   { id: FINANCE_MODULE_IDS.USERS, administratorsOnly: true, label: 'Usuarios del departamento', icon: UsersIcon, description: 'Usuarios, plantillas y solicitudes de alta de Finanzas.' },
 ];
 

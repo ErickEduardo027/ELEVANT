@@ -37,3 +37,13 @@ export const statusMeta = (statuses, status) =>
 
 export const packageScopeLabel = scope =>
   (Object.prototype.hasOwnProperty.call(PACKAGE_SCOPE_LABELS, scope) ? PACKAGE_SCOPE_LABELS[scope] : 'Alcance no reconocido');
+
+/**
+ * How Finance and the airline name an invoice (4-N19): its simulated e-NCF (ADR-0035), or the start of the internal
+ * number of a non-fiscal invoice issued before it. «Facturas», the statement and «Aplicar cobro» use the same label.
+ */
+export function invoiceLabel(invoice) {
+  if (invoice?.fiscalNumber) return invoice.fiscalNumber;
+  const number = invoice?.number ?? '';
+  return number.length > 15 ? `${number.slice(0, 15)}…` : number;
+}

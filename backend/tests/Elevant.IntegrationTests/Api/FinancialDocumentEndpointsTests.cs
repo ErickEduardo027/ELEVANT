@@ -27,11 +27,12 @@ public sealed class FinancialDocumentEndpointsTests(ElevantApiFactory factory)
     {
         using var client = factory.CreateClient();
         var id = Guid.NewGuid();
+        // 4-A: every document is addressed by its invoice; the preinvoice routes left with the preinvoice.
         var routes = new[]
         {
-            $"/api/v1/airline/portal/preinvoices/{id:D}/invoice/document",
+            $"/api/v1/airline/portal/invoices/{id:D}/document",
             $"/api/v1/airline/portal/invoices/{id:D}/receipt",
-            $"/api/v1/finance/invoices/by-preinvoice/{id:D}/document",
+            $"/api/v1/finance/invoices/{id:D}/document",
             $"/api/v1/finance/payments/by-invoice/{id:D}/receipt",
         };
         foreach (var route in routes)
@@ -49,15 +50,14 @@ public sealed class FinancialDocumentEndpointsTests(ElevantApiFactory factory)
         var paths = json.RootElement.GetProperty("paths");
         foreach (var route in routes)
         {
-            var template = route.Replace(id.ToString("D"),
-                route.Contains("preinvoices/", StringComparison.Ordinal) ||
-                route.Contains("by-preinvoice/", StringComparison.Ordinal)
-                    ? "{preinvoiceId}" : "{invoiceId}");
+            var template = route.Replace(id.ToString("D"), "{invoiceId}");
             var response = paths.GetProperty(template).GetProperty("get")
                 .GetProperty("responses").GetProperty("200");
             Assert.True(response.GetProperty("content")
                 .TryGetProperty("application/pdf", out _));
         }
+        Assert.False(paths.TryGetProperty("/api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice/document", out _));
+        Assert.False(paths.TryGetProperty("/api/v1/finance/invoices/by-preinvoice/{preinvoiceId}/document", out _));
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class FinancialDocumentEndpointsTests(ElevantApiFactory factory)
             new AuthenticationHeaderValue("Bearer", AirlineToken());
 
         using var response = await client.GetAsync(
-            $"/api/v1/airline/portal/preinvoices/{state.PreinvoiceId:D}/invoice/document",
+            $"/api/v1/airline/portal/invoices/{state.InvoiceId:D}/document",
             TestContext.Current.CancellationToken);
 
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
@@ -120,6 +120,11 @@ public sealed class FinancialDocumentEndpointsTests(ElevantApiFactory factory)
         INonFiscalInvoiceReadStore, IFinancialDocumentStore
     {
         public Guid PreinvoiceId { get; } = Guid.NewGuid();
+
+        public Guid InvoiceId { get; } = Guid.NewGuid();
+
+        public Task<Guid?> PreinvoiceOfInvoiceAsync(Guid invoiceId, CancellationToken cancellationToken = default) =>
+            Task.FromResult<Guid?>(invoiceId == InvoiceId ? PreinvoiceId : null);
 
         public Task<ActorContext?> ResolveAsync(Guid accountId,
             CancellationToken cancellationToken = default) =>

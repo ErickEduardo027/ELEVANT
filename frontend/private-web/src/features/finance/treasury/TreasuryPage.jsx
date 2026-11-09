@@ -11,6 +11,7 @@ import { createPrivateWebAccountChangeObserver } from '../../../services/account
 import { applyTreasuryReceipt, formatTreasuryMoney as money, getTreasuryOptions, getTreasuryReceipt,
   getTreasuryStatement, listTreasuryReceipts, parseTreasuryAmount, recordTreasuryReceipt, refundTreasuryReceipt,
   reverseTreasuryReceipt, treasuryError, treasuryIntent, treasuryToday } from '../../../services/financeTreasuryService';
+import { invoiceLabel } from '../financeLabels';
 
 const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const primary = 'min-h-[40px] rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
@@ -116,7 +117,7 @@ function ReceiptDetail({ receiptId, revision, onChanged, onOpenInvoice, preferre
         {action.kind === 'apply' && <><p className="text-xs">Indique importes en la moneda del cobro. ELEVANT registra la tasa de cambio de la fecha y valida cada saldo.</p>
           {candidates === null ? <p role="status">Cargando facturas…</p> : !candidates.length ? <p>No hay facturas pendientes para esta aerolínea y estación.</p> :
             <div className="max-h-72 space-y-3 overflow-y-auto">{candidates.map(i => <label key={i.id} className="block rounded-lg border border-black/10 p-3 text-xs font-semibold dark:border-white/10">
-              Importe para {i.number} ({action.receipt.currencyCode}) · Saldo {money(i.balance, i.currencyCode)}
+              Importe para {invoiceLabel(i)} ({action.receipt.currencyCode}) · Saldo {money(i.balance, i.currencyCode)}
               <input type="number" min="0.0001" step="0.0001" max={action.receipt.available} value={form.amounts[i.id] ?? ''} disabled={busy}
                 onChange={event => setForm(current => ({ ...current, amounts: { ...current.amounts, [i.id]: event.target.value } }))} className={field} />
             </label>)}</div>}</>}

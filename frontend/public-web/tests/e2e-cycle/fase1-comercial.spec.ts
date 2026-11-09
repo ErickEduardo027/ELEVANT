@@ -29,7 +29,8 @@ test("Finanzas publica la tarifa base de los servicios del catálogo público", 
   const detail = published ? await call<{ rates: Array<{ serviceId: string }> }>(finance, "GET", `/finance/service-tariffs/${published.id}`) : null;
   const missing = catalog.data.services.filter(service => !detail?.data.rates.some(rate => rate.serviceId === service.id));
   await loginPrivate(page, "finance");
-  await openModule(page, "Tarifarios");
+  // 4-A: the tariff books, packages, close rules and contract approvals live in «Configuración».
+  await openModule(page, "Configuración");
   await openModule(page, "Tarifario de servicios");
   if (missing.length) {
     await expect(page.getByText("Cargando tarifas…")).toBeHidden();
@@ -489,6 +490,7 @@ test("Finanzas aprueba las tarifas del contrato", async ({ page }) => {
   const run = loadRun();
   const airline = run.airline as { name: string };
   await loginPrivate(page, "finance");
+  await openModule(page, "Configuración");
   await openModule(page, "Aprobación de contratos");
   await page.getByRole("button", { name: new RegExp(airline.name) }).first().click();
   await snap(page, "fase1-finanzas-revision");

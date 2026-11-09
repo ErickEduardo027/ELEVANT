@@ -27,9 +27,14 @@ public sealed record FinanceTreasuryLineLimitResponse(Guid InvoiceLineId, int Li
     decimal CreditQuantityRemaining, decimal CreditAmountRemaining, decimal DebitQuantityRemaining, decimal DebitAmountRemaining);
 public sealed record FinanceTreasuryAdjustmentsResponse(Guid InvoiceId, string Version, decimal LegacyCredited,
     IReadOnlyList<FinanceTreasuryLineLimitResponse> Lines, IReadOnlyList<FinanceTreasuryAdjustmentResponse> Notes);
+/// <summary>
+/// An invoice of Finance's statement. <c>FiscalNumber</c> (4-N19, added last: web only) is the simulated e-NCF that
+/// identifies it; null for the non-fiscal invoices issued before ADR-0035, which keep their <c>Number</c>.
+/// </summary>
 public sealed record FinanceTreasuryStatementInvoiceResponse(Guid Id, string Number, Guid AirlineId, Guid StationId,
     string CurrencyCode, decimal Total, decimal LegacyPaid, decimal LegacyCredited, decimal Applied, decimal Credited,
-    decimal Debited, decimal Balance, DateOnly? DueDate, int DaysOverdue, string AgingBucket, string Version);
+    decimal Debited, decimal Balance, DateOnly? DueDate, int DaysOverdue, string AgingBucket, string Version,
+    string? FiscalNumber);
 public sealed record FinanceTreasuryStatementMovementResponse(Guid Id, Guid? ReceiptId, Guid? InvoiceId, string Kind,
     string CurrencyCode, decimal Amount, DateOnly EffectiveOn, DateTimeOffset RecordedAt, Guid? ReversesId, string Reference);
 public sealed record FinanceTreasuryAgingResponse(string CurrencyCode, decimal Balance, decimal Current, decimal Days1To30,

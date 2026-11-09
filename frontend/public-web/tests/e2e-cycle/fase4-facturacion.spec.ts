@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
-import { call, login } from "./support/api";
+import { call, expectCall, login } from "./support/api";
 import { loginPortal, loginPrivate, snap } from "./support/browser";
 import { API, loadRun, saveRun } from "./support/env";
 import { pdfText } from "./support/pdf";
@@ -15,8 +15,8 @@ const DECLINED = "4000 0000 0000 0002";
 const APPROVED = "4111 1111 1111 1111";
 const localDay = () => new Date().toLocaleDateString("en-CA");
 // 4-N10: Finance dates by the business day of Santo Domingo, whatever the zone of the machine or UTC.
-const businessDay = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo", year: "numeric",
-  month: "2-digit", day: "2-digit" }).format(new Date());
+const businessDay = (at = new Date()) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Santo_Domingo", year: "numeric",
+  month: "2-digit", day: "2-digit" }).format(at);
 
 type IssueBody = { stationId: string; operationIds: string[]; requestId: string;
   operationVersions?: Array<{ operationId: string; version: string }> };
@@ -153,5 +153,86 @@ test("Finanzas consulta sus reportes del período", async ({ page }) => {
   await snap(page, "fase4-finanzas-reportes");
 });
 
-test.fixme("hueco 4-A · Finanzas sin prefacturas: menú Inicio · Facturación · Cuentas por pagar · Reportes · Configuración · Usuarios", async () => {});
+test("Finanzas sin prefacturas: menú Inicio · Facturación · Cuentas por pagar · Reportes · Configuración · Usuarios", async ({ page }) => {
+  const run = loadRun();
+  const invoice = run.invoice as { fiscalNumber: string };
+  const token = await login("finance");
+  // 4-N21: the ledger finds the run's invoice by its e-NCF; its business day opens the sales book below.
+  const found = await expectCall<{ invoices: Array<{ fiscalNumber: string | null; issuedAt: string }> }>(200, token, "GET",
+    `/finance/invoices?search=${encodeURIComponent(invoice.fiscalNumber)}&limit=25`);
+  expect(found.data.invoices.map(item => item.fiscalNumber)).toEqual([invoice.fiscalNumber]);
+  const issuedDay = businessDay(new Date(found.data.invoices[0].issuedAt));
+  const tooLong = await expectCall<{ code?: string }>(400, token, "GET", `/finance/invoices?search=${"E".repeat(41)}`);
+  expect(tooLong.data.code).toBe("invalid_invoice_query");
+
+  await loginPrivate(page, "finance");
+  // 4-A: the first level of the menu is the simplified Finance; the retired modules are gone from it.
+  const navigation = page.getByRole("navigation", { name: "Navegación principal" });
+  for (const label of [/^Inicio/, /^Facturación/, /^Cuentas por pagar/, /^Reportes/, /^Configuración/, /^Usuarios/])
+    await expect(navigation.getByRole("button", { name: label }).first()).toBeVisible();
+  for (const retired of [/Pre-facturación/, /Servicios aprobados/, /Tratamientos tributarios/, /Documentos fiscales/,
+    /Cobros y aplicaciones/, /^Tarifarios/])
+    await expect(navigation.getByRole("button", { name: retired })).toHaveCount(0);
+  // 4-A, 4-N02: «Inicio» shows what the server computes for the station, never «sin estación».
+  await expect(page.getByRole("heading", { level: 1, name: "Resumen financiero" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Operaciones por facturar" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Por cobrar" })).toBeVisible();
+  await expect(page.getByText("No hay una estación financiera autorizada")).toHaveCount(0);
+  await snap(page, "fase4-finanzas-inicio");
+
+  // 4-N21: «Facturas» pages by 25 and finds the invoice by its e-NCF from the first page.
+  await openFinance(page, "Facturas");
+  const pages = page.getByRole("navigation", { name: "Páginas de facturas" });
+  await expect(pages.getByRole("button", { name: "Siguiente" })).toBeVisible();
+  const searched = page.waitForRequest(request => request.url().includes("/api/v1/finance/invoices?") &&
+    new URL(request.url()).searchParams.get("search") === invoice.fiscalNumber);
+  await page.getByRole("searchbox", { name: "Buscar (e-NCF, número o aerolínea)" }).fill(invoice.fiscalNumber);
+  expect(new URL((await searched).url()).searchParams.get("page")).toBe("1");
+  await expect(page.getByRole("button", { name: invoice.fiscalNumber })).toBeVisible();
+  await expect(pages.getByText("Página 1")).toBeVisible();
+  await snap(page, "fase4-finanzas-facturas-busqueda");
+  // 4-N19: «Cobros» and «Estados de cuenta» are tabs of «Facturas»; the statement names the invoice by its e-NCF.
+  await expect(page.getByRole("tab", { name: "Cobros" })).toBeVisible();
+  await page.getByRole("tab", { name: "Estados de cuenta" }).click();
+  const cutOff = page.locator("section").filter({ has: page.getByRole("heading", { name: "Facturas al corte" }) });
+  await expect(cutOff).toContainText(invoice.fiscalNumber);
+  await snap(page, "fase4-finanzas-estado-de-cuenta");
+
+  // 4-A, 4-N20: six reports; «Ventas (e-CF simulado)» is the sales book of the simulated e-CF.
+  await navigation.getByRole("button", { name: /^Reportes/ }).first().click();
+  const reports = page.getByRole("tablist", { name: "Reportes" });
+  await expect(reports.getByRole("tab")).toHaveText(["Ingresos por período", "Cuentas por cobrar y antigüedad", "Cobranza",
+    "Cuentas por pagar", "Recargos", "Ventas (e-CF simulado)"]);
+  await reports.getByRole("tab", { name: "Ventas (e-CF simulado)" }).click();
+  await page.getByLabel("Desde").fill(issuedDay);
+  await expect(page.getByRole("table")).toContainText(invoice.fiscalNumber);
+  await expect(page.getByText(/Simulación — sin validez fiscal/).first()).toBeVisible();
+  await snap(page, "fase4-finanzas-reporte-ventas");
+
+  // 4-N12: the legacy writes answer 410 with their code, whatever the permissions; the retired routes are gone.
+  const legacy: Array<[string, Record<string, unknown>]> = [
+    ["/finance/invoices", { preinvoiceId: randomUUID(), requestId: randomUUID() }],
+    [`/finance/invoices/${randomUUID()}/credit-notes`, { amount: 1, reason: "Ruta retirada (ciclo E2E)" }],
+    ["/finance/payments", { invoiceId: randomUUID(), amount: 1, reference: "E2E-410", method: "Transfer" }],
+  ];
+  for (const [route, body] of legacy) {
+    const refused = await expectCall<{ code?: string }>(410, token, "POST", route, body);
+    expect(refused.data.code, route).toBe("legacy_finance_route_retired");
+  }
+  for (const route of ["/finance/preinvoices", "/finance/approved-services", "/finance/reconciliation",
+    "/finance/tax-policies", "/finance/fiscal-documents"])
+    await expectCall(404, token, "GET", route);
+  // 4-A: the permission matrix offers the simplified Finance; the retired codes only resolve as aliases.
+  const catalog = await expectCall<Array<{ department: string; modules: Array<{ key: string; section: string;
+    actions: Array<{ code: string }> }> }>>(200, token, "GET", "/governance/catalog");
+  const financeCatalog = catalog.data.find(item => item.department === "finance");
+  expect(financeCatalog, "the Finance catalog").toBeTruthy();
+  const keys = financeCatalog!.modules.map(module => module.key);
+  for (const retired of ["preinvoices", "approved_services", "taxes", "fiscal"]) expect(keys).not.toContain(retired);
+  expect([...new Set(financeCatalog!.modules.map(module => module.section))])
+    .toEqual(["Inicio", "Facturación", "Cuentas por pagar", "Reportes", "Configuración"]);
+  expect(financeCatalog!.modules.flatMap(module => module.actions.map(action => action.code)))
+    .not.toContain("finance.reconciliation.create");
+});
+
 test.fixme("hueco 4-B · el Vault describe el ciclo completo tal como funciona", async () => {});

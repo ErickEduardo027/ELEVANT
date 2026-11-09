@@ -12,7 +12,7 @@ namespace Elevant.IntegrationTests.Persistence;
 public sealed partial class SqlServerMigrationTests
 {
     [Fact]
-    public async Task FinanceReportsReconcileTreasuryLegacyPayablesPackagesAndSeparateFiscalSimulation()
+    public async Task FinanceReportsReconcileTreasuryLegacyAndPayablesInTheSixReports()
     {
         var ct = TestContext.Current.CancellationToken;
         var master = ResolveMasterConnection();
@@ -23,7 +23,6 @@ public sealed partial class SqlServerMigrationTests
         var station = await db.Stations.SingleAsync(s => s.Code == "PUJ", ct);
         var airline = await db.Airlines.FirstAsync(ct);
         var user = await db.Users.SingleAsync(u => u.PublicId == FinanceAccount, ct);
-        var employee = await db.Employees.FirstAsync(ct);
         var now = DateTimeOffset.UtcNow;
         var early = now.AddDays(-2);
         var today = Elevant.Application.Common.BusinessCalendar.Today(now);
@@ -85,62 +84,52 @@ public sealed partial class SqlServerMigrationTests
         db.AddRange(new FinanceTreasuryAdjustmentLine { PublicId = Guid.NewGuid(), NoteId = credit.Id, InvoiceLineId = invoiceLines[0].Id, Quantity = 0.1m, Amount = 60m, CreatedAt = now, UpdatedAt = now },
             new FinanceTreasuryAdjustmentLine { PublicId = Guid.NewGuid(), NoteId = credit.Id, InvoiceLineId = invoiceLines[1].Id, Quantity = 0.1m, Amount = 40m, CreatedAt = now, UpdatedAt = now },
             new FinanceTreasuryAdjustmentLine { PublicId = Guid.NewGuid(), NoteId = debit.Id, InvoiceLineId = invoiceLines[0].Id, Quantity = 0, Amount = 20m, CreatedAt = now, UpdatedAt = now });
-        db.Add(FinanceFiscalDocument.Create(invoice.Id, user.Id, Guid.NewGuid(), new string('a', 64), FiscalMode.LocalSimulation,
-            "Development", FiscalSimulationOutcome.Accepted, "{}", new string('b', 64), "USD", 1000m, early));
         await db.SaveChangesAsync(ct);
 
         var actors = new ReportTestActors(station.PublicId);
         var reports = new EfFinanceReportStore(db, actors, TimeProvider.System);
         var filter = new FinanceReportFilter(firstDay, today, station.PublicId, null, "USD");
         async Task<FinanceReportData> Read(string key, DateOnly? cutoff = null) => (await reports.GetAsync(FinanceAccount, key, filter with { To = cutoff ?? today }, ct))!;
-        static string Cell(FinanceReportData report, string key, int row = 0) => report.Rows[row][report.Columns.ToList().FindIndex(c => c.Key == key)]!;
+        static string? Cell(FinanceReportData report, string key, int row = 0) => report.Rows[row][report.Columns.ToList().FindIndex(c => c.Key == key)];
         Assert.Equal("570.00", Cell(await Read("receivables"), "balance"));
         Assert.Equal("750.00", Cell(await Read("receivables", today.AddDays(-1)), "balance"));
-        Assert.Equal("1000.00", Assert.Single((await Read("collections")).Summary, m => m.Label == "Cobrado USD").Value);
-        var treasury = await Read("treasury");
-        Assert.Equal("300.00", Assert.Single(treasury.Summary, m => m.Label == "Aplicado neto USD").Value);
-        var creditReport = await Read("credit-notes");
-        Assert.Equal(2, creditReport.Rows.Count); Assert.Equal("150.00", Assert.Single(creditReport.Summary).Value);
-        Assert.Single((await Read("debit-notes")).Rows);
-        Assert.Equal(2, (await Read("packages")).Rows.Count);
+        // «Cobranza»: cash once at receipt, every method in Spanish, and what the airlines paid by card apart (4-N19).
+        var collections = await Read("collections");
+        Assert.Equal("1000.00", Assert.Single(collections.Summary, m => m.Label == "Cobrado USD").Value);
+        Assert.Equal("0.00", Assert.Single(collections.Summary, m => m.Label == "Cobrado con tarjeta USD").Value);
+        Assert.All(collections.Rows, row => Assert.Equal("Transferencia", row[3]));
         Assert.Equal("500.00", Cell(await Read("revenue"), "packages"));
         Assert.Equal("100.00", Cell(await Read("revenue"), "excess"));
         Assert.Equal("100.00", Cell(await Read("revenue"), "minimum"));
-        Assert.Null((await Read("revenue")).Rows[0][12]); // unknown legacy tax remains unknown
-        Assert.Empty((await Read("fiscal")).Rows); Assert.Single((await Read("fiscal-simulation")).Rows);
-        var reconciled = Assert.Single((await new EfFinanceReconciliationReadStore(db, TimeProvider.System).ListAsync(FinanceAccount, station.PublicId, 1, 20, ct))!.Rows);
-        Assert.Equal(300m, reconciled.PaymentAmount); // payments + net applications; credits are not payments
-        using (var json = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(reconciled,
-            new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))))
-            Assert.Equal(new[] { "preinvoiceId", "airlineId", "airlineName", "from", "to", "currencyCode", "preinvoiceTotal", "preinvoiceStatus",
-                    "invoiceId", "invoiceNumber", "invoiceTotal", "issuedAt", "paymentId", "paymentReference", "paymentAmount", "paymentRecordedAt" }.Order(),
-                json.RootElement.EnumerateObject().Select(p => p.Name).Order());
+        Assert.Null(Cell(await Read("revenue"), "tax")); // unknown legacy tax remains unknown
+        Assert.Equal("ITBIS", Assert.Single((await Read("revenue")).Columns, c => c.Key == "tax").Label);
+        // «Recargos» reads the issued lines: the excess, the minimum and the legacy adjustment; a package is not one.
+        var charges = await Read("charges");
+        Assert.Equal(["Ajuste", "Excedente", "Mínimo"], charges.Rows.Select(row => row[0]!).ToArray());
+        Assert.Equal(["300.00", "100.00", "100.00"], charges.Rows.Select(row => row[6]!).ToArray());
+        Assert.All(charges.Rows, row => Assert.Null(row[5])); // no ITBIS was frozen on a legacy line
+        Assert.Equal("500.00", Assert.Single(charges.Summary, m => m.Label == "Recargos USD").Value);
+        // «Ventas» is the book of the simulated e-CF: a non-fiscal invoice issued before ADR-0035 is not a sale.
+        var sales = await Read("sales");
+        Assert.Empty(sales.Rows);
+        Assert.Equal("0", Assert.Single(sales.Summary, m => m.Label == "Facturas e-CF").Value);
 
         var supplier = new Supplier { PublicId = Guid.NewGuid(), ScopeStationId = station.Id, Code = "REPORT-SUPPLIER", Name = "Synthetic supplier", CreatedByAccountId = user.Id, CreatedAt = early, UpdatedAt = early };
         db.Add(supplier); await db.SaveChangesAsync(ct);
         var payable = new SupplierInvoice { PublicId = Guid.NewGuid(), SupplierId = supplier.Id, ScopeStationId = station.Id, DocumentReference = "QA-SUP-REPORT",
             DocumentDate = firstDay, DueDate = firstDay, Status = SupplierInvoiceStatus.Approved, CurrencyCode = "USD", FxToDop = 60, FxSource = "Frozen QA",
             FxDate = firstDay, Total = 1000, TotalDop = 60000, CreatedByAccountId = user.Id, CreatedAt = early, UpdatedAt = early };
-        var expense = new EmployeeExpenseClaim { PublicId = Guid.NewGuid(), EmployeeId = employee.Id, Department = employee.Department, Description = "Synthetic ramp travel",
-            ExpenseDate = firstDay, ScopeStationId = station.Id, Status = EmployeeExpenseStatus.Approved, CurrencyCode = "USD", FxToDop = 60,
-            FxSource = "Frozen QA", FxDate = firstDay, Total = 500, TotalDop = 30000, CreatedByAccountId = user.Id, CreatedAt = early, UpdatedAt = early };
         var payablePayment = new FinancePayablesPayment { PublicId = Guid.NewGuid(), SupplierId = supplier.Id, ScopeStationId = station.Id, Reference = "QA-SUP-PAY",
             PaidOn = firstDay, CurrencyCode = "USD", FxToDop = 60, FxSource = "Frozen QA", FxDate = firstDay, Amount = 1500, AmountDop = 90000,
             CreatedByAccountId = user.Id, CreatedAt = early, UpdatedAt = early };
-        db.AddRange(payable, expense, payablePayment); await db.SaveChangesAsync(ct);
+        db.AddRange(payable, payablePayment); await db.SaveChangesAsync(ct);
         db.AddRange(new FinancePayablesApplication { PublicId = Guid.NewGuid(), PaymentId = payablePayment.Id, SupplierInvoiceId = payable.Id, PaymentAmount = 300,
                 InvoiceAmount = 300, RateToInvoice = 1, ActorAccountId = user.Id, AppliedAt = now.AddDays(-1) },
             new FinancePayablesApplication { PublicId = Guid.NewGuid(), PaymentId = payablePayment.Id, SupplierInvoiceId = payable.Id, PaymentAmount = 200,
-                InvoiceAmount = 200, RateToInvoice = 1, ActorAccountId = user.Id, AppliedAt = now },
-            new EmployeeExpensePayment { PublicId = Guid.NewGuid(), ExpenseClaimId = expense.Id, Reference = "QA-REIMB", PaidOn = today, CurrencyCode = "USD", FxToDop = 60,
-                FxSource = "Frozen QA", FxDate = firstDay, Amount = 100, AmountDop = 6000, ExpenseAmount = 100, RateToExpense = 1, ActorAccountId = user.Id, CreatedAt = now });
+                InvoiceAmount = 200, RateToInvoice = 1, ActorAccountId = user.Id, AppliedAt = now });
         await db.SaveChangesAsync(ct);
         Assert.Equal("500.00", Cell(await Read("payables"), "balance"));
         Assert.Equal("700.00", Cell(await Read("payables", today.AddDays(-1)), "balance"));
-        Assert.Equal("1000.00", Cell(await Read("suppliers"), "unapplied"));
-        Assert.Equal("1200.00", Cell(await Read("suppliers", today.AddDays(-1)), "unapplied"));
-        Assert.Equal("400.00", Cell(await Read("expenses"), "balance"));
-        Assert.Equal("500.00", Cell(await Read("expenses", today.AddDays(-1)), "balance"));
         foreach (var key in FinanceReports.All.Select(d => d.Key))
         {
             var report = await Read(key);
@@ -148,6 +137,10 @@ public sealed partial class SqlServerMigrationTests
             Assert.Null(await reports.GetAsync(Guid.NewGuid(), key, filter, ct));
             Assert.Null(await reports.GetAsync(FinanceAccount, key, filter with { StationId = Guid.NewGuid() }, ct));
         }
+        // 4-A: the reports of retired modules left with them.
+        foreach (var retired in new[] { "pipeline", "disputes", "tariffs", "credit-notes", "debit-notes", "treasury", "suppliers",
+                     "expenses", "packages", "fiscal", "fiscal-simulation" })
+            Assert.Null(await reports.GetAsync(FinanceAccount, retired, filter, ct));
     }
 
     private sealed class ReportTestActors(Guid station) : IActorContextResolver

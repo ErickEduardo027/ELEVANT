@@ -124,61 +124,58 @@ public static class DepartmentPermissionCatalog
                 Module("contracts", "reports", "Reportes", "Análisis", null, Read()),
                 Module("contracts", "notifications", "Notificaciones", "Análisis", null, Read()),
             ],
+            // 4-A: the menu of the simplified Finance (ADR-0035, block 3): Inicio · Facturación · Cuentas por pagar ·
+            // Reportes · Configuración. Preinvoices, approved services, tax treatments and fiscal documents are retired:
+            // their stored codes resolve through Aliases.
             [Department.Finance] =
             [
                 Module("finance", "home", "Inicio", "Inicio", null, Read()),
-                Module("finance", "packages", "Paquetes", "Comercial", null,
-                    Read(), Create(), Update(), Delete("Descartar borradores"), Other("publish", "Publicar paquetes"),
-                    Other("retire", "Retirar paquetes publicados")),
-                Module("finance", "contract_approvals", "Aprobación de contratos", "Comercial", null,
-                    Read(), Other("decide", "Aprobar o devolver contratos")),
-                Module("finance", "invoicing", "Facturación", "Facturación", null,
+                Module("finance", "notifications", "Notificaciones", "Inicio", null, Read()),
+                Module("finance", "invoicing", "Por facturar", "Facturación", null,
                     Read(), Other("issue", "Emitir facturas")),
-                Module("finance", "approved_services", "Servicios aprobados", "Comercial", null,
-                    Read(), Create("Generar prefacturas")),
-                Module("finance", "charters", "Charters sin contrato", "Comercial", null,
-                    Read(), Other("confirm", "Confirmar el prepago de un charter")),
-                Module("finance", "close_rules", "Reglas de cierre", "Comercial", null,
-                    Read(), Update("Configurar tiempos en tierra y festivos")),
-                Module("finance", "preinvoices", "Pre-facturación", "Facturación", null,
-                    Read(), Update("Editar importes, ajustes y disputas"), Other("issue", "Publicar y facturar")),
-                Module("finance", "reconciliation", "Facturas", "Facturación", null,
-                    Read(), Create("Registrar pagos y notas de crédito")),
+                Module("finance", "reconciliation", "Facturas", "Facturación", null, Read()),
                 Module("finance", "adjustments", "Notas de ajuste", "Facturación", "reconciliation",
                     Read(), Create("Emitir notas de crédito y débito")),
-                Module("finance", "tariffs", "Tarifario de servicios", "Tarifarios", null,
-                    Read(), Create("Crear borradores"), Update("Editar borradores"), Delete("Eliminar borradores"),
-                    Other("publish", "Publicar tarifas")),
-                Module("finance", "charges", "Tarifario de cargos", "Tarifarios", null,
-                    Read(), Create(), Update(), Delete("Eliminar borradores"), Other("publish", "Publicar importes")),
-                Module("finance", "exchange_rates", "Tasas de cambio", "Tarifarios", null,
-                    Read(), Create("Registrar tasas"), Update("Corregir tasas")),
-                Module("finance", "billing_units", "Unidades de cobro", "Tarifarios", null,
-                    Read(), Create(), Update("Modificar y desactivar")),
-                Module("finance", "receipts", "Cobros y aplicaciones", "Tesorería", null,
+                // Cobros and Estados de cuenta are tabs of «Facturas» (4-A): reaching them reads the invoices.
+                Module("finance", "receipts", "Cobros y aplicaciones", "Facturación", "reconciliation",
                     Read(), Create("Registrar cobros"), Other("apply", "Aplicar cobros"),
                     Other("reverse", "Revertir movimientos"), Other("refund", "Registrar devoluciones")),
-                Module("finance", "statements", "Estados de cuenta", "Tesorería", null, Read()),
-                Module("finance", "suppliers", "Proveedores", "Pagos", null, Read(), Create(), Update(), Delete("Retirar")),
-                Module("finance", "payables", "Cuentas por pagar", "Pagos", null,
+                Module("finance", "statements", "Estados de cuenta", "Facturación", "reconciliation", Read()),
+                Module("finance", "charters", "Charters", "Facturación", null,
+                    Read(), Other("confirm", "Confirmar el prepago de un charter")),
+                Module("finance", "payables", "Facturas de proveedores", "Cuentas por pagar", null,
                     Read(), Create("Registrar facturas"), Update("Editar y enviar facturas"),
                     Other("approve", "Aprobar facturas"), Other("pay", "Registrar pagos")),
-                Module("finance", "expenses", "Gastos de empleados", "Pagos", null,
+                Module("finance", "suppliers", "Proveedores", "Cuentas por pagar", null, Read(), Create(), Update(), Delete("Retirar")),
+                Module("finance", "expenses", "Gastos de empleados", "Cuentas por pagar", null,
                     Read(), Create("Registrar gastos"), Update("Editar gastos"),
                     Other("approve", "Revisar gastos"), Other("pay", "Registrar reembolsos")),
-                Module("finance", "taxes", "Tratamientos tributarios", "Fiscal", null,
-                    Read("Consultar"), Create("Configurar tratamientos"), Update("Modificar vigencias")),
-                Module("finance", "fiscal", "Documentos fiscales", "Fiscal", null,
-                    Read(), Create("Preparar documentos"), Other("simulate", "Ejecutar simulación")),
-                Module("finance", "reports", "Reportes", "Análisis", null, Read(), Other("export", "Exportar")),
-                Module("finance", "notifications", "Notificaciones", "Análisis", null, Read()),
+                Module("finance", "reports", "Reportes", "Reportes", null, Read(), Other("export", "Exportar")),
+                Module("finance", "tariffs", "Tarifario de servicios", "Configuración", null,
+                    Read(), Create("Crear borradores"), Update("Editar borradores"), Delete("Eliminar borradores"),
+                    Other("publish", "Publicar tarifas")),
+                Module("finance", "charges", "Tarifario de cargos", "Configuración", null,
+                    Read(), Create(), Update(), Delete("Eliminar borradores"), Other("publish", "Publicar importes")),
+                Module("finance", "packages", "Paquetes", "Configuración", null,
+                    Read(), Create(), Update(), Delete("Descartar borradores"), Other("publish", "Publicar paquetes"),
+                    Other("retire", "Retirar paquetes publicados")),
+                Module("finance", "close_rules", "Reglas de cierre", "Configuración", null,
+                    Read(), Update("Configurar tiempos en tierra y festivos")),
+                Module("finance", "contract_approvals", "Aprobación de contratos", "Configuración", null,
+                    Read(), Other("decide", "Aprobar o devolver contratos")),
+                Module("finance", "exchange_rates", "Tasas de cambio", "Configuración", null,
+                    Read(), Create("Registrar tasas"), Update("Corregir tasas")),
+                Module("finance", "billing_units", "Unidades de cobro", "Configuración", null,
+                    Read(), Create(), Update("Modificar y desactivar")),
             ],
         };
 
     /// <summary>
     /// Codes stored before ADR-0019 and what they grant now, so existing templates and accounts keep
     /// their access: «manage» became the create/update/delete it covered and shared menu options got
-    /// their own module. Read when grants are resolved; never written.
+    /// their own module. It also keeps the codes of modules retired later (4-A, ADR-0035 block 3): one
+    /// with a real equivalent maps to it and one without maps to nothing (an empty list), so a stored
+    /// grant neither fails nor grants anything. Read when grants are resolved; never written.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string[]> Aliases = new Dictionary<string, string[]>(StringComparer.Ordinal)
     {
@@ -198,17 +195,24 @@ public static class DepartmentPermissionCatalog
         ["contracts.drafts.edit"] = ["contracts.drafts.update"],
         ["contracts.catalog.edit"] = ["contracts.catalog.update"],
         ["contracts.catalog.retire"] = ["contracts.catalog.delete"],
-        ["finance.preinvoices.manage"] = ["finance.preinvoices.update", "finance.preinvoices.issue"],
-        ["finance.reconciliation.record"] = ["finance.reconciliation.create"],
+        // 4-A: viewing approved services or preinvoices was reading «Por facturar»; issuing a preinvoice was issuing.
+        ["finance.approved_services.read"] = ["finance.invoicing.read"],
+        ["finance.approved_services.create"] = [],
+        ["finance.approved_services.preinvoice"] = [],
+        ["finance.preinvoices.read"] = ["finance.invoicing.read"],
+        ["finance.preinvoices.issue"] = ["finance.invoicing.issue"],
+        ["finance.preinvoices.manage"] = ["finance.invoicing.issue"],
+        ["finance.preinvoices.update"] = [],
+        // 4-N12: the legacy payment and credit-note writer is retired; receipts and adjustment notes govern them.
+        ["finance.reconciliation.create"] = [],
+        ["finance.reconciliation.record"] = [],
         ["finance.adjustments.issue"] = ["finance.adjustments.create"],
-        ["finance.approved_services.preinvoice"] = ["finance.approved_services.create"],
         ["finance.tariffs.read"] = ["finance.billing_units.read"],
         ["finance.tariffs.manage"] = ["finance.tariffs.create", "finance.tariffs.update", "finance.tariffs.delete",
             "finance.tariffs.publish", "finance.billing_units.create", "finance.billing_units.update"],
         ["finance.charges.manage"] = ["finance.charges.create", "finance.charges.update", "finance.charges.delete",
             "finance.charges.publish"],
         ["finance.exchange_rates.manage"] = ["finance.exchange_rates.create", "finance.exchange_rates.update"],
-        ["finance.taxes.manage"] = ["finance.taxes.create", "finance.taxes.update"],
         ["finance.packages.manage"] = ["finance.packages.create", "finance.packages.update", "finance.packages.publish",
             "finance.packages.delete", "finance.packages.retire"],
         ["finance.receipts.read"] = ["finance.statements.read"],
@@ -216,7 +220,15 @@ public static class DepartmentPermissionCatalog
         ["finance.suppliers.manage"] = ["finance.suppliers.create", "finance.suppliers.update", "finance.suppliers.delete"],
         ["finance.payables.manage"] = ["finance.payables.create", "finance.payables.update"],
         ["finance.expenses.manage"] = ["finance.expenses.create", "finance.expenses.update"],
-        ["finance.fiscal.manage"] = ["finance.fiscal.create"],
+        // 4-A, 4-N20: tax treatments and fiscal documents are retired; the fixed simulated ITBIS replaced them.
+        ["finance.taxes.read"] = [],
+        ["finance.taxes.create"] = [],
+        ["finance.taxes.update"] = [],
+        ["finance.taxes.manage"] = [],
+        ["finance.fiscal.read"] = [],
+        ["finance.fiscal.create"] = [],
+        ["finance.fiscal.simulate"] = [],
+        ["finance.fiscal.manage"] = [],
     };
 
     private static readonly IReadOnlyDictionary<string, Department> Owners = Modules
@@ -230,6 +242,13 @@ public static class DepartmentPermissionCatalog
             (Child: module.Actions[0].Code[..module.Actions[0].Code.LastIndexOf('.')],
              Parent: module.Actions[0].Code[..module.Actions[0].Code.IndexOf('.')] + "." + module.Parent)))
         .ToDictionary(item => item.Child, item => item.Parent, StringComparer.Ordinal);
+
+    /// <summary>Code prefix ('finance') → the department whose codes carry it.</summary>
+    private static readonly IReadOnlyDictionary<string, Department> Prefixes = Modules
+        .SelectMany(entry => entry.Value.SelectMany(module => module.Actions)
+            .Select(action => (Prefix: action.Code[..action.Code.IndexOf('.')], Department: entry.Key)))
+        .Distinct()
+        .ToDictionary(item => item.Prefix, item => item.Department, StringComparer.Ordinal);
 
     public static IReadOnlyList<Department> Departments { get; } =
         [Department.HumanResources, Department.Contracts, Department.Operations, Department.Finance];
@@ -245,10 +264,15 @@ public static class DepartmentPermissionCatalog
     public static Department? DepartmentOf(string code) =>
         Owners.TryGetValue(code, out var department) ? department : null;
 
-    /// <summary>True when the code, or every code a legacy code stands for, belongs to the department.</summary>
+    /// <summary>
+    /// True when the code, or every code a legacy code stands for, belongs to the department. A retired code (an
+    /// alias to nothing) belongs only to the department of its prefix, so a stored template keeps validating.
+    /// </summary>
     public static bool Belongs(string code, Department department) =>
         Owners.TryGetValue(code, out var owner) ? owner == department
-            : Aliases.TryGetValue(code, out var current) && current.All(item => Owners.TryGetValue(item, out var target) && target == department);
+            : Aliases.TryGetValue(code, out var current) && (current.Length == 0
+                ? Prefixes.TryGetValue(code[..Math.Max(0, code.IndexOf('.'))], out var prefixOwner) && prefixOwner == department
+                : current.All(item => Owners.TryGetValue(item, out var target) && target == department));
 
     /// <summary>Current codes a stored code grants: itself when known plus what a legacy code became.</summary>
     public static IEnumerable<string> Expand(string code)

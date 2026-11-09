@@ -2,37 +2,46 @@ import { describe, expect, it } from 'vitest';
 import { FINANCE_MODULES, FINANCE_MODULE_IDS, financeNavigation, selectableModules } from './modules';
 
 describe('finance modules', () => {
-  it('contains the documented financial workflow without duplicate ids', () => {
-    const ids = selectableModules(FINANCE_MODULES).map(module => module.id);
-    expect(ids).toEqual([
+  it('is the simplified menu: Inicio · Facturación · Cuentas por pagar · Reportes · Configuración · Usuarios (4-A)', () => {
+    expect(FINANCE_MODULES.map(module => module.id)).toEqual([
       FINANCE_MODULE_IDS.HOME,
-      FINANCE_MODULE_IDS.TO_INVOICE,
-      FINANCE_MODULE_IDS.RECONCILIATION,
-      FINANCE_MODULE_IDS.CHARTERS,
-      FINANCE_MODULE_IDS.PACKAGES,
-      FINANCE_MODULE_IDS.CONTRACT_APPROVALS,
-      FINANCE_MODULE_IDS.CLOSE_RULES,
-      FINANCE_MODULE_IDS.TARIFFS,
-      FINANCE_MODULE_IDS.CHARGES,
-      FINANCE_MODULE_IDS.EXCHANGE_RATES,
-      FINANCE_MODULE_IDS.BILLING_UNITS,
-      FINANCE_MODULE_IDS.TREASURY,
-      FINANCE_MODULE_IDS.STATEMENTS,
-      FINANCE_MODULE_IDS.SUPPLIERS,
-      FINANCE_MODULE_IDS.PAYABLES,
-      FINANCE_MODULE_IDS.EXPENSES,
-      FINANCE_MODULE_IDS.TAXES,
-      FINANCE_MODULE_IDS.FISCAL,
+      FINANCE_MODULE_IDS.INVOICING,
+      FINANCE_MODULE_IDS.PAYABLES_GROUP,
       FINANCE_MODULE_IDS.REPORTS,
+      FINANCE_MODULE_IDS.CONFIGURATION,
       FINANCE_MODULE_IDS.USERS,
     ]);
+    expect(FINANCE_MODULES.map(module => module.label)).toEqual([
+      'Inicio', 'Facturación', 'Cuentas por pagar', 'Reportes', 'Configuración', 'Usuarios del departamento',
+    ]);
+    const group = id => FINANCE_MODULES.find(module => module.id === id).children.map(child => child.label);
+    expect(group(FINANCE_MODULE_IDS.INVOICING)).toEqual(['Por facturar', 'Facturas', 'Charters']);
+    expect(group(FINANCE_MODULE_IDS.PAYABLES_GROUP)).toEqual(['Facturas de proveedores', 'Proveedores', 'Gastos de empleados']);
+    expect(group(FINANCE_MODULE_IDS.CONFIGURATION)).toEqual(['Tarifario de servicios', 'Tarifario de cargos', 'Paquetes',
+      'Reglas de cierre', 'Aprobación de contratos', 'Tasas de cambio', 'Unidades de cobro']);
+  });
+
+  it('lists every selectable module once and none of the retired ones', () => {
+    const modules = selectableModules(FINANCE_MODULES);
+    const ids = modules.map(module => module.id);
     expect(new Set(ids).size).toBe(ids.length);
+    for (const retired of ['finance-preinvoices', 'finance-approved-services', 'finance-taxes', 'finance-fiscal',
+      'finance-treasury', 'finance-statements', 'finance-tariff-books'])
+      expect(ids).not.toContain(retired);
+    const permissions = modules.map(module => module.permission).filter(Boolean);
+    expect(permissions.filter(code => /\.(preinvoices|approved_services|taxes|fiscal)\./.test(code))).toEqual([]);
+    expect(permissions).not.toContain('finance.receipts.read');
+    expect(permissions).not.toContain('finance.statements.read');
   });
 
   it('keeps only permitted sub-items and hides an empty group', () => {
     const onlyCharges = financeNavigation(item => item.permission === 'finance.charges.read');
     expect(onlyCharges).toHaveLength(1);
+    expect(onlyCharges[0].id).toBe(FINANCE_MODULE_IDS.CONFIGURATION);
     expect(onlyCharges[0].children.map(child => child.id)).toEqual([FINANCE_MODULE_IDS.CHARGES]);
+    const invoicing = financeNavigation(item => ['finance.home.read', 'finance.invoicing.read'].includes(item.permission));
+    expect(invoicing.map(module => module.id)).toEqual([FINANCE_MODULE_IDS.HOME, FINANCE_MODULE_IDS.INVOICING]);
+    expect(invoicing[1].children.map(child => child.id)).toEqual([FINANCE_MODULE_IDS.TO_INVOICE]);
     expect(financeNavigation(() => false)).toEqual([]);
   });
 

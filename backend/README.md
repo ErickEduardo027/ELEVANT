@@ -576,30 +576,30 @@ versiones y enmiendas, Finanzas aprueba el contrato y OCC aprueba la ejecución.
 El agente marca cargos sin recibir precios. Cantidad, evidencia, precio,
 moneda y cálculo se congelan; falta de datos/FX o ambigüedad bloquea.
 
-Las rutas de `finance/approved-services`, `finance/preinvoices`,
-`finance/tariffs`, tarifarios y catálogo conservan las lecturas autorizadas.
-Se agregan `finance/packages`, paquetes del borrador contractual y enmiendas.
-El consumo se reserva con la prefactura bajo transacción serializable, por
-turnaround, tramo o período; un ámbito con otra prefactura activa sin emitir
-bloquea con `package_scope_has_unissued_preinvoice`. Anular libera reservas
-sin borrar historia. Los mínimos generan un complemento trazable solo para
-versiones modernas `PricingPolicyVersion > 0`; no se reinterpretan versiones
-heredadas ni se añade el mínimo de servicio a cobertura de paquete.
+«Por facturar» lee `finance/invoicing/pending-operations` y emite con
+`finance/invoices/from-operations` (ADR-0035). Desde la fase 4 (4-A) la
+prefactura es solo el borrador interno de esa transacción: valora los servicios
+aprobados y se emite dentro de ella, sin endpoints, permisos ni pantallas. Las
+rutas de prefactura, servicios aprobados y conciliación de Finanzas y las de
+aceptar o disputar del portal se retiraron (404). `POST finance/invoices`,
+`POST finance/invoices/{id}/credit-notes` y `POST finance/payments` responden
+410 `legacy_finance_route_retired` sin escribir nada: se emite desde «Por
+facturar», se cobra en «Cobros» y se corrige con notas de ajuste. Las tablas
+y las migraciones aplicadas se conservan.
 
-En Draft, Finanzas ajusta/excluye con motivo, versión y cálculo original.
-El recálculo es explícito. Una disputa impide emitir; su resolución conserva
-historial. La aerolínea acepta/disputa únicamente su tenant. La emisión
-desde una prefactura Accepted congela factura, líneas, jerarquía, identidad
-comercial y vencimiento. No se revalora después con tarifas actuales.
+`finance/tariffs`, tarifarios, catálogo y `finance/packages` (con paquetes del
+borrador contractual y enmiendas) conservan sus rutas. El consumo de paquete se
+reserva con el borrador interno bajo la transacción serializable de la emisión,
+por turnaround, tramo o período. Los mínimos generan un complemento trazable
+solo para versiones modernas `PricingPolicyVersion > 0`; no se reinterpretan
+versiones heredadas ni se añade el mínimo de servicio a cobertura de paquete.
+La emisión congela factura, líneas, jerarquía, identidad comercial, ITBIS 18 %
+simulado y vencimiento; no se revalora después con tarifas actuales.
 
-`finance/tax-policies` y `finance/preinvoices/{id}/taxes` administran
-tratamientos explícitos por aerolínea, estación, moneda, concepto y vigencia.
-Las líneas congelan política, tasa/fundamento, neto, descuento, impuesto y
-bruto. `Unconfigured` conserva impuesto desconocido, no cero. El legado
-comercial sigue legible sin inferir tratamiento; una preparación fiscal sin
-snapshot emitido configurado se bloquea. El modelo aún no aporta registros
-tributarios revisados: `issuerTaxRegistration` y
-`customerTaxRegistration` quedan explícitamente null, nunca datos inventados.
+Los tratamientos tributarios configurables (`finance/tax-policies` y
+`finance/preinvoices/{id}/taxes`) se retiraron (4-A, 4-N20): el ITBIS fijo del
+e-CF simulado los sustituye. Las líneas heredadas conservan su snapshot y
+`Unconfigured` sigue siendo impuesto desconocido, no cero.
 
 ### Cartera y tesorería
 
@@ -649,33 +649,15 @@ Los PDFs comerciales de factura/recibo conservan descargas autorizadas de
 bytes privados, sin URL pública ni regeneración silenciosa de originales
 alterados. El portal no recibe soportes de empleados ni su PII.
 
-### Fiscal local y preflight XML
+### Documentos fiscales (retirado)
 
-`api/v1/finance/fiscal-documents` ofrece status, lista/detalle, creación,
-simulate y descargas de artefactos. Los estados comercial, de cartera y
-fiscal son independientes.
-
-- `FinanceFiscal:Mode` predetermina Off. LocalSimulation solo ejecuta en
-  Development/Test. ProviderSandbox está bloqueado: no hay proveedor seleccionado.
-- El ambiente se resuelve de DOTNET_ENVIRONMENT, luego
-  ASPNETCORE_ENVIRONMENT, por defecto Production.
-- Se persiste intención, se archivan JSON canónico/XML neutral/manifest,
-  se verifican bytes y después se reclama un único intento. Archivo previo
-  fallido bloquea; timeout/desconocido no permite reenvío ciego.
-- `FinanceFiscal:ArchiveMode` predetermina PrivateObjectStore (S3 privado).
-  LocalDirectory exige ArchiveDirectory privado/persistente y se rechaza al
-  arrancar fuera de Development/Test. Permite QA fiscal sin S3; no reemplaza
-  almacenamiento de soportes de gastos ni PDFs comerciales.
-- El simulador no usa red fiscal, certificados, firma ni numeración oficial.
-  Lleva SIMULATION WITHOUT FISCAL VALIDITY y mantiene e-NCF/respuesta DGII null.
-  El autenticador de callbacks registrado rechaza todos por defecto.
-
-`POST api/v1/finance/fiscal-xml/validate` es un preflight offline independiente
-para E31/E32/E33/E34 con XSD oficiales fijados. No despacha ni almacena el XML.
-XSD, presencia de firma, criptografía, reglas de negocio y aceptación son
-capas separadas: criptografía y aceptación permanecen NotPerformed.
-El XML neutral FiscalSimulation no es un e-CF. Fuentes y límites:
-[referencia DGII](../docs/reference/dgii-ecf-schema-sources.md).
+El módulo «Documentos fiscales» (`api/v1/finance/fiscal-documents`), el
+preflight `POST api/v1/finance/fiscal-xml/validate`, su simulador local y la
+configuración `FinanceFiscal:*` se retiraron en la fase 4 (4-A, 4-N20): la API
+ya no lee esa configuración. Las tablas, las migraciones aplicadas y los XSD
+oficiales (fuente de `scripts/geo/generate-do-territory.mjs`) se conservan. La
+factura lleva el e-NCF simulado de ADR-0035; el recibo de tarjeta y los PDF de
+reportes se marcan «Simulación — sin validez fiscal», nunca «Sin NCF».
 
 ### Acceso, reportes y recuperación
 
@@ -683,23 +665,28 @@ JWT identifica cuenta; el servidor deriva membresía AVIAM, departamento,
 estaciones y permisos. Las mutaciones usan intención/hash, expectedVersion
 cuando corresponde, auditoría y pistas de cambio con revalidación de acceso.
 
-Además de tarifas/cargos, contratos y prefacturas, el catálogo ofrece
-`finance.catalog.read/manage`, `finance.packages.read/manage`,
-`finance.taxes.read/manage`, `finance.receipts.read/manage/apply/reverse/refund`,
-`finance.adjustments.read/issue`, `finance.suppliers.read/manage`,
-`finance.payables.read/manage/approve/pay`,
-`finance.expenses.read/manage/approve/pay` y
-`finance.fiscal.read/manage/simulate`. La excepción de gasto propio no
-concede gestión o aprobación financiera general.
+El catálogo de Finanzas (`DepartmentPermissionCatalog`) sigue el menú: Inicio,
+Facturación (Por facturar, Facturas con Cobros y Estados de cuenta como
+sub-ventanas, Charters), Cuentas por pagar, Reportes y Configuración. Los
+códigos de los módulos retirados se resuelven por alias al leer el acceso:
+`finance.approved_services.read` y `finance.preinvoices.read` dan
+`finance.invoicing.read`; `finance.preinvoices.issue` y `.manage` dan
+`finance.invoicing.issue`; `finance.taxes.*`, `finance.fiscal.*`,
+`finance.reconciliation.create` y el resto de prefactura no conceden nada. La
+excepción de gasto propio no concede gestión o aprobación financiera general.
+`GET api/v1/finance/home` calcula los indicadores de «Inicio» por estación y
+día hábil de Santo Domingo; cada sección es null sin el permiso de su módulo.
 
-Los reportes añaden tesorería, notas de débito, proveedores/CxP, gastos,
-paquetes y fiscal/simulación separados; conservan filtros de servidor,
-exportación CSV/XLSX/PDF con permiso y auditoría. Conciliación documental no es bancaria.
+Quedan seis reportes: ingresos, cuentas por cobrar y antigüedad, cobranza (con
+tarjeta), cuentas por pagar, recargos y ventas del e-CF simulado; usan el e-NCF,
+etiquetas en español, filtros de servidor y exportación CSV/XLSX/PDF con
+permiso y auditoría. Un reporte retirado responde 400 `unknown_finance_report`.
+Conciliación documental no es bancaria.
 Dinero usa decimal(19,4), cantidades decimal(18,4) y USD/DOP requieren FX explícito.
 
-El [runbook fiscal](../docs/runbooks/finance-fiscal-activation.md) detalla
-archivo, recuperación de SQL **y** bytes, validación y gates pendientes de
-conectividad real. La [matriz Odoo](../docs/reference/odoo-finance-adaptation.md)
+El [runbook fiscal](../docs/runbooks/finance-fiscal-activation.md) es histórico:
+describe el módulo fiscal retirado y los gates que exigiría una conectividad
+fiscal real. La [matriz Odoo](../docs/reference/odoo-finance-adaptation.md)
 documenta referencia fijada y licencias: implementación C#/React propia y
 UI ELEVANT, sin copiar apariencia ni código Odoo. No hay emisión fiscal real,
 cobro electrónico, libro mayor ni conciliación bancaria en esta etapa.

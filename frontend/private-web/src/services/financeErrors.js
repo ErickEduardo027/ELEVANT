@@ -118,6 +118,56 @@ export const TREASURY_PROBLEM_MESSAGES = Object.freeze({
   not_found: 'El documento no está disponible en su estación o aerolínea.',
 });
 
+/**
+ * The simplified Finance (phase 4, block B, 4-N12): a legacy write retired with the preinvoice answers 410. Nothing
+ * was written; the message names the way that replaced it.
+ */
+export const FINANCE_LEGACY_MESSAGES = Object.freeze({
+  legacy_finance_route_retired: 'Esta vía se retiró. Emita facturas desde «Por facturar», registre cobros en «Cobros» y corrija con notas de ajuste.',
+});
+
+/** «Inicio» of Finance (phase 4, block B, 4-A and 4-N02): the indicators of one station. */
+export const FINANCE_HOME_MESSAGES = Object.freeze({
+  invalid_finance_home_query: 'La estación elegida no es válida. Elija una estación financiera autorizada.',
+  ...FINANCE_LEGACY_MESSAGES,
+});
+
+/** The six Finance reports (phase 4, block B, 4-A, 4-N19 and 4-N20) and their exports. */
+export const FINANCE_REPORT_MESSAGES = Object.freeze({
+  unknown_finance_report: 'Ese reporte ya no existe en Finanzas. Elija uno de la lista.',
+  invalid_report_export_format: 'Ese formato de exportación no existe. Exporte en CSV, Excel o PDF.',
+  invalid_report_query: 'Revise el período: la fecha final no puede ser anterior a la inicial, el máximo son dos años y la moneda es USD o DOP.',
+  ...FINANCE_LEGACY_MESSAGES,
+});
+
+/** «Facturas» (phase 4, block B, 4-N21): its pages and its search by e-NCF, number or airline. */
+export const INVOICE_LIST_MESSAGES = Object.freeze({
+  invalid_invoice_query: 'La búsqueda no es válida. Escriba hasta 40 caracteres del e-NCF, del número o de la aerolínea.',
+  not_found: 'La factura ya no está disponible en sus estaciones. Actualizamos la lista.',
+  ...FINANCE_LEGACY_MESSAGES,
+});
+
+/** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
+export const financeHomeMessage = (error, options) => problemMessage(error, FINANCE_HOME_MESSAGES, {
+  forbidden: 'No tiene permiso para ver el resumen de Finanzas en esta estación.',
+  fallback: 'No se pudo cargar el resumen financiero. Revise la conexión e intente de nuevo.',
+  ...options,
+});
+
+/** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
+export const financeReportMessage = (error, options) => problemMessage(error, FINANCE_REPORT_MESSAGES, {
+  forbidden: 'No tiene acceso a este reporte en las estaciones elegidas.',
+  fallback: 'No se pudo calcular el reporte. Revise la conexión e intente de nuevo.',
+  ...options,
+});
+
+/** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
+export const invoiceListMessage = (error, options) => problemMessage(error, INVOICE_LIST_MESSAGES, {
+  forbidden: 'No tiene permiso para consultar las facturas de esta estación.',
+  fallback: 'No se pudieron cargar las facturas. Revise la conexión e intente de nuevo.',
+  ...options,
+});
+
 /** @param {unknown} error @param {{ fallback?: string, forbidden?: string }} [options] */
 export const financeContractApprovalMessage = (error, options) =>
   problemMessage(error, CONTRACT_APPROVAL_MESSAGES, options);

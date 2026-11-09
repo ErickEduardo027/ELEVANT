@@ -320,84 +320,50 @@ canónico; esta vista es de solo lectura. La lectura remota carga sin 404, pero
 no se ha probado un cambio futuro de tarifa de punta a punta.
 
 El resumen de Contratos consulta solicitudes y borradores autorizados.
-**Finanzas → Inicio** consulta servicios aprobados de los
-últimos 30 días y la primera página de prefacturas de la estación autorizada
-mediante la API versionada. Los contadores son del conjunto consultado (máximo
-200 servicios y 50 prefacturas), no totales históricos. Expone los límites de
-paginación, estados vacíos o de error, y revalida con cambios durables, foco y
-polling. No consulta `/api/finance/summary` ni inventa saldos o conciliaciones.
+**Finanzas → Inicio** lee `GET /api/v1/finance/home` (fase 4, bloque B): los
+indicadores que calcula el servidor para la estación autorizada al día hábil de
+Santo Domingo —operaciones por facturar, facturado del mes, por cobrar y
+vencido, cobrado con tarjeta en el mes, contratos por aprobar y charters con
+prepago pendiente—. Cada tarjeta aparece solo si la plantilla incluye su módulo
+y abre ese módulo; un 403 muestra el estado sin permiso, nunca «sin estación».
+Revalida con avisos durables, foco, reconexión y cada 25 segundos, y conserva los
+datos visibles mientras lo hace. No lee prefacturas ni listas acotadas.
 Los dos departamentos mantienen oculto el antiguo buzón `/api/notifications`,
 ausente del OpenAPI canónico.
 El icono de notificaciones de esos dos departamentos permanece oculto hasta
 que exista un feed autorizado para sus roles. Los módulos que aún dependan de
 endpoints heredados no deben montarse ni interpretarse como parte del circuito.
 
-**Finanzas → Servicios aprobados** consulta la API versionada con estación
-y período explícitos, muestra evidencia aprobada y razones de bloqueo reales,
-escucha el feed durable y reconsulta al recuperar foco o como máximo cada 25
-segundos. La antigua acción local «Marcar revisado» se retiró porque no
-persistía ni auditaba. Desde esta misma vista, Finanzas puede elegir hasta
-100 servicios facturables de una sola aerolínea y moneda y crear una
-prefactura de prueba persistente y auditada. La selección se reconcilia con
-las reservas de otros usuarios; un intento incierto conserva su clave para
-reintentar sin duplicar. El detalle se lee de nuevo de la API, no del estado
-del navegador. La prefactura no es una factura ni un recibo: emisión, pago
-manual y documentos son transiciones posteriores y separadas.
+**Finanzas → Facturación** agrupa «Por facturar», «Facturas» y «Charters»
+(ADR-0035, fase 4). La prefactura ya no es una pantalla, un endpoint ni un
+permiso: queda como paso interno de la emisión, y «Servicios aprobados»,
+«Pre-facturación», «Tratamientos tributarios» y «Documentos fiscales» se
+retiraron con sus rutas. «Facturas» pagina de 25 en 25 con «Anterior» y
+«Siguiente» y busca por e-NCF, número o aerolínea (`search`, hasta 40
+caracteres); los errores se explican por su `code` y una recarga conserva la
+página visible. Sus pestañas «Cobros» y «Estados de cuenta» aparecen con
+`finance.receipts.read` (o `finance.statements.read`), y el estado de cuenta y
+«Aplicar cobro» nombran cada factura por su e-NCF. Las escrituras heredadas
+`POST /api/v1/finance/invoices`, `POST .../invoices/{id}/credit-notes` y
+`POST /api/v1/finance/payments` responden 410 `legacy_finance_route_retired`:
+las facturas se emiten desde «Por facturar», los cobros se registran en
+«Cobros» y las correcciones son notas de ajuste.
 
-**Finanzas → Pre-facturación** consulta `GET /api/v1/finance/preinvoices`
-por estación autorizada y página. Muestra importes, estado y número de líneas
-persistidos, y abre el detalle canónico; revalida por feed durable, foco y
-polling de 25 segundos. Retira el servicio simulado `/api/finance/preinvoices`
-y sus botones ficticios. Un borrador puede enviarse a la aerolínea tras
-confirmación explícita con `POST /api/v1/finance/preinvoices/{draftId}/submit`;
-un reintento de red usa la misma clave y el estado se relee desde la API. La
-creación real permanece en Servicios aprobados. Seguimiento financiero consulta
-`GET /api/v1/finance/reconciliation` por estación autorizada y página, y
-presenta prefacturas aceptadas, facturas no fiscales y pagos manuales
-persistidos sin simular una conciliación bancaria. Tarifas y Reportes también
-tienen lecturas acotadas de la API.
-
-El detalle de Pre-facturación también lee las disputas de la aerolínea con
-asunto, descripción y líneas cuestionadas desde
-`GET /api/v1/finance/preinvoices/{draftId}/disputes`, separado del detalle
-v1 existente para conservar compatibilidad durante una promoción API-primero;
-no inventa casos ni saldos. Finanzas puede resolver la
-disputa más reciente con motivo y confirmación explícita: mantener devuelve
-`Submitted` para otra respuesta de la aerolínea; anular deja `Voided` y libera
-los servicios para una prefactura nueva. El intento conserva su UUID al
-reintentar una respuesta incierta y la vista relee el resultado persistido.
-No se modifica una línea ni su importe histórico. Desde una prefactura
-`Accepted`, Finanzas puede confirmar una emisión **no fiscal** mediante
-`POST /api/v1/finance/invoices`. El reintento conserva el mismo UUID de intención;
-la tabla se relee al recibir el aviso durable o al recuperar foco/conectividad.
-Una prefactura `Invoiced` consulta el snapshot emitido por
-`GET /api/v1/finance/invoices/by-preinvoice/{preinvoiceId}`. Se ofrece
-un registro manual de pago completo sobre la factura no fiscal. La pantalla
-exige referencia y confirmación; envía una clave de intención estable, relee
-el pago por la API y no lo presenta como conciliación bancaria verificada.
-El aviso durable `finance_preinvoices` provoca revalidación. Todavía no hay
-PDF fiscal, impuesto ni conciliación. El detalle permite
-descargar la factura no fiscal y, si existe un pago registrado, su recibo PDF
-privado. Ambos se obtienen por la API con la sesión de Finanzas y alcance de
-estación vigente; no se generan en el navegador. Una transferencia bancaria
-no queda verificada por registrar su referencia. La release #118 está
-promovida en Development; todavía falta recorrer en el VPS una operación nueva
-hasta factura, pago y recibo.
-
-### Finanzas: tarifarios, cargos y cobros (ADR-0016)
+### Finanzas: menú, tarifarios y reportes (ADR-0016, ADR-0035)
 
 La navegación de Finanzas se arma con los permisos `finance.*` del acceso
-departamental (`src/features/finance/shell/modules.js`). «Tarifarios» agrupa
-tarifario de servicios (tarifa base versionada por moneda), tarifario de cargos
-(catálogo CRUD e importes por versión) y tasas de cambio USD→DOP. «Aprobación de
-contratos» compara cada precio con la base y aprueba o devuelve con motivo;
-Contratos envía a Finanzas en lugar de activar. Pre-facturación muestra los
-cargos marcados por los agentes y los ajustes bajo su servicio y permite editar,
-excluir o ajustar en borrador con motivo y versión esperada. «Facturas y cobros»
-sustituye a Seguimiento: saldo, vencimiento, pagos parciales con método y fecha,
-y notas de crédito. Reportes lee ocho reportes calculados por la API y exporta
-CSV o PDF no fiscal con `finance.reports.export`. Los adaptadores están en
-`src/services/financeBookService.js`. Nada de esto es facturación fiscal.
+departamental (`src/features/finance/shell/modules.js`): Inicio · Facturación
+(Por facturar, Facturas, Charters) · Cuentas por pagar (Facturas de proveedores,
+Proveedores, Gastos de empleados) · Reportes · Configuración (Tarifario de
+servicios, Tarifario de cargos, Paquetes, Reglas de cierre, Aprobación de
+contratos, Tasas de cambio, Unidades de cobro) · Usuarios del departamento.
+«Aprobación de contratos» compara cada precio con la base y aprueba o devuelve
+con motivo; Contratos envía a Finanzas en lugar de activar. Reportes lee los
+seis reportes que calcula la API —ingresos, cuentas por cobrar y antigüedad,
+cobranza (con tarjeta), cuentas por pagar, recargos y ventas e-CF— y exporta
+CSV, Excel o PDF con `finance.reports.export`; el PDF lleva «Simulación — sin
+validez fiscal». Los adaptadores están en `src/services/financeBookService.js`.
+Las e-CF son simuladas: nada de esto es facturación fiscal.
 
 ### Empleados, puestos y accesos (ADR-0017)
 
@@ -450,7 +416,7 @@ ejecuta y verifica la promoción con rollback drill documentada por
 `ops/dokploy/web-cd`. El drill comprueba candidato, restauración de la baseline y
 repromoción final sin publicar puertos nuevos ni conectar la web a SQL Server.
 
-Esta entrega es un **preview técnico de Development**. Autenticación, Planificación OCC, monitoreo, mapa de posiciones, revisión, reportes operativos, notificaciones y chat consumen la API versionada donde existe el contrato correspondiente. El Dashboard OCC combina la planificación de la fecha local y estación seleccionadas, la cola de revisión de esa estación y los avisos persistidos de la cuenta filtrados por estación. Sus conteos son de consultas acotadas, no totales históricos; revalida ante cambios durables de notificaciones, foco, reconexión y cada 25 segundos. Monitoreo usa la estación OCC seleccionada tanto en la lectura inicial como en el refresco de 30 segundos; reemplaza el conjunto de vuelos completo y oculta resultados anteriores si el refresco falla. Solo PUJ dispone de coordenadas cartográficas revisadas: otra estación muestra horarios de la API sin un mapa centrado artificialmente en PUJ. Nada de esto demuestra telemetría, disponibilidad, certificación ISO ni conexión FlightAware. El resumen de Gestión Humana usa los perfiles reales descritos arriba; sus rutas de habilitaciones, permisos, turnos y ausencias tienen contratos canónicos acotados, mientras otras rutas profundas permanecen pendientes. Reportes financieros agrupa estados reales de la primera página de hasta 50 prefacturas de la estación autorizada, separadas por aerolínea y moneda. Ya no solicita `/api/finance/reports` ni ofrece exportaciones simuladas; no es un reporte histórico completo. Seguimiento y Tarifas son lecturas reales paginadas por estación, pero aún no constituyen conciliación bancaria ni cambios futuros de tarifa. La imagen no incluye ni inicia `backend-prototipo`. La rama de integración anterior se promocionó al VPS mediante #118; las correcciones de esta rama todavía no.
+Esta entrega es un **preview técnico de Development**. Autenticación, Planificación OCC, monitoreo, mapa de posiciones, revisión, reportes operativos, notificaciones y chat consumen la API versionada donde existe el contrato correspondiente. El Dashboard OCC combina la planificación de la fecha local y estación seleccionadas, la cola de revisión de esa estación y los avisos persistidos de la cuenta filtrados por estación. Sus conteos son de consultas acotadas, no totales históricos; revalida ante cambios durables de notificaciones, foco, reconexión y cada 25 segundos. Monitoreo usa la estación OCC seleccionada tanto en la lectura inicial como en el refresco de 30 segundos; reemplaza el conjunto de vuelos completo y oculta resultados anteriores si el refresco falla. Solo PUJ dispone de coordenadas cartográficas revisadas: otra estación muestra horarios de la API sin un mapa centrado artificialmente en PUJ. Nada de esto demuestra telemetría, disponibilidad, certificación ISO ni conexión FlightAware. El resumen de Gestión Humana usa los perfiles reales descritos arriba; sus rutas de habilitaciones, permisos, turnos y ausencias tienen contratos canónicos acotados, mientras otras rutas profundas permanecen pendientes. Reportes financieros lee los seis reportes que calcula la API sobre las estaciones autorizadas; Facturas y Tarifas son lecturas reales paginadas por estación, pero aún no constituyen conciliación bancaria ni cambios futuros de tarifa. La imagen no incluye ni inicia `backend-prototipo`. La rama de integración anterior se promocionó al VPS mediante #118; las correcciones de esta rama todavía no.
 
 El Mapa de posiciones mantiene la cartografía PUJ revisada con estados derivados de planificación, nunca ocupación física confirmada. Para otra estación autorizada muestra únicamente las posiciones asignadas que devuelve planificación, en una lista sin coordenadas ni mapa de PUJ. El refresco de 30 segundos reemplaza el snapshot completo y retira datos anteriores ante una falla; el enlace a Monitoreo conserva la estación. Sigue pendiente un contrato canónico de coordenadas y ocupación física para las demás estaciones.
 

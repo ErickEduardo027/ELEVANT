@@ -22,8 +22,9 @@ public sealed class GetNonFiscalInvoiceHandler(
     {
         if (accountId == Guid.Empty || preinvoiceId == Guid.Empty) return null;
         var actor = await actors.ResolveAsync(accountId, cancellationToken);
+        // 4-N02: «Por facturar» opens the invoice it just issued; «Facturas» reads every invoice.
         if (!ActorContextValidator.IsValid(actor, accountId) ||
-            !actor!.HasPermission("finance.reconciliation.read") ||
+            !FinanceInvoicePolicy.CanReadInvoice(actor!) ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff)) return null;

@@ -17,7 +17,7 @@ internal sealed class EfNonFiscalInvoiceReadStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(accountId, cancellationToken);
         if (actor is null ||
-            !actor.HasPermission("finance.reconciliation.read") ||
+            !FinanceInvoicePolicy.CanReadInvoice(actor) ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff)) return null;

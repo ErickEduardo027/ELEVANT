@@ -37,3 +37,13 @@ export function AlertIcon(props) {
 export function ArrowIcon(props) {
   return <Icon {...props}><path d="M5 12h14M14 7l5 5-5 5" /></Icon>;
 }
+
+/** «Cuentas por pagar»: a bill going out. */
+export function PayablesIcon(props) {
+  return <Icon {...props}><path d="M6 3.5h12V20l-3-1.6-3 1.6-3-1.6-3 1.6z" /><path d="M9.5 8h5M9.5 11.5h5M12 14v3M10.5 15.5 12 14l1.5 1.5" /></Icon>;
+}
+
+/** «Configuración»: the tariffs, packages and rules that price an invoice. */
+export function SettingsIcon(props) {
+  return <Icon {...props}><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></Icon>;
+}

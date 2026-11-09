@@ -98,7 +98,7 @@ internal sealed partial class FinanceTreasuryStore
             var days = balance > 0m && i.DueDate is { } due ? Math.Max(0, asOf.DayNumber - due.DayNumber) : 0;
             return new FinanceTreasuryStatementInvoiceData(i.PublicId, i.Number, row.AirlineId, row.StationId, i.CurrencyCode,
                 i.Total, paid, credited, t.Applied, t.Credited, t.Debited, balance, i.DueDate, days, FinanceTreasuryRules.AgingBucket(days),
-                Version(accounts.GetValueOrDefault(i.Id))); }).ToArray();
+                Version(accounts.GetValueOrDefault(i.Id)), i.FiscalNumber); }).ToArray();
         var receiptRows = await Receipts(actor).AsNoTracking().Where(r => r.Receipt.CreatedAt < end && r.Receipt.ReceivedOn <= asOf &&
             (stationId == null || r.StationId == stationId) && (airlineId == null || r.AirlineId == airlineId)).OrderBy(r => r.Receipt.Id).ToArrayAsync(ct);
         var receipts = new List<FinanceTreasuryReceiptData>();
@@ -113,8 +113,9 @@ internal sealed partial class FinanceTreasuryStore
         foreach (var row in rows)
         {
             var invoice = row.Invoice;
+            // 4-N19: the e-NCF is how Finance and the airline name the invoice; the internal number before ADR-0035.
             movements.Add(new(invoice.PublicId, null, invoice.PublicId, "Invoice", invoice.CurrencyCode, invoice.Total,
-                BusinessCalendar.Today(invoice.CreatedAt), invoice.CreatedAt, null, invoice.Number));
+                BusinessCalendar.Today(invoice.CreatedAt), invoice.CreatedAt, null, invoice.FiscalNumber ?? invoice.Number));
             movements.AddRange(payments.Where(p => p.InvoiceId == invoice.Id).Select(p => new FinanceTreasuryStatementMovementData(p.PublicId,
                 null, invoice.PublicId, "LegacyPayment", p.CurrencyCode, p.Amount, p.PaidOn ?? BusinessCalendar.Today(p.CreatedAt), p.CreatedAt, null, p.Reference)));
             movements.AddRange(legacyNotes.Where(n => n.InvoiceId == invoice.Id).Select(n => new FinanceTreasuryStatementMovementData(n.PublicId,

@@ -1,43 +1,60 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
-import { getFinanceHomeSnapshot } from '../../../services/financeHomeService';
+import { financeHomeMessage } from '../../../services/financeErrors';
+import { getFinanceHomeSnapshot, isEmptyFinanceHome } from '../../../services/financeHomeService';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
-import { addDays, businessToday } from '../../../services/businessDay';
 
-/** The last 30 business days of Santo Domingo, today included (4-N10). */
-function lastThirtyDays() {
-  const to = businessToday();
-  return { from: addDays(to, -29), to };
-}
+/** Hints that move an indicator of «Inicio»: approvals and issued invoices, and receipts or card payments. */
+const HOME_RESOURCES = ['finance_approved_services', 'finance_receipts'];
 
+const initialState = stationId => ({ status: stationId ? 'loading' : 'no-station', data: null, error: '',
+  refreshing: false });
+
+/**
+ * «Inicio» of Finance (phase 4, block B, 4-A and 4-N02). `status` is 'no-station' when the session grants no
+ * Finance station, 'loading' on the first read, 'success', 'empty' when the template includes none of the modules
+ * «Inicio» summarizes, 'forbidden' on a 403 and 'error' (recoverable, `error` says why in Spanish) otherwise.
+ * A revalidation (realtime hint, focus, network back or the 25-second fallback) keeps the visible indicators with
+ * `refreshing`; when it fails they stay on screen with `error`.
+ */
 export function useFinanceHomeData(enabled = true) {
   const session = useMemo(() => readSession(), []);
   const stations = useMemo(() => (session?.stationScopes ?? [])
     .filter(scope => scope?.stationId && scope?.stationCode), [session]);
   const [stationId, setStationId] = useState(stations[0]?.stationId ?? '');
   const [revision, setRevision] = useState(0);
-  const [state, setState] = useState({ status: stationId ? 'loading' : 'forbidden',
-    data: null, error: null });
+  const [state, setState] = useState(() => initialState(stationId));
+  /** The station the visible indicators belong to: another station never shows them while it loads. */
+  const shownStation = useRef('');
   const refresh = useCallback(() => setRevision(value => value + 1), []);
 
   useEffect(() => {
-    if (!enabled) return undefined;
-    if (!stationId) {
-      setState({ status: 'forbidden', data: null, error: null });
+    if (!enabled || !stationId) {
+      shownStation.current = '';
       return undefined;
     }
     const controller = new AbortController();
-    setState({ status: 'loading', data: null, error: null });
-    getFinanceHomeSnapshot({ stationId, ...lastThirtyDays() }, { signal: controller.signal })
+    setState(current => (current.data && shownStation.current === stationId
+      ? { ...current, refreshing: true }
+      : initialState(stationId)));
+    getFinanceHomeSnapshot({ stationId }, { signal: controller.signal })
       .then(data => {
-        if (!controller.signal.aborted)
-          setState({ status: 'success', data, error: null });
+        if (controller.signal.aborted) return;
+        shownStation.current = stationId;
+        setState({ status: isEmptyFinanceHome(data) ? 'empty' : 'success', data, error: '', refreshing: false });
       })
       .catch(error => {
         if (controller.signal.aborted || isAbortError(error)) return;
-        setState({ status: error?.status === 403 || error?.status === 404
-          ? 'forbidden' : 'error', data: null, error });
+        if (error?.status === 403) {
+          shownStation.current = '';
+          setState({ status: 'forbidden', data: null, error: financeHomeMessage(error), refreshing: false });
+          return;
+        }
+        const message = financeHomeMessage(error);
+        setState(current => (current.data && shownStation.current === stationId
+          ? { ...current, error: message, refreshing: false }
+          : { status: 'error', data: null, error: message, refreshing: false }));
       });
     return () => abortForEffectCleanup(controller);
   }, [enabled, stationId, revision]);
@@ -45,8 +62,7 @@ export function useFinanceHomeData(enabled = true) {
   useEffect(() => {
     if (!enabled || !session?.accountId) return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('finance_approved_services') ||
-        resources.includes('finance_preinvoices')) refresh();
+      if (resources.some(resource => HOME_RESOURCES.includes(resource))) refresh();
     });
     void observer.start().catch(() => {});
     window.addEventListener('focus', refresh);
@@ -62,5 +78,6 @@ export function useFinanceHomeData(enabled = true) {
     };
   }, [enabled, session?.accountId, refresh]);
 
-  return { ...state, stations, stationId, setStationId, refresh };
+  // Without a Finance station nothing is read: the state is derived, never set from an effect.
+  return { ...(stationId ? state : initialState('')), stations, stationId, setStationId, refresh };
 }

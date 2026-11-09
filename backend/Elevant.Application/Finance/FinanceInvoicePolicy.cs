@@ -23,6 +23,21 @@ public static class FinanceInvoicePolicy
     /// <summary>Marks the tax snapshot as the fixed ITBIS rule, not a configurable policy.</summary>
     public static readonly Guid ItbisPolicyId = Guid.Parse("0f5c2e31-0018-4e31-9e31-000000000018");
 
+    /// <summary>4-N02: «Por facturar» and its reads are governed by Facturación, never by a retired module.</summary>
+    public const string ReadPermission = "finance.invoicing.read";
+
+    /// <summary>
+    /// 4-N02: who may read an issued invoice (its PDF, its emails): «Facturas», or «Por facturar» that issued it.
+    /// </summary>
+    public static readonly IReadOnlyList<string> InvoiceReaderPermissions =
+        ["finance.reconciliation.read", ReadPermission, IssueInvoiceHandler.IssuePermission];
+
+    public static bool CanReadInvoice(Identity.ActorContext actor)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        return InvoiceReaderPermissions.Any(actor.HasPermission);
+    }
+
     /// <summary>
     /// 4-N06: the one set of limits of an invoice, checked by the server and published by «Por facturar»: up to 100
     /// operations, 500 invoice lines (every billable service is at least one line) and operations of at most 31

@@ -17,13 +17,9 @@ import CloseRulesPage from '../close-rules/CloseRulesPage';
 import FinanceReportsPage from '../reports/FinanceReportsPage';
 import BillingUnitsPage from '../billing-units/BillingUnitsPage';
 import PackagesPage from '../packages/PackagesPage';
-import TreasuryPage from '../treasury/TreasuryPage';
-import StatementPage from '../treasury/StatementPage';
 import SuppliersPage from '../payables/SuppliersPage';
 import PayablesPage from '../payables/PayablesPage';
 import ExpensesPage from '../payables/ExpensesPage';
-import FiscalDocumentsPage from '../fiscal/FiscalDocumentsPage';
-import TaxPoliciesPage from '../taxes/TaxPoliciesPage';
 import { FINANCE_MODULE_IDS, financeNavigation, selectableModules } from './modules';
 import { allowedNavigation, useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import NoModulesNotice from '../../access/NoModulesNotice';
@@ -66,9 +62,13 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout, observeNot
   }
 
   const stationProps = { initialStationId: home.stationId };
+  /** A card of «Inicio» opens its module only when the account's template includes it. */
+  const canOpen = id => modules.some(module => module.id === id);
+  // 4-A: the simplified menu. «Cobros» and «Estados de cuenta» are tabs of «Facturas»; the preinvoice, tax treatment
+  // and fiscal document screens were retired with their permissions and endpoints.
   const pages = {
     [FINANCE_MODULE_IDS.USERS]: <DepartmentUsersPage department={DEPARTMENTS.FINANCE} />,
-    [FINANCE_MODULE_IDS.HOME]: <FinanceHomePage status={home.status} data={home.data} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} />,
+    [FINANCE_MODULE_IDS.HOME]: <FinanceHomePage status={home.status} data={home.data} error={home.error} refreshing={home.refreshing} stations={home.stations} stationId={home.stationId} onStationChange={home.setStationId} onRetry={home.refresh} onNavigate={handleSelectModule} canOpen={canOpen} />,
     [FINANCE_MODULE_IDS.TO_INVOICE]: <ToInvoicePage {...stationProps} />,
     [FINANCE_MODULE_IDS.RECONCILIATION]: <InvoicesPage {...stationProps} />,
     [FINANCE_MODULE_IDS.TARIFFS]: <ServiceTariffsPage {...stationProps} />,
@@ -79,13 +79,9 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout, observeNot
     [FINANCE_MODULE_IDS.CONTRACT_APPROVALS]: <ContractApprovalsPage />,
     [FINANCE_MODULE_IDS.CHARTERS]: <ChartersPage />,
     [FINANCE_MODULE_IDS.CLOSE_RULES]: <CloseRulesPage />,
-    [FINANCE_MODULE_IDS.TREASURY]: <TreasuryPage {...stationProps} />,
-    [FINANCE_MODULE_IDS.STATEMENTS]: <StatementPage {...stationProps} />,
     [FINANCE_MODULE_IDS.SUPPLIERS]: <SuppliersPage />,
     [FINANCE_MODULE_IDS.PAYABLES]: <PayablesPage />,
     [FINANCE_MODULE_IDS.EXPENSES]: <ExpensesPage />,
-    [FINANCE_MODULE_IDS.TAXES]: <TaxPoliciesPage />,
-    [FINANCE_MODULE_IDS.FISCAL]: <FiscalDocumentsPage {...stationProps} />,
     [FINANCE_MODULE_IDS.REPORTS]: <FinanceReportsPage {...stationProps} />,
   };
 

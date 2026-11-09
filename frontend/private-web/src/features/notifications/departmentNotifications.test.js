@@ -13,6 +13,19 @@ describe('Finance alerts of phase 4 (block A)', () => {
   });
 });
 
+describe('Finance alerts of phase 4 (block B)', () => {
+  it.each(['preinvoice_accepted', 'preinvoice_disputed'])(
+    'no longer offers the retired preinvoice alert %s (4-A)', kind => {
+      expect(describeNotification({ kind, subject: 'Demo Airlines' })).toMatchObject({
+        title: 'Nueva notificación', target: null });
+    });
+
+  it('keeps the card payment alert on «Facturas»', () => {
+    expect(describeNotification({ kind: 'invoice_paid', subject: 'E310000000001' }).target)
+      .toEqual({ moduleId: FINANCE_MODULE_IDS.RECONCILIATION });
+  });
+});
+
 describe('contract lifecycle notifications (phase 2, block A)', () => {
   it.each([
     ['contract_termination_scheduled', 'Se programó la terminación de un contrato'],

@@ -253,7 +253,8 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         page.Size = PageSize.A4;
         using (var graphics = XGraphics.FromPdfPage(page))
         {
-            DrawFrame(graphics, page, heading, caption, "Recibo de pago con tarjeta", receipt.ReceiptReference, receipt.PaidAt, 1);
+            DrawFrame(graphics, page, heading, caption, "Recibo de pago con tarjeta", receipt.ReceiptReference, receipt.PaidAt, 1,
+                SimulationFrame);
             var rows = new (string Label, string Value)[]
             {
                 ("Aerolínea", receipt.AirlineName),
@@ -283,7 +284,7 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         ArgumentNullException.ThrowIfNull(report);
         using var document = new PdfDocument();
         document.Info.Title = report.Title;
-        document.Info.Subject = "Non-fiscal finance report";
+        document.Info.Subject = FinanceInvoicePolicy.Disclaimer;
         document.Info.Author = "ELEVANT";
         var body = ElevantPdfFonts.Regular(8);
         var caption = ElevantPdfFonts.Regular(8);
@@ -299,7 +300,7 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
             page.Orientation = PageOrientation.Landscape;
             using var graphics = XGraphics.FromPdfPage(page);
             DrawFrame(graphics, page, heading, caption, report.Title,
-                $"{report.From:yyyy-MM-dd} – {report.To:yyyy-MM-dd}", generatedAt, document.PageCount);
+                $"{report.From:yyyy-MM-dd} – {report.To:yyyy-MM-dd}", generatedAt, document.PageCount, SimulationFrame);
             var y = 160d;
             if (first)
             {
@@ -340,19 +341,34 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         return stream.ToArray();
     }
 
+    /// <summary>The banner and the footer a document's frame prints.</summary>
+    private sealed record Frame(string Banner, string Footer);
+
+    /// <summary>The legacy non-fiscal invoice (before ADR-0035) and the manual receipt keep their frame.</summary>
+    private static readonly Frame NonFiscalFrame =
+        new("DOCUMENTO NO FISCAL · DESARROLLO", "Sin NCF, impuestos ni validez fiscal.");
+
+    /// <summary>
+    /// 4-N20: what the simulated e-CF produces (the card receipt next to its e-NCF, the reports) never says «Sin NCF»:
+    /// it is framed as a simulation without fiscal validity.
+    /// </summary>
+    private static readonly Frame SimulationFrame =
+        new(FinanceInvoicePolicy.Disclaimer.ToUpperInvariant(), FinanceInvoicePolicy.Disclaimer + ".");
+
     private static void DrawFrame(XGraphics graphics, PdfPage page, XFont heading,
-        XFont caption, string title, string reference, DateTimeOffset timestamp, int pageNumber)
+        XFont caption, string title, string reference, DateTimeOffset timestamp, int pageNumber, Frame? frame = null)
     {
+        frame ??= NonFiscalFrame;
         graphics.DrawRectangle(new XSolidBrush(Navy), 0, 0, page.Width.Point, 109);
         DrawText(graphics, "ELEVANT", heading, XColors.White, Margin, 30, 220);
-        DrawText(graphics, "DOCUMENTO NO FISCAL · DESARROLLO", caption,
+        DrawText(graphics, frame.Banner, caption,
             XColors.White, Margin, 68, 360);
         DrawText(graphics, title, heading, Navy, Margin, 130, 350);
         DrawText(graphics, reference, caption, Muted, 383, 136, 166);
         DrawText(graphics, Stamp(timestamp), caption, Muted, 383, 155, 166);
         graphics.DrawLine(new XPen(Muted, 0.4), Margin, page.Height.Point - 51,
             page.Width.Point - Margin, page.Height.Point - 51);
-        DrawText(graphics, "Sin NCF, impuestos ni validez fiscal.", caption, Muted,
+        DrawText(graphics, frame.Footer, caption, Muted,
             Margin, page.Height.Point - 41, 350);
         DrawText(graphics, $"Pág. {pageNumber}", caption, Muted,
             page.Width.Point - Margin - 47, page.Height.Point - 41, 47);

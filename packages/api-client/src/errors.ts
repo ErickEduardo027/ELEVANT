@@ -197,6 +197,13 @@ const INVOICING_CODES = ["invalid_invoice_request", "invalid_pending_query", "in
  */
 const TREASURY_CODES = ["effective_before_invoice", "effective_before_receipt", "treasury_conflict",
   "invalid_treasury_request"] as const;
+/**
+ * The simplified Finance (phase 4, block B): a legacy write retired with the preinvoice answers 410 (4-N12), a report
+ * of a retired module or an unknown export format is explained (4-A), and «Facturas» (4-N21) and «Inicio» (4-A, 4-N02)
+ * code their malformed queries. `invalid_report_query` and `forbidden` live in their own lists.
+ */
+const FINANCE_SIMPLIFICATION_CODES = ["legacy_finance_route_retired", "unknown_finance_report",
+  "invalid_report_export_format", "invalid_invoice_query", "invalid_finance_home_query"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
@@ -205,13 +212,14 @@ export type ElevantApiErrorCode = "password_change_required" | "password_policy"
   (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
   (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number] | (typeof OCC_REVIEW_CODES)[number] |
   (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number] | (typeof REPORT_CODES)[number] |
-  (typeof INVOICING_CODES)[number] | (typeof TREASURY_CODES)[number];
+  (typeof INVOICING_CODES)[number] | (typeof TREASURY_CODES)[number] | (typeof FINANCE_SIMPLIFICATION_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
   ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES, ...OCC_REVIEW_CODES,
-  ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES, ...INVOICING_CODES, ...TREASURY_CODES];
+  ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES, ...INVOICING_CODES, ...TREASURY_CODES,
+  ...FINANCE_SIMPLIFICATION_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",

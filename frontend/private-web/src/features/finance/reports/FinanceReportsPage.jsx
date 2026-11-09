@@ -8,26 +8,21 @@ import { readSession } from '../../auth/authService';
 import { ReportIcon } from '../components/icons';
 import { downloadFinanceReport, formatMoney, getFinanceReport } from '../../../services/financeBookService';
 import { businessToday } from '../../../services/businessDay';
+import { financeReportMessage } from '../../../services/financeErrors';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 
+/**
+ * The six reports of the simplified Finance (4-A, 4-N19, 4-N20), with the titles the server gives them. The
+ * preinvoice, dispute and fiscal-simulation reports left with their modules.
+ */
 export const FINANCE_REPORTS = [
   { key: 'revenue', label: 'Ingresos por período' },
-  { key: 'receivables', label: 'Cuentas por cobrar' },
+  { key: 'receivables', label: 'Cuentas por cobrar y antigüedad' },
   { key: 'collections', label: 'Cobranza' },
-  { key: 'pipeline', label: 'Pipeline de facturación' },
-  { key: 'charges', label: 'Cargos y ajustes' },
-  { key: 'disputes', label: 'Disputas' },
-  { key: 'tariffs', label: 'Uso de tarifas' },
-  { key: 'credit-notes', label: 'Notas de crédito' },
-  { key: 'debit-notes', label: 'Notas de débito' },
-  { key: 'treasury', label: 'Movimientos de tesorería' },
   { key: 'payables', label: 'Cuentas por pagar' },
-  { key: 'suppliers', label: 'Estado de proveedores' },
-  { key: 'expenses', label: 'Gastos de empleados' },
-  { key: 'packages', label: 'Paquetes facturados' },
-  { key: 'fiscal', label: 'Estado fiscal' },
-  { key: 'fiscal-simulation', label: 'Simulación fiscal' },
+  { key: 'charges', label: 'Recargos' },
+  { key: 'sales', label: 'Ventas (e-CF simulado)' },
 ];
 
 // 4-N10: the period starts on the first business day of the month in Santo Domingo.
@@ -58,24 +53,31 @@ export default function FinanceReportsPage({ initialStationId }) {
   });
   const [state, setState] = useState({ status: 'loading', report: null, error: '' });
   const [exporting, setExporting] = useState('');
+  const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     let active = true;
-    setState(current => ({ ...current, status: 'loading' }));
+    setState(current => ({ ...current, status: 'loading', error: '' }));
     getFinanceReport(reportKey, filters).then(report => {
       if (active) setState({ status: 'ready', report, error: '' });
     }).catch(failure => {
-      if (active) setState({ status: 'error', report: null, error: failure.status === 403
-        ? 'No tiene acceso a este reporte o los filtros no son válidos.' : 'No se pudo calcular el reporte. Intente de nuevo.' });
+      // 403 is the unauthorized state; any other refusal is explained by its code and can be retried.
+      if (active) setState({ status: failure?.status === 403 ? 'forbidden' : 'error', report: null,
+        error: financeReportMessage(failure) });
     });
     return () => { active = false; };
-  }, [reportKey, filters]);
+  }, [reportKey, filters, revision]);
 
   async function exportAs(format) {
     if (state.status !== 'ready' || state.report?.key !== reportKey || exporting) return;
     setExporting(format);
     try { await downloadFinanceReport(reportKey, format, filters); }
-    catch (failure) { setState(current => ({ ...current, error: failure.message })); }
+    catch (failure) {
+      setState(current => ({ ...current, error: financeReportMessage(failure, {
+        forbidden: 'No tiene permiso para exportar este reporte.',
+        fallback: 'No se pudo generar la exportación. Revise la conexión e intente de nuevo.',
+      }) }));
+    }
     finally { setExporting(''); }
   }
 
@@ -107,7 +109,10 @@ export default function FinanceReportsPage({ initialStationId }) {
           <option value="">Todas</option><option>USD</option><option>DOP</option></select></label>
       </FilterBar>
       {state.status === 'loading' && !report && <p role="status" className="text-sm">Calculando reporte…</p>}
-      {state.error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{state.error}</p>}
+      {state.error && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">
+        <span className="min-w-0 flex-1">{state.error}</span>
+        {state.status === 'error' && <button type="button" className="font-semibold underline" onClick={() => setRevision(value => value + 1)}>Reintentar</button>}
+      </div>}
       {report && (
         <>
           {report.summary.length > 0 && (

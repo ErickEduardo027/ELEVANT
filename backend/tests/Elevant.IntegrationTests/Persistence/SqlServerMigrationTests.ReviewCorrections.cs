@@ -357,14 +357,16 @@ public sealed partial class SqlServerMigrationTests
             Assert.Equal(2, await check.Set<IncidentStatusEvent>().CountAsync(item =>
                 item.IncidentId == incidents[occIncident].Id, ct));
         }
-        async Task<IReadOnlyList<FinanceApprovedServiceData>> ToInvoiceAsync() =>
-            (await Run(services => services.GetRequiredService<IFinanceApprovedServicesReadStore>().GetAsync(FinanceAccount,
-                TimingStation, new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 18), ct)))!
-            .Services.Where(item => item.OperationId == TimingOperation).ToArray();
+        // 4-A: «Por facturar» reads the pending operations (the approved-services read left with the preinvoice). A
+        // service OCC excluded is not billable, so it is not listed; the one with the excluded charge is, blocked.
+        async Task<IReadOnlyList<FinancePendingServiceData>> ToInvoiceAsync() =>
+            (await Run(services => services.GetRequiredService<IFinancePendingOperationsReadStore>().GetAsync(
+                new GetFinancePendingOperationsQuery(FinanceAccount, TimingStation, new DateOnly(2026, 8, 18),
+                    new DateOnly(2026, 8, 18), null, null), ct)))!
+            .Operations.Where(item => item.OperationId == TimingOperation).SelectMany(item => item.Services).ToArray();
         var blocked = await ToInvoiceAsync();
-        Assert.Equal([(false, "charge_excluded_by_contract"), (false, "excluded_in_review")],
-            blocked.OrderBy(item => item.Id == state.ServicePublicIds[0] ? 0 : 1)
-                .Select(item => (item.Ready, item.BlockingReason)).ToArray());
+        Assert.Equal([(state.ServicePublicIds[0], false, "charge_excluded_by_contract")],
+            blocked.Select(item => (item.ServiceId, item.Ready, item.BlockingReason)).ToArray());
         Task<IssueInvoiceResult> IssueAsync() => Run(services => Handler(services).HandleAsync(
             new IssueInvoiceRequest(FinanceAccount, TimingStation, [TimingOperation], Guid.NewGuid()), ct));
         var refused = await IssueAsync();
@@ -438,9 +440,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(ServiceOrderStates.Corrected, detail.ServiceOrderState);
         Assert.True((await Decide(reopened.Data.SubmissionId, detail.ConcurrencyToken, "Approved")).IsSuccess);
         var billable = await ToInvoiceAsync();
-        Assert.Equal([(true, (string?)null), (false, "excluded_in_review")],
-            billable.OrderBy(item => item.Id == state.ServicePublicIds[0] ? 0 : 1)
-                .Select(item => (item.Ready, item.BlockingReason)).ToArray());
+        Assert.Equal([(state.ServicePublicIds[0], true, (string?)null)],
+            billable.Select(item => (item.ServiceId, item.Ready, item.BlockingReason)).ToArray());
         var issued = await IssueAsync();
         Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
         await using (var check = CreateContext(database.ConnectionString))

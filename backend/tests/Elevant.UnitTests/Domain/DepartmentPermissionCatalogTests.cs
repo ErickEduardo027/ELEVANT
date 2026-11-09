@@ -40,7 +40,8 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("operations.review.reopen", Department.Operations)]
     [InlineData("operations.incidents.update", Department.Operations)]
     [InlineData("human_resources.access_requests.validate", Department.HumanResources)]
-    [InlineData("finance.preinvoices.issue", Department.Finance)]
+    [InlineData("finance.invoicing.issue", Department.Finance)]
+    [InlineData("finance.receipts.apply", Department.Finance)]
     public void KnowsWhichDepartmentOwnsACode(string code, Department department)
     {
         Assert.Equal(department, DepartmentPermissionCatalog.DepartmentOf(code));
@@ -83,9 +84,15 @@ public sealed class DepartmentPermissionCatalogTests
         "human_resources.employees.update" })]
     [InlineData("contracts.catalog.retire", new[] { "contracts.catalog.delete", "contracts.catalog.read" })]
     [InlineData("contracts.agreements.read", new[] { "contracts.agreed_services.read", "contracts.agreements.read", "contracts.permits.read" })]
-    [InlineData("finance.receipts.read", new[] { "finance.receipts.read", "finance.statements.read" })]
+    // 4-A: «Cobros» is a tab of «Facturas», so reading receipts also reads the invoices that contain them.
+    [InlineData("finance.receipts.read", new[] { "finance.receipts.read", "finance.reconciliation.read", "finance.statements.read" })]
     [InlineData("finance.packages.manage", new[] { "finance.packages.create", "finance.packages.delete", "finance.packages.publish",
         "finance.packages.read", "finance.packages.retire", "finance.packages.update" })]
+    // 4-A: viewing approved services or preinvoices was reading «Por facturar»; issuing a preinvoice was issuing.
+    [InlineData("finance.approved_services.read", new[] { "finance.invoicing.read" })]
+    [InlineData("finance.preinvoices.read", new[] { "finance.invoicing.read" })]
+    [InlineData("finance.preinvoices.issue", new[] { "finance.invoicing.issue", "finance.invoicing.read" })]
+    [InlineData("finance.preinvoices.manage", new[] { "finance.invoicing.issue", "finance.invoicing.read" })]
     public void LegacyGrantsKeepTheirAccessAsCrudActions(string legacy, string[] expected)
     {
         Assert.False(DepartmentPermissionCatalog.IsKnown(legacy) && legacy.EndsWith(".manage", StringComparison.Ordinal));
@@ -162,6 +169,9 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("operations.attendance.read", "operations.planning.read")]
     [InlineData("operations.incidents.update", "operations.review.read")]
     [InlineData("human_resources.availability.create", "human_resources.schedules.read")]
+    // 4-A: «Cobros» and «Estados de cuenta» are tabs of «Facturas».
+    [InlineData("finance.receipts.apply", "finance.reconciliation.read")]
+    [InlineData("finance.statements.read", "finance.reconciliation.read")]
     public void SubWindowGrantsReadOfTheScreenThatContainsIt(string code, string parentRead)
     {
         var normalized = DepartmentPermissionCatalog.Normalize([code]);
@@ -176,5 +186,74 @@ public sealed class DepartmentPermissionCatalogTests
     public void CatalogReadAloneGrantsNoSubWindow()
     {
         Assert.Equal(["contracts.catalog.read"], DepartmentPermissionCatalog.Normalize(["contracts.catalog.read"]));
+    }
+
+    /// <summary>
+    /// 4-A, 4-N12, 4-N20: a code of a retired module or action grants nothing, but a template that still stores it keeps
+    /// validating in its own department (and only there), so saving it again drops the code instead of failing.
+    /// </summary>
+    [Theory]
+    [InlineData("finance.approved_services.create")]
+    [InlineData("finance.approved_services.preinvoice")]
+    [InlineData("finance.preinvoices.update")]
+    [InlineData("finance.reconciliation.create")]
+    [InlineData("finance.reconciliation.record")]
+    [InlineData("finance.taxes.read")]
+    [InlineData("finance.taxes.create")]
+    [InlineData("finance.taxes.manage")]
+    [InlineData("finance.fiscal.read")]
+    [InlineData("finance.fiscal.simulate")]
+    [InlineData("finance.fiscal.manage")]
+    public void RetiredFinanceCodesGrantNothingButStillBelongToFinance(string code)
+    {
+        Assert.False(DepartmentPermissionCatalog.IsKnown(code));
+        Assert.Null(DepartmentPermissionCatalog.DepartmentOf(code));
+        Assert.Empty(DepartmentPermissionCatalog.Expand(code));
+        Assert.Empty(DepartmentPermissionCatalog.Normalize([code]));
+        Assert.True(DepartmentPermissionCatalog.Belongs(code, Department.Finance));
+        Assert.False(DepartmentPermissionCatalog.Belongs(code, Department.Contracts));
+        Assert.False(DepartmentPermissionCatalog.Belongs(code, Department.Operations));
+        // Next to a live code only the live code survives.
+        Assert.Equal(["finance.reports.read"], DepartmentPermissionCatalog.Normalize([code, "finance.reports.read"]));
+    }
+
+    /// <summary>A code nobody ever defined still belongs to no department, even with a known prefix.</summary>
+    [Fact]
+    public void UnknownCodesWithAKnownPrefixStillBelongNowhere()
+    {
+        Assert.False(DepartmentPermissionCatalog.Belongs("finance.unknown.read", Department.Finance));
+        Assert.False(DepartmentPermissionCatalog.Belongs("finance", Department.Finance));
+    }
+
+    /// <summary>
+    /// 4-A: the simplified Finance menu (ADR-0035, block 3): Inicio · Facturación · Cuentas por pagar · Reportes ·
+    /// Configuración. Preinvoices, approved services, tax treatments and fiscal documents are gone, and «Facturas» is read
+    /// only: payments and credit notes are recorded in «Cobros» and the adjustment notes.
+    /// </summary>
+    [Fact]
+    public void FinanceCatalogMatchesTheSimplifiedMenu()
+    {
+        var modules = DepartmentPermissionCatalog.ModulesOf(Department.Finance);
+        Assert.Equal(["Inicio", "Facturación", "Cuentas por pagar", "Reportes", "Configuración"],
+            modules.Select(module => module.Section).Distinct().ToArray());
+        var codes = DepartmentPermissionCatalog.CodesOf(Department.Finance);
+        Assert.DoesNotContain(codes, code => code.StartsWith("finance.preinvoices.", StringComparison.Ordinal) ||
+            code.StartsWith("finance.approved_services.", StringComparison.Ordinal) ||
+            code.StartsWith("finance.taxes.", StringComparison.Ordinal) ||
+            code.StartsWith("finance.fiscal.", StringComparison.Ordinal));
+        Assert.DoesNotContain("finance.reconciliation.create", codes);
+
+        PermissionModule Of(string key) => Assert.Single(modules, module => module.Key == key);
+        Assert.Equal(("Por facturar", "Facturación"), (Of("invoicing").Label, Of("invoicing").Section));
+        Assert.Equal(["read", "issue"], Of("invoicing").Actions.Select(action => action.Action).ToArray());
+        Assert.Equal(["read"], Of("reconciliation").Actions.Select(action => action.Action).ToArray());
+        string[] subWindows = ["receipts", "statements", "adjustments"];
+        Assert.All(subWindows, key => Assert.Equal(("reconciliation", "Facturación"), (Of(key).Parent, Of(key).Section)));
+        Assert.Equal(("Charters", "Facturación"), (Of("charters").Label, Of("charters").Section));
+        Assert.Equal(["payables", "suppliers", "expenses"],
+            modules.Where(module => module.Section == "Cuentas por pagar").Select(module => module.Key).ToArray());
+        Assert.Equal("Facturas de proveedores", Of("payables").Label);
+        Assert.Equal(["tariffs", "charges", "packages", "close_rules", "contract_approvals", "exchange_rates", "billing_units"],
+            modules.Where(module => module.Section == "Configuración").Select(module => module.Key).ToArray());
     }
 }

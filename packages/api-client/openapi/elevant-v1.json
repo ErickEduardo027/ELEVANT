@@ -107,83 +107,6 @@
         }
       }
     },
-    "/api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice/document": {
-      "get": {
-        "tags": [
-          "AirlineFinancialDocuments"
-        ],
-        "operationId": "GetAirlineInvoiceDocument",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service Unavailable",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/airline/portal/invoices/{invoiceId}/document": {
       "get": {
         "tags": [
@@ -485,509 +408,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NonFiscalPaymentLookupResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice": {
-      "get": {
-        "tags": [
-          "AirlinePortal"
-        ],
-        "operationId": "GetAirlineInvoiceByPreinvoice",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NonFiscalInvoiceResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/airline/portal/preinvoices/{preinvoiceId}/disputes": {
-      "get": {
-        "tags": [
-          "AirlinePortal"
-        ],
-        "operationId": "GetAirlinePreinvoiceDisputes",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "includeResolutions",
-            "in": "query",
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PreinvoiceDisputeListResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/airline/portal/preinvoices/{preinvoiceId}/dispute": {
-      "post": {
-        "tags": [
-          "AirlinePortal"
-        ],
-        "operationId": "DisputeAirlinePreinvoice",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/DisputeAirlinePreinvoiceRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DisputeAirlinePreinvoiceResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/airline/portal/preinvoices/{preinvoiceId}/accept": {
-      "post": {
-        "tags": [
-          "AirlinePortal"
-        ],
-        "operationId": "AcceptAirlinePreinvoice",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/AcceptAirlinePreinvoiceRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AcceptAirlinePreinvoiceResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/airline/portal/preinvoices/{preinvoiceId}": {
-      "get": {
-        "tags": [
-          "AirlinePortal"
-        ],
-        "operationId": "GetAirlinePreinvoice",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "includeVoided",
-            "in": "query",
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AirlinePreinvoiceDetailResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/airline/portal/preinvoices": {
-      "get": {
-        "tags": [
-          "AirlinePortal"
-        ],
-        "operationId": "GetAirlinePreinvoices",
-        "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 1
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 20
-            }
-          },
-          {
-            "name": "includeVoided",
-            "in": "query",
-            "schema": {
-              "type": "boolean",
-              "default": false
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AirlinePreinvoicePageResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -11059,107 +10479,6 @@
         ]
       }
     },
-    "/api/v1/finance/approved-services": {
-      "get": {
-        "tags": [
-          "FinanceApprovedServices"
-        ],
-        "operationId": "GetFinanceApprovedServices",
-        "parameters": [
-          {
-            "name": "stationId",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date"
-            }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceApprovedServicesResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too Many Requests",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/finance/charters": {
       "get": {
         "tags": [
@@ -11696,182 +11015,6 @@
         ]
       }
     },
-    "/api/v1/finance/preinvoices/{preinvoiceId}/resolution": {
-      "post": {
-        "tags": [
-          "FinanceDisputeResolutions"
-        ],
-        "operationId": "ResolveFinancePreinvoiceDispute",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/ResolvePreinvoiceDisputeRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResolvePreinvoiceDisputeResponse"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ResolvePreinvoiceDisputeResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/invoices/by-preinvoice/{preinvoiceId}/document": {
-      "get": {
-        "tags": [
-          "FinanceFinancialDocuments"
-        ],
-        "operationId": "GetFinanceInvoiceDocument",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service Unavailable",
-            "content": {
-              "application/pdf": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/finance/invoices/{invoiceId}/document": {
       "get": {
         "tags": [
@@ -12007,45 +11150,13 @@
         ]
       }
     },
-    "/api/v1/finance/fiscal-documents/status": {
+    "/api/v1/finance/home": {
       "get": {
         "tags": [
-          "FinanceFiscalDocuments"
+          "FinanceHome"
         ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalStatusResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalStatusResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalStatusResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/fiscal-documents": {
-      "get": {
-        "tags": [
-          "FinanceFiscalDocuments"
-        ],
+        "summary": "Requires «Inicio» (finance.home.read), AVIAM staff and a live grant on `stationId`: otherwise 403\n`forbidden`. A missing or malformed station is 400 `invalid_finance_home_query`. Each section is null\nwithout the permission of its module.",
+        "operationId": "GetFinanceHome",
         "parameters": [
           {
             "name": "stationId",
@@ -12054,410 +11165,15 @@
               "type": "string",
               "format": "uuid"
             }
-          },
-          {
-            "name": "take",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 50
-            }
           }
         ],
         "responses": {
           "200": {
             "description": "OK",
             "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                  }
-                }
-              },
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                  }
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "FinanceFiscalDocuments"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceFiscalCreateRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceFiscalCreateRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceFiscalCreateRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalMutationResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalMutationResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalMutationResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/fiscal-documents/{documentId}": {
-      "get": {
-        "tags": [
-          "FinanceFiscalDocuments"
-        ],
-        "parameters": [
-          {
-            "name": "documentId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/fiscal-documents/{documentId}/status": {
-      "get": {
-        "tags": [
-          "FinanceFiscalDocuments"
-        ],
-        "parameters": [
-          {
-            "name": "documentId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalDocumentResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/fiscal-documents/{documentId}/artifacts": {
-      "get": {
-        "tags": [
-          "FinanceFiscalDocuments"
-        ],
-        "parameters": [
-          {
-            "name": "documentId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceFiscalArtifactResponse"
-                  }
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceFiscalArtifactResponse"
-                  }
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceFiscalArtifactResponse"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/fiscal-documents/{documentId}/artifacts/{artifactId}": {
-      "get": {
-        "tags": [
-          "FinanceFiscalDocuments"
-        ],
-        "parameters": [
-          {
-            "name": "documentId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "artifactId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/fiscal-documents/{documentId}/simulate": {
-      "post": {
-        "tags": [
-          "FinanceFiscalDocuments"
-        ],
-        "parameters": [
-          {
-            "name": "documentId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceFiscalSimulateRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceFiscalSimulateRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceFiscalSimulateRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalMutationResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalMutationResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalMutationResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/fiscal-xml/validate": {
-      "post": {
-        "tags": [
-          "FinanceFiscalXmlValidation"
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceFiscalXmlValidationRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalXmlValidationResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalXmlValidationResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceFiscalXmlValidationResponse"
+                  "$ref": "#/components/schemas/FinanceHomeResponse"
                 }
               }
             }
@@ -12465,17 +11181,7 @@
           "400": {
             "description": "Bad Request",
             "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "text/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -12485,17 +11191,7 @@
           "401": {
             "description": "Unauthorized",
             "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "text/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -12505,57 +11201,7 @@
           "403": {
             "description": "Forbidden",
             "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Content Too Large",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Service Unavailable",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              },
-              "text/json": {
+              "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -12740,6 +11386,7 @@
         "tags": [
           "FinanceInvoiceLedger"
         ],
+        "summary": "The invoices of the actor's stations, newest first (4-N21). `search` (1 to 40 characters once trimmed)\nmatches the start of the e-NCF or of the internal number, or any part of the airline name; `page` starts at\n1 and `limit` takes 1 to 100. An invalid query is 400 `invalid_invoice_query`.",
         "operationId": "ListFinanceInvoices",
         "parameters": [
           {
@@ -12760,6 +11407,13 @@
           },
           {
             "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "search",
             "in": "query",
             "schema": {
               "type": "string"
@@ -12794,52 +11448,6 @@
                 }
               }
             }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "FinanceInvoices"
-        ],
-        "operationId": "IssueFinanceInvoice",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/IssueFinanceInvoiceRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IssueFinanceInvoiceResponse"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/IssueFinanceInvoiceResponse"
-                }
-              }
-            }
           },
           "400": {
             "description": "Bad Request",
@@ -12870,9 +11478,22 @@
                 }
               }
             }
-          },
-          "404": {
-            "description": "Not Found",
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "FinanceInvoices"
+        ],
+        "operationId": "IssueFinanceInvoice",
+        "responses": {
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12881,8 +11502,8 @@
               }
             }
           },
-          "409": {
-            "description": "Conflict",
+          "410": {
+            "description": "Gone",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12927,6 +11548,16 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
             "content": {
@@ -12950,6 +11581,7 @@
         "tags": [
           "FinanceInvoiceLedger"
         ],
+        "summary": "4-N12: the legacy credit note bypassed «Notas de ajuste» and its permission; it is retired. Credit and debit\nnotes are issued from the invoice's adjustment notes (POST finance/invoices/{id}/adjustment-notes).",
         "operationId": "IssueFinanceCreditNote",
         "parameters": [
           {
@@ -12962,114 +11594,7 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/IssueCreditNoteInput"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/IssueCreditNoteInput"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/IssueCreditNoteInput"
-                  }
-                ]
-              }
-            }
-          }
-        },
         "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceIdResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/invoices/by-preinvoice/{preinvoiceId}": {
-      "get": {
-        "tags": [
-          "FinanceInvoices"
-        ],
-        "operationId": "GetFinanceInvoiceByPreinvoice",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NonFiscalInvoiceResponse"
-                }
-              }
-            }
-          },
           "401": {
             "description": "Unauthorized",
             "content": {
@@ -13080,8 +11605,8 @@
               }
             }
           },
-          "404": {
-            "description": "Not Found",
+          "410": {
+            "description": "Gone",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14936,51 +13461,9 @@
         "tags": [
           "FinancePayments"
         ],
+        "summary": "4-N12: the legacy payment writer bypassed «Cobros y aplicaciones» and its permissions; it is retired. Payments\nare recorded and applied as treasury receipts (POST finance/receipts).",
         "operationId": "RecordNonFiscalPayment",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/RecordNonFiscalPaymentRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
         "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecordNonFiscalPaymentResponse"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RecordNonFiscalPaymentResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
           "401": {
             "description": "Unauthorized",
             "content": {
@@ -14991,28 +13474,8 @@
               }
             }
           },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
+          "410": {
+            "description": "Gone",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15069,702 +13532,6 @@
           },
           "404": {
             "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices/{preinvoiceId}/lines/{lineId}": {
-      "put": {
-        "tags": [
-          "FinancePreinvoiceLines"
-        ],
-        "operationId": "EditFinancePreinvoiceLine",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "lineId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/EditPreinvoiceLineInput"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/EditPreinvoiceLineInput"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/EditPreinvoiceLineInput"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceIdResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices/{preinvoiceId}/adjustments": {
-      "post": {
-        "tags": [
-          "FinancePreinvoiceLines"
-        ],
-        "operationId": "AddFinancePreinvoiceAdjustment",
-        "parameters": [
-          {
-            "name": "preinvoiceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/AddPreinvoiceAdjustmentInput"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/AddPreinvoiceAdjustmentInput"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/AddPreinvoiceAdjustmentInput"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceIdResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices": {
-      "get": {
-        "tags": [
-          "FinancePreinvoiceList"
-        ],
-        "operationId": "ListFinancePreinvoices",
-        "parameters": [
-          {
-            "name": "stationId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 1
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 20
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePreinvoicePageData"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "PreinvoiceDrafts"
-        ],
-        "operationId": "CreatePreinvoiceDraft",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/CreatePreinvoiceDraftRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreatePreinvoiceDraftResponse"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreatePreinvoiceDraftResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Unprocessable Content",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too Many Requests",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices/{id}/calculations": {
-      "get": {
-        "tags": [
-          "FinancePreinvoiceReview"
-        ],
-        "operationId": "GetFinancePreinvoiceCalculations",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceLineCalculationResponse"
-                  }
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceLineCalculationResponse"
-                  }
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceLineCalculationResponse"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices/{id}/cancel": {
-      "post": {
-        "tags": [
-          "FinancePreinvoiceReview"
-        ],
-        "operationId": "CancelFinancePreinvoiceDraft",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePreinvoiceReviewRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePreinvoiceReviewRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePreinvoiceReviewRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices/{id}/restore-calculation": {
-      "post": {
-        "tags": [
-          "FinancePreinvoiceReview"
-        ],
-        "operationId": "RestoreFinancePreinvoiceCalculation",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePreinvoiceReviewRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePreinvoiceReviewRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinancePreinvoiceReviewRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinancePackageIdResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/reconciliation": {
-      "get": {
-        "tags": [
-          "FinanceReconciliation"
-        ],
-        "operationId": "ListFinanceReconciliation",
-        "parameters": [
-          {
-            "name": "stationId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 1
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "integer",
-              "format": "int32",
-              "default": 20
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceReconciliationPageData"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15887,6 +13654,16 @@
               }
             }
           },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -15910,7 +13687,7 @@
         "tags": [
           "FinanceReports"
         ],
-        "summary": "Exports a report as CSV (UTF-8 with BOM) or PDF; every export is audited.",
+        "summary": "Exports a report as CSV (UTF-8 with BOM), XLSX or PDF; every export is audited.",
         "operationId": "ExportFinanceReport",
         "parameters": [
           {
@@ -15991,6 +13768,21 @@
           },
           "400": {
             "description": "Bad Request",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              },
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
             "content": {
               "text/csv": {
                 "schema": {
@@ -17512,347 +15304,6 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/tax-policies": {
-      "get": {
-        "tags": [
-          "FinanceTaxes"
-        ],
-        "operationId": "ListFinanceTaxPolicies",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceTaxPolicyResponse"
-                  }
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceTaxPolicyResponse"
-                  }
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FinanceTaxPolicyResponse"
-                  }
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "FinanceTaxes"
-        ],
-        "operationId": "CreateFinanceTaxPolicy",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxPolicyRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxPolicyRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxPolicyRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/tax-policies/context": {
-      "get": {
-        "tags": [
-          "FinanceTaxes"
-        ],
-        "operationId": "GetFinanceTaxContext",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxContextResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxContextResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxContextResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/tax-policies/{id}/publish": {
-      "post": {
-        "tags": [
-          "FinanceTaxes"
-        ],
-        "operationId": "PublishFinanceTaxPolicy",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxCommandRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxCommandRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxCommandRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices/{id}/taxes": {
-      "get": {
-        "tags": [
-          "FinanceTaxes"
-        ],
-        "operationId": "GetFinancePreinvoiceTaxes",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxDetailResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxDetailResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxDetailResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      },
-      "post": {
-        "tags": [
-          "FinanceTaxes"
-        ],
-        "operationId": "ApplyFinancePreinvoiceTaxes",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxCommandRequest"
-                  }
-                ]
-              }
-            },
-            "text/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxCommandRequest"
-                  }
-                ]
-              }
-            },
-            "application/*+json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/FinanceTaxCommandRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
-                }
-              },
-              "text/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FinanceTaxIdResponse"
                 }
               }
             }
@@ -31863,234 +29314,6 @@
         ]
       }
     },
-    "/api/v1/finance/preinvoices/{draftId}/disputes": {
-      "get": {
-        "tags": [
-          "PreinvoiceDrafts"
-        ],
-        "operationId": "GetFinancePreinvoiceDisputes",
-        "parameters": [
-          {
-            "name": "draftId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "includeResolutions",
-            "in": "query",
-            "schema": {
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PreinvoiceDisputeListResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices/{draftId}/submit": {
-      "post": {
-        "tags": [
-          "PreinvoiceDrafts"
-        ],
-        "operationId": "SubmitPreinvoice",
-        "parameters": [
-          {
-            "name": "draftId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/SubmitPreinvoiceRequest"
-                  }
-                ]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SubmitPreinvoiceResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad Request",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
-    "/api/v1/finance/preinvoices/{draftId}": {
-      "get": {
-        "tags": [
-          "PreinvoiceDrafts"
-        ],
-        "operationId": "GetPreinvoiceDraft",
-        "parameters": [
-          {
-            "name": "draftId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PreinvoiceDraftResponse"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too Many Requests",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "Bearer": []
-          }
-        ]
-      }
-    },
     "/api/v1/public/commercial-catalog": {
       "get": {
         "tags": [
@@ -36227,40 +33450,6 @@
   },
   "components": {
     "schemas": {
-      "AcceptAirlinePreinvoiceRequest": {
-        "required": [
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "additionalProperties": false
-      },
-      "AcceptAirlinePreinvoiceResponse": {
-        "required": [
-          "id",
-          "replayed",
-          "status"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string"
-          },
-          "replayed": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
       "AccessCandidateData": {
         "required": [
           "employeeId",
@@ -36733,36 +33922,6 @@
           },
           "kind": {
             "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "AddPreinvoiceAdjustmentInput": {
-        "required": [
-          "amount",
-          "description",
-          "expectedVersion",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "description": {
-            "type": "string"
-          },
-          "amount": {
-            "type": "number",
-            "format": "double"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "expectedVersion": {
-            "type": "string"
-          },
-          "parentLineId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
           }
         },
         "additionalProperties": false
@@ -37966,204 +35125,6 @@
             "items": {
               "$ref": "#/components/schemas/AirlinePortalUserData"
             }
-          }
-        },
-        "additionalProperties": false
-      },
-      "AirlinePreinvoiceDetailResponse": {
-        "required": [
-          "createdAt",
-          "currencyCode",
-          "from",
-          "id",
-          "lines",
-          "stationCode",
-          "stationId",
-          "status",
-          "to",
-          "total"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "stationCode": {
-            "type": "string"
-          },
-          "from": {
-            "type": "string",
-            "format": "date"
-          },
-          "to": {
-            "type": "string",
-            "format": "date"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "total": {
-            "type": "number",
-            "format": "double"
-          },
-          "status": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AirlinePreinvoiceLineResponse"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "AirlinePreinvoiceLineResponse": {
-        "required": [
-          "amount",
-          "billingUnit",
-          "executedQuantity",
-          "id",
-          "kind",
-          "operationCode",
-          "operationDate",
-          "serviceCode",
-          "serviceName",
-          "unitPrice"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "operationCode": {
-            "type": "string"
-          },
-          "operationDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "serviceCode": {
-            "type": "string"
-          },
-          "serviceName": {
-            "type": "string"
-          },
-          "executedQuantity": {
-            "type": "number",
-            "format": "double"
-          },
-          "billingUnit": {
-            "type": "string"
-          },
-          "unitPrice": {
-            "type": "number",
-            "format": "double"
-          },
-          "amount": {
-            "type": "number",
-            "format": "double"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "parentLineId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "reason": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "AirlinePreinvoicePageResponse": {
-        "required": [
-          "hasMore",
-          "limit",
-          "page",
-          "preinvoices"
-        ],
-        "type": "object",
-        "properties": {
-          "page": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "limit": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "hasMore": {
-            "type": "boolean"
-          },
-          "preinvoices": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/AirlinePreinvoiceResponse"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "AirlinePreinvoiceResponse": {
-        "required": [
-          "createdAt",
-          "currencyCode",
-          "from",
-          "id",
-          "stationCode",
-          "stationId",
-          "status",
-          "to",
-          "total"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "stationCode": {
-            "type": "string"
-          },
-          "from": {
-            "type": "string",
-            "format": "date"
-          },
-          "to": {
-            "type": "string",
-            "format": "date"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "total": {
-            "type": "number",
-            "format": "double"
-          },
-          "status": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
           }
         },
         "additionalProperties": false
@@ -41827,59 +38788,6 @@
         },
         "additionalProperties": false
       },
-      "CreatePreinvoiceDraftRequest": {
-        "required": [
-          "from",
-          "requestId",
-          "serviceIds",
-          "stationId",
-          "to"
-        ],
-        "type": "object",
-        "properties": {
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "from": {
-            "type": "string",
-            "format": "date"
-          },
-          "to": {
-            "type": "string",
-            "format": "date"
-          },
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "serviceIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "CreatePreinvoiceDraftResponse": {
-        "required": [
-          "id",
-          "replayed"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "replayed": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
       "CreateRequisitionInput": {
         "required": [
           "positionId",
@@ -42591,86 +39499,6 @@
           "expectedVersion": {
             "type": "string",
             "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "DisputeAirlinePreinvoiceRequest": {
-        "required": [
-          "description",
-          "lineIds",
-          "requestId",
-          "subject"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "lineIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "DisputeAirlinePreinvoiceResponse": {
-        "required": [
-          "disputeId",
-          "id",
-          "replayed",
-          "status"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "disputeId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string"
-          },
-          "replayed": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "EditPreinvoiceLineInput": {
-        "required": [
-          "exclude",
-          "expectedVersion",
-          "reason"
-        ],
-        "type": "object",
-        "properties": {
-          "amount": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "exclude": {
-            "type": "boolean"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "expectedVersion": {
-            "type": "string"
           }
         },
         "additionalProperties": false
@@ -43435,195 +40263,6 @@
         },
         "additionalProperties": false
       },
-      "FinanceApprovedChargeResponse": {
-        "required": [
-          "code",
-          "source"
-        ],
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceApprovedServiceResponse": {
-        "required": [
-          "airlineId",
-          "airlineName",
-          "approvedSubmissionId",
-          "billingUnit",
-          "contractedQuantity",
-          "executedQuantity",
-          "executionStatus",
-          "flightNumber",
-          "id",
-          "operationCode",
-          "operationDate",
-          "operationId",
-          "ready",
-          "serviceCode",
-          "serviceName",
-          "turnaroundId"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "operationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "turnaroundId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "approvedSubmissionId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "operationCode": {
-            "type": "string"
-          },
-          "operationDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "airlineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineName": {
-            "type": "string"
-          },
-          "flightNumber": {
-            "type": "string"
-          },
-          "contractCode": {
-            "type": "string",
-            "nullable": true
-          },
-          "serviceCode": {
-            "type": "string"
-          },
-          "serviceName": {
-            "type": "string"
-          },
-          "executionStatus": {
-            "type": "string"
-          },
-          "contractedQuantity": {
-            "type": "number",
-            "format": "double"
-          },
-          "executedQuantity": {
-            "type": "number",
-            "format": "double"
-          },
-          "billingUnit": {
-            "type": "string"
-          },
-          "frozenUnitPrice": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "frozenCurrency": {
-            "type": "string",
-            "nullable": true
-          },
-          "ready": {
-            "type": "boolean"
-          },
-          "blockingReason": {
-            "type": "string",
-            "nullable": true
-          },
-          "amount": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "preinvoiceId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "charges": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceApprovedChargeResponse"
-            },
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceApprovedServicesResponse": {
-        "required": [
-          "from",
-          "hasMore",
-          "services",
-          "stationId",
-          "to"
-        ],
-        "type": "object",
-        "properties": {
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "from": {
-            "type": "string",
-            "format": "date"
-          },
-          "to": {
-            "type": "string",
-            "format": "date"
-          },
-          "services": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceApprovedServiceResponse"
-            }
-          },
-          "hasMore": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceCalculationStepResponse": {
-        "required": [
-          "label",
-          "value"
-        ],
-        "type": "object",
-        "properties": {
-          "label": {
-            "type": "string"
-          },
-          "value": {
-            "type": "number",
-            "format": "double"
-          },
-          "unit": {
-            "type": "string",
-            "nullable": true
-          },
-          "currency": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
       "FinanceCharterListResponse": {
         "required": [
           "charters"
@@ -43778,375 +40417,6 @@
         },
         "additionalProperties": false
       },
-      "FinanceFiscalArtifactResponse": {
-        "required": [
-          "contentType",
-          "fileName",
-          "id",
-          "kind",
-          "length",
-          "sha256"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "fileName": {
-            "type": "string"
-          },
-          "contentType": {
-            "type": "string"
-          },
-          "sha256": {
-            "type": "string"
-          },
-          "length": {
-            "type": "integer",
-            "format": "int64"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalCreateRequest": {
-        "required": [
-          "invoiceId",
-          "outcome",
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "invoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "outcome": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalDocumentResponse": {
-        "required": [
-          "artifactCompletion",
-          "artifacts",
-          "canonicalSnapshot",
-          "createdAt",
-          "currencyCode",
-          "disclaimer",
-          "environment",
-          "history",
-          "id",
-          "invoiceId",
-          "mode",
-          "officialQr",
-          "officialXsdValidation",
-          "signed",
-          "snapshotHash",
-          "state",
-          "stationId",
-          "total",
-          "version"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "invoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "mode": {
-            "type": "string"
-          },
-          "environment": {
-            "type": "string"
-          },
-          "state": {
-            "type": "string"
-          },
-          "artifactCompletion": {
-            "type": "string"
-          },
-          "snapshotHash": {
-            "type": "string"
-          },
-          "canonicalSnapshot": {
-            "type": "string"
-          },
-          "total": {
-            "type": "number",
-            "format": "double"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "providerDocumentId": {
-            "type": "string",
-            "nullable": true
-          },
-          "dgiiResponseId": {
-            "type": "string",
-            "nullable": true
-          },
-          "encf": {
-            "type": "string",
-            "nullable": true
-          },
-          "version": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "artifacts": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceFiscalArtifactResponse"
-            }
-          },
-          "history": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceFiscalEventResponse"
-            }
-          },
-          "disclaimer": {
-            "type": "string"
-          },
-          "officialXsdValidation": {
-            "type": "string"
-          },
-          "signed": {
-            "type": "boolean"
-          },
-          "officialQr": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalEventResponse": {
-        "required": [
-          "applied",
-          "detail",
-          "id",
-          "kind",
-          "occurredAt",
-          "state"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "state": {
-            "type": "string"
-          },
-          "providerSequence": {
-            "type": "integer",
-            "format": "int64",
-            "nullable": true
-          },
-          "applied": {
-            "type": "boolean"
-          },
-          "detail": {
-            "type": "string"
-          },
-          "occurredAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalMutationResponse": {
-        "required": [
-          "replayed"
-        ],
-        "type": "object",
-        "properties": {
-          "documentId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "version": {
-            "type": "string",
-            "nullable": true
-          },
-          "replayed": {
-            "type": "boolean"
-          },
-          "failure": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalSimulateRequest": {
-        "required": [
-          "expectedVersion",
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "expectedVersion": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalStatusResponse": {
-        "required": [
-          "canSimulate",
-          "disclaimer",
-          "environment",
-          "mode",
-          "officialXsdValidation",
-          "providerStatus"
-        ],
-        "type": "object",
-        "properties": {
-          "mode": {
-            "type": "string"
-          },
-          "environment": {
-            "type": "string"
-          },
-          "canSimulate": {
-            "type": "boolean"
-          },
-          "disclaimer": {
-            "type": "string"
-          },
-          "officialXsdValidation": {
-            "type": "string"
-          },
-          "providerStatus": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalXmlValidationErrorResponse": {
-        "required": [
-          "code",
-          "lineNumber",
-          "linePosition",
-          "message"
-        ],
-        "type": "object",
-        "properties": {
-          "code": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          },
-          "lineNumber": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "linePosition": {
-            "type": "integer",
-            "format": "int32"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalXmlValidationRequest": {
-        "required": [
-          "documentType"
-        ],
-        "type": "object",
-        "properties": {
-          "documentType": {
-            "type": "string"
-          },
-          "xmlUtf8": {
-            "type": "string",
-            "nullable": true
-          },
-          "xmlBase64": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceFiscalXmlValidationResponse": {
-        "required": [
-          "cryptographicValidation",
-          "fiscalAcceptance",
-          "isStructurallyValid",
-          "schemaId",
-          "schemaSha256",
-          "schemaValidation",
-          "schemaVersion",
-          "signatureElementPresent",
-          "structuralErrors"
-        ],
-        "type": "object",
-        "properties": {
-          "schemaId": {
-            "type": "string"
-          },
-          "schemaVersion": {
-            "type": "string"
-          },
-          "schemaSha256": {
-            "type": "string"
-          },
-          "schemaValidation": {
-            "type": "string"
-          },
-          "isStructurallyValid": {
-            "type": "boolean"
-          },
-          "structuralErrors": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceFiscalXmlValidationErrorResponse"
-            }
-          },
-          "signatureElementPresent": {
-            "type": "boolean"
-          },
-          "cryptographicValidation": {
-            "type": "string"
-          },
-          "fiscalAcceptance": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
       "FinanceHolidayResponse": {
         "required": [
           "date",
@@ -44165,6 +40435,140 @@
           },
           "name": {
             "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceHomeAmountResponse": {
+        "required": [
+          "amount",
+          "count",
+          "currencyCode"
+        ],
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "amount": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceHomeReceivableResponse": {
+        "required": [
+          "currencyCode",
+          "open",
+          "openInvoices",
+          "overdue",
+          "overdueInvoices"
+        ],
+        "type": "object",
+        "properties": {
+          "currencyCode": {
+            "type": "string"
+          },
+          "openInvoices": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "open": {
+            "type": "number",
+            "format": "double"
+          },
+          "overdueInvoices": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "overdue": {
+            "type": "number",
+            "format": "double"
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceHomeResponse": {
+        "required": [
+          "businessDate",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "businessDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "toInvoice": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FinanceHomeToInvoiceResponse"
+              }
+            ],
+            "nullable": true
+          },
+          "invoicedThisMonth": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceHomeAmountResponse"
+            },
+            "nullable": true
+          },
+          "receivables": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceHomeReceivableResponse"
+            },
+            "nullable": true
+          },
+          "cardCollectionsThisMonth": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FinanceHomeAmountResponse"
+            },
+            "nullable": true
+          },
+          "pendingContractApprovals": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "chartersAwaitingPrepayment": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinanceHomeToInvoiceResponse": {
+        "required": [
+          "airlines",
+          "operations"
+        ],
+        "type": "object",
+        "properties": {
+          "operations": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "airlines": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "oldestOperationDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -44416,44 +40820,6 @@
           "maxDays": {
             "type": "integer",
             "format": "int32"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceLineCalculationResponse": {
-        "required": [
-          "description",
-          "kind",
-          "lineId",
-          "steps"
-        ],
-        "type": "object",
-        "properties": {
-          "lineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "operationServiceId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "submissionId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "steps": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceCalculationStepResponse"
-            }
           }
         },
         "additionalProperties": false
@@ -45590,233 +41956,6 @@
         },
         "additionalProperties": false
       },
-      "FinancePreinvoiceListItem": {
-        "required": [
-          "airlineId",
-          "airlineName",
-          "createdAt",
-          "currencyCode",
-          "from",
-          "id",
-          "lineCount",
-          "stationId",
-          "status",
-          "to",
-          "total"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineName": {
-            "type": "string"
-          },
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "from": {
-            "type": "string",
-            "format": "date"
-          },
-          "to": {
-            "type": "string",
-            "format": "date"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "total": {
-            "type": "number",
-            "format": "double"
-          },
-          "status": {
-            "type": "string"
-          },
-          "lineCount": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinancePreinvoicePageData": {
-        "required": [
-          "hasMore",
-          "limit",
-          "page",
-          "preinvoices"
-        ],
-        "type": "object",
-        "properties": {
-          "page": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "limit": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "hasMore": {
-            "type": "boolean"
-          },
-          "preinvoices": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinancePreinvoiceListItem"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinancePreinvoiceReviewRequest": {
-        "required": [
-          "expectedVersion",
-          "reason",
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "expectedVersion": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceReconciliationData": {
-        "required": [
-          "airlineId",
-          "airlineName",
-          "currencyCode",
-          "from",
-          "preinvoiceId",
-          "preinvoiceStatus",
-          "preinvoiceTotal",
-          "to"
-        ],
-        "type": "object",
-        "properties": {
-          "preinvoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineName": {
-            "type": "string"
-          },
-          "from": {
-            "type": "string",
-            "format": "date"
-          },
-          "to": {
-            "type": "string",
-            "format": "date"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "preinvoiceTotal": {
-            "type": "number",
-            "format": "double"
-          },
-          "preinvoiceStatus": {
-            "type": "string"
-          },
-          "invoiceId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "invoiceNumber": {
-            "type": "string",
-            "nullable": true
-          },
-          "invoiceTotal": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "issuedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          },
-          "paymentId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "paymentReference": {
-            "type": "string",
-            "nullable": true
-          },
-          "paymentAmount": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "paymentRecordedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceReconciliationPageData": {
-        "required": [
-          "hasMore",
-          "limit",
-          "page",
-          "rows",
-          "stationId"
-        ],
-        "type": "object",
-        "properties": {
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "page": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "limit": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "hasMore": {
-            "type": "boolean"
-          },
-          "rows": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceReconciliationData"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
       "FinanceReportColumn": {
         "required": [
           "key",
@@ -46081,353 +42220,6 @@
             "items": {
               "$ref": "#/components/schemas/FinanceTariffData"
             }
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceTaxCommandRequest": {
-        "required": [
-          "expectedVersion",
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "expectedVersion": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceTaxContextResponse": {
-        "required": [
-          "airlines",
-          "stations"
-        ],
-        "type": "object",
-        "properties": {
-          "airlines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceTaxOptionResponse"
-            }
-          },
-          "stations": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceTaxOptionResponse"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceTaxDetailResponse": {
-        "required": [
-          "currencyCode",
-          "discount",
-          "gross",
-          "id",
-          "lines",
-          "net",
-          "treatmentsConfigured",
-          "version"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "version": {
-            "type": "string"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "net": {
-            "type": "number",
-            "format": "double"
-          },
-          "discount": {
-            "type": "number",
-            "format": "double"
-          },
-          "tax": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "gross": {
-            "type": "number",
-            "format": "double"
-          },
-          "treatmentsConfigured": {
-            "type": "boolean"
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FinanceTaxLineResponse"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceTaxIdResponse": {
-        "required": [
-          "id"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceTaxLineResponse": {
-        "required": [
-          "conceptCode",
-          "conceptKind",
-          "configured",
-          "description",
-          "discount",
-          "excluded",
-          "gross",
-          "id",
-          "lineNumber",
-          "net",
-          "treatment"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "lineNumber": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "conceptKind": {
-            "type": "string"
-          },
-          "conceptCode": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "treatment": {
-            "type": "string"
-          },
-          "policyId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "rate": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "basis": {
-            "type": "string",
-            "nullable": true
-          },
-          "net": {
-            "type": "number",
-            "format": "double"
-          },
-          "discount": {
-            "type": "number",
-            "format": "double"
-          },
-          "tax": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "gross": {
-            "type": "number",
-            "format": "double"
-          },
-          "configured": {
-            "type": "boolean"
-          },
-          "excluded": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceTaxOptionResponse": {
-        "required": [
-          "code",
-          "id",
-          "name"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "code": {
-            "type": "string"
-          },
-          "name": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceTaxPolicyRequest": {
-        "required": [
-          "airlineId",
-          "conceptCode",
-          "conceptKind",
-          "currencyCode",
-          "requestId",
-          "stationId",
-          "treatment",
-          "validFrom"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "conceptKind": {
-            "type": "string"
-          },
-          "conceptCode": {
-            "type": "string"
-          },
-          "treatment": {
-            "type": "string"
-          },
-          "rate": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "basis": {
-            "type": "string",
-            "nullable": true
-          },
-          "validFrom": {
-            "type": "string",
-            "format": "date"
-          },
-          "validTo": {
-            "type": "string",
-            "format": "date",
-            "nullable": true
-          },
-          "replacesPolicyId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "expectedVersion": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "FinanceTaxPolicyResponse": {
-        "required": [
-          "airlineId",
-          "airlineName",
-          "conceptCode",
-          "conceptKind",
-          "currencyCode",
-          "id",
-          "stationCode",
-          "stationId",
-          "status",
-          "treatment",
-          "validFrom",
-          "version"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineName": {
-            "type": "string"
-          },
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "stationCode": {
-            "type": "string"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "conceptKind": {
-            "type": "string"
-          },
-          "conceptCode": {
-            "type": "string"
-          },
-          "treatment": {
-            "type": "string"
-          },
-          "rate": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "basis": {
-            "type": "string",
-            "nullable": true
-          },
-          "validFrom": {
-            "type": "string",
-            "format": "date"
-          },
-          "validTo": {
-            "type": "string",
-            "format": "date",
-            "nullable": true
-          },
-          "status": {
-            "type": "string"
-          },
-          "replacesPolicyId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "version": {
-            "type": "string"
           }
         },
         "additionalProperties": false
@@ -47228,6 +43020,10 @@
           },
           "version": {
             "type": "string"
+          },
+          "fiscalNumber": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -49407,76 +45203,6 @@
         },
         "additionalProperties": false
       },
-      "IssueCreditNoteInput": {
-        "required": [
-          "amount",
-          "reason",
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "amount": {
-            "type": "number",
-            "format": "double"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "IssueFinanceInvoiceRequest": {
-        "required": [
-          "preinvoiceId",
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "preinvoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "additionalProperties": false
-      },
-      "IssueFinanceInvoiceResponse": {
-        "required": [
-          "id",
-          "kind",
-          "number",
-          "preinvoiceId",
-          "replayed"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "preinvoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "number": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "replayed": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
       "IssueInvoiceFromOperationsRequest": {
         "required": [
           "operationIds",
@@ -50517,117 +46243,6 @@
           },
           "replayed": {
             "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
-      "NonFiscalInvoiceLineResponse": {
-        "required": [
-          "amount",
-          "billingUnit",
-          "executedQuantity",
-          "id",
-          "lineNumber",
-          "operationCode",
-          "operationDate",
-          "serviceCode",
-          "serviceName",
-          "unitPrice"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "lineNumber": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "operationCode": {
-            "type": "string"
-          },
-          "operationDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "serviceCode": {
-            "type": "string"
-          },
-          "serviceName": {
-            "type": "string"
-          },
-          "executedQuantity": {
-            "type": "number",
-            "format": "double"
-          },
-          "billingUnit": {
-            "type": "string"
-          },
-          "unitPrice": {
-            "type": "number",
-            "format": "double"
-          },
-          "amount": {
-            "type": "number",
-            "format": "double"
-          }
-        },
-        "additionalProperties": false
-      },
-      "NonFiscalInvoiceResponse": {
-        "required": [
-          "airlineId",
-          "currencyCode",
-          "id",
-          "issuedAt",
-          "kind",
-          "lines",
-          "number",
-          "preinvoiceId",
-          "stationId",
-          "total"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "preinvoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "number": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "total": {
-            "type": "number",
-            "format": "double"
-          },
-          "issuedAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/NonFiscalInvoiceLineResponse"
-            }
           }
         },
         "additionalProperties": false
@@ -54454,255 +50069,6 @@
         },
         "additionalProperties": false
       },
-      "PreinvoiceDisputeListResponse": {
-        "required": [
-          "disputes",
-          "preinvoiceId"
-        ],
-        "type": "object",
-        "properties": {
-          "preinvoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "disputes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PreinvoiceDisputeResponse"
-            }
-          }
-        },
-        "additionalProperties": false
-      },
-      "PreinvoiceDisputeResolutionResponse": {
-        "required": [
-          "decision",
-          "id",
-          "reason",
-          "resolvedAt"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "decision": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "resolvedAt": {
-            "type": "string",
-            "format": "date-time"
-          }
-        },
-        "additionalProperties": false
-      },
-      "PreinvoiceDisputeResponse": {
-        "required": [
-          "createdAt",
-          "description",
-          "id",
-          "lineIds",
-          "subject"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "subject": {
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "lineIds": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "resolution": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/PreinvoiceDisputeResolutionResponse"
-              }
-            ],
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "PreinvoiceDraftLineResponse": {
-        "required": [
-          "amount",
-          "billingUnit",
-          "currencyCode",
-          "executedQuantity",
-          "id",
-          "isExcluded",
-          "kind",
-          "lineNumber",
-          "operationCode",
-          "operationDate",
-          "serviceCode",
-          "serviceName",
-          "unitPrice"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "operationServiceId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "approvedSubmissionId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "lineNumber": {
-            "type": "integer",
-            "format": "int32"
-          },
-          "operationCode": {
-            "type": "string"
-          },
-          "operationDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "serviceCode": {
-            "type": "string"
-          },
-          "serviceName": {
-            "type": "string"
-          },
-          "executedQuantity": {
-            "type": "number",
-            "format": "double"
-          },
-          "billingUnit": {
-            "type": "string"
-          },
-          "unitPrice": {
-            "type": "number",
-            "format": "double"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "amount": {
-            "type": "number",
-            "format": "double"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "parentLineId": {
-            "type": "string",
-            "format": "uuid",
-            "nullable": true
-          },
-          "computedQuantity": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "computedAmount": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "isExcluded": {
-            "type": "boolean"
-          },
-          "adjustmentReason": {
-            "type": "string",
-            "nullable": true
-          },
-          "editedAt": {
-            "type": "string",
-            "format": "date-time",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "PreinvoiceDraftResponse": {
-        "required": [
-          "airlineId",
-          "airlineName",
-          "currencyCode",
-          "from",
-          "id",
-          "lines",
-          "stationId",
-          "status",
-          "to",
-          "total"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "airlineName": {
-            "type": "string"
-          },
-          "stationId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "from": {
-            "type": "string",
-            "format": "date"
-          },
-          "to": {
-            "type": "string",
-            "format": "date"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "total": {
-            "type": "number",
-            "format": "double"
-          },
-          "status": {
-            "type": "string"
-          },
-          "lines": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PreinvoiceDraftLineResponse"
-            }
-          },
-          "version": {
-            "type": "string",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
       "PresenceHeartbeatRequest": {
         "required": [
           "activityObserved",
@@ -56964,77 +52330,6 @@
         },
         "additionalProperties": false
       },
-      "RecordNonFiscalPaymentRequest": {
-        "required": [
-          "invoiceId",
-          "reference",
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "invoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "reference": {
-            "type": "string"
-          },
-          "amount": {
-            "type": "number",
-            "format": "double",
-            "nullable": true
-          },
-          "method": {
-            "type": "string",
-            "nullable": true
-          },
-          "paidOn": {
-            "type": "string",
-            "format": "date",
-            "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "RecordNonFiscalPaymentResponse": {
-        "required": [
-          "amount",
-          "currencyCode",
-          "id",
-          "invoiceId",
-          "reference",
-          "replayed"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "invoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "reference": {
-            "type": "string"
-          },
-          "currencyCode": {
-            "type": "string"
-          },
-          "amount": {
-            "type": "number",
-            "format": "double"
-          },
-          "replayed": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
       "RecordOccArrivalRequest": {
         "required": [
           "aircraftRegistration"
@@ -57738,53 +53033,6 @@
           "expectedVersion": {
             "type": "string",
             "nullable": true
-          }
-        },
-        "additionalProperties": false
-      },
-      "ResolvePreinvoiceDisputeRequest": {
-        "required": [
-          "decision",
-          "reason",
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "decision": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          }
-        },
-        "additionalProperties": false
-      },
-      "ResolvePreinvoiceDisputeResponse": {
-        "required": [
-          "id",
-          "preinvoiceId",
-          "replayed",
-          "status"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "preinvoiceId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string"
-          },
-          "replayed": {
-            "type": "boolean"
           }
         },
         "additionalProperties": false
@@ -59376,40 +54624,6 @@
         },
         "additionalProperties": false
       },
-      "SubmitPreinvoiceRequest": {
-        "required": [
-          "requestId"
-        ],
-        "type": "object",
-        "properties": {
-          "requestId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "additionalProperties": false
-      },
-      "SubmitPreinvoiceResponse": {
-        "required": [
-          "id",
-          "replayed",
-          "status"
-        ],
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "status": {
-            "type": "string"
-          },
-          "replayed": {
-            "type": "boolean"
-          }
-        },
-        "additionalProperties": false
-      },
       "SubmitRampOperationChecklistRequest": {
         "required": [
           "answers",
@@ -60282,25 +55496,16 @@
       "name": "EmployeeExpenses"
     },
     {
-      "name": "FinanceApprovedServices"
-    },
-    {
       "name": "FinanceCharters"
     },
     {
       "name": "FinanceCloseRules"
     },
     {
-      "name": "FinanceDisputeResolutions"
-    },
-    {
       "name": "FinanceFinancialDocuments"
     },
     {
-      "name": "FinanceFiscalDocuments"
-    },
-    {
-      "name": "FinanceFiscalXmlValidation"
+      "name": "FinanceHome"
     },
     {
       "name": "FinanceInvoiceIssuance"
@@ -60327,21 +55532,6 @@
       "name": "FinancePayments"
     },
     {
-      "name": "FinancePreinvoiceLines"
-    },
-    {
-      "name": "FinancePreinvoiceList"
-    },
-    {
-      "name": "PreinvoiceDrafts"
-    },
-    {
-      "name": "FinancePreinvoiceReview"
-    },
-    {
-      "name": "FinanceReconciliation"
-    },
-    {
       "name": "FinanceReports"
     },
     {
@@ -60349,9 +55539,6 @@
     },
     {
       "name": "FinanceTariffs"
-    },
-    {
-      "name": "FinanceTaxes"
     },
     {
       "name": "FinanceTreasury"

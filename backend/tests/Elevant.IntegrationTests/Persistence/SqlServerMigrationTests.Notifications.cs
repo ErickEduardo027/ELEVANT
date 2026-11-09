@@ -32,8 +32,9 @@ public sealed partial class SqlServerMigrationTests
         { "contract_expiring", Department.Contracts, "contracts.agreements.read", "contracts" },
         { "contract_lifecycle", Department.Contracts, "contracts.agreements.read", "contracts" },
         { "contract_approval", Department.Finance, "finance.contract_approvals.read", "finance" },
-        { "preinvoice_accepted", Department.Finance, "finance.preinvoices.read", "finance" },
-        { "preinvoice_disputed", Department.Finance, "finance.preinvoices.read", "finance" },
+        // 4-A: the preinvoice alerts left with the preinvoice; «Por facturar» and «Charters» raise these.
+        { "operation_ready_to_invoice", Department.Finance, "finance.invoicing.read", "finance" },
+        { "charter_cancelled", Department.Finance, "finance.charters.read", "finance" },
         { "invoice_paid", Department.Finance, "finance.reconciliation.read", "finance" },
     };
 

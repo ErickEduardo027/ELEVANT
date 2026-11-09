@@ -23,14 +23,17 @@ export const DepartmentPermissionCodes = {
     requests: ['read', 'verify', 'approve', 'reject'], catalog: ['read', 'create', 'update', 'delete'],
     service_closures: ['read', 'decide', 'reopen'], reports: ['read'], notifications: ['read'],
   }),
+  // 4-A: the simplified Finance (ADR-0035, block 3) has no preinvoices, approved services, tax treatments or fiscal
+  // documents; «Cobros» and «Estados de cuenta» are tabs of «Facturas».
   finance: codes('finance', {
-    home: ['read'], packages: ['read', 'create', 'update', 'delete', 'publish', 'retire'], contract_approvals: ['read', 'decide'],
-    approved_services: ['read', 'create'], preinvoices: ['read', 'update', 'issue'], reconciliation: ['read', 'create'],
-    adjustments: ['read', 'create'], tariffs: ['read', 'create', 'update', 'delete', 'publish'],
-    charges: ['read', 'create', 'update', 'delete', 'publish'], exchange_rates: ['read', 'create', 'update'],
-    billing_units: ['read', 'create', 'update'], receipts: ['read', 'create', 'apply', 'reverse', 'refund'],
-    statements: ['read'], suppliers: ['read', 'create', 'update', 'delete'],
-    payables: ['read', 'create', 'update', 'approve', 'pay'], expenses: ['read', 'create', 'update', 'approve', 'pay'],
-    taxes: ['read', 'create', 'update'], fiscal: ['read', 'create', 'simulate'], reports: ['read', 'export'], notifications: ['read'],
+    home: ['read'], notifications: ['read'], invoicing: ['read', 'issue'], reconciliation: ['read'],
+    adjustments: ['read', 'create'], receipts: ['read', 'create', 'apply', 'reverse', 'refund'], statements: ['read'],
+    charters: ['read', 'confirm'], payables: ['read', 'create', 'update', 'approve', 'pay'],
+    suppliers: ['read', 'create', 'update', 'delete'], expenses: ['read', 'create', 'update', 'approve', 'pay'],
+    reports: ['read', 'export'], tariffs: ['read', 'create', 'update', 'delete', 'publish'],
+    charges: ['read', 'create', 'update', 'delete', 'publish'],
+    packages: ['read', 'create', 'update', 'delete', 'publish', 'retire'], close_rules: ['read', 'update'],
+    contract_approvals: ['read', 'decide'], exchange_rates: ['read', 'create', 'update'],
+    billing_units: ['read', 'create', 'update'],
   }),
 };

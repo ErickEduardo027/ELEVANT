@@ -11,13 +11,21 @@ import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
 import { ReconciliationIcon } from '../components/icons';
+import { invoiceLabel } from '../financeLabels';
 import AdjustmentNotesPanel from '../treasury/AdjustmentNotesPanel';
+import StatementPage from '../treasury/StatementPage';
 import TreasuryPage from '../treasury/TreasuryPage';
-import { formatMoney, getFinanceInvoice, listFinanceInvoices } from '../../../services/financeBookService';
+import { formatMoney, getFinanceInvoice, INVOICE_PAGE_SIZE, listFinanceInvoices } from '../../../services/financeBookService';
+import { invoiceListMessage } from '../../../services/financeErrors';
 import { formatTreasuryMoney, getTreasuryStatement, treasuryError, treasuryToday } from '../../../services/financeTreasuryService';
 import { downloadInvoiceDocument, getInvoiceCardPayments } from '../../../services/invoicingService';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
+const secondaryClass = 'min-h-[40px] rounded-lg border border-black/10 px-3 py-2 text-sm font-semibold disabled:opacity-50 dark:border-white/10';
+/** Longest search the server accepts (4-N21): an e-NCF or number prefix, or part of the airline name. */
+export const INVOICE_SEARCH_MAX_LENGTH = 40;
+/** Typing pauses this long before «Facturas» searches, so each keystroke does not reach the API. */
+export const INVOICE_SEARCH_DEBOUNCE_MS = 350;
 export const INVOICE_STATUS = {
   Pending: { label: 'Pendiente', tone: 'info' }, PartiallyPaid: { label: 'Pago parcial', tone: 'warning' },
   Paid: { label: 'Pagada', tone: 'success' }, Overdue: { label: 'Vencida', tone: 'danger' },
@@ -45,11 +53,6 @@ function CardAttempts({ invoiceId, revision }) {
           <span>{item.brand} •••• {item.last4} · <strong>{formatTreasuryMoney(item.amount, item.currencyCode)}</strong> · {new Date(item.attemptedAt).toLocaleString('es-DO')}
             {item.authorizationCode && ` · autorización ${item.authorizationCode}`}{item.declineCode && ` · ${DECLINES[item.declineCode] ?? item.declineCode}`}</span></li>; })}</ul>}
   </section>;
-}
-
-/** e-NCF when the invoice was issued as a simulated e-CF (ADR-0035); the internal number otherwise. */
-export function invoiceLabel(invoice) {
-  return invoice?.fiscalNumber ?? `${invoice?.number?.slice(0, 15) ?? ''}…`;
 }
 
 function InvoiceDetail({ invoiceId, revision, onChanged, onOpenReceipt }) {
@@ -109,30 +112,63 @@ function InvoiceDetail({ invoiceId, revision, onChanged, onOpenReceipt }) {
   </div>;
 }
 
-/** Non-fiscal invoices with balance, aging, partial payments and credit notes. */
-export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
-  const { access } = useDepartmentAccess();
+/**
+ * The tabs of «Facturas» (4-A): with the simplified menu, «Cobros» and «Estados de cuenta» are reached from here.
+ * Each one shows only with the permission its screen reads with.
+ */
+const INVOICE_TABS = [
+  { id: 'invoices', label: 'Facturas', permissions: null },
+  { id: 'receipts', label: 'Cobros', permissions: ['finance.receipts.read'] },
+  { id: 'statements', label: 'Estados de cuenta', permissions: ['finance.receipts.read', 'finance.statements.read'] },
+];
+
+const queryKey = query => JSON.stringify([query.stationId, query.status, query.search, query.page]);
+
+/**
+ * The invoices of the actor's stations, newest first (4-N21): pages of 25 with «Anterior» and «Siguiente», and one
+ * search by e-NCF, number or airline that waits for a pause in typing and starts again on the first page. A reload
+ * keeps the visible page; an error is explained by its Problem Details code.
+ */
+function InvoiceList({ initialStationId, onOpenReceipt }) {
   const [treasuryScope, setTreasuryScope] = useState(null);
   const [revision, setRevision] = useState(0);
   const stations = (readSession()?.stationScopes ?? []).filter(scope => scope?.stationId);
-  const [filters, setFilters] = useState({ stationId: initialStationId ?? '', status: '' });
-  const [page, setPage] = useState(null);
+  const [query, setQuery] = useState(() => ({ stationId: initialStationId ?? '', status: '', search: '', page: 1 }));
+  const [searchText, setSearchText] = useState('');
+  const [state, setState] = useState({ page: null, shownKey: '', error: null, loading: true });
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState('');
-  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const text = searchText.trim();
+    if (text === query.search) return undefined;
+    const timer = window.setTimeout(() => setQuery(current => ({ ...current, search: text, page: 1 })),
+      INVOICE_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchText, query.search]);
 
   const listRequest = useRef(0);
   const load = useCallback(async () => {
     const request = ++listRequest.current;
-    setPage(null); setError('');
+    const key = queryKey(query);
+    setState(current => ({ ...current, error: null, loading: true }));
     try {
-      const value = await listFinanceInvoices({ ...filters, limit: 50 });
-      if (request === listRequest.current) { setPage(value); setError(''); }
+      const value = await listFinanceInvoices({ stationId: query.stationId, status: query.status,
+        search: query.search, page: query.page, limit: INVOICE_PAGE_SIZE });
+      if (request === listRequest.current) setState({ page: value, shownKey: key, error: null, loading: false });
     } catch (failure) {
-      if (request === listRequest.current) { setPage({ invoices: [] }); setError(treasuryError(failure)); }
+      // A failed reload keeps the page on screen; a page of another query or a refusal is not shown as current.
+      if (request === listRequest.current) setState(current => (current.shownKey === key && failure?.status !== 403
+        ? { ...current, error: failure, loading: false }
+        : { page: null, shownKey: '', error: failure, loading: false }));
     }
-  }, [filters]);
-  useEffect(() => { void load(); return () => { ++listRequest.current; }; }, [load, revision]);
+  }, [query]);
+  useEffect(() => {
+    // The cleanup retires the request in flight: a response of an older query or revision is never shown.
+    const requests = listRequest;
+    void load();
+    return () => { requests.current += 1; };
+  }, [load, revision]);
   useEffect(() => {
     if (process.env.NODE_ENV === 'test') return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
@@ -147,28 +183,50 @@ export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
     if (onOpenReceipt) onOpenReceipt(receiptId, context);
     else setTreasuryScope({ ...context, receiptId });
   }
+  const filter = (field, value) => setQuery(current => ({ ...current, [field]: value, page: 1 }));
+  const goTo = page => setQuery(current => ({ ...current, page }));
   if (treasuryScope) return <div className="space-y-4"><button type="button" className="min-h-[40px] text-sm font-semibold text-accent-600" onClick={() => { setTreasuryScope(null); setRevision(value => value + 1); }}>Volver a facturas</button>
     <TreasuryPage initialStationId={treasuryScope.stationId} initialAirlineId={treasuryScope.airlineId} initialInvoiceId={treasuryScope.invoiceId} initialReceiptId={treasuryScope.receiptId} />
   </div>;
-  const invoices = page?.invoices ?? [];
+  const invoices = state.page?.invoices ?? [];
+  const shownPage = state.page?.page ?? query.page;
   const current = invoices.find(invoice => invoice.id === selected);
+  const forbidden = state.error?.status === 403;
+  const message = state.error ? invoiceListMessage(state.error) : '';
+  const statusLabel = INVOICE_STATUS[query.status]?.label;
+  const empty = shownPage > 1
+    ? { title: 'No hay más facturas', description: 'Esta página quedó vacía.', action: { label: 'Ir a la primera página', onClick: () => goTo(1) } }
+    : query.search
+      ? { title: 'Ninguna factura coincide con la búsqueda', description: `Revise el e-NCF, el número o el nombre de la aerolínea («${query.search}»).`,
+        action: { label: 'Limpiar búsqueda', onClick: () => { setSearchText(''); filter('search', ''); } } }
+      : statusLabel
+        ? { title: 'Sin facturas en este estado', description: `No hay facturas «${statusLabel}» en las estaciones elegidas.` }
+        : { title: 'Sin facturas', description: 'Las facturas emitidas desde «Por facturar» aparecerán aquí.' };
   return (
-    <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
+    <div className="space-y-5">
       <PageHeader eyebrow="Facturación" title="Facturas"
         description="Facturas e-CF simuladas con su saldo, vencimiento y cobros." />
       <FilterBar>
-        {stations.length > 1 && <label className="text-xs font-semibold">Estación<select value={filters.stationId} onChange={event => setFilters(currentFilters => ({ ...currentFilters, stationId: event.target.value }))} className={fieldClass}>
+        <label className="text-xs font-semibold">Buscar (e-NCF, número o aerolínea)<input type="search" value={searchText}
+          maxLength={INVOICE_SEARCH_MAX_LENGTH} placeholder="E31…, NF-… o aerolínea" onChange={event => setSearchText(event.target.value)}
+          className={fieldClass} /></label>
+        {stations.length > 1 && <label className="text-xs font-semibold">Estación<select value={query.stationId} onChange={event => filter('stationId', event.target.value)} className={fieldClass}>
           <option value="">Todas</option>{stations.map(station => <option key={station.stationId} value={station.stationId}>{station.stationCode}</option>)}</select></label>}
-        <label className="text-xs font-semibold">Estado<select value={filters.status} onChange={event => setFilters(currentFilters => ({ ...currentFilters, status: event.target.value }))} className={fieldClass}>
+        <label className="text-xs font-semibold">Estado<select value={query.status} onChange={event => filter('status', event.target.value)} className={fieldClass}>
           <option value="">Todos</option>{Object.entries(INVOICE_STATUS).map(([value, item]) => <option key={value} value={value}>{item.label}</option>)}</select></label>
       </FilterBar>
       {notice && <p role="status" className="rounded-lg bg-status-success/10 p-3 text-sm">{notice}</p>}
-      {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
-      {!page ? <p role="status" className="text-sm">Cargando facturas…</p> : invoices.length === 0 ? (
-        <EmptyState icon={ReconciliationIcon} title="Sin facturas" description="Las facturas emitidas desde «Por facturar» aparecerán aquí." />
+      {forbidden ? <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{message}</p>
+        : state.error && <div role="alert" className="flex flex-wrap items-center gap-3 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">
+          <span className="min-w-0 flex-1">{message}</span>
+          <button type="button" className="font-semibold underline" onClick={() => setRevision(value => value + 1)}>Reintentar</button>
+        </div>}
+      {state.page && state.loading && <p role="status" className="text-xs text-text-secondary-light dark:text-text-secondary-dark">Actualizando…</p>}
+      {!forbidden && (!state.page ? !state.error && <p role="status" className="text-sm">Cargando facturas…</p> : invoices.length === 0 ? (
+        <EmptyState icon={ReconciliationIcon} title={empty.title} description={empty.description} action={empty.action} />
       ) : (
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card">
-          <table className="table-stack w-full min-w-[760px] text-left text-sm">
+          <table aria-busy={state.loading} className="table-stack w-full min-w-[760px] text-left text-sm">
             <thead className="bg-black/[.03] text-xs uppercase text-text-secondary-light dark:bg-white/[.03]"><tr><th className="p-3">Factura</th><th className="p-3">Aerolínea</th><th className="p-3">Total</th><th className="p-3">Saldo</th><th className="p-3">Vence</th><th className="p-3">Estado</th></tr></thead>
             <tbody>{invoices.map(invoice => {
               const status = INVOICE_STATUS[invoice.status] ?? { label: invoice.status, tone: 'info' };
@@ -185,11 +243,46 @@ export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
             })}</tbody>
           </table>
         </StackedTable>
-      )}
+      ))}
+      {!forbidden && state.page && (invoices.length > 0 || shownPage > 1) && <nav aria-label="Páginas de facturas" className="flex items-center justify-end gap-3 text-sm">
+        <button type="button" className={secondaryClass} disabled={shownPage <= 1 || state.loading} onClick={() => goTo(shownPage - 1)}>Anterior</button>
+        <span>Página {shownPage}</span>
+        <button type="button" className={secondaryClass} disabled={!state.page.hasMore || state.loading} onClick={() => goTo(shownPage + 1)}>Siguiente</button>
+      </nav>}
       <Drawer open={Boolean(current)} onClose={() => setSelected(null)} title={current ? `Factura ${current.airline}` : ''}
         description={current?.fiscalNumber ? `${current.fiscalNumber} · ${current.number}` : current?.number} widthClassName="lg:w-[560px]">
         {current && <InvoiceDetail key={current.id} invoiceId={current.id} revision={revision} onOpenReceipt={openReceipt} onChanged={message => { setNotice(message); setRevision(value => value + 1); }} />}
       </Drawer>
+    </div>
+  );
+}
+
+/**
+ * «Facturas» of Finance (4-A, 4-N19, 4-N21): the e-CF invoices with their balance, and, as tabs, «Cobros» (receipts
+ * and applications) and «Estados de cuenta» when the account may read them.
+ */
+export default function InvoicesPage({ initialStationId, onOpenReceipt }) {
+  const { access } = useDepartmentAccess();
+  const tabs = INVOICE_TABS.filter(tab => !tab.permissions || tab.permissions.some(code => access?.can(code)));
+  const [tabId, setTabId] = useState('invoices');
+  const active = tabs.some(tab => tab.id === tabId) ? tabId : 'invoices';
+  const panel = id => ({ role: tabs.length > 1 ? 'tabpanel' : undefined, id: `finance-invoices-panel-${id}`,
+    'aria-labelledby': tabs.length > 1 ? `finance-invoices-tab-${id}` : undefined });
+  return (
+    <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
+      {tabs.length > 1 && <div role="tablist" aria-label="Facturas, cobros y estados de cuenta" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1">
+        {tabs.map(tab => <button key={tab.id} type="button" role="tab" id={`finance-invoices-tab-${tab.id}`}
+          aria-selected={active === tab.id} aria-controls={`finance-invoices-panel-${tab.id}`} onClick={() => setTabId(tab.id)}
+          className={`min-h-[40px] shrink-0 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium ${active === tab.id ? 'bg-accent-600 text-white' : 'text-text-secondary-light hover:bg-black/5 dark:text-text-secondary-dark dark:hover:bg-white/5'}`}>
+          {tab.label}
+        </button>)}
+      </div>}
+      {/* The list stays mounted while another tab is open, so its page and search are kept. */}
+      <div {...panel('invoices')} hidden={active !== 'invoices'}>
+        <InvoiceList initialStationId={initialStationId} onOpenReceipt={onOpenReceipt} />
+      </div>
+      {active === 'receipts' && <div {...panel('receipts')}><TreasuryPage initialStationId={initialStationId} /></div>}
+      {active === 'statements' && <div {...panel('statements')}><StatementPage initialStationId={initialStationId} /></div>}
     </div>
   );
 }

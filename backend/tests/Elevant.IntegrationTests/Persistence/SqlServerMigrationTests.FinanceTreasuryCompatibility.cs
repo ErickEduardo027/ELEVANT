@@ -11,6 +11,10 @@ namespace Elevant.IntegrationTests.Persistence;
 
 public sealed partial class SqlServerMigrationTests
 {
+    /// <summary>
+    /// 4-N12: the legacy credit-note writer is retired, but the notes it issued before still count. A historical note and
+    /// the line credits of «Notas de ajuste» share the original invoice's ceiling, despite a debit raising the balance.
+    /// </summary>
     [Fact]
     public async Task FinanceTreasuryCompatibilityCreditsShareOriginalInvoiceCeiling()
     {
@@ -22,42 +26,32 @@ public sealed partial class SqlServerMigrationTests
         async Task<T> Run<T>(Func<IServiceProvider, Task<T>> action)
         { await using var scope = provider.CreateAsyncScope(); return await action(scope.ServiceProvider); }
         Task<FinanceTreasuryAdjustmentsData?> Limits() => Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>().AdjustmentsAsync(FinanceAccount, fixture.Invoice, ct));
-        var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
+        Task<FinanceTreasuryResult> Credit(string version, decimal quantity, decimal amount) => Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>()
+            .IssueAdjustmentAsync(FinanceAccount, fixture.Invoice, new(Guid.NewGuid(), version, BusinessToday(), "Synthetic line correction", "Credit",
+                [new(fixture.Line, quantity, amount)]), ct));
+        static DateOnly BusinessToday() => Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
         var debit = await Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>().IssueAdjustmentAsync(FinanceAccount,
-            fixture.Invoice, new(Guid.NewGuid(), "0", today, "Synthetic debit", "Debit", [new(fixture.Line, 10, 1000)]), ct));
+            fixture.Invoice, new(Guid.NewGuid(), "0", BusinessToday(), "Synthetic debit", "Debit", [new(fixture.Line, 10, 1000)]), ct));
         Assert.True(debit.IsSuccess);
-        var rejected = await Run(sp => sp.GetRequiredService<IFinanceInvoiceLedgerStore>().IssueCreditNoteAsync(FinanceAccount,
-            fixture.Invoice, new(Guid.NewGuid(), 2000, "Exceeds original invoice"), ct));
-        Assert.Equal(FinanceCatalogFailure.Conflict, rejected.Failure);
+        await using (var history = CreateContext(database.ConnectionString))
+        {
+            var invoice = await history.NonFiscalInvoices.SingleAsync(i => i.PublicId == fixture.Invoice, ct);
+            var account = await history.Users.Where(u => u.PublicId == FinanceAccount).Select(u => u.Id).SingleAsync(ct);
+            var recorded = DateTimeOffset.UtcNow;
+            history.NonFiscalCreditNotes.Add(new NonFiscalCreditNote { PublicId = Guid.NewGuid(), InvoiceId = invoice.Id,
+                IssuedByAccountId = account, RequestId = Guid.NewGuid(), Number = "NC-" + Guid.NewGuid().ToString("N"),
+                CurrencyCode = invoice.CurrencyCode, Amount = 700, Reason = "Historical credit before the retirement",
+                CreatedAt = recorded, UpdatedAt = recorded });
+            await history.SaveChangesAsync(ct);
+        }
         var limits = (await Limits())!;
-        var credit = await Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>().IssueAdjustmentAsync(FinanceAccount,
-            fixture.Invoice, new(Guid.NewGuid(), limits.Version, today, "Synthetic line correction", "Credit", [new(fixture.Line, 3, 300)]), ct));
-        Assert.True(credit.IsSuccess);
-        rejected = await Run(sp => sp.GetRequiredService<IFinanceInvoiceLedgerStore>().IssueCreditNoteAsync(FinanceAccount,
-            fixture.Invoice, new(Guid.NewGuid(), 701, "Exceeds remaining correction limit"), ct));
-        Assert.Equal(FinanceCatalogFailure.Conflict, rejected.Failure);
-        var input = new IssueCreditNoteInput(Guid.NewGuid(), 700, "Remaining original correction");
-        var legacy = await Run(sp => sp.GetRequiredService<IFinanceInvoiceLedgerStore>().IssueCreditNoteAsync(FinanceAccount, fixture.Invoice, input, ct));
-        Assert.True(legacy.IsSuccess);
-        Assert.Equal(legacy.Id, (await Run(sp => sp.GetRequiredService<IFinanceInvoiceLedgerStore>().IssueCreditNoteAsync(FinanceAccount, fixture.Invoice, input, ct))).Id);
-        Assert.Equal(0, Assert.Single((await Limits())!.Lines).CreditAmountRemaining);
-
-        // Both public writers must reserve the same ceiling while competing, despite a debit increasing the balance.
-        var raceFixture = await TreasuryReviewFixtureAsync(database.ConnectionString, ct);
-        Assert.True((await Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>().IssueAdjustmentAsync(FinanceAccount,
-            raceFixture.Invoice, new(Guid.NewGuid(), "0", today, "Race debit", "Debit", [new(raceFixture.Line, 10, 1000)]), ct))).IsSuccess);
-        var raceLimits = (await Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>().AdjustmentsAsync(FinanceAccount, raceFixture.Invoice, ct)))!;
-        var oldWriter = Run(sp => sp.GetRequiredService<IFinanceInvoiceLedgerStore>().IssueCreditNoteAsync(FinanceAccount,
-            raceFixture.Invoice, new(Guid.NewGuid(), 700, "Concurrent historical credit"), ct));
-        var newWriter = Run(sp => sp.GetRequiredService<IFinanceTreasuryStore>().IssueAdjustmentAsync(FinanceAccount,
-            raceFixture.Invoice, new(Guid.NewGuid(), raceLimits.Version, today, "Concurrent line credit", "Credit", [new(raceFixture.Line, 7, 700)]), ct));
-        await Task.WhenAll(oldWriter, newWriter);
-        Assert.Equal(1, new[] { (await oldWriter).IsSuccess, (await newWriter).IsSuccess }.Count(x => x));
-        await using var verify = CreateContext(database.ConnectionString);
-        var numericId = await verify.NonFiscalInvoices.Where(i => i.PublicId == raceFixture.Invoice).Select(i => i.Id).SingleAsync(ct);
-        var legacyAmount = await verify.NonFiscalCreditNotes.Where(n => n.InvoiceId == numericId).SumAsync(n => (decimal?)n.Amount, ct) ?? 0;
-        var lineAmount = await verify.Set<FinanceTreasuryAdjustmentNote>().Where(n => n.InvoiceId == numericId && n.Kind == FinanceTreasuryAdjustmentKind.Credit).SumAsync(n => (decimal?)n.Amount, ct) ?? 0;
-        Assert.Equal(700, legacyAmount + lineAmount);
+        Assert.Equal(700, limits.LegacyCredited);
+        Assert.Equal(300, Assert.Single(limits.Lines).CreditAmountRemaining);
+        Assert.Equal(FinanceTreasuryFailure.Conflict, (await Credit(limits.Version, 4, 301)).Failure);
+        Assert.True((await Credit(limits.Version, 3, 300)).IsSuccess);
+        limits = (await Limits())!;
+        Assert.Equal(0, Assert.Single(limits.Lines).CreditAmountRemaining);
+        Assert.Equal(FinanceTreasuryFailure.Conflict, (await Credit(limits.Version, 1, 1)).Failure);
     }
 
     [Fact]

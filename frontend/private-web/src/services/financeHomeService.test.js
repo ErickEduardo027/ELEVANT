@@ -1,55 +1,68 @@
-import { beforeEach, expect, it, vi } from 'vitest';
-import { getFinanceHomeSnapshot } from './financeHomeService';
-import { getApprovedServices } from './approvedServicesService';
-import { getFinancePreinvoices } from './financePreinvoiceService';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 
-vi.mock('./approvedServicesService', () => ({ getApprovedServices: vi.fn() }));
-vi.mock('./financePreinvoiceService', () => ({ getFinancePreinvoices: vi.fn() }));
+vi.mock('../features/auth/authService', () => ({ readSession: vi.fn(), handleUnauthorizedResponse: vi.fn() }));
 
 const stationId = '10000000-0000-7000-8000-000000000001';
-const query = { stationId, from: '2026-09-01', to: '2026-09-28' };
+const home = {
+  stationId, businessDate: '2026-10-31',
+  toInvoice: { operations: 3, airlines: 2, oldestOperationDate: '2026-10-02' },
+  invoicedThisMonth: [{ currencyCode: 'USD', count: 2, amount: 236 }],
+  receivables: [{ currencyCode: 'USD', openInvoices: 2, open: 236, overdueInvoices: 1, overdue: 118 }],
+  cardCollectionsThisMonth: [{ currencyCode: 'DOP', count: 1, amount: 5900 }],
+  pendingContractApprovals: 1,
+  chartersAwaitingPrepayment: null,
+};
+
+function reply(status, body) {
+  return new Response(JSON.stringify(body), { status,
+    headers: { 'content-type': status >= 400 ? 'application/problem+json' : 'application/json' } });
+}
 
 beforeEach(() => {
-  vi.mocked(getApprovedServices).mockReset();
-  vi.mocked(getFinancePreinvoices).mockReset();
+  vi.resetModules();
+  vi.stubEnv('NEXT_PUBLIC_ELEVANT_API_URL', 'https://api.example.test');
+  vi.mocked(readSession).mockReturnValue({ token: 'finance-token' });
 });
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
-it('derives a bounded financial summary from the two station-authorized API reads', async () => {
-  vi.mocked(getApprovedServices).mockResolvedValue({ hasMore: true, services: [
-    { id: 'service-1', airlineName: 'Arajet', flightNumber: 'DM 100',
-      serviceName: 'GPU', operationDate: '2026-09-27', amount: 250,
-      frozenCurrency: 'USD', ready: true, preinvoiceId: null },
-    { id: 'service-2', airlineName: 'Arajet', flightNumber: 'DM 101',
-      serviceName: 'Escalera', operationDate: '2026-09-26', amount: null,
-      frozenCurrency: null, ready: false, preinvoiceId: null },
-  ] });
-  vi.mocked(getFinancePreinvoices).mockResolvedValue({ hasMore: true, preinvoices: [
-    { id: 'pre-1', airlineName: 'Arajet', status: 'Draft', total: 250,
-      currencyCode: 'USD' },
-    { id: 'pre-2', airlineName: 'Arajet', status: 'Disputed', total: 280,
-      currencyCode: 'USD' },
-    { id: 'pre-3', airlineName: 'Arajet', status: 'Invoiced', total: 310,
-      currencyCode: 'USD' },
-  ] });
-
-  const result = await getFinanceHomeSnapshot(query);
-
-  expect(getApprovedServices).toHaveBeenCalledWith(query, { signal: undefined });
-  expect(getFinancePreinvoices).toHaveBeenCalledWith(
-    { stationId, page: 1, limit: 50 }, { signal: undefined });
-  expect(result).toMatchObject({
-    kpis: { approvedServices: 2, readyForPreinvoice: 1,
-      draftPreinvoices: 1, disputedPreinvoices: 1 },
-    bounds: { servicesHaveMore: true, preinvoicesHaveMore: true },
-    approvedServices: [{ id: 'service-1', airline: 'Arajet',
-      flight: 'DM 100', operationDate: '2026-09-27', amount: 250,
-      currency: 'USD' }, { id: 'service-2', amount: null, currency: null }],
+it('reads «Inicio» from the one server read, never from preinvoices or approved services (4-A, 4-N02)', async () => {
+  const sent = [];
+  const fetch = vi.fn(async (url, init) => {
+    // The client clears the token from its headers once the request is sent: read it while it is in flight.
+    sent.push({ url: String(url), authorization: new Headers(init.headers).get('authorization') });
+    return reply(200, home);
   });
-  expect(result.pendingActions.map(item => item.id)).toEqual(['pre-1', 'pre-2']);
+  vi.stubGlobal('fetch', fetch);
+  const { getFinanceHomeSnapshot, isEmptyFinanceHome } = await import('./financeHomeService');
+  const snapshot = await getFinanceHomeSnapshot({ stationId });
+  expect(fetch).toHaveBeenCalledOnce();
+  expect(sent).toEqual([{ url: `https://api.example.test/api/v1/finance/home?stationId=${stationId}`,
+    authorization: 'Bearer finance-token' }]);
+  expect(snapshot).toEqual({
+    businessDate: '2026-10-31', toInvoice: home.toInvoice, invoicedThisMonth: home.invoicedThisMonth,
+    receivables: home.receivables, cardCollectionsThisMonth: home.cardCollectionsThisMonth,
+    pendingContractApprovals: 1, chartersAwaitingPrepayment: null,
+  });
+  expect(isEmptyFinanceHome(snapshot)).toBe(false);
+  expect(isEmptyFinanceHome({ toInvoice: null, invoicedThisMonth: null, receivables: null,
+    cardCollectionsThisMonth: null, pendingContractApprovals: null, chartersAwaitingPrepayment: null })).toBe(true);
 });
 
-it('fails closed rather than showing stale or invented finance data', async () => {
-  vi.mocked(getApprovedServices).mockRejectedValue(new Error('offline'));
-  vi.mocked(getFinancePreinvoices).mockResolvedValue({ preinvoices: [], hasMore: false });
-  await expect(getFinanceHomeSnapshot(query)).rejects.toThrow('offline');
+it('keeps the status and code of a refusal and renews the session on 401', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => reply(403, { status: 403, title: 'The Finance home is forbidden in this station.',
+    code: 'forbidden' })));
+  const { getFinanceHomeSnapshot } = await import('./financeHomeService');
+  await expect(getFinanceHomeSnapshot({ stationId })).rejects.toMatchObject({ status: 403, code: 'forbidden' });
+  expect(handleUnauthorizedResponse).not.toHaveBeenCalled();
+
+  vi.stubGlobal('fetch', vi.fn(async () => reply(401, { status: 401, title: 'Authentication failed.' })));
+  await expect(getFinanceHomeSnapshot({ stationId })).rejects.toMatchObject({ status: 401 });
+  expect(handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
+});
+
+it('fails closed on a response that is not the published contract', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => reply(200, { ...home, preinvoices: 4 })));
+  const { getFinanceHomeSnapshot } = await import('./financeHomeService');
+  await expect(getFinanceHomeSnapshot({ stationId })).rejects.toMatchObject({ kind: 'malformed-response' });
 });

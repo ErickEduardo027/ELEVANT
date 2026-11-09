@@ -89,175 +89,29 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         Assert.Equal(HttpStatusCode.BadRequest, badLimit.StatusCode);
     }
 
-    [Fact]
-    public async Task PublishedPreinvoicesUseServerTenantAndNeverReturnAnUnknownRoute()
+    /// <summary>
+    /// 4-A (ADR-0035, block 3): the airline no longer reviews, accepts or disputes preinvoices; it reads its invoices.
+    /// The routes are gone (404), not answered by a stub, and nothing reaches a store.
+    /// </summary>
+    [Theory]
+    [InlineData("GET", "preinvoices")]
+    [InlineData("GET", "preinvoices/{0}")]
+    [InlineData("GET", "preinvoices/{0}/disputes")]
+    [InlineData("GET", "preinvoices/{0}/invoice")]
+    [InlineData("GET", "preinvoices/{0}/invoice/document")]
+    [InlineData("POST", "preinvoices/{0}/accept")]
+    [InlineData("POST", "preinvoices/{0}/dispute")]
+    public async Task RetiredPreinvoiceRoutesAreGone(string method, string route)
     {
         var state = new StubState(CreateActor());
         await using var application = CreateApplication(state);
-        using var anonymous = application.CreateClient();
-        using var unauthorized = await anonymous.GetAsync(
-            "/api/v1/airline/portal/preinvoices", TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
-
         using var client = CreateAuthenticatedClient(application);
-        using var response = await client.GetAsync(
-            "/api/v1/airline/portal/preinvoices?page=1&limit=20",
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("no-store", response.Headers.CacheControl?.ToString(), StringComparison.Ordinal);
-        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
-        Assert.Equal(1, state.QueriedPage);
-        Assert.Equal(20, state.QueriedLimit);
-        await using var stream = await response.Content.ReadAsStreamAsync(TestContext.Current.CancellationToken);
-        using var json = await JsonDocument.ParseAsync(stream,
-            cancellationToken: TestContext.Current.CancellationToken);
-        Assert.Equal(1, json.RootElement.GetProperty("page").GetInt32());
-        Assert.Empty(json.RootElement.GetProperty("preinvoices").EnumerateArray());
-
-        using var badPage = await client.GetAsync(
-            "/api/v1/airline/portal/preinvoices?page=0", TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.BadRequest, badPage.StatusCode);
-    }
-
-    [Fact]
-    public async Task PublishedPreinvoiceDetailIsAvailableThroughTheTenantPortal()
-    {
-        var preinvoiceId = Guid.NewGuid();
-        var state = new StubState(CreateActor())
-        {
-            DetailPreinvoice = new AirlinePreinvoiceDetailData(preinvoiceId,
-                StationId, "PUJ", new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 18),
-                "USD", 125.5000m, "Submitted", DateTimeOffset.UtcNow,
-                [new AirlinePreinvoiceLineData(Guid.NewGuid(), "DEV-TAT-0021",
-                    new DateOnly(2026, 8, 18), "GPU", "Ground power",
-                    1.0000m, "hour", 125.5000m, 125.5000m)]),
-        };
-        await using var application = CreateApplication(state);
-        using var client = CreateAuthenticatedClient(application);
-        using var response = await client.GetAsync(
-            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}",
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Contains("no-store", response.Headers.CacheControl?.ToString());
-        Assert.Equal(OrganizationId, state.QueriedOrganizationId);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
-            TestContext.Current.CancellationToken));
-        Assert.Equal(preinvoiceId, json.RootElement.GetProperty("id").GetGuid());
-        Assert.Equal("DEV-TAT-0021", json.RootElement.GetProperty("lines")[0]
-            .GetProperty("operationCode").GetString());
-        Assert.Equal(125.5000m, json.RootElement.GetProperty("lines")[0]
-            .GetProperty("amount").GetDecimal());
-        Assert.False(json.RootElement.TryGetProperty("disputes", out _));
-
-        using var disputeRead = await client.GetAsync(
-            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/disputes",
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, disputeRead.StatusCode);
-        using var disputeJson = JsonDocument.Parse(await disputeRead.Content.ReadAsStringAsync(
-            TestContext.Current.CancellationToken));
-        Assert.Equal(preinvoiceId, disputeJson.RootElement.GetProperty("preinvoiceId").GetGuid());
-        Assert.Empty(disputeJson.RootElement.GetProperty("disputes").EnumerateArray());
-
-        using var absent = await client.GetAsync(
-            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}",
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.NotFound, absent.StatusCode);
-        using var absentDisputes = await client.GetAsync(
-            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}/disputes",
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.NotFound, absentDisputes.StatusCode);
-    }
-
-    [Fact]
-    public async Task AirlineReadsOnlyItsOwnNonFiscalInvoiceThroughThePortal()
-    {
-        var preinvoiceId = Guid.NewGuid();
-        var state = new StubState(CreateActor())
-        {
-            DetailPreinvoice = new AirlinePreinvoiceDetailData(preinvoiceId,
-                StationId, "PUJ", new DateOnly(2026, 8, 18), new DateOnly(2026, 8, 18),
-                "USD", 10m, "Invoiced", DateTimeOffset.UtcNow, []),
-        };
-        await using var application = CreateApplication(state);
-        using var anonymous = application.CreateClient();
-        using var denied = await anonymous.GetAsync(
-            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/invoice",
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
-        using var client = CreateAuthenticatedClient(application);
-        using var own = await client.GetAsync(
-            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/invoice",
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, own.StatusCode);
-        using var invoice = JsonDocument.Parse(await own.Content.ReadAsStringAsync(
-            TestContext.Current.CancellationToken));
-        Assert.Equal(preinvoiceId, invoice.RootElement.GetProperty("preinvoiceId").GetGuid());
-        Assert.Equal("NonFiscal", invoice.RootElement.GetProperty("kind").GetString());
-        using var other = await client.GetAsync(
-            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}/invoice",
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
-    }
-
-    [Fact]
-    public async Task AirlineCanAcceptAPublishedPreinvoiceWithoutAnUnknownRoute()
-    {
-        var state = new StubState(CreateActor());
-        await using var application = CreateApplication(state);
-        using var anonymous = application.CreateClient();
-        using var unauthenticated = await anonymous.PostAsJsonAsync(
-            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}/accept",
-            new { requestId = Guid.NewGuid() }, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Unauthorized, unauthenticated.StatusCode);
-        using var client = CreateAuthenticatedClient(application);
-        var preinvoiceId = Guid.NewGuid();
-        var requestId = Guid.NewGuid();
-        using var response = await client.PostAsJsonAsync(
-            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/accept",
-            new { requestId }, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal((AccountId, OrganizationId, preinvoiceId, requestId), state.Accepted);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
-            TestContext.Current.CancellationToken));
-        Assert.Equal("Accepted", json.RootElement.GetProperty("status").GetString());
-
-        using var invalid = await client.PostAsJsonAsync(
-            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/accept",
-            new { requestId = Guid.Empty }, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
-    }
-
-    [Fact]
-    public async Task AirlineCanDisputePublishedLinesWithoutAnUnknownRoute()
-    {
-        var state = new StubState(CreateActor());
-        await using var application = CreateApplication(state);
-        using var anonymous = application.CreateClient();
-        using var unauthenticated = await anonymous.PostAsJsonAsync(
-            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}/dispute",
-            new { requestId = Guid.NewGuid(), subject = "Cantidad incorrecta",
-                description = "La cantidad de GPU no coincide.",
-                lineIds = new[] { Guid.NewGuid() } }, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Unauthorized, unauthenticated.StatusCode);
-        using var client = CreateAuthenticatedClient(application);
-        var preinvoiceId = Guid.NewGuid();
-        var lineId = Guid.NewGuid();
-        var requestId = Guid.NewGuid();
-        using var response = await client.PostAsJsonAsync(
-            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/dispute",
-            new { requestId, subject = "Cantidad incorrecta",
-                description = "La cantidad de GPU no coincide con el servicio aprobado.",
-                lineIds = new[] { lineId } }, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal((AccountId, OrganizationId, preinvoiceId, requestId), state.Disputed);
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(
-            TestContext.Current.CancellationToken));
-        Assert.Equal("Disputed", json.RootElement.GetProperty("status").GetString());
-        using var invalid = await client.PostAsJsonAsync(
-            $"/api/v1/airline/portal/preinvoices/{preinvoiceId:D}/dispute",
-            new { requestId = Guid.Empty, subject = "", description = "", lineIds = new[] { lineId } },
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        using var request = new HttpRequestMessage(new HttpMethod(method),
+            "/api/v1/airline/portal/" + string.Format(System.Globalization.CultureInfo.InvariantCulture, route, Guid.NewGuid()));
+        if (method == "POST") request.Content = JsonContent.Create(new { requestId = Guid.NewGuid() });
+        using var response = await client.SendAsync(request, TestContext.Current.CancellationToken);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Null(state.QueriedOrganizationId);
     }
 
     [Fact]
@@ -488,24 +342,6 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         Assert.Equal(HttpStatusCode.Forbidden, requestResponse.StatusCode);
         Assert.Null(state.QueriedOrganizationId);
 
-        using var financeResponse = await client.GetAsync(
-            "/api/v1/airline/portal/preinvoices", TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Forbidden, financeResponse.StatusCode);
-        Assert.Null(state.QueriedOrganizationId);
-
-        using var acceptance = await client.PostAsJsonAsync(
-            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}/accept",
-            new { requestId = Guid.NewGuid() }, TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Forbidden, acceptance.StatusCode);
-        Assert.Null(state.Accepted);
-
-        using var dispute = await client.PostAsJsonAsync(
-            $"/api/v1/airline/portal/preinvoices/{Guid.NewGuid():D}/dispute",
-            new { requestId = Guid.NewGuid(), subject = "Cantidad",
-                description = "Diferencia de cantidad.", lineIds = new[] { Guid.NewGuid() } },
-            TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Forbidden, dispute.StatusCode);
-        Assert.Null(state.Disputed);
     }
 
     [Fact]
@@ -542,14 +378,10 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         {
             services.RemoveAll<IActorContextResolver>();
             services.RemoveAll<IAirlinePortalReadStore>();
-            services.RemoveAll<IAirlinePreinvoiceAcceptanceStore>();
-            services.RemoveAll<IAirlinePreinvoiceDisputeStore>();
             services.RemoveAll<INonFiscalInvoiceReadStore>();
             services.RemoveAll<INonFiscalPaymentReadStore>();
             services.AddScoped<IActorContextResolver>(_ => state);
             services.AddScoped<IAirlinePortalReadStore>(_ => state);
-            services.AddScoped<IAirlinePreinvoiceAcceptanceStore>(_ => state);
-            services.AddScoped<IAirlinePreinvoiceDisputeStore>(_ => state);
             services.AddScoped<INonFiscalInvoiceReadStore>(_ => state);
             services.AddScoped<INonFiscalPaymentReadStore>(_ => state.Payment);
         }));
@@ -590,45 +422,18 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         []);
 
     private sealed class StubState(ActorContext actor) : IActorContextResolver,
-        IAirlinePortalReadStore, IAirlinePreinvoiceAcceptanceStore,
-        IAirlinePreinvoiceDisputeStore, INonFiscalInvoiceReadStore
+        IAirlinePortalReadStore, INonFiscalInvoiceReadStore
     {
         public PaymentStub Payment { get; } = new();
-        public (Guid AccountId, Guid OrganizationId, Guid PreinvoiceId, Guid RequestId)? Accepted { get; private set; }
-
-        public (Guid AccountId, Guid OrganizationId, Guid PreinvoiceId, Guid RequestId)? Disputed { get; private set; }
 
         public Task<NonFiscalInvoiceData?> GetForFinanceAsync(Guid accountId, Guid preinvoiceId,
             CancellationToken cancellationToken = default) => Task.FromResult<NonFiscalInvoiceData?>(null);
 
         public Task<NonFiscalInvoiceData?> GetForAirlineAsync(Guid organizationId, Guid preinvoiceId,
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<NonFiscalInvoiceData?>(organizationId == OrganizationId &&
-                DetailPreinvoice?.Id == preinvoiceId
-                ? new NonFiscalInvoiceData(Guid.NewGuid(), preinvoiceId, AirlineId,
-                    StationId, "NF-TEST", "USD", 10m, DateTimeOffset.UtcNow,
-                    [new NonFiscalInvoiceLineData(Guid.NewGuid(), 1, "DEV-TAT",
-                        new DateOnly(2026, 8, 18), "GPU", "GPU", 1m, "hour", 10m, 10m)])
-                : null);
-
-        public Task<DisputeAirlinePreinvoiceResult> DisputeAsync(
-            DisputeAirlinePreinvoiceCommand command,
             CancellationToken cancellationToken = default)
         {
-            Disputed = (command.AccountId, command.OrganizationId,
-                command.PreinvoiceId, command.RequestId);
-            return Task.FromResult(DisputeAirlinePreinvoiceResult.Success(
-                command.PreinvoiceId, Guid.NewGuid(), false));
-        }
-
-        public Task<AcceptAirlinePreinvoiceResult> AcceptAsync(
-            AcceptAirlinePreinvoiceCommand command,
-            CancellationToken cancellationToken = default)
-        {
-            Accepted = (command.AccountId, command.OrganizationId,
-                command.PreinvoiceId, command.RequestId);
-            return Task.FromResult(AcceptAirlinePreinvoiceResult.Success(
-                command.PreinvoiceId, false));
+            QueriedOrganizationId = organizationId;
+            return Task.FromResult<NonFiscalInvoiceData?>(null);
         }
 
         public AirlinePortalBootstrapData? Bootstrap { get; init; }
@@ -640,8 +445,6 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
         public AirlinePortalOperationData? DetailOperation { get; init; }
 
         public AirlineOperationalRequestPageData? Requests { get; init; }
-
-        public AirlinePreinvoiceDetailData? DetailPreinvoice { get; init; }
 
         public Guid? QueriedOperationId { get; private set; }
 
@@ -709,35 +512,6 @@ public sealed class AirlinePortalEndpointsTests(ElevantApiFactory factory) : ICl
             QueriedPage = page;
             QueriedLimit = limit;
             return Task.FromResult(Requests);
-        }
-
-        public Task<AirlinePreinvoicePageData?> GetPreinvoicesAsync(
-            Guid organizationId, int page, int limit,
-            bool includeVoided = false, CancellationToken cancellationToken = default)
-        {
-            QueriedOrganizationId = organizationId;
-            QueriedPage = page;
-            QueriedLimit = limit;
-            return Task.FromResult<AirlinePreinvoicePageData?>(
-                new AirlinePreinvoicePageData([], false));
-        }
-
-        public Task<AirlinePreinvoiceDetailData?> GetPreinvoiceAsync(
-            Guid organizationId, Guid preinvoiceId,
-            bool includeVoided = false, CancellationToken cancellationToken = default)
-        {
-            QueriedOrganizationId = organizationId;
-            return Task.FromResult(DetailPreinvoice?.Id == preinvoiceId
-                ? DetailPreinvoice : null);
-        }
-
-        public Task<IReadOnlyList<PreinvoiceDisputeData>?> GetPreinvoiceDisputesAsync(
-            Guid organizationId, Guid preinvoiceId,
-            bool includeVoided = false, CancellationToken cancellationToken = default)
-        {
-            QueriedOrganizationId = organizationId;
-            return Task.FromResult<IReadOnlyList<PreinvoiceDisputeData>?>(
-                DetailPreinvoice?.Id == preinvoiceId ? [] : null);
         }
     }
 

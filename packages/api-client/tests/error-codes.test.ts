@@ -108,6 +108,14 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 
+  it("knows the simplified Finance codes of phase 4 (block B)", () => {
+    // 4-N12: a legacy write answers 410; 4-A: a retired report and a bad export format; 4-N21 and 4-A: the queries of
+    // «Facturas» and «Inicio». The report query and the refusal keep their shared codes.
+    for (const code of ["legacy_finance_route_retired", "unknown_finance_report", "invalid_report_export_format",
+      "invalid_invoice_query", "invalid_finance_home_query", "invalid_report_query", "forbidden", "not_found"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

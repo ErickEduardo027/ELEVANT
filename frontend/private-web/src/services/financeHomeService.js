@@ -1,44 +1,31 @@
-import { getApprovedServices } from './approvedServicesService';
-import { getFinancePreinvoices } from './financePreinvoiceService';
+import { createPrivateWebApiClient } from '../config/elevantApiClient';
+import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 
-const ACTIONS = {
-  Draft: 'Preparar envío a la aerolínea',
-  Disputed: 'Resolver disputa de la aerolínea',
-  Accepted: 'Emitir factura de prueba',
-};
-
-export async function getFinanceHomeSnapshot({ stationId, from, to }, { signal } = {}) {
-  const [evidence, page] = await Promise.all([
-    getApprovedServices({ stationId, from, to }, { signal }),
-    getFinancePreinvoices({ stationId, page: 1, limit: 50 }, { signal }),
-  ]);
-  const services = evidence.services;
-  const preinvoices = page.preinvoices;
-
-  return {
-    kpis: {
-      approvedServices: services.length,
-      readyForPreinvoice: services.filter(item => item.ready && !item.preinvoiceId).length,
-      draftPreinvoices: preinvoices.filter(item => item.status === 'Draft').length,
-      disputedPreinvoices: preinvoices.filter(item => item.status === 'Disputed').length,
-    },
-    bounds: { servicesHaveMore: evidence.hasMore, preinvoicesHaveMore: page.hasMore },
-    approvedServices: services.slice(0, 5).map(item => ({
-      id: item.id,
-      airline: item.airlineName,
-      flight: item.flightNumber,
-      service: item.serviceName,
-      operationDate: item.operationDate,
-      amount: item.amount,
-      currency: item.frozenCurrency,
-    })),
-    pendingActions: preinvoices.filter(item => ACTIONS[item.status]).slice(0, 5)
-      .map(item => ({
-        id: item.id,
-        kind: 'Pre-factura',
-        airline: item.airlineName,
-        detail: ACTIONS[item.status],
-        moduleId: 'finance-to-invoice',
-      })),
-  };
+/**
+ * «Inicio» of Finance (phase 4, block B, 4-A and 4-N02): one read of the indicators the server computes for the
+ * station at the business day of Santo Domingo. Each section is null when the account's template does not include
+ * the module it summarizes; nothing is derived from preinvoices or from a bounded list in the browser.
+ */
+export async function getFinanceHomeSnapshot({ stationId }, { signal } = {}) {
+  try {
+    const home = await createPrivateWebApiClient({ getAccessToken: () => readSession()?.token })
+      .getFinanceHome(stationId, { signal, cache: 'no-store' });
+    return {
+      businessDate: home.businessDate,
+      toInvoice: home.toInvoice,
+      invoicedThisMonth: home.invoicedThisMonth,
+      receivables: home.receivables,
+      cardCollectionsThisMonth: home.cardCollectionsThisMonth,
+      pendingContractApprovals: home.pendingContractApprovals,
+      chartersAwaitingPrepayment: home.chartersAwaitingPrepayment,
+    };
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
 }
+
+/** True when the template includes none of the modules «Inicio» summarizes. */
+export const isEmptyFinanceHome = home => Boolean(home) && home.toInvoice === null && home.invoicedThisMonth === null &&
+  home.receivables === null && home.cardCollectionsThisMonth === null && home.pendingContractApprovals === null &&
+  home.chartersAwaitingPrepayment === null;
