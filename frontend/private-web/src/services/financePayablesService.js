@@ -21,6 +21,11 @@ export const listPayablePayments = filters => read('/finance/payable-payments' +
 export const getPayablePayment = id => read('/finance/payable-payments/' + idPath(id));
 export const recordPayablePayment = body => commercialApi('/finance/payable-payments', json('POST', body));
 export const applyPayablePayment = (id, body) => commercialApi('/finance/payable-payments/' + idPath(id) + '/applications', json('POST', body));
+/**
+ * 4-N04: reverses one application of the payment (`applicationId`) or, without it, voids the whole payment once nothing
+ * of it is applied. `{ requestId, expectedVersion, reason, applicationId? }`; the reversal is a linked row, never a delete.
+ */
+export const reversePayablePayment = (id, body) => commercialApi('/finance/payable-payments/' + idPath(id) + '/reversals', json('POST', body));
 export const listEmployeeExpenses = filters => read('/finance/expenses' + query(filters));
 export const getEmployeeExpense = id => read('/finance/expenses/' + idPath(id));
 export const saveEmployeeExpense = (id, body) => commercialApi('/finance/expenses' + (id ? '/' + idPath(id) : ''), json(id ? 'PUT' : 'POST', body));
@@ -28,6 +33,14 @@ export const decideEmployeeExpense = (id, body) => commercialApi('/finance/expen
 export const reimburseEmployeeExpense = (id, body) => commercialApi('/finance/expenses/' + idPath(id) + '/reimbursements', json('POST', body));
 function kindPath(kind) { if (!['suppliers', 'payables', 'expenses'].includes(kind)) throw new Error('Tipo de documento inválido.'); return '/finance/' + kind; }
 export const payablesOptions = (kind, scopeStationId) => read(kindPath(kind) + '/options' + query({ scopeStationId }));
+/**
+ * 4-N13: removes a receipt from a draft expense or supplier invoice (`{ requestId, expectedVersion }`). It stops being
+ * shown and counted; its bytes are erased only when no submission ever included it.
+ */
+export function removePayablesAttachment(kind, id, attachmentId, body) {
+  if (kind === 'suppliers') throw new Error('Tipo de documento inválido.');
+  return commercialApi(kindPath(kind) + '/' + idPath(id) + '/attachments/' + idPath(attachmentId) + '/removals', json('POST', body));
+}
 
 async function privateFileRequest(path, options = {}) {
   const base = String(process.env.NEXT_PUBLIC_ELEVANT_API_URL || '');
@@ -36,7 +49,12 @@ async function privateFileRequest(path, options = {}) {
   if (!origin || !token) throw Object.assign(new Error('Sesión no disponible.'), { status: 401 });
   const response = await fetch(origin + '/api/v1' + path, { ...options, cache: 'no-store', headers: { Authorization: 'Bearer ' + token } });
   handleUnauthorizedResponse(response);
-  if (!response.ok) throw Object.assign(new Error('No se pudo completar la operación del adjunto privado.'), { status: response.status });
+  if (!response.ok) {
+    // 4-N27: the code of the Problem Details explains the refusal (a full receipt list, a file that is not a receipt…).
+    const problem = await response.json().catch(() => ({}));
+    throw Object.assign(new Error('No se pudo completar la operación del adjunto privado.'),
+      { status: response.status, code: typeof problem?.code === 'string' ? problem.code : undefined });
+  }
   return response;
 }
 export async function uploadPayablesAttachment(kind, id, { requestId, expectedVersion, file }) {

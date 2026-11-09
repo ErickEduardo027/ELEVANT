@@ -103,7 +103,8 @@ VALUES
     (N'20261105164624_AddSimulatedCardPayments'),
     (N'20261106020045_AddCommercialRequestReviewAndIcaoOnlyAirlines'),
     (N'20261108043225_AddOccIncidentsReviewReopenAndServiceOrderCorrections'),
-    (N'20261109030826_AddAdjustmentNoteTaxAndCharterPrepaymentLink');
+    (N'20261109030826_AddAdjustmentNoteTaxAndCharterPrepaymentLink'),
+    (N'20261109064156_AddPayablesCorrections');
 
 DECLARE @missing_migrations nvarchar(2048);
 SELECT @missing_migrations = STRING_AGG(expected.[migration_id], N', ')

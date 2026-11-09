@@ -36,12 +36,16 @@ internal sealed partial class FinancePayablesStore
             Require(Text(input.DocumentReference, 100) && input.DueDate >= input.DocumentDate);
             var total = ValidateLines(input.Lines); var dop = ValidateFx(input.Fx, total, input.DocumentDate);
             var station = await StationAsync(a, input.ScopeStationId, ct); var supplier = await SupplierAsync(a, input.SupplierId, ct);
-            Require(supplier.IsActive && supplier.ScopeStationId == station);
+            Require(supplier.ScopeStationId == station); Require(supplier.IsActive, FinancePayablesProblems.SupplierInactive);
             var dims = await DimensionsAsync(a, station, input.Dimensions, ct); var now = clock.GetUtcNow();
             var row = id is { } key ? await InvoiceAsync(a, key, ct) : new SupplierInvoice { PublicId = Guid.CreateVersion7(), CreatedAt = now, CreatedByAccountId = a.Id, ScopeStationId = station };
-            if (id is not null) { Match(row.RowVersion, input.ExpectedVersion); Require(row.Status == SupplierInvoiceStatus.Draft, "conflict"); Require(row.ScopeStationId == station); }
-            else context.Set<SupplierInvoice>().Add(row);
-            row.SupplierId = supplier.Id; row.DocumentReference = input.DocumentReference.Trim().ToUpperInvariant();
+            if (id is not null) { Match(row.RowVersion, input.ExpectedVersion); Require(row.Status == SupplierInvoiceStatus.Draft, FinancePayablesProblems.InvalidState); Require(row.ScopeStationId == station); }
+            var reference = input.DocumentReference.Trim().ToUpperInvariant();
+            // 4-N03: only a voided invoice frees its reference; the unique index filtered on Voided backs this read.
+            Require(!await context.Set<SupplierInvoice>().AnyAsync(x => x.SupplierId == supplier.Id && x.DocumentReference == reference &&
+                x.Status != SupplierInvoiceStatus.Voided && x.Id != row.Id, ct), FinancePayablesProblems.DuplicateReference);
+            if (id is null) context.Set<SupplierInvoice>().Add(row);
+            row.SupplierId = supplier.Id; row.DocumentReference = reference;
             row.DocumentDate = input.DocumentDate; row.DueDate = input.DueDate;
             row.CurrencyCode = input.Fx.Currency; row.FxToDop = input.Fx.RateToDop!.Value; row.FxSource = input.Fx.Source.Trim(); row.FxDate = input.Fx.RateDate!.Value;
             row.Total = total; row.TotalDop = dop; row.StationId = dims.Station; row.AirlineId = dims.Airline; row.TurnaroundId = dims.Turnaround; row.ServiceDefinitionId = dims.Service;
@@ -53,16 +57,46 @@ internal sealed partial class FinancePayablesStore
                 Total = FinancePayablesPolicy.LineTotal(l.Quantity, l.UnitPrice, l.TaxAmount) }));
             Audit(a, id is null ? "finance.payable.created" : "finance.payable.draft_updated", "commercial.supplier_invoices", row.PublicId); return row.PublicId;
         }, ct);
+    /// <summary>
+    /// Submits, approves or rejects a supplier invoice and, 4-N03, corrects a rejected one (back to Draft) or voids a
+    /// draft, a rejected one or an approved one without active applications. Reading the payables opens the command;
+    /// the Finance code each move needs is checked against the invoice's current status.
+    /// </summary>
     public Task<FinancePayablesResult<FinancePayablesMutation>> DecideInvoiceAsync(Guid actorId, Guid id, FinancePayablesDecision input, CancellationToken ct = default) =>
-        WriteAsync(actorId, input.RequestId, "payable.decide", id, input, input.Decision == "Submitted" ? "finance.payables.update" : "finance.payables.approve", async a =>
+        WriteAsync(actorId, input.RequestId, "payable.decide", id, input, "finance.payables.read", async a =>
         {
-            Require(Finance(a, input.Decision == "Submitted" ? "finance.payables.update" : "finance.payables.approve"), "forbidden");
+            Require(Enum.GetNames<SupplierInvoiceStatus>().Contains(input.Decision));
             var row = await InvoiceAsync(a, id, ct); Match(row.RowVersion, input.ExpectedVersion);
-            Require(OptionalText(input.Reason, 500) && FinancePayablesPolicy.CanTransitionInvoice(row.Status.ToString(), input.Decision, input.Reason), "conflict");
-            Require(await context.Set<Supplier>().AnyAsync(s => s.Id == row.SupplierId && s.IsActive, ct), "conflict");
-            row.Status = Enum.Parse<SupplierInvoiceStatus>(input.Decision); row.UpdatedAt = clock.GetUtcNow();
-            context.Set<SupplierInvoiceReview>().Add(new SupplierInvoiceReview { DocumentId = row.Id, Stage = input.Decision == "Submitted" ? "Submission" : "Finance",
-                Decision = input.Decision, Reason = input.Reason?.Trim(), ActorAccountId = a.Id, DecidedAt = clock.GetUtcNow() });
-            Audit(a, "finance.payable." + input.Decision.ToLowerInvariant(), "commercial.supplier_invoices", id, input.Reason); return id;
+            var from = row.Status.ToString();
+            var needsReason = FinancePayablesPolicy.InvoiceTransitionNeedsReason(from, input.Decision);
+            Require(needsReason is not null, FinancePayablesProblems.InvalidState);
+            Require(Finance(a, FinancePayablesPolicy.InvoiceDecisionPermission(from, input.Decision)), FinancePayablesProblems.Forbidden);
+            RequireReason(input.Reason, needsReason!.Value);
+            var voiding = input.Decision == nameof(SupplierInvoiceStatus.Voided);
+            // 4-N15: the invoice of a retired supplier is only voided.
+            if (!voiding) Require(await context.Set<Supplier>().AnyAsync(s => s.Id == row.SupplierId && s.IsActive, ct), FinancePayablesProblems.SupplierInactive);
+            // 4-N03: an approved invoice keeps its applied balance until every application of it is reversed.
+            if (voiding && row.Status == SupplierInvoiceStatus.Approved)
+                Require(!await ActiveApplications().AnyAsync(x => x.SupplierInvoiceId == row.Id, ct), FinancePayablesProblems.InvoiceHasApplications);
+            // 4-N14: who created or submitted the invoice does not approve it (by person; rejecting it stays possible).
+            if (input.Decision == nameof(SupplierInvoiceStatus.Approved))
+            {
+                var creator = await context.Users.Where(u => u.Id == row.CreatedByAccountId).Select(u => u.PersonId).SingleAsync(ct);
+                var submitters = await (from review in context.Set<SupplierInvoiceReview>() join user in context.Users on review.ActorAccountId equals user.Id
+                    where review.DocumentId == row.Id && review.Stage == "Submission" select user.PersonId).ToArrayAsync(ct);
+                Require(FinancePayablesPolicy.CanApproveInvoice(a.PersonId, creator, submitters), FinancePayablesProblems.SegregationOfDuties);
+            }
+            var now = clock.GetUtcNow();
+            row.Status = Enum.Parse<SupplierInvoiceStatus>(input.Decision); row.UpdatedAt = now;
+            var (stage, action) = input.Decision switch
+            {
+                nameof(SupplierInvoiceStatus.Submitted) => ("Submission", "finance.payable.submitted"),
+                nameof(SupplierInvoiceStatus.Draft) => ("Correction", "finance.payable.reopened"),
+                nameof(SupplierInvoiceStatus.Voided) => ("Void", "finance.payable.voided"),
+                _ => ("Finance", "finance.payable." + input.Decision.ToLowerInvariant()),
+            };
+            context.Set<SupplierInvoiceReview>().Add(new SupplierInvoiceReview { DocumentId = row.Id, Stage = stage,
+                Decision = input.Decision, Reason = input.Reason?.Trim(), ActorAccountId = a.Id, DecidedAt = now });
+            Audit(a, action, "commercial.supplier_invoices", id, input.Reason); return id;
         }, ct);
 }

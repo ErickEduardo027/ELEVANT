@@ -17,6 +17,7 @@ export const FINANCE_MODULE_IDS = {
   PAYABLES: 'finance-payables',
   SUPPLIERS: 'finance-suppliers',
   EXPENSES: 'finance-expenses',
+  OWN_EXPENSES: 'finance-own-expenses',
   REPORTS: 'finance-reports',
   CONFIGURATION: 'finance-configuration',
   TARIFFS: 'finance-tariffs',
@@ -45,11 +46,13 @@ export const FINANCE_MODULES = [
     ],
   },
   {
-    id: FINANCE_MODULE_IDS.PAYABLES_GROUP, label: 'Cuentas por pagar', icon: PayablesIcon, description: 'Facturas de proveedores, proveedores y gastos de empleados.',
+    id: FINANCE_MODULE_IDS.PAYABLES_GROUP, label: 'Cuentas por pagar', icon: PayablesIcon, description: 'Facturas de proveedores, proveedores, gastos de empleados y gastos propios.',
     children: [
       { id: FINANCE_MODULE_IDS.PAYABLES, permission: 'finance.payables.read', label: 'Facturas de proveedores' },
       { id: FINANCE_MODULE_IDS.SUPPLIERS, permission: 'finance.suppliers.read', label: 'Proveedores' },
       { id: FINANCE_MODULE_IDS.EXPENSES, permission: 'finance.expenses.read', label: 'Gastos de empleados' },
+      // 4-N28: like every department, a Finance member files its own expenses without a Finance code.
+      { id: FINANCE_MODULE_IDS.OWN_EXPENSES, label: 'Mis gastos' },
     ],
   },
   { id: FINANCE_MODULE_IDS.REPORTS, permission: 'finance.reports.read', label: 'Reportes', icon: ReportIcon, description: 'Ingresos, cuentas por cobrar, cobranza, cuentas por pagar, recargos y ventas.' },

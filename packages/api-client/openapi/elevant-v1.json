@@ -10603,6 +10603,93 @@
         ]
       }
     },
+    "/api/v1/finance/expenses/{id}/attachments/{attachmentId}/removals": {
+      "post": {
+        "tags": [
+          "EmployeeExpenses"
+        ],
+        "summary": "4-N13: the requester removes a receipt from its draft expense. It is no longer shown, downloaded nor counted; its\nbytes are erased only when no submission ever included it.",
+        "operationId": "RemoveEmployeeExpenseReceipt",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesAttachmentRemovalDto"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesAttachmentRemovalDto"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesAttachmentRemovalDto"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/charters": {
       "get": {
         "tags": [
@@ -13264,6 +13351,93 @@
         ]
       }
     },
+    "/api/v1/finance/payables/{id}/attachments/{attachmentId}/removals": {
+      "post": {
+        "tags": [
+          "FinancePayables"
+        ],
+        "summary": "4-N13: removes an attachment from a draft supplier invoice (`finance.payables.update`). It is no longer shown,\ndownloaded nor counted; its bytes are erased only when no submission ever included it.",
+        "operationId": "RemoveFinancePayableAttachment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "attachmentId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesAttachmentRemovalDto"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesAttachmentRemovalDto"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesAttachmentRemovalDto"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/finance/payable-payments": {
       "get": {
         "tags": [
@@ -13553,6 +13727,84 @@
                 "allOf": [
                   {
                     "$ref": "#/components/schemas/FinancePayablesApplyDto"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              },
+              "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FinancePayablesMutationDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/payable-payments/{id}/reversals": {
+      "post": {
+        "tags": [
+          "FinancePayablesPayments"
+        ],
+        "summary": "4-N04: reverses one application of the payment (`applicationId`) or voids the whole payment once nothing of it is\napplied, as a linked and immutable row with its reason; it needs `finance.payables.reverse`.",
+        "operationId": "ReverseFinancePayablePayment",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesReversalDto"
+                  }
+                ]
+              }
+            },
+            "text/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesReversalDto"
+                  }
+                ]
+              }
+            },
+            "application/*+json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/FinancePayablesReversalDto"
                   }
                 ]
               }
@@ -40290,6 +40542,10 @@
             "items": {
               "$ref": "#/components/schemas/EmployeeExpensePaymentViewDto"
             }
+          },
+          "reviewRoute": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -41338,6 +41594,15 @@
           "appliedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "reversedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reversalReason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -41362,6 +41627,23 @@
             "items": {
               "$ref": "#/components/schemas/FinancePayablesApplicationInputDto"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePayablesAttachmentRemovalDto": {
+        "required": [
+          "expectedVersion",
+          "requestId"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedVersion": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -41771,6 +42053,41 @@
             "items": {
               "$ref": "#/components/schemas/FinancePayablesApplicationViewDto"
             }
+          },
+          "voidedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "voidReason": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "FinancePayablesReversalDto": {
+        "required": [
+          "expectedVersion",
+          "requestId"
+        ],
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expectedVersion": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
+          },
+          "applicationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           }
         },
         "additionalProperties": false

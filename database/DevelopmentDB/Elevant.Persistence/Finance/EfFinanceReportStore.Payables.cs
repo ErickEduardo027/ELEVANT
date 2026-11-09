@@ -25,10 +25,12 @@ internal sealed partial class EfFinanceReportStore
         var reviews = await context.Set<SupplierInvoiceReview>().AsNoTracking().Where(r => ids.Contains(r.DocumentId) && r.DecidedAt < end)
             .OrderBy(r => r.DecidedAt).ThenBy(r => r.Id).ToArrayAsync(ct);
         var statuses = reviews.GroupBy(r => r.DocumentId).ToDictionary(g => g.Key, g => g.Last().Decision);
+        // 4-N04: an application reversed by the cut-off no longer pays its invoice; a voided payment has none left.
         var applications = await (from a in context.Set<FinancePayablesApplication>().AsNoTracking()
             join payment in context.Set<FinancePayablesPayment>().AsNoTracking() on a.PaymentId equals payment.Id
             where ids.Contains(a.SupplierInvoiceId) && a.AppliedAt < end &&
-                payment.CreatedAt < end && payment.PaidOn <= scope.Filter.To
+                payment.CreatedAt < end && payment.PaidOn <= scope.Filter.To &&
+                !context.Set<FinancePayablesReversal>().Any(r => r.ApplicationId == a.Id && r.ReversedAt < end)
             select new { a.SupplierInvoiceId, a.InvoiceAmount }).ToArrayAsync(ct);
         var paid = applications.GroupBy(a => a.SupplierInvoiceId).ToDictionary(g => g.Key, g => g.Sum(a => a.InvoiceAmount));
         return documents.Where(d => statuses.GetValueOrDefault(d.Document.Id,
@@ -52,6 +54,6 @@ internal sealed partial class EfFinanceReportStore
                 Col("balance", "Saldo", "money"), Col("dop", "Total DOP congelado", "money")],
             documents.OrderBy(d => d.Due).ThenBy(d => d.Reference).Select(d => (IReadOnlyList<string?>)[d.Reference, d.Supplier, d.Station,
                 DateText(d.Date), DateText(d.Due), d.Currency, Money(d.Total), Money(d.Applied), Money(d.Total - d.Applied), Money(d.TotalDop)]).ToArray(),
-            [$"Obligaciones aprobadas al {DateText(scope.Filter.To)}. Los pagos sin aplicar no reducen facturas; los importes aplicados están en moneda de factura."]);
+            [$"Obligaciones aprobadas al {DateText(scope.Filter.To)}. Los pagos sin aplicar no reducen facturas; las facturas anuladas y las aplicaciones revertidas dejan de contar desde su fecha; los importes aplicados están en moneda de factura."]);
     }
 }

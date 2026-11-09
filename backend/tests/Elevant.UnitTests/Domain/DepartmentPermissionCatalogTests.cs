@@ -204,6 +204,10 @@ public sealed class DepartmentPermissionCatalogTests
     [InlineData("finance.fiscal.read")]
     [InlineData("finance.fiscal.simulate")]
     [InlineData("finance.fiscal.manage")]
+    // 4-N28: registering and editing an own expense never needed a Finance code.
+    [InlineData("finance.expenses.create")]
+    [InlineData("finance.expenses.update")]
+    [InlineData("finance.expenses.manage")]
     public void RetiredFinanceCodesGrantNothingButStillBelongToFinance(string code)
     {
         Assert.False(DepartmentPermissionCatalog.IsKnown(code));
@@ -215,6 +219,32 @@ public sealed class DepartmentPermissionCatalogTests
         Assert.False(DepartmentPermissionCatalog.Belongs(code, Department.Operations));
         // Next to a live code only the live code survives.
         Assert.Equal(["finance.reports.read"], DepartmentPermissionCatalog.Normalize([code, "finance.reports.read"]));
+    }
+
+    /// <summary>
+    /// 4-N28: «Gastos de empleados» only reviews and reimburses (an own expense needs no Finance code); 4-N03, 4-N04:
+    /// voiding an approved supplier invoice and reversing a supplier payment is «finance.payables.reverse».
+    /// </summary>
+    [Fact]
+    public void PayablesOfferTheReversalAndExpensesOnlyReviewAndReimburse()
+    {
+        var modules = DepartmentPermissionCatalog.ModulesOf(Department.Finance);
+        var expenses = Assert.Single(modules, module => module.Key == "expenses");
+        Assert.Equal(["read", "approve", "pay"], expenses.Actions.Select(action => action.Action).ToArray());
+        var payables = Assert.Single(modules, module => module.Key == "payables");
+        Assert.Equal(["read", "create", "update", "approve", "pay", "reverse"], payables.Actions.Select(action => action.Action).ToArray());
+        var reverse = Assert.Single(payables.Actions, action => action.Action == "reverse");
+        Assert.Equal(("finance.payables.reverse", "Anular facturas y revertir pagos", PermissionKinds.Other),
+            (reverse.Code, reverse.Label, reverse.Kind));
+        Assert.Equal(Department.Finance, DepartmentPermissionCatalog.DepartmentOf("finance.payables.reverse"));
+        Assert.True(DepartmentPermissionCatalog.Belongs("finance.payables.reverse", Department.Finance));
+        Assert.False(DepartmentPermissionCatalog.Belongs("finance.payables.reverse", Department.Operations));
+        // Administrators hold every code of the department, the reversal included.
+        Assert.Contains("finance.payables.reverse", DepartmentPermissionCatalog.CodesOf(Department.Finance));
+        Assert.Equal(["finance.payables.read", "finance.payables.reverse"], DepartmentPermissionCatalog.Normalize(["finance.payables.reverse"]));
+        // A template that still stores the old expense codes keeps only what they really granted: nothing.
+        Assert.Equal(["finance.expenses.approve", "finance.expenses.read"],
+            DepartmentPermissionCatalog.Normalize(["finance.expenses.create", "finance.expenses.update", "finance.expenses.approve"]));
     }
 
     /// <summary>A code nobody ever defined still belongs to no department, even with a known prefix.</summary>

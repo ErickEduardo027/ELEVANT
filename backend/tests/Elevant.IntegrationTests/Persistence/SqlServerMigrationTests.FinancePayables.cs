@@ -30,25 +30,28 @@ public sealed partial class SqlServerMigrationTests
         await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
         await using var provider = await SeededFinanceProviderAsync(database, ct); await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ElevantDbContext>(); var store = PayablesStore(db, scope.ServiceProvider);
+        // 4-N14: another person of Finance approves what this account registers and submits.
+        var approver = await AddPayablesExpenseActorAsync(db, "unique-approver", ct);
         var station = await db.Stations.FirstAsync(ct);
         var input = new SupplierSave(Guid.NewGuid(), station.PublicId, "QA-SUPPLIER", "Synthetic Supplier", null, "supplier@example.invalid", true);
         var saved = await store.SaveSupplierAsync(FinanceAccount, null, input, ct); Assert.True(saved.IsSuccess, saved.Failure);
         Assert.True((await store.SaveSupplierAsync(FinanceAccount, null, input, ct)).Value!.Replayed);
-        Assert.Equal("conflict", (await store.SaveSupplierAsync(FinanceAccount, null, input with { Name = "Changed" }, ct)).Failure);
+        Assert.Equal("idempotency_conflict", (await store.SaveSupplierAsync(FinanceAccount, null, input with { Name = "Changed" }, ct)).Failure);
         var supplier = (await store.GetSupplierAsync(FinanceAccount, saved.Value!.Id, ct)).Value!;
-        Assert.Equal("conflict", (await store.SaveSupplierAsync(FinanceAccount, supplier.Id, input with { RequestId = Guid.NewGuid(), ExpectedVersion = "stale" }, ct)).Failure);
+        Assert.Equal("version_conflict", (await store.SaveSupplierAsync(FinanceAccount, supplier.Id, input with { RequestId = Guid.NewGuid(), ExpectedVersion = "stale" }, ct)).Failure);
         var invoiceInput = new FinancePayablesSave(Guid.NewGuid(), supplier.Id, station.PublicId, "SUP-0001", PayablesDate, PayablesDate.AddDays(30),
             PayablesUsd, new(), [new("Synthetic service", 2, 500, 0)]);
         var created = await store.SaveInvoiceAsync(FinanceAccount, null, invoiceInput, ct); Assert.True(created.IsSuccess, created.Failure);
         var invoiceId = created.Value!.Id;
-        Assert.Equal("conflict", (await store.SaveInvoiceAsync(FinanceAccount, null, invoiceInput with { RequestId = Guid.NewGuid(), DocumentReference = "  sup-0001  " }, ct)).Failure);
+        Assert.Equal("duplicate_reference", (await store.SaveInvoiceAsync(FinanceAccount, null, invoiceInput with { RequestId = Guid.NewGuid(), DocumentReference = "  sup-0001  " }, ct)).Failure);
         var invoice = (await store.GetInvoiceAsync(FinanceAccount, invoiceId, ct)).Value!;
         Assert.Equal(60000m, invoice.TotalDop); var lineId = Assert.Single(invoice.Lines).Id;
         Assert.True((await store.DecideInvoiceAsync(FinanceAccount, invoiceId, new(Guid.NewGuid(), invoice.Version, "Submitted"), ct)).IsSuccess);
         invoice = (await store.GetInvoiceAsync(FinanceAccount, invoiceId, ct)).Value!;
-        Assert.True((await store.DecideInvoiceAsync(FinanceAccount, invoiceId, new(Guid.NewGuid(), invoice.Version, "Approved"), ct)).IsSuccess);
+        Assert.Equal("segregation_of_duties", (await store.DecideInvoiceAsync(FinanceAccount, invoiceId, new(Guid.NewGuid(), invoice.Version, "Approved"), ct)).Failure);
+        Assert.True((await store.DecideInvoiceAsync(approver, invoiceId, new(Guid.NewGuid(), invoice.Version, "Approved"), ct)).IsSuccess);
         invoice = (await store.GetInvoiceAsync(FinanceAccount, invoiceId, ct)).Value!;
-        Assert.Equal("conflict", (await store.SaveInvoiceAsync(FinanceAccount, invoiceId, invoiceInput with { RequestId = Guid.NewGuid(), ExpectedVersion = invoice.Version }, ct)).Failure);
+        Assert.Equal("invalid_state", (await store.SaveInvoiceAsync(FinanceAccount, invoiceId, invoiceInput with { RequestId = Guid.NewGuid(), ExpectedVersion = invoice.Version }, ct)).Failure);
         await using var restarted = CreateContext(database.ConnectionString);
         var restartedInvoice = await restarted.Set<SupplierInvoice>().SingleAsync(i => i.PublicId == invoiceId, ct);
         Assert.Equal(lineId, (await restarted.Set<SupplierInvoiceLine>().SingleAsync(x => x.DocumentId == restartedInvoice.Id, ct)).PublicId);
@@ -72,6 +75,7 @@ public sealed partial class SqlServerMigrationTests
         await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
         await using var provider = await SeededFinanceProviderAsync(database, ct); await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ElevantDbContext>(); var store = PayablesStore(db, scope.ServiceProvider); var station = await db.Stations.FirstAsync(ct);
+        var approver = await AddPayablesExpenseActorAsync(db, "partial-approver", ct);
         var supplier = (await store.SaveSupplierAsync(FinanceAccount, null, new(Guid.NewGuid(), station.PublicId, "QA-PAY", "Synthetic Payee", null, null, true), ct)).Value!.Id;
         async Task<FinancePayablesView> CreateInvoice(string reference)
         {
@@ -80,7 +84,7 @@ public sealed partial class SqlServerMigrationTests
             var view = (await store.GetInvoiceAsync(FinanceAccount, id, ct)).Value!;
             Assert.True((await store.DecideInvoiceAsync(FinanceAccount, id, new(Guid.NewGuid(), view.Version, "Submitted"), ct)).IsSuccess);
             view = (await store.GetInvoiceAsync(FinanceAccount, id, ct)).Value!;
-            Assert.True((await store.DecideInvoiceAsync(FinanceAccount, id, new(Guid.NewGuid(), view.Version, "Approved"), ct)).IsSuccess);
+            Assert.True((await store.DecideInvoiceAsync(approver, id, new(Guid.NewGuid(), view.Version, "Approved"), ct)).IsSuccess);
             return (await store.GetInvoiceAsync(FinanceAccount, id, ct)).Value!;
         }
         var first = await CreateInvoice("PAY-A"); var second = await CreateInvoice("PAY-B");
@@ -88,7 +92,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.True(p.IsSuccess, p.Failure); var payment = (await store.GetPaymentAsync(FinanceAccount, p.Value!.Id, ct)).Value!;
         var apply = new FinancePayablesApply(Guid.NewGuid(), payment.Version, [new(first.Id, first.Version, 300, 1), new(second.Id, second.Version, 400, 1)]);
         var invalidBatch = apply with { RequestId = Guid.NewGuid(), Applications = [new(first.Id, first.Version, 300, 1), new(second.Id, second.Version, 1200, 1)] };
-        Assert.Equal("conflict", (await store.ApplyPaymentAsync(FinanceAccount, payment.Id, invalidBatch, ct)).Failure);
+        Assert.Equal("balance_exceeded", (await store.ApplyPaymentAsync(FinanceAccount, payment.Id, invalidBatch, ct)).Failure);
         Assert.Equal(0, await db.Set<FinancePayablesApplication>().CountAsync(ct));
         Assert.Equal(1500m, (await store.GetPaymentAsync(FinanceAccount, payment.Id, ct)).Value!.Remaining);
         Assert.True((await store.ApplyPaymentAsync(FinanceAccount, payment.Id, apply, ct)).IsSuccess);
@@ -97,7 +101,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(800m, (await store.GetPaymentAsync(FinanceAccount, payment.Id, ct)).Value!.Remaining);
         first = (await store.GetInvoiceAsync(FinanceAccount, first.Id, ct)).Value!;
         payment = (await store.GetPaymentAsync(FinanceAccount, payment.Id, ct)).Value!;
-        Assert.Equal("conflict", (await store.ApplyPaymentAsync(FinanceAccount, payment.Id, new(Guid.NewGuid(), payment.Version, [new(first.Id, first.Version, 701, 1)]), ct)).Failure);
+        Assert.Equal("balance_exceeded", (await store.ApplyPaymentAsync(FinanceAccount, payment.Id, new(Guid.NewGuid(), payment.Version, [new(first.Id, first.Version, 701, 1)]), ct)).Failure);
         var another = await store.RecordPaymentAsync(FinanceAccount, new(Guid.NewGuid(), supplier, station.PublicId, PayablesDate, "PAYMENT-2", PayablesUsd, 1000), ct);
         var payment2 = (await store.GetPaymentAsync(FinanceAccount, another.Value!.Id, ct)).Value!;
         async Task<FinancePayablesResult<FinancePayablesMutation>> Race(Guid paymentId, string version)
@@ -107,7 +111,7 @@ public sealed partial class SqlServerMigrationTests
                 new(Guid.NewGuid(), version, [new(first.Id, first.Version, 600, 1)]), ct);
         }
         var results = await Task.WhenAll(Race(payment.Id, payment.Version), Race(payment2.Id, payment2.Version));
-        Assert.Single(results, x => x.IsSuccess); Assert.Single(results, x => x.Failure == "conflict");
+        Assert.Single(results, x => x.IsSuccess); Assert.Single(results, x => x.Failure is "balance_exceeded" or "version_conflict");
         Assert.Equal(100m, (await store.GetInvoiceAsync(FinanceAccount, first.Id, ct)).Value!.Remaining);
         Assert.Equal(3, await db.Set<FinancePayablesApplication>().CountAsync(ct));
     }
@@ -132,10 +136,11 @@ public sealed partial class SqlServerMigrationTests
         Assert.True((await store.DecideExpenseAsync(FinanceAccount, id, new(Guid.NewGuid(), view.Version, "Submitted"), ct)).IsSuccess);
         view = (await store.GetExpenseAsync(FinanceAccount, id, ct)).Value!;
         Assert.Equal("forbidden", (await store.DecideExpenseAsync(FinanceAccount, id, new(Guid.NewGuid(), view.Version, "DepartmentApproved"), ct)).Failure);
-        Assert.Equal("conflict", (await store.DecideExpenseAsync(financeReviewer, id, new(Guid.NewGuid(), view.Version, "Approved"), ct)).Failure);
+        Assert.Equal("invalid_state", (await store.DecideExpenseAsync(financeReviewer, id, new(Guid.NewGuid(), view.Version, "Approved"), ct)).Failure);
         Assert.True((await store.DecideExpenseAsync(departmentReviewer, id, new(Guid.NewGuid(), view.Version, "DepartmentApproved"), ct)).IsSuccess);
         view = (await store.GetExpenseAsync(FinanceAccount, id, ct)).Value!;
-        Assert.Equal("forbidden", (await store.DecideExpenseAsync(departmentReviewer, id, new(Guid.NewGuid(), view.Version, "Approved"), ct)).Failure);
+        // 4-N13: who reviewed it for the department does not give the final approval; the refusal says so.
+        Assert.Equal("segregation_of_duties", (await store.DecideExpenseAsync(departmentReviewer, id, new(Guid.NewGuid(), view.Version, "Approved"), ct)).Failure);
         Assert.True((await store.DecideExpenseAsync(financeReviewer, id, new(Guid.NewGuid(), view.Version, "Approved"), ct)).IsSuccess);
         view = (await store.GetExpenseAsync(FinanceAccount, id, ct)).Value!;
         var reimbursement = new EmployeeExpensePaymentSave(Guid.NewGuid(), view.Version, PayablesDate, "REIMBURSE", PayablesUsd, 300, 1);
@@ -143,7 +148,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.True((await store.ReimburseExpenseAsync(financeReviewer, id, reimbursement, ct)).IsSuccess);
         Assert.True((await store.ReimburseExpenseAsync(financeReviewer, id, reimbursement, ct)).Value!.Replayed);
         view = (await store.GetExpenseAsync(FinanceAccount, id, ct)).Value!; Assert.Equal(700m, view.Remaining); Assert.Single(view.Reimbursements);
-        Assert.Equal("conflict", (await store.ReimburseExpenseAsync(financeReviewer, id, reimbursement with { RequestId = Guid.NewGuid(), ExpectedVersion = view.Version, Amount = 701 }, ct)).Failure);
+        Assert.Equal("balance_exceeded", (await store.ReimburseExpenseAsync(financeReviewer, id, reimbursement with { RequestId = Guid.NewGuid(), ExpectedVersion = view.Version, Amount = 701 }, ct)).Failure);
         Assert.True((await store.DownloadAttachmentAsync(FinanceAccount, id, true, upload.Value!.Id, ct)).IsSuccess);
         Assert.False((await store.DownloadAttachmentAsync(ContractsAccount, id, true, upload.Value!.Id, ct)).IsSuccess);
         objects.Corrupt(); Assert.Equal("unavailable", (await store.DownloadAttachmentAsync(FinanceAccount, id, true, upload.Value.Id, ct)).Failure);
@@ -186,6 +191,8 @@ public sealed partial class SqlServerMigrationTests
         public Task<byte[]?> GetAsync(string key, CancellationToken cancellationToken = default) => Task.FromResult(contents.GetValueOrDefault(key));
         public Task DeleteAsync(string key, CancellationToken cancellationToken = default) { contents.TryRemove(key, out _); return Task.CompletedTask; }
         public void Corrupt() { foreach (var key in contents.Keys) contents[key] = [0]; }
+        /// <summary>Whether the private bytes of <paramref name="key"/> are still stored (4-N13).</summary>
+        public bool Holds(string key) => contents.ContainsKey(key);
     }
     [Fact]
     public async Task EmployeeExpensesAllowNonFinanceOwnAccessAndMaskOtherEmployeesAndDepartments()

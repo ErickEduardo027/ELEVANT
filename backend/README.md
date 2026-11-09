@@ -623,24 +623,72 @@ con tenant derivado por el servidor. Ningún registro confirma fondos bancarios.
 ### Proveedores, CxP y gastos propios
 
 - `api/v1/finance/suppliers`: alta, detalle, filtros/opciones, edición y retiro
-  lógico con motivo y versión.
+  lógico con motivo y versión. Un proveedor con facturas en borrador o en
+  revisión, facturas aprobadas con saldo o pagos sin aplicar no se retira, ni
+  por `DELETE` ni al desmarcar «Proveedor activo» (`supplier_has_open_balance`).
+  Con un proveedor retirado solo se anulan sus facturas y se aplican pagos ya
+  registrados; lo demás responde `supplier_inactive`.
 - `api/v1/finance/payables`: facturas de proveedor Draft → Submitted →
-  Approved/Rejected, referencia normalizada única por proveedor, líneas
-  congeladas al presentar y rechazo con motivo.
+  Approved/Rejected, referencia normalizada única por proveedor entre las no
+  anuladas (`duplicate_reference`), líneas congeladas al presentar y rechazo
+  con motivo. Una rechazada vuelve a Draft para corregirla; un borrador, una
+  rechazada o una aprobada sin aplicaciones activas se anula (Voided) con
+  motivo y libera su número de documento. Una aprobada nunca vuelve a Draft y
+  una en revisión se decide antes de anularla. Quien creó o envió la factura no
+  la aprueba, y quien la aprobó no registra ni aplica pagos contra ella
+  (`segregation_of_duties`, comparado por persona).
 - `api/v1/finance/payable-payments`: pago separado de sus applications;
   varias facturas, pagos parciales, saldo y remanente, sin sobreaplicación.
+  `payable-payments/{id}/reversals` revierte una aplicación (`applicationId`)
+  o, sin ella, anula el pago que ya no tiene aplicaciones activas. Cada
+  reverso es una fila vinculada e inmutable con su motivo; los saldos, la
+  lista de pagos pendientes y el reporte de cuentas por pagar dejan de contar
+  lo revertido o anulado desde su instante.
 - `api/v1/finance/expenses`: Employee activo vinculado a la cuenta, soporte
   privado, presentación, decisión departamental, decisión final de Finanzas y
-  reimbursements separados.
+  reimbursements separados. El solicitante retira su gasto mientras el
+  departamento no lo decide, corrige uno rechazado y descarta un borrador o un
+  rechazado (Cancelled), siempre con motivo.
+- `.../{id}/attachments/{attachmentId}/removals` (gastos y facturas de
+  proveedor): quita un comprobante de un borrador. Deja de mostrarse, de
+  descargarse y de contar para el envío y el límite de 20; sus bytes se borran
+  solo si ninguna presentación lo incluyó, y si no queda oculto como historial.
+
+Ninguna corrección borra datos: son cambios de estado o filas vinculadas con
+su revisión y su auditoría. Los comandos conservan `requestId` y
+`expectedVersion` en el cuerpo, con el recibo `FinancePayablesCommand`. Cada
+rechazo es Problem Details con un `code` estable cuyo status fija
+`FinancePayablesProblems` (`version_conflict`, `idempotency_conflict`,
+`invalid_state`, `reason_required` de 5 a 500 caracteres,
+`expense_date_outside_assignment`, `attachment_limit`…). La migración
+`20261109064156_AddPayablesCorrections` añade
+`commercial.payable_payment_reversals`, la marca de comprobante retirado y el
+índice de referencia filtrado sin las facturas anuladas.
+
+Códigos de Finanzas del módulo:
+
+| Módulo | Códigos |
+| --- | --- |
+| Facturas de proveedores | `finance.payables.read`, `.create`, `.update` (editar, enviar, corregir una rechazada y anular un borrador o una rechazada), `.approve`, `.pay` y `.reverse` (anular una aprobada, revertir aplicaciones y anular pagos) |
+| Proveedores | `finance.suppliers.read`, `.create`, `.update` y `.delete` (retirar) |
+| Gastos de empleados | `finance.expenses.read`, `.approve` (revisar) y `.pay` (reembolsar) |
+
+`finance.expenses.create`, `.update` y `.manage` se retiraron como alias
+vacíos: nunca controlaron el gasto propio, y un perfil guardado con ellos no
+falla al volver a guardarse.
 
 Una cuenta interna AVIAM con Employee activo puede crear/presentar/leer su
 propio gasto sin un código de Finanzas. La API impide seleccionar otro
 empleado; sus opciones devuelven capacidades para la UI. El administrador
-efectivo revisa su departamento, nunca su propio gasto. Finanzas aprueba
-después y registra reembolsos con sus permisos, sin autoaprobación/pago
-propio ni una misma persona en ambas revisiones. Listas y filtros no amplían
-el ámbito. El componente reutilizable DepartmentExpensesPage sirve el
-recorrido «Mis gastos» fuera del área de Finanzas.
+efectivo revisa su departamento, nunca su propio gasto. Si su departamento no
+tiene otro administrador con la estación del gasto, lo revisa un administrador
+de Finanzas (etapa Escalation); `reviewRoute` lo indica con `Department`,
+`Finance` o `None`, cuando nadie puede revisarlo y Gobernanza debe asignar un
+revisor. Finanzas aprueba después y registra reembolsos con sus permisos, sin
+autoaprobación/pago propio ni una misma persona en ambas revisiones. Listas y
+filtros no amplían el ámbito. El componente reutilizable
+DepartmentExpensesPage sirve el recorrido «Mis gastos» en cada departamento,
+Finanzas incluido, sin código de Finanzas.
 
 Las dimensiones opcionales estación, aerolínea, turnaround y servicio se
 validan entre sí y frente al scope. Los soportes usan almacenamiento privado

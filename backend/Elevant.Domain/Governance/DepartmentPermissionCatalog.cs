@@ -143,13 +143,16 @@ public static class DepartmentPermissionCatalog
                 Module("finance", "statements", "Estados de cuenta", "Facturación", "reconciliation", Read()),
                 Module("finance", "charters", "Charters", "Facturación", null,
                     Read(), Other("confirm", "Confirmar el prepago de un charter")),
+                // 4-N03, 4-N04: voiding an approved invoice and reversing a payment is a correction of its own.
                 Module("finance", "payables", "Facturas de proveedores", "Cuentas por pagar", null,
                     Read(), Create("Registrar facturas"), Update("Editar y enviar facturas"),
-                    Other("approve", "Aprobar facturas"), Other("pay", "Registrar pagos")),
+                    Other("approve", "Aprobar facturas"), Other("pay", "Registrar pagos"),
+                    Other("reverse", "Anular facturas y revertir pagos")),
                 Module("finance", "suppliers", "Proveedores", "Cuentas por pagar", null, Read(), Create(), Update(), Delete("Retirar")),
+                // 4-N28: an own expense needs no Finance code (any internal employee files it), so the module only reviews
+                // and reimburses; its former create and update codes resolve through Aliases.
                 Module("finance", "expenses", "Gastos de empleados", "Cuentas por pagar", null,
-                    Read(), Create("Registrar gastos"), Update("Editar gastos"),
-                    Other("approve", "Revisar gastos"), Other("pay", "Registrar reembolsos")),
+                    Read(), Other("approve", "Revisar gastos"), Other("pay", "Registrar reembolsos")),
                 Module("finance", "reports", "Reportes", "Reportes", null, Read(), Other("export", "Exportar")),
                 Module("finance", "tariffs", "Tarifario de servicios", "Configuración", null,
                     Read(), Create("Crear borradores"), Update("Editar borradores"), Delete("Eliminar borradores"),
@@ -219,7 +222,10 @@ public static class DepartmentPermissionCatalog
         ["finance.receipts.manage"] = ["finance.receipts.create"],
         ["finance.suppliers.manage"] = ["finance.suppliers.create", "finance.suppliers.update", "finance.suppliers.delete"],
         ["finance.payables.manage"] = ["finance.payables.create", "finance.payables.update"],
-        ["finance.expenses.manage"] = ["finance.expenses.create", "finance.expenses.update"],
+        // 4-N28: registering or editing an own expense never needed a Finance code; these grants did nothing.
+        ["finance.expenses.create"] = [],
+        ["finance.expenses.update"] = [],
+        ["finance.expenses.manage"] = [],
         // 4-A, 4-N20: tax treatments and fiscal documents are retired; the fixed simulated ITBIS replaced them.
         ["finance.taxes.read"] = [],
         ["finance.taxes.create"] = [],

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { randomUUID } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 import { call, expectCall, login } from "./support/api";
-import { loginPortal, loginPrivate, snap } from "./support/browser";
+import { goPrivate, loginPortal, loginPrivate, snap } from "./support/browser";
 import { API, loadRun, saveRun } from "./support/env";
 import { waitForEmail } from "./support/mailpit";
 import { pdfText } from "./support/pdf";
@@ -11,8 +11,10 @@ import { pdfText } from "./support/pdf";
 // pays it by card in its portal (a declined card first, then an approved one, against the simulated
 // gateway) and gets the receipt, and Finanzas sees the card payment. Then (block C) Treasury cannot
 // reverse that card receipt, Finanzas credits part of the invoice with an E34 note that reaches the
-// airline by email, and the portal shows the note and the credit in its favour. The card numbers are
-// the public test numbers of the simulated gateway; no screenshot is taken while they are typed.
+// airline by email, and the portal shows the note and the credit in its favour. Finally (block D)
+// Cuentas por pagar corrects, voids and reuses an NCF under segregation of duties, and an OCC
+// expense is reviewed by escalation in Finance. The card numbers are the public test numbers of the
+// simulated gateway; no screenshot is taken while they are typed.
 
 const DECLINED = "4000 0000 0000 0002";
 const APPROVED = "4111 1111 1111 1111";
@@ -379,6 +381,182 @@ test("Finanzas sin prefacturas: menú Inicio · Facturación · Cuentas por paga
     .toEqual(["Inicio", "Facturación", "Cuentas por pagar", "Reportes", "Configuración"]);
   expect(financeCatalog!.modules.flatMap(module => module.actions.map(action => action.code)))
     .not.toContain("finance.reconciliation.create");
+});
+
+// Block D: Cuentas por pagar y gastos. Every code, NCF and concept carries the run id and an attempt suffix, so a resumed
+// run never collides with an earlier attempt. The seeded Finance account registers and submits, so it never approves
+// nor pays its own invoice (4-N14).
+const RECEIPT_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/** Opens a child of «Cuentas por pagar»; the group is a disclosure, so it is expanded only while it is closed. */
+async function openPayables(page: Page, label: string, heading = label) {
+  const navigation = page.getByRole("navigation", { name: "Navegación principal" });
+  const group = navigation.getByRole("button", { name: /^Cuentas por pagar/ }).first();
+  if (await group.getAttribute("aria-expanded") !== "true") await group.click();
+  await navigation.getByRole("button", { name: label, exact: true }).first().click();
+  await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+}
+
+type PayableRow = { id: string; status: string; version: string };
+const attemptTag = (runId: string) => `${runId}-${Date.now().toString(36).slice(-4).toUpperCase()}`;
+
+test("Cuentas por pagar: corregir, anular y volver a usar el NCF, segregación y retiro del proveedor (4-N03, 4-N14, 4-N15)", async ({ page }) => {
+  const tag = attemptTag(loadRun().runId);
+  const code = `E2E-${tag}`;
+  const name = `Proveedor del ciclo ${tag}`;
+  const ncf = `NCF-${tag}`;
+  const token = await login("finance");
+  await loginPrivate(page, "finance");
+
+  await openPayables(page, "Proveedores");
+  await page.getByRole("button", { name: "Nuevo proveedor" }).click();
+  await page.getByLabel("Código", { exact: true }).fill(code);
+  await page.getByLabel("Nombre del proveedor").fill(name);
+  await page.getByRole("button", { name: "Guardar proveedor" }).click();
+  await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+  await snap(page, "fase4-cxp-proveedor");
+
+  await openPayables(page, "Facturas de proveedores", "Cuentas por pagar");
+  const registerInvoice = async () => {
+    await page.getByRole("button", { name: "Nueva factura de proveedor" }).click();
+    const form = page.getByRole("form", { name: "Borrador de factura de proveedor" });
+    await form.getByLabel("Proveedor", { exact: true }).selectOption({ label: `${code} · ${name}` });
+    await form.getByLabel("Referencia del proveedor").fill(ncf);
+    await form.getByLabel("Descripción de línea 1").fill("Limpieza de rampa");
+    await form.getByLabel("Precio unitario de línea 1").fill("1500");
+    await form.getByLabel("Tasa a DOP").fill("60");
+    await form.getByLabel("Fuente de la tasa").fill("Tasa revisada del ciclo E2E");
+    await form.getByRole("button", { name: "Guardar borrador" }).click();
+    await expect(form).toBeHidden();
+  };
+  const invoiceRow = (status: string) => page.getByRole("row").filter({ hasText: status })
+    .getByRole("button", { name: new RegExp(ncf) });
+  const detail = page.getByRole("region", { name: "Detalle de cuenta por pagar" });
+  const decide = async (action: string, confirm: string, reason?: string) => {
+    await detail.getByRole("button", { name: action }).click();
+    if (reason) await detail.getByLabel("Motivo de la decisión").fill(reason);
+    await detail.getByRole("button", { name: confirm }).click();
+  };
+  await registerInvoice();
+  await invoiceRow("Borrador").click();
+  await decide("Enviar a revisión", "Confirmar envío");
+  await expect(detail.getByText("En revisión de Finanzas", { exact: true })).toBeVisible();
+  // 4-N14: who submitted it does not approve it; the screen says so and the API refuses it by person.
+  await expect(detail.getByRole("button", { name: "Aprobar factura" })).toHaveCount(0);
+  await expect(detail.getByText("Otra persona de Finanzas debe aprobar esta factura.")).toBeVisible();
+  const listed = await expectCall<PayableRow[]>(200, token, "GET", `/finance/payables?search=${encodeURIComponent(ncf)}&take=25`);
+  const submitted = listed.data.find(item => item.status === "Submitted");
+  expect(submitted, "the submitted invoice of the run").toBeTruthy();
+  const refused = await expectCall<{ code?: string }>(403, token, "POST", `/finance/payables/${submitted!.id}/decisions`,
+    { requestId: randomUUID(), expectedVersion: submitted!.version, decision: "Approved" });
+  expect(refused.data.code).toBe("segregation_of_duties");
+  await snap(page, "fase4-cxp-segregacion");
+
+  // 4-N03: its creator still rejects it; the rejected invoice returns to Draft and is voided, each with its reason.
+  await decide("Rechazar factura", "Confirmar decisión", "Referencia digitada con error");
+  await expect(detail.getByText("Rechazado", { exact: true })).toBeVisible();
+  await decide("Corregir factura", "Confirmar corrección", "Se corrige la referencia del proveedor");
+  await expect(detail.getByText("Borrador", { exact: true })).toBeVisible();
+  await decide("Anular borrador", "Confirmar anulación", "Factura registrada con datos erróneos");
+  await expect(detail.getByText("Anulada", { exact: true })).toBeVisible();
+  await snap(page, "fase4-cxp-factura-anulada");
+  // The voided invoice freed its NCF: the corrected one is registered again with the real number.
+  await registerInvoice();
+  await expect(invoiceRow("Borrador")).toBeVisible();
+  const both = await expectCall<PayableRow[]>(200, token, "GET", `/finance/payables?search=${encodeURIComponent(ncf)}&take=25`);
+  expect(both.data.map(item => item.status).sort()).toEqual(["Draft", "Voided"]);
+
+  // 4-N15: the open draft keeps the supplier working; once it is voided the supplier retires with its history.
+  await openPayables(page, "Proveedores");
+  await page.getByRole("button", { name, exact: true }).click();
+  const supplier = page.getByRole("region", { name: "Detalle del proveedor" });
+  await supplier.getByRole("button", { name: "Retirar proveedor" }).click();
+  await supplier.getByLabel("Motivo del retiro").fill("Proveedor sin contrato vigente");
+  await supplier.getByRole("button", { name: "Confirmar retiro" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "El proveedor tiene facturas en curso" })).toBeVisible();
+  await snap(page, "fase4-cxp-retiro-rechazado");
+  const draft = both.data.find(item => item.status === "Draft")!;
+  await expectCall(200, token, "POST", `/finance/payables/${draft.id}/decisions`,
+    { requestId: randomUUID(), expectedVersion: draft.version, decision: "Voided", reason: "Borrador de prueba del ciclo" });
+  await supplier.getByRole("button", { name: "Confirmar retiro" }).click();
+  await expect(page.getByRole("row", { name: new RegExp(name) })).toContainText("Inactivo");
+  await snap(page, "fase4-cxp-proveedor-retirado");
+});
+
+test("Gastos: el gasto de OCC se revisa por escalamiento en Finanzas y «Mis gastos» de Finanzas descarta un borrador (4-N13, 4-N28)", async ({ page }) => {
+  const tag = attemptTag(loadRun().runId);
+  const concept = `Combustible de rampa ${tag}`;
+  const own = `Taxi de Finanzas ${tag}`;
+  const receipt = { name: "recibo.png", mimeType: "image/png", buffer: Buffer.from(RECEIPT_PNG, "base64") };
+  const detail = page.getByRole("region", { name: "Detalle de gasto" });
+  const fileExpense = async (description: string) => {
+    await page.getByRole("button", { name: "Nuevo gasto" }).click();
+    const form = page.getByRole("form", { name: "Borrador de gasto" });
+    await form.getByLabel("Concepto del gasto").fill(description);
+    await form.getByLabel("Descripción de línea 1").fill("Combustible y peaje");
+    await form.getByLabel("Precio unitario de línea 1").fill("45");
+    await form.getByLabel("Tasa a DOP").fill("60");
+    await form.getByLabel("Fuente de la tasa").fill("Tasa revisada del ciclo E2E");
+    await form.getByRole("button", { name: "Guardar borrador" }).click();
+    await expect(form).toBeHidden();
+    await page.getByRole("button", { name: new RegExp(description) }).click();
+    await expect(detail).toBeVisible();
+  };
+  const upload = async () => {
+    await detail.getByLabel("Adjuntar comprobante privado").setInputFiles(receipt);
+    await detail.getByRole("button", { name: "Subir comprobante" }).click();
+    await expect(detail.getByRole("button", { name: /Descargar comprobante 1/ })).toBeVisible();
+  };
+
+  // OCC's only administrator files its expense; a receipt uploaded by mistake is removed before submitting it.
+  await loginPrivate(page, "occ");
+  await goPrivate(page, "/admin-occ/expenses");
+  await expect(page.getByRole("heading", { level: 1, name: "Mis gastos" })).toBeVisible();
+  await fileExpense(concept);
+  await upload();
+  await detail.getByRole("button", { name: "Quitar comprobante 1" }).click();
+  await detail.getByRole("button", { name: "Sí, quitar el comprobante" }).click();
+  await expect(detail.getByText("Sin comprobantes adjuntos.")).toBeVisible();
+  await snap(page, "fase4-gastos-comprobante-quitado");
+  await upload();
+  await detail.getByRole("button", { name: "Enviar gasto al departamento" }).click();
+  await detail.getByRole("button", { name: "Confirmar decisión" }).click();
+  await expect(detail.getByText("En revisión de departamento", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Sin otro administrador de su departamento en la estación: lo revisa Finanzas.")).toBeVisible();
+  await snap(page, "fase4-gastos-occ-enviado");
+  const occ = await login("occ");
+  const filed = await expectCall<Array<{ id: string; reviewRoute: string | null; receipts: unknown[] }>>(200, occ, "GET",
+    `/finance/expenses?search=${encodeURIComponent(concept)}&ownOnly=true&take=25`);
+  expect(filed.data.map(item => [item.reviewRoute, item.receipts.length])).toEqual([["Finance", 1]]);
+
+  // A Finance administrator reviews it by escalation; the final approval is left to another person of Finance.
+  await loginPrivate(page, "finance");
+  await openPayables(page, "Gastos de empleados");
+  await page.getByLabel("Buscar", { exact: true }).fill(concept);
+  await page.getByRole("button", { name: new RegExp(concept) }).click();
+  await expect(detail.getByText("Revisión por escalamiento: el departamento del gasto no tiene otro administrador en la estación.")).toBeVisible();
+  await snap(page, "fase4-gastos-escalamiento");
+  await detail.getByRole("button", { name: "Aprobar por escalamiento" }).click();
+  await detail.getByRole("button", { name: "Confirmar decisión" }).click();
+  await expect(detail.getByText("Pendiente de Finanzas", { exact: true })).toBeVisible();
+  await expect(detail.getByRole("button", { name: "Aprobar Finanzas" })).toHaveCount(0);
+  await expect(detail.getByText("Usted revisó este gasto: otra persona de Finanzas debe darle la aprobación final.")).toBeVisible();
+  const finance = await login("finance");
+  const escalated = await expectCall<{ status: string; version: string; reviews: Array<{ stage: string }> }>(200, finance, "GET",
+    `/finance/expenses/${filed.data[0].id}`);
+  expect([escalated.data.status, escalated.data.reviews[escalated.data.reviews.length - 1]?.stage]).toEqual(["DepartmentApproved", "Escalation"]);
+  const self = await expectCall<{ code?: string }>(403, finance, "POST", `/finance/expenses/${filed.data[0].id}/decisions`,
+    { requestId: randomUUID(), expectedVersion: escalated.data.version, decision: "Approved" });
+  expect(self.data.code).toBe("segregation_of_duties");
+
+  // 4-N28: «Mis gastos» needs no Finance code; a draft filed by mistake is discarded with its reason.
+  await openPayables(page, "Mis gastos");
+  await fileExpense(own);
+  await detail.getByRole("button", { name: "Descartar borrador" }).click();
+  await detail.getByLabel("Motivo de la decisión").fill("Gasto registrado por error");
+  await detail.getByRole("button", { name: "Confirmar descarte" }).click();
+  await expect(detail.getByText("Descartado", { exact: true })).toBeVisible();
+  await snap(page, "fase4-gastos-descartado");
 });
 
 test.fixme("hueco 4-B · el Vault describe el ciclo completo tal como funciona", async () => {});

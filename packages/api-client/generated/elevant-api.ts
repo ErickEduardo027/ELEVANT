@@ -2176,6 +2176,8 @@ export interface EmployeeExpenseViewDto {
   receipts: FinancePayablesAttachmentViewDto[];
   reviews: FinancePayablesReviewViewDto[];
   reimbursements: EmployeeExpensePaymentViewDto[];
+  /** @nullable */
+  reviewRoute?: string | null;
 }
 
 export interface JobPositionData {
@@ -2494,12 +2496,21 @@ export interface FinancePayablesApplicationViewDto {
   invoiceAmount: number;
   rateToInvoice: number;
   appliedAt: string;
+  /** @nullable */
+  reversedAt?: string | null;
+  /** @nullable */
+  reversalReason?: string | null;
 }
 
 export interface FinancePayablesApplyDto {
   requestId: string;
   expectedVersion: string;
   applications: FinancePayablesApplicationInputDto[];
+}
+
+export interface FinancePayablesAttachmentRemovalDto {
+  requestId: string;
+  expectedVersion: string;
 }
 
 export interface FinancePayablesDecisionDto {
@@ -2562,6 +2573,19 @@ export interface FinancePayablesPaymentViewDto {
   remaining: number;
   version: string;
   applications: FinancePayablesApplicationViewDto[];
+  /** @nullable */
+  voidedAt?: string | null;
+  /** @nullable */
+  voidReason?: string | null;
+}
+
+export interface FinancePayablesReversalDto {
+  requestId: string;
+  expectedVersion: string;
+  /** @nullable */
+  reason?: string | null;
+  /** @nullable */
+  applicationId?: string | null;
 }
 
 export interface FinancePayablesSaveDto {
@@ -11492,6 +11516,47 @@ export const downloadEmployeeExpenseReceipt = async (id: string,
 
 
 
+export const getRemoveEmployeeExpenseReceiptUrl = (id: string,
+    attachmentId: string,) => {
+
+
+
+
+  return `/api/v1/finance/expenses/${id}/attachments/${attachmentId}/removals`
+}
+
+/**
+ * @summary 4-N13: the requester removes a receipt from its draft expense. It is no longer shown, downloaded nor counted; its
+bytes are erased only when no submission ever included it.
+ */
+export const removeEmployeeExpenseReceipt = async (id: string,
+    attachmentId: string,
+    financePayablesAttachmentRemovalDto?: FinancePayablesAttachmentRemovalDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRemoveEmployeeExpenseReceiptUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesAttachmentRemovalDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
 export const getGetFinanceChartersUrl = () => {
 
 
@@ -12689,6 +12754,47 @@ export const downloadFinancePayableAttachment = async (id: string,
 
 
 
+export const getRemoveFinancePayableAttachmentUrl = (id: string,
+    attachmentId: string,) => {
+
+
+
+
+  return `/api/v1/finance/payables/${id}/attachments/${attachmentId}/removals`
+}
+
+/**
+ * @summary 4-N13: removes an attachment from a draft supplier invoice (`finance.payables.update`). It is no longer shown,
+downloaded nor counted; its bytes are erased only when no submission ever included it.
+ */
+export const removeFinancePayableAttachment = async (id: string,
+    attachmentId: string,
+    financePayablesAttachmentRemovalDto?: FinancePayablesAttachmentRemovalDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getRemoveFinancePayableAttachmentUrl(id,attachmentId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesAttachmentRemovalDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
 export const getListFinancePayablePaymentsUrl = (params?: ListFinancePayablePaymentsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -12809,6 +12915,45 @@ const res = await fetch(getApplyFinancePayablePaymentUrl(id),
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(financePayablesApplyDto)
+  }
+)
+
+  const contentType = (res.headers.get('content-type') ?? '').toLowerCase();
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: FinancePayablesMutationDto = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getReverseFinancePayablePaymentUrl = (id: string,) => {
+
+
+
+
+  return `/api/v1/finance/payable-payments/${id}/reversals`
+}
+
+/**
+ * @summary 4-N04: reverses one application of the payment (`applicationId`) or voids the whole payment once nothing of it is
+applied, as a linked and immutable row with its reason; it needs `finance.payables.reverse`.
+ */
+export const reverseFinancePayablePayment = async (id: string,
+    financePayablesReversalDto?: FinancePayablesReversalDto, options?: RequestInit): Promise<FinancePayablesMutationDto> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getReverseFinancePayablePaymentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(financePayablesReversalDto)
   }
 )
 

@@ -26,8 +26,9 @@ public sealed partial class SqlServerMigrationTests
         var today = Elevant.Application.Common.BusinessCalendar.Today(clock.GetUtcNow());
         var store = new FinancePayablesStore(db, scope.ServiceProvider.GetRequiredService<IActorContextResolver>(), new PayablesObjects(), clock);
         var station = await db.Stations.FirstAsync(ct);
+        var approver = await AddPayablesExpenseActorAsync(db, "settlement-current-approver", ct);
         var supplier = await CreateSettlementSupplierAsync(store, station.PublicId, ct);
-        var invoice = await CreateSettlementInvoiceAsync(store, supplier, station.PublicId, today, "SETTLEMENT-CURRENT", ct);
+        var invoice = await CreateSettlementInvoiceAsync(store, approver, supplier, station.PublicId, today, "SETTLEMENT-CURRENT", ct);
         var commands = await db.Set<FinancePayablesCommand>().CountAsync(ct);
         var audits = await db.AuditEntries.CountAsync(ct);
         var outbox = await db.OutboxMessages.CountAsync(ct);
@@ -75,8 +76,9 @@ public sealed partial class SqlServerMigrationTests
         var store = new FinancePayablesStore(db, scope.ServiceProvider.GetRequiredService<IActorContextResolver>(), new PayablesObjects(), clock);
         var station = await db.Stations.FirstAsync(ct);
         var supplierId = await CreateSettlementSupplierAsync(store, station.PublicId, ct);
-        var first = await CreateSettlementInvoiceAsync(store, supplierId, station.PublicId, today, "SETTLEMENT-LEGACY", ct);
-        var second = await CreateSettlementInvoiceAsync(store, supplierId, station.PublicId, today, "SETTLEMENT-TARGET", ct);
+        var approver = await AddPayablesExpenseActorAsync(db, "settlement-legacy-approver", ct);
+        var first = await CreateSettlementInvoiceAsync(store, approver, supplierId, station.PublicId, today, "SETTLEMENT-LEGACY", ct);
+        var second = await CreateSettlementInvoiceAsync(store, approver, supplierId, station.PublicId, today, "SETTLEMENT-TARGET", ct);
         var supplier = await db.Set<Supplier>().SingleAsync(s => s.PublicId == supplierId, ct);
         var actor = await db.Users.Where(u => u.PublicId == FinanceAccount).Select(u => u.Id).SingleAsync(ct);
         var firstId = await db.Set<SupplierInvoice>().Where(i => i.PublicId == first.Id).Select(i => i.Id).SingleAsync(ct);
@@ -185,8 +187,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(0m, expense.Paid);
         Assert.Equal(1000m, expense.Remaining);
         Assert.Empty(expense.Reimbursements);
+        // The expenses report was retired with the simplified Finance (4-A): the claim and the outstanding list are the evidence.
         Assert.Contains((await store.ListExpensesAsync(FinanceAccount, new(ScopeStationId: station.PublicId, OutstandingOnly: true), ct)).Value!, e => e.Id == expense.Id && e.Remaining == 1000);
-        await AssertSettlementReportAsync(scope.ServiceProvider, "expenses", station.PublicId, today, "employee", expense.EmployeeNumber, 1000, ct);
 
         var current = future with { RequestId = Guid.NewGuid(), PaidOn = today, Reference = "CURRENT-REIMBURSEMENT", Amount = 300, ExpectedVersion = expense.Version };
         Assert.True((await store.ReimburseExpenseAsync(financeReviewer, expense.Id, current, ct)).IsSuccess);
@@ -195,7 +197,7 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(300m, expense.Paid);
         Assert.Equal(700m, expense.Remaining);
         Assert.Single(expense.Reimbursements);
-        await AssertSettlementReportAsync(scope.ServiceProvider, "expenses", station.PublicId, today, "employee", expense.EmployeeNumber, 700, ct);
+        Assert.Contains((await store.ListExpensesAsync(FinanceAccount, new(ScopeStationId: station.PublicId, OutstandingOnly: true), ct)).Value!, e => e.Id == expense.Id && e.Remaining == 700);
         Assert.Equal(2, await db.Set<EmployeeExpensePayment>().CountAsync(ct)); // Legacy evidence remains intact.
     }
 
@@ -208,7 +210,8 @@ public sealed partial class SqlServerMigrationTests
         return saved.Value!.Id;
     }
 
-    private static async Task<FinancePayablesView> CreateSettlementInvoiceAsync(FinancePayablesStore store, Guid supplier, Guid station,
+    /// <summary>Registers and submits the invoice with the Finance account; another person approves it (4-N14).</summary>
+    private static async Task<FinancePayablesView> CreateSettlementInvoiceAsync(FinancePayablesStore store, Guid approver, Guid supplier, Guid station,
         DateOnly date, string reference, CancellationToken ct)
     {
         var saved = await store.SaveInvoiceAsync(FinanceAccount, null,
@@ -217,7 +220,7 @@ public sealed partial class SqlServerMigrationTests
         foreach (var decision in new[] { "Submitted", "Approved" })
         {
             var view = (await store.GetInvoiceAsync(FinanceAccount, saved.Value!.Id, ct)).Value!;
-            Assert.True((await store.DecideInvoiceAsync(FinanceAccount, view.Id, new(Guid.NewGuid(), view.Version, decision), ct)).IsSuccess);
+            Assert.True((await store.DecideInvoiceAsync(decision == "Approved" ? approver : FinanceAccount, view.Id, new(Guid.NewGuid(), view.Version, decision), ct)).IsSuccess);
         }
         return (await store.GetInvoiceAsync(FinanceAccount, saved.Value!.Id, ct)).Value!;
     }

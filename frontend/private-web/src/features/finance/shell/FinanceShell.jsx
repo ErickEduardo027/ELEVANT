@@ -20,6 +20,7 @@ import PackagesPage from '../packages/PackagesPage';
 import SuppliersPage from '../payables/SuppliersPage';
 import PayablesPage from '../payables/PayablesPage';
 import ExpensesPage from '../payables/ExpensesPage';
+import DepartmentExpensesPage from '../payables/DepartmentExpensesPage';
 import { FINANCE_MODULE_IDS, financeNavigation, selectableModules } from './modules';
 import { allowedNavigation, useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import NoModulesNotice from '../../access/NoModulesNotice';
@@ -82,6 +83,7 @@ export default function FinanceShell({ user = CURRENT_USER, onLogout, observeNot
     [FINANCE_MODULE_IDS.SUPPLIERS]: <SuppliersPage />,
     [FINANCE_MODULE_IDS.PAYABLES]: <PayablesPage />,
     [FINANCE_MODULE_IDS.EXPENSES]: <ExpensesPage />,
+    [FINANCE_MODULE_IDS.OWN_EXPENSES]: <DepartmentExpensesPage />,
     [FINANCE_MODULE_IDS.REPORTS]: <FinanceReportsPage {...stationProps} />,
   };
 

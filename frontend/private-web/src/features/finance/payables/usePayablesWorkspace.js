@@ -3,16 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { readSession } from '../../auth/authService';
 import { payablesOptions } from '../../../services/financePayablesService';
 import { newRequestId } from '../../../services/financeBookService';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
+import { isUncertain, needsReload, payablesError } from './payablesProblemMessages';
 
-export function payablesError(error) {
-  if (error?.status === 403) return 'No tiene permiso para realizar esta acción.';
-  if (error?.status === 401) return 'La sesión expiró. Vuelva a iniciar sesión.';
-  if (error?.status === 409) return 'El documento, su versión o el saldo cambió. Revise los datos actualizados antes de continuar.';
-  if (error?.status === 404) return 'El documento ya no está disponible en su ámbito.';
-  if (error?.status === 400) return 'Revise los campos, la tasa de cambio y los comprobantes requeridos.';
-  return 'No se pudo conectar o completar la operación. Intente de nuevo.';
-}
+export { payablesError };
 export function usePayablesWorkspace(kind, list, get, enabled) {
   const [stations, setStations] = useState([]); const [scope, setScope] = useState(''); const [session, setSession] = useState(null);
   const [filter, setFilter] = useState({ search: '', status: '', from: '', to: '', skip: 0, take: 25 });
@@ -47,28 +42,31 @@ export function usePayablesWorkspace(kind, list, get, enabled) {
   const changeScope = value => { selected.current = null; setDetail(null); setOptions(null); setRows([]); setScope(value); setFilter(f => ({ ...f, skip: 0 })); };
   return { stations, scope, session, changed, filter, setFilter, rows, options, detail, setDetail, loading, detailLoading, error, refresh, open, changeScope };
 }
+/**
+ * One command of the module: the body carries its `requestId`. The same id is kept only while the user retries the same
+ * operation and values after an uncertain result (no answer, or a 5xx); any other answer settles the intent (4-N27).
+ * The screen re-reads the document only when it changed or moved to another status, so a correctable refusal (a
+ * duplicate reference, a missing reason…) keeps the form open as it was.
+ */
 export function usePayablesMutation(refresh) {
   const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [success, setSuccess] = useState(''); const [retry, setRetry] = useState(null);
-  const pending = useRef(null); const locked = useRef(false);
+  const keys = useRef(null); const locked = useRef(false);
   const currentRefresh = useRef(refresh);
   useEffect(() => { currentRefresh.current = refresh; }, [refresh]);
-  const execute = async command => {
+  const run = async (operation, values, send) => {
     if (locked.current) return false; locked.current = true; setBusy(true); setError(''); setSuccess(''); setRetry(null);
+    keys.current ??= createCommandKeyHolder(newRequestId);
+    const body = structuredClone(values);
     try {
-      // Retry the original command, then reconcile the station and filters now on screen.
-      await command.send(command.body); pending.current = null; setSuccess('Operación guardada.'); await currentRefresh.current(); return true;
+      // A retry sends the original command, then reconciles the station and filters now on screen.
+      await keys.current.run(operation, body, requestId => send({ ...body, requestId }));
+      setSuccess('Operación guardada.'); await currentRefresh.current(); return true;
     } catch (e) {
       setError(payablesError(e));
-      if (e?.status === 409) { pending.current = null; await currentRefresh.current(); }
-      else if (![400, 401, 403, 404].includes(e?.status)) setRetry(() => () => execute(command));
+      if (needsReload(e)) await currentRefresh.current();
+      else if (isUncertain(e)) setRetry(() => () => run(operation, values, send));
       return false;
     } finally { locked.current = false; setBusy(false); }
-  };
-  const run = (operation, values, send) => {
-    const fingerprint = JSON.stringify({ operation, values });
-    const requestId = pending.current?.fingerprint === fingerprint ? pending.current.body.requestId : newRequestId();
-    const command = { fingerprint, body: { ...structuredClone(values), requestId }, send };
-    pending.current = command; return execute(command);
   };
   return { busy, error, success, retry, run };
 }

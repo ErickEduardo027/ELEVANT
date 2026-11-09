@@ -28,8 +28,8 @@ export const DepartmentPermissionCodes = {
   finance: codes('finance', {
     home: ['read'], notifications: ['read'], invoicing: ['read', 'issue'], reconciliation: ['read'],
     adjustments: ['read', 'create'], receipts: ['read', 'create', 'apply', 'reverse', 'refund'], statements: ['read'],
-    charters: ['read', 'confirm'], payables: ['read', 'create', 'update', 'approve', 'pay'],
-    suppliers: ['read', 'create', 'update', 'delete'], expenses: ['read', 'create', 'update', 'approve', 'pay'],
+    charters: ['read', 'confirm'], payables: ['read', 'create', 'update', 'approve', 'pay', 'reverse'],
+    suppliers: ['read', 'create', 'update', 'delete'], expenses: ['read', 'approve', 'pay'],
     reports: ['read', 'export'], tariffs: ['read', 'create', 'update', 'delete', 'publish'],
     charges: ['read', 'create', 'update', 'delete', 'publish'],
     packages: ['read', 'create', 'update', 'delete', 'publish', 'retire'], close_rules: ['read', 'update'],

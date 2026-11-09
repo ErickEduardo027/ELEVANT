@@ -83,7 +83,8 @@ internal sealed class SupplierInvoiceConfiguration : IEntityTypeConfiguration<Su
         });
         b.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
         b.Property(x => x.DocumentReference).HasMaxLength(100).IsRequired();
-        b.HasIndex(x => new { x.SupplierId, x.DocumentReference }).IsUnique();
+        // 4-N03: a voided invoice frees its document reference, so the corrected one is registered with the real NCF.
+        b.HasIndex(x => new { x.SupplierId, x.DocumentReference }).IsUnique().HasFilter("[status] <> N'Voided'");
         FinancePayablesMapping.Reference<SupplierInvoice, Supplier>(b, "SupplierId");
     }
 }
@@ -174,5 +175,26 @@ internal sealed class FinancePayablesAttachmentConfiguration : IEntityTypeConfig
         FinancePayablesMapping.Reference<FinancePayablesAttachment, SupplierInvoice>(b, "SupplierInvoiceId");
         FinancePayablesMapping.Reference<FinancePayablesAttachment, EmployeeExpenseClaim>(b, "ExpenseClaimId");
         FinancePayablesMapping.Reference<FinancePayablesAttachment, ApplicationUser>(b, "UploadedByAccountId");
+        FinancePayablesMapping.Reference<FinancePayablesAttachment, ApplicationUser>(b, "RemovedByAccountId");
+    }
+}
+/// <summary>
+/// 4-N04: linked, immutable reversals of supplier payments. One reversal per application, and one void of the whole
+/// payment (the row without an application).
+/// </summary>
+internal sealed class FinancePayablesReversalConfiguration : IEntityTypeConfiguration<FinancePayablesReversal>
+{
+    public void Configure(EntityTypeBuilder<FinancePayablesReversal> b)
+    {
+        FinancePayablesMapping.Identity(b);
+        b.ToTable("payable_payment_reversals", "commercial", t => t.HasCheckConstraint("ck_payable_payment_reversal_reason", "LEN([reason]) > 0"));
+        b.HasIndex(x => x.PublicId).IsUnique();
+        b.HasIndex(x => x.ApplicationId).IsUnique().HasFilter("[application_id] IS NOT NULL");
+        b.HasIndex(x => x.PaymentId).IsUnique().HasFilter("[application_id] IS NULL");
+        b.Property(x => x.Reason).HasMaxLength(500).IsRequired();
+        FinancePayablesMapping.Reference<FinancePayablesReversal, FinancePayablesPayment>(b, "PaymentId");
+        FinancePayablesMapping.Reference<FinancePayablesReversal, FinancePayablesApplication>(b, "ApplicationId");
+        FinancePayablesMapping.Reference<FinancePayablesReversal, ApplicationUser>(b, "ActorAccountId");
+        foreach (var property in b.Metadata.GetProperties()) property.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
     }
 }

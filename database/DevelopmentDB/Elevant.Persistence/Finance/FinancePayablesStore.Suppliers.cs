@@ -1,5 +1,6 @@
 using Elevant.Application.Finance;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Enumerations;
 using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Finance;
 
@@ -37,7 +38,13 @@ internal sealed partial class FinancePayablesStore
             var row = id is { } key ? await SupplierAsync(a, key, ct) : new Supplier { PublicId = Guid.CreateVersion7(), CreatedAt = now, CreatedByAccountId = a.Id, ScopeStationId = station };
             if (id is not null) { Match(row.RowVersion, input.ExpectedVersion); Require(row.ScopeStationId == station); }
             else context.Set<Supplier>().Add(row);
-            row.Code = input.Code.Trim().ToUpperInvariant(); row.Name = input.Name.Trim(); row.TaxReference = input.TaxReference?.Trim();
+            var code = input.Code.Trim().ToUpperInvariant();
+            Require(!await context.Set<Supplier>().AnyAsync(s => s.ScopeStationId == station && s.Code == code && s.Id != row.Id, ct),
+                FinancePayablesProblems.DuplicateSupplierCode);
+            // 4-N15: unticking «Proveedor activo» is a retirement too, with the same rule.
+            if (id is not null && row.IsActive && !input.IsActive)
+                Require(!await SupplierHasOpenBalanceAsync(row.Id, ct), FinancePayablesProblems.SupplierHasOpenBalance);
+            row.Code = code; row.Name = input.Name.Trim(); row.TaxReference = input.TaxReference?.Trim();
             row.ContactEmail = input.ContactEmail?.Trim(); row.IsActive = input.IsActive; row.UpdatedAt = now;
             Audit(a, id is null ? "finance.supplier.created" : "finance.supplier.updated", "commercial.suppliers", row.PublicId); return row.PublicId;
         }, ct);
@@ -45,7 +52,24 @@ internal sealed partial class FinancePayablesStore
         WriteAsync(actorId, input.RequestId, "supplier.retire", id, input, "finance.suppliers.delete", async a =>
         {
             Require(Finance(a, "finance.suppliers.delete"), "forbidden"); var row = await SupplierAsync(a, id, ct);
-            Match(row.RowVersion, input.ExpectedVersion); Require(Text(input.Reason, 500));
+            Match(row.RowVersion, input.ExpectedVersion); RequireReason(input.Reason, true);
+            Require(!await SupplierHasOpenBalanceAsync(row.Id, ct), FinancePayablesProblems.SupplierHasOpenBalance);
             row.IsActive = false; row.UpdatedAt = clock.GetUtcNow(); Audit(a, "finance.supplier.retired", "commercial.suppliers", id, input.Reason); return id;
         }, ct);
+    /// <summary>
+    /// 4-N15: a supplier keeps working while it has an invoice in Draft or under review, an approved invoice with a balance
+    /// or a payment not voided with something left to apply (reversed applications do not count). Its retirement waits
+    /// until those are voided or settled, so its invoices never get stuck.
+    /// </summary>
+    private async Task<bool> SupplierHasOpenBalanceAsync(long supplierId, CancellationToken ct)
+    {
+        var invoices = context.Set<SupplierInvoice>().Where(x => x.SupplierId == supplierId);
+        if (await invoices.AnyAsync(x => x.Status == SupplierInvoiceStatus.Draft || x.Status == SupplierInvoiceStatus.Submitted, ct)) return true;
+        var applications = ActiveApplications();
+        if (await invoices.AnyAsync(x => x.Status == SupplierInvoiceStatus.Approved &&
+                x.Total > (applications.Where(p => p.SupplierInvoiceId == x.Id).Sum(p => (decimal?)p.InvoiceAmount) ?? 0), ct)) return true;
+        var voids = PaymentVoids();
+        return await context.Set<FinancePayablesPayment>().AnyAsync(x => x.SupplierId == supplierId && !voids.Any(v => v.PaymentId == x.Id) &&
+            x.Amount > (applications.Where(p => p.PaymentId == x.Id).Sum(p => (decimal?)p.PaymentAmount) ?? 0), ct);
+    }
 }

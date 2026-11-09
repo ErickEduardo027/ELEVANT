@@ -2804,6 +2804,15 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("uniqueidentifier")
                         .HasColumnName("public_id");
 
+                    b.Property<DateTimeOffset?>("RemovedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("removed_at");
+
+                    b.Property<long?>("RemovedByAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("removed_by_account_id");
+
                     b.Property<string>("Sha256")
                         .IsRequired()
                         .HasColumnType("char(64)")
@@ -2826,6 +2835,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("PublicId")
                         .IsUnique();
+
+                    b.HasIndex("RemovedByAccountId");
 
                     b.HasIndex("SupplierInvoiceId");
 
@@ -2986,6 +2997,63 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                             t.HasCheckConstraint("ck_payable_payment_currency", "[currency_code] IN ('USD','DOP') AND ([currency_code] <> 'DOP' OR [fx_to_dop] = 1)");
 
                             t.HasCheckConstraint("ck_payable_payment_money", "[amount] > 0 AND [amount_dop] > 0 AND [fx_to_dop] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.FinancePayablesReversal", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long>("ActorAccountId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("actor_account_id");
+
+                    b.Property<long?>("ApplicationId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("application_id");
+
+                    b.Property<long>("PaymentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("payment_id");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uniqueidentifier")
+                        .HasColumnName("public_id");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset>("ReversedAt")
+                        .HasPrecision(3)
+                        .HasColumnType("datetimeoffset(3)")
+                        .HasColumnName("reversed_at");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorAccountId");
+
+                    b.HasIndex("ApplicationId")
+                        .IsUnique()
+                        .HasFilter("[application_id] IS NOT NULL");
+
+                    b.HasIndex("PaymentId")
+                        .IsUnique()
+                        .HasFilter("[application_id] IS NULL");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.ToTable("payable_payment_reversals", "commercial", t =>
+                        {
+                            t.HasCheckConstraint("ck_payable_payment_reversal_reason", "LEN([reason]) > 0");
                         });
                 });
 
@@ -6479,7 +6547,8 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasIndex("ScopeStationId", "Status");
 
                     b.HasIndex("SupplierId", "DocumentReference")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("[status] <> N'Voided'");
 
                     b.ToTable("supplier_invoices", "commercial", t =>
                         {
@@ -14501,6 +14570,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("ExpenseClaimId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("RemovedByAccountId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("Elevant.Domain.Entities.Commercial.SupplierInvoice", null)
                         .WithMany()
                         .HasForeignKey("SupplierInvoiceId")
@@ -14539,6 +14613,26 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasOne("Elevant.Domain.Entities.Commercial.Supplier", null)
                         .WithMany()
                         .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Elevant.Domain.Entities.Commercial.FinancePayablesReversal", b =>
+                {
+                    b.HasOne("Elevant.Infrastructure.Identity.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ActorAccountId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.FinancePayablesApplication", null)
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("Elevant.Domain.Entities.Commercial.FinancePayablesPayment", null)
+                        .WithMany()
+                        .HasForeignKey("PaymentId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
                 });

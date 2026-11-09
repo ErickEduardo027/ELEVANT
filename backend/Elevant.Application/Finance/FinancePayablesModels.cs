@@ -28,9 +28,12 @@ public sealed record FinancePayablesApplicationInput(Guid InvoiceId, string Expe
 
 public sealed record FinancePayablesApply(Guid RequestId, string ExpectedVersion, IReadOnlyList<FinancePayablesApplicationInput> Applications);
 
-public sealed record FinancePayablesApplicationView(Guid Id, Guid InvoiceId, decimal PaymentAmount, decimal InvoiceAmount, decimal RateToInvoice, DateTimeOffset AppliedAt);
+public sealed record FinancePayablesApplicationView(Guid Id, Guid InvoiceId, decimal PaymentAmount, decimal InvoiceAmount, decimal RateToInvoice, DateTimeOffset AppliedAt, DateTimeOffset? ReversedAt = null, string? ReversalReason = null);
 
-public sealed record FinancePayablesPaymentView(Guid Id, Guid SupplierId, Guid ScopeStationId, DateOnly PaidOn, string Reference, FinancePayablesFx Fx, decimal Amount, decimal Applied, decimal Remaining, string Version, IReadOnlyList<FinancePayablesApplicationView> Applications);
+public sealed record FinancePayablesPaymentView(Guid Id, Guid SupplierId, Guid ScopeStationId, DateOnly PaidOn, string Reference, FinancePayablesFx Fx, decimal Amount, decimal Applied, decimal Remaining, string Version, IReadOnlyList<FinancePayablesApplicationView> Applications, DateTimeOffset? VoidedAt = null, string? VoidReason = null);
+
+/// <summary>4-N04: reverses one application of a supplier payment or, without <see cref="ApplicationId"/>, voids the payment.</summary>
+public sealed record FinancePayablesReverse(Guid RequestId, string ExpectedVersion, string? Reason, Guid? ApplicationId = null);
 
 public sealed record EmployeeExpenseSave(Guid RequestId, Guid ScopeStationId, string Description, DateOnly ExpenseDate, FinancePayablesFx Fx, FinancePayablesDimensions Dimensions, IReadOnlyList<FinancePayablesLineInput> Lines, string? ExpectedVersion = null);
 
@@ -38,7 +41,11 @@ public sealed record EmployeeExpensePaymentSave(Guid RequestId, string ExpectedV
 
 public sealed record EmployeeExpensePaymentView(Guid Id, DateOnly PaidOn, string Reference, FinancePayablesFx Fx, decimal Amount, decimal ExpenseAmount, decimal RateToExpense);
 
-public sealed record EmployeeExpenseView(Guid Id, Guid EmployeeId, string EmployeeNumber, Guid RequesterId, string Department, Guid ScopeStationId, string Description, DateOnly ExpenseDate, string Status, FinancePayablesFx Fx, FinancePayablesDimensions Dimensions, decimal Total, decimal TotalDop, decimal Paid, decimal Remaining, string Version, IReadOnlyList<FinancePayablesLineView> Lines, IReadOnlyList<FinancePayablesAttachmentView> Receipts, IReadOnlyList<FinancePayablesReviewView> Reviews, IReadOnlyList<EmployeeExpensePaymentView> Reimbursements);
+/// <summary>An employee expense; 4-N13: while submitted, <see cref="ReviewRoute"/> says who reviews it (Department, Finance or None).</summary>
+public sealed record EmployeeExpenseView(Guid Id, Guid EmployeeId, string EmployeeNumber, Guid RequesterId, string Department, Guid ScopeStationId, string Description, DateOnly ExpenseDate, string Status, FinancePayablesFx Fx, FinancePayablesDimensions Dimensions, decimal Total, decimal TotalDop, decimal Paid, decimal Remaining, string Version, IReadOnlyList<FinancePayablesLineView> Lines, IReadOnlyList<FinancePayablesAttachmentView> Receipts, IReadOnlyList<FinancePayablesReviewView> Reviews, IReadOnlyList<EmployeeExpensePaymentView> Reimbursements, string? ReviewRoute = null);
+
+/// <summary>4-N13: removes a receipt from a draft expense or supplier invoice; <see cref="ExpectedVersion"/> is the document's.</summary>
+public sealed record FinancePayablesAttachmentRemoval(Guid RequestId, string ExpectedVersion);
 
 public sealed record FinancePayablesOption(Guid Id, string Code, string Name);
 

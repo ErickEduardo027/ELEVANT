@@ -1,8 +1,73 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { listPayablePayments, listPayables, recordPayablePayment, applyPayablePayment, reimburseEmployeeExpense } from '../../../services/financePayablesService';
+import { listPayablePayments, listPayables, recordPayablePayment, applyPayablePayment, reimburseEmployeeExpense, reversePayablePayment } from '../../../services/financePayablesService';
 import { payablesError } from './usePayablesWorkspace';
-import { buttonClass, Choice, emptyFx, Field, fieldClass, formatMoney, FxFields, fxBody, panelClass, primaryClass, today } from './PayablesUi';
+import { buttonClass, Choice, DecisionForm, emptyFx, Field, fieldClass, formatMoney, FxFields, fxBody, panelClass, primaryClass, today } from './PayablesUi';
+
+const PAYMENTS_PAGE = 25;
+const paymentStatus = payment => payment.voidedAt ? 'Anulado'
+  : Number(payment.remaining) > 0 ? 'Disponible ' + formatMoney(payment.remaining, payment.fx.currency) : 'Aplicado';
+
+/**
+ * 4-N04: the payments of the invoice's supplier at the station, 25 at a time, with their applications. With
+ * `finance.payables.reverse` an application is reversed and a payment without active applications is voided, each
+ * with its reason; both are linked rows, so the history stays on screen.
+ */
+export function SupplierPaymentsPanel({ detail, scope, canReverse, mutation, onOpenInvoice }) {
+  const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');
+  const [hasMore, setHasMore] = useState(false); const [revision, setRevision] = useState(0); const [reversing, setReversing] = useState(null);
+  useEffect(() => {
+    let active = true;
+    Promise.resolve().then(async () => {
+      if (!active) return; setLoading(true); setError('');
+      try {
+        const page = await listPayablePayments({ scopeStationId: scope, supplierId: detail.supplierId, skip: 0, take: PAYMENTS_PAGE });
+        if (active) { setRows(page); setHasMore(page.length === PAYMENTS_PAGE); }
+      } catch (e) { if (active) setError(payablesError(e)); } finally { if (active) setLoading(false); }
+    });
+    return () => { active = false; };
+  }, [scope, detail.supplierId, revision]);
+  async function more() {
+    setLoading(true); setError('');
+    try {
+      const page = await listPayablePayments({ scopeStationId: scope, supplierId: detail.supplierId, skip: rows.length, take: PAYMENTS_PAGE });
+      setRows(current => [...current, ...page.filter(item => !current.some(row => row.id === item.id))]); setHasMore(page.length === PAYMENTS_PAGE);
+    } catch (e) { setError(payablesError(e)); } finally { setLoading(false); }
+  }
+  async function confirm(reason) {
+    const { payment, application } = reversing;
+    const values = { expectedVersion: payment.version, reason, ...(application ? { applicationId: application.id } : {}) };
+    if (await mutation.run('payable:reverse:' + payment.id + ':' + (application?.id ?? 'payment'), values, body => reversePayablePayment(payment.id, body))) {
+      setReversing(null); setRevision(n => n + 1);
+    }
+  }
+  return <section aria-label="Pagos del proveedor" className="space-y-3 border-t border-black/10 pt-4 dark:border-white/10">
+    <h3 className="font-semibold">Pagos del proveedor</h3>
+    {loading && rows.length === 0 && <p role="status">Cargando pagos…</p>}
+    {error && <div role="alert"><p>{error}</p><button type="button" className={buttonClass + ' mt-2'} onClick={() => { setRows([]); setRevision(n => n + 1); }}>Reintentar pagos</button></div>}
+    {!loading && !error && rows.length === 0 && <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Sin pagos registrados para este proveedor en la estación.</p>}
+    <ul className="space-y-3 text-sm">{rows.map(payment => {
+      const active = payment.applications.filter(application => !application.reversedAt);
+      return <li key={payment.id} aria-label={'Pago ' + payment.reference} className="rounded-xl border border-black/10 p-3 dark:border-white/10">
+        <p><strong>{payment.reference}</strong> · {payment.paidOn} · {formatMoney(payment.amount, payment.fx.currency)} · {paymentStatus(payment)}</p>
+        {payment.voidedAt && <p className="text-xs">Anulado el {new Date(payment.voidedAt).toLocaleString('es-DO')}: {payment.voidReason}</p>}
+        {payment.applications.length > 0 && <ul className="mt-2 space-y-1 text-xs">{payment.applications.map(application => <li key={application.id} className="flex flex-wrap items-center gap-2">
+          {application.invoiceId === detail.id ? <strong>Esta factura</strong> : <button type="button" className="underline" onClick={() => onOpenInvoice(application.invoiceId)}>Otra factura del proveedor</button>}
+          <span>· {formatMoney(application.paymentAmount, payment.fx.currency)} · {application.reversedAt ? 'Revertida: ' + application.reversalReason : 'Activa'}</span>
+          {canReverse && !application.reversedAt && !payment.voidedAt && <button type="button" className={buttonClass} disabled={mutation.busy} onClick={() => setReversing({ payment, application })}>Revertir aplicación</button>}
+        </li>)}</ul>}
+        {canReverse && !payment.voidedAt && <div className="mt-2"><button type="button" className={buttonClass} disabled={mutation.busy || active.length > 0} onClick={() => setReversing({ payment, application: null })}>Anular pago</button>
+          {active.length > 0 && <p className="mt-1 text-xs text-text-secondary-light dark:text-text-secondary-dark">Revierta sus aplicaciones activas antes de anular el pago.</p>}</div>}
+      </li>;
+    })}</ul>
+    {hasMore && <button type="button" className={buttonClass} disabled={loading} onClick={() => void more()}>Ver más</button>}
+    {reversing && <DecisionForm key={reversing.payment.id + (reversing.application?.id ?? '')} decision="Voided" busy={mutation.busy}
+      title={reversing.application ? 'Revertir la aplicación del pago ' + reversing.payment.reference : 'Anular el pago ' + reversing.payment.reference}
+      confirmLabel={reversing.application ? 'Confirmar reverso' : 'Confirmar anulación'}
+      notice={reversing.application ? 'El importe vuelve a quedar disponible en el pago y pendiente en la factura.' : 'El pago queda anulado con su historial y deja de estar disponible.'}
+      onCancel={() => setReversing(null)} onConfirm={confirm} />}
+  </section>;
+}
 
 // Positive decimal arithmetic mirrors the backend's midpoint-away-from-zero rule.
 function roundedQuotient(numerator, denominator) {
@@ -52,7 +117,8 @@ export function PaymentForm({ detail, scope, expense = false, mutation, onClose 
 export function ApplyPaymentForm({ detail, scope, mutation, onClose, onOpenInvoice }) {
   const [payments, setPayments] = useState([]); const [invoices, setInvoices] = useState([]); const [paymentId, setPaymentId] = useState(''); const [amounts, setAmounts] = useState({}); const [error, setError] = useState(''); const [loading, setLoading] = useState(true); const [revision, setRevision] = useState(0);
   useEffect(() => { let active = true; Promise.all([listPayablePayments({ scopeStationId: scope, supplierId: detail.supplierId, take: 200 }), listPayables({ scopeStationId: scope, supplierId: detail.supplierId, status: 'Approved', outstandingOnly: true, take: 200 })])
-    .then(([p, i]) => { if (active) { setPayments(p); setInvoices(i); } }).catch(e => { if (active) setError(payablesError(e)); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [scope, detail.supplierId, revision]);
+    // 4-N04: a voided payment has nothing left to apply.
+    .then(([p, i]) => { if (active) { setPayments(p.filter(payment => !payment.voidedAt)); setInvoices(i); } }).catch(e => { if (active) setError(payablesError(e)); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [scope, detail.supplierId, revision]);
   const payment = payments.find(p => p.id === paymentId); const rateFor = invoice => conversionRate(payment?.fx, invoice.fx);
   const selected = invoices.filter(i => Number(amounts[i.id]) > 0);
   const usedUnits = selected.reduce((sum, i) => sum + (decimalUnits(amounts[i.id], 4) ?? 0n), 0n);
@@ -62,7 +128,7 @@ export function ApplyPaymentForm({ detail, scope, mutation, onClose, onOpenInvoi
     if (await mutation.run('payable:apply:' + payment.id, values, body => applyPayablePayment(payment.id, body))) onClose(); }
   return <form className={panelClass + ' space-y-4'} onSubmit={submit} aria-label="Aplicaciones de pago"><h3 className="font-bold">Aplicar pago existente</h3>{loading && <p role="status">Cargando saldos…</p>}{error && <div role="alert"><p>{error}</p><button type="button" className={buttonClass} onClick={() => { setLoading(true); setError(''); setRevision(n => n + 1); }}>Reintentar saldos</button></div>}
     <fieldset disabled={loading || mutation.busy || Boolean(error)} className="space-y-4"><Choice label="Pago registrado" value={paymentId} required choices={payments.map(p => ({ id: p.id, code: p.reference, name: 'Disponible ' + formatMoney(p.remaining, p.fx.currency) }))} onChange={id => { setPaymentId(id); setAmounts({}); }} />
-      {payment && <><p className="text-sm">Disponible {formatMoney(payment.remaining, payment.fx.currency)} · Por aplicar {formatMoney(used, payment.fx.currency)}</p><div className="space-y-3">{invoices.map(i => <div key={i.id} className="grid items-end gap-3 border-t border-black/10 pt-3 dark:border-white/10 sm:grid-cols-2"><div><strong className="text-sm">{i.documentReference}</strong><p className="text-xs">Saldo {formatMoney(i.remaining, i.fx.currency)} · Tasa al documento {rateFor(i)}</p></div><Field label={'Importe a aplicar de ' + i.documentReference}><input className={fieldClass} type="number" step="0.0001" min="0" max={payment.remaining} value={amounts[i.id] ?? ''} onChange={e => setAmounts(a => ({ ...a, [i.id]: e.target.value }))} />{Number(amounts[i.id]) > 0 && !fitsDocument(amounts[i.id], rateFor(i), i.remaining) && <span role="alert" className="mt-1 block text-status-danger">El importe convertido debe ser mayor que cero y no superar el saldo de la factura.</span>}</Field></div>)}</div>{payment.applications?.length > 0 && <details><summary>Aplicaciones anteriores</summary><ul className="space-y-2 text-xs">{payment.applications.map(a => <li key={a.id}><button className="underline" type="button" onClick={() => onOpenInvoice(a.invoiceId)}>Abrir factura aplicada</button> · {formatMoney(a.paymentAmount, payment.fx.currency)}</li>)}</ul></details>}</>}
+      {payment && <><p className="text-sm">Disponible {formatMoney(payment.remaining, payment.fx.currency)} · Por aplicar {formatMoney(used, payment.fx.currency)}</p><div className="space-y-3">{invoices.map(i => <div key={i.id} className="grid items-end gap-3 border-t border-black/10 pt-3 dark:border-white/10 sm:grid-cols-2"><div><strong className="text-sm">{i.documentReference}</strong><p className="text-xs">Saldo {formatMoney(i.remaining, i.fx.currency)} · Tasa al documento {rateFor(i)}</p></div><Field label={'Importe a aplicar de ' + i.documentReference}><input className={fieldClass} type="number" step="0.0001" min="0" max={payment.remaining} value={amounts[i.id] ?? ''} onChange={e => setAmounts(a => ({ ...a, [i.id]: e.target.value }))} />{Number(amounts[i.id]) > 0 && !fitsDocument(amounts[i.id], rateFor(i), i.remaining) && <span role="alert" className="mt-1 block text-status-danger">El importe convertido debe ser mayor que cero y no superar el saldo de la factura.</span>}</Field></div>)}</div>{payment.applications?.length > 0 && <details><summary>Aplicaciones anteriores</summary><ul className="space-y-2 text-xs">{payment.applications.map(a => <li key={a.id}><button className="underline" type="button" onClick={() => onOpenInvoice(a.invoiceId)}>Abrir factura aplicada</button> · {formatMoney(a.paymentAmount, payment.fx.currency)}{a.reversedAt && ' · Revertida'}</li>)}</ul></details>}</>}
       {invoices.length === 0 && !loading && <p className="text-sm">No hay facturas aprobadas con saldo para este proveedor.</p>}
       {payments.length === 0 && !loading && <p className="text-sm">No hay pagos registrados para este proveedor.</p>}
       {exceedsPayment && <p role="alert">La suma supera el remanente del pago.</p>}<div className="flex gap-2"><button className={primaryClass} type="submit" disabled={!payment || selected.length === 0 || selected.length > 100 || invalidApplications || exceedsPayment}>Confirmar aplicaciones</button><button className={buttonClass} type="button" onClick={onClose}>Cancelar aplicación</button></div>

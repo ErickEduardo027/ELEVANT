@@ -15,6 +15,8 @@ public interface IFinancePayablesStore
     Task<FinancePayablesResult<FinancePayablesPaymentView>> GetPaymentAsync(Guid actorId, Guid id, CancellationToken ct = default);
     Task<FinancePayablesResult<FinancePayablesMutation>> RecordPaymentAsync(Guid actorId, FinancePayablesPaymentSave input, CancellationToken ct = default);
     Task<FinancePayablesResult<FinancePayablesMutation>> ApplyPaymentAsync(Guid actorId, Guid id, FinancePayablesApply input, CancellationToken ct = default);
+    /// <summary>4-N04: reverses one application of the payment or voids it once nothing of it is applied (linked rows).</summary>
+    Task<FinancePayablesResult<FinancePayablesMutation>> ReversePaymentAsync(Guid actorId, Guid id, FinancePayablesReverse input, CancellationToken ct = default);
     Task<FinancePayablesResult<IReadOnlyList<EmployeeExpenseView>>> ListExpensesAsync(Guid actorId, FinancePayablesFilter filter, CancellationToken ct = default);
     Task<FinancePayablesResult<EmployeeExpenseView>> GetExpenseAsync(Guid actorId, Guid id, CancellationToken ct = default);
     Task<FinancePayablesResult<FinancePayablesMutation>> SaveExpenseAsync(Guid actorId, Guid? id, EmployeeExpenseSave input, CancellationToken ct = default);
@@ -23,4 +25,9 @@ public interface IFinancePayablesStore
     Task<FinancePayablesResult<FinancePayablesOptions>> OptionsAsync(Guid actorId, Guid? scopeStationId, CancellationToken ct = default);
     Task<FinancePayablesResult<FinancePayablesMutation>> UploadAttachmentAsync(Guid actorId, Guid id, bool expense, Guid requestId, string expectedVersion, string contentType, byte[] bytes, CancellationToken ct = default);
     Task<FinancePayablesResult<FinancePayablesAttachmentContent>> DownloadAttachmentAsync(Guid actorId, Guid id, bool expense, Guid attachmentId, CancellationToken ct = default);
+    /// <summary>
+    /// 4-N13: removes a receipt from a draft expense (its requester) or supplier invoice (<c>finance.payables.update</c>).
+    /// The row stays, marked removed; its bytes are erased once committed only when no submission ever included it.
+    /// </summary>
+    Task<FinancePayablesResult<FinancePayablesMutation>> RemoveAttachmentAsync(Guid actorId, Guid id, bool expense, Guid attachmentId, FinancePayablesAttachmentRemoval input, CancellationToken ct = default);
 }
