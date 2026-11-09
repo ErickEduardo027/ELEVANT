@@ -26,9 +26,11 @@ const secondaryClass = 'min-h-[40px] rounded-lg border border-black/10 px-3 py-2
 export const INVOICE_SEARCH_MAX_LENGTH = 40;
 /** Typing pauses this long before «Facturas» searches, so each keystroke does not reach the API. */
 export const INVOICE_SEARCH_DEBOUNCE_MS = 350;
+/** 4-N24: an invoice credited to zero without any payment is «Anulada», never «Pagada». */
 export const INVOICE_STATUS = {
   Pending: { label: 'Pendiente', tone: 'info' }, PartiallyPaid: { label: 'Pago parcial', tone: 'warning' },
   Paid: { label: 'Pagada', tone: 'success' }, Overdue: { label: 'Vencida', tone: 'danger' },
+  Voided: { label: 'Anulada', tone: 'neutral' },
 };
 const KIND_LABELS = { Service: 'Servicio', Charge: 'Cargo', Adjustment: 'Ajuste', Package: 'Paquete', Excess: 'Exceso', Minimum: 'Mínimo' };
 const METHODS = { Transfer: 'Transferencia', Check: 'Cheque', Cash: 'Efectivo', Other: 'Otro', Card: 'Tarjeta' };
@@ -107,7 +109,7 @@ function InvoiceDetail({ invoiceId, revision, onChanged, onOpenReceipt }) {
     {((detail.payments?.length ?? 0) > 0 || (detail.creditNotes?.length ?? 0) > 0) && <section><h3 className="text-sm font-semibold">Pagos y notas históricos</h3><ul className="mt-2 space-y-1 text-xs">
       {detail.payments.map(payment => <li key={payment.id}>Pago {METHODS[payment.method] ?? payment.method} {payment.reference} · {payment.paidOn ?? ''} · <strong>{formatTreasuryMoney(payment.amount, summary.currencyCode)}</strong> · {payment.recordedBy}</li>)}
       {detail.creditNotes.map(note => <li key={note.id}>Nota {note.number} · <strong>{formatTreasuryMoney(note.amount, summary.currencyCode)}</strong> · {note.reason}</li>)}</ul></section>}
-    {access?.can('finance.adjustments.read') && <AdjustmentNotesPanel invoiceId={invoiceId} invoiceNumber={summary.number} currencyCode={summary.currencyCode}
+    {access?.can('finance.adjustments.read') && <AdjustmentNotesPanel invoiceId={invoiceId} invoiceNumber={summary.fiscalNumber ?? summary.number} currencyCode={summary.currencyCode}
       onChanged={() => { void load(); onChanged('Nota de ajuste registrada.'); }} />}
   </div>;
 }
@@ -123,6 +125,12 @@ const INVOICE_TABS = [
 ];
 
 const queryKey = query => JSON.stringify([query.stationId, query.status, query.search, query.page]);
+
+/**
+ * 4-N11: the feed resources after which «Facturas» reads again: an invoice issued, paid by card, applied, reversed or
+ * adjusted (finance_invoices), a receipt, or an operation invoiced.
+ */
+export const INVOICE_RESOURCES = Object.freeze(['finance_invoices', 'finance_receipts', 'finance_approved_services']);
 
 /**
  * The invoices of the actor's stations, newest first (4-N21): pages of 25 with «Anterior» and «Siguiente», and one
@@ -170,12 +178,15 @@ function InvoiceList({ initialStationId, onOpenReceipt }) {
     return () => { requests.current += 1; };
   }, [load, revision]);
   useEffect(() => {
-    if (process.env.NODE_ENV === 'test') return undefined;
+    // 4-N11: the list reads again when the window regains focus, like «Por facturar».
+    const refresh = () => setRevision(value => value + 1);
+    window.addEventListener('focus', refresh);
+    if (process.env.NODE_ENV === 'test') return () => window.removeEventListener('focus', refresh);
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('finance_preinvoices') || resources.includes('finance_receipts') || resources.includes('finance_approved_services')) setRevision(value => value + 1);
+      if (INVOICE_RESOURCES.some(resource => resources.includes(resource))) refresh();
     });
     void observer.start().catch(() => {});
-    return () => { void observer.stop(); };
+    return () => { window.removeEventListener('focus', refresh); void observer.stop(); };
   }, []);
 
   function openReceipt(receiptId, context) {

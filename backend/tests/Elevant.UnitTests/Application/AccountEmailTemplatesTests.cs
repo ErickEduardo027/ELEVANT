@@ -18,6 +18,8 @@ public sealed class AccountEmailTemplatesTests
         "contract-expiring", "contract-suspended",
         // Phase 2, block E: the representatives hear of every change of the portal users.
         "portal-user-changed",
+        // Phase 4, block C (4-N23): the invoice, its credit and debit notes and the overdue notice.
+        "invoice-issued", "credit-note", "debit-note", "invoice-overdue",
     };
 
     private static EmailMessage Render(string kind) => kind switch
@@ -47,6 +49,14 @@ public sealed class AccountEmailTemplatesTests
             "Se invitó a Luis Linares (luis@demo-air.test) como usuario del portal.", "Ana Rivera"),
         "contract-suspended" => AccountEmailTemplates.ContractSuspended("ana@example.test", "Demo Airlines", "CTR-2026-0007",
             Elevant.Application.Commercial.ContractSuspensionCause.PermitExpired),
+        "invoice-issued" => AccountEmailTemplates.InvoiceIssued("ana@example.test", "Demo Airlines", "E310000000007", "USD",
+            1180m, 300m, new DateOnly(2026, 12, 9)),
+        "credit-note" => AccountEmailTemplates.AdjustmentNoteIssued("ana@example.test", "Demo Airlines", "E340000000002",
+            true, "E310000000007", "USD", 118m),
+        "debit-note" => AccountEmailTemplates.AdjustmentNoteIssued("ana@example.test", "Demo Airlines", "E330000000001",
+            false, "E310000000007", "USD", 59m),
+        "invoice-overdue" => AccountEmailTemplates.InvoiceOverdue("ana@example.test", "Demo Airlines", "E310000000007",
+            new DateOnly(2026, 12, 9)),
         _ => AccountEmailTemplates.Test("ana@example.test", new DateTimeOffset(2026, 11, 2, 20, 17, 0, TimeSpan.Zero)),
     };
 
@@ -118,6 +128,42 @@ public sealed class AccountEmailTemplatesTests
         Assert.Contains("cancelada", cancelled.Subject);
         Assert.Contains("aprobada", approved.Subject);
         Assert.DoesNotContain("Motivo", approved.TextBody);
+    }
+
+    /// <summary>
+    /// 4-N23: the billing emails never state a balance (it moves with payments and notes, and the airline reads it in the
+    /// portal) nor any card data; they carry the simulation label. «Factura emitida» states the total, the due date and the
+    /// prepayment the issuance applied; the notes name the invoice they modify.
+    /// </summary>
+    [Fact]
+    public void BillingEmailsStateNoBalanceAndCarryTheSimulationLabel()
+    {
+        var issued = Render("invoice-issued");
+        Assert.Contains("por USD 1,180.00, con vencimiento el 09/12/2026.", issued.TextBody);
+        Assert.Contains("Al emitirla se aplicó el prepago confirmado por USD 300.00.", issued.TextBody);
+        var unprepaid = AccountEmailTemplates.InvoiceIssued("ana@example.test", "Demo Airlines", "E310000000008", "USD",
+            1180m, 0m, null);
+        Assert.DoesNotContain("prepago", unprepaid.TextBody);
+        Assert.Contains("por USD 1,180.00.", unprepaid.TextBody);
+
+        var credit = Render("credit-note");
+        Assert.Equal("Nota de crédito E340000000002 · factura E310000000007 · ELEVANT", credit.Subject);
+        Assert.Contains("La nota reduce lo que se debe de esa factura.", credit.TextBody);
+        var debit = Render("debit-note");
+        Assert.Equal("Nota de débito E330000000001 · factura E310000000007 · ELEVANT", debit.Subject);
+        Assert.Contains("La nota aumenta lo que se debe de esa factura.", debit.TextBody);
+        var overdue = Render("invoice-overdue");
+        Assert.Equal("Factura E310000000007 vencida · ELEVANT", overdue.Subject);
+        Assert.Contains("venció el 09/12/2026", overdue.TextBody);
+
+        foreach (var email in new[] { issued, unprepaid, credit, debit, overdue })
+        {
+            Assert.DoesNotContain("Saldo", email.TextBody);
+            Assert.DoesNotContain("Saldo", email.HtmlBody);
+            Assert.DoesNotContain("tarjeta", email.TextBody);
+            Assert.Contains(Elevant.Application.Finance.FinanceInvoicePolicy.Disclaimer, email.TextBody);
+            Assert.Contains("Consulta el saldo vigente", email.TextBody);
+        }
     }
 
     [Fact]

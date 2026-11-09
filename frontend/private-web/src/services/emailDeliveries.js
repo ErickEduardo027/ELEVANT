@@ -22,6 +22,9 @@ export const EMAIL_PURPOSES = Object.freeze({
   ContractSuspended: 'Contrato suspendido',
   // Phase 2, block E: the representatives learn who joined, left or changed role in their portal (2-N20).
   PortalUserChanged: 'Cambio de usuarios del portal',
+  // Phase 4, block C (4-N23): the credit or debit note and the one notice of an overdue invoice.
+  AdjustmentNoteIssued: 'Nota de ajuste emitida',
+  InvoiceOverdue: 'Factura vencida',
 });
 
 export const EMAIL_STATUSES = Object.freeze({
@@ -66,6 +69,8 @@ export const EMAIL_RECOVERY = Object.freeze({
   ContractExpiring: 'El vencimiento se ve en el portal de la aerolínea; recuérdeselo por otro canal.',
   ContractSuspended: 'El estado del contrato se ve en el portal de la aerolínea; avísele por otro canal.',
   PortalUserChanged: 'Los representantes ven sus usuarios y roles en el portal; avíseles del cambio por otro canal si hace falta.',
+  AdjustmentNoteIssued: 'La nota y su PDF siguen disponibles en el estado de cuenta del portal; avise a la aerolínea por otro canal si hace falta.',
+  InvoiceOverdue: 'El vencimiento se ve en el portal de la aerolínea; recuérdeselo por otro canal.',
 });
 
 /**

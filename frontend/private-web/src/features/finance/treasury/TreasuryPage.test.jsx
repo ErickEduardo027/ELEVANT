@@ -134,6 +134,21 @@ it('reverses the referenced application and preserves its recorded FX in the his
   await waitFor(() => expect(api.reverseTreasuryReceipt).toHaveBeenCalledWith('r-1', expect.objectContaining({ applicationId: 'm-1', expectedVersion: 'r-v1', reason: 'Applied to wrong invoice' })));
 });
 
+it('never offers to reverse or refund a card receipt of the portal and explains the credit note (4-N09)', async () => {
+  const user = userEvent.setup();
+  vi.mocked(api.getTreasuryReceipt).mockResolvedValue({ ...receipt, method: 'Card', reference: 'TARJETA VISA *1111 AUT ABC234',
+    available: 50, movements: [{ id: 'm-card', kind: 'Application', receiptAmount: 950, receiptCurrency: 'USD', invoiceId: 'i-1',
+      invoiceAmount: 950, invoiceCurrency: 'USD', exchangeRate: 1, exchangeRateOn: '2026-10-18', effectiveOn: '2026-10-18', reason: 'Card' }] });
+  view(<TreasuryPage initialStationId="s-1" />);
+  await user.click(await screen.findByRole('button', { name: 'Ver RC-1' }));
+  expect(await screen.findByRole('note')).toHaveTextContent('no se revierte ni se devuelve');
+  expect(screen.getByRole('note')).toHaveTextContent('nota de crédito');
+  expect(screen.queryByRole('button', { name: 'Revertir aplicación' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Revertir cobro' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Devolver remanente' })).not.toBeInTheDocument();
+  expect(api.reverseTreasuryReceipt).not.toHaveBeenCalled();
+});
+
 it('names the invoices of «Aplicar cobro» and of the statement by their e-NCF (4-N19)', async () => {
   const user = userEvent.setup();
   const ecf = { id: 'i-9', number: 'NF-0193f4c2a1b24c5d9e8f7a6b5c4d3e2f', fiscalNumber: 'E310000000017', airlineId: 'a-1',

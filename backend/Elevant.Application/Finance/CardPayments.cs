@@ -86,6 +86,40 @@ public interface ICardPaymentGateway
     CardAuthorization Authorize(CardCharge charge);
 }
 
+/// <summary>
+/// 4-N05: which card processor the API composes, from <c>CardPayments:Mode</c>. Disabled is the default; the simulated
+/// gateway (ADR-0036) only runs in Development or Test, and any other environment refuses to start with it.
+/// </summary>
+public enum CardPaymentMode
+{
+    Disabled,
+    Simulated,
+}
+
+/// <summary>
+/// 4-N05: whether the airline portal may pay by card, and whether the gateway is the simulation («Simulación — sin
+/// validez fiscal»). Without a gateway every payment is refused with <c>card_payments_unavailable</c>.
+/// </summary>
+public sealed record CardPaymentAvailability(bool Available, bool Simulated)
+{
+    public static CardPaymentAvailability Disabled { get; } = new(false, false);
+
+    public static CardPaymentAvailability SimulatedGateway { get; } = new(true, true);
+}
+
+/// <summary>Problem Details codes of the card payment (phase 4, block C).</summary>
+public static class CardPaymentCodes
+{
+    /// <summary>4-N05: no card gateway is configured in this environment.</summary>
+    public const string Unavailable = "card_payments_unavailable";
+
+    /// <summary>The card or the request is invalid; <c>reasons</c> name each rule.</summary>
+    public const string Invalid = "card_payment_invalid";
+
+    /// <summary>The invoice cannot be paid with this request and no reason names why.</summary>
+    public const string Conflict = "card_payment_conflict";
+}
+
 public enum CardPaymentFailure
 {
     Unauthorized,
@@ -93,6 +127,8 @@ public enum CardPaymentFailure
     InvalidRequest,
     NotFound,
     Conflict,
+    /// <summary>4-N05: no card gateway in this environment.</summary>
+    Unavailable,
 }
 
 public sealed record CardPaymentAttemptData(Guid Id, Guid InvoiceId, string Status, string Brand, string Last4, decimal Amount,
@@ -125,17 +161,39 @@ public interface ICardPaymentStore
     Task<CardPaymentReceiptData?> AirlineReceiptAsync(Guid accountId, Guid attemptId, CancellationToken cancellationToken = default);
 }
 
-/// <summary>Validates the card and the request before the store and the gateway see them.</summary>
-public sealed class PayInvoiceByCardHandler(ICardPaymentStore store, TimeProvider timeProvider)
+/// <summary>
+/// Validates the card and the request before the store and the gateway see them. 4-N05: without a gateway the payment
+/// is refused with <c>card_payments_unavailable</c> before the card is even checked.
+/// </summary>
+public sealed class PayInvoiceByCardHandler(ICardPaymentStore store, TimeProvider timeProvider,
+    CardPaymentAvailability availability)
 {
     public async Task<CardPaymentResult> HandleAsync(PayInvoiceByCardRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.AccountId == Guid.Empty) return CardPaymentResult.Failed(CardPaymentFailure.Unauthorized);
-        if (request.InvoiceId == Guid.Empty || request.IdempotencyKey == Guid.Empty)
-            return CardPaymentResult.Failed(CardPaymentFailure.InvalidRequest);
+        if (!availability.Available)
+            return CardPaymentResult.Failed(CardPaymentFailure.Unavailable, CardPaymentCodes.Unavailable);
+        if (request.IdempotencyKey == Guid.Empty)
+            return CardPaymentResult.Failed(CardPaymentFailure.InvalidRequest, "idempotency_key_required");
+        if (request.InvoiceId == Guid.Empty) return CardPaymentResult.Failed(CardPaymentFailure.InvalidRequest);
         var reasons = CardPaymentPolicy.Validate(request, timeProvider.GetUtcNow());
         if (reasons.Count > 0) return CardPaymentResult.Failed(CardPaymentFailure.InvalidRequest, [.. reasons]);
         return await store.PayAsync(request, cancellationToken);
+    }
+}
+
+/// <summary>
+/// 4-N05: tells the airline portal whether it may offer the card payment and whether the gateway is the simulation.
+/// Only an airline portal session reads it; anything else is forbidden.
+/// </summary>
+public sealed class CardPaymentAvailabilityHandler(Abstractions.Identity.IActorContextResolver actors,
+    CardPaymentAvailability availability)
+{
+    public async Task<CardPaymentAvailability?> HandleAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        if (accountId == Guid.Empty) return null;
+        var actor = await actors.ResolveAsync(accountId, cancellationToken);
+        return Abstractions.Finance.FinanceTreasuryPortalAccess.OrganizationId(actor, accountId) is null ? null : availability;
     }
 }

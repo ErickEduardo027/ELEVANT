@@ -276,8 +276,11 @@ import {
   getGetAirlineInvoiceCardPaymentsUrl,
   getGetFinanceInvoiceCardPaymentsUrl,
   getGetAirlineCardPaymentReceiptUrl,
+  getGetAirlineCardPaymentAvailabilityUrl,
   getGetFinanceInvoiceDocumentByIdUrl,
   getGetAirlineInvoiceDocumentByIdUrl,
+  getGetFinanceAdjustmentNoteDocumentUrl,
+  getGetAirlineAdjustmentNoteDocumentUrl,
   getGetAirlinePaymentByInvoiceUrl,
   getGetAirlineInvoiceStatementUrl,
   type AirlineInvoiceStatementResponse,
@@ -466,6 +469,7 @@ import {
   type CardPaymentAttemptResponse,
   type CardPaymentListResponse,
   type CardPaymentResponse,
+  type CardPaymentAvailabilityResponse,
   type IssuedInvoiceResponse,
   type NonFiscalPaymentLookupResponse,
   type ManagedContractPageData,
@@ -1138,6 +1142,13 @@ export interface ElevantApiClient {
   getAirlineInvoiceDocumentById(
     invoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
+  /**
+   * 4-N17: the PDF of a credit or debit note of an invoice of Finance's stations: its e-NCF E34/E33 when it modifies an
+   * E31 invoice, the frozen ITBIS of each line and «Simulación — sin validez fiscal».
+   */
+  getFinanceAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
+  /** 4-N17: the PDF of a credit or debit note of the airline's own invoice, within the portal's scope. */
+  getAirlineAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
   /** ADR-0036: pays the whole balance with a simulated card; the same key and body replay the attempt. */
   payAirlineInvoiceByCard(
     invoiceId: string, request: PayInvoiceByCardBody, idempotencyKey: string,
@@ -1146,6 +1157,11 @@ export interface ElevantApiClient {
   getAirlineInvoiceCardPayments(invoiceId: string, options?: GetFinancialDocumentOptions): Promise<CardPaymentListResponse>;
   getFinanceInvoiceCardPayments(invoiceId: string, options?: GetFinancialDocumentOptions): Promise<CardPaymentListResponse>;
   getAirlineCardPaymentReceipt(attemptId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
+  /**
+   * 4-N05: whether this environment takes card payments and whether the gateway is the simulation; the portal hides
+   * the card form when it is unavailable.
+   */
+  getAirlineCardPaymentAvailability(options?: GetFinancialDocumentOptions): Promise<CardPaymentAvailabilityResponse>;
   getFinancePaymentByInvoice(
     invoiceId: string,
     options?: GetNonFiscalPaymentOptions,
@@ -1700,7 +1716,11 @@ export interface ElevantApiClient {
     idempotencyKey: string, options?: ReportRampIncidentOptions): Promise<RampCharterResponse>;
   /** Finance: charters of its stations and their prepayment. */
   getFinanceCharters(options?: GetHumanResourcesReportOptions): Promise<FinanceCharterListResponse>;
-  confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand,
+  /**
+   * 4-N22: confirms the prepayment with the version Finance saw and the intent's Idempotency-Key; confirmed after the
+   * invoice it settles it. Another amount or reference corrects it with a reason while it was never applied.
+   */
+  confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<FinanceCharterResponse>;
   /** 3-N24: Finance reopens a confirmed prepayment as a new quotation, with its reason and the version it saw. */
   reopenFinanceCharterPrepayment(charterId: string, command: ReopenCharterPrepaymentCommand, idempotencyKey: string,
@@ -4027,6 +4047,12 @@ function isCardPaymentAttempt(value: unknown, invoiceId: string): value is CardP
       (value.receiptId === null || value.receiptId === undefined);
 }
 
+/** 4-N05: two flags only; a simulated gateway is always available. */
+function isCardPaymentAvailability(value: unknown): value is CardPaymentAvailabilityResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["available", "simulated"]) && typeof value.available === "boolean" &&
+    typeof value.simulated === "boolean" && (!value.simulated || value.available);
+}
+
 function isCardPaymentList(value: unknown, invoiceId: string): value is CardPaymentListResponse {
   return isRecord(value) && hasOnlyKeys(value, ["invoiceId", "attempts"]) && typeof value.invoiceId === "string" &&
     value.invoiceId.toLowerCase() === invoiceId && Array.isArray(value.attempts) && value.attempts.length <= 500 &&
@@ -4656,7 +4682,8 @@ function isFinanceTariffPageData(value: unknown): value is FinanceTariffPageData
 }
 
 const PRICED_LINE_KINDS = ["Service", "Charge", "Adjustment", "Package", "Excess", "Minimum"];
-const INVOICE_STATUSES = ["Pending", "PartiallyPaid", "Paid", "Overdue"];
+/** Projected invoice statuses; 4-N24: credited to zero without any payment is «Anulada» (Voided), never «Pagada». */
+const INVOICE_STATUSES = ["Pending", "PartiallyPaid", "Paid", "Overdue", "Voided"];
 const PAYMENT_METHODS = ["Transfer", "Check", "Cash", "Other", "Card"];
 
 function isStatementText(value: unknown, maximum: number): value is string {
@@ -6489,9 +6516,20 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const id = validatedUuid(attemptId, "attemptId");
       return executePdf(getGetAirlineCardPaymentReceiptUrl(id), options);
     },
+    async getAirlineCardPaymentAvailability(options?: GetFinancialDocumentOptions) {
+      const result = await execute(getGetAirlineCardPaymentAvailabilityUrl(), { ...options, method: "GET" }, true);
+      if (!isCardPaymentAvailability(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
     getAirlineInvoiceDocumentById(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");
       return executePdf(getGetAirlineInvoiceDocumentByIdUrl(id), options);
+    },
+    getFinanceAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions) {
+      return executePdf(getGetFinanceAdjustmentNoteDocumentUrl(validatedUuid(noteId, "noteId")), options);
+    },
+    getAirlineAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions) {
+      return executePdf(getGetAirlineAdjustmentNoteDocumentUrl(validatedUuid(noteId, "noteId")), options);
     },
     getFinancePaymentReceipt(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");
@@ -7956,15 +7994,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return result.data;
     },
     async confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand,
-      options?: GetHumanResourcesReportOptions) {
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
       const charter = validatedUuid(charterId, "charterId");
       const body = normalizedPrepayment(command);
       if (body === null) throw new TypeError("The prepayment is invalid.");
       const headers = headersFrom(options?.headers, "Request headers");
       headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
       const result = await execute(getConfirmFinanceCharterPrepaymentUrl(charter),
         { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
-      if (!isFinanceCharterResponse(result.data)) throw malformedResponse(result.status);
+      if (!isFinanceCharterResponse(result.data) || result.data.id.toLowerCase() !== charter)
+        throw malformedResponse(result.status);
       return result.data;
     },
     async reopenFinanceCharterPrepayment(charterId: string, command: ReopenCharterPrepaymentCommand,

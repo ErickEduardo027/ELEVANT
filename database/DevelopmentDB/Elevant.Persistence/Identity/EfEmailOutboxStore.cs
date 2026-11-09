@@ -247,6 +247,19 @@ internal sealed class EfEmailOutboxStore(ElevantDbContext context, Application.A
                 .ToDictionaryAsync(item => item.PublicId,
                     item => new EmailReferenceData("invoice", item.PublicId, item.Code, item.Name), cancellationToken));
 
+        // 4-N23: a credit or debit note reads as the invoice it modifies.
+        var notes = Attached(AdjustmentNoteDocuments.AttachmentPrefix);
+        if (notes.Length > 0)
+            Link(AdjustmentNoteDocuments.AttachmentPrefix, await (
+                    from note in context.Set<FinanceTreasuryAdjustmentNote>().AsNoTracking()
+                    join invoice in context.NonFiscalInvoices.AsNoTracking() on note.InvoiceId equals invoice.Id
+                    join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
+                    where notes.Contains(note.PublicId)
+                    select new { note.PublicId, InvoiceId = invoice.PublicId, Code = invoice.FiscalNumber ?? invoice.Number,
+                        airline.Name })
+                .ToDictionaryAsync(item => item.PublicId,
+                    item => new EmailReferenceData("invoice", item.InvoiceId, item.Code, item.Name), cancellationToken));
+
         var payments = Attached(EfCardPaymentStore.AttachmentPrefix);
         if (payments.Length > 0)
             Link(EfCardPaymentStore.AttachmentPrefix, await (

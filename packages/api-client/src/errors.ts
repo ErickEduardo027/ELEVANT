@@ -166,8 +166,13 @@ const OCC_REVIEW_CODES = ["invalid_review_request", "service_order_unsigned", "s
  */
 const OCC_INCIDENT_CODES = ["incident_transition_invalid", "incident_report_invalid", "incident_occurred_at_invalid",
   "operation_closed"] as const;
-/** Charter (phase 3, block D, 3-N24): no service is added on a confirmed prepayment; only a confirmed one is reopened. */
-const CHARTER_CODES = ["charter_prepayment_confirmed", "charter_prepayment_not_confirmed"] as const;
+/**
+ * Charter (phase 3, block D, 3-N24): no service is added on a confirmed prepayment; only a confirmed one is reopened.
+ * Phase 4, block C (4-N22): a prepayment already applied to the invoice is neither corrected nor reopened in place, and
+ * an amount or a reference the confirmation cannot take.
+ */
+const CHARTER_CODES = ["charter_prepayment_confirmed", "charter_prepayment_not_confirmed", "charter_prepayment_applied",
+  "invalid_charter_request"] as const;
 /**
  * OCC and Gestión Humana reports (phase 3, block E, 3-N13): an export over its row limit is refused, never cut; a
  * malformed or out-of-range query; an unknown report; a station outside the caller's scope or no longer active.
@@ -193,10 +198,11 @@ const INVOICING_CODES = ["invalid_invoice_request", "invalid_pending_query", "in
   "duplicate_service", "station_mismatch", "date_out_of_range"] as const;
 /**
  * Treasury (phase 4, block A, 4-N10): a date before the invoice's or the receipt's business day is explained instead of
- * a conflict a re-read cannot solve; every other refusal answers the default of its status.
+ * a conflict a re-read cannot solve; every other refusal answers the default of its status. Block C (4-N09): a card
+ * receipt of the portal is neither reversed nor refunded; Finance corrects it with a credit note.
  */
 const TREASURY_CODES = ["effective_before_invoice", "effective_before_receipt", "treasury_conflict",
-  "invalid_treasury_request"] as const;
+  "invalid_treasury_request", "card_payment_not_reversible"] as const;
 /**
  * The simplified Finance (phase 4, block B): a legacy write retired with the preinvoice answers 410 (4-N12), a report
  * of a retired module or an unknown export format is explained (4-A), and «Facturas» (4-N21) and «Inicio» (4-A, 4-N02)
@@ -204,6 +210,13 @@ const TREASURY_CODES = ["effective_before_invoice", "effective_before_receipt", 
  */
 const FINANCE_SIMPLIFICATION_CODES = ["legacy_finance_route_retired", "unknown_finance_report",
   "invalid_report_export_format", "invalid_invoice_query", "invalid_finance_home_query"] as const;
+/**
+ * Card payment of the airline portal (phase 4, block C): no card gateway in this environment (4-N05), an invalid card or
+ * request, and the cause of a conflict (a paid invoice, a balance that changed, a payment in flight). A reused key keeps
+ * the common `idempotency_conflict`.
+ */
+const CARD_PAYMENT_CODES = ["card_payments_unavailable", "card_payment_invalid", "card_payment_conflict", "invoice_paid",
+  "amount_mismatch", "concurrent_payment"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
@@ -212,14 +225,15 @@ export type ElevantApiErrorCode = "password_change_required" | "password_policy"
   (typeof FLIGHT_FEED_CODES)[number] | (typeof PLANNING_CODES)[number] | (typeof HUMAN_RESOURCES_CODES)[number] |
   (typeof ACCESS_CODES)[number] | (typeof RAMP_EVIDENCE_CODES)[number] | (typeof OCC_REVIEW_CODES)[number] |
   (typeof OCC_INCIDENT_CODES)[number] | (typeof CHARTER_CODES)[number] | (typeof REPORT_CODES)[number] |
-  (typeof INVOICING_CODES)[number] | (typeof TREASURY_CODES)[number] | (typeof FINANCE_SIMPLIFICATION_CODES)[number];
+  (typeof INVOICING_CODES)[number] | (typeof TREASURY_CODES)[number] | (typeof FINANCE_SIMPLIFICATION_CODES)[number] |
+  (typeof CARD_PAYMENT_CODES)[number];
 export const ELEVANT_API_ERROR_CODES: readonly ElevantApiErrorCode[] = ["password_change_required", "password_policy",
   "invalid_link", "refresh_rotated", ...CONTRACT_CODES, ...COMMON_COMMAND_CODES, ...COMMERCIAL_REQUEST_CODES,
   ...CONTRACT_DRAFT_CODES, ...FINANCE_COMMAND_CODES, ...CATALOG_CODES, ...GOVERNANCE_ACCOUNT_CODES,
   ...CONTRACT_LIFECYCLE_CODES, ...AIRLINE_PERMIT_CODES, ...STATION_CODES, ...MASTER_DATA_CODES, ...FLIGHT_FEED_CODES,
   ...PLANNING_CODES, ...HUMAN_RESOURCES_CODES, ...ACCESS_CODES, ...RAMP_EVIDENCE_CODES, ...OCC_REVIEW_CODES,
   ...OCC_INCIDENT_CODES, ...CHARTER_CODES, ...REPORT_CODES, ...INVOICING_CODES, ...TREASURY_CODES,
-  ...FINANCE_SIMPLIFICATION_CODES];
+  ...FINANCE_SIMPLIFICATION_CODES, ...CARD_PAYMENT_CODES];
 
 /** Rules a rejected stand coverage or stand placement breaks (ADR-0030); the screens explain each one. */
 export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inactive", "stand_other_terminal",
@@ -231,6 +245,8 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   // Simulated card payment (ADR-0036).
   "cardholder_invalid", "card_number_invalid", "card_expired", "security_code_invalid", "amount_invalid",
   "amount_mismatch", "invoice_paid", "idempotency_conflict", "concurrent_payment",
+  // No card gateway in this environment (phase 4, block C, 4-N05).
+  "card_payments_unavailable",
   // A stand in use is not deactivated, nor one of an inactive terminal reactivated, from the coverage configuration
   // (phase 2, block C, 2-A).
   "stand_in_use", "terminal_inactive",

@@ -101,6 +101,51 @@ public sealed class FinancialDocumentPdfRendererTests
         Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(new FinancialDocumentPdfRenderer().RenderInvoice(invoice), 0, 5));
     }
 
+    /// <summary>
+    /// 4-N17: the note on an E31 invoice prints its own e-NCF E34, the e-NCF it modifies, the frozen net and ITBIS of
+    /// each line and the simulation frame; an older TC- note prints its lines without inventing a tax.
+    /// </summary>
+    [Fact]
+    public void AdjustmentNoteCarriesItsEcfTheInvoiceItModifiesAndTheFrozenItbis()
+    {
+        var issuedAt = new DateTimeOffset(2026, 11, 8, 15, 0, 0, TimeSpan.Zero);
+        var note = new Elevant.Application.Abstractions.Finance.FinanceAdjustmentNoteDocumentData(Guid.NewGuid(),
+            "E340000000001", "Credit", Guid.NewGuid(), "DEV-NF-2026-0001", "E310000000007", "USD", 59m,
+            new DateOnly(2026, 11, 8), issuedAt, "Servicio cobrado de más", "AVIAM Ltd.", FinanceInvoicePolicy.SimulatedIssuerRnc,
+            "Aerolínea Demo S.A.", "AAL", "PUJ",
+            [new Elevant.Application.Abstractions.Finance.FinanceAdjustmentNoteDocumentLineData(1, "DEV-TAT-0001", "GPU",
+                "Planta eléctrica", 0.5m, 59m, 50m, 9m, 18m)]);
+
+        var pdf = new FinancialDocumentPdfRenderer().RenderAdjustmentNote(note);
+
+        using (var document = PdfReader.Open(new MemoryStream(pdf), PdfDocumentOpenMode.Import))
+        {
+            Assert.Single(document.Pages);
+            Assert.Equal("Nota de crédito electrónica E340000000001", document.Info.Title);
+            Assert.Equal(FinanceInvoicePolicy.Disclaimer, document.Info.Subject);
+        }
+        var text = PdfFontInspector.Text(pdf);
+        Assert.Contains("e-NCF E340000000001", text);
+        Assert.Contains("Modifica: E310000000007", text);
+        Assert.Contains(FinanceInvoicePolicy.Disclaimer, text);
+        Assert.Contains("TOTAL ACREDITADO", text);
+        Assert.Contains("50.00", text);
+        Assert.Contains("9.00", text);
+        Assert.Contains("Código de seguridad " + FinanceInvoicePolicy.SecurityCode("E340000000001", 59m, issuedAt, "AAL"), text);
+
+        var legacy = new FinancialDocumentPdfRenderer().RenderAdjustmentNote(note with
+        {
+            Number = "TD-0190f0e0a0b0c0d0e0f0a0b0c0d0e0f0", Kind = "Debit", InvoiceFiscalNumber = null,
+            Lines = [note.Lines[0] with { NetAmount = null, TaxAmount = null, TaxRate = null }],
+        });
+        var legacyText = PdfFontInspector.Text(legacy);
+        Assert.Contains("TOTAL DEBITADO", legacyText);
+        Assert.Contains("Modifica: DEV-NF-2026-0001", legacyText);
+        Assert.DoesNotContain("Código de seguridad", legacyText);
+        Assert.DoesNotContain("e-NCF", legacyText);
+        Assert.Throws<ArgumentException>(() => new FinancialDocumentPdfRenderer().RenderAdjustmentNote(note with { Lines = [] }));
+    }
+
     [Fact]
     public void StoredPdfMustMatchBothLengthAndSha256BeforeDownload()
     {

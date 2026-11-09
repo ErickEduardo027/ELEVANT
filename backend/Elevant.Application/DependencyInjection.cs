@@ -66,6 +66,10 @@ public static class DependencyInjection
         services.AddScoped<Elevant.Application.Finance.CloseOperationsWithoutChargeHandler>();
         services.AddScoped<Elevant.Application.Finance.GetFinancePendingOperationsHandler>();
         services.AddScoped<Elevant.Application.Finance.PayInvoiceByCardHandler>();
+        services.AddScoped<Elevant.Application.Finance.CardPaymentAvailabilityHandler>();
+        // 4-N05: without Infrastructure (tools, tests) there is no card gateway; AddInfrastructure registers the real one.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services,
+            Elevant.Application.Finance.CardPaymentAvailability.Disabled);
         services.AddScoped<Elevant.Application.Finance.FinanceCloseRulesHandler>();
         services.AddScoped<AirlineServiceOrderHandler>();
         services.AddScoped<RampServiceChargesHandler>();

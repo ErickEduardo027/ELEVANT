@@ -2,6 +2,7 @@ using System.Data;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Identity;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Finance;
@@ -19,14 +20,22 @@ internal sealed partial class FinanceTreasuryStore
                 o.Status == OrganizationStatus.Active && a.IsActive select new { a.Id, a.PublicId }).SingleOrDefaultAsync(ct);
         if (airline is null) return null;
         // Finance history remains available after a contractual term ends; draft coverage never grants access.
-        var stations = await (from contract in context.Contracts.AsNoTracking()
+        var contracted = await (from contract in context.Contracts.AsNoTracking()
             join version in context.ContractVersions.AsNoTracking() on contract.Id equals version.ContractId
             join link in context.Set<ContractVersionStation>().AsNoTracking() on version.Id equals link.ContractVersionId
             join station in context.Stations.AsNoTracking() on link.StationId equals station.Id
             where contract.AirlineId == airline.Id && station.IsActive &&
                 (version.Status == ContractVersionStatus.Approved || version.Status == ContractVersionStatus.Superseded)
-            select new { station.PublicId, station.Code }).Distinct().OrderBy(s => s.Code).ToArrayAsync(ct);
-        var scopes = stations.Select(s => new ActorStationScope(s.PublicId, s.Code)).ToArray();
+            select new { station.PublicId, station.Code }).Distinct().ToArrayAsync(ct);
+        // 4-N08: a charter never has a contract (ADR-0033); the stations where AVIAM served the airline's charters open
+        // its own invoices, receipts and notes there. Every read below still filters by the airline.
+        var chartered = await (from agreement in context.Set<CharterAgreement>().AsNoTracking()
+            join turnaround in context.Turnarounds.AsNoTracking() on agreement.TurnaroundId equals turnaround.Id
+            join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+            where agreement.AirlineId == airline.Id && station.IsActive
+            select new { station.PublicId, station.Code }).Distinct().ToArrayAsync(ct);
+        var scopes = contracted.Concat(chartered).DistinctBy(s => s.PublicId).OrderBy(s => s.Code, StringComparer.Ordinal)
+            .Select(s => new ActorStationScope(s.PublicId, s.Code)).ToArray();
         return new(actor! with { StationScopes = scopes }, airline.Id, airline.PublicId, scopes);
     }
     private async Task<AirlineTreasuryReadResult<T>> PortalReadAsync<T>(Guid actorId,

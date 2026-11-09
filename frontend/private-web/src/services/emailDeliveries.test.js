@@ -4,7 +4,7 @@ import { EMAIL_PURPOSES, EMAIL_RECOVERY, purposeLabel } from './emailDeliveries'
 // Every EmailPurpose of the server (backend/Elevant.Domain/Enumerations/IdentityEnums.cs) has a Spanish label.
 const SERVER_PURPOSES = ['Activation', 'LoginCode', 'PasswordReset', 'Test', 'ContractActivated', 'InvoiceIssued',
   'PaymentReceived', 'CommercialDecision', 'ContractReadyToSign', 'PermitRejected', 'PermitRevoked', 'PermitExpiring',
-  'ContractExpiring', 'ContractSuspended', 'PortalUserChanged'];
+  'ContractExpiring', 'ContractSuspended', 'PortalUserChanged', 'AdjustmentNoteIssued', 'InvoiceOverdue'];
 
 describe('email purposes of the outbox', () => {
   it('labels every purpose the server queues, the airline notices of phase 2 included', () => {
@@ -12,12 +12,15 @@ describe('email purposes of the outbox', () => {
     expect(purposeLabel('ContractReadyToSign')).toBe('Contrato listo para firmar');
     expect(purposeLabel('PermitRevoked')).toBe('Verificación de permiso revocada');
     expect(purposeLabel('PortalUserChanged')).toBe('Cambio de usuarios del portal');
+    // Phase 4, block C (4-N23).
+    expect(purposeLabel('AdjustmentNoteIssued')).toBe('Nota de ajuste emitida');
+    expect(purposeLabel('InvoiceOverdue')).toBe('Factura vencida');
     expect(purposeLabel('Unknown')).toBe('Correo del sistema');
   });
 
   it('tells what to do when an airline notice did not go out, without claiming it was sent', () => {
     for (const purpose of ['ContractReadyToSign', 'PermitRejected', 'PermitRevoked', 'PermitExpiring', 'ContractExpiring',
-      'ContractSuspended', 'PortalUserChanged']) {
+      'ContractSuspended', 'PortalUserChanged', 'AdjustmentNoteIssued', 'InvoiceOverdue']) {
       expect(EMAIL_RECOVERY[purpose]).toMatch(/portal/);
       expect(EMAIL_RECOVERY[purpose]).not.toMatch(/enviamos|se envió/i);
     }

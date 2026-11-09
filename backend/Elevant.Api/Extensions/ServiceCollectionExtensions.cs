@@ -62,6 +62,8 @@ public static class ServiceCollectionExtensions
             services.AddHostedService<AccountChangeDispatchWorker>();
         services.AddHostedService<Elevant.Api.Messaging.EmailDispatchWorker>();
         services.AddHostedService<Elevant.Api.Commercial.ContractLifecycleWorker>();
+        // 4-N23: the one notice of each invoice that passed its due date with a balance.
+        services.AddHostedService<Elevant.Api.Finance.InvoiceOverdueNoticeWorker>();
         services.AddHostedService<Elevant.Api.HumanResources.HumanResourcesDocumentWorker>();
         services.AddHostedService<Elevant.Api.Integration.FlightFeedSyncWorker>();
         if (!string.IsNullOrWhiteSpace(configuration["MediaStorage:Endpoint"]))

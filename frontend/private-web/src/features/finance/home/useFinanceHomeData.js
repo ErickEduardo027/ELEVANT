@@ -6,7 +6,8 @@ import { getFinanceHomeSnapshot, isEmptyFinanceHome } from '../../../services/fi
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 
 /** Hints that move an indicator of «Inicio»: approvals and issued invoices, and receipts or card payments. */
-const HOME_RESOURCES = ['finance_approved_services', 'finance_receipts'];
+// 4-N11: «Inicio» also hears the invoices issued, paid, applied or adjusted.
+const HOME_RESOURCES = ['finance_approved_services', 'finance_receipts', 'finance_invoices'];
 
 const initialState = stationId => ({ status: stationId ? 'loading' : 'no-station', data: null, error: '',
   refreshing: false });

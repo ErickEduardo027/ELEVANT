@@ -53,19 +53,58 @@ public static class FinanceInvoicePolicy
     public static bool FitsWindow(DateOnly from, DateOnly to) =>
         to >= from && to.DayNumber - from.DayNumber < MaxDays;
 
-    public static string FormatFiscalNumber(long sequence)
+    /// <summary>4-N17: e-NCF type 34, the simulated credit note that modifies an E31 invoice.</summary>
+    public const string CreditNoteFiscalPrefix = "E34";
+
+    /// <summary>4-N17: e-NCF type 33, the simulated debit note that modifies an E31 invoice.</summary>
+    public const string DebitNoteFiscalPrefix = "E33";
+
+    public static string FormatFiscalNumber(long sequence) => FormatFiscalNumber(FiscalNumberPrefix, sequence);
+
+    /// <summary>An e-NCF of the type <paramref name="prefix"/> (E31, E33, E34): the prefix and ten digits.</summary>
+    public static string FormatFiscalNumber(string prefix, long sequence)
     {
+        if (prefix is not (FiscalNumberPrefix or CreditNoteFiscalPrefix or DebitNoteFiscalPrefix))
+            throw new ArgumentOutOfRangeException(nameof(prefix));
         if (sequence is < 1 or > 9_999_999_999) throw new ArgumentOutOfRangeException(nameof(sequence));
-        return FiscalNumberPrefix + sequence.ToString("D10", System.Globalization.CultureInfo.InvariantCulture);
+        return prefix + sequence.ToString("D10", System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    public static bool IsFiscalNumber(string? value) =>
-        value is { Length: 13 } && value.StartsWith(FiscalNumberPrefix, StringComparison.Ordinal) &&
+    public static bool IsFiscalNumber(string? value) => IsFiscalNumber(value, FiscalNumberPrefix);
+
+    public static bool IsFiscalNumber(string? value, string prefix) =>
+        value is { Length: 13 } && value.StartsWith(prefix, StringComparison.Ordinal) &&
         value[3..].All(char.IsAsciiDigit);
 
     /// <summary>The next e-NCF after the highest one issued (null when none).</summary>
-    public static string NextFiscalNumber(string? highest) =>
-        FormatFiscalNumber(IsFiscalNumber(highest) ? long.Parse(highest![3..], System.Globalization.CultureInfo.InvariantCulture) + 1 : 1);
+    public static string NextFiscalNumber(string? highest) => NextFiscalNumber(FiscalNumberPrefix, highest);
+
+    /// <summary>The next e-NCF of the type <paramref name="prefix"/> after the highest one issued (null when none).</summary>
+    public static string NextFiscalNumber(string prefix, string? highest) =>
+        FormatFiscalNumber(prefix, IsFiscalNumber(highest, prefix)
+            ? long.Parse(highest![3..], System.Globalization.CultureInfo.InvariantCulture) + 1 : 1);
+
+    /// <summary>4-N17: the e-NCF type of a note on an E31 invoice: E34 for a credit, E33 for a debit.</summary>
+    public static string NoteFiscalPrefix(bool credit) => credit ? CreditNoteFiscalPrefix : DebitNoteFiscalPrefix;
+
+    /// <summary>
+    /// 4-N17: the ITBIS and net of an amount a credit or debit note adjusts on an invoice line, from the line's frozen
+    /// gross and ITBIS and what earlier notes of the same kind already adjusted. The note that exhausts the line's
+    /// remaining gross takes its exact remaining ITBIS, so rounding never drifts; any other one is proportional, rounded
+    /// to cents. Pure: it never reads the current rate.
+    /// </summary>
+    public static AdjustmentBreakdown AdjustmentTax(decimal lineGross, decimal lineTax, decimal alreadyAdjustedAmount,
+        decimal alreadyAdjustedTax, decimal amount)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(amount, 0m);
+        var remainingTax = Math.Max(0m, lineTax - alreadyAdjustedTax);
+        decimal tax;
+        if (lineGross <= 0m || lineTax <= 0m) tax = 0m;
+        else if (amount >= lineGross - alreadyAdjustedAmount) tax = remainingTax;
+        else tax = decimal.Round(amount * lineTax / lineGross, 2, MidpointRounding.AwayFromZero);
+        tax = Math.Min(Math.Min(tax, remainingTax), amount);
+        return new AdjustmentBreakdown(amount - tax, tax);
+    }
 
     /// <summary>Six characters derived from what the e-CF certifies: number, total, time and customer.</summary>
     public static string SecurityCode(string fiscalNumber, decimal total, DateTimeOffset signedAt, string customer)
@@ -100,6 +139,9 @@ public static class FinanceInvoicePolicy
         line.TaxCapturedAt = now;
     }
 }
+
+/// <summary>4-N17: the net and the ITBIS of what a note adjusts on one invoice line (net + tax = the gross adjusted).</summary>
+public readonly record struct AdjustmentBreakdown(decimal Net, decimal Tax);
 
 /// <summary>
 /// The version (base64 rowversion) of an operation as the caller saw it: a stale one is <c>version_conflict</c>.

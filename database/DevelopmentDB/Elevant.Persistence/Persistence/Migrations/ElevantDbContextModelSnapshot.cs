@@ -3292,6 +3292,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("invoice_line_id");
 
+                    b.Property<decimal?>("NetAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("net_amount");
+
                     b.Property<long>("NoteId")
                         .HasColumnType("bigint")
                         .HasColumnName("note_id");
@@ -3313,6 +3318,16 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion")
                         .HasColumnName("row_version");
+
+                    b.Property<decimal?>("TaxAmount")
+                        .HasPrecision(19, 4)
+                        .HasColumnType("decimal(19,4)")
+                        .HasColumnName("tax_amount");
+
+                    b.Property<decimal?>("TaxRate")
+                        .HasPrecision(9, 4)
+                        .HasColumnType("decimal(9,4)")
+                        .HasColumnName("tax_rate");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .ValueGeneratedOnAdd()
@@ -3655,6 +3670,10 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasColumnType("decimal(19,4)")
                         .HasColumnName("amount");
 
+                    b.Property<long?>("CharterAgreementId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("charter_agreement_id");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .ValueGeneratedOnAdd()
                         .HasPrecision(3)
@@ -3720,6 +3739,9 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ActorAccountId");
+
+                    b.HasIndex("CharterAgreementId")
+                        .HasFilter("[charter_agreement_id] IS NOT NULL");
 
                     b.HasIndex("PublicId")
                         .IsUnique();
@@ -14652,6 +14674,11 @@ namespace Elevant.Infrastructure.Persistence.Migrations
                         .HasForeignKey("AirlineId")
                         .OnDelete(DeleteBehavior.NoAction)
                         .IsRequired();
+
+                    b.HasOne("Elevant.Domain.Entities.Operations.CharterAgreement", null)
+                        .WithMany()
+                        .HasForeignKey("CharterAgreementId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("Elevant.Domain.Entities.Reference.Station", null)
                         .WithMany()

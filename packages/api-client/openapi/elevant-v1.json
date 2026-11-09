@@ -1754,6 +1754,84 @@
         ]
       }
     },
+    "/api/v1/airline/portal/adjustment-notes/{noteId}/document": {
+      "get": {
+        "tags": [
+          "AirlineTreasury"
+        ],
+        "summary": "4-N17: the PDF of a credit or debit note of the airline's own invoice, within the portal's scope: the e-NCF\nE34/E33 and its frozen ITBIS, «Simulación — sin validez fiscal». Another airline's note is 404.",
+        "operationId": "GetAirlineAdjustmentNoteDocument",
+        "parameters": [
+          {
+            "name": "noteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/airline/portal/treasury/invoices/{invoiceId}/adjustment-notes": {
       "get": {
         "tags": [
@@ -3072,6 +3150,52 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/airline/portal/card-payments/availability": {
+      "get": {
+        "tags": [
+          "CardPayments"
+        ],
+        "summary": "4-N05: whether this environment takes card payments and whether the gateway is the simulation. The portal hides\nthe card form when it is unavailable; only an airline portal session reads it.",
+        "operationId": "GetAirlineCardPaymentAvailability",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CardPaymentAvailabilityResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10539,13 +10663,21 @@
         "tags": [
           "FinanceCharters"
         ],
-        "summary": "Confirms the prepayment; the same amount and reference again are a retry.",
+        "summary": "4-N22: confirms the prepayment with an Idempotency-Key and the version Finance saw (a stale one is 409\n`version_conflict`). Confirmed after the charter was invoiced, it settles that invoice at once and the excess\nstays as the airline's credit. The same amount and reference again change nothing; another amount or reference\ncorrects it with a reason while it was never applied, else 409 `charter_prepayment_applied`. Every refusal\nbut a 401 carries its code.",
         "operationId": "ConfirmFinanceCharterPrepayment",
         "parameters": [
           {
             "name": "charterId",
             "in": "path",
             "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
             "schema": {
               "type": "string",
               "format": "uuid"
@@ -16870,6 +17002,94 @@
                 }
               },
               "text/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/finance/adjustment-notes/{noteId}/document": {
+      "get": {
+        "tags": [
+          "FinanceTreasury"
+        ],
+        "summary": "4-N17: the PDF of a credit or debit note of an invoice of the actor's stations (finance.adjustments.read): the\ne-NCF E34/E33 of a note on an E31 invoice and its frozen ITBIS, «Simulación — sin validez fiscal».",
+        "operationId": "GetFinanceAdjustmentNoteDocument",
+        "parameters": [
+          {
+            "name": "noteId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/pdf": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/pdf": {
                 "schema": {
                   "$ref": "#/components/schemas/ProblemDetails"
                 }
@@ -36237,6 +36457,22 @@
         },
         "additionalProperties": false
       },
+      "CardPaymentAvailabilityResponse": {
+        "required": [
+          "available",
+          "simulated"
+        ],
+        "type": "object",
+        "properties": {
+          "available": {
+            "type": "boolean"
+          },
+          "simulated": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
       "CardPaymentListResponse": {
         "required": [
           "attempts",
@@ -37181,6 +37417,14 @@
           },
           "reference": {
             "type": "string"
+          },
+          "version": {
+            "type": "string",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "nullable": true
           }
         },
         "additionalProperties": false

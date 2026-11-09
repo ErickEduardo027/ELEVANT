@@ -68,6 +68,25 @@ it("downloads the invoice PDF by invoice id for Finance and the airline portal",
   ]);
 });
 
+it("downloads the PDF of a credit or debit note for Finance and the airline portal (4-N17)", async () => {
+  const noteId = "10000000-0000-7000-8000-0000000000e3";
+  const urls: string[] = [];
+  let reply = () => new Response(new Blob(["%PDF-1.7"]), { headers: { "content-type": "application/pdf" } });
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async url => { urls.push(String(url)); return reply(); } });
+  await expect(client.getFinanceAdjustmentNoteDocument(noteId)).resolves.toBeInstanceOf(Blob);
+  await expect(client.getAirlineAdjustmentNoteDocument(noteId)).resolves.toBeInstanceOf(Blob);
+  expect(urls).toEqual([
+    `https://api.example.test/api/v1/finance/adjustment-notes/${noteId}/document`,
+    `https://api.example.test/api/v1/airline/portal/adjustment-notes/${noteId}/document`,
+  ]);
+  // A malformed id is never sent; what is not a PDF is refused.
+  expect(() => client.getAirlineAdjustmentNoteDocument("not-a-note")).toThrow(TypeError);
+  reply = () => Response.json({ title: "not a pdf" });
+  await expect(client.getFinanceAdjustmentNoteDocument(noteId)).rejects.toMatchObject({ kind: "malformed-response" });
+  expect(urls).toHaveLength(3);
+});
+
 it("pays an invoice by card with the idempotency key and accepts only brand and last four digits back", async () => {
   const key = "10000000-0000-7000-8000-00000000000b";
   const attempt = { id: "10000000-0000-7000-8000-00000000000c", invoiceId, status: "Approved", brand: "Visa", last4: "1111",
@@ -113,4 +132,36 @@ it("lists card attempts for Finance and the portal and downloads the card receip
     `https://api.example.test/api/v1/finance/invoices/${invoiceId}/card-payments`,
     "https://api.example.test/api/v1/airline/portal/card-payments/10000000-0000-7000-8000-00000000000c/receipt",
   ]);
+});
+
+it("reads whether card payments are available and accepts only the two flags (4-N05)", async () => {
+  const urls: string[] = [];
+  let reply: unknown = { available: true, simulated: true };
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async url => {
+      urls.push(String(url));
+      return new Response(JSON.stringify(reply), { headers: { "content-type": "application/json" } });
+    } });
+  await expect(client.getAirlineCardPaymentAvailability()).resolves.toEqual({ available: true, simulated: true });
+  reply = { available: false, simulated: false };
+  await expect(client.getAirlineCardPaymentAvailability()).resolves.toEqual({ available: false, simulated: false });
+  expect(urls[0]).toBe("https://api.example.test/api/v1/airline/portal/card-payments/availability");
+  // A simulation is always available; anything else the server sent is refused.
+  for (const malformed of [{ available: false, simulated: true }, { available: "yes", simulated: false },
+    { available: true, simulated: true, gateway: "simulated" }, { available: true }])
+  {
+    reply = malformed;
+    await expect(client.getAirlineCardPaymentAvailability()).rejects.toMatchObject({ kind: "malformed-response" });
+  }
+});
+
+it("keeps the code of a card payment refusal (4-N05)", async () => {
+  const client = createElevantApiClient({ baseUrl: "https://api.example.test",
+    fetch: async () => new Response(JSON.stringify({ title: "Card payments are not available.", status: 409,
+      code: "card_payments_unavailable", reasons: ["card_payments_unavailable"] }),
+    { status: 409, headers: { "content-type": "application/problem+json" } }) });
+  await expect(client.payAirlineInvoiceByCard(invoiceId, { cardholderName: "Casey Airline",
+    cardNumber: "4111 1111 1111 1111", expiryMonth: 12, expiryYear: 2030, securityCode: "123", amount: 118 },
+  "10000000-0000-7000-8000-00000000000b")).rejects.toMatchObject({ status: 409, code: "card_payments_unavailable",
+    reasons: ["card_payments_unavailable"] });
 });

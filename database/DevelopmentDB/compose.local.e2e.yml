@@ -6,6 +6,9 @@
 # - the simulated flight feed (SimulatedFlightFeed__Enabled, hueco 2-B): a deterministic timetable of the
 #   registered airlines that never calls AeroDataBox nor the network. The API refuses to start when AeroDataBox
 #   is enabled too; ELEVANT_E2E_SIMULATED_FLIGHT_FEED=false runs the overlay without any feed.
+# - the simulated card gateway (CardPayments__Mode, hueco 4-N05): test cards approve or decline payments in memory,
+#   no money moves and every receipt says «Simulación — sin validez fiscal». The API refuses to start with it outside
+#   Development or Test, so the overlay never enables it anywhere else.
 #
 # docker compose --env-file database/DevelopmentDB/.env \
 #   -f database/DevelopmentDB/compose.local.yml -f database/DevelopmentDB/compose.local.e2e.yml up --build
@@ -70,6 +73,7 @@ services:
       RateLimiting__SessionPermitLimit: "200"
       AccountEmail__PublicWebBaseUrl: "${AccountEmail__PublicWebBaseUrl:-http://localhost:4174}"
       SimulatedFlightFeed__Enabled: "${ELEVANT_E2E_SIMULATED_FLIGHT_FEED:-true}"
+      CardPayments__Mode: "Simulated"
     depends_on:
       media:
         condition: service_started

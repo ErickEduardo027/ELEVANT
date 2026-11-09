@@ -75,8 +75,8 @@ internal sealed class EfFinanceInvoiceLedgerStore(
             var creditedAmount = credited.GetValueOrDefault(row.Id) + movements.Credited - movements.Debited;
             var balance = row.Total - paidAmount - creditedAmount;
             var overdueDays = balance > 0 && row.DueDate is { } due && due < today ? today.DayNumber - due.DayNumber : 0;
-            var status = balance <= 0 ? "Paid" : overdueDays > 0 ? "Overdue" : paidAmount + creditedAmount > 0
-                ? "PartiallyPaid" : "Pending";
+            // 4-N24: credited to zero without any payment is «Anulada», never «Pagada».
+            var status = Elevant.Application.Finance.FinanceInvoiceStatus.Of(balance, paidAmount, creditedAmount, overdueDays);
             return new FinanceInvoiceSummaryData(row.PublicId, row.Number, row.PreinvoiceId, row.AirlineId, row.Airline,
                 row.StationId, row.StationCode, row.CurrencyCode, row.Total, paidAmount, creditedAmount, balance,
                 row.IssuedAt, row.DueDate, status, overdueDays, row.FiscalNumber);

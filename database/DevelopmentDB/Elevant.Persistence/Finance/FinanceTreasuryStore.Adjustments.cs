@@ -83,23 +83,29 @@ internal sealed partial class FinanceTreasuryStore
                 if (related is null) return Fail(FinanceTreasuryFailure.NotFound);
             }
             var id = Guid.CreateVersion7(); var now = timeProvider.GetUtcNow();
+            var invoiceLines = await context.Set<NonFiscalInvoiceLine>().AsNoTracking().Where(l => l.InvoiceId == scope.Invoice.Id).ToArrayAsync(ct);
+            // 4-N17: the ITBIS of each line is frozen now, from the invoice's snapshot; an E31 invoice's note gets E34/E33.
+            var breakdown = await BreakdownAsync(invoiceLines, kind, input.Lines, ct);
             var note = new FinanceTreasuryAdjustmentNote { PublicId = id, InvoiceId = scope.Invoice.Id, ActorAccountId = accountId,
-                RequestId = input.RequestId, RelatedNoteId = related?.Id, Number = $"{(kind == FinanceTreasuryAdjustmentKind.Credit ? "TC" : "TD")}-{id:N}",
+                RequestId = input.RequestId, RelatedNoteId = related?.Id, Number = await NoteNumberAsync(scope.Invoice, kind, id, ct),
                 Kind = kind, EffectiveOn = input.EffectiveOn, CurrencyCode = scope.Invoice.CurrencyCode, Amount = amount,
                 Reason = input.Reason.Trim(), CreatedAt = now, UpdatedAt = now };
             context.Add(note);
             await context.SaveChangesAsync(ct);
-            var invoiceLines = await context.Set<NonFiscalInvoiceLine>().Where(l => l.InvoiceId == scope.Invoice.Id).ToArrayAsync(ct);
             foreach (var line in input.Lines)
             {
+                var invoiceLine = invoiceLines.Single(l => l.PublicId == line.InvoiceLineId);
+                var (net, tax, rate) = breakdown[invoiceLine.Id];
                 var entry = new FinanceTreasuryAdjustmentLine { PublicId = Guid.CreateVersion7(),
-                    NoteId = note.Id, InvoiceLineId = invoiceLines.Single(l => l.PublicId == line.InvoiceLineId).Id,
-                    Quantity = line.Quantity, Amount = line.Amount, CreatedAt = now, UpdatedAt = now };
+                    NoteId = note.Id, InvoiceLineId = invoiceLine.Id, Quantity = line.Quantity, Amount = line.Amount,
+                    NetAmount = net, TaxAmount = tax, TaxRate = rate, CreatedAt = now, UpdatedAt = now };
                 context.Add(entry);
             }
             account ??= NewAccount(scope.Invoice.Id);
+            // 4-N23: the airline is told of the note, with its PDF; a replay of the request never queues it again.
+            await InvoiceEmails.QueueAdjustmentNoteAsync(context, scope.Invoice, note, now, ct);
             return await CompleteAsync(accountId, input.RequestId, invoiceId, "adjustment.issued", hash, id, account,
-                scope.OrganizationId, scope.Invoice.StationId, input.Reason, ct);
+                scope.OrganizationId, scope.Invoice.StationId, input.Reason, [invoiceId], ct);
         }, ct);
     }
 }

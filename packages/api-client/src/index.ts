@@ -156,6 +156,7 @@ export {
   type CardPaymentAttemptResponse,
   type CardPaymentListResponse,
   type CardPaymentResponse,
+  type CardPaymentAvailabilityResponse,
   type IssuedInvoiceResponse,
   type NonFiscalPaymentLookupResponse,
   type NonFiscalPaymentResponse,

@@ -14,7 +14,7 @@ import { ElevantApiError, type AirlineContractPageResponse, type ContractDocumen
   type SetAirlinePortalUserStatusCommand } from "@elevant/api-client";
 import { createAirlineTreasuryService, type AirlineTreasuryService, type AirlineTreasuryStatement, type AirlineTreasuryInvoiceDetail, type AirlineTreasuryReceipt, type AirlineTreasuryNotes } from "@/lib/airline-treasury-service";
 import { createPublicWebApiClient } from "@/lib/elevant-api";
-import type { CardPaymentListResponse, CardPaymentResponse, PayInvoiceByCardBody } from "@elevant/api-client";
+import type { CardPaymentAvailabilityResponse, CardPaymentListResponse, CardPaymentResponse, PayInvoiceByCardBody } from "@elevant/api-client";
 import { createPublicAirlineChangeObserver } from "@/lib/airline-change-observer";
 
 export const AIRLINE_SESSION_STORAGE_KEY = "elevant-airline-session-v1";
@@ -125,8 +125,19 @@ interface AirlineSessionContextValue {
   payInvoiceByCard(invoiceId: string, request: PayInvoiceByCardBody, idempotencyKey: string): Promise<CardPaymentResponse>;
   getInvoiceCardPayments(invoiceId: string): Promise<CardPaymentListResponse>;
   getCardPaymentReceipt(attemptId: string): Promise<Blob>;
+  /** 4-N17: the PDF of a credit or debit note of the airline's own invoice, with its e-NCF E34/E33 when it has one. */
+  getAdjustmentNoteDocument(noteId: string): Promise<Blob>;
+  /**
+   * 4-N05: whether this environment takes card payments and whether the gateway is the simulation. The answer is kept for
+   * the session, so every invoice detail reads it once.
+   */
+  getCardPaymentAvailability(): Promise<CardPaymentAvailabilityResponse>;
   getPaymentReceipt(invoiceId: string): Promise<Blob>;
   operationRevision: number;
+  /**
+   * 4-N25: rises when something financial may have changed (a treasury or issuance notice, the tab regaining the focus,
+   * the connection returning), never on the periodic refresh: the Finance views read again and keep what they show.
+   */
   financeRevision: number;
   getDrafts(): Promise<AirlineDraftData[]>;
   /** An observation on a draft, with the draft version on screen and the intent's Idempotency-Key. */
@@ -215,6 +226,8 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
   const stored = useRef<StoredSession | null>(null);
   const generation = useRef(0);
   const refreshing = useRef(false);
+  // 4-N25: a Finance re-read asked for while another refresh runs is honoured when that refresh ends.
+  const financeWanted = useRef(false);
 
   const load = useCallback(async (record: StoredSession): Promise<AirlineSessionData> => {
     if (Date.parse(record.expiresAt) <= Date.now()) throw new ElevantApiError({ kind: "http", status: 401 });
@@ -305,7 +318,12 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     if (token) void createPublicWebApiClient({ baseUrl }).endSession(token).catch(() => {});
   }, [baseUrl, clear]);
 
-  const refreshLive = useCallback(async () => {
+  /**
+   * Reads the session and the bootstrap again. `finance` also asks the Finance views to read again (4-N25): the periodic
+   * refresh and the operations notice do not, so the invoices on screen are not re-read every 25 s.
+   */
+  const refreshLive = useCallback(async ({ finance = false }: { finance?: boolean } = {}) => {
+    if (finance) financeWanted.current = true;
     const record = stored.current;
     if (!record || refreshing.current) return;
     const request = generation.current;
@@ -315,7 +333,10 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
       if (request === generation.current) {
         setSession(live);
         setOperationRevision(current => current + 1);
-        setFinanceRevision(current => current + 1);
+        if (financeWanted.current) {
+          financeWanted.current = false;
+          setFinanceRevision(current => current + 1);
+        }
       }
     } catch (error) {
       if (request === generation.current &&
@@ -328,16 +349,18 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
 
   useEffect(() => {
     if (status !== "ready" || !accountId) return;
-    const refresh = () => { void refreshLive(); };
-    const visibility = () => { if (document.visibilityState === "visible") refresh(); };
-    window.addEventListener("focus", refresh);
-    window.addEventListener("online", refresh);
+    // Coming back to the tab or to the network may have missed a Finance notice: those re-read Finance too.
+    const returned = () => { void refreshLive({ finance: true }); };
+    const visibility = () => { if (document.visibilityState === "visible") returned(); };
+    const periodic = () => { void refreshLive(); };
+    window.addEventListener("focus", returned);
+    window.addEventListener("online", returned);
     document.addEventListener("visibilitychange", visibility);
-    const timer = window.setInterval(refresh, 25_000);
+    const timer = window.setInterval(periodic, 25_000);
     return () => {
       window.clearInterval(timer);
-      window.removeEventListener("focus", refresh);
-      window.removeEventListener("online", refresh);
+      window.removeEventListener("focus", returned);
+      window.removeEventListener("online", returned);
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [accountId, refreshLive, status]);
@@ -717,6 +740,17 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     portalCall(client => client.getAirlineInvoiceCardPayments(invoiceId, { cache: "no-store" })), [portalCall]);
   const getCardPaymentReceipt = useCallback((attemptId: string) =>
     portalCall(client => client.getAirlineCardPaymentReceipt(attemptId, { cache: "no-store" })), [portalCall]);
+  const getAdjustmentNoteDocument = useCallback((noteId: string) =>
+    portalCall(client => client.getAirlineAdjustmentNoteDocument(noteId, { cache: "no-store" })), [portalCall]);
+  // The gateway of an environment does not change during a session; a failed read is not kept.
+  const cardAvailability = useRef<{ accountId: string; value: CardPaymentAvailabilityResponse } | null>(null);
+  const getCardPaymentAvailability = useCallback(async () => {
+    const owner = stored.current?.accessToken ? accountId ?? "" : "";
+    if (cardAvailability.current && cardAvailability.current.accountId === owner) return cardAvailability.current.value;
+    const value = await portalCall(client => client.getAirlineCardPaymentAvailability({ cache: "no-store" }));
+    cardAvailability.current = { accountId: owner, value };
+    return value;
+  }, [accountId, portalCall]);
 
   const getPaymentReceipt = useCallback(async (invoiceId: string): Promise<Blob> => {
     const record = stored.current;
@@ -767,7 +801,7 @@ export function AirlineSessionProvider({ children, baseUrl }: { children: ReactN
     setDraftRevision(current => current + 1);
   }, [withContractClient]);
 
-  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, uploadPermitDocument, submitPermit, getPortalUsers, invitePortalUser, setPortalUserStatus, setPortalUserSigner, standing, requestStanding, retryStanding, getContractTimeline, getContractPricingTerms, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getPaymentReceipt, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
+  return <AirlineSessionContext.Provider value={{ status, session, signIn, verifyLoginCode, resendLoginCode, activateAccount, requestPasswordReset, resetPassword, changePassword, signOut, retry, getContracts, getContractDocument, downloadContractDocument, downloadContractDraft, getPermits, uploadPermitDocument, submitPermit, getPortalUsers, invitePortalUser, setPortalUserStatus, setPortalUserSigner, standing, requestStanding, retryStanding, getContractTimeline, getContractPricingTerms, signContract, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getTreasuryNotes, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getAdjustmentNoteDocument, getCardPaymentAvailability, getPaymentReceipt, operationRevision, financeRevision, getDrafts, commentDraft, draftRevision }}>
     {children}
   </AirlineSessionContext.Provider>;
 }

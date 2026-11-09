@@ -107,9 +107,11 @@ export const INVOICING_PROBLEM_MESSAGES = Object.freeze({
 
 /**
  * Treasury (phase 4, block A, 4-N10): the business day of the invoice or the receipt, and the default code of each
- * refusal.
+ * refusal. Block C (4-N09): a card receipt of the portal is neither reversed nor refunded.
  */
 export const TREASURY_PROBLEM_MESSAGES = Object.freeze({
+  card_payment_not_reversible: 'Los cobros con tarjeta no se revierten ni se devuelven. Corrija con una nota de crédito en la factura.',
+  idempotency_conflict: 'Ese envío ya se usó con otros datos. Recargue el documento antes de preparar otra solicitud.',
   effective_before_invoice: 'La fecha efectiva es anterior al día de emisión de la factura (hora de República Dominicana). Elija ese día o uno posterior.',
   effective_before_receipt: 'La fecha efectiva es anterior a la fecha en que se recibió el cobro. Elija ese día o uno posterior.',
   treasury_conflict: 'El saldo, la versión o la referencia cambió. Recargue el documento antes de preparar otra solicitud.',

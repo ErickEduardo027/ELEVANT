@@ -6,6 +6,9 @@ using Microsoft.EntityFrameworkCore;
 namespace Elevant.Persistence.Finance;
 internal sealed partial class FinanceTreasuryStore
 {
+    /// <summary>4-N09: a card receipt (ADR-0036) is neither reversed nor refunded from Treasury.</summary>
+    internal const string CardNotReversible = "card_payment_not_reversible";
+
     public Task<FinanceTreasuryResult> RecordAsync(Guid actorId, FinanceTreasuryReceiptInput input, CancellationToken cancellationToken = default)
     {
         if (input is null || !FinanceTreasuryRules.Money(input.Amount) || input.CurrencyCode is not ("USD" or "DOP") ||
@@ -33,7 +36,7 @@ internal sealed partial class FinanceTreasuryStore
                 Reason = input.Reason.Trim(), CreatedAt = timeProvider.GetUtcNow(), UpdatedAt = timeProvider.GetUtcNow() };
             context.Add(receipt);
             return await CompleteAsync(accountId, input.RequestId, input.AirlineId, "receipt.recorded", hash, receipt.PublicId,
-                receipt, scope.Organization, scope.Station, input.Reason, ct);
+                receipt, scope.Organization, scope.Station, input.Reason, null, ct);
         }, ct);
     }
     public Task<FinanceTreasuryResult> ApplyAsync(Guid actorId, Guid receiptId, FinanceTreasuryApplyInput input, CancellationToken cancellationToken = default)
@@ -86,7 +89,8 @@ internal sealed partial class FinanceTreasuryStore
                 available -= allocation.ReceiptAmount;
             }
             return await CompleteAsync(accountId, input.RequestId, receiptId, "receipt.applied", hash, firstId!.Value,
-                receipt, scope.OrganizationId, receipt.StationId, input.Reason, ct);
+                receipt, scope.OrganizationId, receipt.StationId, input.Reason,
+                invoices.Select(item => item.Invoice.PublicId).ToArray(), ct);
         }, ct);
     }
     public Task<FinanceTreasuryResult> ReverseAsync(Guid actorId, Guid receiptId, FinanceTreasuryReverseInput input, CancellationToken cancellationToken = default)
@@ -111,6 +115,8 @@ internal sealed partial class FinanceTreasuryStore
             }
             var replay = await ReplayAsync(actorId, input.RequestId, receiptId, "receipt.reversed", hash, ct);
             if (replay is not null) return replay;
+            // 4-N09: a card payment of the portal is never reversed here; Finance corrects it with a credit note.
+            if (receipt.Method == PaymentMethod.Card) return Fail(FinanceTreasuryFailure.Conflict, CardNotReversible);
             if (Version(receipt) != input.ExpectedVersion) return Fail(FinanceTreasuryFailure.Conflict, "version_conflict");
             if (input.EffectiveOn < receipt.ReceivedOn) return Fail(FinanceTreasuryFailure.Invalid, "effective_before_receipt");
             if (moves.Any(m => m.Kind == FinanceTreasuryMovementKind.ReceiptReversal)) return Fail(FinanceTreasuryFailure.Conflict);
@@ -133,7 +139,8 @@ internal sealed partial class FinanceTreasuryStore
             }
             context.Add(movement);
             return await CompleteAsync(accountId, input.RequestId, receiptId, "receipt.reversed", hash, movement.PublicId,
-                receipt, scope.OrganizationId, receipt.StationId, input.Reason, ct);
+                receipt, scope.OrganizationId, receipt.StationId, input.Reason,
+                invoice is null ? null : [invoice.Invoice.PublicId], ct);
         }, ct);
     }
     public Task<FinanceTreasuryResult> RefundAsync(Guid actorId, Guid receiptId, FinanceTreasuryRefundInput input, CancellationToken cancellationToken = default)
@@ -149,6 +156,8 @@ internal sealed partial class FinanceTreasuryStore
             var receipt = await LockReceiptAsync(scope.Receipt.Id, ct);
             var replay = await ReplayAsync(actorId, input.RequestId, receiptId, "receipt.refunded", hash, ct);
             if (replay is not null) return replay;
+            // 4-N09: nor refunded: the airline's receipt and the paid invoice never contradict each other.
+            if (receipt.Method == PaymentMethod.Card) return Fail(FinanceTreasuryFailure.Conflict, CardNotReversible);
             var moves = await ReceiptMovementsAsync(receipt.Id, ct);
             if (Version(receipt) != input.ExpectedVersion) return Fail(FinanceTreasuryFailure.Conflict, "version_conflict");
             if (input.EffectiveOn < receipt.ReceivedOn) return Fail(FinanceTreasuryFailure.Invalid, "effective_before_receipt");
@@ -158,7 +167,7 @@ internal sealed partial class FinanceTreasuryStore
             var movement = Movement(accountId, input.RequestId, receipt, FinanceTreasuryMovementKind.Refund, input.EffectiveOn, input.Amount, input.Reason);
             movement.Reference = input.Reference.Trim(); context.Add(movement);
             return await CompleteAsync(accountId, input.RequestId, receiptId, "receipt.refunded", hash, movement.PublicId,
-                receipt, scope.OrganizationId, receipt.StationId, input.Reason, ct);
+                receipt, scope.OrganizationId, receipt.StationId, input.Reason, null, ct);
         }, ct);
     }
 }

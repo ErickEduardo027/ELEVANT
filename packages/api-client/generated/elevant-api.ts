@@ -842,6 +842,11 @@ export interface CardPaymentAttemptResponse {
   attemptedAt: string;
 }
 
+export interface CardPaymentAvailabilityResponse {
+  available: boolean;
+  simulated: boolean;
+}
+
 export interface CardPaymentListResponse {
   invoiceId: string;
   attempts: CardPaymentAttemptResponse[];
@@ -1163,6 +1168,10 @@ export interface CommercialStationData {
 export interface ConfirmCharterPrepaymentRequest {
   amount: number;
   reference: string;
+  /** @nullable */
+  version?: string | null;
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface ConfirmCommercialRepresentativeInput {
@@ -7532,6 +7541,37 @@ export const getAirlineTreasuryReceipt = async (receiptId: string, options?: Req
 
 
 
+export const getGetAirlineAdjustmentNoteDocumentUrl = (noteId: string,) => {
+
+
+
+
+  return `/api/v1/airline/portal/adjustment-notes/${noteId}/document`
+}
+
+/**
+ * @summary 4-N17: the PDF of a credit or debit note of the airline's own invoice, within the portal's scope: the e-NCF
+E34/E33 and its frozen ITBIS, «Simulación — sin validez fiscal». Another airline's note is 404.
+ */
+export const getAirlineAdjustmentNoteDocument = async (noteId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetAirlineAdjustmentNoteDocumentUrl(noteId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
+  return data
+}
+
+
+
 export const getGetAirlineTreasuryAdjustmentNotesUrl = (invoiceId: string,) => {
 
 
@@ -8019,6 +8059,38 @@ export const getAirlineInvoiceCardPayments = async (invoiceId: string, options?:
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: CardPaymentListResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getGetAirlineCardPaymentAvailabilityUrl = () => {
+
+
+
+
+  return `/api/v1/airline/portal/card-payments/availability`
+}
+
+/**
+ * @summary 4-N05: whether this environment takes card payments and whether the gateway is the simulation. The portal hides
+the card form when it is unavailable; only an airline portal session reads it.
+ */
+export const getAirlineCardPaymentAvailability = async ( options?: RequestInit): Promise<CardPaymentAvailabilityResponse> => {
+
+  const res = await fetch(getGetAirlineCardPaymentAvailabilityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: CardPaymentAvailabilityResponse = body ? JSON.parse(body) : {}
   return data
 }
 
@@ -11457,7 +11529,11 @@ export const getConfirmFinanceCharterPrepaymentUrl = (charterId: string,) => {
 }
 
 /**
- * @summary Confirms the prepayment; the same amount and reference again are a retry.
+ * @summary 4-N22: confirms the prepayment with an Idempotency-Key and the version Finance saw (a stale one is 409
+`version_conflict`). Confirmed after the charter was invoiced, it settles that invoice at once and the excess
+stays as the airline's credit. The same amount and reference again change nothing; another amount or reference
+corrects it with a reason while it was never applied, else 409 `charter_prepayment_applied`. Every refusal
+but a 401 carries its code.
  */
 export const confirmFinanceCharterPrepayment = async (charterId: string,
     confirmCharterPrepaymentRequest?: ConfirmCharterPrepaymentRequest, options?: RequestInit): Promise<FinanceCharterResponse> => {
@@ -14069,6 +14145,37 @@ const res = await fetch(getIssueFinanceTreasuryAdjustmentUrl(invoiceId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: FinanceTreasuryMutationResponse = body ? (contentType.includes('json') ? JSON.parse(body) : body) : {}
+  return data
+}
+
+
+
+export const getGetFinanceAdjustmentNoteDocumentUrl = (noteId: string,) => {
+
+
+
+
+  return `/api/v1/finance/adjustment-notes/${noteId}/document`
+}
+
+/**
+ * @summary 4-N17: the PDF of a credit or debit note of an invoice of the actor's stations (finance.adjustments.read): the
+e-NCF E34/E33 of a note on an E31 invoice and its frozen ITBIS, «Simulación — sin validez fiscal».
+ */
+export const getFinanceAdjustmentNoteDocument = async (noteId: string, options?: RequestInit): Promise<Blob> => {
+
+  const res = await fetch(getGetFinanceAdjustmentNoteDocumentUrl(noteId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.blob();
+  const data: Blob = body as Blob
   return data
 }
 

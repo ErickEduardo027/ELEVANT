@@ -77,6 +77,10 @@ public enum EmailPurpose
     ContractSuspended,
     /// <summary>A portal user of the airline was invited, deactivated, reactivated or got a role changed (2-N20).</summary>
     PortalUserChanged,
+    /// <summary>Finance issued a credit or debit note on an invoice of the airline, with the note's PDF (4-N23).</summary>
+    AdjustmentNoteIssued,
+    /// <summary>The one notice of an invoice that passed its due date with a balance, with its PDF (4-N23).</summary>
+    InvoiceOverdue,
 }
 
 /// <summary>Delivery state of an email in the outbox.</summary>

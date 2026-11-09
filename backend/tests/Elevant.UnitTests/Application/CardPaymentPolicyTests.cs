@@ -87,7 +87,7 @@ public sealed class CardPaymentPolicyTests
     public async Task HandlerRejectsAnInvalidCardBeforeTheStore()
     {
         var store = new Store();
-        var handler = new PayInvoiceByCardHandler(store, new FixedTime(Now));
+        var handler = new PayInvoiceByCardHandler(store, new FixedTime(Now), CardPaymentAvailability.SimulatedGateway);
         var ct = TestContext.Current.CancellationToken;
         var invalid = await handler.HandleAsync(Request("4111111111111112"), ct);
         Assert.Equal(CardPaymentFailure.InvalidRequest, invalid.Failure);
@@ -96,6 +96,30 @@ public sealed class CardPaymentPolicyTests
         Assert.Equal(0, store.Calls);
         await handler.HandleAsync(Request(), ct);
         Assert.Equal(1, store.Calls);
+        var keyless = await handler.HandleAsync(Request() with { IdempotencyKey = Guid.Empty }, ct);
+        Assert.Equal((CardPaymentFailure.InvalidRequest, "idempotency_key_required"),
+            (keyless.Failure!.Value, keyless.Reasons.Single()));
+    }
+
+    /// <summary>
+    /// 4-N05: without a gateway the payment is refused before the card is checked or the store is reached, so no card
+    /// is ever validated, authorized or recorded in an environment without a card processor.
+    /// </summary>
+    [Fact]
+    public async Task WithoutAGatewayEveryPaymentIsUnavailableBeforeTheCardIsChecked()
+    {
+        var store = new Store();
+        var handler = new PayInvoiceByCardHandler(store, new FixedTime(Now), CardPaymentAvailability.Disabled);
+        var ct = TestContext.Current.CancellationToken;
+        foreach (var request in new[] { Request(), Request("4111111111111112"), Request(cvv: "x") })
+        {
+            var refused = await handler.HandleAsync(request, ct);
+            Assert.Equal(CardPaymentFailure.Unavailable, refused.Failure);
+            Assert.Equal([CardPaymentCodes.Unavailable], refused.Reasons);
+        }
+        Assert.Equal(0, store.Calls);
+        Assert.Throws<InvalidOperationException>(() => new DisabledCardGateway().Authorize(
+            new CardCharge("4111111111111111", 12, 2030, "123", 10m, "USD")));
     }
 
     private sealed class FixedTime(DateTimeOffset now) : TimeProvider

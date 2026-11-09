@@ -26,7 +26,9 @@ public sealed class EmailOutboxRulesTests
                      EmailPurpose.ContractReadyToSign, EmailPurpose.PermitRejected, EmailPurpose.PermitRevoked,
                      EmailPurpose.PermitExpiring, EmailPurpose.ContractExpiring, EmailPurpose.ContractSuspended,
                      // Phase 2, block E: the notice of a change of portal users.
-                     EmailPurpose.PortalUserChanged })
+                     EmailPurpose.PortalUserChanged,
+                     // Phase 4, block C (4-N23): the notes and the overdue notice carry no secret either.
+                     EmailPurpose.AdjustmentNoteIssued, EmailPurpose.InvoiceOverdue })
             Assert.Null(EmailOutboxLifetimes.For(purpose));
         Assert.Equal(new[] { EmailPurpose.Activation, EmailPurpose.LoginCode, EmailPurpose.PasswordReset },
             EmailOutboxLifetimes.Expiring.Select(item => item.Purpose));

@@ -100,25 +100,17 @@ internal sealed class EfInvoiceIssuanceStore(
         var invoice = await context.NonFiscalInvoices.SingleAsync(item => item.PublicId == issued.InvoiceId, cancellationToken);
         var accountId = invoice.IssuedByAccountId;
 
-        // A charter is prepaid: its confirmed prepayment settles the invoice up to its total.
+        // A charter is prepaid: its confirmed prepayment settles the invoice up to its total (4-N22: once, as the receipt
+        // that names the charter).
         var turnaroundIds = prepared.Operations.Select(item => item.TurnaroundId).Distinct().ToArray();
         var charters = await context.Set<CharterAgreement>().AsNoTracking()
             .Where(item => turnaroundIds.Contains(item.TurnaroundId) && item.PrepaymentStatus == CharterPrepaymentStatus.Confirmed &&
                 item.PrepaymentAmount > 0)
-            .Select(item => new { item.PublicId, item.PrepaymentAmount, item.PrepaymentReference, item.CurrencyCode })
-            .ToArrayAsync(cancellationToken);
+            .OrderBy(item => item.Id).ToArrayAsync(cancellationToken);
         decimal prepaid = 0m;
-        foreach (var charter in charters.Where(item => item.CurrencyCode == invoice.CurrencyCode))
-        {
-            var reference = $"PREPAGO {charter.PrepaymentReference}".Trim();
-            if (await context.Set<FinanceTreasuryReceipt>().AnyAsync(receipt => receipt.AirlineId == invoice.AirlineId &&
-                    receipt.Reference == reference, cancellationToken))
-                reference = $"{reference} · {charter.PublicId:N}"[..Math.Min(80, reference.Length + 35)];
-            var posted = await FinanceTreasuryPosting.ReceiveAndApplyAsync(context, invoice, accountId, PaymentMethod.Transfer,
-                reference, charter.PrepaymentAmount!.Value, "Prepago del charter confirmado por Finanzas.", now,
-                cancellationToken);
-            prepaid += posted.Applied;
-        }
+        foreach (var charter in charters)
+            prepaid += (await CharterPrepaymentPosting.PostAsync(context, invoice, charter, accountId, now,
+                cancellationToken))?.Applied ?? 0m;
 
         var airline = await context.Airlines.AsNoTracking().Where(item => item.Id == invoice.AirlineId)
             .Select(item => new { item.OrganizationId, item.PublicId }).SingleAsync(cancellationToken);
@@ -133,10 +125,14 @@ internal sealed class EfInvoiceIssuanceStore(
             MetadataJson = JsonSerializer.Serialize(new { fiscalNumber = invoice.FiscalNumber, total = invoice.Total,
                 operations = request.OperationIds, prepaid }),
         });
-        await InvoiceEmails.QueueIssuedAsync(context, invoice, now, cancellationToken);
+        await InvoiceEmails.QueueIssuedAsync(context, invoice, prepaid, now, cancellationToken);
         await AirlineOperationChangeWriter.AddTreasuryAsync(context, airlineOrganization, airline.PublicId, now, cancellationToken);
-        await FinanceApprovedServiceChangeWriter.AddAsync(context, invoice.StationId, invoice.PublicId, now,
-            "finance_approved_services", cancellationToken);
+        // 4-N11: «Por facturar» hears each invoiced operation by its own id (the feed only delivers an approved operation
+        // of the station), and «Facturas» hears the new invoice.
+        await FinanceApprovedServiceChangeWriter.AddAsync(context, invoice.StationId,
+            prepared.Operations.Select(item => item.PublicId).ToArray(), now, "finance_approved_services", cancellationToken);
+        await FinanceApprovedServiceChangeWriter.AddInvoicesAsync(context, invoice.StationId, [invoice.PublicId], now,
+            cancellationToken);
         await FinanceApprovedServiceChangeWriter.AddAsync(context, invoice.StationId, invoice.PublicId, now,
             "finance_receipts", cancellationToken);
         await context.SaveChangesAsync(cancellationToken);

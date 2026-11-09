@@ -55,3 +55,16 @@ public sealed record FinanceTreasuryStatementData(DateOnly AsOf, IReadOnlyList<F
 public sealed record FinanceTreasuryAirlineOptionData(Guid Id, string Name);
 public sealed record FinanceTreasuryStationOptionData(Guid Id, string Code);
 public sealed record FinanceTreasuryOptionsData(IReadOnlyList<FinanceTreasuryAirlineOptionData> Airlines, IReadOnlyList<FinanceTreasuryStationOptionData> Stations);
+
+/// <summary>
+/// 4-N17: what the PDF of a credit or debit note prints, read from what was frozen when it was issued. A note on an E31
+/// invoice carries its own simulated e-NCF (E34 credit, E33 debit) in <c>Number</c>; an older note keeps TC-/TD-.
+/// </summary>
+public sealed record FinanceAdjustmentNoteDocumentData(Guid NoteId, string Number, string Kind, Guid InvoiceId,
+    string InvoiceNumber, string? InvoiceFiscalNumber, string CurrencyCode, decimal Amount, DateOnly EffectiveOn,
+    DateTimeOffset IssuedAt, string Reason, string IssuerName, string IssuerRnc, string CustomerName, string CustomerCode,
+    string StationCode, IReadOnlyList<FinanceAdjustmentNoteDocumentLineData> Lines);
+
+/// <summary>One line of a note: the gross adjusted and, from phase 4 on, its frozen net, ITBIS and rate.</summary>
+public sealed record FinanceAdjustmentNoteDocumentLineData(int LineNumber, string OperationCode, string ServiceCode,
+    string ServiceName, decimal Quantity, decimal Amount, decimal? NetAmount, decimal? TaxAmount, decimal? TaxRate);

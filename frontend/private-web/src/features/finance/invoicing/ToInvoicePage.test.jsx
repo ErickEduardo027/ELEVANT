@@ -224,6 +224,20 @@ describe('ToInvoicePage', () => {
     expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
   });
 
+  it('reads the list again when an invoice of another analyst is announced, and only then (4-N11)', async () => {
+    renderPage();
+    expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
+    const onChange = observer.factory.mock.calls[0][0];
+    const calls = vi.mocked(getFinancePendingOperations).mock.calls.length;
+    vi.mocked(getFinancePendingOperations).mockResolvedValue(page(OPERATIONS.slice(2)));
+    onChange(['finance_invoices']);
+    await waitFor(() => expect(screen.queryByLabelText('Seleccionar DEV-TAT-0001')).not.toBeInTheDocument());
+    expect(getFinancePendingOperations).toHaveBeenCalledTimes(calls + 1);
+    onChange(['finance_receipts']);
+    onChange(['finance_approved_services']);
+    await waitFor(() => expect(getFinancePendingOperations).toHaveBeenCalledTimes(calls + 2));
+  });
+
   it('tells an expired session and a station without access apart', async () => {
     vi.mocked(getFinancePendingOperations).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 401 }));
     const { unmount } = renderPage();

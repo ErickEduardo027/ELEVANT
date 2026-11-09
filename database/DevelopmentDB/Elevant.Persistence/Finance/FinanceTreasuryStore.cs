@@ -82,7 +82,7 @@ internal sealed partial class FinanceTreasuryStore(ElevantDbContext context, IAc
         if (prior is null) return null;
         var owner = await context.Users.AnyAsync(a => a.Id == prior.ActorAccountId && a.PublicId == actorId, ct);
         return owner && prior.ResourceId == resource && prior.Operation == operation && prior.PayloadHash == hash
-            ? new(prior.ResultId, prior.ResultVersion, true, null) : Fail(FinanceTreasuryFailure.Conflict);
+            ? new(prior.ResultId, prior.ResultVersion, true, null) : Fail(FinanceTreasuryFailure.Conflict, "idempotency_conflict");
     }
     private async Task<FinanceTreasuryResult> ExecuteAsync(Guid actorId, Guid requestId, string permission,
         Func<ActorContext, long, Task<FinanceTreasuryResult>> action, CancellationToken ct, bool recoverUnique = true)
@@ -115,8 +115,13 @@ internal sealed partial class FinanceTreasuryStore(ElevantDbContext context, IAc
         }
     }
     private static bool Conflict(Exception e) => e is SqlException s && s.Number is 1205 or 2601 or 2627 or 3960;
+    /// <summary>
+    /// Audits the command, announces it and stores its idempotency result. 4-N11: <paramref name="invoices"/> are the
+    /// invoices of the station whose balance the command changed; «Por facturar» and «Facturas» hear them.
+    /// </summary>
     private async Task<FinanceTreasuryResult> CompleteAsync(long actorId, Guid requestId, Guid resource, string operation,
-        string hash, Guid resultId, AuditableEntity aggregate, long organizationId, long stationId, string reason, CancellationToken ct)
+        string hash, Guid resultId, AuditableEntity aggregate, long organizationId, long stationId, string reason,
+        IReadOnlyCollection<Guid>? invoices, CancellationToken ct)
     {
         var now = timeProvider.GetUtcNow(); Touch(aggregate);
         context.Set<AuditEntry>().Add(new AuditEntry { PublicId = Guid.CreateVersion7(), OccurredAt = now,
@@ -126,6 +131,8 @@ internal sealed partial class FinanceTreasuryStore(ElevantDbContext context, IAc
             StationId = stationId, Source = AuditSource.Api, CorrelationId = requestId, RequestId = requestId.ToString("D"), Reason = reason,
             MetadataJson = JsonSerializer.Serialize(new { ResourceId = resource, PayloadHash = hash }) });
         await FinanceApprovedServiceChangeWriter.AddAsync(context, stationId, resultId, now, "finance_receipts", ct);
+        if (invoices is { Count: > 0 })
+            await FinanceApprovedServiceChangeWriter.AddInvoicesAsync(context, stationId, invoices, now, ct);
         var airlineId = await context.Airlines.AsNoTracking().Where(a => a.OrganizationId == organizationId)
             .Select(a => a.PublicId).SingleAsync(ct);
         await AirlineOperationChangeWriter.AddTreasuryAsync(context, organizationId, airlineId, now, ct);

@@ -103,5 +103,49 @@ public sealed partial class SqlServerMigrationTests
             var pdf = new FinancialDocumentPdfRenderer().RenderCardReceipt(receiptData);
             Assert.StartsWith("%PDF-", System.Text.Encoding.ASCII.GetString(pdf, 0, 5));
         }
+
+        // 4-N09: Treasury never reverses nor refunds a card receipt; the receipt of the portal stays true.
+        await using (var context = CreateContext(database.ConnectionString))
+        {
+            var treasury = new FinanceTreasuryStore(context, new Elevant.Persistence.Identity.EfActorContextResolver(context,
+                TimeProvider.System), TimeProvider.System);
+            var today = Elevant.Application.Common.BusinessCalendar.Today(DateTimeOffset.UtcNow);
+            var card = (await treasury.GetAsync(FinanceAccount, receipt.PublicId, ct))!;
+            var application = Assert.Single(card.Movements, item => item.Kind == "Application");
+            foreach (var refused in new[]
+            {
+                await treasury.ReverseAsync(FinanceAccount, receipt.PublicId, new Elevant.Application.Abstractions.Finance.FinanceTreasuryReverseInput(
+                    Guid.NewGuid(), card.Version, today, "Reverse the card application", application.Id), ct),
+                await treasury.ReverseAsync(FinanceAccount, receipt.PublicId, new Elevant.Application.Abstractions.Finance.FinanceTreasuryReverseInput(
+                    Guid.NewGuid(), card.Version, today, "Reverse the card receipt"), ct),
+                await treasury.RefundAsync(FinanceAccount, receipt.PublicId, new Elevant.Application.Abstractions.Finance.FinanceTreasuryRefundInput(
+                    Guid.NewGuid(), card.Version, today, "Refund the card", 1m, "QA-CARD-REFUND"), ct),
+            })
+                Assert.Equal((Elevant.Application.Abstractions.Finance.FinanceTreasuryFailure.Conflict, (string?)"card_payment_not_reversible"),
+                    (refused.Failure!.Value, refused.Code));
+            Assert.Equal(card.Movements.Count, (await treasury.GetAsync(FinanceAccount, receipt.PublicId, ct))!.Movements.Count);
+            var still = await PayAsync(airlineAccount, "4111111111111111", total, Guid.NewGuid());
+            Assert.Equal((CardPaymentFailure.Conflict, "invoice_paid"), (still.Failure!.Value, still.Reasons.Single()));
+
+            // Any other receipt is still reversed; its key with another body is idempotency_conflict, a stale version
+            // version_conflict.
+            var airline = await setup.Airlines.AsNoTracking().Where(item => item.Id == receipt.AirlineId).Select(item => item.PublicId)
+                .SingleAsync(ct);
+            var transferKey = Guid.NewGuid();
+            var transfer = new Elevant.Application.Abstractions.Finance.FinanceTreasuryReceiptInput(transferKey, airline, station, "USD",
+                10m, "QA-TRANSFER-4N09", "Transfer", today, "Synthetic transfer");
+            var recorded = await treasury.RecordAsync(FinanceAccount, transfer, ct);
+            Assert.True(recorded.IsSuccess, $"{recorded.Failure} {recorded.Code}");
+            var reusedKey = await treasury.RecordAsync(FinanceAccount, transfer with { Amount = 11m }, ct);
+            Assert.Equal("idempotency_conflict", reusedKey.Code);
+            var stale = await treasury.ReverseAsync(FinanceAccount, recorded.Id!.Value,
+                new Elevant.Application.Abstractions.Finance.FinanceTreasuryReverseInput(Guid.NewGuid(), "AAAAAAAAAAA=", today,
+                    "Reverse the transfer"), ct);
+            Assert.Equal("version_conflict", stale.Code);
+            var reversed = await treasury.ReverseAsync(FinanceAccount, recorded.Id!.Value,
+                new Elevant.Application.Abstractions.Finance.FinanceTreasuryReverseInput(Guid.NewGuid(), recorded.Version!, today,
+                    "Reverse the transfer"), ct);
+            Assert.True(reversed.IsSuccess, $"{reversed.Failure} {reversed.Code}");
+        }
     }
 }

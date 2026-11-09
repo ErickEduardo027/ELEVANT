@@ -48,6 +48,23 @@ public sealed class AirlineTreasuryEndpointsTests(ElevantApiFactory factory) : I
         using var problem = JsonDocument.Parse(await missing.Content.ReadAsStringAsync(ct));
         Assert.Equal("not_found", problem.RootElement.GetProperty("code").GetString());
     }
+    /// <summary>4-N17: the airline downloads the PDF of a note of its own invoice; another note is a coded 404.</summary>
+    [Fact]
+    public async Task TheAirlineDownloadsTheNoteOfItsOwnInvoice()
+    {
+        var stub = new Stub(); await using var app = App(stub); using var client = app.CreateClient(); var ct = TestContext.Current.CancellationToken;
+        using var anonymous = await client.GetAsync($"/api/v1/airline/portal/adjustment-notes/{stub.NoteId}/document", ct);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymous.StatusCode);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var pdf = await client.GetAsync($"/api/v1/airline/portal/adjustment-notes/{stub.NoteId}/document", ct);
+        Assert.Equal((HttpStatusCode.OK, "application/pdf"), (pdf.StatusCode, pdf.Content.Headers.ContentType?.MediaType));
+        Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString((await pdf.Content.ReadAsByteArrayAsync(ct))[..5]));
+        Assert.Equal(Account, stub.Actor);
+        using var other = await client.GetAsync($"/api/v1/airline/portal/adjustment-notes/{Guid.NewGuid()}/document", ct);
+        Assert.Equal(HttpStatusCode.NotFound, other.StatusCode);
+        using var problem = JsonDocument.Parse(await other.Content.ReadAsStringAsync(ct));
+        Assert.Equal("not_found", problem.RootElement.GetProperty("code").GetString());
+    }
     private WebApplicationFactory<Program> App(Stub stub) => factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
         { services.RemoveAll<IFinanceTreasuryStore>(); services.AddSingleton<IFinanceTreasuryStore>(stub); }));
     private static string Token()
@@ -77,5 +94,15 @@ public sealed class AirlineTreasuryEndpointsTests(ElevantApiFactory factory) : I
         public Task<FinanceTreasuryAdjustmentsData?> AdjustmentsAsync(Guid actorId, Guid invoiceId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<FinanceTreasuryResult> IssueAdjustmentAsync(Guid actorId, Guid invoiceId, FinanceTreasuryAdjustmentInput input, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<FinanceTreasuryStatementData?> StatementAsync(Guid actorId, DateOnly asOf, Guid? stationId, Guid? airlineId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Guid NoteId { get; } = Guid.NewGuid();
+        public Task<FinanceAdjustmentNoteDocumentData?> AdjustmentNoteDocumentAsync(Guid actorId, Guid noteId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<AirlineTreasuryReadResult<FinanceAdjustmentNoteDocumentData>> PortalAdjustmentNoteDocumentAsync(Guid actorId, Guid noteId, CancellationToken cancellationToken = default)
+        {
+            Actor = actorId;
+            return Task.FromResult(noteId == NoteId ? new AirlineTreasuryReadResult<FinanceAdjustmentNoteDocumentData>(new FinanceAdjustmentNoteDocumentData(NoteId, "E340000000001", "Credit", Guid.NewGuid(), "NF-QA", "E310000000001", "USD", 59m,
+            new DateOnly(2026, 10, 18), DateTimeOffset.UtcNow, "Servicio cobrado de más", "AVIAM Ltd.", "130000001", "QA Airline", "QA",
+            "PUJ", [new FinanceAdjustmentNoteDocumentLineData(1, "DEV-TAT-0001", "GPU", "Ground power", 1m, 59m, 50m, 9m, 18m)]), null)
+                : new AirlineTreasuryReadResult<FinanceAdjustmentNoteDocumentData>(null, FinanceTreasuryFailure.NotFound));
+        }
     }
 }

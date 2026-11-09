@@ -13,6 +13,8 @@ export const ITBIS_RATE = 0.18;
 /** The limits of one invoice until the server publishes them with the first page (4-N06). */
 export const DEFAULT_LIMITS = Object.freeze({ maxOperations: 100, maxLines: 500, maxDays: 31 });
 const PAGE_SIZE = 50;
+/** 4-N11: the feed resources that change «Por facturar»: an approved or invoiced operation, an issued invoice. */
+export const TO_INVOICE_RESOURCES = Object.freeze(['finance_approved_services', 'finance_invoices']);
 const EMPTY = Object.freeze({ operations: [], nextCursor: null, totalPending: 0, airlines: [], limits: DEFAULT_LIMITS });
 
 /** The calendar month that contains the date, moved by whole months. */
@@ -89,8 +91,9 @@ export function useToInvoiceData(initialStationId) {
 
   useEffect(() => {
     if (!accountId) return undefined;
+    // 4-N11: an issuance announces each invoiced operation and the new invoice.
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('finance_approved_services')) refresh();
+      if (TO_INVOICE_RESOURCES.some(resource => resources.includes(resource))) refresh();
     });
     void observer.start().catch(() => {});
     window.addEventListener('focus', refresh);

@@ -73,7 +73,7 @@ public static class DependencyInjection
             Elevant.Application.Commercial.AirlineRegistryLookup>();
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
-        services.AddSingleton<Elevant.Application.Finance.ICardPaymentGateway, SimulatedCardGateway>();
+        AddCardPayments(services, configuration, environment);
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
         services.AddSingleton<IOccReportRenderer, OccReportRenderer>();
@@ -84,5 +84,33 @@ public static class DependencyInjection
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 
         return services;
+    }
+
+    /// <summary>Configuration section of the card gateway (4-N05).</summary>
+    public const string CardPaymentsModeKey = "CardPayments:Mode";
+
+    /// <summary>
+    /// 4-N05: the card gateway is chosen explicitly. <c>CardPayments:Mode</c> is Disabled by default; Simulated
+    /// (ADR-0036) only runs in Development or Test, so a Production API with it never starts. Without a gateway the
+    /// portal shows card payment as unavailable and every payment is refused before the card is checked.
+    /// </summary>
+    private static void AddCardPayments(IServiceCollection services, IConfiguration configuration, string environment)
+    {
+        var configured = configuration[CardPaymentsModeKey]?.Trim();
+        // Only the exact names: no numbers and no flag combinations.
+        var mode = string.IsNullOrEmpty(configured) ? CardPaymentMode.Disabled
+            : Enum.GetValues<CardPaymentMode>().Cast<CardPaymentMode?>().SingleOrDefault(value =>
+                  string.Equals(value.ToString(), configured, StringComparison.OrdinalIgnoreCase))
+              ?? throw new InvalidOperationException("CardPayments:Mode must be Disabled or Simulated.");
+        if (mode == CardPaymentMode.Simulated)
+        {
+            if (environment is not ("Development" or "Test" or "Testing"))
+                throw new InvalidOperationException("The simulated card gateway requires Development or Test.");
+            services.AddSingleton<ICardPaymentGateway, SimulatedCardGateway>();
+            services.AddSingleton(CardPaymentAvailability.SimulatedGateway);
+            return;
+        }
+        services.AddSingleton<ICardPaymentGateway, DisabledCardGateway>();
+        services.AddSingleton(CardPaymentAvailability.Disabled);
     }
 }

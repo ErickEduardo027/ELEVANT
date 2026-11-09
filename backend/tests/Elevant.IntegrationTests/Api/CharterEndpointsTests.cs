@@ -42,23 +42,70 @@ public sealed class CharterEndpointsTests(ElevantApiFactory factory) : IClassFix
         Assert.Equal("1200 NW 72nd Ave", state.Details!.CarrierAddress);
     }
 
+    /// <summary>
+    /// 4-N22: confirming the prepayment takes the Idempotency-Key header and the version Finance saw; a correction takes
+    /// its reason (5 to 500 characters). Every refusal but a 401 carries its code, model-binding failures included.
+    /// </summary>
     [Fact]
-    public async Task FinanceNeedsItsPermissionToConfirmAPrepayment()
+    public async Task FinanceConfirmsAPrepaymentWithItsPermissionKeyAndVersion()
     {
         var state = new State();
         await using var application = Create(state);
         using var client = Authenticated(application);
-        using var forbidden = await client.SendAsync(Json(HttpMethod.Put, $"/api/v1/finance/charters/{Guid.NewGuid():D}/prepayment",
-            """{"amount":260,"reference":"TRF-0001"}"""), TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        var ct = TestContext.Current.CancellationToken;
+        var charterId = Guid.NewGuid();
+        HttpRequestMessage Confirm(string body, string? key = "new")
+        {
+            var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/finance/charters/{charterId:D}/prepayment")
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json"),
+            };
+            if (key is not null)
+                request.Headers.TryAddWithoutValidation("Idempotency-Key", key == "new" ? Guid.NewGuid().ToString("D") : key);
+            return request;
+        }
+        async Task<(HttpStatusCode, string?)> Send(HttpRequestMessage request)
+        {
+            using var response = await client.SendAsync(request, ct);
+            var body = await response.Content.ReadFromJsonAsync<JsonElement>(ct);
+            return (response.StatusCode, body.TryGetProperty("code", out var code) ? code.GetString() : null);
+        }
+
+        Assert.Equal((HttpStatusCode.Forbidden, "forbidden"),
+            await Send(Confirm("""{"amount":260,"reference":"TRF-0001","version":"AAAA"}""")));
+        Assert.Null(state.Amount);
         state.Permissions = [CharterHandler.FinanceReadPermission, CharterHandler.FinanceConfirmPermission];
-        using var invalid = await client.SendAsync(Json(HttpMethod.Put, $"/api/v1/finance/charters/{Guid.NewGuid():D}/prepayment",
-            """{"amount":260,"reference":"<x>"}"""), TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
-        using var confirmed = await client.SendAsync(Json(HttpMethod.Put, $"/api/v1/finance/charters/{Guid.NewGuid():D}/prepayment",
-            """{"amount":260,"reference":"TRF-0001"}"""), TestContext.Current.CancellationToken);
-        Assert.Equal(HttpStatusCode.OK, confirmed.StatusCode);
-        Assert.Equal((260m, "TRF-0001"), (state.Amount, state.Reference));
+        Assert.Equal((HttpStatusCode.BadRequest, "idempotency_key_required"),
+            await Send(Confirm("""{"amount":260,"reference":"TRF-0001","version":"AAAA"}""", null)));
+        Assert.Equal((HttpStatusCode.BadRequest, "idempotency_key_required"),
+            await Send(Confirm("""{"amount":260,"reference":"TRF-0001","version":"AAAA"}""", "not-a-key")));
+        Assert.Equal((HttpStatusCode.BadRequest, "expected_version_required"),
+            await Send(Confirm("""{"amount":260,"reference":"TRF-0001"}""")));
+        Assert.Equal((HttpStatusCode.BadRequest, "invalid_charter_request"),
+            await Send(Confirm("""{"amount":260,"reference":"<x>","version":"AAAA"}""")));
+        Assert.Equal((HttpStatusCode.BadRequest, "invalid_charter_request"),
+            await Send(Confirm("""{"amount":0,"reference":"TRF-0001","version":"AAAA"}""")));
+        Assert.Equal((HttpStatusCode.BadRequest, "invalid_charter_request"), await Send(Confirm("""{"amount":""")));
+        Assert.Equal((HttpStatusCode.BadRequest, "reason_required"),
+            await Send(Confirm("""{"amount":260,"reference":"TRF-0001","version":"AAAA","reason":"abc"}""")));
+        Assert.Equal((HttpStatusCode.BadRequest, "reason_required"), await Send(Confirm(
+            $$"""{"amount":260,"reference":"TRF-0001","version":"AAAA","reason":"{{new string('x', 501)}}"}""")));
+        Assert.Null(state.Amount);
+
+        var key = Guid.NewGuid().ToString("D");
+        Assert.Equal((HttpStatusCode.OK, (string?)null), await Send(Confirm(
+            """{"amount":260,"reference":" TRF-0001 ","version":" AAAA ","reason":"  Monto mal capturado  "}""", key)));
+        Assert.Equal((260m, "TRF-0001", "Monto mal capturado", "AAAA", Guid.Parse(key)),
+            (state.Amount, state.Reference, state.Reason, state.Version, state.Key));
+        Assert.Equal((HttpStatusCode.OK, (string?)null),
+            await Send(Confirm("""{"amount":260,"reference":"TRF-0001","version":"AAAA"}""")));
+        Assert.Null(state.Reason);
+        state.ConfirmFailure = (MasterDataFailure.Conflict, "charter_prepayment_applied");
+        Assert.Equal((HttpStatusCode.Conflict, "charter_prepayment_applied"),
+            await Send(Confirm("""{"amount":300,"reference":"TRF-0002","version":"AAAA","reason":"Monto mal capturado"}""")));
+        state.ConfirmFailure = (MasterDataFailure.NotFound, "not_found");
+        Assert.Equal((HttpStatusCode.NotFound, "not_found"),
+            await Send(Confirm("""{"amount":260,"reference":"TRF-0001","version":"AAAA"}""")));
     }
 
     /// <summary>
@@ -165,6 +212,10 @@ public sealed class CharterEndpointsTests(ElevantApiFactory factory) : IClassFix
         public CharterDetailsWriteRequest? Details { get; private set; }
         public decimal? Amount { get; private set; }
         public string? Reference { get; private set; }
+        public string? Reason { get; private set; }
+        public string? Version { get; private set; }
+        public Guid? Key { get; private set; }
+        public (MasterDataFailure Failure, string Code)? ConfirmFailure { get; set; }
         public string[] Permissions { get; set; } = [];
         public string? AddCode { get; init; }
         public (MasterDataFailure Failure, string Code)? ReopenFailure { get; set; }
@@ -210,12 +261,14 @@ public sealed class CharterEndpointsTests(ElevantApiFactory factory) : IClassFix
         public Task<IReadOnlyList<CharterPrepaymentItem>> ListForFinanceAsync(IReadOnlyCollection<Guid> stations,
             CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<CharterPrepaymentItem>>([]);
 
-        public Task<(CharterPrepaymentItem? Item, CharterPrepaymentFailure? Failure)> ConfirmPrepaymentAsync(Guid accountId,
-            IReadOnlyCollection<Guid> stations, Guid charterId, decimal amount, string reference, string? requestId,
-            CancellationToken cancellationToken = default)
+        public Task<MasterDataResult<CharterPrepaymentItem>> ConfirmPrepaymentAsync(Guid accountId,
+            IReadOnlyCollection<Guid> stations, Guid charterId, decimal amount, string reference, string? reason,
+            string expectedVersion, Guid idempotencyKey, string? requestId, CancellationToken cancellationToken = default)
         {
-            (Amount, Reference) = (amount, reference);
-            return Task.FromResult<(CharterPrepaymentItem?, CharterPrepaymentFailure?)>((Item(amount, reference), null));
+            if (ConfirmFailure is { } failure)
+                return Task.FromResult(MasterDataResult<CharterPrepaymentItem>.Failed(failure.Failure, failure.Code));
+            (Amount, Reference, Reason, Version, Key) = (amount, reference, reason, expectedVersion, idempotencyKey);
+            return Task.FromResult(MasterDataResult<CharterPrepaymentItem>.Success(Item(amount, reference)));
         }
 
         public Task<MasterDataResult<CharterPrepaymentItem>> ReopenPrepaymentAsync(Guid accountId,

@@ -274,6 +274,42 @@ it("invalidates the airline Finance read model on an issuance or treasury hint",
   expect(screen.getByTestId("finance-revision")).toHaveTextContent("2");
 });
 
+it("re-reads Finance when the tab returns, never on the periodic refresh nor an operations hint (4-N25)", async () => {
+  sessionStorage.setItem(AIRLINE_SESSION_STORAGE_KEY, JSON.stringify({
+    accessToken: session.accessToken, expiresAt: session.expiresAt,
+  }));
+  let currentName = "Demo Airlines";
+  vi.stubGlobal("fetch", vi.fn<typeof fetch>(async input =>
+    new URL(String(input)).pathname === "/api/v1/auth/session" ? json({ actor }) : json({ ...bootstrap, name: currentName })));
+  // The 25 s refresh is run by hand; every other timer keeps working.
+  const periodic: Array<() => void> = [];
+  const original = window.setInterval.bind(window);
+  const interval = vi.spyOn(window, "setInterval").mockImplementation(((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+    if (timeout === 25_000 && typeof handler === "function") { periodic.push(handler as () => void); return 0; }
+    return original(handler, timeout, ...args);
+  }) as typeof window.setInterval);
+  try {
+    render(<AirlineSessionProvider baseUrl="https://api.example.test"><Harness /></AirlineSessionProvider>);
+    await screen.findByText("Demo Airlines");
+    await waitFor(() => expect(observe).toHaveBeenCalledOnce());
+    expect(periodic).toHaveLength(1);
+    currentName = "Periodic Airlines";
+    act(() => periodic[0]());
+    await screen.findByText("Periodic Airlines");
+    expect(screen.getByTestId("finance-revision")).toHaveTextContent("0");
+    currentName = "Operations Airlines";
+    act(() => observe.mock.calls[0][0].onChanges(["airline_operations"]));
+    await screen.findByText("Operations Airlines");
+    expect(screen.getByTestId("finance-revision")).toHaveTextContent("0");
+    currentName = "Focused Airlines";
+    act(() => { window.dispatchEvent(new Event("focus")); });
+    await screen.findByText("Focused Airlines");
+    expect(screen.getByTestId("finance-revision")).toHaveTextContent("1");
+  } finally {
+    interval.mockRestore();
+  }
+});
+
 it("renews an expired tab session with its refresh token and ends the chain on sign out", async () => {
   const refreshToken = "aB3-dE5_fG7hI9jK1lM3nO5pQ7rS9tU1";
   const renewed = "zZ9-yY8_xX7wW6vV5uU4tT3sS2rR1qQ0";

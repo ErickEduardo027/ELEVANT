@@ -143,10 +143,16 @@ public static class DependencyInjection
                 new Elevant.Persistence.Finance.EfCardReceiptAttachmentResolver(
                     provider.GetRequiredService<Elevant.Persistence.Finance.EfCardPaymentStore>(),
                     provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
+                // 4-N23: the PDF of the credit or debit note its email announces.
+                new Elevant.Persistence.Finance.EfAdjustmentNoteAttachmentResolver(
+                    provider.GetRequiredService<ElevantDbContext>(),
+                    provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
             ]));
         services.AddScoped<IAirlinePermitStore, EfAirlinePermitStore>();
         services.AddScoped<IAirlinePortalUserStore, EfAirlinePortalUserStore>();
         services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
+        // 4-N23: the one notice of each invoice that passed its due date with a balance.
+        services.AddScoped<Elevant.Application.Finance.IInvoiceOverdueNoticeStore, EfInvoiceOverdueNoticeStore>();
         services.AddScoped<Elevant.Application.Finance.IFinancePendingOperationsReadStore, EfFinancePendingOperationsReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
         services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();

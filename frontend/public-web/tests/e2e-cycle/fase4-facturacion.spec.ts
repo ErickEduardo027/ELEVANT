@@ -4,12 +4,15 @@ import { expect, type Page, test } from "@playwright/test";
 import { call, expectCall, login } from "./support/api";
 import { loginPortal, loginPrivate, snap } from "./support/browser";
 import { API, loadRun, saveRun } from "./support/env";
+import { waitForEmail } from "./support/mailpit";
 import { pdfText } from "./support/pdf";
 
 // Fase 4 · Facturación: Finanzas invoices the run's approved operation (simulated e-CF), the airline
 // pays it by card in its portal (a declined card first, then an approved one, against the simulated
-// gateway) and gets the receipt, and Finanzas sees the card payment. The card numbers are the public
-// test numbers of the simulated gateway; no screenshot is taken while they are typed.
+// gateway) and gets the receipt, and Finanzas sees the card payment. Then (block C) Treasury cannot
+// reverse that card receipt, Finanzas credits part of the invoice with an E34 note that reaches the
+// airline by email, and the portal shows the note and the credit in its favour. The card numbers are
+// the public test numbers of the simulated gateway; no screenshot is taken while they are typed.
 
 const DECLINED = "4000 0000 0000 0002";
 const APPROVED = "4111 1111 1111 1111";
@@ -144,6 +147,149 @@ test("Finanzas ve el pago con tarjeta y la factura cobrada", async ({ page }) =>
   // Card data never comes back: Finanzas sees only the brand and the last 4 digits.
   expect(await page.content()).not.toMatch(/4111\s?1111\s?1111|4000\s?0000\s?0000\s?0002/);
   await snap(page, "fase4-finanzas-pago-tarjeta");
+});
+
+type LedgerInvoice = { id: string; airlineId: string; stationId: string; fiscalNumber: string | null };
+type TreasuryReceipt = { id: string; reference: string; method: string; version: string;
+  movements: Array<{ id: string; kind: string; invoiceId: string | null }> };
+
+test("Tesorería no revierte ni devuelve el cobro con tarjeta: se corrige con una nota de crédito (4-N09)", async ({ page }) => {
+  const run = loadRun();
+  const invoice = run.invoice as { fiscalNumber: string };
+  const airline = run.airline as { name: string };
+  const token = await login("finance");
+  const found = await expectCall<{ invoices: LedgerInvoice[] }>(200, token, "GET",
+    `/finance/invoices?search=${encodeURIComponent(invoice.fiscalNumber)}&limit=25`);
+  const summary = found.data.invoices[0];
+  const receipts = await expectCall<{ items: TreasuryReceipt[] }>(200, token, "GET",
+    `/finance/receipts?page=1&limit=25&stationId=${summary.stationId}&airlineId=${summary.airlineId}`);
+  const applied = (receipt: TreasuryReceipt) => receipt.movements.find(movement => movement.kind === "Application" &&
+    movement.invoiceId === summary.id);
+  const card = receipts.data.items.find(receipt => receipt.method === "Card" && applied(receipt));
+  expect(card, "the approved card payment left its receipt applied to the invoice").toBeTruthy();
+  // Neither the application, nor the whole receipt, nor a refund: the portal's receipt never contradicts the invoice.
+  const base = { expectedVersion: card!.version, effectiveOn: businessDay(), reason: "Ciclo E2E: un cobro con tarjeta no se revierte" };
+  const attempts: Array<[string, Record<string, unknown>]> = [
+    [`/finance/receipts/${card!.id}/reversals`, { ...base, requestId: randomUUID(), applicationId: applied(card!)!.id }],
+    [`/finance/receipts/${card!.id}/reversals`, { ...base, requestId: randomUUID() }],
+    [`/finance/receipts/${card!.id}/refunds`, { ...base, requestId: randomUUID(), amount: 1, reference: "E2E-DEVOLUCION" }],
+  ];
+  for (const [route, body] of attempts) {
+    const refused = await expectCall<{ code?: string }>(409, token, "POST", route, body);
+    expect(refused.data.code, route).toBe("card_payment_not_reversible");
+  }
+
+  await loginPrivate(page, "finance");
+  await openFinance(page, "Facturas");
+  await page.getByRole("tab", { name: "Cobros" }).click();
+  const receiptsPanel = page.getByRole("tabpanel", { name: "Cobros" });
+  await receiptsPanel.getByRole("combobox", { name: /^Aerolínea/ }).selectOption({ label: airline.name });
+  await receiptsPanel.getByRole("button", { name: `Ver ${card!.reference}` }).click();
+  const drawer = page.getByRole("dialog", { name: `Cobro ${card!.reference}` });
+  await expect(drawer.getByText(/no se revierte ni se devuelve/)).toBeVisible();
+  await expect(drawer.getByRole("button", { name: /Revertir|Devolver remanente/ })).toHaveCount(0);
+  await snap(page, "fase4-finanzas-cobro-tarjeta-no-reversible");
+});
+
+test("Finanzas emite una nota de crédito E34 con su PDF y la aerolínea recibe el aviso sin saldo (4-N17, 4-N23)", async ({ page }) => {
+  const run = loadRun();
+  const invoice = run.invoice as { fiscalNumber: string };
+  const representative = run.representative as { email: string };
+  if (run.creditNote) return; // resumed run: already credited
+  await loginPrivate(page, "finance");
+  await openFinance(page, "Facturas");
+  await page.getByRole("button", { name: invoice.fiscalNumber }).click();
+  const notes = page.getByRole("region", { name: "Notas de ajuste" });
+  await notes.getByRole("button", { name: "Emitir nota" }).click();
+  const dialog = page.getByRole("dialog", { name: "Emitir nota de ajuste" });
+  const quantity = dialog.getByLabel(/Cantidad línea 1/);
+  const amountField = dialog.getByLabel(/Importe línea 1/);
+  const maxQuantity = Number(await quantity.getAttribute("max"));
+  const maxAmount = Number(await amountField.getAttribute("max"));
+  expect(maxAmount, "the paid invoice still admits a credit on its first line").toBeGreaterThan(1);
+  // A partial credit of the paid invoice: at most half of the line, so the airline keeps a credit in its favour.
+  const credit = Math.min(10, Math.floor(maxAmount * 50) / 100);
+  await quantity.fill(maxQuantity > 0 ? String(Math.min(maxQuantity, 1)) : "0");
+  await amountField.fill(credit.toFixed(2));
+  await dialog.getByLabel("Motivo").fill("Ciclo E2E: servicio prestado parcialmente");
+  const since = Date.now();
+  await dialog.getByRole("button", { name: "Confirmar nota" }).click();
+  // 4-N17: a note on an E31 invoice gets its own simulated e-NCF, E34 for a credit.
+  const notice = notes.getByRole("status").filter({ hasText: "emitida" });
+  await expect(notice).toHaveText(/^Nota de crédito electrónica E34\d{10} emitida\./);
+  const number = /E34\d{10}/.exec(await notice.innerText())![0];
+  const download = page.waitForEvent("download");
+  await notes.getByRole("button", { name: `Descargar PDF de Nota de crédito electrónica ${number}` }).click();
+  const pdf = await download;
+  expect(pdf.suggestedFilename()).toBe(`nota-${number}.pdf`);
+  const text = pdfText(fs.readFileSync(await pdf.path()));
+  expect(text).toContain(`e-NCF ${number}`);
+  expect(text).toContain(`Modifica: ${invoice.fiscalNumber}`);
+  expect(text).toMatch(/Simulaci.n . sin validez fiscal/);
+  await snap(page, "fase4-finanzas-nota-credito");
+
+  // 4-N23: the airline is told of the note with its PDF, and the email states no balance that could contradict it.
+  const email = await waitForEmail(representative.email, new RegExp(`Nota de crédito ${number}`), since);
+  expect(email.subject).toContain(invoice.fiscalNumber);
+  expect(email.attachments.map(item => item.FileName)).toContain(`nota-${number}.pdf`);
+  expect(email.text).not.toMatch(/saldo[^.\n]*\d/i);
+  expect(email.text).toMatch(/Simulaci.n . sin validez fiscal/);
+  saveRun({ creditNote: { number, amount: credit } });
+});
+
+test("El portal muestra la nota y el saldo a favor en «Estado de cuenta» y no vacía la lista al revalidar (4-N17, 4-N24, 4-N25, 4-N30)", async ({ page }) => {
+  const run = loadRun();
+  const invoice = run.invoice as { fiscalNumber: string };
+  const note = run.creditNote as { number: string } | undefined;
+  test.skip(!note, "The credit note of this run was not issued.");
+  await loginPortal(page, (run.representative as { email: string }).email);
+  await page.getByRole("link", { name: "Facturas", exact: true }).first().click();
+  await expect(page.getByRole("heading", { level: 1, name: "Facturas" })).toBeVisible();
+  const card = page.getByRole("region", { name: `Factura ${invoice.fiscalNumber}` });
+  // 4-N24: paid by card and credited afterwards, it is «Pagada», never «Anulada».
+  await expect(card).toContainText("Pagada");
+  const favour = page.getByLabel("Resumen de facturas").getByText("Saldo a favor", { exact: true })
+    .locator("xpath=following-sibling::strong[1]");
+  await expect(favour).toHaveText(/^(USD|DOP) \d/);
+
+  // 4-N25: the periodic refresh (25 s) and the focus keep the invoices and their PDF on screen.
+  const invoicePdf = card.getByRole("button", { name: `Descargar PDF de Factura ${invoice.fiscalNumber}` });
+  for (let second = 0; second < 30; second += 1) {
+    await expect(invoicePdf).toBeVisible();
+    await expect(page.getByText("Cargando facturas autorizadas…")).toHaveCount(0);
+    await page.waitForTimeout(1_000);
+  }
+  await page.evaluate(() => { window.dispatchEvent(new Event("focus")); });
+  await expect(invoicePdf).toBeVisible();
+  await expect(page.getByText("Cargando facturas autorizadas…")).toHaveCount(0);
+
+  // 4-N30: «Estado de cuenta» is a view of the same page, with the credit in the airline's favour.
+  await page.getByRole("button", { name: "Estado de cuenta" }).click();
+  const statement = page.getByRole("region", { name: "Estado de cuenta de aerolínea" });
+  const credit = statement.getByText("Crédito a favor", { exact: true }).first().locator("xpath=following-sibling::strong[1]");
+  await expect(credit).toHaveText(/^(USD|DOP) \d/);
+  expect(Number((await credit.innerText()).replace(/^[A-Z]{3}\s/, "").replace(/,/g, ""))).toBeGreaterThan(0);
+  await snap(page, "fase4-portal-estado-de-cuenta");
+  await statement.getByRole("button", { name: `Ver factura ${invoice.fiscalNumber}` }).click();
+  const noteCard = statement.getByRole("article", { name: `Nota de crédito electrónica ${note!.number}` });
+  await expect(noteCard).toBeVisible();
+  const download = page.waitForEvent("download");
+  await noteCard.getByRole("button", { name: `Descargar PDF de Nota de crédito electrónica ${note!.number}` }).click();
+  expect((await download).suggestedFilename()).toBe(`nota-${note!.number}.pdf`);
+  await snap(page, "fase4-portal-nota-credito");
+});
+
+test("El charter ve su factura y su prepago en el portal (4-N08, 4-N22)", async ({ page }) => {
+  const run = loadRun();
+  const charter = run.charter as { representativeEmail: string; fiscalNumber: string } | undefined;
+  // The cycle's phase 3 operates a contracted flight, not a charter: without one, the SQL integration tests
+  // (SqlServerMigrationTests.FinanceTreasuryPortal and .CharterPrepayment) cover the portal scope and the prepayment.
+  test.skip(!charter, "La corrida de la fase 3 no deja un charter facturado.");
+  await loginPortal(page, charter!.representativeEmail);
+  await page.getByRole("link", { name: "Facturas", exact: true }).first().click();
+  await expect(page.getByRole("region", { name: `Factura ${charter!.fiscalNumber}` })).toBeVisible();
+  await page.getByRole("button", { name: "Estado de cuenta" }).click();
+  await expect(page.getByRole("region", { name: "Estado de cuenta de aerolínea" }).getByText(/^PREPAGO/).first()).toBeVisible();
 });
 
 test("Finanzas consulta sus reportes del período", async ({ page }) => {

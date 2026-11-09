@@ -122,6 +122,9 @@ internal sealed class EfCardPaymentStore(ElevantDbContext context, TimeProvider 
                 stationId: invoice.StationId);
             await FinanceApprovedServiceChangeWriter.AddAsync(context, invoice.StationId, invoice.PublicId, now,
                 "finance_receipts", cancellationToken);
+            // 4-N11: «Facturas» hears the payment with the permissions it is read with.
+            await FinanceApprovedServiceChangeWriter.AddInvoicesAsync(context, invoice.StationId, [invoice.PublicId], now,
+                cancellationToken);
         }
         await AirlineOperationChangeWriter.AddTreasuryAsync(context, portal.OrganizationKey, portal.AirlineId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);

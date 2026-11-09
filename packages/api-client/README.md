@@ -86,6 +86,16 @@ de «Inicio» de una estación al día hábil de Santo Domingo; su validador es
 estricto y acepta `null` en cada sección que la plantilla de la cuenta no
 incluye. Es una lectura solo web.
 
+`getAirlineCardPaymentAvailability()` (4-N05) dice al portal si el entorno
+acepta pagos con tarjeta y si la pasarela es la simulada; su validador solo
+acepta `available` y `simulated`, y una simulación siempre está disponible.
+Sin pasarela, `payAirlineInvoiceByCard` recibe 409
+`card_payments_unavailable`. `confirmFinanceCharterPrepayment(charterId,
+{ amount, reference, version, reason? }, idempotencyKey)` (4-N22) confirma
+el prepago con la versión vista y la clave del intento; otro monto o
+referencia lo corrige con un motivo de 5 a 500 caracteres mientras no se haya
+aplicado.
+
 `getFinanceTariffs({ stationId, page?, limit? })` lista hasta 50 tarifas de
 versiones contractuales publicadas que cubren la estación con grant vigente de
 Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,
@@ -279,7 +289,10 @@ idempotencia en headers. La API deriva identidad, asignación, estado y recibo.
 
 Las descargas financieras (`getAirlineInvoiceDocumentById`,
 `getAirlinePaymentReceipt`, `getAirlineCardPaymentReceipt`,
-`getFinanceInvoiceDocumentById` y `getFinancePaymentReceipt`) usan rutas
+`getFinanceInvoiceDocumentById`, `getFinancePaymentReceipt` y, desde la
+fase 4 (4-N17), `getFinanceAdjustmentNoteDocument` y
+`getAirlineAdjustmentNoteDocument` para el PDF de una nota de crédito o
+débito con su e-NCF E34/E33) usan rutas
 generadas desde OpenAPI y el Bearer
 vigente. El transporte binario conserva errores HTTP tipados y rechaza HTML,
 respuestas vacías, firmas ajenas a `%PDF-` y cuerpos mayores de 8 MiB. Devuelve

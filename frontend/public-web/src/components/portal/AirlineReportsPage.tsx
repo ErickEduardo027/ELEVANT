@@ -6,7 +6,7 @@ import type { AirlineOperationPageResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import type { AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
-import { invoiceStatus, invoiceTitle } from "./AirlineFinancePage";
+import { invoiceStatus, invoiceTitle } from "./financeDocuments";
 import styles from "./AirlinePortalPage.module.css";
 import { operationStatusLabel } from "@/lib/operation-status";
 import { businessToday } from "@/lib/business-day";

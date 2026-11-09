@@ -3,11 +3,31 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Modal from '../../../components/Modal';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
-import { formatTreasuryMoney as money, getTreasuryAdjustments, issueTreasuryAdjustment, parseTreasuryAmount,
-  treasuryError, treasuryIntent, treasuryToday } from '../../../services/financeTreasuryService';
+import { adjustmentNoteTitle, downloadAdjustmentNoteDocument, formatTreasuryMoney as money, getTreasuryAdjustments,
+  issueTreasuryAdjustment, noteDocumentError, parseTreasuryAmount, treasuryError, treasuryIntent, treasuryToday,
+} from '../../../services/financeTreasuryService';
 
 const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const primary = 'min-h-[40px] rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
+const secondary = 'min-h-[36px] rounded-lg border border-black/10 px-3 py-1 text-xs font-semibold disabled:opacity-50 dark:border-white/10';
+
+/** 4-N17: the note's PDF (its e-NCF, the frozen ITBIS of each line), with its own recoverable error. */
+function NotePdfButton({ note }) {
+  const [state, setState] = useState({ busy: false, error: '' });
+  async function download() {
+    setState({ busy: true, error: '' });
+    try {
+      await downloadAdjustmentNoteDocument(note.id, `nota-${note.number}.pdf`);
+      setState({ busy: false, error: '' });
+    } catch (failure) { setState({ busy: false, error: noteDocumentError(failure) }); }
+  }
+  return <div className="flex flex-wrap items-center gap-2">
+    <button type="button" disabled={state.busy} aria-label={'Descargar PDF de ' + adjustmentNoteTitle(note)} className={secondary}
+      onClick={() => void download()}>{state.busy ? 'Preparando PDF…' : 'Descargar PDF'}</button>
+    {state.error && <p role="alert" className="text-xs text-status-danger">{state.error} <button type="button" className="font-semibold"
+      onClick={() => void download()}>Reintentar</button></p>}
+  </div>;
+}
 
 export default function AdjustmentNotesPanel({ invoiceId, invoiceNumber, currencyCode, onChanged, onOpenInvoice }) {
   const { access } = useDepartmentAccess(); const canRead = Boolean(access?.can('finance.adjustments.read'));
@@ -17,8 +37,8 @@ export default function AdjustmentNotesPanel({ invoiceId, invoiceNumber, currenc
   const load = useCallback(signal => {
     if (!canRead || !invoiceId) return Promise.resolve();
     return getTreasuryAdjustments(invoiceId, { signal }).then(
-      response => { if (!signal?.aborted) { setData(response); setError(''); } },
-      failure => { if (!signal?.aborted) { setData(null); setError(treasuryError(failure)); } },
+      response => { if (!signal?.aborted) { setData(response); setError(''); } return response; },
+      failure => { if (!signal?.aborted) { setData(null); setError(treasuryError(failure)); } return null; },
     );
   }, [canRead, invoiceId]);
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
@@ -41,8 +61,11 @@ export default function AdjustmentNotesPanel({ invoiceId, invoiceNumber, currenc
       if (!lines.length || form.reason.trim().length < 3) throw new Error('Complete al menos una línea y un motivo válido.');
       const payload = { expectedVersion: form.source.version, effectiveOn: form.effectiveOn, reason: form.reason.trim(), kind: form.kind, lines, relatedNoteId: form.relatedNoteId || null };
       intent.current = treasuryIntent(intent.current, payload);
-      await issueTreasuryAdjustment(invoiceId, intent.current.body); setForm(null); setNotice('Nota emitida. Los cobros y las devoluciones se gestionan por separado.');
-      await load(); onChanged?.();
+      const issued = await issueTreasuryAdjustment(invoiceId, intent.current.body); setForm(null);
+      // 4-N17: the notice names the note by its e-NCF E34/E33 when the invoice is an E31.
+      const note = (await load())?.notes?.find(item => item.id === issued?.id);
+      setNotice(`${note ? adjustmentNoteTitle(note) + ' emitida' : 'Nota emitida'}. Los cobros y las devoluciones se gestionan por separado.`);
+      onChanged?.();
     } catch (failure) { setError(treasuryError(failure)); }
     finally { submitting.current = false; setBusy(false); }
   }
@@ -57,10 +80,11 @@ export default function AdjustmentNotesPanel({ invoiceId, invoiceNumber, currenc
       {data.legacyCredited > 0 && <p className="text-xs">Créditos históricos: {money(data.legacyCredited, currencyCode)}. El límite disponible ya reserva ese importe.</p>}
       {!data.notes.length && <p className="text-sm text-text-secondary-light">Sin notas de ajuste emitidas.</p>}
       <ul className="space-y-2">{data.notes.map(note => <li id={'adjustment-' + note.id} key={note.id} className="space-y-1 rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
-        <p className="font-semibold">{note.kind === 'Credit' ? 'Crédito' : 'Débito'} · {note.number} · {money(note.amount, note.currencyCode)}</p>
+        <p className="font-semibold">{adjustmentNoteTitle(note)} · {money(note.amount, note.currencyCode)}</p>
         <p>{note.effectiveOn} · {note.reason}</p>
         {note.relatedNoteId && <a href={'#adjustment-' + note.relatedNoteId} className="text-accent-600">Nota vinculada: {data.notes.find(n => n.id === note.relatedNoteId)?.number ?? 'Ver referencia'}</a>}
         <p className="text-xs">{note.lines.length} {note.lines.length === 1 ? 'línea vinculada a la factura' : 'líneas vinculadas a la factura'}</p>
+        <NotePdfButton note={note} />
       </li>)}</ul>
     </>}
     <Modal open={Boolean(form)} onClose={close} title="Emitir nota de ajuste" widthClassName="max-w-2xl" footer={<><button type="button" disabled={busy} onClick={close} className="min-h-[40px] rounded-lg border px-4 py-2 text-sm">Cancelar</button>

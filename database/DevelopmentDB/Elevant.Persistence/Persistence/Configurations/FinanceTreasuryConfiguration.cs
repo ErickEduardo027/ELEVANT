@@ -1,5 +1,6 @@
 using Elevant.Domain.Entities;
 using Elevant.Domain.Entities.Commercial;
+using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Reference;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Identity;
@@ -30,6 +31,9 @@ internal sealed class FinanceTreasuryConfiguration :
         b.HasOne<Airline>().WithMany().HasForeignKey(x => x.AirlineId).OnDelete(DeleteBehavior.NoAction);
         b.HasOne<Station>().WithMany().HasForeignKey(x => x.StationId).OnDelete(DeleteBehavior.NoAction);
         b.HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.ActorAccountId).OnDelete(DeleteBehavior.NoAction);
+        // 4-N22: the receipt of a charter prepayment names its charter.
+        b.HasIndex(x => x.CharterAgreementId).HasFilter("[charter_agreement_id] IS NOT NULL");
+        b.HasOne<CharterAgreement>().WithMany().HasForeignKey(x => x.CharterAgreementId).OnDelete(DeleteBehavior.NoAction);
         Freeze(b, nameof(AuditableEntity.UpdatedAt));
     }
     public void Configure(EntityTypeBuilder<FinanceTreasuryMovement> b)
@@ -96,6 +100,9 @@ internal sealed class FinanceTreasuryConfiguration :
         b.ToTable("finance_treasury_adjustment_lines", "commercial", t =>
             t.HasCheckConstraint("ck_treasury_adjustment_line_amount", "[quantity] >= 0 AND [amount] > 0"));
         b.Property(x => x.Amount).HasPrecision(19, 4); b.Property(x => x.Quantity).HasPrecision(18, 4);
+        // 4-N17: the frozen fiscal breakdown of the line, with the precision of the invoice line it comes from.
+        b.Property(x => x.NetAmount).HasPrecision(19, 4); b.Property(x => x.TaxAmount).HasPrecision(19, 4);
+        b.Property(x => x.TaxRate).HasPrecision(9, 4);
         b.HasIndex(x => new { x.NoteId, x.InvoiceLineId }).IsUnique();
         b.HasOne<FinanceTreasuryAdjustmentNote>().WithMany().HasForeignKey(x => x.NoteId).OnDelete(DeleteBehavior.NoAction);
         b.HasOne<NonFiscalInvoiceLine>().WithMany().HasForeignKey(x => x.InvoiceLineId).OnDelete(DeleteBehavior.NoAction);

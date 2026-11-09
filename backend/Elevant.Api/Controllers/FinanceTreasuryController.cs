@@ -18,7 +18,8 @@ namespace Elevant.Api.Controllers;
 [ProducesResponseType<ProblemDetails>(404)]
 [ProducesResponseType<ProblemDetails>(409)]
 [Route("api/v{version:apiVersion}/finance")]
-public sealed class FinanceTreasuryController(IFinanceTreasuryStore treasury) : ControllerBase
+public sealed class FinanceTreasuryController(IFinanceTreasuryStore treasury, IFinancialDocumentPdfRenderer renderer)
+    : ControllerBase
 {
     private bool Actor(out Guid actorId) => Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out actorId);
     /// <summary>
@@ -124,6 +125,23 @@ public sealed class FinanceTreasuryController(IFinanceTreasuryStore treasury) : 
     {
         if (!Actor(out var actor)) return Error<FinanceTreasuryMutationResponse>(401, "Authentication failed.");
         return Result(await treasury.IssueAdjustmentAsync(actor, invoiceId, FinanceTreasuryResponseMapper.Map(request), cancellationToken));
+    }
+    /// <summary>
+    /// 4-N17: the PDF of a credit or debit note of an invoice of the actor's stations (finance.adjustments.read): the
+    /// e-NCF E34/E33 of a note on an E31 invoice and its frozen ITBIS, «Simulación — sin validez fiscal».
+    /// </summary>
+    [HttpGet("adjustment-notes/{noteId:guid}/document", Name = "GetFinanceAdjustmentNoteDocument")]
+    [Produces("application/pdf")]
+    [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "application/pdf")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<IActionResult> AdjustmentNoteDocument(Guid noteId, CancellationToken cancellationToken)
+    {
+        if (!Actor(out var actor)) return Error<object>(401, "Authentication failed.").Result!;
+        var note = await treasury.AdjustmentNoteDocumentAsync(actor, noteId, cancellationToken);
+        return note is null ? Error<object>(404, "Adjustment note was not found.").Result!
+            : File(renderer.RenderAdjustmentNote(note), "application/pdf", $"nota-{note.Number}.pdf");
     }
     [HttpGet("statements", Name = "GetFinanceTreasuryStatement")]
     [ProducesResponseType<FinanceTreasuryStatementResponse>(200)]

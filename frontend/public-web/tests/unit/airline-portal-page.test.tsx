@@ -87,6 +87,8 @@ type PayCall = (invoiceId: string, body: Record<string, unknown>, key: string) =
 const payInvoiceByCard = vi.fn<PayCall>(async () => { throw new Error("not mocked"); });
 const getInvoiceCardPayments = vi.fn(async (invoiceId: string) => ({ invoiceId, attempts: [] as unknown[] }));
 const getCardPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+// 4-N05: the environment of these tests has the simulated gateway.
+const getCardPaymentAvailability = vi.fn(async () => ({ available: true, simulated: true }));
 const getTreasuryReceipt = vi.fn(async () => { throw new ElevantApiError({ kind: "http", status: 404 }); });
 
 // 2-N20: the profile lists the airline's portal users and what the session may do.
@@ -97,7 +99,7 @@ const getPortalUsers = vi.fn(async () => ({
 }));
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getPaymentReceipt, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getCardPaymentAvailability, getPaymentReceipt, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {

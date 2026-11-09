@@ -123,3 +123,9 @@
 /* Long option names and the file input must not widen the panel on phones. */
 .panel, .draftCommentForm { min-width: 0; }
 .draftCommentForm select, .draftCommentForm input:not([type="checkbox"]):not([type="radio"]) { width: 100%; max-width: 100%; min-width: 0; box-sizing: border-box; }
+
+/* 4-N30: «Facturas | Estado de cuenta», two views of the same Finance page. */
+.viewSwitch { display: flex; flex-wrap: wrap; gap: .5rem; }
+.viewSwitch button { min-height: 2.5rem; padding: .5rem .95rem; border: 1px solid #b8c9df; border-radius: .5rem; background: #fff; color: #1155b4; font-weight: 700; cursor: pointer; }
+.viewSwitch button[aria-pressed="true"] { border-color: #123f81; background: #123f81; color: #fff; }
+.viewSwitch button:focus-visible { outline: 3px solid #ff5c00; outline-offset: 2px; }

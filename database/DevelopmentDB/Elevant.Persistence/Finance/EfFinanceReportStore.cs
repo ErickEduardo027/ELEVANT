@@ -3,6 +3,7 @@ using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Finance;
+using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -108,6 +109,11 @@ internal sealed partial class EfFinanceReportStore(
             row.StationId, row.CurrencyCode, row.Total, row.NetTotal, row.TaxTotal, row.CreatedAt, row.DueDate)).ToArray();
     }
 
+    /// <summary>
+    /// «Ingresos por período»: what was invoiced by month of issue, airline and currency. 4-N17: the credit and debit
+    /// notes effective in the period count in the month they take effect: «Notas de crédito» and «Notas de débito» show
+    /// them, and «Total», «Total USD» and «ITBIS» are net of them, so what is reported matches the documents in force.
+    /// </summary>
     private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
         RevenueAsync(Scope scope, CancellationToken cancellationToken)
     {
@@ -116,40 +122,96 @@ internal sealed partial class EfFinanceReportStore(
         var lines = (await context.NonFiscalInvoiceLines.AsNoTracking().Where(line => ids.Contains(line.InvoiceId))
                 .Select(line => new { line.InvoiceId, line.Kind, line.Amount, line.TaxAmount }).ToArrayAsync(cancellationToken))
             .ToLookup(line => line.InvoiceId);
+        var notes = await NotesAsync(scope, cancellationToken);
+        var keys = invoices.Select(invoice => (Month: Month(DateOf(invoice.IssuedAt)), invoice.Airline, invoice.CurrencyCode))
+            .Concat(notes.Select(note => (Month: Month(note.EffectiveOn), note.Airline, note.CurrencyCode)))
+            .Distinct().OrderBy(key => key.Month, StringComparer.Ordinal).ThenBy(key => key.Airline, StringComparer.Ordinal)
+            .ThenBy(key => key.CurrencyCode, StringComparer.Ordinal).ToArray();
         var rows = new List<IReadOnlyList<string?>>();
         decimal consolidated = 0;
         var missingRate = false;
-        foreach (var group in invoices.GroupBy(invoice => (Month: Month(DateOf(invoice.IssuedAt)), invoice.Airline,
-                     invoice.CurrencyCode)).OrderBy(group => group.Key.Month).ThenBy(group => group.Key.Airline))
+        foreach (var key in keys)
         {
+            var group = invoices.Where(invoice => (Month(DateOf(invoice.IssuedAt)), invoice.Airline, invoice.CurrencyCode) == key)
+                .ToArray();
+            var groupNotes = notes.Where(note => (Month(note.EffectiveOn), note.Airline, note.CurrencyCode) == key).ToArray();
             var groupLines = group.SelectMany(invoice => lines[invoice.Id]).ToArray();
-            var total = group.Sum(invoice => invoice.Total);
+            var credited = groupNotes.Where(note => note.Credit).Sum(note => note.Amount);
+            var debited = groupNotes.Where(note => !note.Credit).Sum(note => note.Amount);
+            var total = group.Sum(invoice => invoice.Total) - credited + debited;
             decimal? usd = 0;
             foreach (var invoice in group)
                 usd = usd is null ? null : await ToUsdAsync(invoice.Total, invoice.CurrencyCode, DateOf(invoice.IssuedAt),
                     cancellationToken) is { } converted ? usd + converted : null;
+            foreach (var note in groupNotes)
+                usd = usd is null ? null : await ToUsdAsync(note.Amount, note.CurrencyCode, note.EffectiveOn,
+                    cancellationToken) is { } converted ? usd + (note.Credit ? -converted : converted) : null;
             if (usd is null) missingRate = true; else consolidated += usd.Value;
-            rows.Add([group.Key.Month, group.Key.Airline, group.Key.CurrencyCode, group.Count().ToString(CultureInfo.InvariantCulture),
+            // An ITBIS a legacy line or note never froze stays unknown, never zero.
+            decimal? tax = groupLines.Any(line => line.TaxAmount == null) || groupNotes.Any(note => note.Tax == null) ? null
+                : groupLines.Sum(line => line.TaxAmount ?? 0m) - groupNotes.Where(note => note.Credit).Sum(note => note.Tax!.Value) +
+                  groupNotes.Where(note => !note.Credit).Sum(note => note.Tax!.Value);
+            rows.Add([key.Month, key.Airline, key.CurrencyCode, group.Length.ToString(CultureInfo.InvariantCulture),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Service).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Charge).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Adjustment).Sum(line => line.Amount)),
+                Money(credited), Money(debited),
                 Money(total), usd is null ? null : Money(usd.Value),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Package).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Excess).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Minimum).Sum(line => line.Amount)),
-                groupLines.Any(line => line.TaxAmount == null) ? null : Money(groupLines.Sum(line => line.TaxAmount ?? 0m))]);
+                tax is null ? null : Money(tax.Value)]);
         }
-        var summary = invoices.GroupBy(invoice => invoice.CurrencyCode)
-            .Select(group => new FinanceReportMetric($"Facturado {group.Key}", Money(group.Sum(invoice => invoice.Total)),
-                "money", group.Key)).Append(new FinanceReportMetric("Consolidado USD", Money(consolidated), "money", "USD"))
+        var currencies = invoices.Select(invoice => invoice.CurrencyCode).Concat(notes.Select(note => note.CurrencyCode))
+            .Distinct().Order(StringComparer.Ordinal).ToArray();
+        var summary = currencies.Where(currency => invoices.Any(invoice => invoice.CurrencyCode == currency))
+            .Select(currency => new FinanceReportMetric($"Facturado {currency}",
+                Money(invoices.Where(invoice => invoice.CurrencyCode == currency).Sum(invoice => invoice.Total)), "money", currency))
+            .Concat(currencies.Select(currency => new FinanceReportMetric($"Facturado neto {currency}",
+                Money(invoices.Where(invoice => invoice.CurrencyCode == currency).Sum(invoice => invoice.Total) -
+                    notes.Where(note => note.CurrencyCode == currency && note.Credit).Sum(note => note.Amount) +
+                    notes.Where(note => note.CurrencyCode == currency && !note.Credit).Sum(note => note.Amount)),
+                "money", currency)))
+            .Append(new FinanceReportMetric("Consolidado USD", Money(consolidated), "money", "USD"))
             .Append(new FinanceReportMetric("Facturas", invoices.Length.ToString(CultureInfo.InvariantCulture), "number"))
             .ToArray();
         return (summary,
             [Col("month", "Mes"), Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("invoices", "Facturas", "number"),
                 Col("services", "Servicios", "money"), Col("charges", "Cargos", "money"), Col("adjustments", "Ajustes", "money"),
+                Col("credit_notes", "Notas de crédito", "money"), Col("debit_notes", "Notas de débito", "money"),
                 Col("total", "Total", "money"), Col("usd", "Total USD", "money"), Col("packages", "Paquetes", "money"),
                 Col("excess", "Excedentes", "money"), Col("minimum", "Mínimos", "money"), Col("tax", "ITBIS", "money")],
             rows, missingRate ? ["Algunas facturas en DOP no tienen tasa registrada y no se consolidan en USD."] : []);
+    }
+
+    /// <summary>
+    /// 4-N17: a credit or debit note effective in the period, of an invoice of the scope whenever it was issued. <c>Tax</c>
+    /// is the ITBIS it froze, null when any of its lines froze none (a note issued before the breakdown).
+    /// </summary>
+    private sealed record NoteRow(bool Credit, decimal Amount, decimal? Tax, DateOnly EffectiveOn, string Airline,
+        string CurrencyCode);
+
+    private async Task<NoteRow[]> NotesAsync(Scope scope, CancellationToken cancellationToken)
+    {
+        var first = scope.Filter.From;
+        var last = scope.Filter.To;
+        var notes = await (from note in context.Set<FinanceTreasuryAdjustmentNote>().AsNoTracking()
+                           join invoice in context.NonFiscalInvoices.AsNoTracking() on note.InvoiceId equals invoice.Id
+                           join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
+                           where scope.StationIds.Contains(invoice.StationId) &&
+                                 (scope.AirlineId == null || invoice.AirlineId == scope.AirlineId) &&
+                                 (scope.Filter.CurrencyCode == null || invoice.CurrencyCode == scope.Filter.CurrencyCode) &&
+                                 note.EffectiveOn >= first && note.EffectiveOn <= last
+                           select new { note.Id, note.Kind, note.Amount, note.EffectiveOn, airline.Name, note.CurrencyCode })
+            .ToArrayAsync(cancellationToken);
+        var noteIds = notes.Select(note => note.Id).ToArray();
+        var taxes = (await context.Set<FinanceTreasuryAdjustmentLine>().AsNoTracking().Where(line => noteIds.Contains(line.NoteId))
+                .Select(line => new { line.NoteId, line.TaxAmount }).ToArrayAsync(cancellationToken))
+            .ToLookup(line => line.NoteId);
+        return notes.Select(note => new NoteRow(note.Kind == FinanceTreasuryAdjustmentKind.Credit, note.Amount,
+            taxes[note.Id].Any() && taxes[note.Id].All(line => line.TaxAmount != null)
+                ? taxes[note.Id].Sum(line => line.TaxAmount!.Value) : null,
+            note.EffectiveOn, note.Name, note.CurrencyCode)).ToArray();
     }
 
     private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>

@@ -16,9 +16,18 @@ internal static class FinanceTreasuryPosting
 {
     public sealed record Posted(FinanceTreasuryReceipt Receipt, decimal Applied);
 
+    public static Task<Posted> ReceiveAndApplyAsync(ElevantDbContext context, NonFiscalInvoice invoice,
+        long actorAccountId, PaymentMethod method, string reference, decimal amount, string reason, DateTimeOffset now,
+        CancellationToken cancellationToken) => ReceiveAndApplyAsync(context, invoice, actorAccountId, method, reference,
+        amount, reason, now, null, cancellationToken);
+
+    /// <summary>
+    /// Receives <paramref name="amount"/> and applies it up to the invoice balance; <paramref name="charterAgreementId"/>
+    /// names the charter whose prepayment the receipt is (4-N22).
+    /// </summary>
     public static async Task<Posted> ReceiveAndApplyAsync(ElevantDbContext context, NonFiscalInvoice invoice,
         long actorAccountId, PaymentMethod method, string reference, decimal amount, string reason, DateTimeOffset now,
-        CancellationToken cancellationToken)
+        long? charterAgreementId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(invoice);
         if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount));
@@ -29,7 +38,7 @@ internal static class FinanceTreasuryPosting
             PublicId = Guid.CreateVersion7(), AirlineId = invoice.AirlineId, StationId = invoice.StationId,
             ActorAccountId = actorAccountId, RequestId = Guid.CreateVersion7(), Reference = reference,
             CurrencyCode = invoice.CurrencyCode, Method = method, ReceivedOn = today, Amount = amount,
-            Reason = reason, CreatedAt = now, UpdatedAt = now,
+            Reason = reason, CharterAgreementId = charterAgreementId, CreatedAt = now, UpdatedAt = now,
         };
         context.Add(receipt);
         await context.SaveChangesAsync(cancellationToken);

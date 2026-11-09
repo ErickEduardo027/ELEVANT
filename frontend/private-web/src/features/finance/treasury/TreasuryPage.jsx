@@ -78,8 +78,11 @@ function ReceiptDetail({ receiptId, revision, onChanged, onOpenInvoice, preferre
     finally { submitting.current = false; setBusy(false); }
   }
   if (!receipt) return <div>{error ? <><p role="alert">{error}</p><button type="button" className={secondary} onClick={() => void load()}>Reintentar</button></> : <p role="status">Cargando cobro…</p>}</div>;
+  // 4-N09: a card receipt of the portal is neither reversed nor refunded; Finance corrects it with a credit note.
+  const card = receipt.method === 'Card';
   const canApply = access?.can('finance.receipts.apply') && !receipt.reversed && receipt.available > 0;
-  const canReverse = access?.can('finance.receipts.reverse') && !receipt.reversed;
+  const canReverse = access?.can('finance.receipts.reverse') && !receipt.reversed && !card;
+  const canRefund = access?.can('finance.receipts.refund') && !receipt.reversed && receipt.available > 0 && !card;
   const title = action?.kind === 'apply' ? 'Aplicar cobro' : action?.kind === 'refund' ? 'Devolver remanente' : action?.movement ? 'Revertir aplicación' : 'Revertir cobro';
   const confirm = action?.kind === 'apply' ? 'Confirmar aplicación' : action?.kind === 'refund' ? 'Confirmar devolución' : 'Confirmar reverso';
   return <div className="space-y-4">
@@ -89,9 +92,10 @@ function ReceiptDetail({ receiptId, revision, onChanged, onOpenInvoice, preferre
     </dl>
     <p className="text-sm">{receipt.receivedOn} · {METHOD_LABELS[receipt.method] ?? receipt.method}{receipt.reversed && ' · Revertido'}</p>
     <p className="text-sm">{receipt.reason}</p>
+    {card && <p role="note" className="rounded-lg bg-black/[.03] p-3 text-sm dark:bg-white/[.04]">Cobro con tarjeta desde el portal de la aerolínea: no se revierte ni se devuelve. Para corregirlo, emita una nota de crédito en la factura.</p>}
     <div className="flex flex-wrap gap-2">
       {canApply && <button type="button" className={primary} onClick={() => void open('apply')}>Aplicar a facturas</button>}
-      {access?.can('finance.receipts.refund') && !receipt.reversed && receipt.available > 0 && <button type="button" className={secondary} onClick={() => void open('refund')}>Devolver remanente</button>}
+      {canRefund && <button type="button" className={secondary} onClick={() => void open('refund')}>Devolver remanente</button>}
       {canReverse && receipt.applied === 0 && receipt.refunded === 0 && <button type="button" className={secondary} onClick={() => void open('reverse')}>Revertir cobro</button>}
     </div>
     {error && !action && <p role="alert" className="text-sm text-status-danger">{error}</p>}

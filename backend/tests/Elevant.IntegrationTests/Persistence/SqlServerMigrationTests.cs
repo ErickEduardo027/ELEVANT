@@ -7453,10 +7453,12 @@ public sealed partial class SqlServerMigrationTests
                 var period = new FinanceReportFilter(today.AddDays(-1), today.AddDays(1), stationId, null, null);
                 var revenue = (await reports.GetAsync(financeAccountId, "revenue", period, cancellationToken))!;
                 var revenueRow = Assert.Single(revenue.Rows);
+                // 4-N17 inserted the note columns: the cells are read by their key.
+                string? RevenueCell(string key) => revenueRow[revenue.Columns.ToList().FindIndex(column => column.Key == key)];
                 Assert.Equal(ReportMoney(billedLines.Where(item => item.Kind == PreinvoiceLineKind.Charge).Sum(item => item.Amount)),
-                    revenueRow[5]);
-                Assert.Equal(ReportMoney(invoice.Total), revenueRow[7]);
-                Assert.Equal(ReportMoney(billedLines.Sum(item => item.TaxAmount!.Value)), revenueRow[12]);
+                    RevenueCell("charges"));
+                Assert.Equal(ReportMoney(invoice.Total), RevenueCell("total"));
+                Assert.Equal(ReportMoney(billedLines.Sum(item => item.TaxAmount!.Value)), RevenueCell("tax"));
                 Assert.Empty((await reports.GetAsync(financeAccountId, "receivables", period, cancellationToken))!.Rows);
                 // Collections use the payment date the cashier recorded (the cheque is dated in August), in Spanish.
                 var collections = (await reports.GetAsync(financeAccountId, "collections",

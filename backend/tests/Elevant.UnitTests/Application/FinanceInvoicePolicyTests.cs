@@ -33,6 +33,66 @@ public sealed class FinanceInvoicePolicyTests
         Assert.Throws<ArgumentOutOfRangeException>(() => FinanceInvoicePolicy.FormatFiscalNumber(10_000_000_000));
     }
 
+    /// <summary>4-N17: a credit note on an E31 invoice is an E34 and a debit note an E33, each with its own sequence.</summary>
+    [Theory]
+    [InlineData("E34", null, "E340000000001")]
+    [InlineData("E34", "E340000000041", "E340000000042")]
+    [InlineData("E33", null, "E330000000001")]
+    [InlineData("E33", "E330000009999", "E330000010000")]
+    [InlineData("E34", "E330000000007", "E340000000001")]
+    [InlineData("E33", "TD-0190f0e0a0b0c0d0e0f0a0b0c0d0e0f0", "E330000000001")]
+    public void NoteFiscalNumbersFollowTheirOwnType(string prefix, string? highest, string expected)
+    {
+        Assert.Equal(expected, FinanceInvoicePolicy.NextFiscalNumber(prefix, highest));
+        Assert.True(FinanceInvoicePolicy.IsFiscalNumber(expected, prefix));
+        Assert.False(FinanceInvoicePolicy.IsFiscalNumber(expected));
+    }
+
+    [Fact]
+    public void NoteTypeIsE34ForACreditAndE33ForADebitAndNoOtherPrefixIsIssued()
+    {
+        Assert.Equal(("E34", "E33"), (FinanceInvoicePolicy.NoteFiscalPrefix(true), FinanceInvoicePolicy.NoteFiscalPrefix(false)));
+        // The E31 overloads keep their meaning.
+        Assert.Equal(FinanceInvoicePolicy.FormatFiscalNumber(7), FinanceInvoicePolicy.FormatFiscalNumber("E31", 7));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FinanceInvoicePolicy.FormatFiscalNumber("E32", 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FinanceInvoicePolicy.FormatFiscalNumber("E34", 0));
+    }
+
+    /// <summary>
+    /// 4-N17: the ITBIS a note adjusts on a line comes from the line's frozen gross and tax: proportional and rounded to
+    /// cents, except the note that exhausts the line, which takes the exact remainder so the notes never drift.
+    /// </summary>
+    [Theory]
+    // A GPU of 118 (net 100, ITBIS 18): half credited is 50 + 9; the whole line is 100 + 18.
+    [InlineData("118", "18", "0", "0", "59", "50", "9")]
+    [InlineData("118", "18", "0", "0", "118", "100", "18")]
+    // The last credit of a line takes the remaining ITBIS exactly.
+    [InlineData("118", "18", "59", "9", "59", "50", "9")]
+    [InlineData("100", "15.25", "66.66", "10.16", "33.34", "28.25", "5.09")]
+    // Rounded to cents, away from zero.
+    [InlineData("100", "15.25", "0", "0", "33.33", "28.25", "5.08")]
+    // A line that froze no tax adjusts no tax.
+    [InlineData("80", "0", "0", "0", "20", "20", "0")]
+    public void AdjustmentTaxIsProportionalAndTheLastNoteTakesTheRemainder(string gross, string tax, string adjusted,
+        string adjustedTax, string amount, string net, string expectedTax)
+    {
+        static decimal D(string value) => decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+        var breakdown = FinanceInvoicePolicy.AdjustmentTax(D(gross), D(tax), D(adjusted), D(adjustedTax), D(amount));
+        Assert.Equal((D(net), D(expectedTax)), (breakdown.Net, breakdown.Tax));
+        Assert.Equal(D(amount), breakdown.Net + breakdown.Tax);
+    }
+
+    [Fact]
+    public void ThreeCreditsOfALineAddUpToItsExactItbis()
+    {
+        var first = FinanceInvoicePolicy.AdjustmentTax(100m, 15.25m, 0m, 0m, 33.33m);
+        var second = FinanceInvoicePolicy.AdjustmentTax(100m, 15.25m, 33.33m, first.Tax, 33.33m);
+        var third = FinanceInvoicePolicy.AdjustmentTax(100m, 15.25m, 66.66m, first.Tax + second.Tax, 33.34m);
+        Assert.Equal(15.25m, first.Tax + second.Tax + third.Tax);
+        Assert.Equal(84.75m, first.Net + second.Net + third.Net);
+        Assert.Throws<ArgumentOutOfRangeException>(() => FinanceInvoicePolicy.AdjustmentTax(100m, 18m, 0m, 0m, 0m));
+    }
+
     [Theory]
     [InlineData("100", "18.00")]
     [InlineData("0.03", "0.01")]
