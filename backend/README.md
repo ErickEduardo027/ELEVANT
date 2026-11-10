@@ -246,7 +246,10 @@ a 60 minutos y usa 15 por defecto.
   sin solapamiento. El UUID de intención conserva la idempotencia del alta. El
   mismo vuelo de la aerolínea en el mismo día local se planifica una sola vez
   (`409 flight_already_planned`), y la importación del feed lo vincula a la escala
-  existente (`linked=true`). Las escalas nuevas, manuales o importadas, reciben el
+  existente (`linked=true`). El tipo de avión que la escala aún no tiene solo se
+  toma si la posición que ya ocupa lo admite; si no, responde
+  `409 stand_unavailable` con `reasons`, igual que la llegada y «Editar vuelo».
+  Las escalas nuevas, manuales o importadas, reciben el
   código legible `{ESTACIÓN}-{AAAAMMDD}-{NNN}`; los códigos `MAN-` y `EXT-` ya
   emitidos se conservan.
 - `POST /api/v1/occ/turnarounds/{turnaroundId}/arrival`, `.../stand` y

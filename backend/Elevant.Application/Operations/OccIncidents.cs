@@ -8,7 +8,9 @@ namespace Elevant.Application.Operations;
 /// note, closes it once resolved, or takes a resolved one back into review. A closed incident is final. Every change
 /// carries a note (8 to 2000 characters) and is kept as a step of the incident's history; types and severities are
 /// the tablet's (<see cref="RampIncidentPolicy"/>). OCC reports on an operation that is still open (neither approved
-/// nor cancelled), at a time not in the future and not before the operation's window.
+/// nor cancelled), at a time not in the future and not before the operation's window. Once the operation is approved
+/// or cancelled its incidents are history: OCC only resolves or closes the ones still open, never takes one back into
+/// review, so the approval's resolution stands until OCC reopens the review (3-H).
 /// </summary>
 public static class OccIncidentPolicy
 {
@@ -31,9 +33,20 @@ public static class OccIncidentPolicy
         _ => false,
     };
 
+    /// <summary>
+    /// <see cref="CanTransition(IncidentStatus, IncidentStatus)"/> on an operation in <paramref name="operation"/>:
+    /// approved or cancelled, only the steps that close an incident remain (resolve it, close it).
+    /// </summary>
+    public static bool CanTransition(IncidentStatus from, IncidentStatus to, GroundOperationStatus operation) =>
+        CanTransition(from, to) && (CanReport(operation) || to is IncidentStatus.Resolved or IncidentStatus.Closed);
+
     /// <summary>The states OCC may move an incident to from its current one.</summary>
     public static IReadOnlyList<IncidentStatus> NextStatuses(IncidentStatus from) =>
         Statuses.Where(to => CanTransition(from, to)).ToArray();
+
+    /// <summary>The states OCC may move an incident to from its current one, on an operation in that state.</summary>
+    public static IReadOnlyList<IncidentStatus> NextStatuses(IncidentStatus from, GroundOperationStatus operation) =>
+        Statuses.Where(to => CanTransition(from, to, operation)).ToArray();
 
     /// <summary>A known incident state by its exact name, or null.</summary>
     public static IncidentStatus? ParseStatus(string? value) =>
@@ -77,8 +90,13 @@ public static class OccIncidentCodes
     /// <summary>The time is in the future or before the operation's window.</summary>
     public const string OccurredAtInvalid = "incident_occurred_at_invalid";
 
-    /// <summary>The operation is approved or cancelled: its incidents are history.</summary>
+    /// <summary>
+    /// The operation is approved or cancelled: its incidents are history (no new report, none taken back into review).
+    /// </summary>
     public const string OperationClosed = "operation_closed";
+
+    /// <summary>The command cannot be read: the version in If-Match is not a strong ETag.</summary>
+    public const string RequestInvalid = "invalid_incident_request";
 }
 
 /// <summary>One step of an incident's life: its report, each change OCC made and the approval's resolution.</summary>

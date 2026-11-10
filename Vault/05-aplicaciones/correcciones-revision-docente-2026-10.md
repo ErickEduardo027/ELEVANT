@@ -179,10 +179,13 @@ estación. Las cifras cambian respecto de los reportes anteriores.*
   Cada cambio se audita y se anuncia en tiempo real.
 
   *Posterior al commit verificado: desde la fase 3 del ciclo, la llegada lleva
-  la hora local que escribe OCC y, si quiere, el tipo de avión, y se corrige con
-  motivo hasta la primera entrega. Los tres comandos aceptan `Idempotency-Key`
-  e `If-Match` opcionales y corren con la posición bloqueada, así que dos
-  vuelos nunca toman la misma
+  la hora local que escribe OCC (si no la toca y el vuelo aún no tiene hora, la
+  del servidor al guardar) y, si quiere, el tipo de avión; reemplazar una hora ya
+  informada pide motivo, y registrar o corregir la llegada solo vale hasta la
+  primera entrega. Los tres comandos aceptan `Idempotency-Key` e `If-Match`
+  opcionales (private-web los envía siempre) y corren en una transacción
+  serializable en la que la asignación bloquea la posición, así que dos vuelos
+  nunca toman la misma
   ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*
 - **Panorama.** Si el panorama no responde en 20 s, la pantalla avisa y ofrece
   reintentar. Las señales del feed ya no reinician una lectura en curso; antes,

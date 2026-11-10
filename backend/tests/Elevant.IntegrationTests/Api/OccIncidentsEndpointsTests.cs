@@ -80,8 +80,16 @@ public sealed class OccIncidentsEndpointsTests(ElevantApiFactory factory) : ICla
         Assert.Equal(((HttpStatusCode)428, "expected_version_required"),
             (unversioned.StatusCode, await CodeOf(unversioned, ct)));
         Assert.Null(state.ChangeInput!.ExpectedVersion);
-        using var malformed = await client.SendAsync(Post(path, Change, Guid.NewGuid(), "W/\"weak\""), ct);
-        Assert.Equal(HttpStatusCode.BadRequest, malformed.StatusCode);
+        // A version that is not a strong ETag is a malformed request, never a refused transition; the store is not asked.
+        state.Change = MasterDataResult<OccIncidentData>.Failed(MasterDataFailure.Conflict, "incident_transition_invalid");
+        foreach (var ifMatch in new[] { "W/\"weak\"", "AAAAAAAAB9E=", "\"AAAA\"AAAA\"" })
+        {
+            using var malformed = await client.SendAsync(Post(path, Change, Guid.NewGuid(), ifMatch), ct);
+            var problem = await malformed.Content.ReadFromJsonAsync<JsonElement>(ct);
+            Assert.Equal((HttpStatusCode.BadRequest, "invalid_incident_request", "La versión enviada en If-Match no es válida."),
+                (malformed.StatusCode, problem.GetProperty("code").GetString(), problem.GetProperty("title").GetString()));
+        }
+        Assert.Null(state.ChangeInput.ExpectedVersion);
 
         state.Change = MasterDataResult<OccIncidentData>.Failed(MasterDataFailure.Conflict, "version_conflict");
         using var stale = await client.SendAsync(Post(path, Change, Guid.NewGuid(), "\"AAAAAAAAB9A=\""), ct);
@@ -91,6 +99,13 @@ public sealed class OccIncidentsEndpointsTests(ElevantApiFactory factory) : ICla
         state.Change = MasterDataResult<OccIncidentData>.Failed(MasterDataFailure.Conflict, "incident_transition_invalid");
         using var invalid = await client.SendAsync(Post(path, Change, Guid.NewGuid(), "\"AAAAAAAAB9E=\""), ct);
         Assert.Equal((HttpStatusCode.Conflict, "incident_transition_invalid"), (invalid.StatusCode, await CodeOf(invalid, ct)));
+        // An approved or cancelled operation's incident is not taken back into review.
+        state.Change = MasterDataResult<OccIncidentData>.Failed(MasterDataFailure.Conflict, "operation_closed");
+        using var closed = await client.SendAsync(Post(path, Change, Guid.NewGuid(), "\"AAAAAAAAB9E=\""), ct);
+        var closedProblem = await closed.Content.ReadFromJsonAsync<JsonElement>(ct);
+        Assert.Equal((HttpStatusCode.Conflict, "operation_closed", "La operación ya está aprobada o cancelada."),
+            (closed.StatusCode, closedProblem.GetProperty("code").GetString(),
+                closedProblem.GetProperty("title").GetString()));
 
         state.Change = MasterDataResult<OccIncidentData>.Success(Incident() with { Status = "Resolved", Version = "AAAAAAAAB9I=" });
         var key = Guid.NewGuid();

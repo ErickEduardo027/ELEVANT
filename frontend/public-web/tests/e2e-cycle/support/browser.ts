@@ -3,7 +3,7 @@ import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 import { login } from "./api";
 import { API, emailOf, passwordOf, PRIVATE_WEB, PUBLIC_API, PUBLIC_WEB, type Role, SHOTS_DIR } from "./env";
-import { loginCode, waitForEmail } from "./mailpit";
+import { emailIds, loginCode, waitForEmail } from "./mailpit";
 
 /** Node's WebSocket (undici) also takes request headers, which the DOM typing does not declare. */
 const NodeWebSocket = WebSocket as unknown as new (url: string, init: { headers: Record<string, string> }) => WebSocket;
@@ -88,11 +88,12 @@ export async function loginPortal(page: Page, email: string) {
   await page.goto(`${PUBLIC_WEB}/login`);
   await page.getByRole("textbox", { name: "Correo corporativo" }).fill(email);
   await page.getByLabel("Contraseña", { exact: true }).fill(passwordOf(email));
+  const earlier = await emailIds(email, /código/i);
   const since = Date.now();
   await page.getByRole("button", { name: "Iniciar sesión", exact: true }).click();
   const codeBox = page.getByRole("textbox", { name: /Código de verificación/ });
   await codeBox.waitFor({ timeout: 60_000 });
-  await codeBox.fill(loginCode(await waitForEmail(email, /código/i, since)));
+  await codeBox.fill(loginCode(await waitForEmail(email, /código/i, since, undefined, earlier)));
   await page.getByRole("button", { name: "Verificar y entrar" }).click();
   await expect(page).toHaveURL(/\/portal/, { timeout: 60_000 });
 }

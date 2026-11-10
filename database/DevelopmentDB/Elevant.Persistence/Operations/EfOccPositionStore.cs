@@ -147,9 +147,9 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
                 {
                     if (OccTurnaroundRules.IsAircraftTypeLocked(operation?.CurrentStatus, submitted))
                         return Outcome.Fail(OccPositionFailure.Conflict, "aircraft_type_locked");
-                    if (await SizeReasonsAsync(current, operation?.PlannedStartAt, operation?.PlannedEndAt, type.SizeCategory,
-                            cancellationToken) is { Count: > 0 } reasons)
-                        return Outcome.Fail(OccPositionFailure.Conflict, "stand_unavailable", reasons);
+                    var reasons = await StandAvailability.SizeReasonsAsync(context, current.StationId, current.TurnaroundId,
+                        operation?.PlannedStartAt, operation?.PlannedEndAt, type.SizeCategory, cancellationToken);
+                    if (reasons.Count > 0) return Outcome.Fail(OccPositionFailure.Conflict, "stand_unavailable", reasons);
                     turnaround.AircraftTypeId = type.Id;
                 }
             }
@@ -379,24 +379,6 @@ internal sealed partial class EfOccPositionStore(ElevantDbContext context, IActo
     }
 
     private static string Version(byte[] rowVersion) => Convert.ToBase64String(rowVersion);
-
-    /// <summary>
-    /// The rules a new aircraft size breaks on the turnaround's current stand (ADR-0030): a wide-body never takes a
-    /// narrow-body stand or the neighbour it limits. Without a stand nothing is checked.
-    /// </summary>
-    private async Task<IReadOnlyList<string>> SizeReasonsAsync(Context current, DateTimeOffset? startsAt, DateTimeOffset? endsAt,
-        AircraftSizeCategory? size, CancellationToken cancellationToken)
-    {
-        if (size is null || startsAt is not { } start || endsAt is not { } end) return [];
-        var stand = await (from assignment in context.Set<StandAssignment>().AsNoTracking()
-                           join item in context.Stands.AsNoTracking() on assignment.StandId equals item.Id
-                           where assignment.TurnaroundId == current.TurnaroundId && assignment.AssignedTo == null
-                           select (Guid?)item.PublicId).SingleOrDefaultAsync(cancellationToken);
-        if (stand is not { } standId) return [];
-        var placement = await StandAvailability.CheckAsync(context, current.StationId, standId, start, end, size,
-            current.TurnaroundId, cancellationToken);
-        return placement.Reasons.Where(reason => reason is "stand_narrowbody_only" or "neighbour_widebody").ToArray();
-    }
 
     private async Task<(Context? Scope, OccPositionFailure? Failure)> ScopeAsync(Guid actorId, Guid turnaroundId,
         CancellationToken cancellationToken)

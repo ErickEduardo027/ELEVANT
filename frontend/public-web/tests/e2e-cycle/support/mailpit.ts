@@ -12,15 +12,28 @@ export async function attachment(email: Email, fileName: RegExp): Promise<Buffer
   return Buffer.from(await response.arrayBuffer());
 }
 
-/** Waits for the newest email to `to` created after `since` whose subject matches. */
-export async function waitForEmail(to: string, subject: RegExp, since: number, timeoutMs = 90_000): Promise<Email> {
+/** IDs of the emails to `to` whose subject matches: an email already listed is never the one a new request waits for. */
+export async function emailIds(to: string, subject: RegExp): Promise<string[]> {
+  const address = to.toLowerCase();
+  const response = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${address}`)}&limit=25`);
+  const list = await response.json() as { messages?: Summary[] };
+  return (list.messages ?? []).filter(item => subject.test(item.Subject) &&
+    item.To.some(recipient => recipient.Address.toLowerCase() === address)).map(item => item.ID);
+}
+
+/**
+ * Waits for the newest email to `to` created after `since` whose subject matches. `exclude` lists emails that already
+ * existed: a login a few seconds after another one would otherwise take the previous, already used code.
+ */
+export async function waitForEmail(to: string, subject: RegExp, since: number, timeoutMs = 90_000,
+  exclude: readonly string[] = []): Promise<Email> {
   const deadline = Date.now() + timeoutMs;
   const address = to.toLowerCase();
   while (Date.now() < deadline) {
     const response = await fetch(`${MAILPIT}/api/v1/search?query=${encodeURIComponent(`to:${address}`)}&limit=25`);
     const list = await response.json() as { messages?: Summary[] };
     const match = (list.messages ?? []).find(item => subject.test(item.Subject) && Date.parse(item.Created) >= since - 2_000 &&
-      item.To.some(recipient => recipient.Address.toLowerCase() === address));
+      !exclude.includes(item.ID) && item.To.some(recipient => recipient.Address.toLowerCase() === address));
     if (match) {
       const full = await (await fetch(`${MAILPIT}/api/v1/message/${match.ID}`)).json() as {
         Subject: string; Text?: string; HTML?: string; Attachments?: Email["attachments"] };

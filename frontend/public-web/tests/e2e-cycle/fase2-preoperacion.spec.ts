@@ -246,8 +246,12 @@ test("Gestión Humana programa el turno de hoy del agente", async ({ page }) => 
   await goPrivate(page, "/gestion-humana/schedules");
   const editor = page.getByRole("region", { name: "Editor semanal de turnos" });
   await expect(editor).toBeVisible();
-  if (await editor.getByRole("button", { name: `Quitar turno de ${AGENT} el ${today}` }).count() === 0) {
-    await editor.getByRole("button", { name: `Asignar turno a ${AGENT} el ${today}` }).click();
+  // Wait for the week to load: the agent's day offers either «Quitar» (a shift, e.g. from an earlier run) or «Asignar».
+  const remove = editor.getByRole("button", { name: `Quitar turno de ${AGENT} el ${today}` });
+  const assign = editor.getByRole("button", { name: `Asignar turno a ${AGENT} el ${today}` });
+  await expect(remove.or(assign).first()).toBeVisible();
+  if (await remove.count() === 0) {
+    await assign.click();
     const form = page.getByRole("form", { name: "Asignar turno" });
     await expect(form.getByText("Cargando estaciones del agente…")).toBeHidden();
     await form.getByLabel("Plantilla").selectOption(preset.id);

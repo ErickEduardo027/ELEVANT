@@ -80,15 +80,18 @@ la fase 2 del ciclo (`50e7778f`;
 ### Fase 3: el feed y las escalas que planifica OCC
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
-la fase 3 del ciclo (`f2d5c52c`;
-[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+la fase 3 del ciclo (`f2d5c52c`) y la corrección de los hallazgos pendientes de
+la revisión de su bloque A (`52141adb`), que esa verificación no cubre
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
 Lo que informa el proveedor nunca reemplaza una decisión de OCC:
 
 - **Sin escalas duplicadas.** Importar un par que coincide con una escala
   abierta de la misma estación, aerolínea, número de vuelo normalizado y día
-  local lo vincula a esa escala (`linked`) y completa el tipo de avión y la
-  matrícula si faltan; el alta manual del mismo vuelo se rechaza
-  (`flight_already_planned`).
+  local lo vincula a esa escala (`linked`) y completa la matrícula si falta y
+  el tipo de avión si la escala no lo tiene, siempre que el tipo no esté fijo y
+  la posición que ya ocupa lo admita (si no lo admite, `409 stand_unavailable`
+  con `reasons`, como la llegada y «Editar vuelo»); el alta manual del mismo
+  vuelo se rechaza (`flight_already_planned`).
 - **La llegada de OCC prevalece.** Desde que OCC registra la llegada, el tramo
   es `Manual` y las lecturas siguientes ya no reescriben su hora real.
 - **Cancelado o desviado.** Si el proveedor informa cancelado o desviado un

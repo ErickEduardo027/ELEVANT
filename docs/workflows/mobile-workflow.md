@@ -42,12 +42,13 @@ cola persistente por cuenta, en orden FIFO por operación, con la instalación
 registrada y una clave estable por comando. Para el inicio, los servicios, los
 cargos, el checklist, los hitos, los datos del vuelo, las firmas, las marcas del
 walk-around y el charter, el recibo del servidor repite el mismo resultado o el
-mismo código de rechazo; el chat se deduplica por la clave del mensaje (sin
-recibo: un rechazo se vuelve a evaluar) y la foto del walk-around viaja sin
-clave, como un `PUT` por marca en el que los mismos bytes cuentan como
-reintento. Las incidencias salen después por su propia cola, y la entrega a OCC,
-la corrección y la observación de asistencia conservan su propia clave
-reservada fuera de esa cola. El inicio y los servicios llevan
+mismo código de rechazo, salvo el `contract_not_in_force` del inicio, que no se
+guarda: la misma clave vuelve a evaluar el contrato; el chat se deduplica por la
+clave del mensaje (sin recibo: un rechazo se vuelve a evaluar) y la foto del
+walk-around viaja sin clave, como un `PUT` por marca en el que los mismos bytes
+cuentan como reintento. Las incidencias salen después por su propia cola, y la
+entrega a OCC, la corrección y la observación de asistencia conservan su propia
+clave reservada fuera de esa cola. El inicio y los servicios llevan
 la hora del toque, corregida con el reloj de ELEVANT, y lo que ELEVANT no
 confirmó sobrevive a un `401`, un `403` o al cierre de sesión, ligado a su
 cuenta. Una API anterior rechaza con `400` la transición de servicio que lleva
@@ -60,8 +61,12 @@ Las claves de firma/tokens futuros deben permanecer fuera de Git. Una
 evidencia real no se borrará antes de confirmación persistente ni se
 conservará sin política. La foto del walk-around va a un almacenamiento S3
 privado; si no está configurado o falla, la API responde `503` y la foto sigue
-en la tablet para un reintento
-([ADR-0032](../adr/0032-aviam-forms-signatures-and-walkaround.md)).
+en la tablet para un reintento automático
+([ADR-0032](../adr/0032-aviam-forms-signatures-and-walkaround.md)). El agente
+puede descartarla en «Sincronización» para entregar la operación sin ella, y una
+foto que la tablet no puede leer, o la de una marca que ELEVANT rechazó, no se
+envía y espera allí a que el agente la descarte
+([ADR-0039](../adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
 
 Para alcanzar la API privada compartida de Development, la tablet necesita
 Tailscale y HTTPS: el cliente rechaza otro esquema en

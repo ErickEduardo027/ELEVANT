@@ -98,7 +98,13 @@ entrar, pasa a la sesión nueva con su clave y su cuerpo para un reintento
 deliberado; otra cuenta no lo ve. En una tablet compartida, esas observaciones
 quedan en el dispositivo hasta entonces. Las horas que captura la tablet salen
 del reloj de ELEVANT. Tras un relevo, OCC puede registrar la asistencia del
-agente relevado después del inicio, aunque su asignación ya esté liberada.*
+agente relevado después del inicio, aunque su asignación ya esté liberada: el
+detalle de Planificación lee esa asignación de
+`GET occ/planning/turnarounds/{id}/attendance-assignments` (solo web,
+`operations.attendance.read`) y ofrece al agente en «Agente para asistencia»
+como «{nombre} (relevado)», después del agente actual. Una asignación liberada
+antes del inicio no recibe asistencia, y la tablet no escribe sobre una
+asignación liberada.*
 
 La migración es aditiva y sin datos de negocio. Esta nota verifica código de
 la rama en el commit indicado, no una promoción al VPS ni una prueba de

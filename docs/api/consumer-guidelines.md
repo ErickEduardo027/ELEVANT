@@ -127,8 +127,9 @@ cubre la asignación inicial.
   (`X-Elevant-Installation-Id`) y una `Idempotency-Key` estable. El servidor
   guarda el recibo ligado a la instalación (`integration.mobile_command_receipts`):
   un reintento con la misma clave y el mismo cuerpo no repite el trabajo y
-  devuelve el éxito o el mismo código de rechazo, y la misma clave con otro
-  cuerpo responde `idempotency_conflict`. El chat y la observación de asistencia
+  devuelve el éxito o el mismo código de rechazo (salvo `contract_not_in_force`
+  del inicio, que se vuelve a evaluar), y la misma clave con otro cuerpo
+  responde `idempotency_conflict`. El chat y la observación de asistencia
   se deduplican por su propia clave, sin ese recibo, y la foto del walk-around
   viaja sin clave; la cola y sus reglas están en el
   [flujo de Mobile Agent](../workflows/mobile-workflow.md).

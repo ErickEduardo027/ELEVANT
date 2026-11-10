@@ -70,4 +70,12 @@ describe('invoicingService (phase 4, block A)', () => {
     expect(blockingReasonMessage('exchange_rate_missing')).toBe(INVOICING_PROBLEM_MESSAGES.exchange_rate_missing);
     expect(blockingReasonMessage('toString')).toBe('Requiere revisión antes de facturar.');
   });
+
+  it('explains the reason a refused e-CF names: the shared client keeps it (3-N29)', () => {
+    const refused = reasons => new ElevantApiError({ kind: 'http', status: 422,
+      title: 'The operations cannot be invoiced together.', reasons });
+    expect(invoicingError(refused(['charge_excluded_by_contract'])))
+      .toBe(INVOICING_PROBLEM_MESSAGES.charge_excluded_by_contract);
+    expect(invoicingError(refused(['excluded_in_review']))).toBe(INVOICING_PROBLEM_MESSAGES.excluded_in_review);
+  });
 });

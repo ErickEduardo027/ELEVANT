@@ -15,6 +15,7 @@ sources:
   - backend/Elevant.Application/Finance/ServiceBillability.cs
   - backend/Elevant.Application/Finance/FinanceApprovedServicePolicy.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/ContractChargeExclusions.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/AutomaticSurchargeApplier.cs
   - database/DevelopmentDB/Elevant.Persistence/Operations/EfCharterStore.cs
   - backend/Elevant.Application/Commercial/ContractAmendment.cs
   - backend/Elevant.Application/Finance/BillingUnitNames.cs
@@ -174,8 +175,8 @@ Development usa 15 % para el nocturno y el festivo, como el formulario de AVIAM.
 Desde [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md):
 
 - **Una sola regla de lo facturable.** Se factura un servicio completado o en excepción, con cantidad ejecutada, que OCC no excluyó en la revisión ([`ServiceBillability`](../../backend/Elevant.Application/Finance/ServiceBillability.cs)). La aplican «Por facturar», el borrador interno, la emisión e-CF, los recargos automáticos y los reportes, también «Servicios ejecutados por aerolínea» de OCC.
-- **Exclusión de OCC.** OCC excluye de la facturación, con motivo, un servicio en excepción con cantidad mientras la revisión sigue abierta.
-- **Cargos que el contrato excluye.** OCC ya no los ve ni los añade. Un cargo heredado de ese tipo bloquea la operación en «Por facturar» y en la emisión con `charge_excluded_by_contract`, hasta que OCC reabra la revisión y lo quite: nunca se valora en 0 sin aviso ([política](../../backend/Elevant.Application/Finance/FinanceApprovedServicePolicy.cs)).
+- **Exclusión de OCC.** OCC excluye de la facturación, con motivo, un servicio en excepción con cantidad mientras la revisión sigue abierta. El tiempo extra y la demora que marca ELEVANT van a un servicio completado antes que a uno en excepción, y si OCC excluye el servicio que los lleva pasan al siguiente servicio facturable que los admite: la operación los sigue facturando una vez (corrección de la revisión del bloque D de la fase 3, `3b749a94`).
+- **Cargos que el contrato excluye.** OCC ya no los ve ni los añade. Un cargo heredado de ese tipo bloquea el servicio, y con él su operación, en «Por facturar» y en la emisión con `charge_excluded_by_contract`, hasta que OCC reabra la revisión y lo quite: nunca se valora en 0 sin aviso ([política](../../backend/Elevant.Application/Finance/FinanceApprovedServicePolicy.cs)).
 - **Lo firmado.** OCC solo aprueba la Orden de Servicio firmada o corregida por OCC, y los recargos automáticos se proyectan en la Orden antes de la firma: Finanzas factura lo que firmó la aerolínea. Una aprobación de la que nada se facturó se reabre en OCC; una ya facturada se corrige con una nota de crédito.
 - **Recargos recalculados.** El reenvío de una corrección mide el tiempo en tierra hasta la primera entrega y retira solo los recargos automáticos que ya no se detectan, y la evidencia que llega mientras OCC revisa los recalcula.
 

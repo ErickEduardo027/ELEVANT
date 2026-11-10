@@ -201,8 +201,9 @@ Esto tampoco demuestra latencia en el VPS ni entrega con la aplicación cerrada.
 ## Fase 3 del ciclo: la operación
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
-la fase 3 del ciclo (`f2d5c52c`;
-[ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+la fase 3 del ciclo (`f2d5c52c`) y la corrección de los hallazgos pendientes de
+la revisión de su bloque A (`52141adb`), que esa verificación no cubre
+([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
 Las pistas siguen sin llevar datos.
 
 **Pistas ampliadas:**
@@ -223,7 +224,9 @@ Las pistas siguen sin llevar datos.
 
 - para OCC (solo `ADMIN_OCC` con la estación en alcance), que abren
   Planificación: `flight_cancelled_by_provider` y `flight_diverted_by_provider`,
-  una sola vez cuando el proveedor cambia el estado de un vuelo importado;
+  una sola vez por escala y tipo cuando el proveedor cambia el estado de un
+  vuelo importado, aunque informe los dos tramos en la misma lectura o en
+  lecturas distintas (la fuente del aviso es la escala);
   `stand_change_unassigned`, cuando un cambio de posición deja la operación sin
   agente elegible; y `contract_not_in_force`, por cada operación sin iniciar
   cuyo contrato dejó de estar en vigor. Ninguna llega a la tablet;

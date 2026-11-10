@@ -7,10 +7,13 @@ export const INCIDENT_PROBLEM_MESSAGES = Object.freeze({
   incident_report_invalid:
     'Revise el tipo, la severidad, la descripción (8 a 2000 caracteres) y el código IATA de una desviación.',
   incident_occurred_at_invalid: 'La hora está en el futuro o es anterior a la operación.',
-  operation_closed: 'La operación ya está aprobada o cancelada: sus incidencias quedan como historia.',
+  operation_closed:
+    'La operación ya está aprobada o cancelada: sus incidencias quedan como historia y solo se resuelven o se cierran. ' +
+    'Se actualizó la lista.',
   reason_required: 'Escriba una nota de 8 a 2000 caracteres.',
   version_conflict: 'La incidencia cambió mientras la revisaba. Se actualizó la lista; intente de nuevo.',
   expected_version_required: 'Actualice la lista antes de cambiar la incidencia.',
+  invalid_incident_request: 'La versión de la incidencia no es válida. Actualice la lista antes de cambiarla.',
   idempotency_conflict: 'Ese envío ya se usó con otros datos. Se actualizó la lista; intente de nuevo.',
   not_found: 'La operación o la incidencia ya no está en su alcance.',
 });

@@ -71,8 +71,10 @@ asignación.
 
 > **Actualización (8 de noviembre de 2026).** El Mapa de posiciones registra la llegada con la
 > hora que OCC escribe en la hora local de la estación y, si quiere, el tipo de avión; desde ese
-> registro el tramo pasa a `Manual` y el feed ya no reescribe su hora real. Corregirla exige
-> motivo y solo vale antes de la primera entrega (`arrival_locked`). La llegada, la asignación de
+> registro el tramo pasa a `Manual` y el feed ya no reescribe su hora real. Reemplazar una hora
+> que el tramo ya tiene exige motivo (la de OCC siempre; la del feed, si OCC escribe otra), y
+> registrar o corregir la llegada solo vale antes de la primera entrega (`arrival_locked`), aunque
+> la hora sea del feed o el tramo no la tenga. La llegada, la asignación de
 > la posición y su liberación corren en una transacción serializable y aceptan una
 > `Idempotency-Key` y un `If-Match` opcionales (con la clave, el `If-Match` es obligatorio,
 > `expected_version_required`). La asignación bloquea primero la fila de la posición, así que dos

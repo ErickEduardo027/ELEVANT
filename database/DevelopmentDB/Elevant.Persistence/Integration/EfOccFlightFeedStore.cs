@@ -633,7 +633,8 @@ internal sealed class EfOccFlightFeedStore(
 
     /// <summary>
     /// Joins the pair to the planned turnaround: both proposals become Confirmed on its legs and the turnaround only
-    /// takes what it lacks (the aircraft type while it is not locked, the registration). Nothing else is created.
+    /// takes what it lacks (the aircraft type while it is not locked and the stand it holds admits it, the registration).
+    /// Nothing else is created.
     /// </summary>
     private async Task<OccFlightImportResult> LinkAsync(Turnaround planned, ExternalFlightProposal arrival,
         ExternalFlightProposal departure, long accountId, long organizationId, long stationId, Guid stationPublicId,
@@ -641,15 +642,24 @@ internal sealed class EfOccFlightFeedStore(
     {
         var now = Now();
         var operation = await context.GroundOperations.AsNoTracking().Where(item => item.TurnaroundId == planned.Id)
-            .Select(item => new { item.Id, item.PublicId, item.CurrentStatus }).FirstOrDefaultAsync(cancellationToken);
+            .Select(item => new { item.Id, item.PublicId, item.CurrentStatus, item.PlannedStartAt, item.PlannedEndAt })
+            .FirstOrDefaultAsync(cancellationToken);
         if (input.AircraftTypeId is { } requestedType && planned.AircraftTypeId is null)
         {
             var type = await context.AircraftTypes.AsNoTracking().Where(item => item.PublicId == requestedType && item.IsActive)
-                .Select(item => (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
+                .Select(item => new { item.Id, item.SizeCategory }).SingleOrDefaultAsync(cancellationToken);
             if (type is null) return Failed(OccFlightFeedFailure.Conflict, "aircraft_type_unavailable");
             var submitted = operation is not null && await context.OperationSubmissions.AsNoTracking()
                 .AnyAsync(item => item.GroundOperationId == operation.Id, cancellationToken);
-            if (!OccTurnaroundRules.IsAircraftTypeLocked(operation?.CurrentStatus, submitted)) planned.AircraftTypeId = type;
+            if (!OccTurnaroundRules.IsAircraftTypeLocked(operation?.CurrentStatus, submitted))
+            {
+                // ADR-0030: a wide-body never stays on the stand the flight already holds when that stand only takes
+                // narrow-bodies or an occupied neighbour limits it; the arrival and «Editar vuelo» refuse it the same way.
+                var reasons = await StandAvailability.SizeReasonsAsync(context, stationId, planned.Id,
+                    operation?.PlannedStartAt, operation?.PlannedEndAt, type.SizeCategory, cancellationToken);
+                if (reasons.Count > 0) return Failed(OccFlightFeedFailure.Conflict, "stand_unavailable", reasons);
+                planned.AircraftTypeId = type.Id;
+            }
         }
         planned.AircraftRegistration ??= arrival.AircraftRegistration ?? departure.AircraftRegistration;
         planned.UpdatedAt = now;

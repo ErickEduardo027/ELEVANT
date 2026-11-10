@@ -180,21 +180,22 @@ internal sealed class OperationDocumentAssembler(ElevantDbContext context, TimeP
 
     /// <summary>
     /// The charges the forms list, as (service, charge definition) pairs: the active marks, plus, before the hand-off,
-    /// the automatic surcharges it will mark (3-N02). In progress the operation ends now when push-back was not recorded,
-    /// as the first hand-off measures it; returned for correction it ends at the first hand-off and the automatic marks
-    /// the resubmission retires are left out, as the resubmission measures it (3-N09).
+    /// the automatic surcharges it will mark (3-N02). Before the first hand-off the operation ends now when push-back
+    /// was not recorded, as that hand-off measures it. Once handed off, a correction round (returned, or in progress
+    /// again since the agent opened the correction) ends at the first hand-off and leaves out the automatic marks the
+    /// resubmission retires, as the resubmission measures it (3-N09): the order signed in the correction is the one the
+    /// resubmission freezes.
     /// </summary>
     private async Task<IReadOnlyList<(long ServiceId, long ChargeDefinitionId)>> ChargesAsync(long operationId,
         GroundOperationStatus status, CancellationToken cancellationToken)
     {
-        if (status == GroundOperationStatus.InProgress)
-            return await AutomaticSurchargeApplier.ProjectAsync(context, operationId,
-                (timeProvider ?? TimeProvider.System).GetUtcNow(), false, cancellationToken);
-        if (status == GroundOperationStatus.Returned)
+        if (status is GroundOperationStatus.InProgress or GroundOperationStatus.Returned)
         {
-            var firstHandOff = await RampEvidenceWindowReader.FirstSubmittedAtAsync(context, operationId, cancellationToken)
-                               ?? (timeProvider ?? TimeProvider.System).GetUtcNow();
-            return await AutomaticSurchargeApplier.ProjectAsync(context, operationId, firstHandOff, true, cancellationToken);
+            var firstHandOff = await RampEvidenceWindowReader.FirstSubmittedAtAsync(context, operationId, cancellationToken);
+            return firstHandOff is { } handedOffAt
+                ? await AutomaticSurchargeApplier.ProjectAsync(context, operationId, handedOffAt, true, cancellationToken)
+                : await AutomaticSurchargeApplier.ProjectAsync(context, operationId,
+                    (timeProvider ?? TimeProvider.System).GetUtcNow(), false, cancellationToken);
         }
         return (await (from charge in context.Set<OperationServiceCharge>().AsNoTracking()
                        join service in context.Set<OperationService>().AsNoTracking()

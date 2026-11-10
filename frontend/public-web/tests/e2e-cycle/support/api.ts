@@ -1,5 +1,5 @@
 import { API, emailOf, nextPassword, passwordOf, type Role, savePassword } from "./env";
-import { loginCode, waitForEmail } from "./mailpit";
+import { emailIds, loginCode, waitForEmail } from "./mailpit";
 
 export type ApiResult<T = unknown> = { status: number; data: T; etag: string | null; headers: Headers };
 
@@ -34,11 +34,12 @@ export async function login(who: Role | { email: string }): Promise<string> {
   const email = typeof who === "string" ? emailOf(who) : who.email;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const password = passwordOf(email);
+    const earlier = await emailIds(email, /código|code/i);
     const since = Date.now();
     const response = await call<SessionResponse>(null, "POST", "/auth/session", { email, password });
     if (response.status === 200 && response.data.accessToken) return response.data.accessToken;
     if (response.status === 202 && response.data.challengeId) {
-      const code = loginCode(await waitForEmail(email, /código|code/i, since));
+      const code = loginCode(await waitForEmail(email, /código|code/i, since, undefined, earlier));
       const verified = await call<SessionResponse>(null, "POST", "/auth/session/verify-code",
         { challengeId: response.data.challengeId, code });
       if (verified.status === 200 && verified.data.accessToken) return verified.data.accessToken;
