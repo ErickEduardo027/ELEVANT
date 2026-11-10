@@ -54,22 +54,25 @@ flowchart TB
 
 ## Audiencias respaldadas por el repositorio
 
-| Audiencia | Resultado que el prototipo representa | Cliente | Nivel de certeza |
+Posterior al commit verificado de esta nota: las columnas «Nivel de certeza» y
+«Estado» describen el código de `39a85a46`.
+
+| Audiencia | Resultado que el producto sirve | Cliente | Nivel de certeza |
 | --- | --- | --- | --- |
-| OCC/control operativo | planificar, monitorear, revisar y aprobar/devolver operaciones | AVIAM Web | Audiencia explícita; detalle de permisos aún no implementado en API |
-| Administración y departamentos internos | trabajar con contratos, finanzas, gestión humana, reportes y operaciones según su función | AVIAM Web | Familias funcionales observadas; nombres exactos de roles son vocabulario de prototipo |
-| Agente de rampa | consultar asignaciones, iniciar/cerrar atención, completar checklist/hitos, reportar incidencias y sincronizar | Mobile Agent | Audiencia y recorrido explícitos; autenticación e integración .NET pendientes |
-| Usuario de aerolínea/cliente | consultar información limitada a su organización/estaciones y realizar escrituras expresamente autorizadas | Public Web | Frontera tenant explícita; sesión y mayoría de datos actuales son mock |
-| Visitante | conocer la propuesta pública e intentar solicitar una demostración | Public Web | Landing ejecutable; formulario en modo preview sin transmisión backend |
+| OCC/control operativo | planificar, monitorear, revisar y aprobar/devolver operaciones | AVIAM Web | Audiencia explícita; permisos del departamento Operaciones en el catálogo del servidor |
+| Administración y departamentos internos | trabajar con contratos, finanzas, gestión humana, reportes y operaciones según su función | AVIAM Web | Cuatro departamentos con módulos y acciones del catálogo del servidor; perfiles por plantilla |
+| Agente de rampa | consultar asignaciones, iniciar/cerrar atención, completar checklist/hitos, reportar incidencias y sincronizar | Mobile Agent | Recorrido contra la API con sesión, tableta vinculada y cola offline idempotente |
+| Usuario de aerolínea/cliente | consultar información limitada a su organización/estaciones y realizar escrituras expresamente autorizadas | Public Web | Sesión con código por correo; el servidor filtra por organización y estaciones |
+| Visitante | conocer la propuesta pública y solicitar servicios | Public Web | Catálogo público y envío de solicitudes comerciales por la API |
 
 ## Actores del sistema que no son personas usuarias
 
 | Actor | Responsabilidad | Estado |
 | --- | --- | --- |
-| API ELEVANT | autenticar, autorizar, aplicar scope, reglas y contratos | Scaffold técnico; autenticación y endpoints de negocio no implementados |
-| SQL Server | persistir estado canónico de ELEVANT | Esquema v1 modelado; nunca es interfaz de cliente |
-| Proveedor de información de vuelos | aportar información externa mediante un adaptador | Integración futura, no capacidad activa |
-| Dispositivo móvil registrado | acotar identidad de dispositivo y reintentos idempotentes | Modelo persistente presente; flujo API pendiente |
+| API ELEVANT | autenticar, autorizar, aplicar scope, reglas y contratos | 400 operaciones de las cuatro fases del ciclo, con JWT y política fallback autenticada |
+| SQL Server | persistir estado canónico de ELEVANT | 57 migraciones; nunca es interfaz de cliente |
+| Proveedor de información de vuelos | aportar información externa mediante un adaptador | Adaptador AeroDataBox configurable, apagado por defecto |
+| Dispositivo móvil registrado | acotar identidad de dispositivo y reintentos idempotentes | Vínculo de tableta, liberación y revocación por la API |
 
 ## Identidades que no deben confundirse
 
@@ -110,6 +113,6 @@ La autorización final debe expresarse en casos de uso y pruebas de API, no en r
 - [README del monorepo](../../README.md): audiencias principales.
 - [Private Web](../../frontend/private-web/README.md), [Public Web](../../frontend/public-web/README.md) y [Mobile Agent](../../frontend/mobile-agent/README.md): módulos y recorridos observados.
 - [Base de datos v1](../../docs/architecture/database-v1.md) y [esquema v1](../../docs/database/schema-v1.md): separación de persona, cuenta, membresía, agente y scopes.
-- [Límite de FlightAware](../../backend/Elevant.Infrastructure/Integrations/FlightAware/README.md): estado futuro del proveedor de información de vuelos.
+- [Límite de FlightAware](../../backend/Elevant.Infrastructure/Integrations/FlightAware/README.md): estado futuro de ese proveedor; el feed configurable vigente es AeroDataBox ([integraciones](../04-arquitectura/integraciones-externas.md)).
 
 Relacionados: [Fronteras de los clientes](fronteras-de-clientes.md), [Preguntas abiertas](preguntas-abiertas.md) y [Mapa de producto](README.md).

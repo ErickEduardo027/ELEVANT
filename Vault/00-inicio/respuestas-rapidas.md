@@ -56,7 +56,7 @@ Es la plataforma de AVIAM para planificar y controlar asistencia en tierra. El m
 
 ### ¿Cuál es el recorrido operativo principal?
 
-La evidencia actual conecta solicitud comercial, contrato versionado, planificación del turnaround, ejecución en rampa, revisión OCC y consecuencias financieras futuras. No todas esas etapas tienen hoy endpoints de negocio reales: el [Mapa de Producto](../02-producto/README.md) distingue capacidad observada, contrato persistente y trabajo diferido; el [Mapa de Dominio](../03-dominio/README.md) fija el vocabulario canónico.
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* el ciclo tiene cuatro fases: comercial (solicitud, alta y contrato), pre-operación (vigencia, firmas, permiso, personal y turnos), operación (planificación, ejecución en rampa y revisión OCC) y facturación y cobro (e-CF simulado, tarjeta simulada, notas, cuentas por pagar y gastos). Cada fase tiene casos de uso en la API; [Recorridos de extremo a extremo](../02-producto/recorridos-end-to-end.md) nombra sus operaciones y el [Mapa de Dominio](../03-dominio/README.md) fija el vocabulario canónico.
 
 ### ¿Desde cuándo existe ELEVANT y cómo evolucionó?
 
@@ -64,15 +64,15 @@ La historia reproducible comienza en el primer commit disponible; cualquier orig
 
 ### ¿Hay un backend o una base por aplicación?
 
-No. La arquitectura establece una sola API y una sola base lógica por ambiente para los tres clientes. Private Web y Public Web ya siguen esa frontera; la integración real del Mobile Agent con endpoints versionados continúa incompleta. Crear un backend o una base por cliente contradice la arquitectura vigente. Fuente: [`AGENTS.md`](../../AGENTS.md) y [Flujo Mobile](../../docs/workflows/mobile-workflow.md).
+No. La arquitectura establece una sola API y una sola base lógica por ambiente para los tres clientes. *Posterior al commit verificado de esta nota (código de `39a85a46`):* los tres clientes, Mobile Agent incluido, consumen los endpoints versionados con el cliente compartido. Crear un backend o una base por cliente contradice la arquitectura vigente. Fuente: [`AGENTS.md`](../../AGENTS.md) y [Flujo Mobile](../../docs/workflows/mobile-workflow.md).
 
 ### ¿Qué recorrido funciona hoy de extremo a extremo en la API real?
 
-La superficie contractual actual es técnica: health/readiness, Swagger donde está habilitado y `GET /api/v1/system/ping`. El modelo persistente es amplio, pero todavía no hay autenticación ni endpoints de negocio. Consulta [Arquitectura](../04-arquitectura/README.md), [API compartida](../05-aplicaciones/api-compartida.md) y [Mapa de Aplicaciones](../05-aplicaciones/README.md) antes de inferir capacidad desde una pantalla o tabla.
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* las cuatro fases del ciclo, de la solicitud pública al cobro con tarjeta, con sesión JWT y 400 operaciones en OpenAPI. El e-CF y la pasarela son simulaciones sin validez fiscal, y el repositorio no acredita qué versión corre en el VPS. Consulta [Mapa de capacidades](../02-producto/mapa-de-capacidades.md), [Arquitectura](../04-arquitectura/README.md), [API compartida](../05-aplicaciones/api-compartida.md) y [Mapa de Aplicaciones](../05-aplicaciones/README.md) antes de inferir capacidad desde una pantalla o tabla.
 
 ### ¿Puede un frontend consultar SQL Server directamente?
 
-No. Ningún cliente puede consultar SQL Server directamente. Private Web y Public Web acceden mediante la API; Mobile Agent debe hacerlo por la misma frontera cuando complete su integración. El acceso SSMS de Development es una herramienta controlada para personas autorizadas y no un contrato de aplicación. Consulta [Acceso a base de datos](../../docs/security/database-access.md).
+No. Ningún cliente puede consultar SQL Server directamente; *posterior al commit verificado de esta nota (código de `39a85a46`),* Private Web, Public Web y Mobile Agent acceden mediante la API. El acceso SSMS de Development es una herramienta controlada para personas autorizadas y no un contrato de aplicación. Consulta [Acceso a base de datos](../../docs/security/database-access.md).
 
 ### ¿Qué define el contrato cliente/servidor?
 
@@ -128,7 +128,7 @@ No. “Sin conflictos” solo significa que Git puede combinar ramas. CI valida 
 
 ### ¿El Mobile Agent ya tiene entrega APK automática?
 
-No. La aplicación Expo/React Native existe, pero su workflow móvil propio es todavía una plantilla y la distribución firmada requiere decisiones y configuración adicionales. Algunas pruebas móviles sí corren condicionalmente en API-client CI; eso no crea una APK. Consulta el [diseño diferido de APK](../07-entrega/mobile-apk-ci-cd.md). No se aloja como sitio en Dokploy.
+No. La aplicación Expo/React Native existe y la distribución firmada requiere decisiones y configuración adicionales. *Posterior al commit verificado de esta nota (código de `39a85a46`):* el workflow `mobile-ci.yml` valida lint, tipos, pruebas unitarias y el bundle Metro de Android, pero no construye ni firma una APK. Consulta el [diseño diferido de APK](../07-entrega/mobile-apk-ci-cd.md). No se aloja como sitio en Dokploy.
 
 ### ¿Production está desplegada?
 

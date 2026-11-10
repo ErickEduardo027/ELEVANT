@@ -217,7 +217,7 @@ entenderlo.
 
 | Decisión | Por qué bloquea la activación |
 | --- | --- |
-| Flujos móviles y endpoints OpenAPI reales, autenticación y autorización | El prototipo no prueba un flujo de negocio contra `Elevant.Api`. |
+| Flujos móviles y endpoints OpenAPI reales, autenticación y autorización | *Posterior al commit verificado de esta nota (código de `39a85a46`):* resuelta en el código; la app opera contra `Elevant.Api` con sesión, tableta vinculada y cola idempotente. Falta decidir qué recorridos se certifican en el dispositivo físico. |
 | Tablets/Android mínimo, permisos y pruebas físicas | Un bundle Metro o emulador no verifica cámara, red ni almacenamiento del dispositivo objetivo. |
 | Cuenta/propietario EAS, custodia de keystore y recuperación | Sin firma estable no hay actualización confiable. |
 | Identificadores Development y Production; versión local o remota | Evita mezclar datos y permite upgrade trazable. |

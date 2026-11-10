@@ -51,8 +51,9 @@ tags:
 ELEVANT modela dos tipos de solicitud con propósitos distintos. La solicitud comercial inicia o amplía una relación de servicio; la solicitud operativa pide resolver una necesidad dentro de una estación y, opcionalmente, una escala concreta.
 
 > El commit verificado del frontmatter describe la base anterior. Esta rama de
-> integración agrega consultas tenant-scoped de solicitudes operativas y
-> prefacturas publicadas; no está promocionada ni habilita nuevas transiciones.
+> integración agrega consultas tenant-scoped de solicitudes operativas; no está
+> promocionada ni habilita nuevas transiciones. La lectura de prefacturas
+> publicadas que también agregaba se retiró en la fase 4 (ver abajo).
 
 ## Dos procesos, dos identidades
 
@@ -243,64 +244,39 @@ OperationService
 
 La definición de servicio es catálogo; la tarifa pertenece a una versión contractual; la ejecución pertenece a una operación. La FK opcional no garantiza que la tarifa sea la procedencia de los snapshots. Falta validar que precio y moneda sean all-or-none, que una línea contractualmente valorizada enlace una tarifa, que tarifa y línea compartan definición, que contrato y turnaround compartan aerolínea, que la versión esté aprobada, cubra la estación y sea vigente, y que unidad/precio/moneda se copien de forma consistente y permanezcan históricos.
 
-### Lectura financiera en la rama de integración
+### De la entrega aprobada a la factura
 
-La rama `feat/integrated-cycle-realtime` expone una lectura acotada de líneas
-de operaciones cuya última entrega fue aprobada por OCC. Finanzas debe tener
-rol interno y grant vigente de la estación. La cantidad, estado y unidad de
-cada línea se contrastan con el snapshot inmutable presentado a OCC; el
-importe sólo se calcula si el servicio se completó con cantidad positiva y
-existen precio, moneda y unidad congelados válidos. Las inconsistencias se
-muestran como líneas bloqueadas, sin importe facturable, en vez de omitirlas
-silenciosamente. Una aprobación genera una pista durable dirigida a Finanzas
-en la misma transacción; el feed vuelve a comprobar rol, membresía, estación
-y estado de la operación. La misma rama añade una **prefactura interna no
-fiscal**: Finanzas selecciona servicios de una sola aerolínea, estación y
-moneda, y la API reserva cada línea fuente una sola vez con snapshots
-inmutables de cantidad y tarifa. La solicitud tiene clave idempotente; el
-detalle y la auditoría se guardan en SQL. Todavía no hay conciliación,
-factura, pago ni recibo, y esto no acredita un despliegue al VPS.
+Posterior al commit verificado de esta nota: desde la fase 4 del ciclo (código
+de `39a85a46`; [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md))
+Finanzas factura directamente las operaciones aprobadas por OCC desde «Por
+facturar» (`GET finance/invoicing/pending-operations` y
+`POST finance/invoices/from-operations`). La prefactura es solo el borrador
+interno de la emisión, dentro de una sola transacción serializable, y nunca
+queda visible ni pendiente; ver [Finanzas](finanzas-tarifas-cargos-y-cobros.md).
+Las entidades `Preinvoice` y `PreinvoiceStatus` y sus tablas se conservan.
 
-La lista interna de prefacturas se consulta por estación con rol Finanzas,
-membresía AVIAM y grant vigente. Devuelve páginas acotadas y detalles de
-snapshots persistidos. En esta rama, el comando
-`POST /api/v1/finance/preinvoices/{draftId}/submit` permite a Finanzas
-publicar una prefactura `Draft` con al menos una línea. Revalida la concesión
-de estación en una transacción serializable, cambia el estado una sola vez a
-`Submitted` y guarda auditoría y avisos durables para Finanzas y aerolínea.
-La misma clave devuelve una repetición; otra intención para la prefactura ya
-enviada recibe conflicto. No es aprobación, factura ni cobro. El
-antiguo adaptador `/api/finance/preinvoices` de la pantalla activa se retiró.
+**Historia (retirado del producto).** Antes de la fase 4:
 
-La aerolínea puede aceptar una prefactura `Submitted` propia mediante
-`POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/accept`. La API vuelve
-a derivar la única organización vigente del actor, comprueba la pertenencia
-de la prefactura en SQL y guarda transición `Accepted`, auditoría y avisos
-durables en una transacción serializable. Un reintento del mismo actor y clave
-es inocuo; otra intención recibe conflicto. Aceptar no equivale a conciliar,
-facturar ni cobrar; la disputa puede registrarse, pero su resolución sigue
-pendiente.
+- Finanzas leía las líneas de las operaciones aprobadas por estación
+  («Servicios aprobados»), con las inconsistencias como líneas bloqueadas;
+- armaba una prefactura interna no fiscal de una aerolínea, estación y moneda,
+  que reservaba cada línea fuente una sola vez, y la publicaba con
+  `POST finance/preinvoices/{draftId}/submit`;
+- la aerolínea la aceptaba (`POST airline/portal/preinvoices/{preinvoiceId}/accept`)
+  o disputaba sus líneas, y Finanzas resolvía la disputa;
+- Finanzas emitía desde la prefactura aceptada una factura no fiscal `NF-…` sin
+  impuestos con `POST finance/invoices`.
 
-En la rama local, Finanzas puede emitir una factura **no fiscal** desde una
-prefactura `Accepted` con `POST /api/v1/finance/invoices`. SQL crea un número
-único y snapshots independientes de sus líneas, cambia la prefactura a
-`Invoiced` y guarda auditoría y avisos en la misma transacción serializable.
-La misma clave y actor devuelven la emisión anterior; una segunda intención
-no duplica la factura. Finanzas la relee por estación autorizada y la aerolínea
-por su tenant, sin exigir un contrato todavía vigente para conservar historial.
-No es una factura tributaria, pago ni recibo y no está promovida al VPS.
-
-Esta rama añade una lectura de prefacturas para el portal de la aerolínea. La
-API deriva la organización de la membresía y filtra por `AirlineId` en SQL;
-solo expone estados publicados (`Submitted`, `Disputed`, `Accepted`, `Invoiced`).
-`Draft` y `Voided` no son visibles sin historial de publicación que distinga
-una anulación interna de una posterior al envío. La lectura conserva importes
-y fechas congelados tras vencer un contrato, pero no habilita por sí sola
-emisión, pago ni descargas.
+Las rutas de servicios aprobados, prefacturas, aceptación y disputa se
+borraron y responden 404; `POST finance/invoices` responde
+`410 legacy_finance_route_retired` sin escribir nada. El portal ya no lee
+prefacturas: ve sus facturas e-CF simuladas, su estado de cuenta y paga con
+tarjeta. No hay reclamos ni disputas en el sistema: una corrección es una nota
+de crédito.
 
 ## Diferencias con Public Web
 
-El prototipo del portal usa tipos como `SCHEDULE_CHANGE`, `SPECIAL_ASSISTANCE` y `OTHER`, además de una forma de solicitud ligada a vuelo y estados con nombres propios. También representa facturas, conciliaciones, disputas, documentos y notificaciones. Esos tipos orientan futuras conversaciones de producto, pero no son DTO OpenAPI ni amplían las entidades actuales.
+El prototipo del portal usa tipos como `SCHEDULE_CHANGE`, `SPECIAL_ASSISTANCE` y `OTHER`, además de una forma de solicitud ligada a vuelo y estados con nombres propios. También representa facturas, conciliaciones, disputas, documentos y notificaciones. Esos tipos orientan futuras conversaciones de producto, pero no son DTO OpenAPI ni amplían las entidades actuales. Posterior al commit verificado: facturas, documentos y notificaciones ya existen con sus propios contratos, y las disputas y la conciliación del prototipo no se implementan, por decisión de producto.
 
 Hasta acordar el contrato:
 

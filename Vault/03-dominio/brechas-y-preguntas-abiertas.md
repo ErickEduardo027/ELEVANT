@@ -7,27 +7,35 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "0c392571a9a235ff5e75846d14b2a127b6c25c73"
+last_verified: "2026-11-10"
+verified_commit: "39a85a46ae089239e22edce448a4d77771680b46"
 sources:
-  - README.md
-  - docs/architecture/database-v1.md
-  - docs/database/schema-v1.md
-  - docs/architecture/external-integrations.md
-  - docs/api/openapi-contract.md
   - backend/README.md
-  - backend/Elevant.Application/README.md
-  - backend/Elevant.Application/DependencyInjection.cs
-  - backend/Elevant.Contracts/README.md
-  - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/IdentityReferenceConfiguration.cs
-  - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/WorkforceCommercialConfiguration.cs
-  - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/OperationsConfiguration.cs
-  - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/IntegrationAuditConfiguration.cs
-  - database/DevelopmentDB/Elevant.Persistence/Persistence/Configurations/PlatformConfiguration.cs
-  - database/DevelopmentDB/scripts/bootstrap/provision-development.sql
-  - frontend/private-web/README.md
-  - frontend/public-web/README.md
-  - frontend/mobile-agent/README.md
+  - docs/architecture/database-v1.md
+  - packages/api-client/openapi/elevant-v1.json
+  - packages/api-client/src/client.ts
+  - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs
+  - backend/Elevant.Api/Controllers/AuthenticationController.cs
+  - backend/Elevant.Api/Controllers/PortalAccountController.cs
+  - backend/Elevant.Application/Finance/FinanceInvoicePolicy.cs
+  - backend/Elevant.Application/Identity/ShiftAdjustmentRules.cs
+  - backend/Elevant.Infrastructure/DependencyInjection.cs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs
+  - database/DevelopmentDB/Elevant.Persistence/Identity/EfGovernanceStore.cs
+  - database/ProductionDB/.gitkeep
+  - frontend/private-web/src/config/hrDemoMode.js
+  - frontend/private-web/src/services/notificationsService.js
+  - docs/adr/0021-rotating-refresh-tokens.md
+  - docs/adr/0022-portal-email-verification.md
+  - docs/adr/0024-airline-permits-and-contract-lifecycle.md
+  - docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md
+  - docs/adr/0029-ramp-realtime-alerts-and-chat-read-state.md
+  - docs/adr/0032-aviam-forms-signatures-and-walkaround.md
+  - docs/adr/0035-direct-invoicing-simulated-ecf.md
+  - docs/adr/0036-simulated-card-payment.md
+  - docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md
+  - docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md
+  - docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md
 tags:
   - brechas
   - preguntas-abiertas
@@ -37,126 +45,202 @@ tags:
 
 # Brechas y preguntas abiertas del dominio
 
-Esta lista evita que un vacío se convierta en una suposición. “Brecha” no significa necesariamente defecto: identifica una decisión, regla o capacidad que el repositorio todavía no demuestra.
+Esta lista evita que un vacío se convierta en una suposición. «Brecha» no
+significa necesariamente defecto: nombra una decisión, una regla o una
+capacidad que el código del commit verificado todavía no demuestra. Lo que las
+cuatro fases del ciclo ya resolvieron sale de la lista con la decisión que lo
+cerró.
 
 ## Estado honesto
 
-| Capa | Existe | Falta |
+| Capa | Existe en el commit verificado | Sigue abierto |
 | --- | --- | --- |
-| Persistencia | Entidades, enums, configuraciones y cinco migraciones v1 | Algunas invariantes de aplicación, transiciones y políticas temporales |
-| Backend HTTP | Salud, readiness, ping y Swagger | Autenticación y todos los endpoints/casos de uso de negocio |
-| OpenAPI | Scaffold y proceso de snapshot/generación | DTOs y operaciones del dominio |
-| Private Web | Recorridos internos ejecutables | Sustitución general de mocks y autorización real |
-| Public Web | Landing/portal demostrativo | Sesión real, tenant enforcement y operaciones API |
-| Mobile Agent | Recorrido nativo y cola local demostrativa | Integración .NET, autenticación segura y sync contractual |
-| Production | Frontera reservada | Infraestructura, datos, secretos, despliegue y políticas aprobadas |
+| Persistencia | 57 migraciones EF sobre los ocho schemas, `rowversion` en los agregados mutables, auditoría y outbox en la misma transacción | Datos heredados que ninguna migración corrige y algunas coherencias que solo exige la aplicación (ver abajo) |
+| Backend HTTP | JWT de 15 minutos con refresh rotativo, política fallback autenticada, 400 operaciones de las cuatro fases, Problem Details con `code`, `Idempotency-Key` y versión esperada en los comandos | El paso «contract» de la clave opcional y una consulta general de auditoría |
+| OpenAPI y cliente | Snapshot revisado con su digest, cliente Orval y validadores manuales que rechazan claves desconocidas | Nada propio: cada endpoint nuevo repite el flujo de snapshot y generación |
+| Private Web | OCC, Gestión Humana, Contratos, Finanzas y Superadministración contra la API, con el menú que permite el servidor | Adaptadores heredados del prototipo (`NEXT_PUBLIC_PROTOTYPE_API_URL`), el modo demo de solo lectura del tablero de Gestión Humana y la zona horaria de cada estación |
+| Public Web | Sesión con código por correo, solicitudes, contratos, operaciones, facturas y cobro con tarjeta, filtrados por el servidor | Los tipos de solicitud del prototipo que nadie decidió (abajo) |
+| Mobile Agent | Sesión, tableta vinculada, cola offline por instalación con recibos idempotentes y feed de cambios | Entrega de avisos con la aplicación cerrada y latencia medida |
+| Production | Frontera reservada: `database/ProductionDB` solo contiene `.gitkeep` | Infraestructura, datos, secretos, despliegue y políticas aprobadas |
 
-## Decisiones de negocio prioritarias
+## Cerradas por las fases del ciclo
 
-### Estados y comandos
+- **Autenticación, invitación, recuperación y sesión.** Refresh rotativo con
+  revocación por familia ([ADR-0021](../../docs/adr/0021-rotating-refresh-tokens.md)),
+  código por correo en el portal ([ADR-0022](../../docs/adr/0022-portal-email-verification.md)),
+  cambio de contraseña ([AuthenticationController](../../backend/Elevant.Api/Controllers/AuthenticationController.cs))
+  y activación y restablecimiento de la cuenta
+  ([PortalAccountController](../../backend/Elevant.Api/Controllers/PortalAccountController.cs)).
+- **Catálogo de permisos.** Vive en el servidor por departamento, módulo y
+  acción; un código retirado se conserva como alias para no romper perfiles
+  guardados ([gobernanza](gobernanza-por-departamento.md)).
+- **Dispositivos.** Una tableta pasa al agente que inicia sesión, se libera al
+  cerrarla y OCC la desvincula o revoca
+  ([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).
+- **Transiciones del ciclo comercial y del contrato.** Solicitud, alta de
+  aerolínea, cuenta del portal, borrador, enmienda, vigencia, firmas,
+  suspensión y terminación
+  ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md),
+  [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md),
+  ADR-0038).
+- **Cancelación, reapertura y corrección sin borrar historia.** En la
+  operación, OCC cancela o desvía una escala, corrige la llegada, reabre una
+  aprobación sin facturar y corrige la Orden de Servicio con una versión nueva
+  ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+  En Finanzas, anular, corregir, revertir, retirar y cerrar sin cargo son
+  cambios de estado con motivo y auditoría ([Finanzas](finanzas-tarifas-cargos-y-cobros.md)).
+- **Estado, evento, auditoría y outbox atómicos.** Cada comando los escribe en
+  su transacción; el feed solo anuncia y el cliente relee por REST
+  ([feed de cambios](../04-arquitectura/feed-de-cambios-operativos.md),
+  [ADR-0029](../../docs/adr/0029-ramp-realtime-alerts-and-chat-read-state.md)).
+- **Turnos que cruzan medianoche.** Se evalúan como instantes en la zona de la
+  estación ([reglas de ajuste](../../backend/Elevant.Application/Identity/ShiftAdjustmentRules.cs)).
+- **Solapamientos de posición y de agente.** El mapa de posiciones bloquea la
+  posición en una transacción serializable y una regla limita al agente a tres
+  operaciones simultáneas (ADR-0039).
+- **Qué se exige antes de enviar.** La APK no entrega con registros pendientes
+  ni con la Orden de Servicio sin las dos firmas, y OCC solo aprueba una Orden
+  firmada (ADR-0039, [ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)).
+- **Reconciliación tras reconectar.** La tableta y las webs reconcilian el
+  cursor del feed y releen por REST; SignalR solo acelera el aviso.
+- **Precedencia de la llegada.** La llegada que registra OCC prevalece sobre
+  la del proveedor, y la importación del feed se vincula a la escala del mismo
+  vuelo en lugar de duplicarla (ADR-0039).
+- **Feed de vuelos de un proveedor.** AeroDataBox, con presupuesto de unidades
+  y apagado por defecto ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)).
+- **Facturación, cobro y correcciones.** La prefactura es un paso interno de la
+  emisión desde operaciones aprobadas, sin aceptación ni disputa de la
+  aerolínea; una corrección es una nota de crédito y el cobro con tarjeta es
+  siempre por el saldo completo ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+  [ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). No hay reclamos ni
+  disputas en el sistema, por decisión de producto.
 
-- Definir matriz de transición por turnaround, operación, servicio, solicitud, contrato, checklist, incidente y revisión.
-- Definir actor, permiso, precondición, idempotencia y efecto secundario de cada comando.
-- Resolver cómo se mantienen atómicamente estado actual, evento histórico, auditoría y outbox.
-- Acordar cancelación, devolución, reapertura y corrección sin borrar historia.
+## Siguen abiertas
+
+### Comandos y contrato
+
+- El paso «contract» que vuelva obligatoria la `Idempotency-Key` en los
+  comandos que hoy la aceptan opcional, sobre todo los comerciales, de
+  gobernanza y de OCC ampliados en las fases 1 a 3, y la versión esperada en los
+  que todavía no la exigen. Es un cambio coordinado con los clientes desplegados.
+- Una consulta general de auditoría: hoy se lee por área y Superadministración
+  solo ve la de gobernanza, comercial y Gestión Humana
+  ([almacén](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfGovernanceStore.cs)).
 
 ### Tenant y autorización
 
-- Fijar catálogo de permisos y su asignación a roles por portal.
-- El modelo ya permite membresías activas simultáneas en organizaciones distintas; definir cómo se elige y valida el contexto y fallar de forma cerrada ante ambigüedad.
-- Definir precedencia entre membresía, scope de cuenta, scope laboral de agente y terminal.
-- Especificar acceso interno entre aerolíneas y pruebas de aislamiento negativas.
-- Diseñar autenticación, invitación, recuperación, bloqueo, revocación de sesión y dispositivo.
+- El modelo permite membresías activas simultáneas en organizaciones
+  distintas; falta decidir cómo se elige el contexto y fallar de forma cerrada
+  ante ambigüedad.
+- Documentar la precedencia entre membresía, alcance de estación de la cuenta,
+  alcance laboral del agente y terminal.
+- Especificar el acceso interno entre aerolíneas y sus pruebas negativas de
+  aislamiento.
 
 ### Planificación y tiempo
 
-- Representar turnos que cruzan medianoche y cambios de zona/DST.
-- Detectar solapamientos de turnos, stands, agentes y equipos que los índices actuales no cubren.
-- Definir algoritmo de elegibilidad y razones explicables.
-- Exigir coherencia estación-terminal-stand/equipo/turnaround mediante aplicación o constraints adicionales.
-- Acordar códigos de hito, SLA, tolerancias y cálculo de puntualidad/cumplimiento.
+- La asignación de equipos existe en el modelo y en la lectura de
+  Planificación, pero ningún comando la escribe: faltan su caso de uso y su
+  regla de solapamiento.
+- Exigir la coherencia estación-terminal-posición-equipo-turnaround con
+  restricciones adicionales o en cada caso de uso.
+- Acordar SLA, tolerancias y cálculo de puntualidad sobre los hitos.
+- Mostrar en Private Web la hora de cada estación en su propia zona.
 
-### Comercial
+### Comercial y Finanzas
 
-- Exigir que `OriginatingServiceRequestId`, cuando exista, apunte a una solicitud aprobada de la misma aerolínea del contrato.
-- Al vincular `OperationService` con una tarifa, exigir precio/moneda all-or-none, enlace de tarifa cuando corresponda, la misma definición de servicio y aerolínea, cobertura de estación, versión aprobada y vigente, y copia consistente e histórica de unidad/precio/moneda.
-- Normalizar o gobernar strings todavía abiertos: categoría, estado de equipo, rol de asignación y tipo de incidente.
-- Unidad de cobro (acotada el 6 de noviembre de 2026, después del commit verificado de esta nota): el ciclo comercial guarda el código de `ref.billing_units`, pero las filas heredadas conservan el nombre («operación»), la valoración de paquetes de la emisión de facturas compara la unidad como texto y puede bloquear con `package_unit_mismatch` ([`FinancePackageValuation`](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs)), y OCC y Revisión muestran el código ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)). Desde el 8 de noviembre de 2026, Revisión y el detalle del vuelo de Planificación muestran la unidad con su nombre, pero el panel de asignación de Planificación todavía muestra el código ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
-- Decidir Schedule Change, Special Assistance y otros tipos observados en Public Web sin asumir que ya existen.
-- Prefacturas, disputas, factura no fiscal, pagos parciales, notas de crédito, tarifarios y cargos ya tienen modelo (ver [Finanzas: tarifarios, cargos y cobros](finanzas-tarifas-cargos-y-cobros.md)); siguen abiertos impuestos y documento fiscal (ITBIS, NCF), conciliación bancaria y obtención automática de tasas.
-
-Posterior al commit verificado de esta nota, el 6 de noviembre de 2026 salió de esta lista la definición de las transiciones entre solicitud aprobada, alta de aerolínea, cuenta del portal y contrato ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md) y [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)). De ese trabajo siguen abiertos la unidad de cobro, acotada arriba, y el paso «contract», que hará obligatoria la `Idempotency-Key` en los comandos comerciales que hoy la aceptan opcional, y también la versión esperada en los que todavía no la exigen.
-
-El 7 de noviembre de 2026, también después del commit verificado, la fase 2 «Pre-operación» sacó de esta lista los solapamientos entre versiones y la suspensión y terminación del contrato ([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)). Una versión nueva rige solo desde su segunda firma, y esa firma termina la anterior, a más tardar, la víspera de su inicio. La terminación respeta el preaviso firmado o pide una causa inmediata, y revocar el permiso de operación suspende los contratos que se quedan sin uno usable. Siguen abiertos:
-
-- el paso «contract» de los comandos que la fase 2 amplió con una `Idempotency-Key` opcional;
-- los datos heredados que ninguna migración corrige, como las versiones que una aprobación anterior ya recortó.
+- Exigir que `OriginatingServiceRequestId`, cuando exista, apunte a una
+  solicitud aprobada de la misma aerolínea del contrato.
+- Al vincular un servicio ejecutado con su tarifa, exigir precio y moneda
+  completos, la misma definición de servicio y aerolínea, cobertura de
+  estación y una versión aprobada y vigente.
+- Normalizar o gobernar los textos abiertos: categoría, estado de equipo, rol
+  de asignación y tipo de incidente.
+- **Unidad de cobro.** El ciclo comercial guarda el código de
+  `ref.billing_units`, pero las filas heredadas conservan el nombre
+  («operación») y la valoración de paquetes compara la unidad como texto, así
+  que puede bloquear con `package_unit_mismatch`
+  ([`FinancePackageValuation`](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs)).
+- Decidir «Schedule Change», «Special Assistance» y los demás tipos de
+  solicitud que mostraba el prototipo de Public Web; el código no los tiene.
+- Decidir si Superadministración archiva o conserva el perfil comercial sin
+  verificar (`OCC-…`) que OCC creó para un charter, una vez que la aprobación
+  comercial vincula la aerolínea ([pendientes](../12-backlog/pendientes-transversales.md)).
+- **Fiscal real.** El e-CF es una simulación sin validez fiscal: no hay
+  proveedor ni transmisión a la DGII, certificado, firma, secuencias
+  autorizadas ni el RNC real del emisor, que se imprime simulado
+  ([política](../../backend/Elevant.Application/Finance/FinanceInvoicePolicy.cs)).
+- Conciliación bancaria, obtención automática de tasas de cambio (hoy se
+  registran a mano) y libro mayor.
+- La pasarela de tarjeta real: el código solo compone la simulada, que no
+  arranca fuera de Development, Test o Testing, o ninguna
+  ([composición](../../backend/Elevant.Infrastructure/DependencyInjection.cs)).
+- Los datos heredados que ninguna migración corrige, como las versiones de
+  contrato que una aprobación anterior ya recortó.
 
 ### Operación, evidencia y revisión
 
-- Definir cuándo nace una `GroundOperation` y cómo se relacionan estados de turnaround y ejecución.
-- Acordar obligatoriedad de servicios, checklist, firmas/evidencias e incidentes antes de enviar.
-- Exigir que cada `ChecklistAnswer` use un ítem de la misma versión instanciada por su `OperationChecklist` y que cada `OperationSubmission` use un checklist de su misma `GroundOperation`.
-- Precisar devolución y nueva revisión: hoy el envío no snapshottea respuestas, varios envíos pueden apuntar al mismo checklist y sus respuestas siguen mutables. Hace falta versionado/snapshot y enforcement append-only.
-- Alinear outcome de `ReviewDecision` con el estado de `OperationSubmission`.
-- Diseñar metadatos, object keys, tipos, tamaño, retención, antivirus y permisos para fotos/PDF; SQL no almacenará binarios.
-- Definir qué solicita `OperationalServiceRequest`, su historia de estados y relación con una línea ejecutada.
-- En `OperationalServiceRequest`, validar membresía activa y autorización del solicitante/resolutor, scope de estación, aplicabilidad del servicio y coherencia de aerolínea/estación con turnaround; exigir además `NeededAt >= RequestedAt` y coherencia entre estado, resolutor, nota y fecha. Las FKs y el único check temporal actual no lo garantizan.
-
-El 8 de noviembre de 2026, también después del commit verificado, la fase 3 «La operación» acotó varias de estas brechas ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)):
-
-- **Cancelación, reapertura y corrección sin borrar historia** («Estados y comandos»). OCC cancela o desvía una escala antes de que su operación inicie, corrige la llegada hasta la primera entrega, reabre como envío nuevo una aprobación de la que nada se facturó y corrige la Orden de Servicio firmada con una versión nueva y su motivo. Lo ya facturado se corrige con una nota de crédito.
-- **Solapamientos** («Planificación y tiempo»). El mapa de posiciones bloquea la posición dentro de una transacción serializable, y una sola regla limita al agente a tres operaciones simultáneas.
-- **Qué se exige antes de enviar** (esta sección). La APK nueva no entrega con registros pendientes ni con la Orden de Servicio sin las dos firmas, y OCC solo aprueba una Orden firmada; el servidor no exige la firma al entregar, para no cambiar lo que envía la APK desplegada.
-- **Comandos sin conexión** («Mobile e integraciones»). El inicio, las transiciones de servicio, los cargos, el envío del checklist y el chat se suman a la cola de la tablet (hitos, datos del vuelo, firmas, walk-around y charter), que es por cuenta y FIFO por operación; el inicio y los servicios llevan la hora del toque. En esa cola el recibo repite el mismo resultado o el mismo código, salvo en el chat, que se deduplica por la clave del mensaje, y en la foto del walk-around, que viaja sin clave. Las incidencias salen después por su propia cola, y la entrega, la corrección y las observaciones de asistencia conservan su comando reservado.
-- **Precedencia de fuentes** («Mobile e integraciones»). La llegada que registra OCC prevalece sobre la del proveedor, y la importación del feed se vincula a la escala del mismo vuelo en lugar de duplicarla.
-
-Siguen abiertos el paso «contract» de los comandos que la fase 3 amplió con una `Idempotency-Key` opcional, la zona horaria de cada estación en Private Web, la decisión sobre el perfil `OCC-` de una aerolínea charter ya vinculada y los huecos de la fase 4 «Facturación».
+- Definir cuándo nace una `GroundOperation` y cómo se relacionan los estados
+  del turnaround y de la ejecución.
+- El servidor no exige las firmas de la Orden de Servicio al entregar, para no
+  cambiar lo que envía la APK desplegada; la regla vive en la APK y en la
+  aprobación de OCC.
+- Exigir que cada `ChecklistAnswer` use un ítem de la misma versión del
+  checklist instanciado y que cada `OperationSubmission` use un checklist de su
+  misma operación.
+- Alinear el resultado de `ReviewDecision` con el estado de `OperationSubmission`.
+- Retención y antivirus de fotos y PDF; los bytes viven en almacenamiento S3
+  privado y SQL guarda metadatos y hash.
+- `OperationalServiceRequest` solo tiene la lectura del portal
+  (`GetAirlineOperationalRequests`): faltan su creación y cancelación, qué
+  solicita, su historia de estados, su relación con una línea ejecutada y sus
+  validaciones de membresía, estación y tiempos.
 
 ### Mobile e integraciones
 
-- Versionar payloads/comandos offline, respuesta repetible, expiración y resolución de conflictos.
-- Definir registro/revocación de dispositivos, almacenamiento seguro de tokens y pérdida de tablet. *Posterior al commit verificado: desde la fase 2 una tablet pasa al agente que inicia sesión y se libera al cerrarla, y OCC la desvincula o revoca una perdida ([ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)).*
-- Exigir al procesar cada comando un binding activo cuya cuenta coincida con el recibo, una cuenta habilitada y un dispositivo no revocado; de estas coherencias sólo está materializado el dedupe dispositivo-clave.
-- Alinear estado del recibo con `ProcessedAt`, resultado y error, y devolver exactamente el resultado persistido en un reintento sin duplicar trabajo.
-- Establecer reconciliación tras reconexión; SignalR sólo puede acelerar avisos, no ser fuente de verdad.
-- Acordar precedencia y reconciliación de datos `Internal`, `Manual`, `AirlineClient` y `ExternalProvider`.
-- Completar puertos/use cases para FlightAware u otros proveedores antes de declarar integración real.
+- Versionar los payloads offline y fijar la expiración de un comando que nunca
+  se pudo enviar.
+- Medir la entrega de avisos con la aplicación cerrada y la latencia en el VPS.
+- FlightAware sigue como frontera futura sin adaptador.
 
 ### Auditoría, privacidad y retención
 
-- Definir catálogo de acciones auditables y política de acceso/retención.
-- Redactar secretos, tokens, documentos, payloads y PII en errores, outbox, audit y metadata JSON.
-- Definir derecho de corrección/eliminación sin romper historia regulatoria u operacional.
-- Establecer observabilidad y alertas sin duplicar auditoría como log técnico.
+- Política de acceso y retención de la auditoría.
+- Redactar secretos, tokens, documentos y PII en errores, outbox, auditoría y
+  metadatos JSON de forma uniforme. Los datos de tarjeta ya cumplen la regla:
+  solo se guardan la marca y los últimos cuatro dígitos.
+- Derecho de corrección o eliminación sin romper la historia regulatoria u
+  operacional.
+- Observabilidad y alertas sin duplicar la auditoría como log técnico.
 
-## Pruebas negativas mínimas para estas coherencias
+## Pruebas negativas que siguen siendo criterio
 
-- rechazar una respuesta cuyo ítem pertenezca a otra versión de template y un envío cuyo checklist pertenezca a otra operación;
-- rechazar precio/moneda incompletos, tarifa ausente o de otra definición, aerolínea o estación, versión no aprobada/no vigente y snapshots que no coincidan al crear la línea;
-- rechazar contrato originado por una solicitud no aprobada o de otra aerolínea;
-- rechazar creación o resolución de solicitud operativa fuera de tenant/scope, con referencias incoherentes, tiempos invertidos o resolución incompatible con su estado;
-- rechazar recibo móvil con cuenta distinta del binding, binding cerrado, cuenta deshabilitada o dispositivo revocado;
-- rechazar recibos con estado/resultado/error incoherentes y comprobar replay exacto sin repetir efectos;
-- rechazar modificación o borrado de eventos, respuestas, envíos y decisiones que el diseño declare históricos.
+- Rechazar una respuesta cuyo ítem pertenezca a otra versión del checklist y un
+  envío cuyo checklist pertenezca a otra operación.
+- Rechazar precio o moneda incompletos, una tarifa de otra definición,
+  aerolínea o estación y una versión no aprobada o no vigente.
+- Rechazar un contrato originado por una solicitud no aprobada o de otra
+  aerolínea.
+- Rechazar un recibo móvil con una cuenta distinta del vínculo, un vínculo
+  cerrado, una cuenta deshabilitada o un dispositivo revocado.
+- Rechazar la modificación o el borrado de eventos, respuestas, envíos y
+  decisiones que el diseño declara históricos.
 
-## Contradicciones de vocabulario que deben resolverse
+## Vocabulario del prototipo
 
 | Fuente de prototipo | Diferencia respecto al modelo | Tratamiento actual |
 | --- | --- | --- |
-| Public Web | Tipos de solicitud adicionales; objetos de factura, conciliación, documento, disputa y notificación | Conservar como exploración; módulos no modelados siguen diferidos. |
-| Mobile Agent | Estados de vuelo en español y granularidad aeronáutica distinta de `TurnaroundStatus` | No mapear uno-a-uno; definir traducción/procedencia en un caso de uso. |
-| Private Web | Departamentos y roles detallados; permisos como textos de interfaz | No convertir en autorización hasta tener catálogo servidor y pruebas. |
-| Dashboards | KPI, conteos, alertas, cobertura y elegibilidad | Implementar como read models derivados, no tablas por conveniencia. |
+| Public Web | Tipos de solicitud adicionales; objetos de disputa y conciliación | Facturas, documentos, notificaciones y cobro existen en la API. La disputa y la conciliación del prototipo no se implementan, por decisión: Finanzas corrige con notas de crédito. Los tipos de solicitud siguen sin decidir. |
+| Mobile Agent | Estados de vuelo en español y granularidad aeronáutica distinta de `TurnaroundStatus` | No se mapean uno a uno; la traducción vive en cada caso de uso. |
+| Private Web | Departamentos y roles detallados como textos de interfaz | El catálogo del servidor es la autoridad; el menú solo oculta lo que el servidor ya niega. |
+| Tableros | KPI, conteos, alertas, cobertura y elegibilidad | Proyecciones calculadas en el servidor, no tablas autoritativas. |
 
 ## Fuera de alcance v1 explícito
 
-- facturación fiscal (ITBIS, NCF) y conciliación bancaria;
-- notificaciones y chat;
-- documentos y evidencia binaria;
+- conectividad fiscal real con la DGII y conciliación bancaria;
 - proyecciones analíticas materializadas;
 - endpoints de negocio inferidos directamente de entidades EF;
-- acceso directo de cualquier cliente a SQL Server o proveedor externo;
+- acceso directo de cualquier cliente a SQL Server o a un proveedor externo;
 - reutilizar datos, credenciales o archivos del prototipo como seed real;
 - tratar Production como una extensión del host Development.
 
@@ -175,19 +259,21 @@ flowchart LR
     TESTS --> DOCS[Vault y docs actualizados]
 ```
 
-Una pantalla terminada o un campo agregado no cierra por sí solo una brecha. Debe existir decisión verificable, comportamiento ejecutable, contrato cuando cruza la API y pruebas proporcionales al riesgo.
+Una pantalla terminada o un campo agregado no cierra por sí solo una brecha.
+Debe existir decisión verificable, comportamiento ejecutable, contrato cuando
+cruza la API y pruebas proporcionales al riesgo.
 
 ## Relacionados
 
 - [Índice de dominio](README.md)
+- [Mapa de capacidades](../02-producto/mapa-de-capacidades.md)
 - [Contextos y límites](contextos-y-limites.md)
 - [Identidad, tenancy y autorización](identidad-tenancy-y-autorizacion.md)
 - [Tiempo, estados y trazabilidad](tiempo-estados-y-trazabilidad.md)
 
 ## Fuentes
 
-- [Límites v1](../../docs/architecture/database-v1.md)
-- [Contrato OpenAPI](../../docs/api/openapi-contract.md)
-- [Estado del backend](../../backend/README.md)
-- [Límites de Public Web](../../frontend/public-web/README.md)
-- [Límites de Mobile Agent](../../frontend/mobile-agent/README.md)
+- [Límites v1](../../docs/architecture/database-v1.md) y [estado del backend](../../backend/README.md).
+- [Snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json) y [cliente compartido](../../packages/api-client/src/client.ts).
+- [Composición de la API](../../backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs): autenticación y política fallback.
+- [Modo demo de Gestión Humana](../../frontend/private-web/src/config/hrDemoMode.js) y [adaptador heredado de notificaciones](../../frontend/private-web/src/services/notificationsService.js).

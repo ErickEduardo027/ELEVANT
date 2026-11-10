@@ -31,7 +31,7 @@ Este mapa conecta tres preguntas que deben responderse juntas antes de modificar
 - [Abrir la Base filtrable de las notas 04, 05 y 06](arquitectura-aplicaciones-desarrollo.base)
 
 > [!IMPORTANT]
-> El Canvas es una ruta de exploración, no una afirmación de que todos los recorridos estén integrados. El OpenAPI vigente sólo contiene la superficie contractual mínima; los perfiles de aplicación indican dónde todavía hay mocks o adaptadores prototípicos.
+> El Canvas es una ruta de exploración, no una afirmación de que todos los recorridos estén integrados. *Posterior al commit verificado de esta nota (código de `39a85a46`):* el OpenAPI publica las operaciones de las cuatro fases del ciclo y los tres clientes lo consumen; los perfiles de aplicación indican los adaptadores heredados del prototipo que quedan en Private Web.
 
 ## Sistema y ciclo de cambio
 
@@ -61,7 +61,7 @@ flowchart LR
 
     PRIVATE --> CONTRACT
     PUBLIC --> CONTRACT
-    MOBILE -. integración en evolución .-> CONTRACT
+    MOBILE --> CONTRACT
     CONTRACT --> API
     API --> APP
     APP --> DOMAIN
@@ -80,7 +80,7 @@ flowchart LR
 | Desde | Hacia | Regla verificable |
 | --- | --- | --- |
 | Private Web, Public Web y Mobile Agent | `@elevant/api-client` | El contrato compartido proviene de OpenAPI; un mock o tipo local no lo reemplaza. |
-| Cliente API | `Elevant.Api` | HTTP versionado; la identidad y los scopes deben resolverse en servidor cuando se implementen. |
+| Cliente API | `Elevant.Api` | HTTP versionado; la identidad y los scopes se resuelven en el servidor. |
 | API | Application, Contracts, Infrastructure y Persistence | API es composition root; no debe concentrar reglas de dominio ni ejecutar migraciones al iniciar. |
 | Application/Infrastructure/Persistence | Domain | Las dependencias apuntan hacia el núcleo; las pruebas de arquitectura fijan el grafo exacto. |
 | Persistence | SQL Server | EF Core y sus migraciones son la fuente ejecutable del esquema. Ningún cliente accede directamente. |

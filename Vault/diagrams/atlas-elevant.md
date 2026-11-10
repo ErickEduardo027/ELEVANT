@@ -67,7 +67,7 @@ flowchart TB
     D --> API
     D --> CONTRACT[OpenAPI y cliente generado]
     CONTRACT --> WEB
-    CONTRACT -.->|integración en evolución| MOB
+    CONTRACT --> MOB
     O --> RELEASE[Artefactos inmutables y promoción pull-based]
     RELEASE --> API
     RELEASE --> WEB
@@ -95,6 +95,8 @@ flowchart TB
     class BACK caution;
     class REF control;
 ```
+
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* Mobile Agent consume el contrato OpenAPI como las dos webs; su APK/EAS sigue pendiente.
 
 ## Cómo leerlo
 

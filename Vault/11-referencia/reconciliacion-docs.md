@@ -45,8 +45,9 @@ Este registro explica qué discrepancias se corrigieron en esta etapa y cómo le
 
 ## Qué no se «resolvió» por editar documentación
 
-- La API de negocio y la autorización siguen incompletas aunque el esquema tenga entidades.
-- Mobile Agent conserva flujos de prototipo; no hay pipeline APK/EAS activo ni distribución certificada.
+- En el corte de esta nota, la API de negocio y la autorización estaban incompletas aunque el esquema tuviera entidades. *Posterior al commit verificado de esta nota (código de `39a85a46`):* la API autentica y publica los casos de uso de las cuatro fases del ciclo ([Mapa de capacidades](../02-producto/mapa-de-capacidades.md)).
+- En ese corte, Mobile Agent conservaba flujos de prototipo; posterior al commit verificado, opera contra la API. Sigue sin haber pipeline APK/EAS activo ni distribución certificada.
+- *Posterior al commit verificado:* [`docs/architecture/realtime.md`](../../docs/architecture/realtime.md) y el [README de hubs](../../backend/Elevant.Api/Hubs/README.md) siguen describiendo hubs sin eventos; el código emite `ChangedV1` y prevalece ([OpenAPI, HTTP y SignalR](../04-arquitectura/openapi-http-y-signalr.md)).
 - Production, alertas externas y protección obligatoria de ramas continúan pendientes según sus fuentes.
 - Un restore-check exitoso demuestra una restauración de prueba bajo sus condiciones, no un ensayo completo de desastre con RPO/RTO acordados.
 - La [cronología anterior a Git](../01-historia/origenes-y-limites-de-evidencia.md) no puede reconstruirse sólo desde un repositorio.

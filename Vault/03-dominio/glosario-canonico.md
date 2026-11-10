@@ -128,8 +128,8 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Cargo de demora | Cargo DELAY por la demora de la llegada, cobrado por hora con minutos de gracia (regla `ArrivalDelay`). No existe una «tabla de tiempo de mora». | La unidad «hora», que solo dice cómo se mide. |
 | Huella del contrato | SHA-256 del contenido canónico de una versión (partes, vigencia, estaciones, tarifas y términos); cada firma registra la huella que aceptó. | Un hash del archivo PDF. |
 | Firma de contrato | Aceptación de una parte (AVIAM o la aerolínea) sobre una versión aprobada, con nombre, cargo, fecha y huella; solo de inserción. | Una firma electrónica certificada. |
-| Marca de cargo | Tipo de cargo que el agente de rampa aplica a un servicio, sin precio ni cantidad. | La línea de cargo valorada en la prefactura. |
-| Ajuste | Línea manual de Finanzas en una prefactura borrador, positiva o negativa, con motivo. | Una nota de crédito sobre una factura emitida. |
+| Marca de cargo | Tipo de cargo que el agente de rampa aplica a un servicio, sin precio ni cantidad. | La línea de cargo valorada en la factura. |
+| Ajuste | Historia: línea manual, positiva o negativa y con motivo, que Finanzas agregaba a una prefactura en borrador; salió del producto con la prefactura en la fase 4. Hoy una factura emitida se corrige con una nota de crédito o débito. | Una nota de crédito sobre una factura emitida. |
 | Listo para Finanzas | Regla del servidor que decide si un borrador puede enviarse a Finanzas, con un código por cada causa pendiente. | La aprobación de Finanzas. |
 | Descartar un borrador | Cerrar sin borrar una versión que no prosperó: queda `Rejected` y, si el contrato nunca se activó, el contrato se termina. | Una devolución de Finanzas, que regresa la versión a `Draft`. |
 | Enmienda | Versión nueva de un contrato activo o suspendido, creada desde la última versión aprobada con su propio «Vigente desde»; vuelve a pasar por Finanzas y por las firmas. Desde la fase 2 parte de la versión que rige (ver abajo). | Una renovación, que abre la vigencia siguiente. |
@@ -140,11 +140,11 @@ Las unicidades impiden duplicar una respuesta por pareja checklist-ítem y una r
 | Permiso de operación | Autorización de la autoridad aeronáutica (JAC) que la aerolínea envía desde el portal y Contratos verifica ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)). | Vigente, por vencer o vencido se calcula con la fecha; un contrato no se activa sin uno verificado y vigente. |
 | Verificación en registro | Consulta de la aerolínea en Wikidata (o la copia de OpenFlights) por IATA/ICAO ([ADR-0023](../../docs/adr/0023-airline-public-registry-check.md)). | La verificación legal de Contratos. |
 | Tasa de cambio | Tasa diaria USD→DOP registrada manualmente por Finanzas; las correcciones conservan historia. | Una cotización bancaria automática. |
-| Nota de crédito | Reducción no fiscal del saldo de una factura, idempotente y nunca mayor que el saldo. | Una anulación de prefactura. |
+| Nota de crédito | Reducción del saldo de una factura emitida, con motivo, idempotente y nunca mayor que el saldo. Sobre una factura E31 recibe su propio e-NCF simulado `E34`, con el ITBIS congelado por línea y su PDF; la nota de débito recibe `E33`. | Un reembolso de dinero o un reclamo de la aerolínea, que el sistema no tiene. |
 | Factura e-CF simulada | Factura de crédito fiscal (tipo 31) que Finanzas emite directamente de operaciones aprobadas, con e-NCF, código de seguridad e ITBIS 18 % ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)). | Un comprobante válido ante la DGII: dice «Simulación — sin validez fiscal». |
 | Pago con tarjeta simulado | Pago del saldo completo de una factura desde el portal con una pasarela simulada; guarda solo marca y últimos 4 dígitos ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). | Un cobro real: no se mueve dinero. |
-| e-NCF | Número de la factura e-CF simulada: `E31` y 10 dígitos consecutivos. | El número interno `NF-…`, que se conserva. |
-| Saldo | Total de la factura menos pagos y notas de crédito; su estado (pendiente, parcial, pagada, vencida) es una proyección. | Una conciliación bancaria. |
+| e-NCF | Número del comprobante e-CF simulado: `E31` y 10 dígitos consecutivos en la factura, `E34` en la nota de crédito y `E33` en la de débito. | El número interno `NF-…` de la factura o `TC-`/`TD-` de una nota, que se conserva. |
+| Saldo | Total de la factura y sus notas de débito menos pagos y notas de crédito; su estado (pendiente, parcial, pagada, vencida o anulada) es una proyección. | Una conciliación bancaria. |
 
 ### Términos de la fase 2 del ciclo
 
@@ -161,7 +161,7 @@ de la fase 2 «Pre-operación» (`50e7778f`;
 | Permiso revocado | Permiso de operación verificado que Contratos dejó sin efecto con motivo (`Revoked`). Conserva su verificación original y suspende los contratos activos que se quedan sin un permiso usable. | Un permiso rechazado, que nunca se verificó. |
 | Representante del portal | Cuenta del portal que gestiona los usuarios de su aerolínea: la aprovisionada para la solicitud aprobada, hasta la primera designación, o quien designe el superadministrador. Firma contratos y envía el permiso JAC. | Un rol de departamento: es un grant de cuenta (`airline_portal.representative`). |
 | Firmante del portal | Usuario del portal que un representante o el superadministrador marca para firmar contratos y enviar el permiso JAC (`airline_portal.signer`). | Un usuario del portal sin ese grant, que no firma ni envía permisos. |
-| Día hábil | El día del calendario de la estación o, si la regla no tiene estación, de `America/Santo_Domingo` ([`BusinessCalendar`](../../backend/Elevant.Application/Common/BusinessCalendar.cs)). Lo usan, entre otras, las reglas de contratos, permisos y Gestión Humana; Finanzas todavía no: sigue contando el día UTC. | El día UTC, que de 20:00 a 23:59 en República Dominicana ya es el siguiente. |
+| Día hábil | El día del calendario de la estación o, si la regla no tiene estación, de `America/Santo_Domingo` ([`BusinessCalendar`](../../backend/Elevant.Application/Common/BusinessCalendar.cs)). Lo usan, entre otras, las reglas de contratos, permisos y Gestión Humana; Finanzas lo adoptó en la fase 4 (ver abajo). | El día UTC, que de 20:00 a 23:59 en República Dominicana ya es el siguiente. |
 | Liberación del agente | Lo que la baja, el traslado fuera de rampa, el paso a oficina, la desactivación del perfil o una ausencia aprobada le quitan al agente en la misma transacción: coberturas, asignaciones en las operaciones que no empezaron y turnos que no empezaron. | La aptitud de una asignación, que solo marca al agente y no libera nada. |
 | Datos maestros | Terminales y posiciones de una estación, y los tipos de avión compartidos por todas, que OCC crea, edita y desactiva; nada en uso se desactiva y nada se borra. | Las estaciones, que solo crea el superadministrador. |
 | Tablet compartida | Instalación de la app de rampa que pasa al agente que inicia sesión y se libera al cerrar la sesión; OCC la desvincula o revoca una perdida. | El binding, que es el registro de cada vínculo entre instalación y cuenta. |
@@ -187,6 +187,29 @@ de la fase 3 «La operación» (`f2d5c52c`;
 | Reapertura de la revisión | Envío nuevo `PendingReview` que OCC crea, con motivo, sobre una aprobación de la que nada se facturó; se corrige y se aprueba en OCC, sin volver a rampa. | Una devolución a rampa, que pide al agente corregir y reenviar. |
 | Aerolínea charter creada por OCC | Aerolínea mínima (organización `OCC-…`, OACI obligatorio e IATA opcional) que OCC da de alta para un charter; una aprobación comercial posterior la vincula. | Una aerolínea aprobada por Contratos con su contrato. |
 | Reabrir la cotización | Paso de Finanzas, con motivo y versión, que devuelve a `Pending` el prepago confirmado de un charter para que la tablet agregue servicios; el monto y la referencia se conservan hasta la confirmación siguiente. | La confirmación del prepago, que cierra la cotización. |
+
+### Términos de la fase 4 del ciclo
+
+Posterior al commit verificado de esta nota: estos términos, y las filas
+«Marca de cargo», «Ajuste», «Nota de crédito», «e-NCF», «Saldo» y «Día hábil»
+de arriba, describen el código de la fase 4 «Facturación y cobro»
+(`39a85a46`; [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+[ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
+[Finanzas](finanzas-tarifas-cargos-y-cobros.md)).
+
+| Término | Significado | No confundir con |
+| --- | --- | --- |
+| Por facturar | Las operaciones aprobadas por OCC con servicios facturables que todavía no tienen factura ni cierre sin cargo, de la más antigua a la más reciente, con todos sus motivos de bloqueo. | «Servicios aprobados», pantalla retirada. |
+| Borrador interno | La prefactura que la emisión crea y emite dentro de una sola transacción serializable; nunca queda visible ni pendiente. Uno antiguo sin factura bloquea la operación con `pending_preinvoice`. | Una prefactura que la aerolínea aceptaba o disputaba, retirada del producto. |
+| Cierre sin cargo | Cierre, con motivo, de operaciones cuya valoración es 0: deja el borrador interno en `NoCharge`, sin e-NCF ni correo, y no tiene reversa. | Una factura en 0, que nunca se emite (`zero_total`). |
+| Día hábil de Finanzas | El día de `America/Santo_Domingo` que usa todo día de Finanzas: emisión, vencimiento, cobros, notas, reportes, tarjeta, correos y cuentas por pagar. | El día UTC o el de la estación. |
+| Anulada | Estado proyectado (`Voided`) de una factura sin cobros que las notas de crédito llevaron a 0; si hubo algún cobro, queda «Pagada». | Anular una factura de proveedor, que es un cambio de estado con motivo. |
+| Saldo a favor | Crédito de notas por encima de lo adeudado más los cobros sin aplicar, como el excedente de un prepago; el portal lo muestra en «Estado de cuenta». | Una devolución, que es un movimiento propio de Cobros. |
+| Prepago aplicado | El cobro `PREPAGO {referencia}` de un charter aplicado una sola vez a su factura; mientras no se aplique, Finanzas lo corrige con motivo. | El pago con tarjeta del resto del saldo. |
+| Factura de proveedor anulada | Un borrador, una rechazada o una aprobada sin aplicaciones activas que Finanzas deja `Voided` con motivo; libera el NCF para registrarlo de nuevo. | Rechazar, que permite devolver la factura a borrador para corregirla. |
+| Reverso de pago | Fila vinculada e inmutable que revierte una aplicación de un pago a proveedor o anula el pago, con motivo y `finance.payables.reverse`. | Borrar o editar el pago. |
+| Segregación de funciones | Regla por persona: quien crea o envía una factura de proveedor no la aprueba, y quien la aprueba no registra ni aplica pagos contra ella (`segregation_of_duties`). | Un permiso del catálogo. |
+| Escalamiento del gasto | Revisión de un gasto por un administrador de Finanzas (etapa `Escalation`) cuando el departamento no tiene otro administrador elegible; la aprobación final la da otra persona. | La aprobación final de Finanzas. |
 
 ## Integración y trazabilidad
 

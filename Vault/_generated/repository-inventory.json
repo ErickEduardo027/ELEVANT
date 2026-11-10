@@ -248,10 +248,10 @@
       {
         "path": "Vault/03-dominio/finanzas-tarifas-cargos-y-cobros.md",
         "id": "dominio-finanzas-tarifas-cargos-y-cobros",
-        "title": "Finanzas: precios, cartera, proveedores, gastos y simulación fiscal",
+        "title": "Finanzas: precios, facturación e-CF simulada, cobro con tarjeta, proveedores y gastos",
         "type": "architecture",
         "area": "domain",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -401,9 +401,9 @@
         "title": "OpenAPI, HTTP y SignalR",
         "type": "architecture",
         "area": "architecture",
-        "status": "draft",
+        "status": "verified",
         "maturity": "evolving",
-        "evidence": "unknown"
+        "evidence": "repo-verified"
       },
       {
         "path": "Vault/04-arquitectura/README.md",
@@ -441,9 +441,9 @@
         "title": "API compartida",
         "type": "architecture",
         "area": "backend",
-        "status": "draft",
+        "status": "verified",
         "maturity": "evolving",
-        "evidence": "unknown"
+        "evidence": "repo-verified"
       },
       {
         "path": "Vault/05-aplicaciones/asistencia-compartida-occ-agente.md",
@@ -551,7 +551,7 @@
         "title": "Cobros, aplicaciones y consulta de aerolínea",
         "type": "capability",
         "area": "applications",
-        "status": "documented",
+        "status": "verified",
         "maturity": "evolving",
         "evidence": "repo-verified"
       },
@@ -1053,7 +1053,7 @@
       },
       {
         "path": "Vault/diagrams/arquitectura-contexto.canvas",
-        "sha256": "cd0c90474aca6270c73a6a5b97992ac19b86929ab339b2c160521d65334bda56"
+        "sha256": "aad9fb9cd13697e7d90a58809416a8545ab154e22f7113eb3e8d479c8ba9c1b3"
       },
       {
         "path": "Vault/diagrams/atlas-elevant.canvas",
@@ -1155,13 +1155,13 @@
     "openapi": [
       {
         "path": "packages/api-client/openapi/elevant-v1.json",
-        "sha256": "081ca590c65f1c08e6c97687047bfcc1950b9192841b2a231a34362b0f5bcf03",
+        "sha256": "4b7961c3a7c8423a3131be66b18c38ef41df4e7b5c379c72827602bff54cfa20",
         "title": "Elevant API",
         "version": "v1"
       },
       {
         "path": "packages/api-client/openapi/source.json",
-        "sha256": "db5bcca0d3b8312c0154225aeca55afac535b11bd36bb85a90a90211d5dd02f0",
+        "sha256": "91c99b2dfe54e911b578a794c209dadbd75ca0724445f4d99b90a8a206a66fdf",
         "title": null,
         "version": null
       }
@@ -1496,6 +1496,18 @@
         "name": "AddOccIncidentsReviewReopenAndServiceOrderCorrections",
         "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261108043225_AddOccIncidentsReviewReopenAndServiceOrderCorrections.cs",
         "sha256": "07905a4b2228002adc33aaa92df24ffcd4114fef2228d35afff3b0cd622e7582"
+      },
+      {
+        "id": "20261109030826",
+        "name": "AddAdjustmentNoteTaxAndCharterPrepaymentLink",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261109030826_AddAdjustmentNoteTaxAndCharterPrepaymentLink.cs",
+        "sha256": "66e608e797627c69ee882a397b8d315eea1ec2b0e872dd91f7eb6c43fb665fab"
+      },
+      {
+        "id": "20261109064156",
+        "name": "AddPayablesCorrections",
+        "path": "database/DevelopmentDB/Elevant.Persistence/Persistence/Migrations/20261109064156_AddPayablesCorrections.cs",
+        "sha256": "d28f940d91d2044323d28a4963bcc18126ee96c0287e3ab38ea6acc429ab7a04"
       }
     ],
     "manifestContracts": [

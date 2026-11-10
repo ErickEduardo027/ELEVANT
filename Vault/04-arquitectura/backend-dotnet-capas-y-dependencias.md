@@ -122,7 +122,7 @@ Implementado:
 - registro de `TimeProvider.System`;
 - puerto neutral `IFlightInformationProvider` y sus tipos de consulta/resultado.
 
-No implementado: no existe una carpeta `Features` ni handlers de negocio. Los vertical slices descritos en su README siguen siendo un patrón objetivo, no funcionalidad disponible.
+En el commit verificado no existían handlers de negocio. *Posterior al commit verificado de esta nota (código de `39a85a46`):* Application organiza los casos de uso y puertos en `Operations`, `Commercial`, `Finance`, `Identity` e `Integration`, con políticas puras como [`FinanceInvoicePolicy`](../../backend/Elevant.Application/Finance/FinanceInvoicePolicy.cs) y [`ShiftAdjustmentRules`](../../backend/Elevant.Application/Identity/ShiftAdjustmentRules.cs), y utilidades comunes como el día hábil de Santo Domingo en [`BusinessCalendar`](../../backend/Elevant.Application/Common/BusinessCalendar.cs).
 
 ### `Elevant.Contracts`
 
@@ -130,10 +130,10 @@ Responsabilidad: formas públicas HTTP independientes de Domain y EF.
 
 Implementado:
 
-- `SystemPingResponse`, publicado por el único endpoint versionado;
+- `SystemPingResponse`, que en el commit verificado publicaba el único endpoint versionado;
 - tipos comunes de paginación preparados para futuros endpoints.
 
-Límite actual: los tipos de paginación no aparecen en el OpenAPI vigente porque no existe un endpoint que los use. No hay DTO de vuelos, operaciones, contratos, usuarios o autenticación.
+Límite en el commit verificado: no había DTO de negocio. *Posterior al commit verificado de esta nota (código de `39a85a46`):* Contracts define las formas HTTP de las 400 operaciones del snapshot, de la sesión a las cuentas por pagar.
 
 ### `Elevant.Infrastructure`
 
@@ -141,7 +141,7 @@ Responsabilidad: adaptadores y proveedores externos no persistentes detrás de p
 
 Implementado: binding de opciones para el shell de FlightAware.
 
-No implementado: adapter de `IFlightInformationProvider`, `HttpClient`, transporte, resiliencia y llamadas reales. La clase `FlightAwareClient` está vacía y no se registra.
+No implementado: adapter de `IFlightInformationProvider` para FlightAware; la clase `FlightAwareClient` sigue vacía y no se registra. *Posterior al commit verificado de esta nota (código de `39a85a46`):* Infrastructure [compone](../../backend/Elevant.Infrastructure/DependencyInjection.cs) el feed AeroDataBox y el tráfico OpenSky, apagados por defecto, los registros públicos de aerolíneas, los tokens JWT, los PDF y hojas de cálculo, el correo SMTP y la pasarela de tarjeta (`Disabled` por defecto; la simulada solo en Development, Test o Testing).
 
 ### `Elevant.Persistence`
 
@@ -161,10 +161,10 @@ Implementado:
 - CORS, rate limiting, forwarded headers y HTTPS redirection configurables;
 - Problem Details, manejo global de excepciones, health y readiness;
 - Swagger/OpenAPI en ambientes permitidos;
-- mapeo de dos hubs SignalR;
+- mapeo de los hubs SignalR;
 - probes especiales de contenedor antes de construir el host.
 
-No implementado: autenticación, autorización efectiva, controllers de negocio y dispatch de casos de uso/eventos.
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* la API también registra autenticación JWT con política fallback autenticada, los controllers de negocio, tres hubs SignalR y los workers de correo, ciclo de vida de contratos, aviso de facturas vencidas, documentos de Gestión Humana, sincronización del feed de vuelos y, si se configuran, el despachador del feed de cambios y la limpieza de medios ([composición](../../backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs)).
 
 ### `Elevant.DatabaseTool`
 
@@ -181,14 +181,16 @@ sequenceDiagram
     participant H as API host
 
     P->>A: AddApplication()
-    A-->>P: TimeProvider
+    A-->>P: TimeProvider y handlers de casos de uso
     P->>I: AddInfrastructure(configuration)
-    I-->>P: opciones FlightAware, sin adapter
+    I-->>P: adaptadores configurables y shell FlightAware
     P->>D: AddPersistence(configuration)
-    D-->>P: DbContext y checks SQL
+    D-->>P: DbContext, stores y checks SQL
     P->>H: AddApiServices + UseApiPipeline
-    H-->>P: endpoints técnicos y hubs shell
+    H-->>P: controllers, workers y hubs de avisos
 ```
+
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* el diagrama muestra la composición actual. En el commit verificado, Application solo registraba `TimeProvider`, Infrastructure las opciones de FlightAware sin adapter y el host los endpoints técnicos y dos hubs sin eventos.
 
 Persistence falla al iniciar si falta `ConnectionStrings:ElevantDatabase`. Eso demuestra una dependencia de runtime explícita; no demuestra que el catálogo sea correcto hasta que readiness valide nombre y marcador.
 
@@ -222,7 +224,7 @@ Una capacidad real debería atravesar las fronteras así:
 5. Api traduce transporte, identidad y resultado; el controller no ejecuta reglas.
 6. Las pruebas cubren reglas, handler, persistencia/frontera y contrato generado.
 
-Este patrón es un objetivo aceptado. No se debe interpretar como evidencia de slices que todavía no existen.
+Este patrón es el aceptado; posterior al commit verificado de esta nota, los casos de uso de las cuatro fases del ciclo lo siguen. Cada slice nuevo debe probarlo, no darlo por supuesto.
 
 ## Verificación
 

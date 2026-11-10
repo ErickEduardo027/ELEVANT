@@ -3,12 +3,12 @@ id: aplicaciones-api-compartida
 title: "API compartida"
 type: architecture
 area: backend
-status: draft
+status: verified
 maturity: evolving
-evidence: unknown
+evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "pending"
+last_verified: "2026-11-10"
+verified_commit: "39a85a46ae089239e22edce448a4d77771680b46"
 sources:
   - global.json
   - Directory.Build.props
@@ -16,11 +16,21 @@ sources:
   - backend/AGENTS.md
   - backend/README.md
   - backend/Elevant.Api/appsettings.json
+  - backend/Elevant.Api/appsettings.Development.json
   - backend/Elevant.Api/appsettings.Production.json
-  - backend/Elevant.Api/Controllers/SystemController.cs
   - backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs
   - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs
+  - backend/Elevant.Api/Controllers/SystemController.cs
+  - backend/Elevant.Api/Controllers/AuthenticationController.cs
+  - backend/Elevant.Api/Controllers/GovernanceResults.cs
+  - backend/Elevant.Api/Controllers/FinanceResults.cs
+  - backend/Elevant.Api/Controllers/OperationalPresenceController.cs
+  - backend/Elevant.Application/Operations/OperationalPresence.cs
+  - backend/Elevant.Api/Hubs/AccountChangeDispatchWorker.cs
+  - backend/Elevant.Api/Hubs/HubOriginGuard.cs
+  - backend/Elevant.Api/Hubs/PublicCatalogHub.cs
   - backend/Elevant.Api/Hubs/README.md
+  - database/DevelopmentDB/Elevant.Persistence/Operations/MasterDataCommand.cs
   - packages/api-client/openapi/elevant-v1.json
   - docs/api/openapi-contract.md
 tags:
@@ -33,149 +43,166 @@ tags:
 
 # API compartida
 
-> [!WARNING]
-> La verificación integral de esta nota queda pendiente mientras avanza el plan
-> de implementación. La ruta de `SystemController` fue corregida para conservar
-> la navegación, pero el estado funcional se documentará únicamente en el cierre
-> aprobado por el usuario.
-
-`Elevant.Api` es la única puerta de aplicación a reglas, datos e integraciones para Private Web, Public Web y Mobile Agent. El host existe y está probado como scaffold técnico; no implementa todavía autenticación ni casos de uso de negocio.
+`Elevant.Api` es la única puerta a reglas, datos e integraciones para Private
+Web, Public Web y Mobile Agent. En el commit verificado publica 400
+operaciones de negocio y técnicas en OpenAPI v1, con autenticación JWT y una
+política que exige sesión salvo en las operaciones declaradas anónimas. Esta
+nota describe el código; no acredita qué versión corre en el VPS.
 
 ## Ficha de frontera
 
 | Dimensión | Estado verificado |
 | --- | --- |
-| Consumidores | Los tres clientes del repositorio mediante HTTPS y el contrato versionado. |
-| Responsabilidad objetivo | Alojar casos de uso, autorización, tenant/station scope, persistencia y adaptadores externos; esa capacidad de negocio aún no está implementada de extremo a extremo. |
-| Forma | Monolito modular .NET 10 con capas explícitas. |
-| Contrato actual | Health/readiness técnicos y `GET /api/v1/system/ping`; OpenAPI contiene solo el ping como operación pública de aplicación. |
-| Tiempo real | Dos hubs SignalR vacíos/reservados; los eventos listados son futuros y no estables. |
-| Madurez | Infraestructura funcional con dominio/persistencia amplios, pero superficie funcional mínima. |
+| Consumidores | Los tres clientes del repositorio, por HTTPS y con el cliente compartido `@elevant/api-client`. |
+| Responsabilidad | Casos de uso, autorización por departamento, organización y estación, persistencia y adaptadores externos. |
+| Forma | Monolito modular .NET 10 con capas probadas por pruebas de arquitectura. |
+| Contrato | 400 operaciones en 349 rutas del [snapshot](../../packages/api-client/openapi/elevant-v1.json); la tabla de abajo las reparte por prefijo. |
+| Escrituras | `Idempotency-Key` UUID en la cabecera, o `requestId` en el cuerpo en los módulos que ya lo publicaban; versión esperada (`rowversion` en Base64, `If-Match` o `expectedVersion`); Problem Details con un `code` estable. |
+| Tiempo real | Tres hubs SignalR que solo anuncian cambios; el cliente relee por REST. |
+| Fuera de alcance | Production, proveedor fiscal real, pasarela de tarjeta real y conciliación bancaria. |
 
 ## Stack actual
 
-- SDK y target .NET 10 fijados desde `global.json` y `Directory.Build.props`.
-- ASP.NET Core con controllers, API versioning por segmento de URL y JSON camelCase.
-- Swashbuckle/OpenAPI v1 para contrato y Swagger en ambientes permitidos.
+- SDK .NET 10 fijado en `global.json` y target común en `Directory.Build.props`.
+- ASP.NET Core con controllers, versionado por segmento de URL y JSON camelCase.
+- Swashbuckle para OpenAPI v1; Swagger se expone en Development y, con
+  `Swagger:Enabled`, en Testing, nunca en Production.
 - EF Core SQL Server a través del proyecto Persistence compartido.
-- SignalR para puntos de conexión reservados.
-- Problem Details, health checks, CORS, rate limiting y forwarded headers configurables.
-- xUnit para pruebas unitarias, de arquitectura e integración.
+- JWT Bearer HMAC-SHA256 de tipo `at+jwt`: cada petición comprueba además el
+  sello de seguridad vigente de la cuenta en SQL.
+- SignalR, almacenamiento S3 privado (`AWSSDK.S3`), PDF con PDFsharp, hojas
+  OpenXML y correo por SMTP.
+- xUnit v3 para pruebas unitarias, de arquitectura e integración con SQL Server.
 
 ## Capas y responsabilidades
 
 | Proyecto | Responsabilidad | Restricción principal |
 | --- | --- | --- |
-| `Elevant.Domain` | Entidades, enums y reglas puras. | Sin dependencia de framework. |
-| `Elevant.Application` | Casos de uso y puertos. | Organizar features como vertical slices; no infraestructura. |
-| `Elevant.Contracts` | Requests/responses HTTP públicos. | No exponer entidades EF ni inferir DTOs de fixtures. |
-| `Elevant.Infrastructure` | Adaptadores externos no persistentes. | Proveedores quedan detrás de puertos de Application. |
-| `Elevant.Persistence` | EF Core, SQL Server, mappings y migraciones. | Vive en `database/DevelopmentDB`; no en la ruta de clientes. |
-| `Elevant.Api` | Composition root, middleware y transporte HTTP/SignalR. | No contiene reglas de dominio ni ejecuta migraciones/seeds al arrancar. |
+| `Elevant.Domain` | Entidades, enums, catálogo de permisos y reglas puras. | Sin dependencia de framework. |
+| `Elevant.Application` | Casos de uso y puertos por módulo: Operations, Commercial, Finance, Identity e Integration. | Sin infraestructura. |
+| `Elevant.Contracts` | Requests y responses HTTP. | Nunca expone entidades EF. |
+| `Elevant.Infrastructure` | Adaptadores de proveedores, PDF, correo y pasarela. | Detrás de puertos de Application. |
+| `Elevant.Persistence` | EF Core, stores, migraciones y seed de Development. | Vive en `database/DevelopmentDB`. |
+| `Elevant.Api` | Composition root: controllers, hubs, workers y OpenAPI. | No contiene reglas de dominio ni ejecuta migraciones o seeds al arrancar. |
 
-## Superficie HTTP actual
+## Superficie HTTP por prefijo
 
-| Ruta | Estado | Qué demuestra |
+| Prefijo `/api/v1/…` | Operaciones | Qué sirve |
 | --- | --- | --- |
-| `/health` | Actual | El proceso HTTP responde; no consulta dependencias. |
-| `/health/ready` | Actual | Verifica SQL, catálogo esperado y marcador del ambiente mediante el health check registrado. |
-| `/api/v1/system/ping` | Actual y contractual | Operación pública v1 con respuesta técnica y errores documentados. |
-| `/swagger/v1/swagger.json` | Actual en Development/Testing configurado | Documento OpenAPI que alimenta el cliente generado. No se expone en Production. |
-| `/hubs/operations` | Reservada | Punto SignalR vacío; no existen eventos funcionales publicados. |
-| `/hubs/notifications` | Reservada | Punto SignalR vacío; no existen eventos funcionales publicados. |
+| `finance` | 97 | Tarifarios, paquetes, reglas de cierre, «Por facturar», emisión, facturas, cobros, notas, charters, CxP, gastos, reportes e Inicio. |
+| `governance` | 64 | Usuarios, perfiles y validaciones por departamento, clientes, aerolíneas, estaciones, correo y auditoría de Superadministración. |
+| `occ` | 63 | Planificación, posiciones, cobertura, feed de vuelos, tráfico, datos maestros, revisión, incidencias, documentos, tabletas y reportes. |
+| `human-resources` | 47 | Empleados, puestos, requisiciones, habilitaciones, carnets, turnos, disponibilidad, asistencia, agentes de rampa y reportes. |
+| `contracts` y `contract-versions` | 37 | Solicitudes comerciales, catálogo, borradores, enmiendas, permisos, documentos, firmas, vigencia y ciclo de vida. |
+| `airline/portal`, `airline/contract-drafts` y `airline/permits` | 30 | Portal de la aerolínea: arranque, operaciones, contratos, borradores, permisos, usuarios, facturas, cartera y tarjeta. |
+| `ramp` | 23 | Tableta: operaciones asignadas, hitos, servicios, cargos, checklist, documentos, incidencias, charter, entrega y agenda. |
+| `auth` | 10 | Sesión, código por correo, refresh, cierre, contraseña, activación y restablecimiento. |
+| `chat` | 8 | Conversaciones de la operación y presencia. |
+| `service-closures` | 4 | Clausura de servicios del catálogo. |
+| `operations` | 3 | Borradores de asistencia de OCC y del agente. |
+| `public` | 3 | Catálogo público y solicitudes públicas. |
+| `media`, `mobile`, `notifications` y `department-notifications` | 8 | Medios privados, vínculo de la tableta y notificaciones. |
+| `changes`, `commercial` y `system` | 3 | Feed de cambios por cursor, opciones de afiliación y `GET /api/v1/system/ping`. |
 
-La presencia de entidades de dominio, tablas o hubs no crea por sí sola endpoints de vuelos, contratos, usuarios, mobile o finanzas.
+Son anónimas solo las operaciones de sesión, activación y restablecimiento de
+cuenta, el catálogo y las solicitudes públicas, los medios publicados, las
+opciones de afiliación y el ping. Fuera de OpenAPI quedan `/health`, que no
+consulta dependencias, `/health/ready`, que verifica SQL, catálogo y marcador
+del ambiente, y `/swagger/v1/swagger.json` donde está permitido.
 
 ## Contrato con los clientes
 
-`packages/api-client/openapi/elevant-v1.json` es el snapshot canónico para TypeScript y en el commit verificado solo contiene `/api/v1/system/ping`. Orval genera `@elevant/api-client`, compartido por las tres aplicaciones. Un endpoint nuevo debe actualizar implementación, OpenAPI, snapshot, salida generada y consumidores afectados; los clientes nunca importan tipos EF.
+El [snapshot](../../packages/api-client/openapi/elevant-v1.json) es la fuente
+del cliente TypeScript: Orval genera los tipos y una capa manual valida cada
+respuesta y convierte los fallos en errores con el `code` de Problem Details.
+Un endpoint nuevo actualiza implementación, snapshot, salida generada,
+validadores y consumidores afectados; los clientes nunca importan tipos EF.
+Una respuesta que lee la APK desplegada no gana claves nuevas: sus validadores
+rechazan las desconocidas.
 
-REST conserva la autoridad del estado. Los eventos SignalR futuros pueden avisar de un cambio, pero después de reconectar el cliente vuelve a consultar REST y tolera duplicados/desorden.
+## Escrituras, versiones y errores
+
+- **Idempotencia.** El mismo cuerpo con la misma clave devuelve el resultado
+  original sin repetir auditoría, correos ni avisos; otra clave con el mismo
+  cuerpo es otro intento, y la misma clave con otro cuerpo responde 409
+  `idempotency_conflict`. Los comandos nuevos de Finanzas usan
+  [`MasterDataCommand`](../../database/DevelopmentDB/Elevant.Persistence/Operations/MasterDataCommand.cs):
+  recibo, trabajo y commit en una transacción serializable.
+- **Versión esperada.** Una versión vieja responde 409 `version_conflict` y
+  el cliente relee antes de formar otro intento.
+- **Problem Details.** Las salidas 4xx y 5xx llevan `Extensions["code"]`
+  ([GovernanceResults](../../backend/Elevant.Api/Controllers/GovernanceResults.cs));
+  una ruta de Finanzas retirada que un cliente viejo aún llama responde 410
+  `legacy_finance_route_retired` ([FinanceResults](../../backend/Elevant.Api/Controllers/FinanceResults.cs)).
+  Una excepción inesperada produce un 500 genérico con `traceId`, sin texto
+  interno.
+
+## Tiempo real
+
+| Hub | Quién se conecta | Qué recibe |
+| --- | --- | --- |
+| `/hubs/operations` | Cuentas autenticadas | `ChangedV1` con un `eventId` para los recursos operativos y de Finanzas. |
+| `/hubs/notifications` | Cuentas autenticadas | `ChangedV1` con un `eventId` para las notificaciones. |
+| `/hubs/public-catalog` | Cualquiera | `CatalogChangedV1` sin datos, cuando cambia el catálogo publicado. |
+
+El aviso no lleva contenido: el cliente pide `GET /api/v1/changes` con su
+cursor y después relee el recurso con sus permisos vigentes. El despachador
+que proyecta el outbox y emite `ChangedV1`
+([worker](../../backend/Elevant.Api/Hubs/AccountChangeDispatchWorker.cs)) se
+enciende con `Realtime:AccountChangeDispatcherEnabled`, que es `false` por
+defecto y `true` en `appsettings.Development.json`. Un navegador solo abre un
+WebSocket desde un origen de la allowlist
+([guarda de origen](../../backend/Elevant.Api/Hubs/HubOriginGuard.cs)). La
+lista de «eventos futuros» del [README de hubs](../../backend/Elevant.Api/Hubs/README.md)
+está desfasada frente a ese código. Detalle en el
+[feed de cambios](../04-arquitectura/feed-de-cambios-operativos.md).
 
 ## Configuración segura
 
 | Grupo | Propósito | Regla |
 | --- | --- | --- |
-| Connection string + ambiente | Conectar al único catálogo físico correcto. | Valor fuera de Git; identidad de aplicación de privilegio mínimo, nunca `sa`/migrator. |
-| CORS | Autorizar orígenes exactos de las dos webs. | Mobile nativo no depende de CORS; CORS tampoco autentica. |
-| Forwarded headers | Interpretar proxy conocido. | Solo habilitar con proxy/red explícitamente confiable. |
-| Rate limiting | Límite fijo por origen de conexión. | Protección técnica, no reemplaza cuotas o autorización de negocio. |
-| Swagger | Diagnóstico/contrato en Development y Testing. | Desactivado en Production. |
-| Integraciones/autenticación | Espacios de configuración reservados. | Secretos fuera de Git; su presencia en settings no prueba implementación. |
+| Connection string y ambiente | Conectar al catálogo físico correcto. | Valor fuera de Git; identidad de aplicación de privilegio mínimo. |
+| `Authentication:*` | Emisor, audiencia, clave de firma y duración del access token. | La API no arranca sin una clave válida; nunca se versiona. |
+| CORS | Orígenes exactos de las dos webs. | Mobile nativo no depende de CORS; CORS no autentica. |
+| Rate limiting | Ventana fija por dirección de la conexión, con un límite menor para crear sesiones. | Protección técnica, no autorización. |
+| `CardPayments:Mode` | Pasarela de tarjeta. | `Disabled` por defecto; `Simulated` solo arranca en Development, Test o Testing. |
+| `AeroDataBox:*` y `OpenSky:*` | Proveedores de vuelos y tráfico. | Apagados por defecto; la clave solo llega por configuración secreta. |
+| SMTP y almacenamiento S3 | Correo y bytes privados. | Secretos fuera de Git. |
 
-Los archivos `.env.example` y `appsettings*.json` contienen forma y placeholders seguros. No copies valores reales a documentación, logs ni imágenes.
+Los archivos `appsettings*.json` y `.env.example` contienen forma y
+placeholders seguros. No copies valores reales a documentación, logs ni
+imágenes.
 
-## Desarrollo local y validación
+## Presencia operativa
 
-Desde la raíz:
+El [controlador](../../backend/Elevant.Api/Controllers/OperationalPresenceController.cs)
+lee la presencia de las operaciones que el lector ya puede ver y actualiza el
+lease del propio sujeto JWT. El [registro](../../backend/Elevant.Application/Operations/OperationalPresence.cs)
+vive en memoria: 90 s de expiración, 5 min de actividad y 24 h de retención,
+más el estado elegido por la propia cuenta y un mensaje de hasta 80
+caracteres. Se pierde al reiniciar la API y presupone una sola instancia.
 
-```powershell
-dotnet tool restore
-dotnet restore backend/Elevant.sln --locked-mode
-dotnet build backend/Elevant.sln --configuration Release --no-restore
-dotnet test backend/Elevant.sln --configuration Release --no-build
-dotnet ef migrations has-pending-model-changes `
-  --project database/DevelopmentDB/Elevant.Persistence `
-  --startup-project backend/Elevant.Api `
-  --context ElevantDbContext `
-  --configuration Release `
-  --no-build
-```
+## Validación local
 
-También existe `backend/scripts/restore-build-test.ps1` como envoltorio. Las pruebas SQL usan una variable de conexión de test o LocalDB cuando aplica; CI es autoridad para la ruta con SQL Server en contenedor.
+Los comandos de restauración, compilación, pruebas y deriva del modelo EF
+viven en [CLAUDE.md](../../CLAUDE.md) y en el [README del backend](../../backend/README.md).
+Las pruebas SQL usan una instancia real cuando está configurada; si no, CI es
+la autoridad.
 
-## Cobertura de pruebas actual
+## Brechas reales
 
-- arquitectura de dependencias entre proyectos;
-- entidades base del dominio;
-- ping, diagnósticos y health probes;
-- target guard y readiness del catálogo;
-- modelo EF, política de migraciones y migraciones sobre SQL Server;
-- manifiesto y guard de publicación de la imagen API.
-
-No existen pruebas de autenticación ni endpoints de negocio porque esas capacidades todavía no están implementadas.
-
-## Brechas y desconocidos
-
-- **Brecha actual:** falta autenticación, emisión/validación de sesión y políticas de autorización.
-- **Brecha actual:** no hay vertical slices ni controllers de negocio aprobados.
-- **Brecha actual:** hubs no publican eventos y no constituyen contrato.
-- **Brecha actual:** el adaptador FlightAware está reservado, sin `HttpClient` ni implementación registrada.
-- **Brecha actual:** object storage para evidencias no está diseñado.
-- **Desconocido:** orden de endpoints, proveedor de identidad y alcance de la primera versión funcional; deben decidirse por necesidad de producto y contrato.
+- Production no existe: necesita su propio plan.
+- El e-CF y la pasarela de tarjeta son simulaciones; no hay proveedor fiscal
+  ni pasarela reales.
+- No hay conciliación bancaria ni obtención automática de tasas.
+- Algunos comandos aceptan todavía la `Idempotency-Key` opcional, a la espera
+  del paso «contract» ([brechas](../03-dominio/brechas-y-preguntas-abiertas.md)).
 
 ## Fuentes y relaciones
 
-- [README del backend](../../backend/README.md)
-- [Contrato OpenAPI](../../docs/api/openapi-contract.md)
-- [Cliente API compartido](../../packages/api-client/README.md)
+- [README del backend](../../backend/README.md) y [contrato OpenAPI](../../docs/api/openapi-contract.md)
+- [Composición de servicios](../../backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs) y [pipeline](../../backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs)
+- [OpenAPI, HTTP y SignalR](../04-arquitectura/openapi-http-y-signalr.md)
 - [DevelopmentDB compartida](developmentdb-compartida.md)
 - [Fronteras de clientes](../02-producto/fronteras-de-clientes.md)
 - [Mapa de aplicaciones](README.md)
-
-
-## Presencia operativa local
-
-La ampliación añade un [controlador autorizado](../../backend/Elevant.Api/Controllers/OperationalPresenceController.cs)
-para leer presencia por operaciones y actualizar el lease del propio sujeto JWT.
-Los participantes se consultan después del filtro de estación/asignación del
-lector; no existe una consulta libre de presencia por identificador de usuario.
-
-El [registro transitorio](../../backend/Elevant.Application/Operations/OperationalPresence.cs)
-combina clientes con secuencias crecientes. Usa 90 s de expiración, 5 min de
-actividad y 24 h de retención observable; ausencia de datos o reinicio significa
-estado desconocido. Presupone una instancia API y no crea entidades ni migraciones.
-El contrato OpenAPI se recaptura desde el backend compilado y se regenera su cliente.
-Una futura publicación requiere API antes de clientes.
-
-El 2 de noviembre de 2026 se añadió, también en memoria, el estado elegido por la
-propia cuenta (`GET`/`PUT /api/v1/chat/presence/status`): disponible, ocupado, no
-molestar, vuelvo enseguida, ausente o mostrar como desconectado, más un mensaje
-opcional de hasta 80 caracteres. La conexión derivada del lease y el estado elegido
-son campos distintos: el estado elegido solo se publica a otros participantes
-mientras la cuenta tiene un lease vivo, «mostrar como desconectado» oculta la
-conexión real y el mensaje nunca se infiere. Se pierde al reiniciar la API y caduca
-a las 24 h. Las peticiones de presencia usan atributos de validación sobre los
-parámetros del record; los atributos `[property:]` previos hacían que MVC
-devolviera 500 en vez de 400/204. Esta modificación local
-no acredita despliegue ni sustituye la verificación histórica de esta nota.

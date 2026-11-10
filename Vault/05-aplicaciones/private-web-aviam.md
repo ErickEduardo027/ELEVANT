@@ -30,7 +30,6 @@ sources:
   - frontend/private-web/src/features/contracts/shell/ContractsShell.jsx
   - frontend/private-web/src/features/finance/shell/FinanceShell.jsx
   - frontend/private-web/src/services/financeHomeService.js
-  - frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx
   - frontend/private-web/src/features/flight-monitoring/components/FlightMap.jsx
   - frontend/private-web/src/features/positions-map/components/PositionMap.jsx
   - frontend/private-web/src/config/securityHeaders.mjs
@@ -397,13 +396,51 @@ y [servicio de sesión](../../frontend/private-web/src/services/humanResourcesVe
 
 ### Contratos y Finanzas
 
-> [!note] Rama `feat/finance-refinement`
-> [!NOTE] Facturación (fase 4, bloque 1)
-> Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) el menú de Finanzas agrupa en «Facturación» **Por facturar** (operaciones aprobadas por OCC sin facturar, por operación, con atajos de semana y mes; emite una factura e-CF simulada para una o varias operaciones de la misma aerolínea), **Facturas** (e-NCF, saldo y PDF por id de factura) y **Charters**. «Pre-facturación» y «Servicios aprobados» salieron del menú; su código se borra en el bloque 3. Desde [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) el detalle de **Facturas** muestra los pagos con tarjeta de la aerolínea (marca •••• últimos 4, autorización o motivo de rechazo) y la campana avisa `invoice_paid`. Fuentes: [Por facturar](../../frontend/private-web/src/features/finance/invoicing/ToInvoicePage.jsx), [menú](../../frontend/private-web/src/features/finance/shell/modules.js) y [adaptador](../../frontend/private-web/src/services/invoicingService.js). Lo que sigue describe el estado anterior.
+> [!NOTE] Finanzas en la fase 4
+> Posterior al commit verificado de esta nota: este bloque describe el código
+> de la fase 4 del ciclo (`39a85a46`;
+> [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
+> [ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Las reglas y los
+> permisos están en [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
 
-> Finanzas agrupa en «Tarifarios» el tarifario de servicios (tarifa base versionada por moneda), el tarifario de cargos (catálogo CRUD e importes) y las tasas de cambio; añade «Aprobación de contratos» (precio contra base, aprobar o devolver con motivo) y sustituye «Seguimiento» por «Facturas y cobros» (saldo, vencimiento, pagos parciales y notas de crédito). Pre-facturación muestra cargos y ajustes bajo cada servicio y permite editarlos en borrador con motivo. Reportes lee ocho reportes del servidor y exporta CSV/PDF. Contratos envía a Finanzas en lugar de activar y ve precio base y diferencia. Cada módulo se muestra según los permisos `finance.*`. El texto siguiente describe el estado anterior. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
+`/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante
+estado interno, no rutas independientes para cada pestaña, y solo muestran los
+módulos que permite `GET governance/me/access`. Contratos presenta inicio,
+contratos, borradores, solicitudes, servicios, servicios pactados y reportes.
+El chat departamental heredado está diferido: ambos shells ocultan
+«Comunicaciones» porque `/api/internal-chat/messages` no existe en la API
+canónica ni persiste en SQL; esto no afecta el chat operativo OCC–agente.
 
-`/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante estado interno, no rutas independientes para cada pestaña. Contratos presenta inicio, contratos, borradores, solicitudes, servicios, servicios pactados y reportes. Finanzas presenta inicio, servicios aprobados, prefacturación, seguimiento, tarifas y reportes. El chat departamental heredado está diferido: ambos shells ocultan «Comunicaciones» porque `/api/internal-chat/messages` no existe en la API canónica ni persiste en SQL; esto no afecta el chat operativo OCC–agente. En el worktree local, Inicio de Finanzas combina lecturas autorizadas de servicios aprobados y prefacturas por estación: hasta 200 servicios de los últimos 30 días y la primera página de 50 prefacturas, no totales históricos. Reportes agrupa los estados de esa primera página por aerolínea y moneda, sin inventar importes ni exportaciones. Ambas vistas revalidan con cambio durable, foco y polling de 25 segundos. Tarifas consulta versiones contractuales publicadas y paginadas para una estación autorizada mediante `GET /api/v1/finance/tariffs`; conserva cuatro decimales y distingue versiones históricas. La activación de un contrato genera una pista durable `finance_tariffs` para Finanzas, con revalidación del alcance en el feed. Se retiró la acción local de «Programar cambio» que no persistía. Seguimiento consulta prefacturas aceptadas, facturas no fiscales y pagos manuales mediante `GET /api/v1/finance/reconciliation`, con revalidación por `finance_preinvoices`, foco y polling. No acredita conciliación bancaria y retiró la acción local «Conciliar». El buzón heredado está oculto para ambos roles, evitando `/api/notifications`. Nada de esto acredita despliegue al VPS. Fuentes: [servicio de inicio](../../frontend/private-web/src/services/financeHomeService.js), [vista de reportes](../../frontend/private-web/src/features/finance/reports/FinanceReportsPage.jsx), [vista de tarifas](../../frontend/private-web/src/features/finance/tariffs/TariffsPage.jsx), [vista de facturas y cobros](../../frontend/private-web/src/features/finance/invoices/InvoicesPage.jsx), [controlador financiero](../../backend/Elevant.Api/Controllers/FinanceReconciliationController.cs) y [persistencia](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfFinanceReconciliationReadStore.cs).
+El [menú de Finanzas](../../frontend/private-web/src/features/finance/shell/modules.js)
+es Inicio · Facturación · Cuentas por pagar · Reportes · Configuración ·
+Usuarios del departamento:
+
+| Pantalla | Comportamiento |
+| --- | --- |
+| Inicio | Indicadores de la estación que calcula el servidor (`GET finance/home`); cada sección se muestra según el permiso de su módulo. |
+| Facturación → Por facturar | Operaciones aprobadas por OCC todavía sin factura, de la más antigua a la más reciente, con atajos de semana (domingo a sábado) y de mes, «Toda la aerolínea del período», «Cargar más» y «Mostrando N de M»; cada operación explica en español todos sus motivos de bloqueo. Emite una factura e-CF simulada para una o varias operaciones de la misma aerolínea y, si el total es 0, ofrece «Cerrar sin cargo» con motivo. |
+| Facturación → Facturas | Páginas de 25 con una búsqueda por e-NCF, número o aerolínea; saldo, estado (también «Anulada») y PDF, y las pestañas «Cobros» y «Estados de cuenta» según los permisos. El detalle muestra los pagos con tarjeta de la aerolínea (marca •••• últimos 4, autorización o motivo de rechazo), las notas de crédito `E34` o de débito `E33` con su PDF y el estado de los correos. Un cobro con tarjeta no ofrece revertir ni devolver: se corrige con una nota de crédito. |
+| Facturación → Charters | Confirma o corrige con motivo el prepago y reabre la cotización. |
+| Cuentas por pagar | Facturas de proveedores con corrección, anulación y reverso de pagos bajo segregación de funciones; proveedores con retiro; gastos de empleados con revisión por escalamiento, y «Mis gastos», que no exige un permiso de Finanzas. |
+| Reportes | Los seis reportes del servidor; sus PDF llevan el marco «Simulación — sin validez fiscal». |
+| Configuración | Tarifarios de servicios y de cargos, paquetes, reglas de cierre, aprobación de contratos, tasas de cambio y unidades de cobro. |
+
+Cada error se muestra por su `code` de Problem Details traducido al español
+([mensajes](../../frontend/private-web/src/services/financeErrors.js)), y cada
+comando reutiliza su clave solo después de una respuesta incierta
+([claves](../../frontend/private-web/src/services/commandKeys.js)). Por
+facturar, Cobros, Charters e Inicio usan el cliente compartido; la lista de
+Facturas, los Reportes y Cuentas por pagar llaman directamente a las rutas
+`/api/v1` de la misma API, sin los validadores del cliente. La campana avisa
+`operation_ready_to_invoice`, que abre «Por facturar», `invoice_paid`, que abre
+«Facturas», y `charter_cancelled`, que abre Charters
+([avisos](../../frontend/private-web/src/features/notifications/departmentNotifications.js)).
+Fuentes: [Por facturar](../../frontend/private-web/src/features/finance/invoicing/ToInvoicePage.jsx),
+[Facturas](../../frontend/private-web/src/features/finance/invoices/InvoicesPage.jsx),
+[Cobros](../../frontend/private-web/src/features/finance/treasury/TreasuryPage.jsx) y
+[adaptador de facturación](../../frontend/private-web/src/services/invoicingService.js).
+Lo que Finanzas tenía antes está en la
+[historia de Finanzas](#historia-finanzas-antes-de-la-fase-4-retirado-del-producto).
 
 En esta rama, **Contratos**, **Servicios pactados** y **Reportes contractuales** comparten `GET /api/v1/contracts/agreements`, que lee versiones aprobadas y reemplazadas, estaciones y tarifas desde SQL con permiso comercial interno. La tabla diferencia los precios históricos y muestra cuatro decimales; los indicadores del reporte se limitan expresamente a la página consultada. Ya no se montan sus adaptadores `/api/contracts/*` ni botones de alta, edición y exportación auditada ficticia. La consulta no sustituye el flujo de borradores ni crea contratos; falta validación de navegador y promoción remota.
 
@@ -587,7 +624,7 @@ las horas locales, de
 | Gestión Humana → Horarios | «Ajustar horario» cambia con motivo las horas de un turno de hoy o de un día futuro; el servidor rechaza un horario que deje sin cubrir el trabajo del agente. |
 | Gestión Humana → Reportes de personal | Clases, documentos y movimientos en español, fechas dd/mm/aaaa y la hora de cada movimiento y de la consulta en hora local. Un conjunto de más de 5 000 filas se rechaza con `report_too_large`, nunca se recorta. |
 | Finanzas → Charters | «Reabrir cotización», con motivo, para un charter con el prepago confirmado. |
-| Finanzas → Por facturar y Servicios aprobados | Explican el servicio que OCC excluyó en la revisión y el que lleva un cargo que su contrato excluye. |
+| Finanzas → Por facturar | Explica el servicio que OCC excluyó en la revisión y el que lleva un cargo que su contrato excluye. «Servicios aprobados», que también lo explicaba, se retiró en la fase 4. |
 
 La campana de OCC muestra `flight_cancelled_by_provider`,
 `flight_diverted_by_provider`, `stand_change_unassigned` y
@@ -609,71 +646,34 @@ sesión no trae la zona de cada estación. Fuentes:
 | --- | --- | --- |
 | UI | Las rutas, componentes, filtros, formularios y estados son ejecutables. | Ejecutable no equivale a flujo de negocio integrado. |
 | Autenticación | `authService.js` usa el cliente OpenAPI para crear y revalidar la sesión de Development; tests usan identidades sintéticas. | La sesión en el navegador no sustituye el enforcement del backend por rol y estación. |
-| Datos de negocio | Planificación, revisión, chat y notificaciones operativas OCC usan contratos canónicos. Otros servicios combinan snapshots/fixtures y rutas heredadas. | Las formas mock no son OpenAPI vigente. |
-| Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. Posterior al commit verificado (fase 1, `8a79fe70`): los comandos de Solicitudes, Borradores, la enmienda, Servicios, clausuras, Paquetes, Aprovisionamiento y Clientes, y la bandeja de correos, usan sus envoltorios validados. | El resto de Contratos y Finanzas no migró de forma general. |
-| API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Los módulos aún sintéticos no prueban endpoints financieros o contractuales; los adaptadores heredados pueden seguir fallando hasta su migración. |
+| Datos de negocio | Planificación, revisión, chat y notificaciones operativas OCC usan contratos canónicos. Otros servicios combinan snapshots/fixtures y rutas heredadas. Posterior al commit verificado (fase 4, `39a85a46`), Finanzas también usa solo contratos canónicos. | Las formas mock no son OpenAPI vigente. |
+| Cliente compartido | Existe una fábrica validada para `@elevant/api-client`. Posterior al commit verificado (fase 1, `8a79fe70`): los comandos de Solicitudes, Borradores, la enmienda, Servicios, clausuras, Paquetes, Aprovisionamiento y Clientes, y la bandeja de correos, usan sus envoltorios validados. Posterior también (fase 4, `39a85a46`): Por facturar, Cobros, Charters e Inicio de Finanzas usan el cliente compartido. | El resto de Contratos y de Finanzas (lista de Facturas, Reportes y Cuentas por pagar) llama a las rutas `/api/v1` de la API sin los validadores del cliente. |
+| API real | El build de Development alinea ambas URLs públicas hacia el mismo origen de API. | Posterior al commit verificado (fase 4, `39a85a46`), los módulos de Finanzas usan endpoints reales de la API. Los adaptadores heredados que quedan pueden seguir fallando hasta su migración. |
 
-En la rama de integración posterior al commit histórico de esta nota,
-**Finanzas → Servicios aprobados** consume una nueva lectura canónica por
-estación y período. Presenta importes de snapshots operativos y razones de
-bloqueo, no cifras de fixtures; la antigua acción local «Marcar revisado» ya
-no aparece. Revalida por feed durable, foco y polling acotado. El resto de
-Finanzas puede crear y volver a consultar una prefactura interna no fiscal
-desde los servicios elegibles. La selección se reconcilia cuando llega una
-reserva de otro usuario y un reintento conserva su clave idempotente.
-Conciliación externa sigue pendiente; el registro manual de pago se describe
-abajo y no verifica una transferencia bancaria. No se ha
-promovido esta rama al VPS.
+### Historia: Finanzas antes de la fase 4 (retirado del producto)
 
-**Finanzas → Pre-facturación** ahora lista por estación las prefacturas
-persistidas mediante `GET /api/v1/finance/preinvoices` y abre su detalle
-canónico. La lista exige el rol Finanzas, membresía interna y concesión de
-estación vigente; revalida por feed, foco y polling. Ya no monta
-`/api/finance/preinvoices` ni acciones locales de aprobar/enviar. En esta rama,
-un borrador abierto ofrece confirmación explícita antes de enviarlo a la
-aerolínea mediante el comando canónico. El identificador del borrador es la
-clave estable de ese único envío, incluso si la respuesta de red es incierta;
-la UI relee la lista autorizada sin exponer mensajes internos. Los badges
-del shell no repiten cifras sintéticas. Inicio, Tarifas y Reportes ya tienen
-lecturas acotadas de la API en esta rama; Seguimiento también consulta estados
-financieros persistidos, pero no confirma conciliación bancaria.
-No se ha promovido esta rama.
+Estos párrafos resumen lo que la nota describía antes de la fase 4; nada de
+esto existe hoy en la interfaz ni en la API. Finanzas presentaba inicio,
+servicios aprobados, prefacturación, seguimiento, tarifas y reportes:
 
-En la rama local, una prefactura `Accepted` presenta confirmación de emisión
-no fiscal. La API congela la factura y Finanzas relee número, líneas y total
-por una ruta de estación autorizada; la clave de intención se conserva para
-un reintento ambiguo. Una disputa `Disputed` no habilita la acción. Esto no
-representa un impuesto ni comprobante fiscal y aún no está promovido al VPS.
+- **Servicios aprobados** leía por estación las líneas de las operaciones
+  aprobadas por OCC, con las inconsistencias como líneas bloqueadas, y armaba
+  una prefactura interna no fiscal que reservaba cada línea una sola vez.
+- **Pre-facturación** listaba las prefacturas, las enviaba a la aerolínea, que
+  las aceptaba o las disputaba, respondía cada disputa (mantener o anular) y
+  emitía desde una prefactura aceptada una factura no fiscal `NF-…` sin
+  impuestos.
+- **Seguimiento** consultaba prefacturas aceptadas, facturas no fiscales y
+  pagos, y Finanzas podía registrar un pago manual completo de prueba con su
+  recibo PDF no fiscal.
 
-En el worktree de integración, Finanzas puede responder a una disputa con
-motivo auditable: `Maintain` devuelve la prefactura a `Submitted` para una
-nueva respuesta de la aerolínea; `Void` la anula y libera las reservas de
-servicio sin borrar el snapshot. La UI exige confirmación y conserva el UUID
-de intención al reintentar, incluso si el foco o una señal de cambio recargan
-la lista durante la edición. El cliente solicita `includeResolutions=true`
-para mostrar la respuesta; la forma v1 sin ese parámetro sigue intacta.
-El estado se relee desde la API. Las pruebas
-locales no equivalen a CI verde ni a despliegue remoto.
-
-En esta rama, Finanzas puede registrar **un pago manual completo de prueba**
-contra una factura no fiscal ya emitida. La API revalida la cuenta y el alcance
-de estación, toma moneda e importe de la factura congelada y conserva UUID de
-intención, referencia y actor para impedir un segundo registro. La vista
-relee `GET /api/v1/finance/payments/by-invoice/{invoiceId}` y distingue
-«Sin pago registrado» de un pago persistido. La operación no consulta al banco,
-no concilia fondos ni emite un comprobante fiscal. Fuentes:
-[controlador](../../backend/Elevant.Api/Controllers/FinancePaymentsController.cs),
-[persistencia](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfNonFiscalPaymentStore.cs)
-y [vista](../../frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx).
-
-En el tramo local posterior, esa vista descarga PDF privado de la factura no
-fiscal y, cuando el pago manual existe, su recibo. La API comprueba el rol y
-la estación al abrirlos y de nuevo después de leer bytes; no delega la
-autorización al navegador ni sirve objetos S3 directamente. No acredita un
-cobro bancario. Las pruebas locales de la UI y SQL no demuestran promoción
-remota. Fuentes: [controlador financiero](../../backend/Elevant.Api/Controllers/FinanceFinancialDocumentsController.cs),
-[persistencia documental](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfFinancialDocumentStore.cs)
-y [vista](../../frontend/private-web/src/features/finance/preinvoices/PreinvoicesPage.jsx).
+La fase 4 retiró esas pantallas, sus servicios, sus permisos (que quedan como
+alias en el catálogo) y sus endpoints. Las escrituras que un cliente viejo
+todavía puede llamar responden `410 legacy_finance_route_retired`, y el pago
+heredado se sigue leyendo por la factura
+([controlador de pagos](../../backend/Elevant.Api/Controllers/FinancePaymentsController.cs)).
+Las tablas y las migraciones se conservan; ver
+[Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
 
 ## Desarrollo local
 

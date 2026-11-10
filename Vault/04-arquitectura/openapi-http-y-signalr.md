@@ -3,26 +3,34 @@ id: arquitectura-openapi-http-signalr
 title: "OpenAPI, HTTP y SignalR"
 type: architecture
 area: architecture
-status: draft
+status: verified
 maturity: evolving
-evidence: unknown
+evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "pending"
+last_verified: "2026-11-10"
+verified_commit: "39a85a46ae089239e22edce448a4d77771680b46"
 sources:
   - backend/Elevant.Api/Controllers/SystemController.cs
+  - backend/Elevant.Api/Controllers/AccountChangesController.cs
+  - backend/Elevant.Api/Controllers/GovernanceResults.cs
   - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs
   - backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs
   - backend/Elevant.Api/ExceptionHandling/GlobalExceptionHandler.cs
   - backend/Elevant.Api/HealthChecks/DatabaseReadinessHealthCheck.cs
   - backend/Elevant.Api/OpenApi/SwaggerConfiguration.cs
+  - backend/Elevant.Api/OpenApi/BearerSecurityOperationFilter.cs
   - backend/Elevant.Api/Hubs/OperationsHub.cs
   - backend/Elevant.Api/Hubs/NotificationsHub.cs
+  - backend/Elevant.Api/Hubs/PublicCatalogHub.cs
+  - backend/Elevant.Api/Hubs/HubOriginGuard.cs
+  - backend/Elevant.Api/Hubs/AccountChangeDispatchWorker.cs
   - backend/Elevant.Api/Hubs/README.md
   - backend/tests/Elevant.IntegrationTests/Api/DiagnosticsEndpointsTests.cs
+  - backend/tests/Elevant.IntegrationTests/Api/AccountChangesEndpointsTests.cs
   - packages/api-client/openapi/elevant-v1.json
   - packages/api-client/src/client.ts
   - docs/api/openapi-contract.md
+  - docs/architecture/realtime.md
 tags:
   - openapi
   - http
@@ -32,43 +40,35 @@ tags:
 
 # OpenAPI, HTTP y SignalR
 
-> [!NOTE]
-> Esta nota histórica sigue en revisión y contiene afirmaciones antiguas.
-> Para el incremento de feed durable implementado en la rama actual, consulte
-> [Feed de cambios operativos](feed-de-cambios-operativos.md). El código y el
-> OpenAPI compilado prevalecen sobre las secciones desactualizadas de abajo.
+La API publica en OpenAPI v1 las 400 operaciones del commit verificado,
+repartidas por prefijo en [API compartida](../05-aplicaciones/api-compartida.md).
+Todas salvo 15 declaran el esquema Bearer; las anónimas son las de sesión,
+activación y restablecimiento de cuenta, el catálogo y las solicitudes
+públicas, los medios publicados, las opciones de afiliación y
+`GetSystemPing`. Health, readiness y los hubs SignalR quedan fuera del
+documento. Esta nota describe el repositorio, no un ambiente vivo.
 
-> [!WARNING]
-> La verificación integral de esta nota queda pendiente mientras avanza el plan
-> de implementación. La ruta de `SystemController` fue corregida para conservar
-> la navegación; consulte OpenAPI y el código como fuentes ejecutables hasta la
-> documentación de cierre aprobada por el usuario.
+## Superficie fuera de las operaciones de negocio
 
-La API dispone de una frontera HTTP endurecida para crecer, pero su contrato público útil continúa siendo mínimo. OpenAPI v1 contiene una sola operación: `GetSystemPing`. Health/readiness son endpoints de plataforma y los dos hubs SignalR son shells sin mensajes de negocio.
-
-## Superficie actual
-
-| Ruta | Mecanismo | Estado | Contrato observable |
-| --- | --- | --- | --- |
-| `GET /api/v1/system/ping` | Controller versionado | Implementado y en OpenAPI | `200` con `SystemPingResponse`; `429` y `500` como Problem Details. |
-| `GET /health` | ASP.NET Health Checks | Implementado, fuera de OpenAPI | Liveness del proceso; predicate vacío, no consulta SQL. |
-| `GET /health/ready` | ASP.NET Health Checks | Implementado, fuera de OpenAPI | Comprueba conexión EF, SQL y coherencia de catálogo/marker de ambiente. |
-| `/swagger/v1/swagger.json` | Swashbuckle | Implementado sólo en ambientes permitidos | Documento v1; no está mapeado en Production. |
-| `/hubs/operations` | SignalR | Shell técnico | Ruta conectable sin métodos o eventos estables. |
-| `/hubs/notifications` | SignalR | Shell técnico | Ruta conectable sin métodos o eventos estables. |
-
-No existen endpoints HTTP de autenticación, vuelos, turnarounds, contratos, personal, operaciones, Mobile, auditoría o integraciones externas.
+| Ruta | Mecanismo | Contrato observable |
+| --- | --- | --- |
+| `GET /api/v1/system/ping` | Controller versionado y en OpenAPI | `200` con `SystemPingResponse`; `429` y `500` como Problem Details. |
+| `GET /health` | Health checks, anónimo | Liveness del proceso; no consulta SQL. |
+| `GET /health/ready` | Health checks, anónimo | Conexión EF, SQL y coherencia del catálogo y el marcador del ambiente. |
+| `/swagger/v1/swagger.json` | Swashbuckle | Development y, con `Swagger:Enabled`, Testing; nunca Production. |
+| `/hubs/operations` y `/hubs/notifications` | SignalR, con Bearer | `ChangedV1` con un `eventId`. |
+| `/hubs/public-catalog` | SignalR, anónimo | `CatalogChangedV1` sin datos. |
 
 ## Contrato OpenAPI vigente
 
 ```mermaid
 flowchart LR
-    CTRL[SystemController]
-    DTO[Elevant.Contracts\nSystemPingResponse]
+    CTRL[Controllers]
+    DTO[Elevant.Contracts]
     SWAG[Swashbuckle v1]
     SNAP[openapi/elevant-v1.json]
     GEN[Orval generado]
-    WRAP[Cliente fetch manual]
+    WRAP[Wrappers y validadores manuales]
     APPS[3 consumidores]
 
     CTRL --> DTO
@@ -80,55 +80,38 @@ flowchart LR
     WRAP --> APPS
 ```
 
-`SystemPingResponse` tiene cuatro campos no nulos serializados en camelCase:
-
-- `application`;
-- `status`;
-- `environment`;
-- `timestampUtc`.
-
-La operación tiene nombre estable `GetSystemPing`, usado como `operationId`. El snapshot versionado y la prueba de integración exigen exactamente las respuestas `200`, `429` y `500` con sus media types correspondientes.
+El snapshot se refresca desde la API compilada, se normaliza y fija su digest;
+el workflow del cliente comprueba que la salida generada no tenga deriva.
 
 ### Qué sí es contrato
 
 - rutas, verbos y versión expuestos por el documento;
 - `operationId`;
 - códigos y content types declarados;
-- schemas, required y nulabilidad;
-- semántica documentada de Problem Details.
+- schemas, `required` y nulabilidad;
+- el esquema Bearer de cada operación protegida;
+- la semántica de Problem Details y de su `code`.
 
 ### Qué no es contrato
 
 - clases EF o tablas;
-- tipos internos de Application/Domain;
+- tipos internos de Application o Domain;
 - props y fixtures de los prototipos;
-- una ruta futura escrita en un README;
-- la sola presencia de un esquema Bearer;
-- nombres tentativos de eventos SignalR.
+- una ruta escrita en un README que el documento no publica;
+- el título en inglés de un Problem Details, que ningún cliente muestra.
 
 ## Cliente TypeScript compartido
 
-`@elevant/api-client` separa tres piezas:
-
-1. snapshot OpenAPI revisable;
-2. código generado por Orval;
-3. una capa manual `fetch` sin estado global.
-
-En el commit verificado, su API útil sólo ofrece `getSystemPing`. La fábrica:
-
-- exige un origen HTTP(S) absoluto, sin path, query, fragment ni credenciales;
-- impide que una ruta salga del origen configurado;
-- solicita un token opcional justo antes de cada request y lo elimina de los headers temporales después;
-- rechaza un `Authorization` durable en `defaultHeaders`;
-- propaga `AbortSignal` y conserva `AbortError`;
-- valida la forma de la respuesta exitosa;
-- transforma fallos HTTP y respuestas malformadas en `ElevantApiError` sin retener URL, body crudo ni `ProblemDetails.detail`; errores de red de `fetch` conservan su excepción original.
-
-Los tres clientes incorporan la dependencia y pueden construir la fábrica, pero sus recorridos de negocio no pueden migrar hasta que OpenAPI publique esas operaciones. La presencia del paquete no demuestra integración funcional más allá de `ping`.
+`@elevant/api-client` separa el snapshot revisable, el código generado por
+Orval y una [capa manual](../../packages/api-client/src/client.ts) sin estado
+global. La fábrica exige un origen HTTP(S) absoluto sin path ni credenciales,
+pide el token justo antes de cada request y no lo conserva en headers
+durables, propaga `AbortSignal`, valida cada respuesta (rechaza las claves
+desconocidas) y convierte los fallos en errores con el `code` de Problem
+Details, sin retener la URL, el cuerpo crudo ni el `detail`. Los tres clientes
+lo consumen desde su código fuente, sin paso de compilación.
 
 ## Pipeline HTTP
-
-El orden relevante es:
 
 ```mermaid
 flowchart LR
@@ -137,41 +120,50 @@ flowchart LR
     HTTPS[HTTPS redirect\nsi está habilitado]
     SW[Swagger\nDevelopment/Testing]
     ROUTE[Routing]
+    ORIGIN[Origen de hubs]
     CORS[CORS allowlist]
+    SIZE[no-store y límite de cuerpo]
     RATE[Rate limiter]
+    AUTHN[Authentication]
     AUTHZ[Authorization]
-    END[Controllers]
+    END[Controllers, health y hubs]
 
-    FH --> ERR --> HTTPS --> SW --> ROUTE --> CORS --> RATE --> AUTHZ --> END
+    FH --> ERR --> HTTPS --> SW --> ROUTE --> ORIGIN --> CORS --> SIZE --> RATE --> AUTHN --> AUTHZ --> END
 ```
+
+([pipeline](../../backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs))
 
 ### Versionado y serialización
 
-- La versión por defecto es 1.0 y se lee del segmento URL.
-- El explorer sustituye la versión y agrupa como `v1`.
+- La versión por defecto es 1.0 y se lee del segmento de la URL.
 - JSON usa camelCase.
-- Los controllers aplican una política fixed-window por IP de cliente.
+- Las respuestas marcadas como privadas salen con `Cache-Control: no-store`.
+- Un cuerpo mayor que el límite del endpoint responde 413 antes de leerse.
 
 ### CORS
 
-Los orígenes se leen de configuración, se descartan valores vacíos y se deduplican sin distinguir mayúsculas. Si hay allowlist, la política permite cualquier header/método y credentials únicamente para esos orígenes exactos.
-
-Una preflight de origen desconocido puede responder HTTP `204` pero sin `Access-Control-Allow-Origin` ni `Access-Control-Allow-Credentials`. Para el navegador eso es rechazo CORS; no debe confundirse con autenticación ni con un firewall.
-
-Mobile Agent no está sujeto a CORS porque es nativo. Sigue necesitando autenticación y autorización de aplicación.
+Los orígenes se leen de configuración, sin vacíos ni duplicados. Con
+allowlist, la política admite credenciales solo para esos orígenes exactos y
+expone la cabecera `ETag`. Una preflight de origen desconocido no recibe
+`Access-Control-Allow-Origin`: para el navegador es un rechazo, no una
+autenticación. Mobile Agent es nativo y no depende de CORS.
 
 ### Proxy, HTTPS y rate limiting
 
-- Forwarded headers sólo pueden habilitarse con proxies o redes conocidas explícitas; se exige simetría y existe límite de saltos.
-- HTTPS redirection depende de configuración y está activada en el archivo Production.
-- La política por defecto usa ventana fija, sin cola; el valor por defecto es 100 permisos por 60 segundos.
-- `RequireRateLimiting` se aplica a controllers. Las rutas health y hubs no reciben esa política en el mapeo actual.
-
-Estas medidas endurecen transporte y disponibilidad. No sustituyen permisos de negocio.
+- Los forwarded headers solo se habilitan con proxies o redes conocidas.
+- La redirección HTTPS depende de configuración y está activa en el archivo
+  de Production.
+- El limitador usa una ventana fija sin cola por dirección de la conexión: 100
+  permisos por 60 segundos por defecto y 10 para crear sesiones.
 
 ### Errores
 
-Una excepción inesperada se registra internamente y produce un 500 genérico con Problem Details y `traceId`. Status code pages generan una respuesta genérica para otros códigos sin cuerpo. La respuesta pública no incluye stack trace ni texto de la excepción.
+Cada salida 4xx y 5xx de un controller es Problem Details; las de negocio
+llevan un `code` estable en `Extensions`
+([GovernanceResults](../../backend/Elevant.Api/Controllers/GovernanceResults.cs)).
+Una excepción inesperada se registra y produce un 500 genérico con `traceId`,
+sin stack trace ni texto de la excepción. Los status code pages cubren los
+códigos sin cuerpo.
 
 ## Readiness y liveness
 
@@ -180,49 +172,71 @@ flowchart TD
     LIVE[/health/] --> PROCESS[Proceso HTTP responde]
     READY[/health/ready/] --> SQL[Conexión EF/SQL]
     READY --> NAME[Catálogo exacto del ambiente]
-    READY --> MARKER[Marker singleton y ambiente coincidente]
+    READY --> MARKER[Marcador singleton y ambiente coincidente]
 ```
 
-`/health` excluye todos los checks registrados. `/health/ready` selecciona los etiquetados `ready`, incluyendo el check de DbContext y el check de destino. Un `200` de liveness no demuestra que SQL sea utilizable; readiness tampoco demuestra que exista un caso de negocio autorizado.
+Un `200` de liveness no demuestra que SQL sea utilizable, y readiness no
+demuestra que un caso de negocio esté autorizado.
 
-## Autenticación: reservada, no implementada
+## Autenticación y autorización
 
-Swagger registra un security scheme HTTP Bearer/JWT cuya descripción dice que es futuro. El host registra `AddAuthorization`, pero:
-
-- no registra `AddAuthentication` ni un handler JWT;
-- no ejecuta `UseAuthentication`;
-- no exige autorización sobre controllers o hubs;
-- el snapshot no declara un security requirement para `GetSystemPing`.
-
-Por eso no puede afirmarse que JWT, RBAC, tenant o station scope funcionen. Las tablas Identity y el callback de token del cliente son preparación estructural, no una autenticación end-to-end.
+- **Bearer JWT** HMAC-SHA256 de tipo `at+jwt`, con emisor, audiencia y
+  vigencia validados y 30 segundos de tolerancia
+  ([composición](../../backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs)).
+  Cada petición comprueba además que el sello de seguridad del token coincida
+  con el vigente de la cuenta: cuando la cuenta renueva su sello, por ejemplo
+  al cambiar credenciales o estado, los tokens anteriores dejan de servir.
+  Cerrar la sesión revoca toda la familia de refresh tokens.
+- **Política fallback autenticada:** todo controller y hub exige sesión salvo
+  que declare `AllowAnonymous`.
+- **Autorización de negocio** en cada caso de uso: departamento, permiso,
+  organización y estación se resuelven desde SQL, nunca desde el navegador.
+- El navegador solo puede enviar el token por `access_token` en la query hacia
+  `/hubs/operations` y `/hubs/notifications`; fuera de esas rutas se ignora.
 
 ## SignalR
 
-Las rutas `/hubs/operations` y `/hubs/notifications` están mapeadas y las clases heredan de `Hub`, pero están vacías. Los nombres de eventos enumerados en el README de hubs son futuros y no constituyen contrato.
+| Hub | Autenticación | Mensaje | Quién lo envía |
+| --- | --- | --- | --- |
+| [`/hubs/operations`](../../backend/Elevant.Api/Hubs/OperationsHub.cs) | Bearer | `ChangedV1` `{ eventId }` | El despachador, al usuario destinatario |
+| [`/hubs/notifications`](../../backend/Elevant.Api/Hubs/NotificationsHub.cs) | Bearer | `ChangedV1` `{ eventId }` para el recurso `notifications` | El despachador, al usuario destinatario |
+| [`/hubs/public-catalog`](../../backend/Elevant.Api/Hubs/PublicCatalogHub.cs) | Anónimo | `CatalogChangedV1` sin datos | Los comandos del catálogo, a todos, con un intento de 2 segundos |
 
-Antes de enviar datos reales faltan, como mínimo:
+Las clases de hub no tienen métodos de cliente: el servidor solo empuja. El
+[despachador](../../backend/Elevant.Api/Hubs/AccountChangeDispatchWorker.cs)
+proyecta el outbox SQL a `infra.account_changes` y luego emite el aviso; si el
+envío falla, la entrega garantizada sigue siendo el feed HTTP
+(`GET /api/v1/changes`, [controlador](../../backend/Elevant.Api/Controllers/AccountChangesController.cs)).
+Arranca solo con `Realtime:AccountChangeDispatcherEnabled`, que es `false` por
+defecto y `true` en `appsettings.Development.json`. Un WebSocket de navegador
+solo se acepta desde un origen de la allowlist
+([guarda](../../backend/Elevant.Api/Hubs/HubOriginGuard.cs)).
 
-- autenticación del handshake y autorización por usuario/tenant/estación;
-- nombres, payloads, versión y compatibilidad de eventos;
-- grupos y revocación;
-- límites de payload y manejo de reconexión/duplicados;
-- estrategia multi-réplica/backplane si se escala el host.
+> [!WARNING] Documentación desfasada
+> [`docs/architecture/realtime.md`](../../docs/architecture/realtime.md) y el
+> [README de hubs](../../backend/Elevant.Api/Hubs/README.md) todavía describen
+> hubs sin eventos y una lista de «eventos futuros». El código de esta sección
+> prevalece: el único evento por cuenta es `ChangedV1`.
 
-REST debe conservar la verdad: después de reconectar o recibir un aviso, el cliente vuelve a consultar el recurso canónico.
+Siguen pendientes la estrategia multi-réplica (backplane) si se escala el host
+y la medición de latencia en el VPS.
 
 ## Verificación
 
-- Abre [el snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json) y enumera `paths` antes de asumir una operación.
-- Compara [SystemController](../../backend/Elevant.Api/Controllers/SystemController.cs), [SwaggerConfiguration](../../backend/Elevant.Api/OpenApi/SwaggerConfiguration.cs) y la prueba de diagnostics.
-- Revisa el mapeo real en [ApplicationBuilderExtensions](../../backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs).
-- Inspecciona las clases de hubs: una ruta mapeada no implica mensajes implementados.
-- Busca `AddAuthentication`, `UseAuthentication` y `[Authorize]`; no aparecen en el backend del commit verificado.
-
-La revisión del repositorio no demuestra disponibilidad o códigos HTTP de un ambiente vivo.
+- Abre [el snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json)
+  y recorre `paths` antes de asumir una operación.
+- Compara el [pipeline](../../backend/Elevant.Api/Extensions/ApplicationBuilderExtensions.cs)
+  con [la composición de servicios](../../backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs).
+- Revisa [SwaggerConfiguration](../../backend/Elevant.Api/OpenApi/SwaggerConfiguration.cs)
+  y el [filtro Bearer](../../backend/Elevant.Api/OpenApi/BearerSecurityOperationFilter.cs).
+- Las pruebas de [diagnóstico](../../backend/tests/Elevant.IntegrationTests/Api/DiagnosticsEndpointsTests.cs)
+  y del [feed](../../backend/tests/Elevant.IntegrationTests/Api/AccountChangesEndpointsTests.cs)
+  fijan las respuestas técnicas y el cursor.
 
 ## Relacionados
 
 - [Índice de Arquitectura](README.md)
+- [Feed de cambios operativos](feed-de-cambios-operativos.md)
 - [Sistema y fronteras de confianza](sistema-y-fronteras-de-confianza.md)
 - [Backend .NET, capas y dependencias](backend-dotnet-capas-y-dependencias.md)
 - [Integraciones externas](integraciones-externas.md)

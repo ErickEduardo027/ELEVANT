@@ -52,9 +52,9 @@ flowchart LR
     RAMP --> MOBILE
     PRIVATE -->|HTTPS · OpenAPI| API
     PUBLIC -->|HTTPS · OpenAPI| API
-    MOBILE -.->|Integración OpenAPI en evolución| API
+    MOBILE -->|HTTPS · OpenAPI| API
     API -->|Persistencia| DB
-    API -.->|Integración futura tras puertos| EXT
+    API -.->|Tras puertos, apagados por defecto| EXT
     OPERATOR -->|Acceso privado| CONTROL
     OPERATOR -->|Acceso privado y personal| SQLTOOLS
     CONTROL -->|Promoción DB pull-based| DB
@@ -76,6 +76,8 @@ flowchart LR
     class API,DB,EXT,CONTROL,SQLTOOLS core;
     class PROD future;
 ```
+
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* Mobile Agent también consume la API con el cliente compartido, y los adaptadores a proveedores externos arrancan apagados hasta que una configuración explícita los enciende.
 
 ## Límites que el mapa hace explícitos
 

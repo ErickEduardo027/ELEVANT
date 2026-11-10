@@ -29,7 +29,20 @@ tags:
 
 # Alcance, estados y no objetivos
 
-## Corte verificable del repositorio
+## Corte vigente del código
+
+Posterior al commit verificado de esta nota: esta tabla describe el código de
+`39a85a46`. Detalle por capacidad en el [Mapa de capacidades](mapa-de-capacidades.md).
+
+| Horizonte | Incluye | No implica |
+| --- | --- | --- |
+| Entregado | sesión y permisos en el servidor; las cuatro fases del ciclo (comercial, pre-operación, operación, facturación y cobro) en la API y los tres clientes; chat, notificaciones, feed de cambios y documentos en almacenamiento S3 privado | despliegue, adopción o Production |
+| Simulado | e-CF con e-NCF e ITBIS fijos y pasarela de tarjeta, marcados «Simulación — sin validez fiscal» | validez fiscal ni cobro real |
+| Configurable | feed AeroDataBox, tráfico OpenSky, despachador del feed de cambios y pasarela simulada, apagados por defecto | que estén encendidos en un ambiente |
+| Diferido explícito | conectividad fiscal real, conciliación bancaria, tasas automáticas, libro mayor y proyecciones analíticas materializadas | descarte definitivo |
+| Futuro separado | Production, tiendas móviles y FlightAware | que Development pueda promoverse sin un plan propio |
+
+## Corte del commit verificado (septiembre de 2026)
 
 | Horizonte | Incluye | No implica |
 | --- | --- | --- |
@@ -59,12 +72,12 @@ tags:
 - Un healthcheck saludable no demuestra que un usuario pueda completar un recorrido.
 - Una migración o entidad no demuestra que existan reglas, API y UX integradas.
 - Un pipeline o imagen certificada demuestra reproducibilidad técnica, no aceptación funcional.
-- Un hub SignalR reservado no define eventos de negocio.
+- Un aviso SignalR solo anuncia un cambio; no define ni transporta el estado de negocio.
 
 ### No adelantar lo diferido
 
-- No almacenar fotos, PDF u otros binarios en SQL ni improvisar uploads sin object storage y retención.
-- No persistir facturas, conciliaciones, chat o notificaciones tomando sus mocks como especificación.
+- No almacenar fotos, PDF u otros binarios en SQL: viven en el almacenamiento S3 privado con metadatos y hash en SQL.
+- No persistir conciliaciones, disputas ni otros objetos del prototipo tomando sus mocks como especificación.
 - No activar tráfico real hacia un proveedor aeronáutico sin contrato, límites, resiliencia y manejo de secretos.
 
 ### No tratar Development como Production
@@ -107,7 +120,7 @@ Si el cambio requiere otra base, acceso directo desde un cliente, datos reales e
 - [Private Web](../../frontend/private-web/README.md), [Public Web](../../frontend/public-web/README.md) y [Mobile Agent](../../frontend/mobile-agent/README.md): estado y límites de cada cliente.
 - [Backend](../../backend/README.md): API funcional disponible.
 - [Base de datos v1](../../docs/architecture/database-v1.md): capacidades persistidas y diferidas.
-- [Tiempo real](../../docs/architecture/realtime.md): hubs reservados y ausencia de contratos de eventos.
+- [Tiempo real](../../docs/architecture/realtime.md): principios de entrega; su descripción de los hubs está desfasada frente al código, que emite `ChangedV1` ([OpenAPI, HTTP y SignalR](../04-arquitectura/openapi-http-y-signalr.md)).
 - [Ambientes](../../docs/deployment/environments.md): separación Development/Production y distribución móvil.
 
 Relacionados: [Visión y problema](vision-y-problema.md), [Mapa de capacidades](mapa-de-capacidades.md), [Preguntas abiertas](preguntas-abiertas.md) y [Mapa de producto](README.md).

@@ -52,14 +52,17 @@ ELEVANT es un sistema con tres clientes especializados, una API compartida y una
 
 ## Las cinco fronteras
 
+Posterior al commit verificado de esta nota: la columna «Estado de
+implementación verificable» describe el código de `39a85a46`.
+
 | Frontera | Audiencia o función | Estado de implementación verificable | Perfil |
 | --- | --- | --- | --- |
-| Private Web / AVIAM | OCC, administración, contratos, finanzas, Gestión Humana y departamentos operativos | SPA React ejecutable y extensa; integración de negocio todavía depende de adaptadores prototípicos | [Private Web / AVIAM](private-web-aviam.md) |
-| Public Web / portal | Visitantes y usuarios de aerolíneas/clientes | Landing y portal ejecutables; sesión, autorización y la mayoría de datos son mock/locales | [Public Web / portal](public-web-portal.md) |
+| Private Web / AVIAM | OCC, administración, contratos, finanzas, Gestión Humana y departamentos operativos | Next.js 16 integrado con la API en sus cuatro departamentos y Superadministración; quedan adaptadores heredados del prototipo en partes de la interfaz | [Private Web / AVIAM](private-web-aviam.md) |
+| Public Web / portal | Visitantes y usuarios de aerolíneas/clientes | Sitio público y portal con sesión real; el servidor filtra cada lectura por organización y estaciones | [Public Web / portal](public-web-portal.md) |
 | Correcciones de la revisión docente | Todos los departamentos y el portal | Estado de los 17 puntos de la revisión del 19-oct-2026 | [Correcciones de la revisión](correcciones-revision-docente-2026-10.md) |
-| Mobile Agent | Agentes de rampa en tablet | Aplicación Expo ejecutable con flujos y outbox prototípicos; no consume aún los contratos de negocio de la API .NET | [Mobile Agent](mobile-agent.md) |
-| API compartida | Única puerta a reglas, datos e integraciones para los tres clientes | Host .NET funcional con diagnóstico, health, OpenAPI y hubs reservados; sin autenticación ni endpoints de negocio | [API compartida](api-compartida.md) |
-| DevelopmentDB | Esquema y persistencia compartidos de Development | Modelo EF y cadena de migraciones ejecutables; solo la API es dependencia de aplicación autorizada | [DevelopmentDB compartida](developmentdb-compartida.md) |
+| Mobile Agent | Agentes de rampa en tablet | Aplicación Expo integrada con la API: sesión, tableta vinculada y cola offline idempotente | [Mobile Agent](mobile-agent.md) |
+| API compartida | Única puerta a reglas, datos e integraciones para los tres clientes | Host .NET con JWT, 400 operaciones en OpenAPI y tres hubs de avisos | [API compartida](api-compartida.md) |
+| DevelopmentDB | Esquema y persistencia compartidos de Development | 57 migraciones ejecutables; solo la API es dependencia de aplicación autorizada | [DevelopmentDB compartida](developmentdb-compartida.md) |
 
 ## Regla de composición
 
@@ -71,7 +74,7 @@ El recorrido objetivo siempre cruza estas fronteras:
 4. la persistencia conserva el estado canónico;
 5. el cliente representa éxito, vacío, error recuperable o no autorizado.
 
-En el commit verificado, las piezas técnicas de los pasos 2 a 4 existen por separado: el API expone un `ping` en OpenAPI y readiness comprueba la base de datos. Ningún caso de negocio documentado recorre todavía esos pasos de extremo a extremo; esos recorridos siguen siendo prototipos o trabajo pendiente.
+En el commit verificado, las piezas técnicas de los pasos 2 a 4 existían por separado: el API exponía un `ping` en OpenAPI y readiness comprobaba la base de datos. Posterior a ese commit, los casos de uso de las cuatro fases del ciclo recorren los cinco pasos ([Recorridos de extremo a extremo](../02-producto/recorridos-end-to-end.md)).
 
 ## Dependencias permitidas
 
@@ -94,7 +97,7 @@ En el commit verificado, las piezas técnicas de los pasos 2 a 4 existen por sep
 | Pregunta | Respuesta verificable |
 | --- | --- |
 | ¿Cada cliente tiene su backend o base? | No. Comparten una API y una base lógica por ambiente. |
-| ¿Los prototipos ya usan la API de negocio? | No de forma general. El OpenAPI actual solo publica `system/ping`. |
+| ¿Los clientes ya usan la API de negocio? | Posterior al commit verificado, sí: el snapshot publica 400 operaciones y los tres clientes las consumen. |
 | ¿Un tipo TypeScript/JS de una pantalla define el contrato? | No. El contrato existe cuando está publicado en OpenAPI y generado en el cliente compartido. |
 | ¿Mobile Agent se despliega como web en el VPS? | No. Su destino es una app nativa instalada; la primera distribución firmada sigue pendiente. |
 | ¿Una tabla existente prueba que la capacidad está lista? | No. Prueba estructura persistente, no endpoint, autorización ni recorrido de usuario. |
@@ -102,7 +105,7 @@ En el commit verificado, las piezas técnicas de los pasos 2 a 4 existen por sep
 ## Extensiones de la rama de trabajo
 
 - [Acceso animado y certificación](acceso-animado-y-certificacion.md): introducción y carrusel verificados contra la imagen de producción, con límites explícitos de aceptación en el VPS.
-- [Cobros, aplicaciones y consulta de aerolínea](tesoreria-cobros-y-portal.md): implementación local de Tesorería y consultas financieras del portal.
+- [Cobros, aplicaciones y consulta de aerolínea](tesoreria-cobros-y-portal.md): cobros, notas, estados de cuenta y consultas financieras del portal.
 
 ## Fuentes verificadas
 

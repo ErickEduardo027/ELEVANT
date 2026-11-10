@@ -50,7 +50,7 @@ tags:
 
 `database/DevelopmentDB/Elevant.Persistence` es la fuente ejecutable del modelo SQL compartido por la única API. La carpeta se llama DevelopmentDB porque contiene el tooling operativo vigente, pero sus migraciones representan la cadena normal de esquema que Development y una futura Production aplicarían sobre bases físicas separadas.
 
-El modelo persistente existe y es amplio; eso no significa que la API ya exponga sus operaciones. Hoy EF puede materializar entidades, relaciones y constraints mientras Application y los endpoints de negocio siguen pendientes.
+El modelo persistente existe y es amplio; una tabla por sí sola no significa que la API exponga una operación sobre ella. Posterior al commit verificado de esta nota (código de `39a85a46`): Persistence contiene también los stores de los casos de uso de las cuatro fases del ciclo, la cadena tiene 57 migraciones y la API los expone en OpenAPI ([API compartida](../05-aplicaciones/api-compartida.md)).
 
 ## Componentes y responsabilidades
 
@@ -93,7 +93,7 @@ flowchart LR
 | `integration` | dispositivos, bindings de cuenta y receipts idempotentes de Mobile |
 | `audit` | entradas de auditoría y cambios por campo |
 
-El inventario detallado está en [schema-v1](../../docs/database/schema-v1.md). La existencia de una tabla de auditoría, outbox o receipt no demuestra que un handler la escriba: el código de aplicación correspondiente todavía no existe.
+El inventario detallado está en [schema-v1](../../docs/database/schema-v1.md). La existencia de una tabla de auditoría, outbox o receipt no demuestra por sí sola que un handler la escriba; posterior al commit verificado de esta nota, los comandos escriben auditoría, outbox y recibos en su misma transacción.
 
 ### Convenciones verificadas
 

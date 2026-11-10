@@ -51,6 +51,10 @@ sources:
   - frontend/public-web/README.md
   - frontend/public-web/next.config.ts
   - frontend/scripts/deployment/csp-tool.mjs
+  - database/DevelopmentDB/Elevant.Persistence/Finance/FinanceApprovedServiceChangeWriter.cs
+  - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceInvoiceChanges.cs
+  - frontend/private-web/src/features/finance/invoices/InvoicesPage.jsx
+  - frontend/private-web/src/features/finance/invoicing/useToInvoiceData.js
 tags:
   - arquitectura
   - tiempo-real
@@ -231,3 +235,45 @@ Las pistas siguen sin llevar datos.
   desvía un charter con prepago.
 
 Tampoco esto demuestra latencia en el VPS ni entrega con la aplicación cerrada.
+
+## Fase 4 del ciclo: facturación y cobro
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+la fase 4 del ciclo (`39a85a46`;
+[ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
+[ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Las pistas siguen
+sin llevar datos.
+
+**Pistas nuevas o ampliadas:**
+
+- `finance_invoices` cuando una factura de la estación se emite, se paga con
+  tarjeta, recibe una aplicación, un reverso o una nota, o se le aplica un
+  prepago confirmado tarde
+  ([escritor](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinanceApprovedServiceChangeWriter.cs)).
+  Llega a quien lee `finance.invoicing.read` o `finance.reconciliation.read`,
+  y el lector comprueba que la factura sea de la estación de la pista.
+  «Facturas» relee con ella y al recuperar el foco
+  ([vista](../../frontend/private-web/src/features/finance/invoices/InvoicesPage.jsx)).
+- `finance_approved_services` ahora exige `finance.invoicing.read` y se
+  anuncia también por cada operación facturada; «Por facturar» e Inicio la
+  escuchan ([datos de Por facturar](../../frontend/private-web/src/features/finance/invoicing/useToInvoiceData.js)).
+- `airline_treasury` sigue anunciando cada cambio de la cartera de la
+  aerolínea, también el pago con tarjeta y el prepago de un charter aplicado.
+- `airline_preinvoices` la sigue escribiendo la emisión sobre su borrador
+  interno; el portal ya no lee prefacturas y la trata solo como pista para
+  releer Finanzas.
+- `finance_preinvoices` y `finance_fiscal` quedan retiradas con sus
+  pantallas: nada las escribe y las ya guardadas nunca se entregan.
+
+**Notificaciones de departamento:** Finanzas recibe
+`operation_ready_to_invoice` cuando OCC aprueba operaciones con servicios
+facturables, una por aerolínea, estación y día hábil, si además abre «Por
+facturar»; abre esa pantalla. `invoice_paid` llega a quien abre «Facturas».
+Los correos de nota de crédito o débito y el aviso único de factura vencida
+salen por el outbox de correo, no por el feed.
+
+**Pruebas.** La [prueba SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceInvoiceChanges.cs)
+cubre a quién llegan `finance_invoices` y `finance_approved_services` según
+el permiso, y que la aerolínea recibe `airline_treasury` y nunca las pistas de
+Finanzas. Tampoco esto
+demuestra latencia en el VPS ni entrega con la aplicación cerrada.

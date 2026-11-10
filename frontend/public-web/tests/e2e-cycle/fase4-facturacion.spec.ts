@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 import { call, expectCall, login } from "./support/api";
@@ -13,8 +14,9 @@ import { pdfText } from "./support/pdf";
 // reverse that card receipt, Finanzas credits part of the invoice with an E34 note that reaches the
 // airline by email, and the portal shows the note and the credit in its favour. Finally (block D)
 // Cuentas por pagar corrects, voids and reuses an NCF under segregation of duties, and an OCC
-// expense is reviewed by escalation in Finance. The card numbers are the public test numbers of the
-// simulated gateway; no screenshot is taken while they are typed.
+// expense is reviewed by escalation in Finance. Last (block E), the Vault describes this cycle as the
+// code does. The card numbers are the public test numbers of the simulated gateway; no screenshot is
+// taken while they are typed.
 
 const DECLINED = "4000 0000 0000 0002";
 const APPROVED = "4111 1111 1111 1111";
@@ -559,4 +561,93 @@ test("Gastos: el gasto de OCC se revisa por escalamiento en Finanzas y «Mis gas
   await snap(page, "fase4-gastos-descartado");
 });
 
-test.fixme("hueco 4-B · el Vault describe el ciclo completo tal como funciona", async () => {});
+/** The repository root, found from where Playwright runs (frontend/public-web) without assuming a depth. */
+function repositoryRoot() {
+  let current = process.cwd();
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (fs.existsSync(path.join(current, "Vault", "README.md")) &&
+        fs.existsSync(path.join(current, "packages", "api-client", "openapi", "elevant-v1.json"))) return current;
+    current = path.dirname(current);
+  }
+  return path.resolve(process.cwd(), "..", "..");
+}
+
+/** Every Markdown note under a folder, except the generated inventory. */
+function vaultNotes(folder: string): string[] {
+  return fs.readdirSync(folder, { withFileTypes: true }).flatMap(entry => {
+    const full = path.join(folder, entry.name);
+    if (entry.isDirectory()) return entry.name === "_generated" ? [] : vaultNotes(full);
+    return entry.name.endsWith(".md") ? [full] : [];
+  });
+}
+
+/** Prose without code, whitespace collapsed, so a claim wrapped across lines still matches. */
+const prose = (markdown: string) => markdown.replace(/```[\s\S]*?```/g, "").replace(/~~~[\s\S]*?~~~/g, "")
+  .replace(/`[^`\n]*`/g, "").replace(/\s+/g, " ");
+
+// 4-B: the claims of an empty API that the Vault made before the business endpoints existed. They mirror
+// STALE_API_CLAIMS of scripts/vault/core.mjs, the real gate (npm run vault:ci); history notes describe the
+// past and templates hold placeholders, so both are exempt.
+const EMPTY_API_CLAIMS = [
+  /OpenAPI(?:\s+v1)?\s+contiene\s+(?:solo|sólo|únicamente|una\s+sola\s+operación)\b/iu,
+  /todos\s+los\s+endpoints\s*\/\s*casos\s+de\s+uso\s+de\s+negocio/iu,
+  /carece\s+de\s+autenticación\s+y\s+(?:de\s+)?endpoints\s+de\s+negocio/iu,
+  /(?:no\s+hay|sin)\s+autenticación\s+ni\s+endpoints\s+de\s+negocio/iu,
+  /no\s+implementa\s+todavía\s+autenticación/iu,
+  /autenticación\s+y\s+endpoints\s+de\s+negocio\s+no\s+implementad[oa]s/iu,
+  /casos\s+de\s+uso\s+de\s+negocio\s+todavía\s+no\s+existen/iu,
+  /no\s+ofrece\s+casos\s+de\s+uso\s+de\s+negocio/iu,
+  /no\s+existen\s+endpoints\s+HTTP\s+de\s+autenticación/iu,
+  /API\s+funcional\s+solo\s+publica\s+infraestructura\s+técnica/iu,
+  /autenticación\s*:\s*reservada,?\s+no\s+implementada/iu,
+  /hubs?(?:\s+SignalR)?\s+(?:vacíos\s*\/\s*reservados|son\s+shells)/iu,
+];
+
+test("hueco 4-B · el Vault describe el ciclo completo tal como funciona", async () => {
+  const root = repositoryRoot();
+  expect(fs.existsSync(path.join(root, "Vault", "README.md"))).toBe(true);
+
+  // The operations the committed OpenAPI snapshot publishes.
+  const snapshot = JSON.parse(fs.readFileSync(path.join(root, "packages", "api-client", "openapi", "elevant-v1.json"), "utf8")) as
+    { paths: Record<string, Record<string, { operationId?: string }>> };
+  const published = new Set(Object.values(snapshot.paths).flatMap(item => Object.values(item))
+    .map(operation => operation?.operationId).filter((id): id is string => typeof id === "string" && id.length > 0));
+  expect(published.size).toBeGreaterThan(1);
+
+  // «Capacidades centrales»: no «Ausente», and every operationId a row cites is published.
+  const map = fs.readFileSync(path.join(root, "Vault", "02-producto", "mapa-de-capacidades.md"), "utf8");
+  const section = map.split(/^## /m).find(part => part.startsWith("Capacidades centrales"));
+  expect(section, "the capability map keeps its «Capacidades centrales» table").toBeTruthy();
+  const rows = section!.split(/\r?\n/).filter(line => line.startsWith("|")).slice(2);
+  expect(rows.length).toBeGreaterThan(10);
+  const header = section!.split(/\r?\n/).find(line => line.startsWith("|"))!.split("|").map(cell => cell.trim());
+  const apiColumn = header.indexOf("API de negocio");
+  expect(apiColumn).toBeGreaterThan(0);
+  for (const row of rows) {
+    const cell = row.split("|").map(value => value.trim())[apiColumn] ?? "";
+    expect(cell.replace(/\*/g, "").trim().toLowerCase(), row).not.toBe("ausente");
+    const cited = [...cell.matchAll(/`([^`\n]+)`/g)].map(match => match[1].trim())
+      .filter(token => /^[A-Z][A-Za-z0-9]+$/.test(token) && !token.endsWith("Controller"));
+    expect(cited.length, row).toBeGreaterThan(0);
+    for (const operationId of cited) expect(published.has(operationId), `${operationId} is published`).toBe(true);
+  }
+  expect(rows.find(row => row.startsWith("| Facturación de operaciones aprobadas"))).toContain("IssueInvoiceFromOperations");
+  expect(rows.find(row => row.startsWith("| Cobro con tarjeta"))).toContain("PayAirlineInvoiceByCard");
+
+  // No current note describes the API as an empty scaffold.
+  const stale = vaultNotes(path.join(root, "Vault"))
+    .map(file => path.relative(root, file).replaceAll("\\", "/"))
+    .filter(relative => !relative.startsWith("Vault/01-historia/") && !relative.startsWith("Vault/99-plantillas/"))
+    .flatMap(relative => {
+      const text = prose(fs.readFileSync(path.join(root, relative), "utf8"));
+      return EMPTY_API_CLAIMS.filter(claim => claim.test(text)).map(claim => `${relative}: ${claim.source}`);
+    });
+  expect(stale).toEqual([]);
+
+  // Finance describes the phase 4 code: the preinvoice is history, the e-CF carries its e-NCF.
+  const finance = fs.readFileSync(path.join(root, "Vault", "03-dominio", "finanzas-tarifas-cargos-y-cobros.md"), "utf8");
+  expect(finance).not.toContain("hasta el bloque 3");
+  expect(finance).not.toContain("permanecen null");
+  expect(finance).toContain("retiradas del producto");
+  expect(finance).toContain("Simulación — sin validez fiscal");
+});

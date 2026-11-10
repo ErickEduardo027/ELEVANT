@@ -28,7 +28,7 @@ tags:
 Este mapa organiza el lenguaje de ELEVANT para planificar y controlar servicios de asistencia en tierra. Conecta el modelo persistente v1, las fronteras de autorización y el vocabulario observado en las tres experiencias, sin convertir una pantalla o un mock en contrato.
 
 > [!IMPORTANT]
-> Las entidades .NET y las migraciones EF describen el modelo persistente. OpenAPI será el contrato cliente/servidor cuando exista cada operación. Hoy la API sólo expone contratos útiles de sistema; autenticación y casos de uso de negocio siguen pendientes. Los clientes son consumidores, nunca fuentes autónomas de autorización ni propietarios de SQL.
+> Las entidades .NET y las migraciones EF describen el modelo persistente. OpenAPI es el contrato cliente/servidor de cada operación publicada. Posterior al commit verificado de esta nota (código de `39a85a46`): la API autentica y publica los casos de uso de las cuatro fases del ciclo ([Mapa de capacidades](../02-producto/mapa-de-capacidades.md)). Los clientes son consumidores, nunca fuentes autónomas de autorización ni propietarios de SQL.
 
 ## Mapa de lectura
 
@@ -51,8 +51,8 @@ Este mapa organiza el lenguaje de ELEVANT para planificar y controlar servicios 
 | Capa | Estado comprobado | Lectura correcta |
 | --- | --- | --- |
 | Entidades, enums y esquema v1 | Implementados y versionados | Definen nombres, relaciones y restricciones persistentes actuales. |
-| Casos de uso HTTP de negocio | No implementados | No existe todavía un contrato para operar el modelo desde los clientes. |
-| Private Web, Public Web y Mobile Agent | Experiencias ejecutables con adaptadores de prototipo | Sus recorridos y términos ayudan a descubrir necesidades; sus objetos y permisos no son contratos. |
+| Casos de uso HTTP de negocio | Implementados (posterior al commit verificado, código de `39a85a46`) | 400 operaciones en OpenAPI operan el modelo desde los clientes, con autorización en el servidor. |
+| Private Web, Public Web y Mobile Agent | Integrados con la API (misma salvedad) | Consumen el cliente generado; los adaptadores heredados del prototipo que quedan en Private Web no son contratos. |
 | Production | Diferida y separada | No se infiere estado productivo desde Development ni desde el modelo v1. |
 
 ## Contexto en una vista

@@ -33,7 +33,7 @@ tags:
 
 ELEVANT concentra el estado y las reglas previstas en una API compartida. Private Web, Public Web y Mobile Agent son consumidores no confiables: pueden presentar datos, guardar caché y solicitar operaciones, pero no deciden tenant, estación, agente, permisos ni el resultado canónico de una transacción.
 
-La arquitectura combina una regla duradera —todo acceso de producto atraviesa la API— con una realidad todavía incompleta: la API sólo expone una superficie técnica mínima y no autentica usuarios. La privacidad de red de Development reduce alcance; no sustituye JWT, RBAC ni autorización por tenant/estación.
+La arquitectura combina una regla duradera —todo acceso de producto atraviesa la API— con su materialización en el código. Posterior al commit verificado de esta nota (código de `39a85a46`): la API autentica con JWT, autoriza cada caso de uso por departamento, organización y estación, y los tres clientes la consumen. La privacidad de red de Development reduce alcance; no sustituye JWT, RBAC ni autorización por tenant/estación.
 
 ## Zonas de confianza
 
@@ -54,8 +54,8 @@ flowchart LR
 
     subgraph Z2[Zona 2 · Frontera de servicio]
         API[API HTTPS versionada]
-        AUTH[Autenticación y autorización futura]
-        HUBS[Hubs SignalR shell]
+        AUTH[Autenticación JWT y autorización]
+        HUBS[Hubs SignalR de avisos]
     end
 
     subgraph Z3[Zona 3 · Núcleo y datos]
@@ -67,8 +67,8 @@ flowchart LR
     end
 
     subgraph Z4[Zona 4 · Sistemas externos]
-        PROVIDER[Proveedor de vuelos futuro]
-        OBJECTS[Object storage futuro]
+        PROVIDER[Proveedor de vuelos configurable]
+        OBJECTS[Object storage S3 privado]
     end
 
     INTERNAL --> PRIVATE
@@ -79,42 +79,45 @@ flowchart LR
     MOBILE --> API
     MOBILE --> CACHE
     CACHE --> MOBILE
-    API -. no implementado .-> AUTH
+    API --> AUTH
     API --> HUBS
     API --> APP
     APP --> DOMAIN
     API --> PERSIST
     APP -. puertos .-> INTEGRATION
     PERSIST --> SQL
-    INTEGRATION -. adapter no implementado .-> PROVIDER
-    INTEGRATION -. capacidad diferida .-> OBJECTS
+    INTEGRATION -. apagado por defecto .-> PROVIDER
+    PERSIST --> OBJECTS
 ```
 
-Las líneas punteadas marcan capacidades objetivo o diferidas. La flecha de los clientes a la API muestra la frontera obligatoria, no que todos sus flujos actuales ya usen endpoints reales.
+Las líneas punteadas marcan puertos o capacidades que dependen de configuración. Posterior al commit verificado de esta nota, la flecha de los clientes a la API es la ruta real de sus flujos; solo quedan adaptadores heredados del prototipo en partes de Private Web.
 
 ## Matriz de confianza
 
+Posterior al commit verificado de esta nota: la columna «Estado actual»
+describe el código de `39a85a46`.
+
 | Origen | Puede aportar | No es autoridad sobre | Estado actual |
 | --- | --- | --- | --- |
-| Private Web | intención del usuario, filtros, IDs públicos, token futuro | roles internos, alcance entre aerolíneas, estación autorizada | Interfaz ejecutable; gran parte del negocio sigue en adaptadores de prototipo/mock. |
-| Public Web | intención del cliente, parámetros de consulta, token futuro | tenant, afiliación, stations visibles, permisos de escritura | Landing y portal demostrativos; autenticación y aislamiento real no están conectados a la API .NET. |
-| Mobile Agent | intención/comandos y caché/outbox locales; ID de instalación + clave idempotente son el contrato objetivo | identidad del agente, estaciones, autorización, resultado canónico | Prototipo nativo: su cola usa una clave local provisional, no envía todavía la identidad/idempotencia del modelo servidor ni consume casos de negocio de la API .NET. |
-| API | transporte, composición y futura resolución de identidad/scope | datos del proveedor sin validación, claims inventados por el cliente | Sólo scaffold técnico; no hay autenticación ni controllers de negocio. |
-| Application/Domain | casos de uso, reglas y puertos | HTTP, SQL, SDK de proveedor | Fronteras creadas; los casos de uso de negocio aún no existen. |
-| Persistence/SQL | constraints y estado persistido | autorización completa de un workflow por sí sola | Modelo v1 y migraciones implementados. |
-| Proveedor externo | observaciones externas adaptadas | modelo interno, autorización ELEVANT, verdad contractual | No hay tráfico ni adapter funcional en el backend. |
+| Private Web | intención del usuario, filtros, IDs públicos, token de sesión | roles internos, alcance entre aerolíneas, estación autorizada | Consume la API con sesión; el menú solo muestra lo que el servidor permite. Quedan adaptadores heredados del prototipo en partes de la interfaz. |
+| Public Web | intención del cliente, parámetros de consulta, token de sesión | tenant, afiliación, stations visibles, permisos de escritura | Portal con sesión real; el servidor deriva organización y estaciones de las membresías vigentes. |
+| Mobile Agent | intención/comandos y caché/cola locales; ID de instalación + clave idempotente | identidad del agente, estaciones, autorización, resultado canónico | Envía cada comando con la clave de su instalación y concilia el resultado del servidor. |
+| API | transporte, composición y resolución de identidad/scope | datos del proveedor sin validación, claims inventados por el cliente | JWT, política fallback autenticada y 400 operaciones en OpenAPI. |
+| Application/Domain | casos de uso, reglas y puertos | HTTP, SQL, SDK de proveedor | Casos de uso de las cuatro fases del ciclo. |
+| Persistence/SQL | constraints y estado persistido | autorización completa de un workflow por sí sola | 57 migraciones y los stores de los casos de uso. |
+| Proveedor externo | observaciones externas adaptadas | modelo interno, autorización ELEVANT, verdad contractual | AeroDataBox y OpenSky detrás de puertos, apagados por defecto. |
 
 ## Flujo objetivo de una petición de negocio
 
 1. El cliente configura un origen de API por ambiente y envía una solicitud HTTPS versionada.
-2. La API autentica la identidad y deriva del lado servidor organización, rol, agente y scopes; **este paso todavía no está implementado**.
+2. La API autentica la identidad y deriva del lado servidor organización, rol, agente y scopes; posterior al commit verificado de esta nota, este paso está implementado.
 3. El controller traduce HTTP a un caso de uso; no contiene reglas ni consulta `ElevantDbContext` directamente.
 4. Application coordina la operación y Domain evalúa invariantes que no pertenecen al transporte.
 5. Persistence carga o guarda el estado mediante EF Core; un puerto de Application, implementado por un adapter de Infrastructure, encapsula cualquier proveedor externo.
 6. La API proyecta el resultado a un DTO de `Elevant.Contracts` y responde con códigos y Problem Details documentados.
-7. Un aviso SignalR futuro puede invalidar la vista; el cliente vuelve a consultar REST para recuperar verdad canónica.
+7. Un aviso SignalR (`ChangedV1`) puede invalidar la vista; el cliente vuelve a consultar REST para recuperar verdad canónica.
 
-Hoy sólo se puede recorrer de extremo a extremo la ruta técnica de `system/ping` y los checks de plataforma; el flujo anterior es la frontera de diseño para los futuros casos de negocio.
+En el commit verificado solo se podía recorrer de extremo a extremo la ruta técnica de `system/ping`. Posterior a ese commit, los casos de uso de las cuatro fases del ciclo siguen este flujo ([Recorridos de extremo a extremo](../02-producto/recorridos-end-to-end.md)).
 
 ## Reglas que cruzan todas las zonas
 
@@ -123,7 +126,7 @@ Hoy sólo se puede recorrer de extremo a extremo la ruta técnica de `system/pin
 - Una variable pública de Next o Expo nunca contiene un secreto.
 - El navegador o dispositivo no convierte un `organizationId`, `stationId`, `agentId` o rol recibido/enviado en autorización.
 - La caché local, el almacenamiento del navegador y los mocks son reemplazables y descartables.
-- Mobile necesita idempotencia de servidor para escrituras reintentables; la tabla de receipts existe, pero no el handler HTTP que la use.
+- Mobile necesita idempotencia de servidor para escrituras reintentables; posterior al commit verificado de esta nota, los handlers de rampa la aplican con los recibos por instalación.
 
 ### API y backend
 
@@ -143,14 +146,18 @@ Hoy sólo se puede recorrer de extremo a extremo la ruta técnica de `system/pin
 
 El repositorio documenta acceso humano controlado por SSMS para manipular datos sintéticos en Development. Esa ruta está fuera del runtime del producto: usa cuentas individuales, permite CRUD limitado y niega DDL/administración. No autoriza a incorporar conexión SQL en un frontend, Mobile Agent, script compartido o futura Production.
 
-## Brecha de seguridad actual
+## Brecha de seguridad del commit verificado y su cierre
 
-El host registra `AddAuthorization`, pero no configura autenticación, no ejecuta `UseAuthentication` y no marca endpoints con requisitos de autorización. OpenAPI contiene un esquema Bearer descrito explícitamente como futuro. Por tanto:
+En el commit verificado de esta nota, el host registraba `AddAuthorization`, pero no configuraba autenticación ni ejecutaba `UseAuthentication`, y OpenAPI describía el esquema Bearer como futuro.
 
-- la red privada puede limitar quién llega al scaffold de Development;
-- la aplicación todavía no demuestra identidad, tenant, rol o scope;
-- ningún endpoint de negocio debe exponerse hasta implementar y probar esas fronteras;
-- las tablas Identity y el seed no equivalen a un login HTTP funcional.
+Posterior a ese commit (código de `39a85a46`), la brecha está cerrada:
+
+- la API registra JWT Bearer y ejecuta `UseAuthentication` y `UseAuthorization` con una política fallback autenticada ([composición](../../backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs));
+- cada caso de uso resuelve identidad, organización, rol y estación desde SQL;
+- las operaciones protegidas declaran Bearer en OpenAPI;
+- la red privada sigue limitando quién llega a Development, pero no sustituye esas fronteras.
+
+Siguen abiertos los controles de [riesgos y controles pendientes](../10-seguridad/riesgos-y-controles-pendientes.md).
 
 ## Verificación
 

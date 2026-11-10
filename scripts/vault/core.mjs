@@ -92,6 +92,30 @@ export const ENUMS = Object.freeze({
 const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 const NOTE_EXTENSION = ".md";
 const TEMPLATE_PREFIX = "Vault/99-plantillas/";
+const HISTORY_PREFIX = "Vault/01-historia/";
+export const OPENAPI_SNAPSHOT_RELATIVE_PATH = "packages/api-client/openapi/elevant-v1.json";
+const OPENAPI_METHODS = new Set(["get", "put", "post", "delete", "options", "head", "patch", "trace"]);
+
+/**
+ * Statements that describe the shared API as an empty technical scaffold. They were true before
+ * the first business endpoints existed; once the OpenAPI snapshot publishes operations they are
+ * stale. History notes describe the past and templates hold placeholders, so both are exempt.
+ * Each pattern is deliberately narrow: it names the exact claim, not a topic.
+ */
+export const STALE_API_CLAIMS = Object.freeze([
+  /OpenAPI(?:\s+v1)?\s+contiene\s+(?:solo|sólo|únicamente|una\s+sola\s+operación)\b/iu,
+  /todos\s+los\s+endpoints\s*\/\s*casos\s+de\s+uso\s+de\s+negocio/iu,
+  /carece\s+de\s+autenticación\s+y\s+(?:de\s+)?endpoints\s+de\s+negocio/iu,
+  /(?:no\s+hay|sin)\s+autenticación\s+ni\s+endpoints\s+de\s+negocio/iu,
+  /no\s+implementa\s+todavía\s+autenticación/iu,
+  /autenticación\s+y\s+endpoints\s+de\s+negocio\s+no\s+implementad[oa]s/iu,
+  /casos\s+de\s+uso\s+de\s+negocio\s+todavía\s+no\s+existen/iu,
+  /no\s+ofrece\s+casos\s+de\s+uso\s+de\s+negocio/iu,
+  /no\s+existen\s+endpoints\s+HTTP\s+de\s+autenticación/iu,
+  /API\s+funcional\s+solo\s+publica\s+infraestructura\s+técnica/iu,
+  /autenticación\s*:\s*reservada,?\s+no\s+implementada/iu,
+  /hubs?(?:\s+SignalR)?\s+(?:vacíos\s*\/\s*reservados|son\s+shells)/iu,
+]);
 
 function isVaultNote(root, filePath) {
   const relativePath = repositoryPath(root, filePath);
@@ -469,6 +493,171 @@ function stripCode(text) {
     .replace(/```[\s\S]*?```/g, "")
     .replace(/~~~[\s\S]*?~~~/g, "")
     .replace(/`[^`\n]*`/g, "");
+}
+
+/**
+ * The operationIds the committed OpenAPI snapshot publishes under `paths`. A missing or
+ * malformed snapshot publishes none; its own checks live with the API client.
+ */
+export function readOpenApiOperationIds(root = REPOSITORY_ROOT) {
+  const operations = new Set();
+  const snapshotPath = path.join(root, OPENAPI_SNAPSHOT_RELATIVE_PATH);
+  if (!existsSync(snapshotPath)) {
+    return operations;
+  }
+  let document;
+  try {
+    document = JSON.parse(readUtf8(snapshotPath));
+  } catch {
+    return operations;
+  }
+  const paths = document?.paths;
+  if (!paths || typeof paths !== "object" || Array.isArray(paths)) {
+    return operations;
+  }
+  for (const item of Object.values(paths)) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    for (const [method, operation] of Object.entries(item)) {
+      if (
+        OPENAPI_METHODS.has(method) &&
+        operation &&
+        typeof operation.operationId === "string" &&
+        operation.operationId.length > 0
+      ) {
+        operations.add(operation.operationId);
+      }
+    }
+  }
+  return operations;
+}
+
+export function countOpenApiOperations(root = REPOSITORY_ROOT) {
+  return readOpenApiOperationIds(root).size;
+}
+
+/**
+ * Code removed but line breaks kept, and whitespace runs collapsed to one space, so a claim
+ * wrapped across source lines still matches and its first line can be reported.
+ */
+function proseWithLines(body) {
+  const prose = body
+    .replace(/```[\s\S]*?```/g, (block) => block.replace(/[^\n]/g, ""))
+    .replace(/~~~[\s\S]*?~~~/g, (block) => block.replace(/[^\n]/g, ""))
+    .replace(/`[^`\n]*`/g, "");
+  let normalized = "";
+  const lineOf = [];
+  let line = 1;
+  let pendingSpace = false;
+  for (let index = 0; index < prose.length; index += 1) {
+    const character = prose[index];
+    if (/\s/u.test(character)) {
+      if (character === "\n") {
+        line += 1;
+      }
+      pendingSpace = normalized.length > 0;
+      continue;
+    }
+    if (pendingSpace) {
+      normalized += " ";
+      lineOf.push(line);
+      pendingSpace = false;
+    }
+    normalized += character;
+    lineOf.push(line);
+  }
+  return { normalized, lineOf };
+}
+
+function isStaleApiExempt(relativePath, metadata) {
+  return (
+    isTemplate(relativePath) ||
+    relativePath.startsWith(HISTORY_PREFIX) ||
+    metadata.status === "historical"
+  );
+}
+
+function validateStaleApiClaims(relativePath, parsed, operationCount, errors) {
+  const { normalized, lineOf } = proseWithLines(parsed.body);
+  for (const pattern of STALE_API_CLAIMS) {
+    const global = new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`);
+    for (const match of normalized.matchAll(global)) {
+      const line = parsed.bodyLineOffset + lineOf[match.index];
+      addError(
+        errors,
+        relativePath,
+        `note describes the API as absent although the OpenAPI snapshot publishes ${operationCount} operations (line ${line})`,
+      );
+    }
+  }
+}
+
+function tableCells(line) {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith("|")) {
+    return null;
+  }
+  return trimmed.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
+
+/**
+ * A capability note states its delivery with a column titled «API de negocio». Once the
+ * snapshot publishes operations, a cell there is never «Ausente» and every row names at least
+ * one operationId of the snapshot in backticks; controller names may accompany them.
+ */
+function validateCapabilityTables(relativePath, parsed, operations, errors) {
+  const lines = parsed.body.replaceAll("\r\n", "\n").split("\n");
+  let inFence = false;
+  for (let index = 0; index < lines.length; index += 1) {
+    if (/^\s*(?:```|~~~)/.test(lines[index])) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      continue;
+    }
+    const header = tableCells(lines[index]);
+    const separator = index + 1 < lines.length ? tableCells(lines[index + 1]) : null;
+    if (!header || !separator || !separator.every((cell) => /^:?-{3,}:?$/.test(cell))) {
+      continue;
+    }
+    const column = header.findIndex(
+      (cell) => cell.replace(/\*/g, "").trim().toLowerCase() === "api de negocio",
+    );
+    index += 1;
+    if (column < 0) {
+      continue;
+    }
+    while (index + 1 < lines.length && tableCells(lines[index + 1])) {
+      index += 1;
+      const line = parsed.bodyLineOffset + index + 1;
+      const cell = tableCells(lines[index])[column] ?? "";
+      if (/^\**\s*ausente\s*\**$/iu.test(cell)) {
+        addError(
+          errors,
+          relativePath,
+          `capability table marks the business API as absent although the OpenAPI snapshot publishes ${operations.size} operations (line ${line})`,
+        );
+        continue;
+      }
+      const cited = [...cell.matchAll(/`([^`\n]+)`/g)]
+        .map((match) => match[1].trim())
+        .filter((token) => /^[A-Z][A-Za-z0-9]+$/.test(token) && !token.endsWith("Controller"));
+      if (cited.length === 0) {
+        addError(errors, relativePath, `capability table row cites no OpenAPI operationId (line ${line})`);
+      }
+      for (const operationId of cited) {
+        if (!operations.has(operationId)) {
+          addError(
+            errors,
+            relativePath,
+            `capability table cites operationId '${operationId}', which the OpenAPI snapshot does not publish (line ${line})`,
+          );
+        }
+      }
+    }
+  }
 }
 
 export function extractLinks(body) {
@@ -1281,6 +1470,8 @@ export function validateVault(root = REPOSITORY_ROOT, { checkInventory = true } 
   const noteSet = new Set(notes.map((filePath) => path.normalize(filePath)));
   const ids = new Map();
   const graph = new Map(notes.map((filePath) => [path.normalize(filePath), new Set()]));
+  // A snapshot with more than the technical ping means the business API exists (4-B).
+  const operations = readOpenApiOperationIds(root);
 
   for (const notePath of notes) {
     const relativePath = repositoryPath(root, notePath);
@@ -1292,6 +1483,12 @@ export function validateVault(root = REPOSITORY_ROOT, { checkInventory = true } 
       continue;
     }
     validateMetadata(root, notePath, relativePath, parsed.metadata, errors);
+    if (operations.size > 1 && !isStaleApiExempt(relativePath, parsed.metadata)) {
+      validateStaleApiClaims(relativePath, parsed, operations.size, errors);
+      if (parsed.metadata.type === "capability") {
+        validateCapabilityTables(relativePath, parsed, operations, errors);
+      }
+    }
     if (typeof parsed.metadata.id === "string" && parsed.metadata.id) {
       const prior = ids.get(parsed.metadata.id);
       if (prior) {

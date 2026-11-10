@@ -34,8 +34,12 @@ Esta es una **lista verificada de brechas documentadas**, no una declaración de
 | Fallo o silencio de un schedule sin alerta externa independiente | Revisión manual de Beszel, Dokploy y logs | Heartbeat/dead-man por SQL y cada carril, canal aprobado, prueba de fallo y silencio |
 | CRUD humano SQL evita validaciones de negocio | Identidad propia, red privada, rol limitado, constraints SQL | Tratar el dato como experimento, no como validación de negocio |
 | Sin historial DML durable por fila | Principal SQL individual identificable | Decisión y mecanismo de auditoría separados, si el equipo lo exige |
-| API de negocio sin autenticación/autorización implementada | Development privado y superficie HTTP mínima | Casos de uso con identidad, tenant/estación, RBAC y pruebas de denegación |
-| Mobile APK sin pipeline/firma/distribución aprobados | Expo ejecutable y pruebas locales parciales | Decisiones y aceptación del [plan móvil](../07-entrega/mobile-apk-ci-cd.md) antes de activar CI/CD |
+| Un caso de uso nuevo sin pruebas de denegación entre organizaciones o estaciones | *Posterior al commit verificado:* JWT, política fallback autenticada y autorización por departamento, organización y estación en cada caso de uso | Pruebas negativas de aislamiento en cada caso de uso nuevo, no solo en los existentes |
+| Datos de tarjeta en logs, auditoría, avisos o respuestas | *Posterior al commit verificado:* solo se guardan la marca y los últimos cuatro dígitos; número, código de seguridad y vencimiento llegan solo a la pasarela ([cobro con tarjeta](../../backend/Elevant.Application/Finance/CardPayments.cs)) | Revisión de cumplimiento antes de conectar una pasarela real |
+| Pasarela simulada en un ambiente real | *Posterior al commit verificado:* `CardPayments:Mode` es `Disabled` por defecto y en `appsettings.Production.json`; con `Simulated` fuera de Development o de los entornos de prueba la API no arranca ([composición](../../backend/Elevant.Infrastructure/DependencyInjection.cs)) | Contrato y adaptador de una pasarela real, fuera del alcance actual |
+| Mobile APK sin pipeline/firma/distribución aprobados | Expo ejecutable; *posterior al commit verificado,* `mobile-ci.yml` valida lint, tipos, pruebas y bundle sin construir la APK | Decisiones y aceptación del [plan móvil](../07-entrega/mobile-apk-ci-cd.md) antes de activar CI/CD |
+
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* la fila de la API de negocio sin autenticación ni autorización quedó cerrada; la API autentica con JWT y refresh rotativo ([fronteras de confianza](../04-arquitectura/sistema-y-fronteras-de-confianza.md)). Las tres filas marcadas describen controles del código de ese commit, no aceptación en un ambiente.
 
 ## Aprobación y alertas
 

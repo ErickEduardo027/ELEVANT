@@ -160,6 +160,39 @@ El administrador de OCC las hereda. El relevo de un agente usa
 `operations.review.decide` y la reapertura de la cotización de un charter usa
 `finance.charters.confirm`, que ya existían.
 
+**Cambios de la fase 4 del ciclo**, también posteriores al commit verificado
+(código de `39a85a46`;
+[ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
+[Finanzas](finanzas-tarifas-cargos-y-cobros.md)):
+
+- el menú de Finanzas queda en Inicio · Facturación (Por facturar, Facturas con
+  sus pestañas Cobros y Estados de cuenta, Charters) · Cuentas por pagar
+  (Facturas de proveedores, Proveedores, Gastos de empleados, Mis gastos) ·
+  Reportes · Configuración · Usuarios del departamento
+  ([menú](../../frontend/private-web/src/features/finance/shell/modules.js));
+- se retiran los módulos de prefacturas, servicios aprobados, tratamientos
+  tributarios y documentos fiscales. Sus códigos guardados se conservan como
+  alias: `finance.approved_services.read` y `finance.preinvoices.read`
+  resuelven a `finance.invoicing.read`, `finance.preinvoices.issue` y
+  `.manage` a `finance.invoicing.issue`, y los demás (tributarios, fiscal,
+  `finance.reconciliation.create`) no conceden nada, así que un perfil guardado
+  no falla;
+- `finance.reconciliation` se rotula «Facturas»; «Por facturar» y el PDF de
+  una factura recién emitida dependen de `finance.invoicing.*`, e Inicio, con
+  su propio permiso de lectura, muestra cada sección según el permiso de su
+  módulo;
+- la única acción nueva es `finance.payables.reverse` («Anular facturas y
+  revertir pagos»);
+- `finance.expenses.create`, `.update` y `.manage` pasan a alias vacíos: el
+  gasto propio nunca necesitó un código de Finanzas, y Finanzas recibe «Mis
+  gastos» sin permiso;
+- el perfil sembrado «Analista de facturación» de Development recibe
+  `finance.notifications.read` y ya no tiene códigos de prefactura.
+
+Un alias retirado solo se atribuye al departamento de su prefijo, para que una
+plantilla guardada siga validando, y la normalización de los grants lo descarta
+([catálogo](../../backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs)).
+
 El acceso efectivo se calcula en el servidor para cada petición. Private Web
 sólo lo usa para mostrar u ocultar módulos y acciones (`GET governance/me/access`).
 
@@ -240,9 +273,9 @@ Posterior al commit verificado de esta nota (código de `8a79fe70`):
   la versión
   ([ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md)).
 - Finanzas también recibe las facturas pagadas con tarjeta
-  ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Las alertas de
-  prefacturas aceptadas o disputadas siguen en el código, pero el portal ya no
-  ofrece esas acciones
+  ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Desde la fase 4
+  (código de `39a85a46`) ya no existen las alertas de prefacturas aceptadas o
+  disputadas: la aerolínea no acepta ni disputa
   ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)).
 - Desde la fase 2 (código de `50e7778f`;
   [ADR-0038](../../docs/adr/0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md)),
@@ -263,6 +296,11 @@ Posterior al commit verificado de esta nota (código de `8a79fe70`):
   informó cancelado o desviado un vuelo importado, que un cambio de posición dejó
   una operación sin agente elegible y que una operación sin iniciar perdió su
   contrato.
+- Desde la fase 4 (código de `39a85a46`), Finanzas recibe
+  `operation_ready_to_invoice` cuando OCC aprueba operaciones con servicios
+  facturables, una por aerolínea, estación y día hábil, solo si también abre
+  «Por facturar» (`finance.invoicing.read`); abre esa pantalla. El aviso de
+  factura pagada con tarjeta (`invoice_paid`) llega a quien abre «Facturas».
 
 **Pruebas.** Cada tipo tiene una prueba SQL que comprueba quién la recibe y quién
 no, el filtro por estación, la marca de leída, la reaparición como no leída de

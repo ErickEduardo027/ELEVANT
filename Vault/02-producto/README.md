@@ -27,7 +27,7 @@ tags:
 ELEVANT se documenta en el repositorio como la plataforma de AVIAM para planificar y controlar asistencia en tierra. Tres clientes especializados comparten una API y una base lógica por ambiente. Esa descripción fija el límite del producto; no prueba todavía adopción, resultados de negocio ni una historia fundacional.
 
 > [!IMPORTANT]
-> En el commit verificado, la persistencia de dominio y varios prototipos de interfaz son amplios, pero la API funcional solo publica infraestructura técnica y `system/ping`. Por eso una pantalla o una tabla no equivale a una capacidad operativa completa.
+> Posterior al commit verificado de esta nota (código de `39a85a46`): la API publica los casos de uso de las cuatro fases del ciclo y los tres clientes los consumen; el [Mapa de capacidades](mapa-de-capacidades.md) dice qué está entregado, simulado, configurable o diferido. Aun así, una pantalla o una tabla no equivale por sí sola a una capacidad operativa completa ni a un despliegue.
 
 ## Cómo leer este mapa
 
@@ -44,7 +44,7 @@ flowchart LR
     PUB[Portal de clientes] --> API
     MOB[Mobile Agent] --> API
     API --> DB[(Base lógica del ambiente)]
-    API -. integración futura .-> EXT[Proveedor aeronáutico]
+    API -. configurable, apagado por defecto .-> EXT[Proveedor aeronáutico]
 ```
 
 ## Recorridos de lectura

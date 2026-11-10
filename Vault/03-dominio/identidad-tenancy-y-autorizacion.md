@@ -154,7 +154,7 @@ Estos valores no definen por sí solos las transiciones ni la interacción entre
 
 Existe el esquema para cuentas ASP.NET Identity, roles, permisos, membresías y scopes. El seeder de Development crea anclas sintéticas mínimas para los tres portales, pero no constituye el catálogo definitivo de roles ni datos reales.
 
-La API actual no implementa autenticación ni endpoints de negocio. Por ello, las reglas anteriores son invariantes de arquitectura que los futuros casos de uso deben materializar y probar, especialmente aislamiento entre organizaciones y estaciones.
+Posterior al commit verificado de esta nota (código de `39a85a46`): la API autentica con JWT y refresh rotativo ([ADR-0021](../../docs/adr/0021-rotating-refresh-tokens.md)), confirma el inicio de sesión del portal con un código por correo ([ADR-0022](../../docs/adr/0022-portal-email-verification.md)) y cada caso de uso resuelve organización, estaciones y permisos desde SQL. Las reglas anteriores siguen siendo invariantes que cada caso de uso nuevo debe materializar y probar, especialmente el aislamiento entre organizaciones y estaciones.
 
 ## Pruebas obligatorias futuras
 

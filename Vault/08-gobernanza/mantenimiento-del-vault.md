@@ -107,6 +107,8 @@ Además de cambios por PR:
 
 No actualices fechas en masa para aparentar vigencia. Una fecha nueva representa una lectura y contraste completos.
 
+*Posterior al commit verificado de esta nota:* el checker también lee el snapshot OpenAPI. Si publica más operaciones que el ping técnico, rechaza las frases que describían la API como un scaffold vacío fuera de `01-historia` y de las plantillas, y exige que cada fila de una tabla de capacidades con la columna «API de negocio» cite al menos un `operationId` publicado ([checker](../../scripts/vault/core.mjs)). La lista exacta de frases vive en el código, no en esta nota.
+
 ## Contenido generado
 
 Los inventarios marcados como generados se actualizan únicamente mediante su generador documentado. No edites manualmente un bloque derivado. El checker debe detectar drift sin escribir durante CI. Una falla de generación no autoriza ignorar la diferencia: corrige el generador o la fuente.

@@ -7,19 +7,25 @@ status: verified
 maturity: evolving
 evidence: repo-verified
 owner: equipo-elevant
-last_verified: "2026-09-12"
-verified_commit: "c2a060179983a13b7e5a0dd45cba1a1fd2e54e8a"
+last_verified: "2026-11-10"
+verified_commit: "39a85a46ae089239e22edce448a4d77771680b46"
 sources:
   - AGENTS.md
   - backend/AGENTS.md
   - backend/README.md
+  - backend/Elevant.sln
   - backend/Elevant.Api/Program.cs
+  - backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs
+  - backend/Elevant.Infrastructure/DependencyInjection.cs
   - backend/tests/Elevant.ArchitectureTests/Architecture/ProjectDependencyTests.cs
   - database/AGENTS.md
   - database/DevelopmentDB/README.md
+  - database/DevelopmentDB/Elevant.Persistence/Persistence/ElevantDbContext.cs
+  - database/ProductionDB/.gitkeep
   - docs/architecture/backend-architecture.md
   - docs/architecture/database-v1.md
   - packages/api-client/README.md
+  - packages/api-client/openapi/elevant-v1.json
 tags:
   - arquitectura
   - mapa
@@ -29,10 +35,17 @@ tags:
 
 # Arquitectura ELEVANT
 
-Este índice explica la arquitectura comprobable de ELEVANT en el commit indicado. El sistema objetivo es un monorepositorio con tres clientes, una API .NET compartida y una base lógica por ambiente. La implementación está avanzada en modelo persistente y empaquetado técnico, pero todavía no ofrece casos de uso de negocio por HTTP.
+Este índice explica la arquitectura comprobable de ELEVANT en el commit
+indicado. Es un monorepositorio con tres clientes, una API .NET compartida y
+una base lógica por ambiente. La API ofrece los casos de uso de las cuatro
+fases del ciclo operativo, autenticados y autorizados en el servidor, y los
+tres clientes los consumen con el cliente TypeScript generado del contrato.
 
 > [!IMPORTANT]
-> “Existe en el esquema”, “aparece en un prototipo” y “se puede operar mediante la API” son estados diferentes. Las notas de esta área los separan deliberadamente.
+> «Existe en el esquema», «aparece en una pantalla», «se puede operar mediante
+> la API» y «está desplegado» son estados diferentes. Las notas de esta área
+> describen el código; el despliegue solo lo acredita un registro
+> `operator-recorded`.
 
 ## Mapa de lectura
 
@@ -42,8 +55,9 @@ Este índice explica la arquitectura comprobable de ELEVANT en el commit indicad
 | ¿Cómo se organiza el backend y qué dependencias están permitidas? | [Backend .NET, capas y dependencias](backend-dotnet-capas-y-dependencias.md) |
 | ¿Quién posee el modelo SQL y cómo evolucionan los datos? | [Datos, EF Core, migraciones y persistencia](datos-ef-migraciones-y-persistencia.md) |
 | ¿Qué contratos HTTP y tiempo real existen hoy? | [OpenAPI, HTTP y SignalR](openapi-http-y-signalr.md) |
+| ¿Cómo se entera un cliente de que algo cambió? | [Feed de cambios operativos](feed-de-cambios-operativos.md) |
 | ¿Qué proveedores se consumen realmente y cuáles son solo objetivos? | [Integraciones externas](integraciones-externas.md) |
-| ¿Cómo se guardan las fotos y videos del flujo comercial? | [Medios comerciales privados](medios-comerciales-privados.md) |
+| ¿Cómo se guardan las fotos, videos y documentos privados? | [Medios comerciales privados](medios-comerciales-privados.md) |
 | ¿Qué decisiones gobiernan el diseño y qué riesgos siguen abiertos? | [Decisiones, restricciones y riesgos](decisiones-restricciones-y-riesgos.md) |
 
 ## Fotografía de implementación
@@ -51,15 +65,16 @@ Este índice explica la arquitectura comprobable de ELEVANT en el commit indicad
 | Capa o capacidad | Estado verificable | Lectura correcta |
 | --- | --- | --- |
 | Monorepositorio y tres fronteras de cliente | Implementado | Private Web, Public Web y Mobile Agent viven separados y comparten el backend y el cliente API. |
-| Backend modular .NET 10 | Implementado | Siete proyectos productivos forman un grafo acíclico probado: cinco bajo `backend` y Persistence/DatabaseTool bajo `database/DevelopmentDB`. |
-| Modelo persistente v1 | Implementado | EF Core, SQL Server, Identity, cinco migraciones y ocho schemas modelan la plataforma. |
-| Superficie HTTP útil | Mínima | El único endpoint funcional versionado en OpenAPI es `GET /api/v1/system/ping`; health y Swagger son capacidades técnicas. |
-| Casos de uso de negocio | No implementados | Application no contiene vertical slices de negocio y la API no publica controllers de negocio. |
-| Autenticación y autorización de aplicación | No implementadas | Hay tablas Identity, una definición Bearer futura y `AddAuthorization`, pero no existe handler de autenticación ni protección de rutas. |
-| SignalR | Shell técnico | Dos rutas de hub están mapeadas; no tienen métodos, mensajes estables ni autorización. |
-| FlightAware | Frontera futura | Existe un puerto neutral y opciones; no existe adapter registrado, `HttpClient` ni tráfico real. |
-| Cliente TypeScript compartido | Implementado para el contrato mínimo | El snapshot y la salida generada contienen únicamente `GetSystemPing`; los flujos de negocio de los clientes continúan en adaptadores de prototipo/mock. |
-| Production | Frontera reservada | El repositorio conserva `database/ProductionDB` vacío salvo `.gitkeep`; no prueba una plataforma Production implementada. |
+| Backend modular .NET 10 | Implementado | Siete proyectos productivos forman un grafo acíclico probado: cinco bajo `backend` y Persistence y DatabaseTool bajo `database/DevelopmentDB`. |
+| Modelo persistente | Implementado | EF Core sobre SQL Server, Identity, 57 migraciones y ocho schemas. |
+| Superficie HTTP | Amplia | 400 operaciones en OpenAPI v1, de la sesión al cobro con tarjeta ([API compartida](../05-aplicaciones/api-compartida.md)). |
+| Casos de uso | Implementados por módulo | Operations, Commercial, Finance, Identity e Integration, con Problem Details, `Idempotency-Key` y versión esperada. |
+| Autenticación y autorización | Implementadas | JWT con refresh rotativo, política fallback autenticada y permisos por departamento, organización y estación resueltos en SQL. |
+| SignalR | Avisos `ChangedV1` | Tres hubs que solo anuncian; el cliente relee por REST. El despachador está apagado por defecto y encendido en Development. |
+| Proveedores de vuelos | Adaptador AeroDataBox configurable | Apagado sin `AeroDataBox:Enabled` y clave; OpenSky también es opcional y FlightAware sigue sin adaptador. |
+| Simulaciones | e-CF y pasarela de tarjeta | Marcadas «Simulación — sin validez fiscal»; la pasarela simulada no arranca fuera de Development, Test o Testing. |
+| Cliente TypeScript compartido | 400 operaciones | Snapshot, salida generada y wrappers validados que consumen las tres aplicaciones. |
+| Production | Frontera reservada | `database/ProductionDB` solo contiene `.gitkeep`; no hay plataforma Production implementada. |
 
 ## Arquitectura en una vista
 
@@ -83,7 +98,8 @@ flowchart LR
     end
 
     DB[(SQL Server por ambiente)]
-    EXT[Proveedor de aviación futuro]
+    S3[(Bucket S3 privado)]
+    EXT[Proveedores autorizados]
 
     PRIV --> CLIENT
     PUB --> CLIENT
@@ -98,46 +114,61 @@ flowchart LR
     INF --> DOM
     PER --> DOM
     PER --> DB
-    INF -. adapter no implementado .-> EXT
+    PER --> S3
+    INF -. configurable, apagado por defecto .-> EXT
 ```
-
-El diagrama expresa dependencias y límites objetivo. No afirma que los recorridos de negocio de los tres clientes ya atraviesen la API real.
 
 ## Invariantes de arquitectura
 
-- Los clientes no importan entidades .NET, no consultan tablas y no poseen credenciales de servidor.
-- La API es la única frontera prevista para datos, reglas y proveedores de aviación.
-- Hay una sola base lógica compartida por ambiente, no una base ni un backend por cliente.
-- `Elevant.Contracts` define formas HTTP; EF y los mocks no son contratos públicos.
-- `Elevant.Api` compone dependencias, pero no debe contener reglas ni ejecutar migraciones o seed al iniciar.
-- Las migraciones EF constituyen la historia del esquema normal; el bootstrap técnico crea antes el marcador inmutable del ambiente.
-- Development y una futura Production son destinos físicos separados que comparten la cadena de esquema, no datos ni credenciales.
-- Una integración externa nace detrás de un puerto de Application y adapta su modelo en Infrastructure.
+- Los clientes no importan entidades .NET, no consultan tablas y no poseen
+  credenciales de servidor.
+- La API es la única frontera para datos, reglas y proveedores de aviación.
+- Hay una sola base lógica compartida por ambiente, no una base ni un backend
+  por cliente.
+- `Elevant.Contracts` define las formas HTTP; EF y los mocks no son contratos
+  públicos.
+- `Elevant.Api` compone dependencias, pero no contiene reglas ni ejecuta
+  migraciones o seeds al iniciar.
+- Las migraciones EF son la historia del esquema; el bootstrap técnico crea
+  antes el marcador inmutable del ambiente.
+- Development y una futura Production son destinos físicos separados que
+  comparten la cadena de esquema, no datos ni credenciales.
+- Una integración externa nace detrás de un puerto de Application y adapta su
+  modelo en Infrastructure.
 - SignalR acelera avisos; REST y la base siguen siendo la verdad canónica.
 
 ## Cómo interpretar el estado
 
 - **Implementado:** existe código ejecutable o una prueba que exige el comportamiento.
 - **Contrato:** aparece en el OpenAPI versionado o en otra interfaz estable aprobada.
-- **Prototipo:** sirve para descubrir flujos y vocabulario, pero no demuestra seguridad ni persistencia real.
-- **Objetivo:** decisión aceptada o frontera preparada cuyo comportamiento todavía debe implementarse.
+- **Configurable:** el código existe y arranca apagado hasta que una configuración explícita lo enciende.
+- **Simulado:** el efecto externo se imita y cada documento lo declara.
+- **Objetivo:** decisión aceptada cuyo comportamiento todavía debe implementarse.
 - **Desconocido:** falta una decisión o evidencia suficiente; no se completa por intuición.
 
 ## Verificación reproducible
 
-La fotografía se obtuvo comparando proyectos, referencias, composición de la API, snapshot OpenAPI, DbContext y migraciones en el commit del frontmatter. Para comprobarla sin ejecutar infraestructura:
+Para comprobar la fotografía sin ejecutar infraestructura:
 
-1. abre la prueba [ProjectDependencyTests](../../backend/tests/Elevant.ArchitectureTests/Architecture/ProjectDependencyTests.cs) y contrástala con los `.csproj`;
-2. revisa [Program](../../backend/Elevant.Api/Program.cs) y sus extensiones de DI/pipeline;
-3. inspecciona [ElevantDbContext](../../database/DevelopmentDB/Elevant.Persistence/Persistence/ElevantDbContext.cs) y la carpeta de migraciones;
-4. compara [el snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json) con controllers y contratos;
-5. busca implementaciones de puertos, hubs y casos de uso, no sólo interfaces o nombres de carpetas.
+1. abre [ProjectDependencyTests](../../backend/tests/Elevant.ArchitectureTests/Architecture/ProjectDependencyTests.cs)
+   y contrástala con [la solución](../../backend/Elevant.sln);
+2. revisa [Program](../../backend/Elevant.Api/Program.cs), la
+   [composición de la API](../../backend/Elevant.Api/Extensions/ServiceCollectionExtensions.cs)
+   y la de [Infrastructure](../../backend/Elevant.Infrastructure/DependencyInjection.cs);
+3. inspecciona [ElevantDbContext](../../database/DevelopmentDB/Elevant.Persistence/Persistence/ElevantDbContext.cs)
+   y la carpeta de migraciones;
+4. recorre `paths` en [el snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json)
+   y compáralo con los controllers;
+5. busca implementaciones de puertos y casos de uso, no solo interfaces o
+   nombres de carpetas.
 
-Esta verificación describe el repositorio. No demuestra por sí sola el estado de un runtime o despliegue.
+Esta verificación describe el repositorio. No demuestra el estado de un
+runtime o despliegue.
 
 ## Relacionados
 
 - [Home](../00-inicio/home.md)
 - [Dominio ELEVANT](../03-dominio/README.md)
 - [Producto ELEVANT](../02-producto/README.md)
+- [Mapa de capacidades](../02-producto/mapa-de-capacidades.md)
 - [Política de evidencia](../08-gobernanza/fuentes-y-evidencia.md)

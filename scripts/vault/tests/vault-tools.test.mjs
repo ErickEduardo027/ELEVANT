@@ -8,6 +8,7 @@ import test from "node:test";
 import {
   INVENTORY_RELATIVE_PATH,
   VaultValidationError,
+  countOpenApiOperations,
   validateVault,
   writeInventory,
 } from "../core.mjs";
@@ -468,5 +469,185 @@ test("detects generated inventory drift without rewriting it", () => {
     const issues = issuesFrom(() => validateVault(root));
     assert.match(issues, /generated inventory has drift/);
     assert.equal(readFileSync(inventoryPath, "utf8"), stale);
+  });
+});
+
+function publishOperations(root, operationIds) {
+  const paths = Object.fromEntries(
+    operationIds.map((operationId, index) => [
+      `/api/v1/example/${index}`,
+      { get: { operationId, responses: {} } },
+    ]),
+  );
+  writeFileSync(
+    path.join(root, "packages", "api-client", "openapi", "elevant-v1.json"),
+    `${JSON.stringify({ openapi: "3.1.0", info: { title: "ELEVANT", version: "1" }, paths })}\n`,
+    "utf8",
+  );
+}
+
+function headCommit(root) {
+  return execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
+}
+
+// Two claims, the second wrapped across source lines as the Vault notes often are.
+const EMPTY_API_CLAIM =
+  "El OpenAPI contiene solo el ping.\n\nLa API carece de autenticación y\nendpoints de negocio.";
+
+test("counts only the operations the OpenAPI snapshot publishes under paths", () => {
+  withFixture((root) => {
+    assert.equal(countOpenApiOperations(root), 0);
+    publishOperations(root, ["GetSystemPing", "CreateSession"]);
+    assert.equal(countOpenApiOperations(root), 2);
+  });
+});
+
+test("rejects empty-API claims once the OpenAPI snapshot publishes operations (4-B)", () => {
+  withFixture((root) => {
+    publishOperations(root, ["GetSystemPing", "CreateSession"]);
+    writeFileSync(
+      path.join(root, "Vault", "guides", "guide.md"),
+      note({
+        id: "guide",
+        title: "Guide",
+        verifiedCommit: headCommit(root),
+        body: `[Home](../README.md)\n\n${EMPTY_API_CLAIM}\n\n\`OpenAPI contiene solo el ping\` en código no cuenta.`,
+      }),
+      "utf8",
+    );
+    const issues = issuesFrom(() => validateVault(root, { checkInventory: false }));
+    const stale = issues
+      .split("\n")
+      .filter((issue) => issue.includes("describes the API as absent"));
+    // The code span on line 27 is not prose; the wrapped claim reports the line it starts on.
+    assert.deepEqual(stale, [
+      "Vault/guides/guide.md: note describes the API as absent although the OpenAPI snapshot publishes 2 operations (line 22)",
+      "Vault/guides/guide.md: note describes the API as absent although the OpenAPI snapshot publishes 2 operations (line 24)",
+    ]);
+  });
+});
+
+test("accepts the same claim while the snapshot publishes no business operations", () => {
+  withFixture((root) => {
+    writeFileSync(
+      path.join(root, "Vault", "guides", "guide.md"),
+      note({
+        id: "guide",
+        title: "Guide",
+        verifiedCommit: headCommit(root),
+        body: `[Home](../README.md)\n\n${EMPTY_API_CLAIM}`,
+      }),
+      "utf8",
+    );
+    assert.deepEqual(validateVault(root, { checkInventory: false }), {
+      notes: 2,
+      canvases: 0,
+      bases: 0,
+    });
+  });
+});
+
+test("keeps the empty-API claim of a history note, which describes the past", () => {
+  withFixture((root) => {
+    publishOperations(root, ["GetSystemPing", "CreateSession"]);
+    const verifiedCommit = headCommit(root);
+    mkdirSync(path.join(root, "Vault", "01-historia"), { recursive: true });
+    writeFileSync(
+      path.join(root, "Vault", "01-historia", "corte.md"),
+      note({
+        id: "corte",
+        title: "Corte",
+        type: "history",
+        area: "history",
+        verifiedCommit,
+        body: `[Inicio](../README.md)\n\nEn ese corte, ${EMPTY_API_CLAIM}`,
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      path.join(root, "Vault", "README.md"),
+      note({
+        id: "vault-readme",
+        title: "Vault",
+        type: "index",
+        verifiedCommit,
+        body: "[Guide](guides/guide.md)\n\n[Corte](01-historia/corte.md)",
+      }),
+      "utf8",
+    );
+    assert.deepEqual(validateVault(root, { checkInventory: false }), {
+      notes: 3,
+      canvases: 0,
+      bases: 0,
+    });
+  });
+});
+
+test("requires capability tables to cite published operations, never «Ausente» (4-B)", () => {
+  withFixture((root) => {
+    publishOperations(root, ["GetSystemPing", "CreateSession", "IssueInvoiceFromOperations"]);
+    const verifiedCommit = headCommit(root);
+    const capability = (rows) =>
+      note({
+        id: "capacidades",
+        title: "Capacidades",
+        type: "capability",
+        area: "product",
+        verifiedCommit,
+        body: [
+          "[Inicio](../README.md)",
+          "",
+          "| Capacidad | API de negocio | Estado |",
+          "| --- | --- | --- |",
+          ...rows,
+          "",
+          "| Periférica | Superficie en el código |",
+          "| --- | --- |",
+          "| Producción | Ausente |",
+        ].join("\n"),
+      });
+    const capabilityPath = path.join(root, "Vault", "guides", "capacidades.md");
+    writeFileSync(
+      path.join(root, "Vault", "README.md"),
+      note({
+        id: "vault-readme",
+        title: "Vault",
+        type: "index",
+        verifiedCommit,
+        body: "[Guide](guides/guide.md)\n\n[Capacidades](guides/capacidades.md)",
+      }),
+      "utf8",
+    );
+    writeFileSync(
+      capabilityPath,
+      capability([
+        "| Sesión | `AuthenticationController` · `CreateSession` | Entregada |",
+        "| Facturas | **Ausente** | Diferido |",
+        "| Chat | `SendChatMessage` | Entregada |",
+        "| Reportes | Reportes del servidor | Parcial |",
+      ]),
+      "utf8",
+    );
+    const issues = issuesFrom(() => validateVault(root, { checkInventory: false }));
+    assert.match(issues, /capability table marks the business API as absent although the OpenAPI snapshot publishes 3 operations \(line 25\)/);
+    assert.match(issues, /cites operationId 'SendChatMessage', which the OpenAPI snapshot does not publish \(line 26\)/);
+    assert.match(issues, /capability table row cites no OpenAPI operationId \(line 27\)/);
+    // A controller name is not an operationId, and a table without «API de negocio» is not checked.
+    assert.doesNotMatch(issues, /AuthenticationController/);
+    assert.doesNotMatch(issues, /\(line 31\)/);
+
+    writeFileSync(
+      capabilityPath,
+      capability([
+        "| Sesión | `AuthenticationController` · `CreateSession` | Entregada |",
+        "| Facturas | `IssueInvoiceFromOperations` | Entregada con simulación |",
+      ]),
+      "utf8",
+    );
+    assert.deepEqual(validateVault(root, { checkInventory: false }), {
+      notes: 3,
+      canvases: 0,
+      bases: 0,
+    });
   });
 });

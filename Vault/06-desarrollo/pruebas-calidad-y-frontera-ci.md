@@ -128,6 +128,28 @@ verificado;
 - **Sin corrida registrada.** Esta nota no registra todavía una corrida de la
   fase 3 contra el stack local.
 
+Desde la fase 4 del ciclo (código de `39a85a46`, también posterior al commit
+verificado; [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
+[ADR-0036](../../docs/adr/0036-simulated-card-payment.md)):
+
+- **Pasos de la fase 4.** Ya no queda ningún `test.fixme` en las
+  [pruebas de la fase 4](../../frontend/public-web/tests/e2e-cycle/fase4-facturacion.spec.ts):
+  la emisión, el pago con tarjeta, la nota de crédito, el estado de cuenta, los
+  reportes, el menú de Finanzas, las cuentas por pagar y los gastos son pruebas
+  reales. Dos pasos se saltan con su motivo cuando la corrida no dejó lo que
+  necesitan: la nota de crédito y un charter facturado. El último paso
+  comprueba, sin navegador, que el Vault describe el ciclo como el código: cada
+  operación que cita el mapa de capacidades existe en el snapshot y ninguna
+  nota vigente describe la API como vacía. La puerta real de esa regla es
+  `npm run vault:ci`.
+- **Pasarela simulada.** El mismo overlay activa `CardPayments__Mode=Simulated`:
+  las tarjetas de prueba se aprueban o rechazan en memoria, sin red.
+- **Reapertura en la fase 3.** El paso que reabre la aprobación se salta si la
+  operación del ciclo ya se facturó o si la retiene un borrador interno
+  antiguo: su corrección es una nota de crédito.
+- **Sin corrida registrada.** Esta nota no registra todavía una corrida de la
+  fase 4 contra el stack local.
+
 ## Qué agrega cada workflow activo
 
 ### Backend CI
