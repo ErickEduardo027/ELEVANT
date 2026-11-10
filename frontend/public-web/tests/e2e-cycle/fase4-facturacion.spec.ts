@@ -422,7 +422,8 @@ test("Cuentas por pagar: corregir, anular y volver a usar el NCF, segregación y
   const registerInvoice = async () => {
     await page.getByRole("button", { name: "Nueva factura de proveedor" }).click();
     const form = page.getByRole("form", { name: "Borrador de factura de proveedor" });
-    await form.getByLabel("Proveedor", { exact: true }).selectOption({ label: `${code} · ${name}` });
+    // The select sits inside its own label, whose text includes the options: it is found by its accessible name.
+    await form.getByRole("combobox", { name: "Proveedor", exact: true }).selectOption({ label: `${code} · ${name}` });
     await form.getByLabel("Referencia del proveedor").fill(ncf);
     await form.getByLabel("Descripción de línea 1").fill("Limpieza de rampa");
     await form.getByLabel("Precio unitario de línea 1").fill("1500");
