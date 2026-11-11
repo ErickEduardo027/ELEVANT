@@ -135,8 +135,12 @@ cerró.
   que todavía no la exigen y `operationVersions` en la emisión de facturas, que
   la fase 4 añadió opcional. Es un cambio coordinado con los clientes
   desplegados.
-- Las respuestas `401` no llevan `code`, como en el resto del repositorio: los
-  clientes las tratan por su estado como sesión vencida.
+- Las respuestas `401` de Facturación, Tesorería, la cartera del portal y la
+  tarjeta no llevan `code`, como en la mayoría de los controladores del
+  repositorio; las de cuentas por pagar y gastos y la del estado de la
+  aerolínea en el portal (`GET airline/portal/standing`) llevan
+  `unauthorized` cuando la cuenta del token ya no resuelve un actor. Los
+  clientes las tratan por su estado HTTP como sesión vencida.
 - Una consulta general de auditoría: hoy se lee por área y Superadministración
   solo ve la de gobernanza, comercial y Gestión Humana
   ([almacén](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfGovernanceStore.cs)).
