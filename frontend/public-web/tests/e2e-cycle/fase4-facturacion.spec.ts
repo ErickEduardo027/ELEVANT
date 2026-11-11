@@ -643,6 +643,11 @@ const EMPTY_API_CLAIMS = [
   /API\s+funcional\s+solo\s+publica\s+infraestructura\s+técnica/iu,
   /autenticación\s*:\s*reservada,?\s+no\s+implementada/iu,
   /hubs?(?:\s+SignalR)?\s+(?:vacíos\s*\/\s*reservados|son\s+shells)/iu,
+  // The «Brecha actual» lines a client note kept after the API had closed them.
+  /autenticación\s+y\s+autorización\s+reales\s+no\s+existen/iu,
+  /rutas\s+de\s+negocio\s+(?:usadas\s+por\s+servicios\s+heredados\s+)?no\s+están\s+en\s+el\s+OpenAPI/iu,
+  /SignalR\s+y\s+el\s+proveedor\s+de\s+vuelos\s+están\s+reservados/iu,
+  /object\s+storage\s+todavía\s+no\s+diseñad[oa]/iu,
 ];
 
 test("hueco 4-B · el Vault describe el ciclo completo tal como funciona", async () => {

@@ -720,10 +720,10 @@ Cada feature debe consumir un endpoint versionado a través de un adaptador remo
 
 ## Brechas y desconocidos
 
-- **Brecha actual:** autenticación y autorización reales no existen en la API compartida.
-- **Brecha actual:** las rutas de negocio usadas por servicios heredados no están en el OpenAPI vigente.
-- **Brecha actual:** SignalR y el proveedor de vuelos están reservados, no entregan datos reales a estas vistas.
-- **Brecha actual:** carga de evidencias requiere una capacidad de object storage todavía no diseñada.
+- **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), la API autentica con JWT y refresh rotativo ([ADR-0021](../../docs/adr/0021-rotating-refresh-tokens.md)) y autoriza en el servidor cada caso de uso con los permisos del departamento ([ADR-0015](../../docs/adr/0015-department-user-governance.md)) y el alcance de estaciones de la cuenta; los shells solo muestran los módulos que permite `GET governance/me/access`.
+- **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), las rutas de negocio que usan estas vistas están en el [snapshot OpenAPI](../../packages/api-client/openapi/elevant-v1.json), que publica 400 operaciones. Solo dos adaptadores heredados conservan rutas del prototipo fuera de él: la fuente `legacy` del contador de notificaciones y `reportsService`; ninguna vista montada los usa.
+- **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), los hubs de operaciones y de notificaciones anuncian `ChangedV1` cuando el despachador está encendido (`true` en `appsettings.Development.json`), y la web lee el cursor de `getAccountChanges` y relee por REST lo que cambió ([feed de cambios](../04-arquitectura/feed-de-cambios-operativos.md)). Planificación importa los vuelos del feed AeroDataBox de la API, apagado por defecto y con presupuesto de unidades ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)).
+- **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), la API guarda en un bucket S3 privado, con metadatos y SHA-256 en SQL, los archivos que suben estas vistas (fotos y videos de servicios, logos de aerolíneas, fotos de perfil y comprobantes de Cuentas por pagar) y las fotos del walk-around que OCC abre en los documentos de la operación ([medios privados](../04-arquitectura/medios-comerciales-privados.md)). La retención y el antivirus siguen abiertos ([brechas del dominio](../03-dominio/brechas-y-preguntas-abiertas.md)).
 - **Desconocido:** orden aprobado para migrar cada módulo desde el prototipo.
 - **Desconocido:** roles, permisos y criterios finales de aceptación de cada recorrido; deben acordarse antes de convertirlos en contratos.
 
