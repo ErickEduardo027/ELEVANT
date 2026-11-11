@@ -21,7 +21,8 @@ namespace Elevant.Persistence.Finance;
 /// it values the approved services through the internal draft (packages, minimums, charges),
 /// applies ITBIS 18 %, issues the invoice with its e-NCF, settles a charter with its confirmed
 /// prepayment and queues the invoice email. No preinvoice is ever left visible or pending: any
-/// failure rolls the whole transaction back, so the operations stay in «Por facturar» (4-N01).
+/// failure rolls the whole transaction back, so the operations stay in «Por facturar» (4-N01), and
+/// an older draft left without invoice is released on the way (<see cref="StaleInternalDrafts"/>).
 /// </summary>
 internal sealed class EfInvoiceIssuanceStore(
     ElevantDbContext context, TimeProvider timeProvider,
@@ -29,6 +30,21 @@ internal sealed class EfInvoiceIssuanceStore(
 {
     /// <summary>Receipt action of the no-charge closure (4-N07) in <see cref="CommercialCommandReceipts"/>.</summary>
     internal const string NoChargeAction = "finance.invoicing.no_charge";
+
+    /// <summary>Receipt action of an issuance from operations (4-N29) in <see cref="CommercialCommandReceipts"/>.</summary>
+    internal const string IssueAction = "finance.invoice.issue";
+
+    /// <summary>
+    /// 4-N29: what a request id stands for: the station, the operations and the versions they were sent with (none for
+    /// an older client). The same key with any other body is <c>idempotency_conflict</c>, never the earlier invoice.
+    /// </summary>
+    internal static string IssueHash(IssueInvoiceRequest request) => CommercialCommandReceipts.Hash(new
+    {
+        route = IssueAction, stationId = request.StationId,
+        operations = request.OperationIds.Distinct().Order().ToArray(),
+        versions = request.OperationVersions?.OrderBy(item => item.OperationId)
+            .Select(item => new { item.OperationId, item.Version }).ToArray(),
+    });
 
     public async Task<IssueInvoiceResult> IssueAsync(IssueInvoiceRequest request, CancellationToken cancellationToken = default)
     {
@@ -77,7 +93,7 @@ internal sealed class EfInvoiceIssuanceStore(
             return IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.IdempotencyConflict);
 
         var now = timeProvider.GetUtcNow();
-        var prepared = await PrepareAsync(request.AccountId, request.StationId, request.OperationIds,
+        var prepared = await PrepareAsync(actor, request.StationId, request.OperationIds,
             request.OperationVersions, request.RequestId, now, cancellationToken);
         if (prepared.Failure is { } failure) return IssueInvoiceResult.Failed(failure, prepared.Code);
         var preinvoice = prepared.Draft!;
@@ -135,6 +151,9 @@ internal sealed class EfInvoiceIssuanceStore(
             cancellationToken);
         await FinanceApprovedServiceChangeWriter.AddAsync(context, invoice.StationId, invoice.PublicId, now,
             "finance_receipts", cancellationToken);
+        // 4-N29: the receipt of the request id keeps the body it stands for, versions included.
+        CommercialCommandReceipts.Add(context, request.RequestId, accountId, IssueAction, IssueHash(request),
+            invoice.PublicId, now);
         await context.SaveChangesAsync(cancellationToken);
         return IssueInvoiceResult.Success(invoice.PublicId, invoice.Number, invoice.FiscalNumber!, invoice.Total,
             invoice.CurrencyCode, false);
@@ -178,7 +197,7 @@ internal sealed class EfInvoiceIssuanceStore(
                     await context.NonFiscalInvoices.AsNoTracking().AnyAsync(item => item.RequestId == request.IdempotencyKey,
                         cancellationToken))
                     return MasterDataCommand.Step.Fail(MasterDataFailure.Conflict, InvoicingCodes.IdempotencyConflict);
-                var prepared = await PrepareAsync(request.AccountId, request.StationId,
+                var prepared = await PrepareAsync(actor, request.StationId,
                     operations.Select(item => item.OperationId).ToArray(), operations, request.IdempotencyKey, now,
                     cancellationToken);
                 if (prepared.Failure is { } failure) return MasterDataCommand.Step.Fail(failure switch
@@ -238,7 +257,7 @@ internal sealed class EfInvoiceIssuanceStore(
                 select operation.PublicId).Distinct().ToArrayAsync(cancellationToken)).Order().ToArray();
 
     private sealed record OperationRow(long Id, Guid PublicId, GroundOperationStatus Status, byte[] RowVersion,
-        DateOnly OperationDate, long TurnaroundId, long AirlineId, bool StationActive, bool AirlineActive);
+        DateOnly OperationDate, long TurnaroundId, long AirlineId, long StationId, bool StationActive, bool AirlineActive);
 
     private sealed record Prepared(IssueInvoiceFailure? Failure, string? Code, Preinvoice? Draft, List<PreinvoiceLine>? Lines,
         OperationRow[] Operations)
@@ -249,12 +268,13 @@ internal sealed class EfInvoiceIssuanceStore(
     /// <summary>
     /// What an issuance and a no-charge closure share, before anything they write is kept: the operations of the
     /// station with the versions the caller saw, the active station, airline and customer organization, the approval,
-    /// one airline within <see cref="FinanceInvoicePolicy.MaxDays"/> days, the billable services free of other drafts,
-    /// and the internal draft valued with ITBIS 18 % (tracked, not saved).
+    /// one airline within <see cref="FinanceInvoicePolicy.MaxDays"/> days, the billable services free of other drafts
+    /// (an older draft without invoice in their way is released, 4-N01), and the internal draft valued with ITBIS 18 %
+    /// (tracked, not saved).
     /// </summary>
-    private async Task<Prepared> PrepareAsync(Guid accountId, Guid stationId, IReadOnlyList<Guid> operationIds,
-        IReadOnlyList<InvoiceOperationVersion>? versions, Guid requestId, DateTimeOffset now,
-        CancellationToken cancellationToken)
+    private async Task<Prepared> PrepareAsync(Elevant.Application.Identity.ActorContext actor, Guid stationId,
+        IReadOnlyList<Guid> operationIds, IReadOnlyList<InvoiceOperationVersion>? versions, Guid requestId,
+        DateTimeOffset now, CancellationToken cancellationToken)
     {
         var requested = operationIds.ToArray();
         var operations = await (from operation in context.GroundOperations.AsNoTracking()
@@ -265,7 +285,8 @@ internal sealed class EfInvoiceIssuanceStore(
                                 where requested.Contains(operation.PublicId) && station.PublicId == stationId
                                 select new OperationRow(operation.Id, operation.PublicId, operation.CurrentStatus,
                                     operation.RowVersion, turnaround.OperationDate, turnaround.Id, turnaround.AirlineId,
-                                    station.IsActive, airline.IsActive && organization.Type == OrganizationType.AirlineCustomer &&
+                                    station.Id, station.IsActive,
+                                    airline.IsActive && organization.Type == OrganizationType.AirlineCustomer &&
                                         organization.Status == OrganizationStatus.Active))
             .ToArrayAsync(cancellationToken);
         if (operations.Length != requested.Length) return Prepared.Fail(IssueInvoiceFailure.NotFound, InvoicingCodes.NotFound);
@@ -296,13 +317,25 @@ internal sealed class EfInvoiceIssuanceStore(
         var services = await context.OperationServices.AsNoTracking()
             .Where(service => internalIds.Contains(service.GroundOperationId))
             .Where(ServiceBillability.Billable)
-            .Select(service => new { service.Id, service.PublicId, service.GroundOperationId }).ToArrayAsync(cancellationToken);
+            .Select(service => new { service.Id, service.PublicId, service.GroundOperationId, service.ContractServiceRateId })
+            .ToArrayAsync(cancellationToken);
         if (operations.Any(item => services.All(service => service.GroundOperationId != item.Id)))
             return Prepared.Fail(IssueInvoiceFailure.Unprocessable, InvoicingCodes.NothingToInvoice);
         if (services.Length > FinanceInvoicePolicy.MaxLines)
             return Prepared.Fail(IssueInvoiceFailure.Unprocessable, InvoicingCodes.TooManyLines);
-        // A service held by an invoice or a closure was invoiced; one held by an older draft without invoice waits for it.
         var serviceIds = services.Select(service => service.Id).ToArray();
+        // 4-N01: an older draft without invoice that holds these services, or the consumption of their packages at the
+        // station, has no way out of its own any more: it is released here, inside this transaction.
+        var rateIds = services.Where(service => service.ContractServiceRateId != null)
+            .Select(service => service.ContractServiceRateId!.Value).Distinct().ToArray();
+        var stale = await StaleInternalDrafts.HoldingAsync(context, serviceIds, cancellationToken);
+        if (rateIds.Length > 0)
+            stale = stale.Union(await StaleInternalDrafts.ConsumingAsync(context, operations[0].StationId, rateIds,
+                cancellationToken)).ToArray();
+        await StaleInternalDrafts.ReleaseAsync(context, stale, actor.AccountId, actor.DisplayName, requestId, now,
+            cancellationToken);
+        // A service held by an invoice or a closure was invoiced; a draft an invoice issued that still holds one (it was
+        // never marked invoiced) is never released and keeps blocking it by name.
         var holders = await (from line in context.PreinvoiceLines.AsNoTracking()
                              join draft in context.Preinvoices.AsNoTracking() on line.PreinvoiceId equals draft.Id
                              where line.Kind == PreinvoiceLineKind.Service && line.OperationServiceId != null &&
@@ -312,7 +345,7 @@ internal sealed class EfInvoiceIssuanceStore(
             return Prepared.Fail(IssueInvoiceFailure.Conflict, InvoicingCodes.AlreadyInvoiced);
         if (holders.Length > 0) return Prepared.Fail(IssueInvoiceFailure.Conflict, InvoicingCodes.PendingPreinvoice);
 
-        var valued = await drafts.DraftForInvoiceAsync(new CreatePreinvoiceDraftCommand(accountId, stationId, from, to,
+        var valued = await drafts.DraftForInvoiceAsync(new CreatePreinvoiceDraftCommand(actor.AccountId, stationId, from, to,
             requestId, services.Select(service => service.PublicId).ToArray()), cancellationToken);
         if (!valued.IsSuccess)
             return Prepared.Fail(valued.Failure switch
@@ -345,11 +378,21 @@ internal sealed class EfInvoiceIssuanceStore(
     }
 
     /// <summary>
-    /// The same request again returns the invoice it issued (ADR-0035). 4-N29: only for the same account, station and
-    /// operations, read from the invoice's lines; anything else with the key is <c>idempotency_conflict</c>.
+    /// The same request again returns the invoice it issued (ADR-0035). 4-N29: only for the same account and body — the
+    /// station, the operations and their versions, kept in the request id's receipt; any other use of the key, a
+    /// no-charge closure's included, is <c>idempotency_conflict</c>. An invoice issued before its receipt existed is
+    /// compared by its account, station and operations, read from its lines.
     /// </summary>
     private async Task<IssueInvoiceResult?> ReplayAsync(IssueInvoiceRequest request, CancellationToken cancellationToken)
     {
+        var accountId = await context.Users.AsNoTracking().Where(item => item.PublicId == request.AccountId)
+            .Select(item => (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
+        var receipt = accountId is { } actorAccountId
+            ? await CommercialCommandReceipts.FindAsync(context, request.RequestId, actorAccountId, IssueAction,
+                IssueHash(request), cancellationToken)
+            : default;
+        if (receipt.Outcome == CommercialCommandReceipts.Outcome.Conflict)
+            return IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.IdempotencyConflict);
         var prior = await (from invoice in context.NonFiscalInvoices.AsNoTracking()
                            join account in context.Users.AsNoTracking() on invoice.IssuedByAccountId equals account.Id
                            join station in context.Stations.AsNoTracking() on invoice.StationId equals station.Id
@@ -358,9 +401,17 @@ internal sealed class EfInvoiceIssuanceStore(
                                invoice.CurrencyCode, invoice.PreinvoiceId, AccountId = account.PublicId,
                                StationId = station.PublicId })
             .SingleOrDefaultAsync(cancellationToken);
-        if (prior is null) return null;
+        if (prior is null)
+            return receipt.Outcome == CommercialCommandReceipts.Outcome.Replay
+                ? IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.IdempotencyConflict)
+                : null;
         if (prior.AccountId != request.AccountId || prior.StationId != request.StationId || prior.FiscalNumber is null)
             return IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.IdempotencyConflict);
+        if (receipt.Outcome == CommercialCommandReceipts.Outcome.Replay)
+            return receipt.ResultId == prior.PublicId
+                ? IssueInvoiceResult.Success(prior.PublicId, prior.Number, prior.FiscalNumber, prior.Total, prior.CurrencyCode,
+                    true)
+                : IssueInvoiceResult.Failed(IssueInvoiceFailure.Conflict, InvoicingCodes.IdempotencyConflict);
         var invoiced = await OperationsOfDraftAsync(prior.PreinvoiceId, cancellationToken);
         return invoiced.SequenceEqual(request.OperationIds.Distinct().Order())
             ? IssueInvoiceResult.Success(prior.PublicId, prior.Number, prior.FiscalNumber, prior.Total, prior.CurrencyCode, true)

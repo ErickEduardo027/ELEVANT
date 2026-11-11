@@ -170,6 +170,77 @@ describe('ToInvoicePage', () => {
     expect(screen.getByText(/Se eligieron 2 de 3 operaciones de Demo Airlines/)).toHaveTextContent('Superaría las 500 líneas');
   });
 
+  it('selects the whole airline across the pages still on the server, never only the loaded rows (4-N06)', async () => {
+    const demo = (day, extra = {}) => operation(`op-${day}`, `DEV-TAT-00${day}`, DEMO, 'Demo Airlines',
+      { operationDate: `2026-08-${day}`, ...extra });
+    const other = operation('op-other', 'DEV-TAT-0099', OTHER, 'Other Airline', { operationDate: '2026-08-11' });
+    vi.mocked(getFinancePendingOperations)
+      .mockResolvedValueOnce(page([demo('10'), other], { nextCursor: 'cursor-2', totalPending: 5 }))
+      .mockResolvedValueOnce(page([demo('10'), demo('12')], { nextCursor: 'airline-2', totalPending: 4 }))
+      .mockResolvedValueOnce(page([demo('13'), demo('14', { lineEstimate: 499 })], { nextCursor: null, totalPending: 4 }));
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0010'));
+    fireEvent.change(screen.getByLabelText('Buscar operaciones'), { target: { value: '0010' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Toda la aerolínea del período' }));
+    expect(await screen.findByText(/Se eligieron 3 de 4 operaciones de Demo Airlines/))
+      .toHaveTextContent('Superaría las 500 líneas');
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0012')).toBeChecked();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0013')).toBeChecked();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0014')).not.toBeChecked();
+    expect(screen.getByRole('region', { name: 'Resumen de la factura' })).toHaveTextContent('3 operaciones · Demo Airlines');
+    // The airline's own pages from the oldest, at the largest page the server takes; the search no longer hides any.
+    const [, firstRead, secondRead] = vi.mocked(getFinancePendingOperations).mock.calls.map(([query]) => query);
+    expect(firstRead).toMatchObject({ stationId: STATION_ID, airlineId: DEMO, cursor: null, limit: 100 });
+    expect(secondRead).toMatchObject({ airlineId: DEMO, cursor: 'airline-2', limit: 100 });
+    expect(screen.getByLabelText('Buscar operaciones')).toHaveValue('');
+    expect(screen.getAllByRole('checkbox').map(row => row.getAttribute('aria-label'))).toEqual([
+      'Seleccionar DEV-TAT-0010', 'Seleccionar DEV-TAT-0099', 'Seleccionar DEV-TAT-0012', 'Seleccionar DEV-TAT-0013',
+      'Seleccionar DEV-TAT-0014']);
+  });
+
+  it('says so when the airline pages cannot be read and keeps what it could choose', async () => {
+    vi.mocked(getFinancePendingOperations)
+      .mockResolvedValueOnce(page(OPERATIONS.slice(0, 2), { nextCursor: 'cursor-2', totalPending: 4 }))
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { status: 503 }));
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
+    fireEvent.click(screen.getByRole('button', { name: 'Toda la aerolínea del período' }));
+    expect(await screen.findByText(/No se pudieron leer todas las operaciones pendientes de Demo Airlines/))
+      .toHaveTextContent('se eligieron 2 de las cargadas');
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0002')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Toda la aerolínea del período' })).toBeEnabled();
+  });
+
+  it('never shows another station\'s rows while the new one loads, nor calls them the previous data when it fails', async () => {
+    const secondStation = '20000000-0000-7000-8000-000000000004';
+    vi.mocked(readSession).mockReturnValue({ accountId: 'finance', stationScopes: [
+      { stationId: STATION_ID, stationCode: 'PUJ' }, { stationId: secondStation, stationCode: 'SDQ' }] });
+    let fail;
+    vi.mocked(getFinancePendingOperations)
+      .mockResolvedValueOnce(page())
+      .mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    renderPage();
+    expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Estación'), { target: { value: secondStation } });
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByTestId('to-invoice-loading')).toBeInTheDocument();
+    expect(vi.mocked(getFinancePendingOperations).mock.calls[1][0]).toMatchObject({ stationId: secondStation });
+    fail(Object.assign(new Error('x'), { status: 503 }));
+    expect(await screen.findByText('No se pudieron cargar las operaciones por facturar.')).toBeInTheDocument();
+    expect(screen.queryByText(/se muestran los datos anteriores/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('keeps the rows of the same filters when their revalidation fails and says they were not updated', async () => {
+    renderPage();
+    expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
+    const onChange = observer.factory.mock.calls[0][0];
+    vi.mocked(getFinancePendingOperations).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 503 }));
+    onChange(['finance_invoices']);
+    expect(await screen.findByText(/se muestran los datos anteriores/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0001')).toBeEnabled();
+  });
+
   it('loads more pages after the cursor and keeps the list when the next page fails', async () => {
     vi.mocked(getFinancePendingOperations)
       .mockResolvedValueOnce(page(OPERATIONS.slice(0, 2), { nextCursor: 'cursor-2', totalPending: 4 }))

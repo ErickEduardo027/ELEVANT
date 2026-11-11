@@ -16,8 +16,9 @@ public sealed partial class SqlServerMigrationTests
 {
     /// <summary>
     /// 4-N16 and 4-N18: one row per pending operation from the oldest, in pages that never split an operation, without
-    /// what an invoice holds; an older draft that holds a service shows the operation as pending_preinvoice, and a
-    /// charge in another currency without that day's rate shows exchange_rate_missing before anyone issues.
+    /// what an invoice holds, and a charge in another currency without that day's rate shows exchange_rate_missing
+    /// before anyone issues. 4-N01: an older draft without invoice that holds a service blocks nothing; the issuance
+    /// releases it (voided, its lines released, audited) in its own transaction.
     /// </summary>
     [Fact]
     public async Task PendingOperationsListTheOldestFirstAndNameEveryBlock()
@@ -108,7 +109,8 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(("DOP", 3, 897.5m), (valued.CurrencyCode, valued.LineEstimate, valued.EstimatedNet));
         Assert.Equal(1, Assert.Single(valued.Services, item => item.ServiceId == secondServices[0].PublicId).ChargeCount);
 
-        // An older internal draft without invoice still holds a service: the operation shows, blocked by name.
+        // 4-N01: an older internal draft without invoice (a failed issuance before the fix) still holds a service: the
+        // operation is ready all the same, because the issuance releases that draft.
         var firstService = await (from service in setup.OperationServices
                                   join operation in setup.GroundOperations on service.GroundOperationId equals operation.Id
                                   where operation.PublicId == first
@@ -116,24 +118,29 @@ public sealed partial class SqlServerMigrationTests
                                   select service).FirstAsync(ct);
         var held = await HoldInOlderDraftAsync(setup, firstService, ct);
         var waiting = (await PendingAsync()).Operations.Single(item => item.OperationId == first);
-        Assert.Equal((false, "pending_preinvoice"), (waiting.Ready, Assert.Single(waiting.BlockingReasons)));
-        await using (var scope = provider.CreateAsyncScope())
-        {
-            var refused = await Handler(scope.ServiceProvider)
-                .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, [first], Guid.NewGuid()), ct);
-            Assert.Equal((IssueInvoiceFailure.Conflict, "pending_preinvoice"), (refused.Failure!.Value, refused.Reason));
-        }
-        await setup.PreinvoiceLines.Where(item => item.PreinvoiceId == held)
-            .ExecuteUpdateAsync(set => set.SetProperty(item => item.ReleasedAt, DateTimeOffset.UtcNow), ct);
-        await setup.Preinvoices.Where(item => item.Id == held)
-            .ExecuteUpdateAsync(set => set.SetProperty(item => item.Status, PreinvoiceStatus.Voided), ct);
+        Assert.True(waiting.Ready, string.Join(",", waiting.BlockingReasons));
 
-        // Once invoiced, the operation leaves «Por facturar»; the rest stays.
+        // Once invoiced, the operation leaves «Por facturar»; the rest stays. The older draft is voided with every line
+        // released and the release audited under the issuance's request id.
+        var requestId = Guid.NewGuid();
         await using (var scope = provider.CreateAsyncScope())
         {
             var issued = await Handler(scope.ServiceProvider)
-                .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, [first], Guid.NewGuid()), ct);
+                .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, [first], requestId), ct);
             Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+        }
+        setup.ChangeTracker.Clear();
+        var released = await setup.Preinvoices.AsNoTracking().SingleAsync(item => item.Id == held, ct);
+        Assert.Equal(PreinvoiceStatus.Voided, released.Status);
+        Assert.All(await setup.PreinvoiceLines.AsNoTracking().Where(item => item.PreinvoiceId == held).ToArrayAsync(ct),
+            line => Assert.NotNull(line.ReleasedAt));
+        var releaseAudit = await setup.AuditEntries.AsNoTracking()
+            .SingleAsync(item => item.Action == "finance.invoicing.stale_draft_released", ct);
+        Assert.Equal((released.PublicId, requestId.ToString("D")), (releaseAudit.EntityPublicId, releaseAudit.RequestId));
+        using (var metadata = System.Text.Json.JsonDocument.Parse(releaseAudit.MetadataJson!))
+        {
+            Assert.Equal("Accepted", metadata.RootElement.GetProperty("previousStatus").GetString());
+            Assert.Equal(first, Assert.Single(metadata.RootElement.GetProperty("operations").EnumerateArray()).GetGuid());
         }
         var left = await PendingAsync();
         Assert.Equal((1, second), (left.TotalPending, Assert.Single(left.Operations).OperationId));
@@ -181,12 +188,23 @@ public sealed partial class SqlServerMigrationTests
                 await setup.Set<EmailOutboxMessage>().CountAsync(ct), await setup.Set<FinancePricingCommand>().CountAsync(ct));
         }
 
+        // 4-N01: a preinvoice of the retired module, still Submitted, holds a service of the free operation. The refused
+        // issuance rolls its release back with everything else; the closure below releases it.
+        var freeService = await (from service in setup.OperationServices
+                                 join operation in setup.GroundOperations on service.GroundOperationId equals operation.Id
+                                 where operation.PublicId == free
+                                 orderby service.LineNumber
+                                 select service).FirstAsync(ct);
+        var retired = await HoldInOlderDraftAsync(setup, freeService, ct, PreinvoiceStatus.Submitted);
         await using (var scope = provider.CreateAsyncScope())
         {
             var zero = await Handler(scope.ServiceProvider)
                 .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, [free], Guid.NewGuid()), ct);
             Assert.Equal((IssueInvoiceFailure.Unprocessable, "zero_total"), (zero.Failure!.Value, zero.Reason));
         }
+        setup.ChangeTracker.Clear();
+        Assert.Equal(PreinvoiceStatus.Submitted, (await setup.Preinvoices.AsNoTracking().SingleAsync(item => item.Id == retired, ct)).Status);
+        Assert.False(await setup.AuditEntries.AnyAsync(item => item.Action == "finance.invoicing.stale_draft_released", ct));
 
         // An operation with an amount is invoiced, not closed; nothing is written.
         var before = await WrittenAsync();
@@ -209,6 +227,9 @@ public sealed partial class SqlServerMigrationTests
         var audit = await setup.AuditEntries.AsNoTracking().SingleAsync(item => item.Action == "finance.invoicing.closed_no_charge", ct);
         Assert.Equal(("Servicios incluidos sin tarifa", draft.PublicId), (audit.Reason, audit.EntityPublicId));
         Assert.False(await setup.NonFiscalInvoices.AnyAsync(item => item.FiscalNumber != null, ct));
+        Assert.Equal(PreinvoiceStatus.Voided, (await setup.Preinvoices.AsNoTracking().SingleAsync(item => item.Id == retired, ct)).Status);
+        Assert.Equal(key.ToString("D"), (await setup.AuditEntries.AsNoTracking()
+            .SingleAsync(item => item.Action == "finance.invoicing.stale_draft_released", ct)).RequestId);
 
         // The same key and body replay the closure without a second audit; another body with the key is a conflict.
         var replay = await CloseAsync(key, "Servicios incluidos sin tarifa", new InvoiceOperationVersion(free, version));
@@ -303,6 +324,107 @@ public sealed partial class SqlServerMigrationTests
     }
 
     /// <summary>
+    /// 4-N06: the line estimate of «Por facturar» counts what a package adds, as the draft writes it: a covered service
+    /// that runs 90 minutes of a 60-minute package is its line, the package's base and its excess. The invoice has
+    /// those three lines and the estimate is never below them.
+    /// </summary>
+    [Fact]
+    public async Task PendingLineEstimateCountsThePackageLines()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        PackageReviewFixture fixture;
+        await using (var scope = provider.CreateAsyncScope())
+            fixture = await PackageReviewFixtureAsync(scope.ServiceProvider, ct);
+        await using var setup = CreateContext(database.ConnectionString);
+        var covered = await CoveredOperationAsync(setup, fixture, 90, ct);
+
+        FinancePendingOperationData pending;
+        await using (var scope = provider.CreateAsyncScope())
+            pending = (await scope.ServiceProvider.GetRequiredService<IFinancePendingOperationsReadStore>().GetAsync(
+                    new GetFinancePendingOperationsQuery(FinanceAccount, fixture.StationId, null, null, null, null, 100), ct))!
+                .Operations.Single(item => item.OperationId == covered);
+        Assert.Equal((1, 3), (pending.ServiceCount, pending.LineEstimate));
+
+        IssueInvoiceResult issued;
+        await using (var scope = provider.CreateAsyncScope())
+            issued = await Handler(scope.ServiceProvider).HandleAsync(
+                new IssueInvoiceRequest(FinanceAccount, fixture.StationId, [covered], Guid.NewGuid()), ct);
+        Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+        setup.ChangeTracker.Clear();
+        var invoice = await setup.NonFiscalInvoices.AsNoTracking().SingleAsync(item => item.PublicId == issued.InvoiceId, ct);
+        var kinds = await setup.NonFiscalInvoiceLines.AsNoTracking().Where(item => item.InvoiceId == invoice.Id)
+            .OrderBy(item => item.LineNumber).Select(item => item.Kind).ToArrayAsync(ct);
+        Assert.Equal([PreinvoiceLineKind.Service, PreinvoiceLineKind.Package, PreinvoiceLineKind.Excess], kinds);
+        Assert.True(pending.LineEstimate >= kinds.Length);
+    }
+
+    /// <summary>
+    /// 4-N01: an older draft without invoice that holds the consumption of a package scope (a 365-day period here) would
+    /// refuse every later operation of that period with package_scope_has_unissued_preinvoice. The issuance of any of
+    /// them releases it instead: the period starts again with its base, the operation that draft held is ready in «Por
+    /// facturar», and it is invoiced next with the base already taken.
+    /// </summary>
+    [Fact]
+    public async Task IssuanceReleasesAnOlderDraftHoldingThePackageScope()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        PackageReviewFixture fixture;
+        await using (var scope = provider.CreateAsyncScope())
+            fixture = await PackageReviewFixtureAsync(scope.ServiceProvider, ct);
+        await using var setup = CreateContext(database.ConnectionString);
+        var bound = setup.Set<ContractServicePackage>().Where(item => item.ContractVersionId == fixture.VersionKey)
+            .Select(item => item.PackageVersionId);
+        await setup.Set<ServicePackageVersion>().Where(item => bound.Contains(item.Id)).ExecuteUpdateAsync(set => set
+            .SetProperty(item => item.Scope, PackageConsumptionScope.Period).SetProperty(item => item.PeriodDays, 365), ct);
+        var firstOperation = await setup.GroundOperations.Where(item => item.Id == fixture.OperationKey)
+            .Select(item => item.PublicId).SingleAsync(ct);
+
+        // The older draft: the fixture's valuation committed on its own, as a failed issuance left it before 4-N01's fix.
+        PreinvoiceDraftResult older;
+        await using (var scope = provider.CreateAsyncScope())
+            older = await ValuationDraftAsync(scope.ServiceProvider, PackageReviewCommand(fixture), ct);
+        Assert.True(older.IsSuccess, $"{older.Failure} {older.Reason}");
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var listed = (await scope.ServiceProvider.GetRequiredService<IFinancePendingOperationsReadStore>().GetAsync(
+                    new GetFinancePendingOperationsQuery(FinanceAccount, fixture.StationId, null, null, null, null, 100), ct))!
+                .Operations.Single(item => item.OperationId == firstOperation);
+            Assert.DoesNotContain(InvoicingCodes.PendingPreinvoice, listed.BlockingReasons);
+        }
+
+        async Task<IssueInvoiceResult> IssueAsync(Guid operation)
+        {
+            await using var scope = provider.CreateAsyncScope();
+            return await Handler(scope.ServiceProvider).HandleAsync(
+                new IssueInvoiceRequest(FinanceAccount, fixture.StationId, [operation], Guid.NewGuid()), ct);
+        }
+        var second = await CoveredOperationAsync(setup, fixture, 20, ct);
+        var issued = await IssueAsync(second);
+        Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+        Assert.Equal(590m, issued.Total);
+        setup.ChangeTracker.Clear();
+        Assert.Equal(PreinvoiceStatus.Voided,
+            (await setup.Preinvoices.AsNoTracking().SingleAsync(item => item.PublicId == older.DraftId, ct)).Status);
+        Assert.Single(await setup.AuditEntries.AsNoTracking().Where(item =>
+            item.Action == "finance.invoicing.stale_draft_released" && item.EntityPublicId == older.DraftId).ToArrayAsync(ct));
+
+        var next = await IssueAsync(firstOperation);
+        Assert.True(next.IsSuccess, $"{next.Failure} {next.Reason}");
+        setup.ChangeTracker.Clear();
+        var nextInvoice = await setup.NonFiscalInvoices.AsNoTracking().SingleAsync(item => item.PublicId == next.InvoiceId, ct);
+        Assert.DoesNotContain(PreinvoiceLineKind.Package, await setup.NonFiscalInvoiceLines.AsNoTracking()
+            .Where(item => item.InvoiceId == nextInvoice.Id).Select(item => item.Kind).ToArrayAsync(ct));
+    }
+
+    /// <summary>
     /// 4-N26: OCC's approval of an operation with billable services alerts Finance once per airline, station and business
     /// day: only Finance accounts with «Notificaciones» and «Facturación» on the station receive it, and the next approval
     /// of that day marks the same alert unread again instead of adding another.
@@ -366,8 +488,12 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((alert.Id, (DateTimeOffset?)null), (again.Id, again.ReadAt));
     }
 
-    /// <summary>Holds <paramref name="service"/> in an older internal draft without invoice (before 4-N01's fix).</summary>
-    private static async Task<long> HoldInOlderDraftAsync(ElevantDbContext db, OperationService service, CancellationToken ct)
+    /// <summary>
+    /// Holds <paramref name="service"/> in an older draft without invoice: an internal draft a failed issuance left before
+    /// 4-N01's fix (Accepted) or a preinvoice of the retired module.
+    /// </summary>
+    private static async Task<long> HoldInOlderDraftAsync(ElevantDbContext db, OperationService service, CancellationToken ct,
+        PreinvoiceStatus status = PreinvoiceStatus.Accepted)
     {
         var operation = await db.GroundOperations.AsNoTracking().SingleAsync(item => item.Id == service.GroundOperationId, ct);
         var turnaround = await db.Turnarounds.AsNoTracking().SingleAsync(item => item.Id == operation.TurnaroundId, ct);
@@ -380,7 +506,7 @@ public sealed partial class SqlServerMigrationTests
             PublicId = Guid.NewGuid(), AirlineId = turnaround.AirlineId, StationId = turnaround.StationId,
             CreatedByAccountId = account, RequestId = Guid.NewGuid(), PayloadHash = new string('A', 64),
             From = turnaround.OperationDate, To = turnaround.OperationDate, CurrencyCode = "USD", Total = 10m,
-            Status = PreinvoiceStatus.Accepted, CreatedAt = now, UpdatedAt = now,
+            Status = status, CreatedAt = now, UpdatedAt = now,
         };
         db.Preinvoices.Add(draft);
         await db.SaveChangesAsync(ct);

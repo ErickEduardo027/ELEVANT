@@ -66,7 +66,8 @@ export const INVOICING_PROBLEM_MESSAGES = Object.freeze({
   nothing_to_invoice: 'Alguna operación no tiene servicios completados para facturar.',
   operation_not_approved: 'Alguna operación aún no está aprobada por OCC.',
   already_invoiced: 'Alguna operación ya fue facturada o cerrada sin cargo. Actualizamos la lista.',
-  pending_preinvoice: 'Un borrador anterior sin factura retiene servicios de esta operación; no se factura hasta liberarlo.',
+  // 4-N01: an older draft without invoice is released by the issuance itself; only one an invoice issued still blocks.
+  pending_preinvoice: 'Un borrador anterior con factura emitida todavía retiene servicios de esta operación. Avise a soporte técnico para que lo revise.',
   exchange_rate_missing: 'Falta la tasa de cambio del día de la operación para valorar un cargo: regístrela en «Tasas de cambio» y vuelva a emitir.',
   contract_charge_rate_missing: 'El contrato no tiene tarifa para un cargo marcado: pida a Contratos que la complete o a OCC que revise el cargo.',
   contract_charge_policy_missing: 'El cargo marcado no tiene su regla en el contrato: pida a Contratos que la revise.',
@@ -80,7 +81,7 @@ export const INVOICING_PROBLEM_MESSAGES = Object.freeze({
   package_flight_scope_ambiguous: 'El paquete por vuelo no identifica un único vuelo de la escala: revise la escala con OCC.',
   package_measurement_missing: 'Falta la medición de un servicio cubierto por paquete: pida a OCC que revise los tiempos.',
   package_period_missing: 'El paquete del contrato no tiene un período válido: revíselo en «Paquetes».',
-  package_scope_has_unissued_preinvoice: 'El paquete tiene en el mismo período un borrador anterior sin factura; no se factura hasta liberarlo.',
+  package_scope_has_unissued_preinvoice: 'Un borrador anterior con factura emitida todavía retiene el consumo del paquete en la misma escala, vuelo o período. Avise a soporte técnico para que lo revise.',
   package_unit_mismatch: 'La unidad del servicio no coincide con la del paquete: revísela con Contratos.',
   invalid_package_rule: 'La regla del paquete no es válida: revísela en «Paquetes».',
   ambiguous_package_coverage: 'Un servicio está cubierto por más de un paquete: pida a Contratos que lo corrija.',

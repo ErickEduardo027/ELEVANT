@@ -105,6 +105,17 @@ test("Finanzas factura la operación aprobada (e-CF simulado)", async ({ page })
   expect(replay.status).toBe(200);
   expect(replay.data.replayed).toBe(true);
   expect(`e-NCF ${replay.data.fiscalNumber}`).toBe(title);
+  // 4-N29 (review of block A): the versions are part of the body the request id stands for; other versions are a
+  // conflict too, never the earlier invoice.
+  const otherVersions = await call<{ code?: string }>(token, "POST", "/finance/invoices/from-operations",
+    { ...body, operationVersions: body.operationIds.map(operationId => ({ operationId, version: "AAAAAAAAAAE=" })) });
+  expect(otherVersions.status).toBe(409);
+  expect(otherVersions.data.code).toBe("idempotency_conflict");
+  // 4-N06 (review of block A): more operations than one invoice takes is its own code over HTTP.
+  const tooMany = await call<{ code?: string }>(token, "POST", "/finance/invoices/from-operations",
+    { stationId: body.stationId, requestId: randomUUID(), operationIds: Array.from({ length: 101 }, () => randomUUID()) });
+  expect(tooMany.status).toBe(400);
+  expect(tooMany.data.code).toBe("too_many_operations");
   saveRun({ invoice: { fiscalNumber: title.replace("e-NCF ", "") } });
 });
 

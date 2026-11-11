@@ -1,4 +1,5 @@
 using Elevant.Application.Finance;
+using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -12,8 +13,9 @@ namespace Elevant.Persistence.Finance;
 /// «Por facturar» (4-N06, 4-N16, 4-N18): one row per pending operation under the account's live station grant, from
 /// the oldest to the newest. What an invoice or a no-charge closure already holds never comes back, so recent
 /// invoiced services cannot hide older pending operations, and an operation is never split between pages. Each row
-/// names every reason the issuance would refuse it with, the valuation of its charges included; an older internal
-/// draft without invoice that still holds a service shows the operation as <c>pending_preinvoice</c>.
+/// names every reason the issuance would refuse it with, the valuation of its charges included. An older draft
+/// without invoice blocks nothing: the issuance releases it (4-N01, <see cref="StaleInternalDrafts"/>); only a draft
+/// an invoice issued that still holds a service shows the operation as <c>pending_preinvoice</c>.
 /// </summary>
 internal sealed class EfFinancePendingOperationsReadStore(ElevantDbContext context, TimeProvider timeProvider)
     : IFinancePendingOperationsReadStore
@@ -127,6 +129,7 @@ internal sealed class EfFinancePendingOperationsReadStore(ElevantDbContext conte
                               select new
                               {
                                   service.Id, service.PublicId, service.GroundOperationId, service.ContractServiceRateId,
+                                  service.ServiceDefinitionId,
                                   definition.Code, definition.Name, service.CurrentStatus, service.ContractedQuantity,
                                   service.ExecutedQuantity, service.BillingUnitSnapshot, service.UnitPriceSnapshot,
                                   service.CurrencyCodeSnapshot, service.BillingExcludedAt,
@@ -159,12 +162,25 @@ internal sealed class EfFinancePendingOperationsReadStore(ElevantDbContext conte
                            where rateIds.Contains(rate.Id)
                            select new { rate.Id, contract.ContractCode, version.PricingPolicyVersion, rate.MinimumQuantity })
             .ToDictionaryAsync(rate => rate.Id, cancellationToken);
+        // 4-N06: the packages of each service's contract version that cover its definition, as the draft finds them.
+        var coverage = (await (from rate in context.ContractServiceRates.AsNoTracking()
+                               join link in context.Set<ContractServicePackage>().AsNoTracking()
+                                   on rate.ContractVersionId equals link.ContractVersionId
+                               join component in context.Set<ServicePackageComponent>().AsNoTracking()
+                                   on link.PackageVersionId equals component.PackageVersionId
+                               where rateIds.Contains(rate.Id)
+                               select new { RateId = rate.Id, component.ServiceDefinitionId, LinkId = link.Id })
+                .Distinct().ToArrayAsync(cancellationToken))
+            .ToLookup(item => (item.RateId, item.ServiceDefinitionId), item => item.LinkId);
         var serviceIds = services.Select(service => service.Id).ToArray();
+        // 4-N01: an older draft without invoice is released by the issuance, so it blocks nothing here; a draft an invoice
+        // issued that still holds a service (it was never marked invoiced) is never released and keeps blocking it.
         var heldByDraft = (await (from line in context.PreinvoiceLines.AsNoTracking()
                                   join draft in context.Preinvoices.AsNoTracking() on line.PreinvoiceId equals draft.Id
                                   where line.Kind == PreinvoiceLineKind.Service && line.OperationServiceId != null &&
                                         serviceIds.Contains(line.OperationServiceId.Value) && line.ReleasedAt == null &&
-                                        draft.Status != PreinvoiceStatus.Invoiced && draft.Status != PreinvoiceStatus.NoCharge
+                                        draft.Status != PreinvoiceStatus.Invoiced && draft.Status != PreinvoiceStatus.NoCharge &&
+                                        context.NonFiscalInvoices.Any(invoice => invoice.PreinvoiceId == draft.Id)
                                   select line.OperationServiceId!.Value).Distinct().ToArrayAsync(cancellationToken))
             .ToHashSet();
 
@@ -188,6 +204,8 @@ internal sealed class EfFinancePendingOperationsReadStore(ElevantDbContext conte
                 Service = service, Valued = item, Minimum = minimum,
                 ContractCode = service.ContractServiceRateId is { } id && rates.TryGetValue(id, out var source)
                     ? source.ContractCode : null,
+                Packages = service.ContractServiceRateId is { } covering
+                    ? coverage[(covering, service.ServiceDefinitionId)].ToArray() : Array.Empty<long>(),
             };
         }).ToLookup(line => line.Service.GroundOperationId);
 
@@ -239,6 +257,12 @@ internal sealed class EfFinancePendingOperationsReadStore(ElevantDbContext conte
             if (chargeBlocks.TryGetValue(row.Id, out var chargeReason)) reasons.Add(chargeReason);
             var valuedCharges = charges.GetValueOrDefault(row.Id);
             var chargeLines = valuedCharges?.Count(charge => !charge.IsExcluded) ?? own.Sum(line => line.Valued.Charges.Count);
+            // 4-N06: as the draft writes them, a service a package covers is its line, at most one excess line and no
+            // minimum, and each package adds at most one base line to an operation (one per consumption scope), so the
+            // estimate never stays below the lines the issuance counts against its limit.
+            var packageLines = own.Count(line => line.Packages.Length > 0) +
+                own.SelectMany(line => line.Packages).Distinct().Count();
+            var minimumLines = own.Count(line => line.Packages.Length == 0 && line.Minimum > 0);
             var net = own.Where(line => line.Valued.Valuation.Ready)
                 .Sum(line => (line.Valued.Valuation.Amount ?? 0m) + line.Minimum) +
                 (valuedCharges?.Sum(charge => charge.Amount) ?? 0m);
@@ -248,7 +272,7 @@ internal sealed class EfFinancePendingOperationsReadStore(ElevantDbContext conte
                 flights.GetValueOrDefault(row.TurnaroundId) ?? string.Empty,
                 own.Select(line => line.ContractCode).FirstOrDefault(code => code is not null),
                 currencies.FirstOrDefault() ?? own.Select(line => line.Service.CurrencyCodeSnapshot).FirstOrDefault(),
-                own.Length, own.Length + own.Count(line => line.Minimum > 0) + chargeLines,
+                own.Length, own.Length + minimumLines + packageLines + chargeLines,
                 decimal.Round(net, 2, MidpointRounding.AwayFromZero), distinct.Length == 0, distinct,
                 own.Select(line => new FinancePendingServiceData(line.Service.PublicId,
                     line.Valued.Evidence?.Code ?? line.Service.Code, line.Valued.Evidence?.Name ?? line.Service.Name,

@@ -587,6 +587,18 @@ aceptar o disputar del portal se retiraron (404). `POST finance/invoices`,
 facturar», se cobra en «Cobros» y se corrige con notas de ajuste. Las tablas
 y las migraciones aplicadas se conservan.
 
+Un borrador anterior sin factura (el de una emisión que falló antes de la
+transacción única o una prefactura del módulo retirado) ya no tiene salida
+propia: la emisión y el cierre sin cargo que encuentran sus servicios, o el
+consumo de su paquete en la estación, lo anulan y liberan sus líneas dentro
+de su propia transacción, con la auditoría `finance.invoicing.stale_draft_released`;
+«Por facturar» no lo cuenta como bloqueo. El recibo del `requestId` de la
+emisión guarda estación, operaciones y versiones (4-N29): la misma clave con
+otras versiones es `409 idempotency_conflict`. Más de 100 operaciones en la
+emisión o en el cierre sin cargo es `400 too_many_operations` (4-N06), y el
+`lineEstimate` de cada operación pendiente cuenta también la base y el
+excedente de un paquete, como los escribe el borrador interno.
+
 `finance/tariffs`, tarifarios, catálogo y `finance/packages` (con paquetes del
 borrador contractual y enmiendas) conservan sus rutas. El consumo de paquete se
 reserva con el borrador interno bajo la transacción serializable de la emisión,

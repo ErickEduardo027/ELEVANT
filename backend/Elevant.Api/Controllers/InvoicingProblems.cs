@@ -1,4 +1,5 @@
 using Elevant.Application.Finance;
+using Elevant.Contracts.Finance;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
@@ -43,10 +44,10 @@ internal static class InvoicingProblems
 }
 
 /// <summary>
-/// Answers the model-binding failures of an invoicing controller (a missing or malformed Idempotency-Key, a reason
-/// beyond its length, an unknown field, malformed JSON or query) with a coded 400 instead of the framework's uncoded
-/// validation problem. It runs before the <c>[ApiController]</c> model-state filter (order −2000), so that filter
-/// never answers first.
+/// Answers the model-binding failures of an invoicing controller (a missing or malformed Idempotency-Key, more
+/// operations than one invoice takes, a reason beyond its length, an unknown field, malformed JSON or query) with a
+/// coded 400 instead of the framework's uncoded validation problem. It runs before the <c>[ApiController]</c>
+/// model-state filter (order −2000), so that filter never answers first.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class)]
 internal sealed class InvoicingProblemDetailsAttribute : Attribute, IActionFilter, IOrderedFilter
@@ -61,6 +62,9 @@ internal sealed class InvoicingProblemDetailsAttribute : Attribute, IActionFilte
         bool Failed(params string[] fields) => failed.Any(key =>
             fields.Any(field => string.Equals(key, field, StringComparison.OrdinalIgnoreCase)));
         var code = Failed("Idempotency-Key", "idempotencyKey") ? InvoicingCodes.IdempotencyKeyRequired
+            // 4-N06: the lists stop at the operations of one invoice; beyond them the code is the handler's own.
+            : Failed("OperationIds", "OperationVersions", "Operations") && ExceedsOneInvoice(context.ActionArguments.Values)
+                ? InvoicingCodes.TooManyOperations
             // The reason of a no-charge closure takes 5 to 500 characters, whichever bound it breaks.
             : Failed("Reason") ? InvoicingCodes.ReasonRequired
             : HttpMethods.IsGet(context.HttpContext.Request.Method) ? InvoicingCodes.InvalidPendingQuery
@@ -72,4 +76,16 @@ internal sealed class InvoicingProblemDetailsAttribute : Attribute, IActionFilte
     public void OnActionExecuted(ActionExecutedContext context)
     {
     }
+
+    /// <summary>
+    /// Whether a bound body carries more operations than <see cref="FinanceInvoicePolicy.MaxOperations"/>: the body binds
+    /// even when its length attributes fail, so the count is read from it, never from the framework's message.
+    /// </summary>
+    private static bool ExceedsOneInvoice(IEnumerable<object?> arguments) => arguments.Any(argument => argument switch
+    {
+        IssueInvoiceFromOperationsRequest issue => issue.OperationIds?.Count > FinanceInvoicePolicy.MaxOperations ||
+            issue.OperationVersions?.Count > FinanceInvoicePolicy.MaxOperations,
+        CloseOperationsWithoutChargeRequest closure => closure.Operations?.Count > FinanceInvoicePolicy.MaxOperations,
+        _ => false,
+    });
 }
