@@ -98,11 +98,13 @@ public sealed partial class SqlServerMigrationTests
             Total = invoice.Total, TaxTotal = invoice.TaxTotal, TaxTreatmentsConfigured = invoice.TaxTreatmentsConfigured,
             CommercialSnapshotJson = invoice.CommercialSnapshotJson,
         }, [invoiceLine]));
-        Assert.Empty(await context.Set<FinanceTreasuryReceipt>().ToArrayAsync(ct));
-        Assert.Empty(await context.Set<FinanceTreasuryMovement>().ToArrayAsync(ct));
-        Assert.Empty(await context.Set<FinanceFiscalDocument>().ToArrayAsync(ct));
-        Assert.Empty(await context.Set<FinanceTaxPolicy>().ToArrayAsync(ct));
-        Assert.Single(await context.PreinvoiceDisputeResolutions.ToArrayAsync(ct));
+        // Counted, not loaded: later migrations add columns these tables do not have yet at this step (4-N22 adds
+        // charter_agreement_id to the receipts).
+        Assert.Equal(0, await context.Set<FinanceTreasuryReceipt>().CountAsync(ct));
+        Assert.Equal(0, await context.Set<FinanceTreasuryMovement>().CountAsync(ct));
+        Assert.Equal(0, await context.Set<FinanceFiscalDocument>().CountAsync(ct));
+        Assert.Equal(0, await context.Set<FinanceTaxPolicy>().CountAsync(ct));
+        Assert.Equal(1, await context.PreinvoiceDisputeResolutions.CountAsync(ct));
 
         // A newly retained policy must stop Down before its table or any issued history can be removed.
         var policy = new FinanceTaxPolicy

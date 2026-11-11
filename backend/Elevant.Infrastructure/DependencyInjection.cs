@@ -29,7 +29,9 @@ public static class DependencyInjection
 
         // 4-A, 4-N20: the fiscal simulation and the XML preflight were retired with «Documentos fiscales»; the
         // simulated e-CF of the invoice (ADR-0035) needs no FinanceFiscal configuration.
-        var environment = configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ?? "Production";
+        // The host key «environment» is what WebApplicationFactory.UseEnvironment sets; the variables win when present.
+        var environment = configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ??
+            configuration["environment"] ?? "Production";
         services.AddFlightAwareShell(configuration);
         // Paid flight feed (ADR-0028): only the synchronizer calls it, within the unit budget.
         var aeroDataBox = configuration.GetSection(Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxOptions.SectionName)
