@@ -28,7 +28,8 @@ public sealed partial class SqlServerMigrationTests
 
     /// <summary>
     /// 4-N02: a template with only «Inicio» and «Facturación» lists «Por facturar», issues, opens what it issued and sees
-    /// its summary; it does not read «Facturas», which is another module.
+    /// its summary; it does not read «Facturas», which is another module. Without the issuance it opens no invoice, and
+    /// the issuance opens none that another account issued.
     /// </summary>
     [Fact]
     public async Task FinanceSimplificationInvoicingOnlyTemplateInvoicesReadsWhatItIssuedAndSeesItsHome()
@@ -88,6 +89,24 @@ public sealed partial class SqlServerMigrationTests
         // Without «Inicio» the summary is refused; a station outside the account's scope too.
         await AssignFinanceTemplateAsync(setup, FinanceAccount, "Sin inicio", ["finance.invoicing.read"], ct);
         Assert.Null(await Run(services => services.GetRequiredService<IFinanceHomeStore>().GetAsync(FinanceAccount, station, ct)));
+        // Reading «Por facturar» without issuing opens no invoice: not the PDF, with its lines and amounts, which is
+        // «Facturas»; the delivery state of its emails, which names no amount, stays readable (1-N08).
+        Assert.Null(await Run(services => services.GetRequiredService<INonFiscalInvoiceReadStore>()
+            .GetForFinanceAsync(FinanceAccount, draft, ct)));
+        Assert.NotNull(await Run(services => services.GetRequiredService<IInvoiceEmailStatusStore>()
+            .ListAsync(FinanceAccount, invoice.PublicId, ct)));
+        // The issuance opens only what its account issued: the same template that opened its own invoice above opens none
+        // that another account issued, which is «Facturas»'s, and «Facturas» opens every invoice of its stations.
+        var otherIssuer = await setup.Users.Where(item => item.PublicId == ContractsAccount).Select(item => item.Id)
+            .SingleAsync(ct);
+        await setup.NonFiscalInvoices.Where(item => item.Id == invoice.Id)
+            .ExecuteUpdateAsync(set => set.SetProperty(item => item.IssuedByAccountId, otherIssuer), ct);
+        await AssignFinanceTemplateAsync(setup, FinanceAccount, "Solo facturación", InvoicingOnlyTemplate, ct);
+        Assert.Null(await Run(services => services.GetRequiredService<INonFiscalInvoiceReadStore>()
+            .GetForFinanceAsync(FinanceAccount, draft, ct)));
+        await AssignFinanceTemplateAsync(setup, FinanceAccount, "Facturas", ["finance.reconciliation.read"], ct);
+        Assert.Equal(invoice.Number, (await Run(services => services.GetRequiredService<INonFiscalInvoiceReadStore>()
+            .GetForFinanceAsync(FinanceAccount, draft, ct)))?.Number);
         await AssignFinanceTemplateAsync(setup, FinanceAccount, "Inicio", ["finance.home.read"], ct);
         var bare = (await Run(services => services.GetRequiredService<IFinanceHomeStore>().GetAsync(FinanceAccount, station, ct)))!;
         Assert.Null(bare.ToInvoice);

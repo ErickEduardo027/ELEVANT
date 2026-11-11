@@ -425,6 +425,72 @@ public sealed partial class SqlServerMigrationTests
     }
 
     /// <summary>
+    /// 4-N01: preinvoices of the retired module (4-A) still Draft or Disputed hold the approved services of an operation,
+    /// and no screen, endpoint or permission releases them any more. «Por facturar» shows the operation ready, and its
+    /// direct issuance voids both, releases their lines, audits each release with the status it had and invoices the
+    /// services they held.
+    /// </summary>
+    [Fact]
+    public async Task IssuanceInvoicesTheServicesRetiredDraftAndDisputedPreinvoicesHeld()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(database, ct);
+        await using var setup = CreateContext(database.ConnectionString);
+        var operation = await ApproveForInvoicingAsync(setup, "DEV-TAT-0001", ct);
+        var station = await setup.Stations.Where(item => item.Code == "PUJ").Select(item => item.PublicId).SingleAsync(ct);
+        var services = await (from service in setup.OperationServices
+                              join row in setup.GroundOperations on service.GroundOperationId equals row.Id
+                              where row.PublicId == operation
+                              orderby service.LineNumber
+                              select service).Take(2).ToArrayAsync(ct);
+        long[] retired =
+        [
+            await HoldInOlderDraftAsync(setup, services[0], ct, PreinvoiceStatus.Draft),
+            await HoldInOlderDraftAsync(setup, services[1], ct, PreinvoiceStatus.Disputed),
+        ];
+
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var listed = (await scope.ServiceProvider.GetRequiredService<IFinancePendingOperationsReadStore>().GetAsync(
+                    new GetFinancePendingOperationsQuery(FinanceAccount, station, null, null, null, null), ct))!
+                .Operations.Single(item => item.OperationId == operation);
+            Assert.True(listed.Ready, string.Join(",", listed.BlockingReasons));
+        }
+        IssueInvoiceResult issued;
+        await using (var scope = provider.CreateAsyncScope())
+            issued = await Handler(scope.ServiceProvider)
+                .HandleAsync(new IssueInvoiceRequest(FinanceAccount, station, [operation], Guid.NewGuid()), ct);
+        Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+
+        setup.ChangeTracker.Clear();
+        var drafts = await setup.Preinvoices.AsNoTracking().Where(item => retired.Contains(item.Id)).ToArrayAsync(ct);
+        Assert.Equal(2, drafts.Length);
+        Assert.All(drafts, item => Assert.Equal(PreinvoiceStatus.Voided, item.Status));
+        var held = await setup.PreinvoiceLines.AsNoTracking().Where(item => retired.Contains(item.PreinvoiceId)).ToArrayAsync(ct);
+        Assert.Equal(2, held.Length);
+        Assert.All(held, line => Assert.NotNull(line.ReleasedAt));
+        var previous = (await setup.AuditEntries.AsNoTracking()
+                .Where(item => item.Action == "finance.invoicing.stale_draft_released")
+                .Select(item => item.MetadataJson!).ToArrayAsync(ct))
+            .Select(json =>
+            {
+                using var metadata = System.Text.Json.JsonDocument.Parse(json);
+                return metadata.RootElement.GetProperty("previousStatus").GetString()!;
+            })
+            .Order(StringComparer.Ordinal).ToArray();
+        Assert.Equal(["Disputed", "Draft"], previous);
+        var invoice = await setup.NonFiscalInvoices.AsNoTracking().SingleAsync(item => item.PublicId == issued.InvoiceId, ct);
+        var invoiced = await (from line in setup.NonFiscalInvoiceLines.AsNoTracking()
+                              join source in setup.PreinvoiceLines.AsNoTracking() on line.PreinvoiceLineId equals source.Id
+                              where line.InvoiceId == invoice.Id && line.Kind == PreinvoiceLineKind.Service
+                              select source.OperationServiceId).ToArrayAsync(ct);
+        Assert.Equal(services.Select(item => (long?)item.Id).Order(), invoiced.Order());
+    }
+
+    /// <summary>
     /// 4-N26: OCC's approval of an operation with billable services alerts Finance once per airline, station and business
     /// day: only Finance accounts with «Notificaciones» and «Facturación» on the station receive it, and the next approval
     /// of that day marks the same alert unread again instead of adding another.

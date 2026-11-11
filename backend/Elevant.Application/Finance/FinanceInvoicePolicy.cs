@@ -26,16 +26,44 @@ public static class FinanceInvoicePolicy
     /// <summary>4-N02: «Por facturar» and its reads are governed by Facturación, never by a retired module.</summary>
     public const string ReadPermission = "finance.invoicing.read";
 
+    /// <summary>4-N02: reading «Facturas» (its tabs grant it), which opens every invoice of the actor's stations.</summary>
+    public const string InvoicesReadPermission = "finance.reconciliation.read";
+
     /// <summary>
-    /// 4-N02: who may read an issued invoice (its PDF, its emails): «Facturas», or «Por facturar» that issued it.
+    /// 4-N02: who may open an issued invoice, its PDF with lines and amounts: «Facturas», or the issuance of «Por
+    /// facturar», which opens only the invoices the account issued (<see cref="ReadsEveryInvoice"/>). Reading «Por
+    /// facturar» alone opens no invoice, as the invoice's detail is «Facturas».
     /// </summary>
     public static readonly IReadOnlyList<string> InvoiceReaderPermissions =
-        ["finance.reconciliation.read", ReadPermission, IssueInvoiceHandler.IssuePermission];
+        [InvoicesReadPermission, IssueInvoiceHandler.IssuePermission];
+
+    /// <summary>
+    /// 1-N08 (ADR-0037): who may read the delivery state of an invoice's «Factura emitida» emails, which names no line
+    /// nor amount: «Facturas» or «Por facturar».
+    /// </summary>
+    public static readonly IReadOnlyList<string> InvoiceEmailReaderPermissions =
+        [InvoicesReadPermission, ReadPermission, IssueInvoiceHandler.IssuePermission];
 
     public static bool CanReadInvoice(Identity.ActorContext actor)
     {
         ArgumentNullException.ThrowIfNull(actor);
         return InvoiceReaderPermissions.Any(actor.HasPermission);
+    }
+
+    /// <summary>
+    /// 4-N02: whether <paramref name="actor"/> opens every invoice of its stations («Facturas»); the issuance of «Por
+    /// facturar» alone opens only the ones its account issued, which is what «Por facturar» downloads.
+    /// </summary>
+    public static bool ReadsEveryInvoice(Identity.ActorContext actor)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        return actor.HasPermission(InvoicesReadPermission);
+    }
+
+    public static bool CanReadInvoiceEmails(Identity.ActorContext actor)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        return InvoiceEmailReaderPermissions.Any(actor.HasPermission);
     }
 
     /// <summary>

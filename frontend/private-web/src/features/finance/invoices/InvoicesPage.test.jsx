@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DepartmentAccessProvider, administratorAccess } from '../../access/DepartmentAccessContext';
-import InvoicesPage from './InvoicesPage';
+import InvoicesPage, { INVOICE_RESOURCES } from './InvoicesPage';
 import { getFinanceInvoice, listFinanceInvoices } from '../../../services/financeBookService';
 import { getTreasuryOptions, getTreasuryStatement, listTreasuryReceipts } from '../../../services/financeTreasuryService';
 import { getInvoiceCardPayments } from '../../../services/invoicingService';
@@ -12,6 +12,8 @@ vi.mock('../../../services/financeTreasuryService', async original => ({ ...(awa
   getTreasuryOptions: vi.fn(), getTreasuryStatement: vi.fn(), listTreasuryReceipts: vi.fn() }));
 vi.mock('../../../services/invoicingService', async original => ({ ...(await original()), getInvoiceCardPayments: vi.fn() }));
 vi.mock('../../auth/authService', () => ({ readSession: () => ({ stationScopes: [{ stationId: 'st-1', stationCode: 'PUJ' }] }) }));
+const observer = vi.hoisted(() => ({ factory: vi.fn() }));
+vi.mock('../../../services/accountChangeObserver', () => ({ createPrivateWebAccountChangeObserver: observer.factory }));
 
 const invoice = (index, values = {}) => ({ id: `i-${index}`, number: `NF-${String(index).padStart(32, '0')}`,
   fiscalNumber: `E3100000000${String(index).padStart(2, '0')}`, airline: 'QA Airline', airlineId: 'a-1', stationId: 'st-1',
@@ -175,5 +177,30 @@ describe('InvoicesPage tabs (4-A, 4-N19)', () => {
     expect(await screen.findByRole('button', { name: 'E310000000001' })).toBeInTheDocument();
     expect(screen.queryByRole('tablist')).not.toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Cobros' })).not.toBeInTheDocument();
+  });
+});
+
+describe('InvoicesPage live hints (4-N11)', () => {
+  it('reads again when the feed announces an invoice to «Facturas» without «Cobros», never on the retired preinvoice hint', async () => {
+    // The page subscribes to the account feed outside tests only.
+    vi.stubEnv('NODE_ENV', 'development');
+    observer.factory.mockImplementation(() => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) }));
+    try {
+      vi.mocked(listFinanceInvoices).mockResolvedValueOnce(page(1, [invoice(1)], false))
+        .mockResolvedValue(page(1, [invoice(2), invoice(1)], false));
+      renderPage(['finance.reconciliation.read']);
+      expect(await screen.findByRole('button', { name: 'E310000000001' })).toBeInTheDocument();
+      const onChange = observer.factory.mock.calls[0][0];
+      // finance_preinvoices is never written nor delivered any more (4-A): it reads nothing again.
+      expect(INVOICE_RESOURCES).not.toContain('finance_preinvoices');
+      act(() => onChange(['finance_preinvoices']));
+      expect(listFinanceInvoices).toHaveBeenCalledTimes(1);
+      // Another analyst issued an invoice: the feed delivers finance_invoices to who reads «Facturas» alone.
+      act(() => onChange(['finance_invoices']));
+      expect(await screen.findByRole('button', { name: 'E310000000002' })).toBeInTheDocument();
+      expect(listFinanceInvoices).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

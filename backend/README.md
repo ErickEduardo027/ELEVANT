@@ -736,6 +736,12 @@ códigos de los módulos retirados se resuelven por alias al leer el acceso:
 excepción de gasto propio no concede gestión o aprobación financiera general.
 `GET api/v1/finance/home` calcula los indicadores de «Inicio» por estación y
 día hábil de Santo Domingo; cada sección es null sin el permiso de su módulo.
+El PDF de una factura (`GET api/v1/finance/invoices/{id}/document`) se abre
+con «Facturas» (`finance.reconciliation.read`), que abre todas las de sus
+estaciones, o con `finance.invoicing.issue`, que solo abre las que emitió la
+propia cuenta (la recién emitida en «Por facturar»); leer «Por facturar» sin
+emitir no abre facturas, aunque sigue leyendo el estado de sus correos
+(`email-deliveries`).
 
 Quedan seis reportes: ingresos, cuentas por cobrar y antigüedad, cobranza (con
 tarjeta), cuentas por pagar, recargos y ventas del e-CF simulado; usan el e-NCF,

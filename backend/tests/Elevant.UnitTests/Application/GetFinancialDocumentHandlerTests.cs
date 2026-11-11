@@ -39,16 +39,19 @@ public sealed class GetFinancialDocumentHandlerTests
     }
 
     /// <summary>
-    /// 4-N02: «Por facturar» opens the PDF of the invoice it just issued with the permissions of Facturación alone; an
-    /// account that reads neither «Facturas» nor «Por facturar» gets nothing and the private object is never read.
+    /// 4-N02: «Por facturar» opens the PDF of the invoice it just issued with the issuance of Facturación alone (the store
+    /// keeps it to the invoices its account issued), and «Facturas» opens every invoice. Reading «Por facturar» alone
+    /// opens no PDF, with its lines and amounts, though it still reads the delivery state of the invoice's emails
+    /// (1-N08). An account that reads neither gets nothing and the private object is never read.
     /// </summary>
     [Theory]
-    [InlineData("finance.invoicing.issue", true)]
-    [InlineData("finance.invoicing.read", true)]
-    [InlineData("finance.reconciliation.read", true)]
-    [InlineData("finance.home.read", false)]
-    [InlineData("finance.charters.read", false)]
-    public async Task FinanceInvoicePdfFollowsThePermissionsOfInvoicing(string permission, bool readable)
+    [InlineData("finance.invoicing.issue", true, false, true)]
+    [InlineData("finance.invoicing.read", false, false, true)]
+    [InlineData("finance.reconciliation.read", true, true, true)]
+    [InlineData("finance.home.read", false, false, false)]
+    [InlineData("finance.charters.read", false, false, false)]
+    public async Task FinanceInvoicePdfFollowsThePermissionsOfInvoicing(string permission, bool readable, bool every,
+        bool emails)
     {
         var accountId = Guid.NewGuid();
         var stationId = Guid.NewGuid();
@@ -73,6 +76,8 @@ public sealed class GetFinancialDocumentHandlerTests
         Assert.Equal(readable, document is not null);
         Assert.Equal(readable, objects.Opened);
         Assert.Equal(readable, FinanceInvoicePolicy.CanReadInvoice(actor));
+        Assert.Equal(every, FinanceInvoicePolicy.ReadsEveryInvoice(actor));
+        Assert.Equal(emails, FinanceInvoicePolicy.CanReadInvoiceEmails(actor));
     }
 
     [Fact]

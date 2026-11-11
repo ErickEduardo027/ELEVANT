@@ -21,7 +21,7 @@ internal sealed class EfInvoiceEmailStatusStore(ElevantDbContext context, TimePr
     {
         if (actorId == Guid.Empty || invoiceId == Guid.Empty) return null;
         var actor = await new EfActorContextResolver(context, timeProvider).ResolveAsync(actorId, cancellationToken);
-        if (actor is null || !FinanceInvoicePolicy.CanReadInvoice(actor) ||
+        if (actor is null || !FinanceInvoicePolicy.CanReadInvoiceEmails(actor) ||
             !actor.Memberships.Any(membership => membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff)) return null;
         var stations = actor.StationScopes.Select(scope => scope.StationId).ToArray();
