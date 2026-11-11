@@ -19,7 +19,8 @@ internal sealed partial class FinancePayablesStore
     private async Task<IReadOnlyList<FinancePayablesAttachmentView>> AttachmentsViewAsync(long id, bool expense, CancellationToken ct) =>
         await context.Set<FinancePayablesAttachment>().AsNoTracking().Where(x => (expense ? x.ExpenseClaimId == id : x.SupplierInvoiceId == id) && x.RemovedAt == null)
             .OrderBy(x => x.Id).Select(x => new FinancePayablesAttachmentView(x.PublicId, x.ContentType, x.Length, x.Sha256, x.CreatedAt)).ToArrayAsync(ct);
-    private async Task<FinancePayablesView> InvoiceViewAsync(SupplierInvoice row, CancellationToken ct)
+    /// <summary>A supplier invoice as <paramref name="a"/> reads it; 4-N14: it says whether that reader may approve it.</summary>
+    private async Task<FinancePayablesView> InvoiceViewAsync(Actor a, SupplierInvoice row, CancellationToken ct)
     {
         var supplier = await context.Set<Supplier>().AsNoTracking().SingleAsync(x => x.Id == row.SupplierId, ct);
         var lines = await context.Set<SupplierInvoiceLine>().AsNoTracking().Where(x => x.DocumentId == row.Id).OrderBy(x => x.LineNumber)
@@ -33,7 +34,7 @@ internal sealed partial class FinancePayablesStore
         return new(row.PublicId, supplier.PublicId, supplier.Name, (await PublicAsync<Station>(row.ScopeStationId, ct))!.Value,
             row.DocumentReference, row.DocumentDate, row.DueDate, row.Status.ToString(), FxView(row.CurrencyCode, row.FxToDop, row.FxSource, row.FxDate),
             await DimensionsViewAsync(row.StationId, row.AirlineId, row.TurnaroundId, row.ServiceDefinitionId, ct), row.Total, row.TotalDop, paid, voided ? 0m : row.Total - paid,
-            Version(row.RowVersion), lines, await AttachmentsViewAsync(row.Id, false, ct), reviews);
+            Version(row.RowVersion), lines, await AttachmentsViewAsync(row.Id, false, ct), reviews, await ApprovalBlockedAsync(a, row, ct));
     }
     private async Task<FinancePayablesPaymentView> PaymentViewAsync(FinancePayablesPayment row, CancellationToken ct)
     {

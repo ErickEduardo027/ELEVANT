@@ -22,9 +22,10 @@ export default function PayablesPage() {
   const w = usePayablesWorkspace('payables', listPayables, getPayable, canRead); const mutation = usePayablesMutation(w.refresh);
   const [editing, setEditing] = useState(false); const [decision, setDecision] = useState(null); const [paymentMode, setPaymentMode] = useState(null);
   const d = w.detail;
-  // 4-N14: who submitted the invoice does not approve it and who approved it does not pay it; the server decides by person.
+  // 4-N14: who created or submitted the invoice does not approve it and who approved it does not pay it; the server
+  // decides by person and tells each reader whether its approval is blocked (the creator of a draft another person sent too).
   const me = w.session?.accountId;
-  const submittedByMe = Boolean(me) && (d?.reviews ?? []).some(r => r.stage === 'Submission' && r.actorId === me);
+  const approvalBlocked = d?.approvalBlocked === true;
   const approvedByMe = Boolean(me) && [...(d?.reviews ?? [])].reverse().find(r => r.stage === 'Finance' && r.decision === 'Approved')?.actorId === me;
   // 4-N15: the options only list the active suppliers of the station; a retired one keeps voiding and applying payments.
   const supplierActive = !d || !w.options || w.options.suppliers.some(s => s.id === d.supplierId);
@@ -37,18 +38,19 @@ export default function PayablesPage() {
     {w.detailLoading && <p role="status">Cargando factura…</p>}
     {d && <section aria-label="Detalle de cuenta por pagar" className={panelClass + ' space-y-4'}><DocumentDetails options={w.options} detail={d} />
       <div className="flex flex-wrap gap-2">{d.status === 'Draft' && canManage && <>{supplierActive && <><button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => setEditing(true)}>Editar borrador</button><button className={primaryClass} type="button" disabled={mutation.busy || editing} onClick={() => decide('Submitted')}>Enviar a revisión</button></>}<button className={buttonClass} type="button" disabled={mutation.busy || editing} onClick={() => decide('Voided')}>Anular borrador</button></>}
-        {d.status === 'Submitted' && canApprove && supplierActive && <>{!submittedByMe && <button className={primaryClass} type="button" disabled={mutation.busy} onClick={() => decide('Approved')}>Aprobar factura</button>}<button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => decide('Rejected')}>Rechazar factura</button></>}
+        {d.status === 'Submitted' && canApprove && supplierActive && <>{!approvalBlocked && <button className={primaryClass} type="button" disabled={mutation.busy} onClick={() => decide('Approved')}>Aprobar factura</button>}<button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => decide('Rejected')}>Rechazar factura</button></>}
         {d.status === 'Rejected' && canManage && <>{supplierActive && <button className={primaryClass} type="button" disabled={mutation.busy} onClick={() => decide('Draft')}>Corregir factura</button>}<button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => decide('Voided')}>Anular factura</button></>}
         {d.status === 'Approved' && canPay && !approvedByMe && <>{supplierActive && <button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => setPaymentMode('record')}>Registrar pago</button>}<button className={primaryClass} type="button" disabled={mutation.busy || d.remaining <= 0} onClick={() => setPaymentMode('apply')}>Aplicar pago existente</button></>}
         {d.status === 'Approved' && canReverse && Number(d.paid) === 0 && <button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => decide('Voided')}>Anular factura</button>}
       </div>
       {!supplierActive && ['Draft', 'Submitted', 'Rejected', 'Approved'].includes(d.status) && <p role="note" className="rounded-lg border border-status-warning/40 p-3 text-sm">Proveedor retirado: reactívelo en Proveedores para continuar.</p>}
-      {d.status === 'Submitted' && canApprove && supplierActive && submittedByMe && <p role="note" className="text-sm">Otra persona de Finanzas debe aprobar esta factura.</p>}
+      {d.status === 'Submitted' && canApprove && supplierActive && approvalBlocked && <p role="note" className="text-sm">Otra persona de Finanzas debe aprobar esta factura.</p>}
       {d.status === 'Approved' && canPay && approvedByMe && <p role="note" className="text-sm">Usted aprobó esta factura: otra persona de Finanzas debe registrar y aplicar sus pagos.</p>}
       {d.status === 'Approved' && canReverse && Number(d.paid) > 0 && <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Para anular esta factura, revierta antes los pagos aplicados.</p>}
       {decision && <DecisionForm key={decision + d.version} decision={decision} title={text?.title} confirmLabel={text?.confirm} notice={text?.notice} busy={mutation.busy} onCancel={() => setDecision(null)} onConfirm={async reason => { if (await mutation.run('payable:decision:' + d.id, { decision, expectedVersion: d.version, reason }, body => decidePayable(d.id, body))) setDecision(null); }} />}
       <PrivateAttachments key={d.id + d.version} kind="payables" detail={d} editable={canManage && d.status === 'Draft' && !editing} mutation={mutation} />
-      {d.status === 'Approved' && <SupplierPaymentsPanel key={d.id} detail={d} scope={w.scope} canReverse={canReverse} mutation={mutation} onOpenInvoice={select} />}
+      {/* 4-N04, 4-N15: on every status, so a payment left without an approved invoice of its supplier is still voided. */}
+      <SupplierPaymentsPanel key={d.id} detail={d} scope={w.scope} canReverse={canReverse} mutation={mutation} onOpenInvoice={select} />
     </section>}
     {editing && (d ? canManage : canCreate) && w.options && <DocumentEditor key={(d?.id ?? 'new') + (d?.version ?? '') + w.scope} detail={d} options={w.options} scope={w.scope} busy={mutation.busy} onCancel={() => setEditing(false)} onSave={async values => { if (await mutation.run('payable:save:' + (d?.id ?? 'new'), values, body => savePayable(d?.id, body))) setEditing(false); }} />}
     {d && paymentMode === 'record' && canPay && <PaymentForm detail={d} scope={w.scope} mutation={mutation} onClose={() => setPaymentMode(null)} />}

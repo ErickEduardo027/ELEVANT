@@ -491,6 +491,36 @@ test("Cuentas por pagar: corregir, anular y volver a usar el NCF, segregación y
   const draft = both.data.find(item => item.status === "Draft")!;
   await expectCall(200, token, "POST", `/finance/payables/${draft.id}/decisions`,
     { requestId: randomUUID(), expectedVersion: draft.version, decision: "Voided", reason: "Borrador de prueba del ciclo" });
+
+  // 4-N04, 4-N15: a payment recorded by mistake (through the API, as from an invoice voided since) keeps the supplier
+  // working although no approved invoice is left; the «Pagos del proveedor» panel of a voided invoice voids it.
+  const suppliers = await expectCall<Array<{ id: string; name: string; scopeStationId: string; version: string }>>(200, token, "GET",
+    `/finance/suppliers?search=${encodeURIComponent(code)}&take=25`);
+  const created = suppliers.data.find(item => item.name === name);
+  expect(created, "the supplier of the run").toBeTruthy();
+  const reference = `PAGO-${tag}`;
+  const day = businessDay();
+  await expectCall(200, token, "POST", "/finance/payable-payments", { requestId: randomUUID(), supplierId: created!.id,
+    scopeStationId: created!.scopeStationId, paidOn: day, reference, amount: 250,
+    fx: { currency: "USD", rateToDop: 60, source: "Tasa revisada del ciclo E2E", rateDate: day } });
+  const kept = await expectCall<{ code?: string }>(409, token, "DELETE", `/finance/suppliers/${created!.id}`,
+    { requestId: randomUUID(), expectedVersion: created!.version, decision: "Retired", reason: "Proveedor sin contrato vigente" });
+  expect(kept.data.code).toBe("supplier_has_open_balance");
+  await openPayables(page, "Facturas de proveedores", "Cuentas por pagar");
+  await invoiceRow("Anulada").first().click();
+  const payments = detail.getByRole("region", { name: "Pagos del proveedor" });
+  const mistaken = payments.getByRole("listitem", { name: `Pago ${reference}` });
+  await expect(mistaken).toContainText("Disponible");
+  await mistaken.getByRole("button", { name: "Anular pago" }).click();
+  await payments.getByLabel("Motivo de la decisión").fill("Pago registrado por error en el ciclo");
+  await payments.getByRole("button", { name: "Confirmar anulación" }).click();
+  await expect(mistaken).toContainText("Anulado");
+  await snap(page, "fase4-cxp-pago-anulado");
+
+  await openPayables(page, "Proveedores");
+  await page.getByRole("button", { name, exact: true }).click();
+  await supplier.getByRole("button", { name: "Retirar proveedor" }).click();
+  await supplier.getByLabel("Motivo del retiro").fill("Proveedor sin contrato vigente");
   await supplier.getByRole("button", { name: "Confirmar retiro" }).click();
   await expect(page.getByRole("row", { name: new RegExp(name) })).toContainText("Inactivo");
   await snap(page, "fase4-cxp-proveedor-retirado");

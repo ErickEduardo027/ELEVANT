@@ -11,7 +11,8 @@ const paymentStatus = payment => payment.voidedAt ? 'Anulado'
 /**
  * 4-N04: the payments of the invoice's supplier at the station, 25 at a time, with their applications. With
  * `finance.payables.reverse` an application is reversed and a payment without active applications is voided, each
- * with its reason; both are linked rows, so the history stays on screen.
+ * with its reason; both are linked rows, so the history stays on screen. 4-N15: it shows on an invoice of any status,
+ * so a payment whose invoices were all voided is still voided before the supplier retires.
  */
 export function SupplierPaymentsPanel({ detail, scope, canReverse, mutation, onOpenInvoice }) {
   const [rows, setRows] = useState([]); const [loading, setLoading] = useState(true); const [error, setError] = useState('');

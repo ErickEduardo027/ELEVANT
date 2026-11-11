@@ -11,8 +11,19 @@ internal sealed partial class FinancePayablesStore
         var row = await context.Set<SupplierInvoice>().SingleOrDefaultAsync(x => x.PublicId == id, ct);
         Require(row is not null, "not_found"); Scope(a, row!.ScopeStationId); return row;
     }
+    /// <summary>
+    /// 4-N14: whether the person of <paramref name="a"/> created or submitted the invoice, so another person of Finance
+    /// approves it. The approval and the invoice's view both ask here, so the screen hides exactly what the store refuses.
+    /// </summary>
+    private async Task<bool> ApprovalBlockedAsync(Actor a, SupplierInvoice row, CancellationToken ct)
+    {
+        var creator = await context.Users.Where(u => u.Id == row.CreatedByAccountId).Select(u => u.PersonId).SingleAsync(ct);
+        var submitters = await (from review in context.Set<SupplierInvoiceReview>() join user in context.Users on review.ActorAccountId equals user.Id
+            where review.DocumentId == row.Id && review.Stage == "Submission" select user.PersonId).ToArrayAsync(ct);
+        return !FinancePayablesPolicy.CanApproveInvoice(a.PersonId, creator, submitters);
+    }
     public Task<FinancePayablesResult<FinancePayablesView>> GetInvoiceAsync(Guid actorId, Guid id, CancellationToken ct = default) =>
-        ReadAsync(actorId, "finance.payables.read", async a => await InvoiceViewAsync(await InvoiceAsync(a, id, ct), ct), ct);
+        ReadAsync(actorId, "finance.payables.read", async a => await InvoiceViewAsync(a, await InvoiceAsync(a, id, ct), ct), ct);
     public Task<FinancePayablesResult<IReadOnlyList<FinancePayablesView>>> ListInvoicesAsync(Guid actorId, FinancePayablesFilter filter, CancellationToken ct = default) =>
         ReadAsync<IReadOnlyList<FinancePayablesView>>(actorId, "finance.payables.read", async a =>
         {
@@ -27,7 +38,7 @@ internal sealed partial class FinancePayablesStore
             var applications = CurrentApplications();
             if (filter.OutstandingOnly) query = query.Where(x => x.Status == SupplierInvoiceStatus.Approved && x.Total > (applications.Where(p => p.SupplierInvoiceId == x.Id).Sum(p => (decimal?)p.InvoiceAmount) ?? 0));
             var rows = await query.OrderByDescending(x => x.DocumentDate).ThenBy(x => x.Id).Skip(filter.Skip).Take(filter.Take).ToArrayAsync(ct);
-            var result = new List<FinancePayablesView>(); foreach (var row in rows) result.Add(await InvoiceViewAsync(row, ct)); return result;
+            var result = new List<FinancePayablesView>(); foreach (var row in rows) result.Add(await InvoiceViewAsync(a, row, ct)); return result;
         }, ct);
     public Task<FinancePayablesResult<FinancePayablesMutation>> SaveInvoiceAsync(Guid actorId, Guid? id, FinancePayablesSave input, CancellationToken ct = default) =>
         WriteAsync(actorId, input.RequestId, "payable.save", id, input, id is null ? "finance.payables.create" : "finance.payables.update", async a =>
@@ -80,12 +91,7 @@ internal sealed partial class FinancePayablesStore
                 Require(!await ActiveApplications().AnyAsync(x => x.SupplierInvoiceId == row.Id, ct), FinancePayablesProblems.InvoiceHasApplications);
             // 4-N14: who created or submitted the invoice does not approve it (by person; rejecting it stays possible).
             if (input.Decision == nameof(SupplierInvoiceStatus.Approved))
-            {
-                var creator = await context.Users.Where(u => u.Id == row.CreatedByAccountId).Select(u => u.PersonId).SingleAsync(ct);
-                var submitters = await (from review in context.Set<SupplierInvoiceReview>() join user in context.Users on review.ActorAccountId equals user.Id
-                    where review.DocumentId == row.Id && review.Stage == "Submission" select user.PersonId).ToArrayAsync(ct);
-                Require(FinancePayablesPolicy.CanApproveInvoice(a.PersonId, creator, submitters), FinancePayablesProblems.SegregationOfDuties);
-            }
+                Require(!await ApprovalBlockedAsync(a, row, ct), FinancePayablesProblems.SegregationOfDuties);
             var now = clock.GetUtcNow();
             row.Status = Enum.Parse<SupplierInvoiceStatus>(input.Decision); row.UpdatedAt = now;
             var (stage, action) = input.Decision switch
