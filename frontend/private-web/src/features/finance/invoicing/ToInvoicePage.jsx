@@ -193,7 +193,7 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
 
       <section aria-label="Límites de una factura" className="rounded-xl border border-black/5 bg-black/[0.02] p-3 text-xs dark:border-white/5 dark:bg-white/[0.03]">
         Una factura admite hasta {limits.maxOperations} operaciones, {limits.maxLines} líneas y operaciones de un máximo de {limits.maxDays} días.
-        Cada servicio es una línea, más sus cargos y su mínimo contractual.
+        Cada servicio es una línea, más sus cargos y su mínimo contractual; si lo cubre un paquete, en lugar del mínimo suma la base y el excedente del paquete.
       </section>
 
       {data.status === 'invalid-range' && <p role="alert" className="rounded-xl bg-status-warning/10 p-4 text-sm">
@@ -219,7 +219,8 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={chip} onClick={data.selectAirline}>Toda la aerolínea del período</button>
+          <button type="button" className={chip} onClick={data.selectAirline} disabled={data.picking} aria-busy={data.picking}>
+            {data.picking ? 'Eligiendo operaciones…' : 'Toda la aerolínea del período'}</button>
           <button type="button" className={chip} onClick={data.clearSelection}>Quitar selección</button>
           {canIssue && <button type="button" onClick={data.issueInvoice} disabled={data.issue.status === 'issuing'}
             className="rounded-xl bg-accent-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50">

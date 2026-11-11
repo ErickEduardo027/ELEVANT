@@ -157,7 +157,8 @@ public sealed partial class SqlServerMigrationTests
     /// <summary>
     /// 4-N01, 4-N06, 4-N07, 4-N29: a refusal writes nothing (the internal draft, its lines, the package consumption, the
     /// e-NCF and the email included), the operation stays pending and the same key issues once it is fixed; a total of
-    /// zero is refused; the key with other operations is idempotency_conflict and a stale version is version_conflict.
+    /// zero is refused; the key with other operations, or with other versions, is idempotency_conflict and a stale
+    /// version is version_conflict. An invoice issued before its receipt existed still replays by its operations.
     /// </summary>
     [Fact]
     public async Task InvoiceIssuanceRollsBackRefusalsComparesReplaysAndChecksVersions()
@@ -233,9 +234,29 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal((IssueInvoiceFailure.Unprocessable, "zero_total"), (zero.Failure!.Value, zero.Reason));
         Assert.Equal(before, await WrittenAsync());
         await services.ExecuteUpdateAsync(set => set.SetProperty(item => item.UnitPriceSnapshot, 10m), ct);
-        var priced = await IssueAsync(Guid.NewGuid(), [second], [new(second, version)]);
+        var pricedKey = Guid.NewGuid();
+        var priced = await IssueAsync(pricedKey, [second], [new(second, version)]);
         Assert.True(priced.IsSuccess, $"{priced.Failure} {priced.Reason}");
         Assert.Equal("E310000000002", priced.FiscalNumber);
+
+        // 4-N29: the versions are part of the body the key stands for: another version, or none, is a conflict; the
+        // same body replays the invoice without a second e-NCF.
+        var otherVersion = await IssueAsync(pricedKey, [second], [new(second, "AAAAAAAAAAE=")]);
+        Assert.Equal((IssueInvoiceFailure.Conflict, "idempotency_conflict"), (otherVersion.Failure!.Value, otherVersion.Reason));
+        var withoutVersions = await IssueAsync(pricedKey, [second]);
+        Assert.Equal((IssueInvoiceFailure.Conflict, "idempotency_conflict"),
+            (withoutVersions.Failure!.Value, withoutVersions.Reason));
+        var same = await IssueAsync(pricedKey, [second], [new(second, version)]);
+        Assert.Equal((true, priced.InvoiceId, "E310000000002"), (same.Replayed, same.InvoiceId, same.FiscalNumber));
+        setup.ChangeTracker.Clear();
+        Assert.Equal(2, await setup.NonFiscalInvoices.CountAsync(item => item.FiscalNumber != null, ct));
+
+        // An invoice issued before its receipt existed keeps replaying by its account, station and operations.
+        await setup.Set<FinancePricingCommand>().Where(item => item.RequestId == key).ExecuteDeleteAsync(ct);
+        var legacy = await IssueAsync(key, [first], [new(first, "AAAAAAAAAAE=")]);
+        Assert.Equal((true, issued.InvoiceId), (legacy.Replayed, legacy.InvoiceId));
+        var legacyOther = await IssueAsync(key, [second]);
+        Assert.Equal((IssueInvoiceFailure.Conflict, "idempotency_conflict"), (legacyOther.Failure!.Value, legacyOther.Reason));
     }
 
     /// <summary>

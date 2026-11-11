@@ -152,6 +152,36 @@ public sealed class FinanceInvoicingEndpointsTests(ElevantApiFactory factory) : 
             Assert.Equal((HttpStatusCode.BadRequest, "invalid_invoice_request"), (partial.StatusCode, await CodeAsync(partial, ct)));
     }
 
+    /// <summary>
+    /// 4-N06: more operations than one invoice takes is too_many_operations on both writes over HTTP, never the generic
+    /// invalid_invoice_request, and nothing reaches the store; an empty list stays a malformed request.
+    /// </summary>
+    [Fact]
+    public async Task MoreOperationsThanOneInvoiceAreTooManyOverHttp()
+    {
+        var stub = new Stub();
+        await using var app = App(stub);
+        using var client = Authorized(app);
+        var ct = TestContext.Current.CancellationToken;
+        var operations = Enumerable.Range(0, FinanceInvoicePolicy.MaxOperations + 1).Select(_ => Guid.NewGuid()).ToArray();
+        var versions = operations.Select(id => new { operationId = id, version = "AAAAAAAAB9E=" }).ToArray();
+
+        using (var issue = await client.PostAsJsonAsync("/api/v1/finance/invoices/from-operations",
+                   new { stationId = Station, operationIds = operations, requestId = Guid.NewGuid(), operationVersions = versions }, ct))
+            Assert.Equal((HttpStatusCode.BadRequest, "too_many_operations"), (issue.StatusCode, await CodeAsync(issue, ct)));
+        using (var older = await client.PostAsJsonAsync("/api/v1/finance/invoices/from-operations",
+                   new { stationId = Station, operationIds = operations, requestId = Guid.NewGuid() }, ct))
+            Assert.Equal((HttpStatusCode.BadRequest, "too_many_operations"), (older.StatusCode, await CodeAsync(older, ct)));
+        using (var closure = await SendAsync(client, Guid.NewGuid().ToString(),
+                   new { stationId = Station, operations = versions, reason = "Servicios incluidos sin tarifa" }, ct))
+            Assert.Equal((HttpStatusCode.BadRequest, "too_many_operations"), (closure.StatusCode, await CodeAsync(closure, ct)));
+        using (var empty = await client.PostAsJsonAsync("/api/v1/finance/invoices/from-operations",
+                   new { stationId = Station, operationIds = Array.Empty<Guid>(), requestId = Guid.NewGuid() }, ct))
+            Assert.Equal((HttpStatusCode.BadRequest, "invalid_invoice_request"), (empty.StatusCode, await CodeAsync(empty, ct)));
+        Assert.Null(stub.Issue);
+        Assert.Null(stub.Closure);
+    }
+
     private static async Task<HttpResponseMessage> SendAsync(HttpClient client, string key, object body, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/finance/invoicing/no-charge-closures")

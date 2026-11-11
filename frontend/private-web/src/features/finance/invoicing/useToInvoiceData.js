@@ -13,6 +13,9 @@ export const ITBIS_RATE = 0.18;
 /** The limits of one invoice until the server publishes them with the first page (4-N06). */
 export const DEFAULT_LIMITS = Object.freeze({ maxOperations: 100, maxLines: 500, maxDays: 31 });
 const PAGE_SIZE = 50;
+/** «Toda la aerolínea del período» reads the airline's own pages at the largest size the server takes (4-N06). */
+const AIRLINE_PAGE_SIZE = 100;
+const MAX_AIRLINE_PAGES = 20;
 /** 4-N11: the feed resources that change «Por facturar»: an approved or invoiced operation, an issued invoice. */
 export const TO_INVOICE_RESOURCES = Object.freeze(['finance_approved_services', 'finance_invoices']);
 const EMPTY = Object.freeze({ operations: [], nextCursor: null, totalPending: 0, airlines: [], limits: DEFAULT_LIMITS });
@@ -60,6 +63,32 @@ export function selectionProblem(selected, item, limits = DEFAULT_LIMITS) {
   return null;
 }
 
+/** From the oldest, the candidates that fit together in one invoice, and why the next one does not (null when all fit). */
+function fitting(candidates, limits) {
+  const chosen = [];
+  for (const item of candidates) {
+    const stop = selectionProblem(chosen, item, limits);
+    if (stop) return { chosen, stop };
+    chosen.push(item);
+  }
+  return { chosen, stop: null };
+}
+
+/** The server's order of «Por facturar»: operation date, operation code and operation id. */
+function byPosition(left, right) {
+  if (left.operationDate !== right.operationDate) return left.operationDate < right.operationDate ? -1 : 1;
+  if (left.operationCode !== right.operationCode) return left.operationCode < right.operationCode ? -1 : 1;
+  if (left.id === right.id) return 0;
+  return left.id < right.id ? -1 : 1;
+}
+
+/** The rows on screen with the new ones added once each, in the server's order. */
+function merged(rows, more) {
+  const byId = new Map(rows.map(item => [item.id, item]));
+  for (const item of more) if (!byId.has(item.id)) byId.set(item.id, item);
+  return [...byId.values()].sort(byPosition);
+}
+
 export function useToInvoiceData(initialStationId) {
   const accountId = useMemo(() => readSession()?.accountId, []);
   const scopes = useMemo(() => (readSession()?.stationScopes ?? [])
@@ -79,11 +108,15 @@ export function useToInvoiceData(initialStationId) {
   const [more, setMore] = useState('idle');
   const [pickedIds, setSelectedIds] = useState([]);
   const [notice, setNotice] = useState(null);
+  const [picking, setPicking] = useState(false);
   const [issue, setIssue] = useState({ status: 'idle' });
   const [closure, setClosure] = useState({ status: 'idle' });
   const issueKeys = useRef(createCommandKeyHolder());
   const closeKeys = useRef(createCommandKeyHolder());
   const generation = useRef(0);
+  // The filters whose rows are on screen. A revalidation of the same filters keeps them until the new page arrives;
+  // other filters (another station, airline or period) never show them, nor call them «los datos anteriores».
+  const shownFilters = useRef(null);
   const rangeIsValid = validRange(from, to);
   const filters = useMemo(() => ({ stationId, from: from || null, to: to || null,
     airlineId: airline === 'all' ? null : airline }), [stationId, from, to, airline]);
@@ -103,17 +136,27 @@ export function useToInvoiceData(initialStationId) {
   useEffect(() => {
     if (!stationId || !rangeIsValid) {
       generation.current += 1;
+      shownFilters.current = null;
       setStatus(!stationId ? 'forbidden' : 'invalid-range');
       setData(EMPTY);
       return undefined;
     }
     const controller = new AbortController();
     const current = ++generation.current;
-    // A revalidation keeps the rows on screen until the new page arrives.
-    setStatus(value => (value === 'success' ? 'success' : 'loading'));
+    const key = JSON.stringify(filters);
+    if (shownFilters.current === key) setStatus(value => (value === 'success' ? 'success' : 'loading'));
+    else {
+      // Other filters: the previous rows leave the screen at once, so none of them can be ticked meanwhile.
+      shownFilters.current = null;
+      setData(EMPTY);
+      setStale(false);
+      setMore('idle');
+      setStatus('loading');
+    }
     getFinancePendingOperations({ ...filters, limit: PAGE_SIZE }, { signal: controller.signal })
       .then(page => {
         if (controller.signal.aborted || current !== generation.current) return;
+        shownFilters.current = key;
         setData({ operations: page.operations.map(toRow), nextCursor: page.nextCursor ?? null,
           totalPending: page.totalPending, airlines: page.airlines, limits: page.limits });
         setStatus('success');
@@ -124,9 +167,14 @@ export function useToInvoiceData(initialStationId) {
         if (controller.signal.aborted || isAbortError(error) || current !== generation.current) return;
         const kind = error?.status === 401 ? 'unauthorized'
           : error?.status === 403 || error?.status === 404 ? 'forbidden' : 'error';
-        if (kind !== 'error') setData(EMPTY);
-        setStale(kind === 'error');
-        setStatus(value => (kind === 'error' && value === 'success' ? 'success' : kind));
+        // Only the rows of these same filters stay, marked as not updated; anything else is the error itself.
+        const keep = kind === 'error' && shownFilters.current === key;
+        if (!keep) {
+          shownFilters.current = null;
+          setData(EMPTY);
+        }
+        setStale(keep);
+        setStatus(value => (keep && value === 'success' ? 'success' : kind));
       });
     return () => abortForEffectCleanup(controller);
   }, [filters, rangeIsValid, revision, stationId]);
@@ -149,23 +197,66 @@ export function useToInvoiceData(initialStationId) {
     setNotice(null);
     setSelectedIds(current => (current.includes(id) ? current.filter(item => item !== id) : [...selectedIds, id]));
   };
-  /** «Toda la aerolínea del período»: from the oldest while they fit in one invoice, and says where it stopped. */
-  const selectAirline = () => {
+  /**
+   * «Toda la aerolínea del período»: from the oldest while they fit in one invoice, and says where it stopped (4-N06).
+   * The whole period counts, not only the rows loaded: while the server has more pages, the airline's own pages are
+   * read first, and the search is cleared so every chosen operation is on screen. Nothing is ever cut silently.
+   */
+  async function selectAirline() {
     const first = selected[0] ?? filtered.find(item => item.ready);
-    if (!first) return;
-    const candidates = filtered.filter(item => item.ready && item.airlineId === first.airlineId && item.currency === first.currency);
-    const chosen = [];
-    let stop = null;
-    for (const item of candidates) {
-      stop = selectionProblem(chosen, item, limits);
-      if (stop) break;
-      chosen.push(item);
+    if (!first || picking) return;
+    const matches = item => item.ready && item.airlineId === first.airlineId && item.currency === first.currency;
+    setQuery('');
+    let rows = operations;
+    let complete = !data.nextCursor;
+    let failed = false;
+    if (!complete) {
+      const current = generation.current;
+      const fetched = [];
+      let cursor = null;
+      setPicking(true);
+      setNotice(null);
+      try {
+        for (let read = 0; read < MAX_AIRLINE_PAGES; read += 1) {
+          const page = await getFinancePendingOperations({ ...filters, airlineId: first.airlineId, cursor,
+            limit: AIRLINE_PAGE_SIZE });
+          if (current !== generation.current) return;
+          fetched.push(...page.operations.map(toRow));
+          cursor = page.nextCursor ?? null;
+          if (!cursor) {
+            complete = true;
+            break;
+          }
+          // Once one operation does not fit, no later one does: the invoice is full.
+          if (fitting(fetched.filter(matches), limits).stop) break;
+        }
+      } catch (error) {
+        if (current !== generation.current) return;
+        if (error?.status === 401) {
+          setStatus('unauthorized');
+          return;
+        }
+        failed = true;
+      } finally {
+        setPicking(false);
+      }
+      rows = merged(operations, fetched);
+      setData(previous => ({ ...previous, operations: merged(previous.operations, fetched) }));
     }
+    const candidates = rows.filter(matches);
+    const { chosen, stop } = fitting(candidates, limits);
+    const airlineName = first.airlineName;
     setSelectedIds(chosen.map(item => item.id));
-    setNotice(chosen.length < candidates.length
-      ? `Se eligieron ${chosen.length} de ${candidates.length} operaciones de ${first.airlineName}: el resto no cabe en una factura. ${stop} Emita esta factura y continúe con las demás.`
-      : null);
-  };
+    if (failed)
+      setNotice(`No se pudieron leer todas las operaciones pendientes de ${airlineName}: se eligieron ${chosen.length} de las cargadas. Vuelva a pulsar «Toda la aerolínea del período» para completar la selección.`);
+    else if (stop && complete)
+      setNotice(`Se eligieron ${chosen.length} de ${candidates.length} operaciones de ${airlineName}: el resto no cabe en una factura. ${stop} Emita esta factura y continúe con las demás.`);
+    else if (stop)
+      setNotice(`Se eligieron ${chosen.length} operaciones de ${airlineName}, las que caben en una factura; quedan más pendientes. ${stop} Emita esta factura y continúe con las demás.`);
+    else if (!complete)
+      setNotice(`Se eligieron ${chosen.length} operaciones de ${airlineName}, pero quedan pendientes sin revisar. Emita esta factura y continúe con las demás.`);
+    else setNotice(null);
+  }
   const net = round2(selected.reduce((sum, item) => sum + item.estimate, 0));
   const summary = { count: selected.length, airlineName: selected[0]?.airlineName ?? null, currency: selected[0]?.currency ?? null,
     lines: selected.reduce((sum, item) => sum + item.lineEstimate, 0), net, tax: round2(net * ITBIS_RATE),
@@ -185,11 +276,9 @@ export function useToInvoiceData(initialStationId) {
     try {
       const page = await getFinancePendingOperations({ ...filters, cursor: data.nextCursor, limit: PAGE_SIZE });
       if (current !== generation.current) return;
-      setData(previous => {
-        const known = new Set(previous.operations.map(item => item.id));
-        return { operations: [...previous.operations, ...page.operations.map(toRow).filter(item => !known.has(item.id))],
-          nextCursor: page.nextCursor ?? null, totalPending: page.totalPending, airlines: page.airlines, limits: page.limits };
-      });
+      // Rows «Toda la aerolínea del período» already brought keep their place in the server's order.
+      setData(previous => ({ operations: merged(previous.operations, page.operations.map(toRow)),
+        nextCursor: page.nextCursor ?? null, totalPending: page.totalPending, airlines: page.airlines, limits: page.limits }));
       setMore('idle');
     } catch (error) {
       if (current !== generation.current) return;
@@ -252,7 +341,7 @@ export function useToInvoiceData(initialStationId) {
     setWeek: offset => changeFilters(sundayWeek(today, offset)), setMonth: offset => changeFilters(calendarMonth(today, offset)),
     clearPeriod: () => changeFilters({ from: '', to: '' }),
     airline, setAirline: value => { setAirline(value); setSelectedIds([]); setNotice(null); }, query, setQuery,
-    selectedIds, canSelect, whyNot, toggle, selectAirline, notice,
+    selectedIds, canSelect, whyNot, toggle, selectAirline, picking, notice,
     clearSelection: () => { setSelectedIds([]); setNotice(null); }, summary,
     issue, issueInvoice, dismissIssue: () => setIssue({ status: 'idle' }),
     closure, closeWithoutCharge, resetClosure: () => setClosure({ status: 'idle' }),
