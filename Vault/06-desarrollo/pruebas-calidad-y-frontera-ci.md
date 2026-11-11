@@ -163,8 +163,10 @@ verificado;
 - **Reapertura en la fase 3.** El paso que reabre la aprobación se salta si la
   operación del ciclo ya se facturó o si la retiene un borrador con factura
   emitida (`pending_preinvoice`): su corrección es una nota de crédito.
-- **Sin corrida registrada.** Esta nota no registra todavía una corrida de la
-  fase 4 contra el stack local.
+- **Corrida registrada.** El 11 de noviembre de 2026 las fases 1 a 4 pasaron
+  contra el stack local recreado con la rama completa: 63 de 64 pasos
+  en verde (14, 18, 20 y 11) y uno saltado por diseño, el del charter, en
+  7,2 minutos.
 
 ## Qué agrega cada workflow activo
 

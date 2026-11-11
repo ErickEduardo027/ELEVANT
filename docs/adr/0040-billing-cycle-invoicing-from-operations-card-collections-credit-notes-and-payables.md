@@ -121,7 +121,8 @@ Este ADR recoge cómo se cerraron, en cinco bloques: A (`2e4a88a4`, emisión de 
   - cuentas por pagar (segregación, rechazo, corrección, anulación, el NCF reutilizado, el pago con remanente que bloquea el retiro (`409 supplier_has_open_balance`) y se anula desde «Pagos del proveedor» de una factura anulada, y el retiro del proveedor) y gastos (el comprobante quitado, el escalamiento, la aprobación final que exige otra persona y «Mis gastos»);
   - el paso 4-B, que lee el snapshot y el Vault.
 - El paso del charter se salta mientras la corrida de la fase 3 no deje un charter facturado (las pruebas SQL cubren 4-N08 y 4-N22), y el del estado de cuenta, si la corrida no emitió su nota. En la fase 3, el paso que reabre la aprobación se salta cuando la operación ya no figura en «Por facturar» o la retiene un borrador con factura emitida (`pending_preinvoice`).
-- El overlay `compose.local.e2e.yml` suma `CardPayments__Mode=Simulated`; lo demás no cambia: el stack local, Mailpit y la franja de 08:30 a 22:30 (ADR-0038). Ningún workflow de CI lo ejecuta, y una corrida local no prueba un despliegue. Este ADR no registra una corrida de la fase 4.
+- El overlay `compose.local.e2e.yml` suma `CardPayments__Mode=Simulated`; lo demás no cambia: el stack local, Mailpit y la franja de 08:30 a 22:30 (ADR-0038). Ningún workflow de CI lo ejecuta, y una corrida local no prueba un despliegue.
+- El 11 de noviembre de 2026 la corrida de las fases 1 a 4 contra el stack local recreado (`down -v`) con la rama completa (bloques, correcciones de la revisión e integración con Development) pasó: 63 de 64 pasos en verde (14 de la fase 1, 18 de la fase 2, 20 de la fase 3 y 11 de la fase 4) y uno saltado por diseño, el del charter, en 7,2 minutos. Para llegar a esa corrida se corrigió una prueba del arnés, no el producto: el paso de cuentas por pagar ubica el select «Proveedor» por su nombre accesible (`c3d86d0f`).
 
 ### Migraciones
 
