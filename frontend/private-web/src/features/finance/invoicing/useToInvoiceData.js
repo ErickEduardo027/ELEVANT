@@ -1,23 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readSession } from '../../auth/authService';
-import { getApprovedServices } from '../../../services/approvedServicesService';
-import { issueInvoiceFromOperations, invoicingError } from '../../../services/invoicingService';
+import {
+  closeOperationsWithoutCharge, closureError, getFinancePendingOperations, invoicingError, issueInvoiceFromOperations,
+} from '../../../services/invoicingService';
+import { businessToday } from '../../../services/businessDay';
+import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { abortForEffectCleanup, isAbortError } from '../../../lib/abort';
 import { createPrivateWebAccountChangeObserver } from '../../../services/accountChangeObserver';
-import { sundayWeek } from '../approved-services/useApprovedServicesData';
+import { sundayWeek } from './weeks';
 
 export const ITBIS_RATE = 0.18;
-const MAX_OPERATIONS = 100;
+/** The limits of one invoice until the server publishes them with the first page (4-N06). */
+export const DEFAULT_LIMITS = Object.freeze({ maxOperations: 100, maxLines: 500, maxDays: 31 });
+const PAGE_SIZE = 50;
+/** «Toda la aerolínea del período» reads the airline's own pages at the largest size the server takes (4-N06). */
+const AIRLINE_PAGE_SIZE = 100;
+const MAX_AIRLINE_PAGES = 20;
+/** 4-N11: the feed resources that change «Por facturar»: an approved or invoiced operation, an issued invoice. */
+export const TO_INVOICE_RESOURCES = Object.freeze(['finance_approved_services', 'finance_invoices']);
+const EMPTY = Object.freeze({ operations: [], nextCursor: null, totalPending: 0, airlines: [], limits: DEFAULT_LIMITS });
 
-function localToday() {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).formatToParts(new Date());
-  const value = type => parts.find(part => part.type === type)?.value;
-  return `${value('year')}-${value('month')}-${value('day')}`;
-}
-
-/** The calendar month that contains the date, moved by whole months (at most 31 days, within the API range). */
+/** The calendar month that contains the date, moved by whole months. */
 export function calendarMonth(isoDate, offsetMonths = 0) {
   const [year, month] = isoDate.split('-').map(Number);
   const first = new Date(Date.UTC(year, month - 1 + offsetMonths, 1));
@@ -25,48 +28,65 @@ export function calendarMonth(isoDate, offsetMonths = 0) {
   return { from: first.toISOString().slice(0, 10), to: last.toISOString().slice(0, 10) };
 }
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The dates are optional filters (4-N16): empty shows everything pending; a period needs «Hasta» after «Desde». */
 function validRange(from, to) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return false;
-  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
-  return days >= 0 && days <= 30;
+  if ((from && !DATE.test(from)) || (to && !DATE.test(to))) return false;
+  return !from || !to || from <= to;
 }
 
 const round2 = value => Math.round((value + Number.EPSILON) * 100) / 100;
+const dayNumber = isoDate => Date.parse(`${isoDate}T00:00:00Z`) / 86_400_000;
+
+/** A pending operation of the server as the screen keeps it. */
+export function toRow(operation) {
+  return { ...operation, id: operation.operationId, currency: operation.currencyCode ?? null, estimate: operation.estimatedNet };
+}
 
 /**
- * What the e-CF bills of a service, as the server decides it (ServiceBillability, 3-N11): completed or in exception,
- * with an executed quantity, unless OCC excluded it from billing in the review.
+ * Why `item` cannot join `selected` in one invoice (4-N06), in Spanish, or null when it fits: the same airline and
+ * currency, and the server limits of operations, lines and days. Nothing is ever cut silently.
  */
-const isBilled = service => ['Completed', 'Exception'].includes(service.executionStatus) &&
-  service.executedQuantity > 0 && service.blockingReason !== 'excluded_in_review';
+export function selectionProblem(selected, item, limits = DEFAULT_LIMITS) {
+  if (selected.some(entry => entry.id === item.id)) return null;
+  if (!item.ready) return 'La operación no está lista para facturar: revise su estado.';
+  if (selected.length >= limits.maxOperations) return `Una factura admite hasta ${limits.maxOperations} operaciones.`;
+  const first = selected[0];
+  if (first && first.airlineId !== item.airlineId) return 'Solo se agrupan operaciones de la misma aerolínea.';
+  if (first && first.currency !== item.currency) return 'Solo se agrupan operaciones de la misma moneda.';
+  const lines = selected.reduce((sum, entry) => sum + entry.lineEstimate, 0) + item.lineEstimate;
+  if (lines > limits.maxLines) return `Superaría las ${limits.maxLines} líneas de una factura.`;
+  const days = [...selected.map(entry => entry.operationDate), item.operationDate].map(dayNumber);
+  if (Math.max(...days) - Math.min(...days) >= limits.maxDays)
+    return `Superaría los ${limits.maxDays} días de operaciones de una factura.`;
+  return null;
+}
 
-/**
- * One row per approved operation not yet invoiced (ADR-0035). It can be invoiced when every service the
- * invoice bills is ready; the amount is an estimate before packages and minimums, the invoice values it.
- */
-export function groupOperations(services) {
-  const groups = new Map();
-  for (const service of services) {
-    if (service.preinvoiceId) continue;
-    const group = groups.get(service.operationId) ?? {
-      id: service.operationId, operationCode: service.operationCode, operationDate: service.operationDate,
-      airlineId: service.airlineId, airlineName: service.airlineName, flightNumber: service.flightNumber,
-      contractCode: service.contractCode, currency: null, services: [], estimate: 0, blockingReason: null,
-    };
-    group.services.push(service);
-    if (service.ready) {
-      group.currency ??= service.frozenCurrency;
-      group.estimate = round2(group.estimate + (service.amount ?? 0));
-    } else if (isBilled(service) && !group.blockingReason) {
-      group.blockingReason = service.blockingReason ?? 'requires_review';
-    }
-    groups.set(service.operationId, group);
+/** From the oldest, the candidates that fit together in one invoice, and why the next one does not (null when all fit). */
+function fitting(candidates, limits) {
+  const chosen = [];
+  for (const item of candidates) {
+    const stop = selectionProblem(chosen, item, limits);
+    if (stop) return { chosen, stop };
+    chosen.push(item);
   }
-  return [...groups.values()].map(group => ({
-    ...group,
-    ready: !group.blockingReason && group.services.some(service => service.ready),
-    blockingReason: group.blockingReason ?? (group.services.some(service => service.ready) ? null : 'nothing_to_invoice'),
-  })).sort((a, b) => a.operationDate.localeCompare(b.operationDate) || a.operationCode.localeCompare(b.operationCode));
+  return { chosen, stop: null };
+}
+
+/** The server's order of «Por facturar»: operation date, operation code and operation id. */
+function byPosition(left, right) {
+  if (left.operationDate !== right.operationDate) return left.operationDate < right.operationDate ? -1 : 1;
+  if (left.operationCode !== right.operationCode) return left.operationCode < right.operationCode ? -1 : 1;
+  if (left.id === right.id) return 0;
+  return left.id < right.id ? -1 : 1;
+}
+
+/** The rows on screen with the new ones added once each, in the server's order. */
+function merged(rows, more) {
+  const byId = new Map(rows.map(item => [item.id, item]));
+  for (const item of more) if (!byId.has(item.id)) byId.set(item.id, item);
+  return [...byId.values()].sort(byPosition);
 }
 
 export function useToInvoiceData(initialStationId) {
@@ -75,117 +95,256 @@ export function useToInvoiceData(initialStationId) {
     .filter(scope => scope?.stationId && scope?.stationCode), []);
   const [stationId, setStationId] = useState(
     scopes.some(scope => scope.stationId === initialStationId) ? initialStationId : scopes[0]?.stationId ?? '');
-  const today = useMemo(() => localToday(), []);
-  const initial = useMemo(() => sundayWeek(today, -1), [today]);
-  const [from, setFrom] = useState(initial.from);
-  const [to, setTo] = useState(initial.to);
-  const [revision, setRevision] = useState(0);
-  const [page, setPage] = useState(null);
-  const [status, setStatus] = useState('loading');
+  // 4-N10: the periods start from the business day of Santo Domingo, never from the browser or UTC day.
+  const today = useMemo(() => businessToday(), []);
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [airline, setAirline] = useState('all');
   const [query, setQuery] = useState('');
+  const [revision, setRevision] = useState(0);
+  const [data, setData] = useState(EMPTY);
+  const [status, setStatus] = useState('loading');
+  const [stale, setStale] = useState(false);
+  const [more, setMore] = useState('idle');
   const [pickedIds, setSelectedIds] = useState([]);
+  const [notice, setNotice] = useState(null);
+  const [picking, setPicking] = useState(false);
   const [issue, setIssue] = useState({ status: 'idle' });
-  const attempt = useRef(null);
+  const [closure, setClosure] = useState({ status: 'idle' });
+  const issueKeys = useRef(createCommandKeyHolder());
+  const closeKeys = useRef(createCommandKeyHolder());
+  const generation = useRef(0);
+  // The filters whose rows are on screen. A revalidation of the same filters keeps them until the new page arrives;
+  // other filters (another station, airline or period) never show them, nor call them «los datos anteriores».
+  const shownFilters = useRef(null);
   const rangeIsValid = validRange(from, to);
+  const filters = useMemo(() => ({ stationId, from: from || null, to: to || null,
+    airlineId: airline === 'all' ? null : airline }), [stationId, from, to, airline]);
+  const refresh = useCallback(() => setRevision(value => value + 1), []);
 
   useEffect(() => {
     if (!accountId) return undefined;
+    // 4-N11: an issuance announces each invoiced operation and the new invoice.
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('finance_approved_services')) setRevision(value => value + 1);
+      if (TO_INVOICE_RESOURCES.some(resource => resources.includes(resource))) refresh();
     });
     void observer.start().catch(() => {});
-    const refresh = () => setRevision(value => value + 1);
     window.addEventListener('focus', refresh);
     return () => { window.removeEventListener('focus', refresh); void observer.stop(); };
-  }, [accountId]);
+  }, [accountId, refresh]);
 
   useEffect(() => {
     if (!stationId || !rangeIsValid) {
+      generation.current += 1;
+      shownFilters.current = null;
       setStatus(!stationId ? 'forbidden' : 'invalid-range');
-      setPage(null);
+      setData(EMPTY);
       return undefined;
     }
     const controller = new AbortController();
-    setStatus(current => (current === 'success' ? 'success' : 'loading'));
-    getApprovedServices({ stationId, from, to }, { signal: controller.signal })
-      .then(result => {
-        if (controller.signal.aborted) return;
-        setPage(result);
+    const current = ++generation.current;
+    const key = JSON.stringify(filters);
+    if (shownFilters.current === key) setStatus(value => (value === 'success' ? 'success' : 'loading'));
+    else {
+      // Other filters: the previous rows leave the screen at once, so none of them can be ticked meanwhile.
+      shownFilters.current = null;
+      setData(EMPTY);
+      setStale(false);
+      setMore('idle');
+      setStatus('loading');
+    }
+    getFinancePendingOperations({ ...filters, limit: PAGE_SIZE }, { signal: controller.signal })
+      .then(page => {
+        if (controller.signal.aborted || current !== generation.current) return;
+        shownFilters.current = key;
+        setData({ operations: page.operations.map(toRow), nextCursor: page.nextCursor ?? null,
+          totalPending: page.totalPending, airlines: page.airlines, limits: page.limits });
         setStatus('success');
+        setStale(false);
+        setMore('idle');
       })
       .catch(error => {
-        if (controller.signal.aborted || isAbortError(error)) return;
-        setPage(null);
-        setStatus(error?.status === 401 ? 'unauthorized' : error?.status === 403 || error?.status === 404 ? 'forbidden' : 'error');
+        if (controller.signal.aborted || isAbortError(error) || current !== generation.current) return;
+        const kind = error?.status === 401 ? 'unauthorized'
+          : error?.status === 403 || error?.status === 404 ? 'forbidden' : 'error';
+        // Only the rows of these same filters stay, marked as not updated; anything else is the error itself.
+        const keep = kind === 'error' && shownFilters.current === key;
+        if (!keep) {
+          shownFilters.current = null;
+          setData(EMPTY);
+        }
+        setStale(keep);
+        setStatus(value => (keep && value === 'success' ? 'success' : kind));
       });
     return () => abortForEffectCleanup(controller);
-  }, [stationId, from, to, rangeIsValid, revision]);
+  }, [filters, rangeIsValid, revision, stationId]);
 
-  const operations = useMemo(() => groupOperations(page?.services ?? []), [page]);
+  const operations = data.operations;
+  const limits = data.limits ?? DEFAULT_LIMITS;
   // A refresh can invoice or block an operation: only still-ready operations stay selected.
-  const selectedIds = useMemo(() => pickedIds.filter(id => operations.some(item => item.id === id && item.ready)),
+  const selected = useMemo(() => pickedIds.map(id => operations.find(item => item.id === id && item.ready)).filter(Boolean),
     [pickedIds, operations]);
-
-  const airlines = useMemo(() => [...new Set(operations.map(item => item.airlineName))].sort(), [operations]);
-  const filtered = useMemo(() => operations.filter(item => {
+  const selectedIds = useMemo(() => selected.map(item => item.id), [selected]);
+  const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const matches = !normalized || [item.operationCode, item.flightNumber ?? '', item.contractCode ?? '']
-      .some(value => value.toLowerCase().includes(normalized));
-    return matches && (airline === 'all' || item.airlineName === airline);
-  }), [operations, query, airline]);
-  const selected = useMemo(() => selectedIds.map(id => operations.find(item => item.id === id)).filter(Boolean),
-    [selectedIds, operations]);
-  const canSelect = item => item.ready && (selectedIds.includes(item.id) || selected.length < MAX_OPERATIONS &&
-    (!selected.length || selected[0].airlineId === item.airlineId && selected[0].currency === item.currency));
+    return operations.filter(item => !normalized || [item.operationCode, item.flightNumber ?? '', item.contractCode ?? '']
+      .some(value => value.toLowerCase().includes(normalized)));
+  }, [operations, query]);
+  const whyNot = item => selectionProblem(selected, item, limits);
+  const canSelect = item => whyNot(item) === null;
   const toggle = id => {
     setIssue(current => (current.status === 'issued' ? current : { status: 'idle' }));
-    setSelectedIds(current => (current.includes(id) ? current.filter(item => item !== id) : [...selectedIds.filter(item => item !== id), id]));
+    setNotice(null);
+    setSelectedIds(current => (current.includes(id) ? current.filter(item => item !== id) : [...selectedIds, id]));
   };
-  const selectAirline = () => {
+  /**
+   * «Toda la aerolínea del período»: from the oldest while they fit in one invoice, and says where it stopped (4-N06).
+   * The whole period counts, not only the rows loaded: while the server has more pages, the airline's own pages are
+   * read first, and the search is cleared so every chosen operation is on screen. Nothing is ever cut silently.
+   */
+  async function selectAirline() {
     const first = selected[0] ?? filtered.find(item => item.ready);
-    if (!first) return;
-    setSelectedIds(filtered.filter(item => item.ready && item.airlineId === first.airlineId && item.currency === first.currency)
-      .slice(0, MAX_OPERATIONS).map(item => item.id));
-  };
+    if (!first || picking) return;
+    const matches = item => item.ready && item.airlineId === first.airlineId && item.currency === first.currency;
+    setQuery('');
+    let rows = operations;
+    let complete = !data.nextCursor;
+    let failed = false;
+    if (!complete) {
+      const current = generation.current;
+      const fetched = [];
+      let cursor = null;
+      setPicking(true);
+      setNotice(null);
+      try {
+        for (let read = 0; read < MAX_AIRLINE_PAGES; read += 1) {
+          const page = await getFinancePendingOperations({ ...filters, airlineId: first.airlineId, cursor,
+            limit: AIRLINE_PAGE_SIZE });
+          if (current !== generation.current) return;
+          fetched.push(...page.operations.map(toRow));
+          cursor = page.nextCursor ?? null;
+          if (!cursor) {
+            complete = true;
+            break;
+          }
+          // Once one operation does not fit, no later one does: the invoice is full.
+          if (fitting(fetched.filter(matches), limits).stop) break;
+        }
+      } catch (error) {
+        if (current !== generation.current) return;
+        if (error?.status === 401) {
+          setStatus('unauthorized');
+          return;
+        }
+        failed = true;
+      } finally {
+        setPicking(false);
+      }
+      rows = merged(operations, fetched);
+      setData(previous => ({ ...previous, operations: merged(previous.operations, fetched) }));
+    }
+    const candidates = rows.filter(matches);
+    const { chosen, stop } = fitting(candidates, limits);
+    const airlineName = first.airlineName;
+    setSelectedIds(chosen.map(item => item.id));
+    if (failed)
+      setNotice(`No se pudieron leer todas las operaciones pendientes de ${airlineName}: se eligieron ${chosen.length} de las cargadas. Vuelva a pulsar «Toda la aerolínea del período» para completar la selección.`);
+    else if (stop && complete)
+      setNotice(`Se eligieron ${chosen.length} de ${candidates.length} operaciones de ${airlineName}: el resto no cabe en una factura. ${stop} Emita esta factura y continúe con las demás.`);
+    else if (stop)
+      setNotice(`Se eligieron ${chosen.length} operaciones de ${airlineName}, las que caben en una factura; quedan más pendientes. ${stop} Emita esta factura y continúe con las demás.`);
+    else if (!complete)
+      setNotice(`Se eligieron ${chosen.length} operaciones de ${airlineName}, pero quedan pendientes sin revisar. Emita esta factura y continúe con las demás.`);
+    else setNotice(null);
+  }
   const net = round2(selected.reduce((sum, item) => sum + item.estimate, 0));
   const summary = { count: selected.length, airlineName: selected[0]?.airlineName ?? null, currency: selected[0]?.currency ?? null,
-    net, tax: round2(net * ITBIS_RATE), total: round2(net * (1 + ITBIS_RATE)) };
+    lines: selected.reduce((sum, item) => sum + item.lineEstimate, 0), net, tax: round2(net * ITBIS_RATE),
+    total: round2(net * (1 + ITBIS_RATE)) };
 
-  function changeRange(range) {
-    setFrom(range.from);
-    setTo(range.to);
+  function changeFilters(next) {
+    setFrom(next.from);
+    setTo(next.to);
     setSelectedIds([]);
+    setNotice(null);
+  }
+
+  async function loadMore() {
+    if (!data.nextCursor || more === 'loading') return;
+    const current = generation.current;
+    setMore('loading');
+    try {
+      const page = await getFinancePendingOperations({ ...filters, cursor: data.nextCursor, limit: PAGE_SIZE });
+      if (current !== generation.current) return;
+      // Rows «Toda la aerolínea del período» already brought keep their place in the server's order.
+      setData(previous => ({ operations: merged(previous.operations, page.operations.map(toRow)),
+        nextCursor: page.nextCursor ?? null, totalPending: page.totalPending, airlines: page.airlines, limits: page.limits }));
+      setMore('idle');
+    } catch (error) {
+      if (current !== generation.current) return;
+      if (error?.status === 401) setStatus('unauthorized');
+      setMore('error');
+    }
   }
 
   async function issueInvoice() {
     if (!selected.length || issue.status === 'issuing') return;
-    const operationIds = selectedIds.slice().sort();
-    const signature = [stationId, ...operationIds].join('|');
-    if (attempt.current?.signature !== signature) attempt.current = { signature, requestId: crypto.randomUUID() };
+    const operationIds = selected.map(item => item.id).sort();
+    const versions = new Map(selected.map(item => [item.id, item.version]));
+    const intent = { stationId, operationIds };
     setIssue({ status: 'issuing' });
     try {
-      const invoice = await issueInvoiceFromOperations({ stationId, operationIds, requestId: attempt.current.requestId });
-      attempt.current = null;
+      // The key of the intent and the versions it saw are kept while an uncertain result is retried (4-N29).
+      const invoice = await issueKeys.current.run('issue', intent,
+        (key, command) => issueInvoiceFromOperations({ ...command, requestId: key }),
+        () => ({ ...intent, operationVersions: operationIds.map(id => ({ operationId: id, version: versions.get(id) })) }));
       setSelectedIds([]);
+      setNotice(null);
       setIssue({ status: 'issued', invoice, airlineName: summary.airlineName });
-      setRevision(value => value + 1);
+      refresh();
     } catch (error) {
-      const stale = error?.status === 409;
-      if (stale) attempt.current = null;
+      if (error?.code === 'zero_total') {
+        // 4-N07: nothing was issued; Finance can close them without charge with a reason.
+        setIssue({ status: 'zero', message: invoicingError(error),
+          operations: selected.map(item => ({ id: item.id, version: item.version, operationCode: item.operationCode })) });
+        return;
+      }
       setIssue({ status: 'error', message: invoicingError(error) });
-      if (stale || error?.status === 422) setRevision(value => value + 1);
+      if (error?.status === 409 || error?.status === 422) refresh();
+    }
+  }
+
+  async function closeWithoutCharge(reason) {
+    if (issue.status !== 'zero' || closure.status === 'closing') return false;
+    const command = { stationId, reason: reason.trim(),
+      operations: issue.operations.map(item => ({ operationId: item.id, version: item.version })) };
+    setClosure({ status: 'closing' });
+    try {
+      const result = await closeKeys.current.run('no-charge', command, key => closeOperationsWithoutCharge(command, key));
+      setClosure({ status: 'idle' });
+      setSelectedIds([]);
+      setIssue({ status: 'closed', count: result.operationIds.length });
+      refresh();
+      return true;
+    } catch (error) {
+      setClosure({ status: 'error', message: closureError(error) });
+      if (error?.status === 409 || error?.status === 422) refresh();
+      return false;
     }
   }
 
   return {
-    status, operations: filtered, totalOperations: operations.length, hasMore: page?.hasMore ?? false,
-    scopes, stationId, setStationId: value => { setStationId(value); setSelectedIds([]); },
-    from, setFrom: value => changeRange({ from: value, to }), to, setTo: value => changeRange({ from, to: value }),
-    setWeek: offset => changeRange(sundayWeek(today, offset)), setMonth: offset => changeRange(calendarMonth(today, offset)),
-    airlines, airline, setAirline, query, setQuery,
-    selectedIds, canSelect, toggle, selectAirline, clearSelection: () => setSelectedIds([]), summary,
+    status, stale, operations: filtered, totalLoaded: operations.length, totalPending: data.totalPending,
+    hasMore: Boolean(data.nextCursor), more, loadMore, limits, airlines: data.airlines,
+    scopes, stationId, setStationId: value => { setStationId(value); setSelectedIds([]); setNotice(null); },
+    from, setFrom: value => changeFilters({ from: value, to }), to, setTo: value => changeFilters({ from, to: value }),
+    setWeek: offset => changeFilters(sundayWeek(today, offset)), setMonth: offset => changeFilters(calendarMonth(today, offset)),
+    clearPeriod: () => changeFilters({ from: '', to: '' }),
+    airline, setAirline: value => { setAirline(value); setSelectedIds([]); setNotice(null); }, query, setQuery,
+    selectedIds, canSelect, whyNot, toggle, selectAirline, picking, notice,
+    clearSelection: () => { setSelectedIds([]); setNotice(null); }, summary,
     issue, issueInvoice, dismissIssue: () => setIssue({ status: 'idle' }),
-    retry: () => setRevision(value => value + 1),
+    closure, closeWithoutCharge, resetClosure: () => setClosure({ status: 'idle' }),
+    retry: refresh,
   };
 }

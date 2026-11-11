@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
@@ -13,7 +14,8 @@ internal static class FinanceTreasuryBalances
         var notes = context.Set<FinanceTreasuryAdjustmentNote>().AsNoTracking().Where(n => invoiceIds.Contains(n.InvoiceId));
         if (asOf is { } day)
         {
-            var end = new DateTimeOffset(day.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+            // 4-N10: what was recorded until the end of the business day in Santo Domingo.
+            var end = BusinessCalendar.StartOfDay(day.AddDays(1));
             movements = movements.Where(m => m.EffectiveOn <= day && m.CreatedAt < end);
             notes = notes.Where(n => n.EffectiveOn <= day && n.CreatedAt < end);
         }

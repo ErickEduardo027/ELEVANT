@@ -8,7 +8,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 
 namespace Elevant.Api.Controllers;
 
-/// <summary>Non-fiscal invoices with balances, payments and credit notes.</summary>
+/// <summary>«Facturas»: the invoices with their balance, payments and adjustment notes.</summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Authorize]
@@ -16,47 +16,54 @@ namespace Elevant.Api.Controllers;
 [Route("api/v{version:apiVersion}/finance/invoices")]
 public sealed class FinanceInvoiceLedgerController(IFinanceInvoiceLedgerStore store) : ControllerBase
 {
+    /// <summary>Longest text «Facturas» searches by: an e-NCF or invoice number prefix, or part of the airline.</summary>
+    public const int MaxSearchLength = 40;
+
+    /// <summary>
+    /// The invoices of the actor's stations, newest first (4-N21). <c>search</c> (1 to 40 characters once trimmed)
+    /// matches the start of the e-NCF or of the internal number, or any part of the airline name; <c>page</c> starts at
+    /// 1 and <c>limit</c> takes 1 to 100. An invalid query is 400 <c>invalid_invoice_query</c>.
+    /// </summary>
     [HttpGet(Name = "ListFinanceInvoices")]
+    [FinanceQueryProblem(FinanceResults.InvalidInvoiceQueryCode)]
     [ProducesResponseType<FinanceInvoicePageData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
     public async Task<IActionResult> List([FromQuery] Guid? stationId, [FromQuery] Guid? airlineId,
-        [FromQuery] string? status, [FromQuery] int page = 1, [FromQuery] int limit = 25,
+        [FromQuery] string? status, [FromQuery] string? search, [FromQuery] int page = 1, [FromQuery] int limit = 25,
         CancellationToken cancellationToken = default)
     {
-        if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await store.ListAsync(actorId, stationId, airlineId, status, page, limit, cancellationToken);
-        return result is null ? Forbid() : Ok(result);
+        if (!TryActor(out var actorId)) return FinanceResults.Unauthorized(this);
+        var text = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        if (page < 1 || limit is < 1 or > 100 || text is { Length: > MaxSearchLength })
+            return FinanceResults.Coded(this, StatusCodes.Status400BadRequest, "The invoice query is invalid.",
+                FinanceResults.InvalidInvoiceQueryCode);
+        var result = await store.ListAsync(actorId, stationId, airlineId, status, page, limit, text, cancellationToken);
+        return result is null ? FinanceResults.Forbidden(this, "Invoices are forbidden in this scope.") : Ok(result);
     }
 
     [HttpGet("{invoiceId:guid}", Name = "GetFinanceInvoice")]
     [ProducesResponseType<FinanceInvoiceDetailData>(StatusCodes.Status200OK, "application/json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
     public async Task<IActionResult> Get(Guid invoiceId, CancellationToken cancellationToken)
     {
-        if (!TryActor(out var actorId)) return Unauthorized();
+        if (!TryActor(out var actorId)) return FinanceResults.Unauthorized(this);
         var result = await store.GetAsync(actorId, invoiceId, cancellationToken);
-        return result is null ? Problem(statusCode: 404, title: "Invoice was not found.") : Ok(result);
+        return result is null ? FinanceResults.NotFound(this, "Invoice was not found.") : Ok(result);
     }
 
+    /// <summary>
+    /// 4-N12: the legacy credit note bypassed «Notas de ajuste» and its permission; it is retired. Credit and debit
+    /// notes are issued from the invoice's adjustment notes (POST finance/invoices/{id}/adjustment-notes).
+    /// </summary>
     [HttpPost("{invoiceId:guid}/credit-notes", Name = "IssueFinanceCreditNote")]
-    [ProducesResponseType<FinanceIdResponse>(StatusCodes.Status200OK, "application/json")]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest, "application/problem+json")]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict, "application/problem+json")]
     [RequestSizeLimit(8192)]
-    public async Task<IActionResult> IssueCreditNote(Guid invoiceId, [FromBody] IssueCreditNoteInput input,
-        CancellationToken cancellationToken)
-    {
-        if (!TryActor(out var actorId)) return Unauthorized();
-        var result = await store.IssueCreditNoteAsync(actorId, invoiceId, input, cancellationToken);
-        return result.Failure switch
-        {
-            null => Ok(new FinanceIdResponse(result.Id!.Value)),
-            FinanceCatalogFailure.Forbidden => Forbid(),
-            FinanceCatalogFailure.NotFound => Problem(statusCode: 404, title: "Invoice was not found."),
-            FinanceCatalogFailure.Invalid => Problem(statusCode: 400, title: "Invalid credit note."),
-            _ => Problem(statusCode: 409, title: "The credit note exceeds the balance or was already issued."),
-        };
-    }
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status410Gone, "application/problem+json")]
+    public IActionResult IssueCreditNote(Guid invoiceId) =>
+        FinanceResults.LegacyRetired(this, "Esta vía se retiró: corrija la factura con sus notas de ajuste.");
 
     private bool TryActor(out Guid accountId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out accountId) && accountId != Guid.Empty;

@@ -18,16 +18,19 @@ namespace Elevant.Api.Controllers;
 [ProducesResponseType<ProblemDetails>(403)]
 [ProducesResponseType<ProblemDetails>(404)]
 [Route("api/v{version:apiVersion}/airline/portal/treasury")]
-public sealed class AirlineTreasuryController(IFinanceTreasuryStore treasury) : ControllerBase
+public sealed class AirlineTreasuryController(IFinanceTreasuryStore treasury, IFinancialDocumentPdfRenderer renderer)
+    : ControllerBase
 {
     private bool Actor(out Guid id) => Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out id);
+    /// <summary>Phase 4, block A: every refusal but a 401 carries the default code of its status.</summary>
     private ActionResult<T> Error<T>(int status)
     {
         if (status == 401) Response.Headers.WWWAuthenticate = "Bearer";
-        return new ObjectResult(new ProblemDetails { Status = status, Instance = HttpContext.Request.Path,
+        var problem = new ProblemDetails { Status = status, Instance = HttpContext.Request.Path,
             Title = status switch { 401 => "Authentication failed.", 403 => "Airline access is forbidden.",
-                400 => "Invalid treasury query.", _ => "Document was not found." } })
-            { StatusCode = status, ContentTypes = { "application/problem+json" } };
+                400 => "Invalid treasury query.", _ => "Document was not found." } };
+        if (status != 401) problem.Extensions["code"] = FinanceTreasuryController.TreasuryCode(status);
+        return new ObjectResult(problem) { StatusCode = status, ContentTypes = { "application/problem+json" } };
     }
     private ActionResult<TResponse> Read<TData, TResponse>(AirlineTreasuryReadResult<TData> result, Func<TData, TResponse> map) where TData : class
     {
@@ -58,6 +61,25 @@ public sealed class AirlineTreasuryController(IFinanceTreasuryStore treasury) : 
         if (!Actor(out var account)) return Error<AirlineTreasuryReceiptResponse>(401);
         return Read<AirlineTreasuryReceiptData, AirlineTreasuryReceiptResponse>(
             await treasury.PortalReceiptAsync(account, receiptId, cancellationToken), AirlineTreasuryResponseMapper.Map);
+    }
+    /// <summary>
+    /// 4-N17: the PDF of a credit or debit note of the airline's own invoice, within the portal's scope: the e-NCF
+    /// E34/E33 and its frozen ITBIS, «Simulación — sin validez fiscal». Another airline's note is 404.
+    /// </summary>
+    [HttpGet("~/api/v{version:apiVersion}/airline/portal/adjustment-notes/{noteId:guid}/document",
+        Name = "GetAirlineAdjustmentNoteDocument")]
+    [Produces("application/pdf")]
+    [ProducesResponseType<FileContentResult>(StatusCodes.Status200OK, "application/pdf")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden, "application/problem+json")]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound, "application/problem+json")]
+    public async Task<IActionResult> AdjustmentNoteDocument(Guid noteId, CancellationToken cancellationToken)
+    {
+        if (!Actor(out var account)) return Error<object>(401).Result!;
+        var result = await treasury.PortalAdjustmentNoteDocumentAsync(account, noteId, cancellationToken);
+        if (!result.IsSuccess)
+            return Error<object>(result.Failure switch { FinanceTreasuryFailure.Forbidden => 403, _ => 404 }).Result!;
+        return File(renderer.RenderAdjustmentNote(result.Data!), "application/pdf", $"nota-{result.Data!.Number}.pdf");
     }
     [HttpGet("invoices/{invoiceId:guid}/adjustment-notes", Name = "GetAirlineTreasuryAdjustmentNotes")]
     [ProducesResponseType<AirlineTreasuryAdjustmentsResponse>(200)]

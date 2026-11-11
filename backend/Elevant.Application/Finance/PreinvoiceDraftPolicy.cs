@@ -20,17 +20,20 @@ public static class PreinvoiceDraftPolicy
     // The integer scaled to four decimal places stays below JS MAX_SAFE_INTEGER.
     private const decimal MaximumMoney = 900_000_000_000m;
 
+    /// <summary>The services a standalone draft takes; the issuance values up to an invoice's lines (4-N06).</summary>
+    public const int DefaultMaxServices = 100;
+
     public static PreinvoiceDraftEvaluation Evaluate(
         Guid stationId, DateOnly from, DateOnly to,
-        IReadOnlyList<PreinvoiceDraftCandidate> candidates)
+        IReadOnlyList<PreinvoiceDraftCandidate> candidates, int maxServices = DefaultMaxServices)
     {
         ArgumentNullException.ThrowIfNull(candidates);
         if (stationId == Guid.Empty || !FinanceApprovedServicePolicy.IsValidWindow(from, to))
             return PreinvoiceDraftEvaluation.Blocked("invalid_range");
-        if (candidates.Count is < 1 or > 100 ||
+        if (candidates.Count < 1 || candidates.Count > maxServices ||
             candidates.Any(line => line.ServiceId == Guid.Empty) ||
             candidates.Select(line => line.ServiceId).Distinct().Count() != candidates.Count)
-            return PreinvoiceDraftEvaluation.Blocked(candidates.Count is < 1 or > 100
+            return PreinvoiceDraftEvaluation.Blocked(candidates.Count < 1 || candidates.Count > maxServices
                 ? "invalid_selection" : "duplicate_service");
 
         var airlineId = candidates[0].AirlineId;

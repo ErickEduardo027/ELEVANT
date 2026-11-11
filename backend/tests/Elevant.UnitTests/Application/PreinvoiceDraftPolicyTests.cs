@@ -46,6 +46,17 @@ public sealed class PreinvoiceDraftPolicyTests
             StationId, default, default, [Candidate(Guid.NewGuid(), 1m)]).Failure);
     }
 
+    /// <summary>4-N06: the issuance values up to an invoice's 500 lines; a standalone draft keeps 100.</summary>
+    [Fact]
+    public void TheIssuanceValuesUpToTheInvoiceLineLimit()
+    {
+        var services = Enumerable.Range(0, 320).Select(_ => Candidate(Guid.NewGuid(), 1m)).ToArray();
+        Assert.Equal("invalid_selection", Evaluate(services).Failure);
+        Assert.True(PreinvoiceDraftPolicy.Evaluate(StationId, Date, Date, services, FinanceInvoicePolicy.MaxLines).Ready);
+        Assert.Equal("invalid_selection", PreinvoiceDraftPolicy.Evaluate(StationId, Date, Date,
+            Enumerable.Range(0, 501).Select(_ => Candidate(Guid.NewGuid(), 1m)).ToArray(), FinanceInvoicePolicy.MaxLines).Failure);
+    }
+
     private static PreinvoiceDraftEvaluation Evaluate(IReadOnlyList<PreinvoiceDraftCandidate> lines) =>
         PreinvoiceDraftPolicy.Evaluate(StationId, Date, Date, lines);
 

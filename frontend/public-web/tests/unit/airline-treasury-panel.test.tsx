@@ -1,9 +1,16 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { SessionResponse, AirlinePortalBootstrapResponse } from "@elevant/api-client";
 import { AirlineSessionProvider, AIRLINE_SESSION_STORAGE_KEY } from "@/components/auth/AirlineSessionProvider";
 import { AirlineTreasuryPanel } from "@/components/portal/AirlineTreasuryPanel";
-vi.mock("@/lib/airline-change-observer", () => ({ createPublicAirlineChangeObserver: () => ({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() }) }));
+// The live notices of the session reach the panel through this observer.
+const observer = vi.hoisted(() => ({ onChanges: null as null | ((resources: string[]) => void) }));
+vi.mock("@/lib/airline-change-observer", () => ({ createPublicAirlineChangeObserver: (options: { onChanges: (resources: string[]) => void }) => {
+  observer.onChanges = options.onChanges;
+  return { start: vi.fn().mockResolvedValue(undefined), stop: vi.fn() };
+} }));
+// While set, the statement reads wait for it: a revalidation in flight.
+let statementGate: Promise<void> | null = null;
 const actor: SessionResponse["actor"] = { accountId: "40000000-0000-7000-8000-000000000003", email: "synthetic@airline.invalid", displayName: "Airline",
   roles: [{ roleId: "41000000-0000-7000-8000-000000000001", code: "AIRLINE_CLIENT", name: "Airline", portal: "airline_portal", userType: "airline_client" }],
   memberships: [{ membershipId: "42000000-0000-7000-8000-000000000001", organizationId: "43000000-0000-7000-8000-000000000001", organizationCode: "QA", organizationName: "QA Airline", organizationType: "airline_customer", kind: "airline_client" }], stationScopes: [] };
@@ -24,6 +31,7 @@ function mount(invoiceId?: string, missing = false) {
     const url = new URL(String(input)); requests.push(url.pathname + url.search);
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer synthetic-token");
     if (url.pathname.includes("/treasury/") && missing) return new Response(JSON.stringify({ title: "private transport detail" }), { status: 404 });
+    if (url.pathname.includes("/statements") && statementGate) await statementGate;
     const body = url.pathname.endsWith("/bootstrap") ? bootstrap : url.pathname.endsWith("/auth/session") ? { actor } : url.pathname.includes("/statements") ? statement : url.pathname.includes("/receipts/") ? receipt :
       { invoice, lines: [{ id: "line-own", lineNumber: 1, kind: "Service", parentLineNumber: null, operationCode: "OP-QA", operationDate: "2026-10-18", serviceCode: "RAMP", serviceName: "Rampa", quantity: 1, billingUnit: "operation", unitPrice: 1000, amount: 1000, reason: null }], movements: [{ id: "legacy-payment", kind: "LegacyPayment", currencyCode: "USD", amount: 50, reference: "LEGACY-50", effectiveOn: "2026-10-18" },
         { id: "application", receiptId: "receipt-own", invoiceId: invoice.id, kind: "Application", currencyCode: "USD", amount: 300, reference: "", effectiveOn: "2026-10-18" }],
@@ -33,7 +41,7 @@ function mount(invoiceId?: string, missing = false) {
   render(<AirlineSessionProvider baseUrl="https://api.example.test"><AirlineTreasuryPanel invoiceId={invoiceId} /></AirlineSessionProvider>);
   return requests;
 }
-afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup(); sessionStorage.clear(); vi.unstubAllGlobals(); statementGate = null; observer.onChanges = null; });
 it("shows tenant-only cutoff statements and separates currencies without mutation controls", async () => {
   const requests = mount();
   expect(await screen.findByRole("heading", { name: "USD" })).toBeInTheDocument();
@@ -43,6 +51,19 @@ it("shows tenant-only cutoff statements and separates currencies without mutatio
   await waitFor(() => expect(requests).toContain("/api/v1/airline/portal/treasury/statements?asOf=2026-10-01"));
   expect(requests.some(path => path.includes("organizationId") || path.includes("airlineId="))).toBe(false);
   expect(screen.queryByRole("button", { name: /Aplicar|Devolver|Emitir nota|Registrar cobro/ })).not.toBeInTheDocument();
+});
+it("cuts the statement on the business day of Santo Domingo, not the UTC day (4-N10)", async () => {
+  // 23:30 in Santo Domingo on 5/11 is already 6/11 in UTC.
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-11-06T03:30:00Z") });
+  try {
+    const requests = mount();
+    await waitFor(() => expect(requests).toContain("/api/v1/airline/portal/treasury/statements?asOf=2026-11-05"));
+    expect(await screen.findByText(/hora de República Dominicana/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Fecha de corte")).toHaveAttribute("max", "2026-11-05");
+    expect(screen.queryByText(/día UTC/)).not.toBeInTheDocument();
+  } finally {
+    vi.useRealTimers();
+  }
 });
 it("shows combined balance, partial applications, historical payment and new adjustment note", async () => {
   mount("invoice-own");
@@ -73,4 +94,28 @@ it("navigates a partial application to the real receipt and its recorded exchang
   expect(requests).toContain("/api/v1/airline/portal/treasury/receipts/receipt-own");
   fireEvent.click(screen.getByRole("button", { name: "Ver factura vinculada" }));
   expect(await screen.findByText(/TC-OWN/)).toBeInTheDocument();
+});
+
+it("keeps the statement on screen while a treasury notice reads it again, naming each invoice (4-N25, 4-N30)", async () => {
+  const requests = mount();
+  expect(await screen.findByText("Factura NF-OWN · PUJ")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Ver factura NF-OWN" })).toBeInTheDocument();
+  await waitFor(() => expect(observer.onChanges).not.toBeNull());
+  let release!: () => void;
+  statementGate = new Promise(resolve => { release = resolve; });
+  const before = requests.filter(path => path.includes("/statements")).length;
+  act(() => observer.onChanges!(["airline_treasury"]));
+  await waitFor(() => expect(requests.filter(path => path.includes("/statements")).length).toBe(before + 1));
+  expect(await screen.findByText("Actualizando…")).toBeInTheDocument();
+  expect(screen.getByText("Factura NF-OWN · PUJ")).toBeInTheDocument();
+  expect(screen.queryByText("Cargando estado financiero…")).not.toBeInTheDocument();
+  await act(async () => { release(); await statementGate; });
+  await waitFor(() => expect(screen.queryByText("Actualizando…")).not.toBeInTheDocument());
+  expect(screen.getByText("Factura NF-OWN · PUJ")).toBeInTheDocument();
+});
+
+it("offers each adjustment note's PDF in the invoice view (4-N17)", async () => {
+  mount("invoice-own");
+  expect(await screen.findByRole("button", { name: "Descargar PDF de Nota de crédito TC-OWN" })).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Factura NF-OWN · PUJ" })).toBeInTheDocument();
 });

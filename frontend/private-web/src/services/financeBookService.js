@@ -72,25 +72,27 @@ export const getContractApproval = versionId => commercialApi(`/finance/contract
 export const decideContractApproval = (versionId, values, idempotencyKey) =>
   commercialApi(`/finance/contract-approvals/${versionId}/decision`, keyed(json('POST', values), idempotencyKey));
 
-// Preinvoice draft edits
-export const editPreinvoiceLine = (preinvoiceId, lineId, values) =>
-  commercialApi(`/finance/preinvoices/${preinvoiceId}/lines/${lineId}`, json('PUT', values));
-export const addPreinvoiceAdjustment = (preinvoiceId, values) =>
-  commercialApi(`/finance/preinvoices/${preinvoiceId}/adjustments`, json('POST', values));
+/** Invoices per page of «Facturas» (4-N21). */
+export const INVOICE_PAGE_SIZE = 25;
 
-// Invoice ledger
+// Invoice ledger. 4-A, 4-N12: the preinvoice edits and the legacy payment and credit note are retired; invoices come
+// from «Por facturar», payments from «Cobros» and corrections from the adjustment notes.
+/**
+ * A page of «Facturas», newest first (4-N21): `{ stationId, status, search, page, limit }`. `search` (up to 40
+ * characters) matches the start of the e-NCF or of the internal number, or part of the airline name.
+ */
 export const listFinanceInvoices = (filters = {}) =>
-  commercialApi(`/finance/invoices${query({ page: 1, limit: 25, ...filters })}`);
+  commercialApi(`/finance/invoices${query({ page: 1, limit: INVOICE_PAGE_SIZE, ...filters })}`);
 export const getFinanceInvoice = id => commercialApi(`/finance/invoices/${id}`);
-export const issueCreditNote = (invoiceId, values) =>
-  commercialApi(`/finance/invoices/${invoiceId}/credit-notes`, json('POST', values));
-export const recordPartialPayment = values => commercialApi('/finance/payments', json('POST', values));
 
 // Reports
 export const listFinanceReports = () => commercialApi('/finance/reports');
 export const getFinanceReport = (key, filters) => commercialApi(`/finance/reports/${key}${query(filters)}`);
 
-/** Downloads an export with the session token; the browser saves it with the server's file name. */
+/**
+ * Downloads an export with the session token; the browser saves it with the server's file name. A refusal carries
+ * its Problem Details `code` (`unknown_finance_report`, `invalid_report_export_format`…) for the screen to explain.
+ */
 export async function downloadFinanceReport(key, format, filters) {
   const origin = String(process.env.NEXT_PUBLIC_ELEVANT_API_URL || '').replace(/\/$/, '');
   const token = readSession()?.token;
@@ -105,8 +107,10 @@ export async function downloadFinanceReport(key, format, filters) {
   }
   handleUnauthorizedResponse(response);
   if (!response.ok) {
+    const problem = await response.json().catch(() => ({}));
     throw Object.assign(new Error(response.status === 403
-      ? 'No tiene permiso para exportar este reporte.' : 'No se pudo generar la exportación.'), { status: response.status });
+      ? 'No tiene permiso para exportar este reporte.' : 'No se pudo generar la exportación.'), {
+      status: response.status, code: typeof problem?.code === 'string' ? problem.code : undefined });
   }
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);

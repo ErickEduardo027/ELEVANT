@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Text;
 using Elevant.Application.Abstractions.Messaging;
+using Elevant.Application.Finance;
 
 namespace Elevant.Application.Identity.AccountEmails;
 
@@ -242,22 +243,67 @@ public static class AccountEmailTemplates
         action: null,
         security: "Si no reconoces este cambio, contacta a AVIAM: solo los representantes de la aerolínea y AVIAM gestionan sus usuarios.");
 
-    /// <summary>The simulated e-CF invoice Finance issued, with its PDF attached (ADR-0035).</summary>
+    /// <summary>
+    /// The simulated e-CF invoice Finance issued, with its PDF attached (ADR-0035). 4-N23: it states only what the
+    /// issuance fixed (the total, the due date and the confirmed prepayment applied), never a balance: the balance moves
+    /// with payments and notes, and the airline reads it in its portal.
+    /// </summary>
     public static EmailMessage InvoiceIssued(string to, string airline, string fiscalNumber, string currency, decimal total,
-        decimal balance, DateOnly? dueDate) => Build(to,
+        decimal prepaidApplied, DateOnly? dueDate) => Build(to,
         subject: $"Factura {fiscalNumber} de AVIAM · ELEVANT",
         preheader: $"AVIAM emitió la factura {fiscalNumber} a {airline}.",
         kicker: "Facturación",
-        title: balance > 0 ? "Tienes una factura por pagar" : "Tu factura está saldada",
+        title: "AVIAM emitió una factura",
         greeting: null,
-        paragraphs: [$"AVIAM emitió la factura {fiscalNumber} a {airline} por {currency} {total.ToString("N2", CultureInfo.InvariantCulture)}.",
-            balance > 0
-                ? $"Saldo pendiente: {currency} {balance.ToString("N2", CultureInfo.InvariantCulture)}" +
-                  (dueDate is { } due ? $", con vencimiento el {due.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)}." : ".") +
-                  " Puedes pagarla con tarjeta en el portal de aerolíneas."
-                : "El prepago confirmado cubrió el total: no tienes saldo pendiente.",
+        paragraphs: [
+            $"AVIAM emitió la factura {fiscalNumber} a {airline} por {currency} {Money(total)}" +
+                (dueDate is { } due ? $", con vencimiento el {Day(due)}." : "."),
+            .. prepaidApplied > 0
+                ? new[] { $"Al emitirla se aplicó el prepago confirmado por {currency} {Money(prepaidApplied)}." }
+                : Array.Empty<string>(),
+            "Consulta el saldo vigente y las formas de pago en el portal de aerolíneas.",
             "Adjuntamos el PDF. Es una simulación de e-CF sin validez fiscal."],
-        validity: "Simulación — sin validez fiscal",
+        validity: FinanceInvoicePolicy.Disclaimer,
+        code: null,
+        action: null,
+        security: "Si no reconoces esta factura, contacta a Finanzas de AVIAM antes de pagar.");
+
+    /// <summary>
+    /// 4-N23: Finance issued a credit or debit note on an invoice of the airline, with the note's PDF attached. Like the
+    /// invoice email it never states a balance.
+    /// </summary>
+    public static EmailMessage AdjustmentNoteIssued(string to, string airline, string noteNumber, bool isCredit,
+        string invoiceLabel, string currency, decimal amount) => Build(to,
+        subject: $"Nota de {(isCredit ? "crédito" : "débito")} {noteNumber} · factura {invoiceLabel} · ELEVANT",
+        preheader: $"AVIAM emitió la nota de {(isCredit ? "crédito" : "débito")} {noteNumber} sobre la factura {invoiceLabel}.",
+        kicker: "Facturación",
+        title: isCredit ? "AVIAM emitió una nota de crédito" : "AVIAM emitió una nota de débito",
+        greeting: null,
+        paragraphs: [
+            $"AVIAM emitió a {airline} la nota de {(isCredit ? "crédito" : "débito")} {noteNumber} por {currency} {Money(amount)}, que modifica la factura {invoiceLabel}.",
+            isCredit ? "La nota reduce lo que se debe de esa factura." : "La nota aumenta lo que se debe de esa factura.",
+            "Consulta el saldo vigente y las formas de pago en el portal de aerolíneas.",
+            "Adjuntamos el PDF de la nota. Es una simulación de e-CF sin validez fiscal."],
+        validity: FinanceInvoicePolicy.Disclaimer,
+        code: null,
+        action: null,
+        security: "Si no reconoces esta nota, contacta a Finanzas de AVIAM.");
+
+    /// <summary>
+    /// 4-N23: the one notice of an invoice that passed its due date with a balance, with the invoice's PDF attached. It
+    /// names no amount, which may change before the email goes out.
+    /// </summary>
+    public static EmailMessage InvoiceOverdue(string to, string airline, string invoiceLabel, DateOnly dueDate) => Build(to,
+        subject: $"Factura {invoiceLabel} vencida · ELEVANT",
+        preheader: $"La factura {invoiceLabel} de {airline} venció el {Day(dueDate)}.",
+        kicker: "Facturación",
+        title: "Tienes una factura vencida",
+        greeting: null,
+        paragraphs: [
+            $"La factura {invoiceLabel} que AVIAM emitió a {airline} venció el {Day(dueDate)} y no estaba saldada al cierre de ese día.",
+            "Consulta el saldo vigente y las formas de pago en el portal de aerolíneas. Si ya la pagaste, ignora este aviso.",
+            "Adjuntamos el PDF de la factura. Es una simulación de e-CF sin validez fiscal."],
+        validity: FinanceInvoicePolicy.Disclaimer,
         code: null,
         action: null,
         security: "Si no reconoces esta factura, contacta a Finanzas de AVIAM antes de pagar.");
@@ -423,4 +469,7 @@ public static class AccountEmailTemplates
     private static string Encode(string value) => WebUtility.HtmlEncode(value);
 
     private static string Day(DateOnly day) => day.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
+
+    private static string Money(decimal amount) => amount.ToString("N2", CultureInfo.InvariantCulture);
+
 }

@@ -183,18 +183,28 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal("PA1234567", signed.Signatures.Single(item => item.Role == OperationSignatureRole.AirlineRepresentative)
             .SignerIdentification);
 
-        // 5. Finance sees the charter (signed, 260 USD) and confirms the prepayment once.
+        // 5. Finance sees the charter (signed, 260 USD) and confirms the prepayment once, with its key and the version it
+        // saw (4-N22): the same key replays, the same data again changes nothing, a stale version is refused and another
+        // amount needs the reason of a correction.
         var charters = await Run(services => services.GetRequiredService<ICharterStore>().ListForFinanceAsync([station], ct));
         var charter = Assert.Single(charters, item => item.OperationId == operationId);
         Assert.Equal((true, 260m, "Pending"), (charter.RequestSigned, charter.ServicesTotal, charter.PrepaymentStatus));
-        Task<(CharterPrepaymentItem? Item, CharterPrepaymentFailure? Failure)> Confirm(decimal amount, string reference) =>
-            Run(services => services.GetRequiredService<ICharterStore>().ConfirmPrepaymentAsync(finance, [station], charter.Id,
-                amount, reference, "charter-test", ct));
-        Assert.Equal("Confirmed", (await Confirm(260m, "TRF-0001")).Item!.PrepaymentStatus);
-        Assert.Null((await Confirm(260m, "TRF-0001")).Failure);
-        Assert.Equal(CharterPrepaymentFailure.Conflict, (await Confirm(300m, "TRF-0002")).Failure);
-        Assert.Equal(CharterPrepaymentFailure.NotFound, (await Run(services => services.GetRequiredService<ICharterStore>()
-            .ConfirmPrepaymentAsync(finance, [Guid.NewGuid()], charter.Id, 260m, "TRF-0001", "charter-test", ct))).Failure);
+        Task<MasterDataResult<CharterPrepaymentItem>> Confirm(decimal amount, string reference, string version, Guid key,
+            string? reason = null) => Run(services => services.GetRequiredService<ICharterStore>().ConfirmPrepaymentAsync(
+            finance, [station], charter.Id, amount, reference, reason, version, key, "charter-test", ct));
+        var confirmKey = Guid.NewGuid();
+        var firstConfirmation = await Confirm(260m, "TRF-0001", charter.Version!, confirmKey);
+        Assert.Equal("Confirmed", firstConfirmation.Value!.PrepaymentStatus);
+        Assert.True((await Confirm(260m, "TRF-0001", charter.Version!, confirmKey)).Replayed);
+        Assert.Equal("idempotency_conflict", (await Confirm(261m, "TRF-0001", charter.Version!, confirmKey)).Code);
+        var same = await Confirm(260m, "TRF-0001", firstConfirmation.Value.Version!, Guid.NewGuid());
+        Assert.Equal(firstConfirmation.Value.Version, same.Value!.Version);
+        Assert.Equal("version_conflict", (await Confirm(300m, "TRF-0002", charter.Version!, Guid.NewGuid(),
+            "Monto mal capturado")).Code);
+        Assert.Equal("reason_required", (await Confirm(300m, "TRF-0002", same.Value.Version!, Guid.NewGuid())).Code);
+        Assert.Equal(MasterDataFailure.NotFound, (await Run(services => services.GetRequiredService<ICharterStore>()
+            .ConfirmPrepaymentAsync(finance, [Guid.NewGuid()], charter.Id, 260m, "TRF-0001", null, same.Value.Version!,
+                Guid.NewGuid(), "charter-test", ct))).Failure);
 
         // 6. 3-N24: with the prepayment confirmed no service is added; the receipt keeps the code and replays it.
         var extra = view.Catalog.First(item => item.Code != "BAGGAGE");
@@ -245,7 +255,10 @@ public sealed partial class SqlServerMigrationTests
         var retiredLine = requested.Services.Single(line => line.Code == extra.Code);
         Assert.Equal((0m, (decimal?)0m), (retiredLine.Quantity, retiredLine.Amount));
         Assert.Equal(260m, requested.TotalAmount);
-        Assert.Equal("Confirmed", (await Confirm(260m, "TRF-0002")).Item!.PrepaymentStatus);
+        var pendingAgain = Assert.Single(await Run(services => services.GetRequiredService<ICharterStore>()
+            .ListForFinanceAsync([station], ct)), item => item.OperationId == operationId);
+        Assert.Equal("Confirmed", (await Confirm(260m, "TRF-0002", pendingAgain.Version!, Guid.NewGuid())).Value!
+            .PrepaymentStatus);
         await using var audit = CreateContext(database.ConnectionString);
         Assert.Equal(1, await audit.AuditEntries.CountAsync(entry => entry.Action == "finance.charter.prepayment_reopened", ct));
         Assert.Equal(CharterCodes.PrepaymentConfirmed, (await audit.MobileCommandReceipts.AsNoTracking()

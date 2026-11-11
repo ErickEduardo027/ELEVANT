@@ -37,6 +37,8 @@ Los clientes no acceden a SQL ni al proveedor fiscal. JWT identifica la cuenta; 
 
 La prefactura permite ajustes justificados y recálculo explícito en borrador. La disputa bloquea la emisión. La factura congela las líneas aceptadas, jerarquía, razones, importes y snapshot comercial; una corrección posterior usa notas vinculadas, sin reescribir el original.
 
+> **Actualización (10 de noviembre de 2026).** La prefactura editable y su disputa salieron del producto: la prefactura es solo el borrador interno de la emisión desde operaciones, dentro de una transacción que no deja nada a medias. La factura sigue congelando sus líneas, y una corrección posterior es una nota vinculada, que sobre una factura e-CF lleva su propio e-NCF simulado. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
+
 ### 3. Tratamientos tributarios explícitos
 
 Las políticas tributarias son versionadas, publicadas y acotadas por aerolínea, estación, moneda, concepto y vigencia. Una coincidencia ambigua falla. Se conserva por línea política, tratamiento, tasa o fundamento, neto, descuento, impuesto, bruto y fecha de captura.
@@ -45,6 +47,8 @@ Las políticas tributarias son versionadas, publicadas y acotadas por aerolínea
 
 La factura conserva identidades comerciales de emisor y cliente. Como el modelo no aporta todavía una fuente fiscal revisada de registros tributarios y domicilio, `issuerTaxRegistration` y `customerTaxRegistration` permanecen explícitamente `null`. No se completan desde nombres, códigos de organización ni fixtures. Cambiar una política o ficha actual no repara una factura histórica.
 
+> **Actualización (10 de noviembre de 2026).** Los tratamientos tributarios configurables, su pantalla, sus permisos y sus endpoints se retiraron: la factura e-CF simulada aplica el ITBIS 18 % fijo de [ADR-0035](0035-direct-invoicing-simulated-ecf.md), y una nota sobre ella congela el ITBIS de cada línea que ajusta. Los snapshots tributarios ya guardados se conservan. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
+
 ### 4. Cobro, aplicación, nota y devolución separados
 
 El recibo de cartera es independiente de las aplicaciones. Puede quedar como anticipo, aplicarse parcialmente a varias facturas y conservar remanente. Cada aplicación valida moneda/FX congelado, saldo y disponibilidad bajo transacción serializable y control de versión.
@@ -52,6 +56,8 @@ El recibo de cartera es independiente de las aplicaciones. Puede quedar como ant
 El saldo incorpora facturación, débitos, créditos y aplicaciones netas de reversos. Los pagos y notas heredados se leen una vez como hechos históricos: no se copian a nuevos movimientos para contabilizarlos de nuevo.
 
 Las notas de crédito/débito referencian factura y líneas originales, con límites y razón. **Una nota de crédito no devuelve dinero.** El reverso o la devolución es otro movimiento vinculado y autorizado; no borra el recibo ni la factura. Registrar un recibo tampoco demuestra liquidación bancaria.
+
+> **Actualización (10 de noviembre de 2026).** Un cobro con tarjeta del portal no se revierte ni se devuelve desde Tesorería (`409 card_payment_not_reversible`): se corrige con una nota de crédito. Una fecha anterior al día hábil de emisión de la factura o al cobro se explica (`400 effective_before_invoice`, `400 effective_before_receipt`), y el día es siempre el hábil de Santo Domingo. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
 
 ### 5. Proveedores, CxP y gastos internos
 
@@ -66,6 +72,8 @@ Las notas de crédito/débito referencian factura y líneas originales, con lím
 | Reembolso | Registro separado, parcial o total sobre gasto aprobado; exige permiso de pago de Finanzas y prohíbe pagarse a sí mismo. |
 
 Estación, aerolínea, turnaround y servicio son dimensiones operativas opcionales, además de la estación de seguridad obligatoria. Se valida su relación. Los soportes conservan metadatos, longitud y hash en SQL y bytes privados; las API no aceptan claves arbitrarias ni publican URLs o PII del personal al portal.
+
+> **Actualización (10 de noviembre de 2026).** Una factura de proveedor rechazada vuelve a borrador para corregirla, y un borrador, una rechazada o una aprobada sin aplicaciones activas se anulan con motivo; la referencia es única entre las facturas no anuladas. Una aplicación o un pago se revierte con una fila inmutable (`finance.payables.reverse`). Quien crea o envía una factura no la aprueba, y quien la aprueba no le aplica pagos (`segregation_of_duties`). El solicitante retira, corrige y descarta su gasto con motivo, y sin otro administrador de su departamento lo revisa Finanzas por escalamiento, con la aprobación final de otra persona. Un proveedor con saldo no se retira. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
 
 ### 6. Tres ejes de estado independientes
 
@@ -87,6 +95,8 @@ El archivo predeterminado usa `PrivateObjectStore`, mediante el S3 privado exist
 
 El preflight offline de e-CF E31/E32/E33/E34 usa XSD oficiales fijados y verifica sus hashes. La [referencia DGII](../reference/dgii-ecf-schema-sources.md) detalla fuentes originales y límites: XSD, presencia de Signature, validación criptográfica, reglas tributarias y aceptación fiscal son comprobaciones separadas. La firma no se valida criptográficamente y la aceptación no se realiza. El XML neutral de simulación no es un e-CF y no se presenta como validado por esos XSD.
 
+> **Actualización (10 de noviembre de 2026).** El eje fiscal de la sección 6 y el archivo y el preflight de esta sección salieron del producto: «Documentos fiscales», sus modos `Off`, `LocalSimulation` y `ProviderSandbox`, el archivo fiscal, el preflight XML y la configuración `FinanceFiscal:*` se borraron con sus rutas, y sus permisos quedan como alias que no conceden nada. Las tablas, las migraciones aplicadas y los XSD se conservan, y el [runbook](../runbooks/finance-fiscal-activation.md) queda como historia. El e-NCF vigente es el de la factura simulada de [ADR-0035](0035-direct-invoicing-simulated-ecf.md) y el de sus notas (`E34` y `E33`). Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
+
 ### 8. Integridad, auditoría y compatibilidad
 
 Dinero usa `decimal(19,4)` y cantidades `decimal(18,4)`; USD/DOP y FX son explícitos. Las mutaciones usan UUID de intención y hash de contenido, más `expectedVersion` donde cambia un agregado mutable. Repetir la misma intención devuelve el resultado persistido; cambiar su contenido o usar una versión obsoleta entra en conflicto.
@@ -107,6 +117,8 @@ Los reportes se calculan desde hechos persistentes y ámbito del actor. Separan 
 
 Las migraciones aditivas `20261019033625_AddFinanceCommercialPlatform` y `20261019041554_AddFinanceTaxSnapshotsAndCorrections` incorporan estos modelos sin DML de negocio. Sus guardas de Down protegen historia; la recuperación requiere backup de SQL **y** bytes privados. El orden de promoción sigue base → API compatible → clientes.
 
-La evidencia ejecutable incluye [paquetes SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinancePackages.cs), [CxP/gastos SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinancePayables.cs), [tesorería SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceTreasury.cs), [impuestos SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceTax.cs), [fiscal SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceFiscal.cs), [archivo local](../../backend/tests/Elevant.UnitTests/Application/FinanceFiscalFileArchiveTests.cs) y [preflight XSD](../../backend/tests/Elevant.UnitTests/Application/OfficialEcfXmlValidatorTests.cs). La existencia de pruebas no acredita por sí sola un despliegue ni reemplaza el resultado de la suite integrada y QA de clientes.
+La evidencia ejecutable incluye [paquetes SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinancePackages.cs), [CxP/gastos SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinancePayables.cs), [tesorería SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceTreasury.cs), impuestos SQL (`backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceTax.cs`), fiscal SQL (`backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceFiscal.cs`), archivo local (`backend/tests/Elevant.UnitTests/Application/FinanceFiscalFileArchiveTests.cs`) y preflight XSD (`backend/tests/Elevant.UnitTests/Application/OfficialEcfXmlValidatorTests.cs`). La existencia de pruebas no acredita por sí sola un despliegue ni reemplaza el resultado de la suite integrada y QA de clientes.
+
+> **Actualización (10 de noviembre de 2026).** Las pruebas de impuestos, fiscal, archivo local y preflight XSD que nombra el párrafo anterior se borraron con el código que probaban, en el bloque B de la fase 4 (`b0928bd9`); sus rutas se conservan como historia y su última versión se lee con `git show b0928bd9^:<ruta>`. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
 
 La conectividad fiscal real queda fuera de esta etapa autorizada. Requiere selección del proveedor, datos fiscales revisados, política de secuencias/certificados/firma, contrato versionado, idempotencia y reconciliación tras timeout, callbacks autenticados y ensayo de recuperación. El [runbook de activación](../runbooks/finance-fiscal-activation.md) define los gates y las condiciones para detenerse.

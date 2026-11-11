@@ -53,18 +53,17 @@ public sealed partial class SqlServerMigrationTests
         await db.SaveChangesAsync(ct);
         // Only the catalog is edited after approval. The contract and approved charge mark remain unchanged.
         charge.Method = liveMethod; await db.SaveChangesAsync(ct);
-        var drafts = scope.ServiceProvider.GetRequiredService<IPreinvoiceDraftStore>();
         var command = PackageReviewCommand(fixture);
-        var result = await drafts.CreateAsync(command, ct);
+        var result = await ValuationDraftAsync(scope.ServiceProvider, command, ct);
         Assert.Equal(expectedSuccess, result.IsSuccess);
         if (expectedSuccess)
         {
-            var detail = (await drafts.GetAsync(FinanceAccount, result.DraftId!.Value, ct))!;
-            Assert.Equal(expectedTotal, detail.Total);
-            var line = Assert.Single(detail.Lines, l => l.Kind == "Charge");
+            var (total, lines) = await ValuationOfAsync(db, result.DraftId!.Value, ct);
+            Assert.Equal(expectedTotal, total);
+            var line = Assert.Single(lines, l => l.Kind == PreinvoiceLineKind.Charge);
             Assert.Equal(25m, line.Amount);
             Assert.False(line.IsExcluded);
-            Assert.True((await drafts.CreateAsync(command, ct)).Replayed);
+            Assert.True((await ValuationDraftAsync(scope.ServiceProvider, command, ct)).Replayed);
             Assert.Equal(1, await db.Set<PackageConsumptionEntry>().CountAsync(ct));
         }
         else
@@ -130,9 +129,8 @@ public sealed partial class SqlServerMigrationTests
             }
             await db.SaveChangesAsync(ct);
         }
-        var drafts = scope.ServiceProvider.GetRequiredService<IPreinvoiceDraftStore>();
         var command = PackageReviewCommand(fixture);
-        var result = await drafts.CreateAsync(command, ct);
+        var result = await ValuationDraftAsync(scope.ServiceProvider, command, ct);
         Assert.Equal(expectedSuccess, result.IsSuccess);
         if (!expectedSuccess)
         {
@@ -141,8 +139,8 @@ public sealed partial class SqlServerMigrationTests
         }
         else
         {
-            Assert.Equal(500m, (await drafts.GetAsync(FinanceAccount, result.DraftId!.Value, ct))!.Total);
-            Assert.True((await drafts.CreateAsync(command, ct)).Replayed);
+            Assert.Equal(500m, (await ValuationOfAsync(db, result.DraftId!.Value, ct)).Total);
+            Assert.True((await ValuationDraftAsync(scope.ServiceProvider, command, ct)).Replayed);
             var entry = await db.Set<PackageConsumptionEntry>().SingleAsync(ct);
             using var calculation = JsonDocument.Parse(entry.CalculationJson);
             Assert.Equal(fixture.PackageId, calculation.RootElement.GetProperty("package").GetGuid());
@@ -163,7 +161,7 @@ public sealed partial class SqlServerMigrationTests
         var fixture = await PackageReviewFixtureAsync(scope.ServiceProvider, ct);
         var original = await db.ContractVersions.SingleAsync(v => v.Id == fixture.VersionKey, ct);
         original.ValidTo = fixture.OperationDate.AddDays(-1); await db.SaveChangesAsync(ct);
-        var result = await scope.ServiceProvider.GetRequiredService<IPreinvoiceDraftStore>().CreateAsync(PackageReviewCommand(fixture), ct);
+        var result = await ValuationDraftAsync(scope.ServiceProvider, PackageReviewCommand(fixture), ct);
         Assert.False(result.IsSuccess); Assert.Equal("package_contract_mismatch", result.Reason);
         Assert.Equal(0, await db.Set<PackageConsumptionEntry>().CountAsync(ct));
     }

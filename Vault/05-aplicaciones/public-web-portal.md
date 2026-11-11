@@ -80,6 +80,13 @@ tags:
 > Servicio corregida por OCC) también es posterior: describe el código de
 > `f2d5c52c`
 > ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+> Lo que atribuye a la fase 4 (el estado «Anulada», las notas con su PDF, el
+> estado de cuenta con saldo a favor, la disponibilidad de la tarjeta y la
+> revalidación sin vaciar la pantalla) también es posterior: describe el código
+> de `39a85a46` ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+> [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
+> [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md),
+> que recoge las decisiones de la fase 4).
 
 Public Web combina la landing pública con el acceso de aerolíneas. En Development, la aerolínea entra desde `/login` y utiliza `/portal`; la antigua ruta separada `/dev-airline` fue retirada. El portal ya autentica y consulta un bootstrap real de la API, pero no es un portal operacional completo ni una capacidad de Production.
 
@@ -99,14 +106,14 @@ Public Web combina la landing pública con el acceso de aerolíneas. En Developm
 | Permisos | La aerolínea envía sus permisos desde el portal ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md)). Desde la fase 2, el envío lleva una `Idempotency-Key`: un resultado incierto se reintenta con la misma clave y el documento ya subido, sin subirlo de nuevo. Solo lo envían representantes y firmantes. Un documento subido hace más de seis días se pide de nuevo (`document_expired`). El formulario limita las fechas con el día hábil de AVIAM, los permisos revocados se muestran con su motivo y cada error se explica por su código ([sección](../../frontend/public-web/src/components/portal/AirlinePermitsSection.tsx)). |
 | Usuarios del portal | Desde la fase 2, «Perfil» tiene «Usuarios del portal», con carga, vacío, error con «Reintentar» y falta de permiso. Todos los usuarios ven la lista. El representante invita por correo, desactiva con confirmación, reactiva y marca firmantes, con una clave por intención y la versión en pantalla; nunca se modifica a sí mismo ni a otro representante. El texto dice que la invitación «quedó en cola» ([sección](../../frontend/public-web/src/components/portal/AirlinePortalUsersSection.tsx) y [API](../../backend/Elevant.Api/Controllers/AirlinePortalUsersController.cs)). |
 | Solicitudes | En esta rama consulta `ops.OperationalServiceRequest` paginado y filtrado por aerolínea en la API; no confundir con la solicitud comercial pública. Crear/cancelar sigue deshabilitado. Aún no está promocionado. |
-| Facturas | Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) lista las facturas propias del estado de cuenta (`GET airline/portal/treasury/statements`) con e-NCF, estado (Pendiente, Vencida o Pagada), vencimiento y saldo; el detalle muestra líneas, pagos y el PDF de la factura e-CF simulada (`GET airline/portal/invoices/{invoiceId}/document`). No hay prefacturas, aceptación ni disputa: los reclamos se resuelven fuera del sistema con nota de crédito. Desde [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) el detalle permite **pagar con tarjeta simulada** el saldo completo (Idempotency-Key estable ante un resultado incierto), muestra el historial de intentos y descarga el recibo PDF. Se revalida con el aviso `airline_treasury`. |
-| Documentos y reportes | Documentos lista los PDF de cada factura propia por id. Reportes muestra la primera página autorizada de operaciones y las facturas del estado de cuenta, sin métricas globales. Nada de este tramo está promocionado. |
+| Facturas | Desde [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) lista las facturas propias del estado de cuenta (`GET airline/portal/treasury/statements`) con e-NCF, estado, vencimiento y saldo; el detalle muestra el total con ITBIS, líneas, pagos y el PDF de la factura e-CF simulada (`GET airline/portal/invoices/{invoiceId}/document`), con la leyenda «Simulación — sin validez fiscal». No hay prefacturas, aceptación, reclamos ni disputas en el sistema: Finanzas corrige con notas de crédito. Desde [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) el detalle permite **pagar con tarjeta simulada** el saldo completo (Idempotency-Key estable ante un resultado incierto), muestra el historial de intentos y descarga el recibo PDF. Desde la fase 4, el estado puede ser Pendiente, Vencida, Pagada o Anulada (sin cobros y llevada a 0 por notas de crédito); el detalle lista las notas de crédito y débito con su PDF; la tarjeta solo se ofrece si la pasarela está disponible, y el selector entre «Facturas» y «Estado de cuenta» de la misma página muestra pendientes, vencidas, saldo pendiente y «Saldo a favor» (crédito a favor más cobros sin aplicar), con el estado de cuenta que nombra cada factura por su e-NCF ([cartera del portal](tesoreria-cobros-y-portal.md)). Se revalida con el aviso `airline_treasury` sin vaciar la pantalla. |
+| Documentos y reportes | Documentos lista los PDF de cada factura propia por id y, desde la fase 4, conserva la lista mientras revalida. Reportes muestra la primera página autorizada de operaciones y las facturas del estado de cuenta, sin métricas globales. Nada de este tramo está promocionado. |
 | Solicitud de acceso | `/solicitar-acceso` usa catálogo y solicitud comerciales canónicos. No recoge contraseña ni crea cuenta; Contratos revisa y Superadministrador provisiona después. Si la aerolínea no figura en el listado, «Mi aerolínea no aparece» la propone con nombre, país, ICAO, IATA solo si existe y sitio HTTPS opcional, y avisa cuando ese ICAO ya está en el listado. La confirmación final anuncia que Contratos responderá por correo; el solicitante recibe la aprobación, el rechazo o la cancelación con su motivo. Una aerolínea sin IATA entra al portal con su ICAO. |
 
 El JWT corto y su vencimiento se conservan en `sessionStorage` de la pestaña, no en `localStorage`. No existe opción «Recordarme». Al recargar, el cliente revalida identidad y bootstrap; al cerrar sesión, vencer el token o perder autorización, limpia el acceso. Un fallo transitorio permite reintentar sin presentar datos obsoletos como si fueran actuales. La comprobación del navegador no sustituye el enforcement del backend por tenant y estación.
 
-> [!note] Rama `feat/finance-refinement`
-> En Finanzas, los cargos aplicados por el agente y los ajustes de Finanzas aparecen como líneas propias bajo su servicio, con motivo, y se pueden disputar una a una. La factura muestra vencimiento, estado, saldo, pagos parciales y notas de crédito mediante `GET /api/v1/airline/portal/invoices/{id}/statement`. Sigue siendo no fiscal. Ver [Finanzas: tarifarios, cargos y cobros](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
+> [!note] Historia: rama `feat/finance-refinement` (retirado del producto)
+> Antes de la fase 4, Finanzas del portal mostraba los cargos del agente y los ajustes de Finanzas como líneas propias bajo su servicio, con motivo, que la aerolínea podía disputar una a una, y la factura era no fiscal. Desde la fase 4 no hay disputas: la factura es el e-CF simulado, los cargos son líneas de la factura y una corrección es una nota de crédito. Ver [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
 
 ## Recorrido y límites
 
@@ -121,10 +128,10 @@ flowchart LR
     Q --> R
     B --> C[API: contratos publicados de su tenant]
     C --> R
-    B --> F[API: prefacturas publicadas propias]
+    B --> F[API: facturas, estado de cuenta y pago con tarjeta propios]
     F --> R
     B --> D[Documentos financieros propios por API]
-    B --> P[Reportes acotados de operaciones y prefacturas propias]
+    B --> P[Reportes acotados de operaciones y facturas propias]
 ```
 
 Los antiguos componentes de `PortalWorkspace` siguen siendo fuentes de UX
@@ -148,51 +155,37 @@ reales de la operación. El backend lee el snapshot de revisión para servicios
 e incidencias, no las filas actuales que una corrección podría modificar.
 No envía descripciones de incidentes, notas internas ni identidades de
 agentes. Solicitudes carga la entidad operativa propia; un seed determinista
-de Development la vincula a `DEV-TAT-0002`. Finanzas muestra prefacturas
-publicadas propias y un vacío real si aún no existen; relee sus líneas
-inmutables con autorización por tenant. Los borradores internos no se hacen
-visibles hasta un envío auditado. El feed solo indica releer por HTTP, sin
-importes ni líneas. Documentos relee facturas y pagos propios antes de
-ofrecer PDF privado. Reportes comunica el límite de cobertura de sus
+de Development la vincula a `DEV-TAT-0002`. Desde la fase 4, Facturas muestra
+las facturas e-CF simuladas propias y un vacío real si aún no existen, y relee
+sus líneas congeladas con autorización por tenant; el borrador interno de la
+emisión nunca se hace visible. El feed solo indica releer por HTTP, sin
+importes ni líneas. Documentos relee las facturas propias antes de ofrecer
+el PDF privado. Reportes comunica el límite de cobertura de sus
 primeras páginas. Los comentarios de borrador de Contratos no activan
 unilateralmente un contrato. Otras evidencias operativas y escrituras de
 solicitudes siguen pendientes.
 
-En la rama de integración, una invalidación financiera conserva la selección de la
-prefactura en Finanzas y el panel expandido en Documentos, incluso tras
-volver de una página posterior a la primera, mientras relee factura y pago
-por las rutas autorizadas. Si la relectura falla, la vista
-retira el detalle anterior y presenta un error recuperable. Esto evita que
-un sondeo periódico cierre la confirmación o el panel de descarga; una
-descarga iniciada durante la revalidación puede requerir reintento. Tampoco
+Desde la fase 4 (código de `39a85a46`), Facturas (lista y detalle),
+Documentos, Estado de cuenta y el historial de la tarjeta conservan los datos
+visibles mientras revalidan: muestran «Actualizando…» y, si la relectura
+falla, «No se pudo actualizar. Mostramos los últimos datos.» con «Reintentar»
+([instantánea](../../frontend/public-web/src/components/portal/useLiveSnapshot.ts)).
+Releen con los avisos de la cartera y al recuperar el foco, la visibilidad o la
+conexión; el sondeo de 25 segundos ya no relee Finanzas. Tampoco esto
 demuestra por sí solo la disponibilidad del objeto PDF en el VPS. Fuentes:
 [vista financiera](../../frontend/public-web/src/components/portal/AirlineFinancePage.tsx),
 [Documentos](../../frontend/public-web/src/components/portal/AirlineDocumentsPage.tsx)
 y [prueba de regresión](../../frontend/public-web/tests/unit/airline-portal-page.test.tsx).
 
-En la rama de integración aún no promocionada, la aerolínea también puede
+**Historia (retirado del producto).** Antes de la fase 4, la aerolínea podía
 registrar una disputa persistente e idempotente de líneas de una prefactura
-`Submitted` propia. Un endpoint **nuevo** de lectura por tenant devuelve el
-historial de objeciones, y Finanzas tiene otro endpoint de lectura por cuenta y
-estación. Los detalles v1 existentes conservan su forma para permitir una
-promoción API-primero con clientes antiguos. Las pruebas locales de API, SQL y
-clientes respaldan este cambio de rama, pero no demuestran CI, merge ni VPS.
-La rama local incorpora la resolución de Finanzas: mantener devuelve la
-prefactura a `Submitted` y anular conserva un historial consultable sin
-habilitar nuevas acciones sobre ese documento. El cliente nuevo solicita
-`includeVoided=true` para ese historial y `includeResolutions=true` para leer
-decisión y motivo; la respuesta por defecto preserva los estados y campos que
-aceptan los clientes ya desplegados. La aerolínea no escoge el resultado.
-El PDF de recibo de este tramo local se ofrece únicamente cuando existe un
-pago manual persistido. La API revalida la cuenta después de leer el objeto
-privado; un objeto faltante o alterado produce error recuperable, no datos de
-otro tenant. Es un recibo **no fiscal** del registro manual, no una prueba de
-transferencia bancaria. La migración y rutas aún no están en Development remoto.
-Esta rama ya permite
-consultar un pago manual existente por la factura propia; el endpoint devuelve
-un vacío real cuando no hay registro y no verifica fondos externos. Fuentes:
-[controlador de aerolínea](../../backend/Elevant.Api/Controllers/AirlinePortalController.cs),
-[persistencia de disputas](../../database/DevelopmentDB/Elevant.Persistence/Commercial/EfAirlinePreinvoiceDisputeStore.cs)
+`Submitted` propia, Finanzas la resolvía manteniendo o anulando la prefactura,
+y el portal ofrecía el recibo PDF no fiscal de un pago manual registrado por
+Finanzas. La fase 4 retiró la prefactura visible, la aceptación, la disputa y
+el pago manual: no hay reclamos ni disputas en el sistema, Finanzas corrige con
+notas de crédito y el único cobro que inicia la aerolínea es el pago con
+tarjeta. Las tablas y migraciones se conservan. Fuentes:
+[controlador de aerolínea](../../backend/Elevant.Api/Controllers/AirlinePortalController.cs)
 y [cliente compartido](../../packages/api-client/src/client.ts).
 
 ## Layout responsive
@@ -200,7 +193,7 @@ y [cliente compartido](../../packages/api-client/src/client.ts).
 La escala de breakpoints es mobile-first en rem (40, 48, 64, 80 y 90 rem) y
 ahora también la usa `/solicitar-acceso`, que en tablet se presenta en una sola
 columna. El contenido del portal es un contenedor CSS (`container: portal`): las
-métricas, las líneas de tarifa y prefactura y los encabezados responden al
+métricas, las líneas de tarifa y de factura y los encabezados responden al
 ancho disponible junto al sidebar, no al del viewport
 ([estilos](../../frontend/public-web/src/components/portal/AirlinePortalPage.module.css)).
 La navegación inferior del portal se mantiene hasta 64 rem. El héroe 3D elige

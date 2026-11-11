@@ -33,6 +33,66 @@ public sealed class FinanceInvoicePolicyTests
         Assert.Throws<ArgumentOutOfRangeException>(() => FinanceInvoicePolicy.FormatFiscalNumber(10_000_000_000));
     }
 
+    /// <summary>4-N17: a credit note on an E31 invoice is an E34 and a debit note an E33, each with its own sequence.</summary>
+    [Theory]
+    [InlineData("E34", null, "E340000000001")]
+    [InlineData("E34", "E340000000041", "E340000000042")]
+    [InlineData("E33", null, "E330000000001")]
+    [InlineData("E33", "E330000009999", "E330000010000")]
+    [InlineData("E34", "E330000000007", "E340000000001")]
+    [InlineData("E33", "TD-0190f0e0a0b0c0d0e0f0a0b0c0d0e0f0", "E330000000001")]
+    public void NoteFiscalNumbersFollowTheirOwnType(string prefix, string? highest, string expected)
+    {
+        Assert.Equal(expected, FinanceInvoicePolicy.NextFiscalNumber(prefix, highest));
+        Assert.True(FinanceInvoicePolicy.IsFiscalNumber(expected, prefix));
+        Assert.False(FinanceInvoicePolicy.IsFiscalNumber(expected));
+    }
+
+    [Fact]
+    public void NoteTypeIsE34ForACreditAndE33ForADebitAndNoOtherPrefixIsIssued()
+    {
+        Assert.Equal(("E34", "E33"), (FinanceInvoicePolicy.NoteFiscalPrefix(true), FinanceInvoicePolicy.NoteFiscalPrefix(false)));
+        // The E31 overloads keep their meaning.
+        Assert.Equal(FinanceInvoicePolicy.FormatFiscalNumber(7), FinanceInvoicePolicy.FormatFiscalNumber("E31", 7));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FinanceInvoicePolicy.FormatFiscalNumber("E32", 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FinanceInvoicePolicy.FormatFiscalNumber("E34", 0));
+    }
+
+    /// <summary>
+    /// 4-N17: the ITBIS a note adjusts on a line comes from the line's frozen gross and tax: proportional and rounded to
+    /// cents, except the note that exhausts the line, which takes the exact remainder so the notes never drift.
+    /// </summary>
+    [Theory]
+    // A GPU of 118 (net 100, ITBIS 18): half credited is 50 + 9; the whole line is 100 + 18.
+    [InlineData("118", "18", "0", "0", "59", "50", "9")]
+    [InlineData("118", "18", "0", "0", "118", "100", "18")]
+    // The last credit of a line takes the remaining ITBIS exactly.
+    [InlineData("118", "18", "59", "9", "59", "50", "9")]
+    [InlineData("100", "15.25", "66.66", "10.16", "33.34", "28.25", "5.09")]
+    // Rounded to cents, away from zero.
+    [InlineData("100", "15.25", "0", "0", "33.33", "28.25", "5.08")]
+    // A line that froze no tax adjusts no tax.
+    [InlineData("80", "0", "0", "0", "20", "20", "0")]
+    public void AdjustmentTaxIsProportionalAndTheLastNoteTakesTheRemainder(string gross, string tax, string adjusted,
+        string adjustedTax, string amount, string net, string expectedTax)
+    {
+        static decimal D(string value) => decimal.Parse(value, System.Globalization.CultureInfo.InvariantCulture);
+        var breakdown = FinanceInvoicePolicy.AdjustmentTax(D(gross), D(tax), D(adjusted), D(adjustedTax), D(amount));
+        Assert.Equal((D(net), D(expectedTax)), (breakdown.Net, breakdown.Tax));
+        Assert.Equal(D(amount), breakdown.Net + breakdown.Tax);
+    }
+
+    [Fact]
+    public void ThreeCreditsOfALineAddUpToItsExactItbis()
+    {
+        var first = FinanceInvoicePolicy.AdjustmentTax(100m, 15.25m, 0m, 0m, 33.33m);
+        var second = FinanceInvoicePolicy.AdjustmentTax(100m, 15.25m, 33.33m, first.Tax, 33.33m);
+        var third = FinanceInvoicePolicy.AdjustmentTax(100m, 15.25m, 66.66m, first.Tax + second.Tax, 33.34m);
+        Assert.Equal(15.25m, first.Tax + second.Tax + third.Tax);
+        Assert.Equal(84.75m, first.Net + second.Net + third.Net);
+        Assert.Throws<ArgumentOutOfRangeException>(() => FinanceInvoicePolicy.AdjustmentTax(100m, 18m, 0m, 0m, 0m));
+    }
+
     [Theory]
     [InlineData("100", "18.00")]
     [InlineData("0.03", "0.01")]
@@ -103,6 +163,86 @@ public sealed class FinanceInvoicePolicyTests
         Assert.Equal(valid, store.Request);
     }
 
+    /// <summary>4-N06 and 4-N29: the refusals name their code; versions, when sent, cover every operation once.</summary>
+    [Fact]
+    public async Task HandlerNamesItsCodesAndRequiresVersionsForEveryOperation()
+    {
+        var accountId = Guid.NewGuid();
+        var station = Guid.NewGuid();
+        var store = new Store();
+        var handler = new IssueInvoiceHandler(new Resolver(Actor(accountId, "FINANZAS", station)), store);
+        var ct = TestContext.Current.CancellationToken;
+        var (first, second) = (Guid.NewGuid(), Guid.NewGuid());
+        IssueInvoiceRequest Request(IReadOnlyList<InvoiceOperationVersion>? versions, params Guid[] operations) =>
+            new(accountId, station, operations, Guid.NewGuid(), versions);
+
+        var tooMany = await handler.HandleAsync(Request(null, Enumerable.Range(0, 101).Select(_ => Guid.NewGuid()).ToArray()), ct);
+        Assert.Equal((IssueInvoiceFailure.InvalidRequest, "too_many_operations"), (tooMany.Failure!.Value, tooMany.Reason));
+        Assert.Equal("invalid_invoice_request", (await handler.HandleAsync(Request(null), ct)).Reason);
+        foreach (var versions in new IReadOnlyList<InvoiceOperationVersion>[]
+                 {
+                     [new(first, "AAAAAAAAB9E=")],
+                     [new(first, "AAAAAAAAB9E="), new(second, " ")],
+                     [new(first, "AAAAAAAAB9E="), new(first, "AAAAAAAAB9E=")],
+                     [new(first, "AAAAAAAAB9E="), new(Guid.NewGuid(), "AAAAAAAAB9E=")],
+                     [new(first, "AAAAAAAAB9E="), new(second, new string('A', 65))],
+                 })
+        {
+            var refused = await handler.HandleAsync(Request(versions, first, second), ct);
+            Assert.Equal((IssueInvoiceFailure.InvalidRequest, "invalid_invoice_request"), (refused.Failure!.Value, refused.Reason));
+        }
+        Assert.Null(store.Request);
+        var forbidden = await new IssueInvoiceHandler(new Resolver(Actor(accountId, "OCC", station)), store)
+            .HandleAsync(Request(null, first), ct);
+        Assert.Equal((IssueInvoiceFailure.Forbidden, "forbidden"), (forbidden.Failure!.Value, forbidden.Reason));
+
+        var versioned = Request([new(second, "AAAAAAAAB9E="), new(first, "AAAAAAAAB9F=")], first, second);
+        Assert.True((await handler.HandleAsync(versioned, ct)).IsSuccess);
+        Assert.Equal(versioned.OperationVersions, store.Request!.OperationVersions);
+    }
+
+    [Theory]
+    [InlineData("2026-11-01", "2026-11-01", true)]
+    [InlineData("2026-11-01", "2026-12-01", true)]
+    [InlineData("2026-11-01", "2026-12-02", false)]
+    [InlineData("2026-11-02", "2026-11-01", false)]
+    public void AnInvoiceSpansAtMostThirtyOneDays(string from, string to, bool fits) =>
+        Assert.Equal(fits, FinanceInvoicePolicy.FitsWindow(
+            DateOnly.Parse(from, System.Globalization.CultureInfo.InvariantCulture),
+            DateOnly.Parse(to, System.Globalization.CultureInfo.InvariantCulture)));
+
+    /// <summary>4-N07: the closure needs its key, the versions and a reason of 5 to 500 characters.</summary>
+    [Fact]
+    public async Task NoChargeClosureValidatesKeyVersionsAndReason()
+    {
+        var accountId = Guid.NewGuid();
+        var station = Guid.NewGuid();
+        var store = new Store();
+        var handler = new CloseOperationsWithoutChargeHandler(new Resolver(Actor(accountId, "FINANZAS", station)), store);
+        var ct = TestContext.Current.CancellationToken;
+        var operation = Guid.NewGuid();
+        NoChargeClosureCommand Command(string reason = "Tarifa cero acordada", Guid? key = null,
+            params InvoiceOperationVersion[] operations) =>
+            new(accountId, station, operations.Length == 0 ? [new(operation, "AAAAAAAAB9E=")] : operations, reason,
+                key ?? Guid.NewGuid());
+
+        Assert.Equal("idempotency_key_required", (await handler.HandleAsync(Command(key: Guid.Empty), ct)).Code);
+        Assert.Equal("expected_version_required",
+            (await handler.HandleAsync(Command(operations: new InvoiceOperationVersion(operation, "")), ct)).Code);
+        Assert.Equal("invalid_invoice_request", (await handler.HandleAsync(Command(operations:
+            [new InvoiceOperationVersion(operation, "AAAAAAAAB9E="), new InvoiceOperationVersion(operation, "AAAAAAAAB9E=")]), ct)).Code);
+        Assert.Equal("too_many_operations", (await handler.HandleAsync(Command(operations: Enumerable.Range(0, 101)
+            .Select(_ => new InvoiceOperationVersion(Guid.NewGuid(), "AAAAAAAAB9E=")).ToArray()), ct)).Code);
+        foreach (var reason in new[] { "", "   ", "Cero", new string('x', 501) })
+            Assert.Equal("reason_required", (await handler.HandleAsync(Command(reason), ct)).Code);
+        Assert.Null(store.Closure);
+        Assert.Equal("forbidden", (await new CloseOperationsWithoutChargeHandler(
+            new Resolver(Actor(accountId, "OCC", station)), store).HandleAsync(Command(), ct)).Code);
+
+        Assert.True((await handler.HandleAsync(Command("  Paquete ya cobrado  "), ct)).IsSuccess);
+        Assert.Equal("Paquete ya cobrado", store.Closure!.Reason);
+    }
+
     private static ActorContext Actor(Guid accountId, string role, Guid station) =>
         new(accountId, "finance@dev.elevant.test", "Finance",
             [new ActorRole(Guid.NewGuid(), role, role, PortalKind.BackOffice, "staff")],
@@ -120,10 +260,20 @@ public sealed class FinanceInvoicePolicyTests
     {
         public IssueInvoiceRequest? Request { get; private set; }
 
+        public NoChargeClosureCommand? Closure { get; private set; }
+
         public Task<IssueInvoiceResult> IssueAsync(IssueInvoiceRequest request, CancellationToken cancellationToken = default)
         {
             Request = request;
             return Task.FromResult(IssueInvoiceResult.Success(Guid.NewGuid(), "DEV-NF-TEST", "E310000000001", 118m, "USD", false));
+        }
+
+        public Task<NoChargeClosureResult> CloseWithoutChargeAsync(NoChargeClosureCommand request,
+            CancellationToken cancellationToken = default)
+        {
+            Closure = request;
+            return Task.FromResult(NoChargeClosureResult.Success(
+                new NoChargeClosureData(Guid.NewGuid(), request.Operations.Select(item => item.OperationId).ToArray()), false));
         }
     }
 }

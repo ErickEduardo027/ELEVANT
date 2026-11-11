@@ -15,10 +15,12 @@ namespace Elevant.Api.Controllers;
 [ApiVersion("1.0")]
 [Authorize]
 [PrivateResponse]
+[InvoicingProblemDetails]
 [Route("api/v{version:apiVersion}/finance/invoices")]
 public sealed class FinanceInvoiceIssuanceController(IssueInvoiceHandler handler) : ControllerBase
 {
-    private const long BodyLimitBytes = 8 * 1024;
+    // 100 operation ids and, since 4-N29, their versions.
+    private const long BodyLimitBytes = 24 * 1024;
 
     [RequestSizeLimit(BodyLimitBytes)]
     [HttpPost("from-operations", Name = "IssueInvoiceFromOperations")]
@@ -36,22 +38,16 @@ public sealed class FinanceInvoiceIssuanceController(IssueInvoiceHandler handler
     {
         var accountId = Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out var id) ? id : Guid.Empty;
         var result = await handler.HandleAsync(new IssueInvoiceRequest(accountId, request.StationId,
-            request.OperationIds ?? [], request.RequestId), cancellationToken);
+            request.OperationIds ?? [], request.RequestId,
+            request.OperationVersions?.Select(item => item is null ? null! : new InvoiceOperationVersion(item.OperationId,
+                item.Version)).ToArray()), cancellationToken);
         if (!result.IsSuccess)
         {
-            var (status, title) = result.Failure switch
-            {
-                IssueInvoiceFailure.Unauthorized => (401, "Authentication failed."),
-                IssueInvoiceFailure.Forbidden => (403, "Issuing invoices is forbidden."),
-                IssueInvoiceFailure.InvalidRequest => (400, "The invoice request is invalid."),
-                IssueInvoiceFailure.NotFound => (404, "An operation was not found in the station."),
-                IssueInvoiceFailure.Conflict => (409, "An operation is not approved or was already invoiced."),
-                _ => (422, "The operations cannot be invoiced together."),
-            };
-            if (status == 401) Response.Headers.WWWAuthenticate = "Bearer";
-            var problem = new ProblemDetails { Status = status, Title = title, Instance = HttpContext.Request.Path };
-            if (result.Reason is { } reason) problem.Extensions["reasons"] = new[] { reason };
-            return new ObjectResult(problem) { StatusCode = status };
+            // Phase 4, block A: every refusal carries its code (and, for older clients, the same code in reasons).
+            var (status, title, fallback) = InvoicingProblems.Of(result.Failure);
+            return status == StatusCodes.Status401Unauthorized
+                ? InvoicingProblems.Coded(this, status, title, null)
+                : InvoicingProblems.Coded(this, status, title, result.Reason ?? fallback, withReasons: true);
         }
         var response = new IssuedInvoiceResponse(result.InvoiceId!.Value, result.Number!, result.FiscalNumber!,
             result.Total!.Value, result.CurrencyCode!, result.Replayed);

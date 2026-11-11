@@ -5,7 +5,7 @@ vi.mock('../features/auth/authService', () => ({ handleUnauthorizedResponse: vi.
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: () => api }));
 
 import { addHoliday, loadCloseRules, saveGroundTime } from './financeCloseRulesService';
-import { sundayWeek } from '../features/finance/approved-services/useApprovedServicesData';
+import { sundayWeek } from '../features/finance/invoicing/weeks';
 
 describe('finance close rules (ADR-0034)', () => {
   beforeEach(() => vi.clearAllMocks());

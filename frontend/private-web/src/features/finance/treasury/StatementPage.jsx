@@ -6,6 +6,7 @@ import StackedTable from '../../../components/StackedTable';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
 import { formatTreasuryMoney as money, getTreasuryOptions, getTreasuryStatement, treasuryError, treasuryToday } from '../../../services/financeTreasuryService';
+import { invoiceLabel } from '../financeLabels';
 
 const field = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const button = 'min-h-[40px] rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
@@ -43,7 +44,7 @@ export default function StatementPage({ initialStationId, initialAirlineId = '',
     {error && <div role="alert" className="space-y-2 rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger"><p>{error}</p><button type="button" onClick={() => { setLoading(true); setRevision(value => value + 1); }} className="font-semibold">Reintentar consulta</button></div>}
     {loading && <p role="status">Cargando estado de cuenta…</p>}
     {data && !loading && <>
-      <p className="text-sm font-semibold">Corte: {data.asOf} · Fechas de registro y movimiento hasta el cierre del día UTC.</p>
+      <p className="text-sm font-semibold">Corte: {data.asOf} · Fechas de registro y movimiento hasta el cierre del día (hora de República Dominicana).</p>
       {!data.aging.length ? <p className="rounded-xl border border-black/10 p-6 text-sm dark:border-white/10">No hay documentos ni movimientos para este corte.</p> : data.aging.map(group => <section key={group.currencyCode} className="space-y-2" aria-label={'Antigüedad ' + group.currencyCode}>
         <h2 className="text-base font-semibold">{group.currencyCode}</h2>
         <StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card"><table className="table-stack w-full min-w-[760px] text-left text-sm"><thead><tr>{['Saldo', 'Vigente', '1–30 días', '31–60 días', '61–90 días', 'Más de 90 días', 'Remanente sin aplicar', 'Crédito a favor'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead>
@@ -51,7 +52,7 @@ export default function StatementPage({ initialStationId, initialAirlineId = '',
       </section>)}
       {data.invoices.length > 0 && <section className="space-y-2"><h2 className="font-semibold">Facturas al corte</h2><StackedTable className="rounded-xl border border-black/5 bg-white dark:border-white/5 dark:bg-surface-dark-card"><table className="table-stack w-full min-w-[800px] text-left text-sm">
         <thead><tr>{['Factura', 'Vencimiento', 'Facturado', 'Pagos históricos', 'Créditos históricos', 'Aplicado', 'Notas crédito / débito', 'Saldo', 'Antigüedad'].map(label => <th key={label} className="p-3">{label}</th>)}</tr></thead><tbody>
-          {data.invoices.map(i => <tr key={i.id} className="border-t border-black/5 dark:border-white/5"><td className="p-3">{onOpenInvoice ? <button type="button" className="min-h-[36px] font-semibold text-accent-600" onClick={() => onOpenInvoice(i.id)}>{i.number}</button> : i.number}</td>
+          {data.invoices.map(i => <tr key={i.id} className="border-t border-black/5 dark:border-white/5"><td className="p-3">{onOpenInvoice ? <button type="button" className="min-h-[36px] font-semibold text-accent-600" onClick={() => onOpenInvoice(i.id)}>{invoiceLabel(i)}</button> : invoiceLabel(i)}</td>
             <td className="p-3">{i.dueDate ?? 'Sin fecha'}</td>{[i.total, i.legacyPaid, i.legacyCredited, i.applied].map((value, index) => <td key={index} className="p-3 tabular-nums">{money(value, i.currencyCode)}</td>)}
             <td className="p-3 tabular-nums">{money(i.credited, i.currencyCode)} / {money(i.debited, i.currencyCode)}</td><td className="p-3 font-semibold tabular-nums">{money(i.balance, i.currencyCode)}</td><td className="p-3">{i.agingBucket === 'Current' ? 'Vigente' : i.agingBucket} {i.daysOverdue > 0 && '(' + i.daysOverdue + ' días)'}</td></tr>)}
         </tbody></table></StackedTable></section>}

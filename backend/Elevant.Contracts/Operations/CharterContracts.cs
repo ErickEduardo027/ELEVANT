@@ -56,6 +56,17 @@ public sealed record ReopenCharterPrepaymentRequest
     public string? Version { get; init; }
 }
 
+/// <summary>
+/// Finance confirms the carrier's prepayment (ADR-0033) with the Idempotency-Key header and the version it saw (4-N22).
+/// The same amount and reference again change nothing; another amount or reference corrects a confirmed prepayment that
+/// was never applied, with its reason.
+/// </summary>
+/// <param name="Amount">The prepaid amount, in the charter's currency.</param>
+/// <param name="Reference">The payment reference.</param>
+/// <param name="Version">The charter's version as Finance saw it; a stale one is 409 <c>version_conflict</c>.</param>
+/// <param name="Reason">Why a confirmed prepayment is corrected (5 to 500 characters); not needed to confirm it.</param>
 public sealed record ConfirmCharterPrepaymentRequest(
     [Range(0.01, 10000000)] decimal Amount,
-    [Required, StringLength(80, MinimumLength = 2)] string Reference);
+    [Required, StringLength(80, MinimumLength = 2)] string Reference,
+    string? Version = null,
+    string? Reason = null);

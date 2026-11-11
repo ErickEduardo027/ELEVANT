@@ -95,6 +95,54 @@ describe("Problem Details codes", () => {
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 
+  it("knows the invoicing and treasury codes of phase 4 (block A)", () => {
+    // 4-N01, 4-N06, 4-N07, 4-N18, 4-N29: every refusal of the issuance, «Por facturar» and the no-charge closure.
+    for (const code of ["invalid_invoice_request", "invalid_pending_query", "invoice_state_changed", "zero_total",
+      "operation_has_charge", "too_many_lines", "too_many_operations", "date_window_exceeded", "station_inactive",
+      "airline_inactive", "mixed_airline", "mixed_currency", "nothing_to_invoice", "operation_not_approved",
+      "already_invoiced", "pending_preinvoice", "exchange_rate_missing", "contract_charge_rate_missing",
+      "charge_definition_missing", "package_scope_has_unissued_preinvoice", "ambiguous_package_coverage",
+      "charge_excluded_by_contract", "invalid_amount", "idempotency_conflict", "version_conflict"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // 4-N10: the business day of the invoice or the receipt, and the defaults of treasury.
+    for (const code of ["effective_before_invoice", "effective_before_receipt", "treasury_conflict",
+      "invalid_treasury_request"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the simplified Finance codes of phase 4 (block B)", () => {
+    // 4-N12: a legacy write answers 410; 4-A: a retired report and a bad export format; 4-N21 and 4-A: the queries of
+    // «Facturas» and «Inicio». The report query and the refusal keep their shared codes.
+    for (const code of ["legacy_finance_route_retired", "unknown_finance_report", "invalid_report_export_format",
+      "invalid_invoice_query", "invalid_finance_home_query", "invalid_report_query", "forbidden", "not_found"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows that a card receipt is not reversed from Treasury (phase 4, block C, 4-N09)", () => {
+    for (const code of ["card_payment_not_reversible", "treasury_conflict", "invalid_treasury_request", "version_conflict",
+      "idempotency_conflict"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the charter prepayment codes of phase 4 (block C, 4-N22)", () => {
+    // Applied to the invoice, the prepayment is reversed in «Cobros» before it is reopened; the confirmation takes a key,
+    // the version and, to correct it, a reason; a receipt of the airline posted at the same moment has its own code.
+    for (const code of ["charter_prepayment_applied", "invalid_charter_request", "charter_prepayment_not_confirmed",
+      "charter_prepayment_receipt_conflict", "idempotency_key_required", "expected_version_required", "reason_required",
+      "version_conflict", "idempotency_conflict"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+  });
+
+  it("knows the card payment codes of phase 4 (block C)", () => {
+    // 4-N05: no card gateway in this environment; every other refusal of the card payment names its cause.
+    for (const code of ["card_payments_unavailable", "card_payment_invalid", "card_payment_conflict", "invoice_paid",
+      "amount_mismatch", "concurrent_payment", "idempotency_conflict", "idempotency_key_required", "not_found", "forbidden"])
+      expect(ELEVANT_API_ERROR_CODES).toContain(code);
+    // Older portals read the reasons: the unavailable gateway is one too.
+    for (const reason of ["card_payments_unavailable", "invoice_paid", "amount_mismatch"])
+      expect(ELEVANT_RULE_REASONS).toContain(reason);
+  });
+
   it("keeps the access codes of phase 2 (block E)", () => {
     for (const code of ["device_revoked", "device_in_use_by_active_agent", "device_platform_mismatch", "device_not_bound",
       "device_conflict", "invalid_mobile_device", "signer_required", "representative_required", "portal_user_protected",

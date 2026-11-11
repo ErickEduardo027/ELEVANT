@@ -5,7 +5,9 @@ namespace Elevant.Contracts.Finance;
 
 /// <summary>
 /// Finance issues one simulated e-CF invoice for one completed operation or for several of the same
-/// airline and currency (ADR-0035). The same request id again returns the invoice already issued.
+/// airline and currency (ADR-0035). The same request id again returns the invoice already issued; with another
+/// account, station, operations or operation versions it is 409 <c>idempotency_conflict</c> (4-N29). More operations
+/// than one invoice takes is 400 <c>too_many_operations</c> (4-N06).
 /// </summary>
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed record IssueInvoiceFromOperationsRequest
@@ -16,6 +18,13 @@ public sealed record IssueInvoiceFromOperationsRequest
     public IReadOnlyList<Guid> OperationIds { get; init; } = [];
 
     public Guid RequestId { get; init; }
+
+    /// <summary>
+    /// 4-N29: the version of each operation as Finance saw it (a stale one is 409 <c>version_conflict</c>). Optional
+    /// while older clients exist; when sent it covers every operation exactly once.
+    /// </summary>
+    [MaxLength(100)]
+    public IReadOnlyList<FinanceOperationVersionRequest>? OperationVersions { get; init; }
 }
 
 public sealed record IssuedInvoiceResponse(Guid InvoiceId, string Number, string FiscalNumber, decimal Total,

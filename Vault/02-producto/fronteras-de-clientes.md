@@ -54,7 +54,7 @@ sequenceDiagram
     C-->>U: Estado observable
 ```
 
-La secuencia es el diseño requerido. En el commit verificado, autenticación, autorización y casos de uso de negocio todavía no existen en el API; no debe leerse como un flujo ya operativo.
+La secuencia es el diseño requerido. Posterior al commit verificado de esta nota (código de `39a85a46`): la API ya autentica, autoriza y ejecuta así los casos de uso de las cuatro fases del ciclo; un 401 renueva la sesión y un 409 obliga a releer antes de un nuevo intento.
 
 ## Contratos y fuentes de verdad
 
@@ -62,7 +62,7 @@ La secuencia es el diseño requerido. En el commit verificado, autenticación, a
 2. Un endpoint existente queda definido por OpenAPI, no por un tipo de pantalla.
 3. El cliente generado adapta ese contrato para los tres consumidores.
 4. El dominio aplica invariantes y la persistencia conserva historia.
-5. REST confirma el estado canónico; un evento SignalR futuro solo avisa que conviene refrescar.
+5. REST confirma el estado canónico; el aviso SignalR `ChangedV1` solo indica que conviene refrescar.
 
 Los modelos EF no salen por la API y los fixtures no entran como contratos de persistencia.
 
@@ -73,15 +73,18 @@ Los modelos EF no salen por la API y los fixtures no entran como contratos de pe
 - **Mobile Agent:** cuenta, perfil, estación y dispositivo se derivan/validan en servidor; cada escritura offline necesita idempotencia.
 - **Todos:** sin conexión directa a SQL Server, FlightAware ni almacenamiento de objetos.
 
-## Estado real de integración al commit verificado
+## Estado real de integración
+
+Posterior al commit verificado de esta nota: la tabla describe el código de
+`39a85a46`.
 
 | Capa | Estado demostrable |
 | --- | --- |
-| Private Web | Preview técnico con adaptadores heredados; las llamadas de negocio a la API real deben fallar de forma controlada |
-| Public Web | Landing/portal demostrativos; sesión, autorización y mayoría de datos son mock/locales |
-| Mobile Agent | Prototipo nativo; aún no consume contratos de negocio de la API .NET |
-| API/OpenAPI | Health, readiness, Swagger y `system/ping`; sin autenticación ni endpoints de negocio |
-| Persistencia | Modelo v1 amplio y compartido; una tabla no implica un caso de uso entregado |
+| Private Web | OCC, Gestión Humana, Contratos, Finanzas y Superadministración contra la API; quedan adaptadores heredados del prototipo y el modo demo del tablero de Gestión Humana |
+| Public Web | Sitio público con catálogo y solicitudes, y portal con sesión real, filtrado por el servidor |
+| Mobile Agent | Consume la API con sesión, tableta vinculada y cola offline idempotente |
+| API/OpenAPI | 400 operaciones de las cuatro fases del ciclo, con JWT y Problem Details con `code` |
+| Persistencia | Modelo compartido con 57 migraciones; una tabla sigue sin implicar un caso de uso entregado |
 
 Esta tabla describe evidencia del repositorio, no certifica qué artefactos están ejecutándose en un host.
 

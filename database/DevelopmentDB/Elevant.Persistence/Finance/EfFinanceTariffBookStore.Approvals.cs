@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Data;
 using Elevant.Application.Commercial;
 using Elevant.Application.Finance;
@@ -42,7 +43,7 @@ internal sealed partial class EfFinanceTariffBookStore
         if (actor is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
         if (input is null || !ValidCurrency(input.FromCurrency) || !ValidCurrency(input.ToCurrency) ||
             input.FromCurrency == input.ToCurrency || input.Rate is <= 0 or > 1_000_000m || input.RateDate == default ||
-            input.RateDate > DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime.AddDays(1)) ||
+            input.RateDate > BusinessCalendar.Today(timeProvider.GetUtcNow()).AddDays(1) ||
             string.IsNullOrWhiteSpace(input.Source) || input.Source.Trim().Length > 120)
             return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid, "invalid_exchange_rate");
         // A replay answers the rate the first attempt recorded instead of exchange_rate_exists.

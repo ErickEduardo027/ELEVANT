@@ -579,30 +579,42 @@ versiones y enmiendas, Finanzas aprueba el contrato y OCC aprueba la ejecución.
 El agente marca cargos sin recibir precios. Cantidad, evidencia, precio,
 moneda y cálculo se congelan; falta de datos/FX o ambigüedad bloquea.
 
-Las rutas de `finance/approved-services`, `finance/preinvoices`,
-`finance/tariffs`, tarifarios y catálogo conservan las lecturas autorizadas.
-Se agregan `finance/packages`, paquetes del borrador contractual y enmiendas.
-El consumo se reserva con la prefactura bajo transacción serializable, por
-turnaround, tramo o período; un ámbito con otra prefactura activa sin emitir
-bloquea con `package_scope_has_unissued_preinvoice`. Anular libera reservas
-sin borrar historia. Los mínimos generan un complemento trazable solo para
-versiones modernas `PricingPolicyVersion > 0`; no se reinterpretan versiones
-heredadas ni se añade el mínimo de servicio a cobertura de paquete.
+«Por facturar» lee `finance/invoicing/pending-operations` y emite con
+`finance/invoices/from-operations` (ADR-0035). Desde la fase 4 (4-A) la
+prefactura es solo el borrador interno de esa transacción: valora los servicios
+aprobados y se emite dentro de ella, sin endpoints, permisos ni pantallas. Las
+rutas de prefactura, servicios aprobados y conciliación de Finanzas y las de
+aceptar o disputar del portal se retiraron (404). `POST finance/invoices`,
+`POST finance/invoices/{id}/credit-notes` y `POST finance/payments` responden
+410 `legacy_finance_route_retired` sin escribir nada: se emite desde «Por
+facturar», se cobra en «Cobros» y se corrige con notas de ajuste. Las tablas
+y las migraciones aplicadas se conservan.
 
-En Draft, Finanzas ajusta/excluye con motivo, versión y cálculo original.
-El recálculo es explícito. Una disputa impide emitir; su resolución conserva
-historial. La aerolínea acepta/disputa únicamente su tenant. La emisión
-desde una prefactura Accepted congela factura, líneas, jerarquía, identidad
-comercial y vencimiento. No se revalora después con tarifas actuales.
+Un borrador anterior sin factura (el de una emisión que falló antes de la
+transacción única o una prefactura del módulo retirado) ya no tiene salida
+propia: la emisión y el cierre sin cargo que encuentran sus servicios, o el
+consumo de su paquete en la estación, lo anulan y liberan sus líneas dentro
+de su propia transacción, con la auditoría `finance.invoicing.stale_draft_released`;
+«Por facturar» no lo cuenta como bloqueo. El recibo del `requestId` de la
+emisión guarda estación, operaciones y versiones (4-N29): la misma clave con
+otras versiones es `409 idempotency_conflict`. Más de 100 operaciones en la
+emisión o en el cierre sin cargo es `400 too_many_operations` (4-N06), y el
+`lineEstimate` de cada operación pendiente cuenta también la base y el
+excedente de un paquete, como los escribe el borrador interno.
 
-`finance/tax-policies` y `finance/preinvoices/{id}/taxes` administran
-tratamientos explícitos por aerolínea, estación, moneda, concepto y vigencia.
-Las líneas congelan política, tasa/fundamento, neto, descuento, impuesto y
-bruto. `Unconfigured` conserva impuesto desconocido, no cero. El legado
-comercial sigue legible sin inferir tratamiento; una preparación fiscal sin
-snapshot emitido configurado se bloquea. El modelo aún no aporta registros
-tributarios revisados: `issuerTaxRegistration` y
-`customerTaxRegistration` quedan explícitamente null, nunca datos inventados.
+`finance/tariffs`, tarifarios, catálogo y `finance/packages` (con paquetes del
+borrador contractual y enmiendas) conservan sus rutas. El consumo de paquete se
+reserva con el borrador interno bajo la transacción serializable de la emisión,
+por turnaround, tramo o período. Los mínimos generan un complemento trazable
+solo para versiones modernas `PricingPolicyVersion > 0`; no se reinterpretan
+versiones heredadas ni se añade el mínimo de servicio a cobertura de paquete.
+La emisión congela factura, líneas, jerarquía, identidad comercial, ITBIS 18 %
+simulado y vencimiento; no se revalora después con tarifas actuales.
+
+Los tratamientos tributarios configurables (`finance/tax-policies` y
+`finance/preinvoices/{id}/taxes`) se retiraron (4-A, 4-N20): el ITBIS fijo del
+e-CF simulado los sustituye. Las líneas heredadas conservan su snapshot y
+`Unconfigured` sigue siendo impuesto desconocido, no cero.
 
 ### Cartera y tesorería
 
@@ -626,24 +638,75 @@ con tenant derivado por el servidor. Ningún registro confirma fondos bancarios.
 ### Proveedores, CxP y gastos propios
 
 - `api/v1/finance/suppliers`: alta, detalle, filtros/opciones, edición y retiro
-  lógico con motivo y versión.
+  lógico con motivo y versión. Un proveedor con facturas en borrador o en
+  revisión, facturas aprobadas con saldo o pagos sin aplicar no se retira, ni
+  por `DELETE` ni al desmarcar «Proveedor activo» (`supplier_has_open_balance`).
+  Con un proveedor retirado solo se anulan sus facturas y se aplican pagos ya
+  registrados; lo demás responde `supplier_inactive`.
 - `api/v1/finance/payables`: facturas de proveedor Draft → Submitted →
-  Approved/Rejected, referencia normalizada única por proveedor, líneas
-  congeladas al presentar y rechazo con motivo.
+  Approved/Rejected, referencia normalizada única por proveedor entre las no
+  anuladas (`duplicate_reference`), líneas congeladas al presentar y rechazo
+  con motivo. Una rechazada vuelve a Draft para corregirla; un borrador, una
+  rechazada o una aprobada sin aplicaciones activas se anula (Voided) con
+  motivo y libera su número de documento. Una aprobada nunca vuelve a Draft y
+  una en revisión se decide antes de anularla. Quien creó o envió la factura no
+  la aprueba, y quien la aprobó no registra ni aplica pagos contra ella
+  (`segregation_of_duties`, comparado por persona). Cada factura leída trae
+  `approvalBlocked`: es verdadero cuando la persona que la lee la creó o la
+  envió, con la misma regla de la aprobación, para que la pantalla no le
+  ofrezca aprobarla.
 - `api/v1/finance/payable-payments`: pago separado de sus applications;
   varias facturas, pagos parciales, saldo y remanente, sin sobreaplicación.
+  `payable-payments/{id}/reversals` revierte una aplicación (`applicationId`)
+  o, sin ella, anula el pago que ya no tiene aplicaciones activas. Cada
+  reverso es una fila vinculada e inmutable con su motivo; los saldos, la
+  lista de pagos pendientes y el reporte de cuentas por pagar dejan de contar
+  lo revertido o anulado desde su instante.
 - `api/v1/finance/expenses`: Employee activo vinculado a la cuenta, soporte
   privado, presentación, decisión departamental, decisión final de Finanzas y
-  reimbursements separados.
+  reimbursements separados. El solicitante retira su gasto mientras el
+  departamento no lo decide, corrige uno rechazado y descarta un borrador o un
+  rechazado (Cancelled), siempre con motivo.
+- `.../{id}/attachments/{attachmentId}/removals` (gastos y facturas de
+  proveedor): quita un comprobante de un borrador. Deja de mostrarse, de
+  descargarse y de contar para el envío y el límite de 20; sus bytes se borran
+  solo si ninguna presentación lo incluyó, y si no queda oculto como historial.
+
+Ninguna corrección borra datos: son cambios de estado o filas vinculadas con
+su revisión y su auditoría. Los comandos conservan `requestId` y
+`expectedVersion` en el cuerpo, con el recibo `FinancePayablesCommand`. Cada
+rechazo es Problem Details con un `code` estable cuyo status fija
+`FinancePayablesProblems` (`version_conflict`, `idempotency_conflict`,
+`invalid_state`, `reason_required` de 5 a 500 caracteres,
+`expense_date_outside_assignment`, `attachment_limit`…). La migración
+`20261109064156_AddPayablesCorrections` añade
+`commercial.payable_payment_reversals`, la marca de comprobante retirado y el
+índice de referencia filtrado sin las facturas anuladas.
+
+Códigos de Finanzas del módulo:
+
+| Módulo | Códigos |
+| --- | --- |
+| Facturas de proveedores | `finance.payables.read`, `.create`, `.update` (editar, enviar, corregir una rechazada y anular un borrador o una rechazada), `.approve`, `.pay` y `.reverse` (anular una aprobada, revertir aplicaciones y anular pagos) |
+| Proveedores | `finance.suppliers.read`, `.create`, `.update` y `.delete` (retirar) |
+| Gastos de empleados | `finance.expenses.read`, `.approve` (revisar) y `.pay` (reembolsar) |
+
+`finance.expenses.create`, `.update` y `.manage` se retiraron como alias
+vacíos: nunca controlaron el gasto propio, y un perfil guardado con ellos no
+falla al volver a guardarse.
 
 Una cuenta interna AVIAM con Employee activo puede crear/presentar/leer su
 propio gasto sin un código de Finanzas. La API impide seleccionar otro
 empleado; sus opciones devuelven capacidades para la UI. El administrador
-efectivo revisa su departamento, nunca su propio gasto. Finanzas aprueba
-después y registra reembolsos con sus permisos, sin autoaprobación/pago
-propio ni una misma persona en ambas revisiones. Listas y filtros no amplían
-el ámbito. El componente reutilizable DepartmentExpensesPage sirve el
-recorrido «Mis gastos» fuera del área de Finanzas.
+efectivo revisa su departamento, nunca su propio gasto. Si su departamento no
+tiene otro administrador con la estación del gasto, lo revisa un administrador
+de Finanzas (etapa Escalation); `reviewRoute` lo indica con `Department`,
+`Finance` o `None`, cuando nadie puede revisarlo y Gobernanza debe asignar un
+revisor. Finanzas aprueba después y registra reembolsos con sus permisos, sin
+autoaprobación/pago propio ni una misma persona en ambas revisiones. Listas y
+filtros no amplían el ámbito. El componente reutilizable
+DepartmentExpensesPage sirve el recorrido «Mis gastos» en cada departamento,
+Finanzas incluido, sin código de Finanzas.
 
 Las dimensiones opcionales estación, aerolínea, turnaround y servicio se
 validan entre sí y frente al scope. Los soportes usan almacenamiento privado
@@ -652,33 +715,15 @@ Los PDFs comerciales de factura/recibo conservan descargas autorizadas de
 bytes privados, sin URL pública ni regeneración silenciosa de originales
 alterados. El portal no recibe soportes de empleados ni su PII.
 
-### Fiscal local y preflight XML
+### Documentos fiscales (retirado)
 
-`api/v1/finance/fiscal-documents` ofrece status, lista/detalle, creación,
-simulate y descargas de artefactos. Los estados comercial, de cartera y
-fiscal son independientes.
-
-- `FinanceFiscal:Mode` predetermina Off. LocalSimulation solo ejecuta en
-  Development/Test. ProviderSandbox está bloqueado: no hay proveedor seleccionado.
-- El ambiente se resuelve de DOTNET_ENVIRONMENT, luego
-  ASPNETCORE_ENVIRONMENT, por defecto Production.
-- Se persiste intención, se archivan JSON canónico/XML neutral/manifest,
-  se verifican bytes y después se reclama un único intento. Archivo previo
-  fallido bloquea; timeout/desconocido no permite reenvío ciego.
-- `FinanceFiscal:ArchiveMode` predetermina PrivateObjectStore (S3 privado).
-  LocalDirectory exige ArchiveDirectory privado/persistente y se rechaza al
-  arrancar fuera de Development/Test. Permite QA fiscal sin S3; no reemplaza
-  almacenamiento de soportes de gastos ni PDFs comerciales.
-- El simulador no usa red fiscal, certificados, firma ni numeración oficial.
-  Lleva SIMULATION WITHOUT FISCAL VALIDITY y mantiene e-NCF/respuesta DGII null.
-  El autenticador de callbacks registrado rechaza todos por defecto.
-
-`POST api/v1/finance/fiscal-xml/validate` es un preflight offline independiente
-para E31/E32/E33/E34 con XSD oficiales fijados. No despacha ni almacena el XML.
-XSD, presencia de firma, criptografía, reglas de negocio y aceptación son
-capas separadas: criptografía y aceptación permanecen NotPerformed.
-El XML neutral FiscalSimulation no es un e-CF. Fuentes y límites:
-[referencia DGII](../docs/reference/dgii-ecf-schema-sources.md).
+El módulo «Documentos fiscales» (`api/v1/finance/fiscal-documents`), el
+preflight `POST api/v1/finance/fiscal-xml/validate`, su simulador local y la
+configuración `FinanceFiscal:*` se retiraron en la fase 4 (4-A, 4-N20): la API
+ya no lee esa configuración. Las tablas, las migraciones aplicadas y los XSD
+oficiales (fuente de `scripts/geo/generate-do-territory.mjs`) se conservan. La
+factura lleva el e-NCF simulado de ADR-0035; el recibo de tarjeta y los PDF de
+reportes se marcan «Simulación — sin validez fiscal», nunca «Sin NCF».
 
 ### Acceso, reportes y recuperación
 
@@ -686,23 +731,34 @@ JWT identifica cuenta; el servidor deriva membresía AVIAM, departamento,
 estaciones y permisos. Las mutaciones usan intención/hash, expectedVersion
 cuando corresponde, auditoría y pistas de cambio con revalidación de acceso.
 
-Además de tarifas/cargos, contratos y prefacturas, el catálogo ofrece
-`finance.catalog.read/manage`, `finance.packages.read/manage`,
-`finance.taxes.read/manage`, `finance.receipts.read/manage/apply/reverse/refund`,
-`finance.adjustments.read/issue`, `finance.suppliers.read/manage`,
-`finance.payables.read/manage/approve/pay`,
-`finance.expenses.read/manage/approve/pay` y
-`finance.fiscal.read/manage/simulate`. La excepción de gasto propio no
-concede gestión o aprobación financiera general.
+El catálogo de Finanzas (`DepartmentPermissionCatalog`) sigue el menú: Inicio,
+Facturación (Por facturar, Facturas con Cobros y Estados de cuenta como
+sub-ventanas, Charters), Cuentas por pagar, Reportes y Configuración. Los
+códigos de los módulos retirados se resuelven por alias al leer el acceso:
+`finance.approved_services.read` y `finance.preinvoices.read` dan
+`finance.invoicing.read`; `finance.preinvoices.issue` y `.manage` dan
+`finance.invoicing.issue`; `finance.taxes.*`, `finance.fiscal.*`,
+`finance.reconciliation.create` y el resto de prefactura no conceden nada. La
+excepción de gasto propio no concede gestión o aprobación financiera general.
+`GET api/v1/finance/home` calcula los indicadores de «Inicio» por estación y
+día hábil de Santo Domingo; cada sección es null sin el permiso de su módulo.
+El PDF de una factura (`GET api/v1/finance/invoices/{id}/document`) se abre
+con «Facturas» (`finance.reconciliation.read`), que abre todas las de sus
+estaciones, o con `finance.invoicing.issue`, que solo abre las que emitió la
+propia cuenta (la recién emitida en «Por facturar»); leer «Por facturar» sin
+emitir no abre facturas, aunque sigue leyendo el estado de sus correos
+(`email-deliveries`).
 
-Los reportes añaden tesorería, notas de débito, proveedores/CxP, gastos,
-paquetes y fiscal/simulación separados; conservan filtros de servidor,
-exportación CSV/XLSX/PDF con permiso y auditoría. Conciliación documental no es bancaria.
+Quedan seis reportes: ingresos, cuentas por cobrar y antigüedad, cobranza (con
+tarjeta), cuentas por pagar, recargos y ventas del e-CF simulado; usan el e-NCF,
+etiquetas en español, filtros de servidor y exportación CSV/XLSX/PDF con
+permiso y auditoría. Un reporte retirado responde 400 `unknown_finance_report`.
+Conciliación documental no es bancaria.
 Dinero usa decimal(19,4), cantidades decimal(18,4) y USD/DOP requieren FX explícito.
 
-El [runbook fiscal](../docs/runbooks/finance-fiscal-activation.md) detalla
-archivo, recuperación de SQL **y** bytes, validación y gates pendientes de
-conectividad real. La [matriz Odoo](../docs/reference/odoo-finance-adaptation.md)
+El [runbook fiscal](../docs/runbooks/finance-fiscal-activation.md) es histórico:
+describe el módulo fiscal retirado y los gates que exigiría una conectividad
+fiscal real. La [matriz Odoo](../docs/reference/odoo-finance-adaptation.md)
 documenta referencia fijada y licencias: implementación C#/React propia y
 UI ELEVANT, sin copiar apariencia ni código Odoo. No hay emisión fiscal real,
 cobro electrónico, libro mayor ni conciliación bancaria en esta etapa.

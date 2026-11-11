@@ -46,8 +46,59 @@ describe("Charter client (ADR-0033)", () => {
       fetch: async () => { throw new Error("must not call"); } });
     await expect(client.addRampCharterService(operationId, { serviceDefinitionId: serviceId, quantity: 0 }, installationId, key))
       .rejects.toThrow(TypeError);
-    await expect(client.confirmFinanceCharterPrepayment(charter.charterId, { amount: 260, reference: "<x>" }))
-      .rejects.toThrow(TypeError);
+    await expect(client.confirmFinanceCharterPrepayment(charter.charterId,
+      { amount: 260, reference: "<x>", version: "AAAA" }, key)).rejects.toThrow(TypeError);
+  });
+
+  it("confirms and corrects a prepayment with its key, the version and a reason (4-N22)", async () => {
+    const financeCharter = {
+      id: "90000000-0000-7000-8000-000000000001", operationId, operationCode: "PUJ-20261108-001",
+      operationDate: "2026-11-08", stationCode: "PUJ", airlineName: "Charter Air", currencyCode: "USD", servicesTotal: 260,
+      requestSigned: true, prepaymentStatus: "Confirmed", prepaymentAmount: 1500, prepaymentReference: "TRF-0001",
+      prepaymentConfirmedAt: "2026-11-08T12:00:00Z", version: "AAAAAAAAB9E=",
+    };
+    const requests: Array<{ url: string; method: string; headers: Headers; body: string }> = [];
+    let answer: unknown = financeCharter;
+    const client = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async (input, init) => {
+      requests.push({ url: String(input).replace("https://api.example.test", ""), method: String(init?.method),
+        headers: new Headers(init?.headers), body: String(init?.body ?? "") });
+      return Response.json(answer);
+    } });
+    await expect(client.confirmFinanceCharterPrepayment(financeCharter.id,
+      { amount: 15000, reference: " TRF-0001 ", version: " AAAAAAAAB9A= " }, key)).resolves.toEqual(financeCharter);
+    expect([requests[0]!.method, requests[0]!.url])
+      .toEqual(["PUT", `/api/v1/finance/charters/${financeCharter.id}/prepayment`]);
+    expect(JSON.parse(requests[0]!.body)).toEqual({ amount: 15000, reference: "TRF-0001", version: "AAAAAAAAB9A=" });
+    expect(requests[0]!.headers.get("idempotency-key")).toBe(key);
+    // A correction carries its reason; a blank one is no reason at all.
+    await client.confirmFinanceCharterPrepayment(financeCharter.id,
+      { amount: 1500, reference: "TRF-0001", version: "AAAAAAAAB9E=", reason: "  Se capturó   15 000 " }, key);
+    expect(JSON.parse(requests[1]!.body)).toEqual({ amount: 1500, reference: "TRF-0001", version: "AAAAAAAAB9E=",
+      reason: "Se capturó 15 000" });
+    await client.confirmFinanceCharterPrepayment(financeCharter.id,
+      { amount: 1500, reference: "TRF-0001", version: "AAAAAAAAB9E=", reason: "   " }, key);
+    expect(JSON.parse(requests[2]!.body)).toEqual({ amount: 1500, reference: "TRF-0001", version: "AAAAAAAAB9E=" });
+    // Without a version, with a short or long reason, or without a valid key, nothing is sent.
+    const sent = requests.length;
+    for (const command of [{ amount: 1500, reference: "TRF-0001", version: "" },
+      { amount: 1500, reference: "TRF-0001", version: "AAAA", reason: "Mal" },
+      { amount: 1500, reference: "TRF-0001", version: "AAAA", reason: "x".repeat(501) }])
+      await expect(client.confirmFinanceCharterPrepayment(financeCharter.id, command, key)).rejects.toBeInstanceOf(TypeError);
+    await expect(client.confirmFinanceCharterPrepayment(financeCharter.id,
+      { amount: 1500, reference: "TRF-0001", version: "AAAA" }, "not-a-key")).rejects.toBeInstanceOf(TypeError);
+    expect(requests).toHaveLength(sent);
+    // The answer is the same charter, with the strict shape.
+    answer = { ...financeCharter, id: "90000000-0000-7000-8000-000000000099" };
+    await expect(client.confirmFinanceCharterPrepayment(financeCharter.id,
+      { amount: 1500, reference: "TRF-0001", version: "AAAA" }, key)).rejects.toMatchObject({ kind: "malformed-response" });
+    // A receipt of the airline posted at the same moment keeps its own code: nothing was written, the screen re-reads.
+    const concurrent = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async () => Response.json(
+      { title: "Otro cobro de la aerolínea se registró al mismo tiempo. Vuelva a cargar el charter.", status: 409,
+        code: "charter_prepayment_receipt_conflict" },
+      { status: 409, headers: { "content-type": "application/problem+json" } }) });
+    await expect(concurrent.confirmFinanceCharterPrepayment(financeCharter.id,
+      { amount: 1500, reference: "TRF-0001", version: "AAAA" }, key))
+      .rejects.toMatchObject({ kind: "http", status: 409, code: "charter_prepayment_receipt_conflict" });
   });
 
   it("reads planning options that carry the charter flag", async () => {

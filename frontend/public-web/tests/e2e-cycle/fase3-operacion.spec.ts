@@ -1036,15 +1036,18 @@ test("hueco 3-H · OCC reabre una operación aprobada que aún no se facturó", 
   const read = async () => (await expectCall<Review>(200, occ, "GET", reviewRoute)).data;
   const finance = await login("finance");
   const day = stationDay(flight.arrivalAt);
-  /** The run's services in «Por facturar», with the preinvoice that holds them, if any. */
-  const toInvoice = async () => (await expectCall<{ services: Array<{ operationId: string; preinvoiceId?: string | null }> }>(
-    200, finance, "GET", `/finance/approved-services?stationId=${station}&from=${day}&to=${day}`))
-    .data.services.filter(item => item.operationId === operationId);
+  /**
+   * The run's operation in «Por facturar» (4-A: «Servicios aprobados» was retired with its endpoint), with the codes
+   * that block it; a draft with an issued invoice that still holds it shows as pending_preinvoice (4-N01).
+   */
+  const toInvoice = async () => (await expectCall<{ operations: Array<{ operationId: string; blockingReasons: string[] }> }>(
+    200, finance, "GET", `/finance/invoicing/pending-operations?stationId=${station}&from=${day}&to=${day}&limit=100`))
+    .data.operations.filter(item => item.operationId === operationId);
   let review = await read();
   if (review.status === "Approved") {
     const listed = await toInvoice();
-    if (listed.length === 0 || listed.some(item => item.preinvoiceId)) {
-      test.skip(true, "La operación del ciclo ya está en una prefactura: su corrección es una nota de crédito.");
+    if (listed.length === 0 || listed.some(item => item.blockingReasons.includes("pending_preinvoice"))) {
+      test.skip(true, "La operación del ciclo ya no está en «Por facturar» o la retiene un borrador con factura emitida: su corrección es una nota de crédito.");
       return;
     }
   }

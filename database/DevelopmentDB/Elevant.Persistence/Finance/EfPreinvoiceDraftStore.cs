@@ -1,8 +1,6 @@
-using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Finance;
 using Elevant.Application.Commercial;
 using Elevant.Application.Operations;
@@ -13,172 +11,33 @@ using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Commercial;
 using Elevant.Persistence.Operations;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Finance;
 
-/// <summary>Serializes source-line reservation and immutable draft snapshots.</summary>
+/// <summary>
+/// The internal draft of an invoice (ADR-0035, block 3): it reserves the approved source lines and freezes their
+/// valuation inside the issuance transaction of «Por facturar». It has no endpoint and no permission of its own.
+/// </summary>
 internal sealed class EfPreinvoiceDraftStore(
-    ElevantDbContext context, TimeProvider timeProvider) : IPreinvoiceDraftStore
+    ElevantDbContext context, TimeProvider timeProvider)
 {
-    public async Task<IReadOnlyList<PreinvoiceDisputeData>?> GetDisputesAsync(
-        Guid accountId, Guid draftId, CancellationToken cancellationToken = default)
-    {
-        if (await GetAsync(accountId, draftId, cancellationToken) is null) return null;
-        var now = timeProvider.GetUtcNow();
-        var internalId = await (
-            from item in context.Preinvoices.AsNoTracking()
-            join station in context.Stations.AsNoTracking() on item.StationId equals station.Id
-            join account in context.Users.AsNoTracking() on accountId equals account.PublicId
-            join grant in context.AccountStationScopes.AsNoTracking()
-                on new { AccountId = account.Id, StationId = station.Id }
-                equals new { grant.AccountId, grant.StationId }
-            where item.PublicId == draftId && grant.GrantedAt <= now && grant.RevokedAt == null
-            select (long?)item.Id).SingleOrDefaultAsync(cancellationToken);
-        return internalId is null ? null : await PreinvoiceDisputeReader.ReadAsync(
-            context, internalId.Value, cancellationToken);
-    }
-
-    public async Task<PreinvoiceDraftDetail?> GetAsync(
-        Guid accountId, Guid draftId, CancellationToken cancellationToken = default)
-    {
-        var actor = await new EfActorContextResolver(context, timeProvider)
-            .ResolveAsync(accountId, cancellationToken);
-        if (actor is null ||
-            !actor.HasPermission("finance.preinvoices.read") ||
-            !actor.Memberships.Any(membership =>
-                membership.OrganizationType == OrganizationType.AviamOperator &&
-                membership.Kind == MembershipKind.InternalStaff))
-            return null;
-        var allowedStationIds = actor.StationScopes.Select(scope => scope.StationId).ToArray();
-        var now = timeProvider.GetUtcNow();
-        var draft = await (
-            from item in context.Preinvoices.AsNoTracking()
-            join airline in context.Airlines.AsNoTracking() on item.AirlineId equals airline.Id
-            join station in context.Stations.AsNoTracking() on item.StationId equals station.Id
-            where item.PublicId == draftId && allowedStationIds.Contains(station.PublicId) &&
-                  context.Users.AsNoTracking().Any(account =>
-                      account.PublicId == accountId &&
-                      context.AccountStationScopes.AsNoTracking().Any(grant =>
-                          grant.AccountId == account.Id && grant.StationId == station.Id &&
-                          grant.GrantedAt <= now && grant.RevokedAt == null))
-            select new
-            {
-                item.Id, item.PublicId, item.From, item.To, item.CurrencyCode,
-                item.Total, item.Status, AirlineId = airline.PublicId,
-                AirlineName = airline.Name, StationId = station.PublicId, item.RowVersion,
-            }).SingleOrDefaultAsync(cancellationToken);
-        if (draft is null) return null;
-
-        var lines = await (
-            from line in context.PreinvoiceLines.AsNoTracking()
-            join serviceCandidate in context.OperationServices.AsNoTracking()
-                on line.OperationServiceId equals (long?)serviceCandidate.Id into services
-            from service in services.DefaultIfEmpty()
-            join submissionCandidate in context.OperationSubmissions.AsNoTracking()
-                on line.ApprovedSubmissionId equals (long?)submissionCandidate.Id into submissions
-            from submission in submissions.DefaultIfEmpty()
-            join parentCandidate in context.PreinvoiceLines.AsNoTracking()
-                on line.ParentLineId equals (long?)parentCandidate.Id into parents
-            from parent in parents.DefaultIfEmpty()
-            where line.PreinvoiceId == draft.Id
-            orderby line.LineNumber
-            select new PreinvoiceDraftLineDetail(
-                line.PublicId, service == null ? null : service.PublicId,
-                submission == null ? null : submission.PublicId,
-                line.LineNumber, line.OperationCode, line.OperationDate,
-                line.ServiceCode, line.ServiceName, line.ExecutedQuantity,
-                line.BillingUnit, line.UnitPrice, line.CurrencyCode, line.Amount,
-                line.Kind.ToString(), parent == null ? null : parent.PublicId, line.ComputedQuantity,
-                line.ComputedAmount, line.IsExcluded, line.AdjustmentReason, line.EditedAt))
-            .ToArrayAsync(cancellationToken);
-        return new PreinvoiceDraftDetail(draft.PublicId, draft.AirlineId,
-            draft.AirlineName, draft.StationId, draft.From, draft.To,
-            draft.CurrencyCode, draft.Total, draft.Status.ToString(), lines,
-            Convert.ToBase64String(draft.RowVersion));
-    }
-
-    public async Task<PreinvoiceDraftResult> CreateAsync(
-        CreatePreinvoiceDraftCommand request,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        var payloadHash = HashRequest(request);
-        var strategy = context.Database.CreateExecutionStrategy();
-        try
-        {
-            return await strategy.ExecuteAsync(async () =>
-            {
-                context.ChangeTracker.Clear();
-                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-                var attempt = await CreateInsideTransactionAsync(request, payloadHash, cancellationToken);
-                if (!attempt.IsSuccess)
-                {
-                    await transaction.RollbackAsync(cancellationToken);
-                    context.ChangeTracker.Clear();
-                    return attempt;
-                }
-                await transaction.CommitAsync(cancellationToken);
-                return attempt;
-            });
-        }
-        catch (DbUpdateException exception) when (IsConflict(exception.GetBaseException()))
-        {
-            context.ChangeTracker.Clear();
-            return await ReplayOrConflictAsync(request, payloadHash, cancellationToken);
-        }
-        catch (RetryLimitExceededException exception) when (IsConflict(exception.GetBaseException()))
-        {
-            context.ChangeTracker.Clear();
-            return await ReplayOrConflictAsync(request, payloadHash, cancellationToken);
-        }
-        catch (SqlException exception) when (IsConflict(exception))
-        {
-            context.ChangeTracker.Clear();
-            return await ReplayOrConflictAsync(request, payloadHash, cancellationToken);
-        }
-    }
-
-    private async Task<PreinvoiceDraftResult> ReplayOrConflictAsync(
-        CreatePreinvoiceDraftCommand request, string payloadHash,
-        CancellationToken cancellationToken)
-    {
-        // A concurrent commit can win the unique request key before this transaction.
-        var prior = await context.Preinvoices.AsNoTracking()
-            .Where(item => item.RequestId == request.RequestId)
-            .Select(item => new { item.PublicId, item.PayloadHash,
-                item.CreatedByAccountId })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (prior is not null && prior.PayloadHash == payloadHash)
-        {
-            var ownerId = await context.Users.AsNoTracking()
-                .Where(item => item.PublicId == request.AccountId)
-                .Select(item => (long?)item.Id)
-                .SingleOrDefaultAsync(cancellationToken);
-            if (prior.CreatedByAccountId == ownerId)
-                return PreinvoiceDraftResult.Success(prior.PublicId, true);
-        }
-        return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Conflict);
-    }
-
     /// <summary>
     /// ADR-0035: the internal valuation step of issuing an invoice. Runs inside the caller's
     /// transaction; the caller has already checked «Emitir facturas».
     /// </summary>
     internal Task<PreinvoiceDraftResult> DraftForInvoiceAsync(CreatePreinvoiceDraftCommand request,
         CancellationToken cancellationToken) =>
-        CreateInsideTransactionAsync(request, HashRequest(request), cancellationToken, requirePermission: false);
+        CreateInsideTransactionAsync(request, HashRequest(request), cancellationToken,
+            maxServices: FinanceInvoicePolicy.MaxLines);
 
     private async Task<PreinvoiceDraftResult> CreateInsideTransactionAsync(
         CreatePreinvoiceDraftCommand request, string payloadHash,
-        CancellationToken cancellationToken, bool requirePermission = true)
+        CancellationToken cancellationToken, int maxServices = PreinvoiceDraftPolicy.DefaultMaxServices)
     {
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(request.AccountId, cancellationToken);
         if (actor is null ||
-            requirePermission && !actor.HasPermission("finance.approved_services.create") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff) ||
@@ -315,7 +174,7 @@ internal sealed class EfPreinvoiceDraftStore(
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable, blocked.BlockingReason);
         var evaluated = PreinvoiceDraftPolicy.Evaluate(
             request.StationId, request.From, request.To,
-            approvedRows.Select(item => item.Candidate).ToArray());
+            approvedRows.Select(item => item.Candidate).ToArray(), maxServices);
         if (!evaluated.Ready)
             return PreinvoiceDraftResult.Failed(PreinvoiceDraftFailure.Unprocessable,
                 evaluated.Failure);
@@ -440,8 +299,6 @@ internal sealed class EfPreinvoiceDraftStore(
             CorrelationId = request.RequestId, RequestId = request.RequestId.ToString("D"),
             Reason = "Finance grouped approved service snapshots in a non-fiscal draft.",
         });
-        await FinanceApprovedServiceChangeWriter.AddAsync(context,
-            scope.StationId, draft.PublicId, now, "finance_preinvoices", cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         return PreinvoiceDraftResult.Success(draft.PublicId, false);
     }
@@ -452,7 +309,4 @@ internal sealed class EfPreinvoiceDraftStore(
             $"{request.To:yyyy-MM-dd}|{string.Join(',', request.ServiceIds.Order())}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(source)));
     }
-
-    private static bool IsConflict(Exception exception) =>
-        exception is SqlException sql && sql.Number is 2601 or 2627 or 1205 or 1222 or 3960;
 }

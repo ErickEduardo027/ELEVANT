@@ -25,4 +25,11 @@ public sealed class FinancePayablesPaymentsController(IFinancePayablesStore stor
     [HttpPost("{id:guid}/applications", Name = "ApplyFinancePayablePayment"), RequestSizeLimit(65536)]
     [ProducesResponseType<FinancePayablesMutationDto>(200)]
     public async Task<IActionResult> Apply(Guid id, [FromBody] FinancePayablesApplyDto input, CancellationToken ct) => Respond(await store.ApplyPaymentAsync(ActorId, id, ToData(input), ct), ToDto);
+    /// <summary>
+    /// 4-N04: reverses one application of the payment (<c>applicationId</c>) or voids the whole payment once nothing of it is
+    /// applied, as a linked and immutable row with its reason; it needs <c>finance.payables.reverse</c>.
+    /// </summary>
+    [HttpPost("{id:guid}/reversals", Name = "ReverseFinancePayablePayment"), RequestSizeLimit(8192)]
+    [ProducesResponseType<FinancePayablesMutationDto>(200)]
+    public async Task<IActionResult> Reverse(Guid id, [FromBody] FinancePayablesReversalDto input, CancellationToken ct) => Respond(await store.ReversePaymentAsync(ActorId, id, ToData(input), ct), ToDto);
 }

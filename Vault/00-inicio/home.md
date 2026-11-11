@@ -122,14 +122,14 @@ flowchart TB
     U3 --> M
     W1 --> API
     W2 --> API
-    M -.->|integración objetivo| API
+    M --> API
     API --> DB
-    API -.->|adaptadores futuros| EXT
+    API -.->|configurables, apagados por defecto| EXT
 ```
 
 Reglas estructurales:
 
-- La arquitectura exige que los tres clientes usen la misma API versionada; la integración real del Mobile Agent todavía está en evolución.
+- La arquitectura exige que los tres clientes usen la misma API versionada. *Posterior al commit verificado de esta nota (código de `39a85a46`):* los tres la consumen, Mobile Agent incluido; el [Mapa de capacidades](../02-producto/mapa-de-capacidades.md) dice hasta dónde.
 - Existe una sola base lógica por ambiente; no una base por cliente.
 - Los clientes no acceden directamente a SQL Server ni a proveedores externos.
 - OpenAPI es el contrato cliente/servidor cuando un endpoint existe.

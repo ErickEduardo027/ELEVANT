@@ -1,5 +1,10 @@
 # DGII e-CF: pinned official schemas and offline preflight
 
+> **The offline preflight was retired in phase 4 (4-A, 4-N20).** `POST api/v1/finance/fiscal-xml/validate`,
+> `IOfficialEcfXmlValidator`, its adapter, its tests and the `EmbeddedResource` of the schemas were deleted with
+> «Documentos fiscales». The four XSD files below stay in the repository byte for byte (they are also the source of
+> `scripts/geo/generate-do-territory.mjs`); the sections about the validator are kept only as history.
+
 Retrieved and inspected on **2026-10-19 UTC** (2026-10-18 in America/La_Paz). Version **1.0** is the version published in the DGII filenames and allowed `Version` field, not a claim of certification or an immutable DGII release.
 
 The official [DGII documentation index](https://dgii.gov.do/cicloContribuyente/facturacion/comprobantesFiscalesElectronicosE-CF/Paginas/documentacionSobreE-CF.aspx) links the four source files below. Files are retained **byte for byte**, including original CRLF endings. The local `XmlSchemas/.gitattributes` disables text conversion. The adapter verifies embedded bytes against SHA-256 before compiling. Missing resources or hash mismatches are configuration failures, not passing validations.

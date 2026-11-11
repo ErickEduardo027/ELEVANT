@@ -1,9 +1,16 @@
 namespace Elevant.Application.Abstractions.Finance;
 public enum FinanceTreasuryFailure { Forbidden, NotFound, Invalid, Conflict }
-public sealed record FinanceTreasuryResult(Guid? Id, string? Version, bool Replayed, FinanceTreasuryFailure? Failure)
+/// <summary>
+/// The outcome of a treasury command. <see cref="Code"/> names the cause of a failure when the store knows it
+/// (<c>effective_before_invoice</c>, <c>effective_before_receipt</c>, <c>version_conflict</c>, phase 4); the API answers
+/// the failure's default code otherwise.
+/// </summary>
+public sealed record FinanceTreasuryResult(Guid? Id, string? Version, bool Replayed, FinanceTreasuryFailure? Failure,
+    string? Code = null)
 {
     public bool IsSuccess => Failure is null;
-    public static FinanceTreasuryResult Failed(FinanceTreasuryFailure failure) => new(null, null, false, failure);
+    public static FinanceTreasuryResult Failed(FinanceTreasuryFailure failure, string? code = null) =>
+        new(null, null, false, failure, code);
 }
 public sealed record FinanceTreasuryReceiptInput(Guid RequestId, Guid AirlineId, Guid StationId, string CurrencyCode,
     decimal Amount, string Reference, string Method, DateOnly ReceivedOn, string Reason);
@@ -32,9 +39,11 @@ public sealed record FinanceTreasuryLineLimitData(Guid InvoiceLineId, int LineNu
     decimal CreditQuantityRemaining, decimal CreditAmountRemaining, decimal DebitQuantityRemaining, decimal DebitAmountRemaining);
 public sealed record FinanceTreasuryAdjustmentsData(Guid InvoiceId, string Version, decimal LegacyCredited,
     IReadOnlyList<FinanceTreasuryLineLimitData> Lines, IReadOnlyList<FinanceTreasuryAdjustmentData> Notes);
+/// <summary>An invoice at the statement's cut-off. <c>FiscalNumber</c> is its simulated e-NCF (4-N19), null before ADR-0035.</summary>
 public sealed record FinanceTreasuryStatementInvoiceData(Guid Id, string Number, Guid AirlineId, Guid StationId,
     string CurrencyCode, decimal Total, decimal LegacyPaid, decimal LegacyCredited, decimal Applied, decimal Credited,
-    decimal Debited, decimal Balance, DateOnly? DueDate, int DaysOverdue, string AgingBucket, string Version);
+    decimal Debited, decimal Balance, DateOnly? DueDate, int DaysOverdue, string AgingBucket, string Version,
+    string? FiscalNumber = null);
 public sealed record FinanceTreasuryStatementMovementData(Guid Id, Guid? ReceiptId, Guid? InvoiceId, string Kind,
     string CurrencyCode, decimal Amount, DateOnly EffectiveOn, DateTimeOffset RecordedAt, Guid? ReversesId, string Reference);
 public sealed record FinanceTreasuryAgingData(string CurrencyCode, decimal Balance, decimal Current, decimal Days1To30,
@@ -46,3 +55,16 @@ public sealed record FinanceTreasuryStatementData(DateOnly AsOf, IReadOnlyList<F
 public sealed record FinanceTreasuryAirlineOptionData(Guid Id, string Name);
 public sealed record FinanceTreasuryStationOptionData(Guid Id, string Code);
 public sealed record FinanceTreasuryOptionsData(IReadOnlyList<FinanceTreasuryAirlineOptionData> Airlines, IReadOnlyList<FinanceTreasuryStationOptionData> Stations);
+
+/// <summary>
+/// 4-N17: what the PDF of a credit or debit note prints, read from what was frozen when it was issued. A note on an E31
+/// invoice carries its own simulated e-NCF (E34 credit, E33 debit) in <c>Number</c>; an older note keeps TC-/TD-.
+/// </summary>
+public sealed record FinanceAdjustmentNoteDocumentData(Guid NoteId, string Number, string Kind, Guid InvoiceId,
+    string InvoiceNumber, string? InvoiceFiscalNumber, string CurrencyCode, decimal Amount, DateOnly EffectiveOn,
+    DateTimeOffset IssuedAt, string Reason, string IssuerName, string IssuerRnc, string CustomerName, string CustomerCode,
+    string StationCode, IReadOnlyList<FinanceAdjustmentNoteDocumentLineData> Lines);
+
+/// <summary>One line of a note: the gross adjusted and, from phase 4 on, its frozen net, ITBIS and rate.</summary>
+public sealed record FinanceAdjustmentNoteDocumentLineData(int LineNumber, string OperationCode, string ServiceCode,
+    string ServiceName, decimal Quantity, decimal Amount, decimal? NetAmount, decimal? TaxAmount, decimal? TaxRate);

@@ -76,37 +76,31 @@ de acuerdos publicados, con aerolínea, estado de versión, estaciones y tarifas
 permiso comercial correspondiente y el wrapper valida la forma recibida;
 esta lectura no crea ni modifica contratos.
 
-`getAirlinePreinvoices({ page?, limit? })` consulta prefacturas publicadas y
-propias del tenant derivado por la API; no expone borradores de Finanzas. El
-cliente rechaza parámetros fuera de rango, estados internos y campos ajenos al
-contrato. `getAirlinePreinvoice(id)` relee las líneas y precios congelados de
-una prefactura propia publicada; un ID ajeno o un borrador no revela detalle.
-Factura, pago y recibo siguen fuera de este contrato de lectura.
+Desde la fase 4 (4-A, ADR-0035) la prefactura es solo el borrador interno de
+la emisión: se retiraron sus wrappers de Finanzas y del portal (listar, leer,
+crear, enviar, aceptar, disputar y resolver), los de servicios aprobados, la
+conciliación y el pago no fiscal manual. «Por facturar» usa
+`getFinancePendingOperations`, `issueInvoiceFromOperations` y
+`closeOperationsWithoutCharge`. `getFinanceHome(stationId)` lee los indicadores
+de «Inicio» de una estación al día hábil de Santo Domingo; su validador es
+estricto y acepta `null` en cada sección que la plantilla de la cuenta no
+incluye. Es una lectura solo web.
 
-`getFinanceApprovedServices({ stationId, from, to })` muestra evidencia
-aprobada por OCC y la reserva de cada servicio. `createPreinvoiceDraft` envía
-una clave UUID estable con 1–100 servicios y valida el ID guardado;
-`getPreinvoiceDraft(id, expectedStationId)` reconsulta y valida el detalle
-persistente y su estación. Solo Finanzas interna autorizada puede usar estos
-contratos. El borrador aún no es factura, pago ni recibo.
-
-`getFinancePreinvoices({ stationId, page?, limit? })` lista hasta 50 prefacturas
-internas por página para la estación con grant vigente de Finanzas. El wrapper
-valida estado, importes, fechas, conteo de líneas y que cada fila pertenece a
-la estación pedida. La API no acepta un tenant suministrado por el cliente.
+`getAirlineCardPaymentAvailability()` (4-N05) dice al portal si el entorno
+acepta pagos con tarjeta y si la pasarela es la simulada; su validador solo
+acepta `available` y `simulated`, y una simulación siempre está disponible.
+Sin pasarela, `payAirlineInvoiceByCard` recibe 409
+`card_payments_unavailable`. `confirmFinanceCharterPrepayment(charterId,
+{ amount, reference, version, reason? }, idempotencyKey)` (4-N22) confirma
+el prepago con la versión vista y la clave del intento; otro monto o
+referencia lo corrige con un motivo de 5 a 500 caracteres mientras no se haya
+aplicado.
 
 `getFinanceTariffs({ stationId, page?, limit? })` lista hasta 50 tarifas de
 versiones contractuales publicadas que cubren la estación con grant vigente de
 Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,
 precios negativos y versiones no publicadas. Es una lectura; no cambia tarifas
 ni revaloriza snapshots operativos o financieros históricos.
-
-`getFinanceReconciliation({ stationId, page?, limit? })` lista hasta 50
-prefacturas aceptadas o facturadas por página, con su factura no fiscal y,
-si existe, el pago manual registrado. La API exige rol Finanzas, membresía
-interna y grant de la estación; el wrapper rechaza otra estación, paginación
-incoherente y combinaciones inválidas de estado, factura y pago. Es una
-proyección de seguimiento, no una confirmación de conciliación bancaria.
 
 `getHumanResourcesQualifications({ page?, limit?, rampProfileId?, equipmentTypeId? })` lee páginas de hasta
 100 ciclos actuales de habilitación registrados para agentes de rampa. Solo
@@ -293,16 +287,13 @@ identificadores de agente o estación. `reportRampIncident` envía solo tipo,
 impacto, descripción y hora de ocurrencia con instalación y clave de
 idempotencia en headers. La API deriva identidad, asignación, estado y recibo.
 
-`getFinanceApprovedServices({ stationId, from, to })` exige una estación y un
-intervalo inclusivo de hasta 31 días. El wrapper comprueba que el alcance
-devuelto coincide con el solicitado, limita la página a 200 líneas y rechaza
-importes listos sin precio/moneda congelados o filas con propiedades ajenas al
-contrato. La API revalida el rol financiero y la estación; esta lectura no
-emite facturas ni modifica revisiones.
-
-Las cuatro descargas financieras (`getAirlineInvoiceDocument`,
-`getAirlinePaymentReceipt`, `getFinanceInvoiceDocument` y
-`getFinancePaymentReceipt`) usan rutas generadas desde OpenAPI y el Bearer
+Las descargas financieras (`getAirlineInvoiceDocumentById`,
+`getAirlinePaymentReceipt`, `getAirlineCardPaymentReceipt`,
+`getFinanceInvoiceDocumentById`, `getFinancePaymentReceipt` y, desde la
+fase 4 (4-N17), `getFinanceAdjustmentNoteDocument` y
+`getAirlineAdjustmentNoteDocument` para el PDF de una nota de crédito o
+débito con su e-NCF E34/E33) usan rutas
+generadas desde OpenAPI y el Bearer
 vigente. El transporte binario conserva errores HTTP tipados y rechaza HTML,
 respuestas vacías, firmas ajenas a `%PDF-` y cuerpos mayores de 8 MiB. Devuelve
 un `Blob` privado; la UI decide el nombre de descarga. No almacena el token ni

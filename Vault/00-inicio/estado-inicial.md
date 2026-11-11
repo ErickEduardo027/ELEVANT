@@ -46,12 +46,19 @@ tags:
 
 Esta nota fija la fotografía de partida del Vault. Resume evidencia versionada en el commit indicado en el frontmatter; no consulta el VPS en tiempo real y no sustituye los checks de salud.
 
+> [!NOTE] Posterior a esta fotografía
+> En el código de `39a85a46` los tres clientes, Mobile Agent incluido, consumen
+> la API con sesión JWT y las cuatro fases del ciclo tienen casos de uso. El
+> estado vigente está en el [Mapa de capacidades](../02-producto/mapa-de-capacidades.md)
+> y en las [brechas del dominio](../03-dominio/brechas-y-preguntas-abiertas.md);
+> esta nota conserva el punto de partida.
+
 ## Lectura ejecutiva
 
 - El monorepo tiene una API y una base lógica por ambiente para tres clientes.
 - El ambiente Development dispone de CI/CD aceptado para base de datos, API, Private Web y Public Web.
 - El acceso humano a SQL Development está controlado por red privada e identidades individuales de mínimo privilegio.
-- Mobile Agent es una aplicación Expo/React Native ejecutable, pero todavía conserva integración prototipo y no tiene entrega APK automática completa.
+- En ese corte, Mobile Agent era una aplicación Expo/React Native ejecutable que conservaba integración prototipo y no tenía entrega APK automática completa.
 - Production no está desplegada y su frontera permanece reservada.
 - Alertas externas/heartbeats y protección técnica de ramas continúan diferidas.
 
@@ -65,7 +72,7 @@ Esta nota fija la fotografía de partida del Vault. Resume evidencia versionada 
 | CD pull-based de ambas webs | Aceptado en Development | [Dokploy configuration](../../docs/deployment/dokploy-configuration.md) | Cada web conserva artefacto y controlador independientes |
 | Acceso SSMS Development | Aceptado y privado | [Database access](../../docs/security/database-access.md) | CRUD de prueba no equivale a permiso de esquema o backup |
 | Backup y restore-check | Aceptado en Development | [Dokploy configuration](../../docs/deployment/dokploy-configuration.md) | La salud se confirma con ejecución y evidencia, no por existencia del schedule |
-| Mobile Agent | En evolución | [Mobile workflow](../../docs/workflows/mobile-workflow.md) | CI es plantilla; integración .NET y distribución APK siguen incompletas |
+| Mobile Agent | En evolución | [Mobile workflow](../../docs/workflows/mobile-workflow.md) | En ese corte, CI era plantilla e integración .NET y distribución APK seguían incompletas |
 | Production | Diferido | [Environments](../../docs/deployment/environments.md) | No existe despliegue ni autorización para crearlo |
 | Alertas externas por carril | Diferido | [Hardening backlog](../../docs/deployment/development-hardening-backlog.md) | Revisión manual actual no equivale a alerta automática |
 | Protección técnica de ramas | Diferido | [Branch protection](../../.github/BRANCH_PROTECTION.md) | La disciplina por PR aún no es una barrera técnica completa |
@@ -124,9 +131,9 @@ El diagrama omite identificadores, IP y dominios deliberadamente. Los detalles o
 Estas brechas no deben rellenarse con narrativa inventada:
 
 - La historia anterior al primer commit necesita testimonio de los participantes y debe identificarse como `unknown` hasta documentarlo.
-- La sustitución completa de mocks por casos de uso reales no está terminada.
-- La integración real del Mobile Agent con la API .NET y su estrategia APK/EAS están pendientes.
-- Integración externa real, objetos/evidencias, chat/notificaciones y reglas finales de facturación permanecen incompletos o diferidos según las fuentes del área.
+- En ese corte, la sustitución completa de mocks por casos de uso reales no estaba terminada.
+- En ese corte, la integración real del Mobile Agent con la API .NET y su estrategia APK/EAS estaban pendientes; la estrategia APK/EAS sigue pendiente.
+- En ese corte, integración externa real, objetos/evidencias, chat/notificaciones y reglas finales de facturación estaban incompletos o diferidos según las fuentes del área.
 - Production necesita un plan y aceptación separados.
 - Alertas externas y gobernanza técnica de ramas conservan criterios de aceptación abiertos.
 

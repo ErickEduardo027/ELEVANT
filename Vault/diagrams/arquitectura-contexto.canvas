@@ -246,7 +246,7 @@
       "toNode": "b00000000000000b",
       "toSide": "left",
       "toEnd": "arrow",
-      "label": "OpenAPI objetivo · en evolución"
+      "label": "HTTPS · OpenAPI"
     },
     {
       "id": "be00000000000007",
@@ -264,7 +264,7 @@
       "toNode": "b00000000000000d",
       "toSide": "right",
       "toEnd": "arrow",
-      "label": "adaptadores futuros"
+      "label": "adaptadores apagados por defecto"
     },
     {
       "id": "be00000000000009",

@@ -12,12 +12,15 @@ import {
 import { ApprovedServicesIcon } from '../components/icons';
 
 const validReason = value => value.trim().length >= 8 && value.trim().length <= 500;
+const validCorrection = value => value.trim().length >= 5 && value.trim().length <= 500;
 
 /**
  * «Charters sin contrato» (ADR-0033): flights served without a contract, priced at the base
  * tariff. The signed Service Request is the flight's agreement; Finance confirms the carrier's
  * prepayment here, and reopens a confirmed one as a new quotation with a reason (3-N24) so the agent can add services
- * again. The reopening carries its intent's Idempotency-Key and the charter's version; a refusal re-reads the list.
+ * again. 4-N22: confirmed after the invoice, the prepayment settles it; one captured wrong is corrected with a reason
+ * while it was never applied. Every command carries its intent's Idempotency-Key and the charter's version; a refusal
+ * re-reads the list.
  */
 export default function ChartersPage() {
   const { access } = useDepartmentAccess();
@@ -28,6 +31,7 @@ export default function ChartersPage() {
   const [amount, setAmount] = useState('');
   const [reference, setReference] = useState('');
   const [reopening, setReopening] = useState(null);
+  const [correcting, setCorrecting] = useState(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState({ tone: '', text: '' });
@@ -48,14 +52,26 @@ export default function ChartersPage() {
 
   function startConfirm(item) {
     setReopening(null);
+    setCorrecting(null);
     setEditing(item.id);
     setAmount(item.servicesTotal != null ? String(item.servicesTotal) : '');
     setReference('');
     setMessage({ tone: '', text: '' });
   }
 
+  function startCorrect(item) {
+    setEditing(null);
+    setReopening(null);
+    setCorrecting(item.id);
+    setAmount(item.prepaymentAmount != null ? String(item.prepaymentAmount) : '');
+    setReference(item.prepaymentReference ?? '');
+    setReason('');
+    setMessage({ tone: '', text: '' });
+  }
+
   function startReopen(item) {
     setEditing(null);
+    setCorrecting(null);
     setReopening(item.id);
     setReason('');
     setMessage({ tone: '', text: '' });
@@ -81,15 +97,27 @@ export default function ChartersPage() {
     }
   }
 
-  async function confirm(event, item) {
+  /** 4-N22: confirms a pending prepayment or, with a reason, corrects a confirmed one that was never applied. */
+  async function confirm(event, item, correction = false) {
     event.preventDefault();
+    if (busy || (correction && !validCorrection(reason))) return;
+    const command = { amount: Number(amount), reference: reference.trim(), version: item.version,
+      ...(correction ? { reason: reason.trim() } : {}) };
     setBusy(true);
     try {
-      await confirmCharterPrepayment(item.id, Number(amount), reference);
-      setMessage({ tone: 'success', text: `Prepago confirmado para ${item.operationCode}.` });
+      await keys.current.run(correction ? 'correct' : 'confirm', { charterId: item.id, ...command },
+        key => confirmCharterPrepayment(item.id, command, key));
+      setMessage({ tone: 'success', text: correction ? `Prepago corregido para ${item.operationCode}.`
+        : `Prepago confirmado para ${item.operationCode}. Si el charter ya estaba facturado, se aplicó a su factura.` });
       setEditing(null);
+      setCorrecting(null);
     } catch (error) {
       setMessage({ tone: 'error', text: error.message });
+      // A stale version, an applied prepayment or a state that moved: the form closes and the list is read again.
+      if (error?.status === 409) {
+        setEditing(null);
+        setCorrecting(null);
+      }
     } finally {
       setBusy(false);
       await load();
@@ -131,8 +159,10 @@ export default function ChartersPage() {
                       {formatMoney(item.prepaymentAmount, item.currencyCode)} · {item.prepaymentReference}</span>}
                   </td>
                   <td className="p-2">
-                    {canConfirm && item.prepaymentStatus !== 'Confirmed' && (editing === item.id ? (
-                      <form onSubmit={event => void confirm(event, item)} className="flex flex-wrap items-end gap-2">
+                    {/* A server before phase 3, block D sends no version: no command is offered without it. */}
+                    {canConfirm && item.prepaymentStatus !== 'Confirmed' && item.version && (editing === item.id ? (
+                      <form onSubmit={event => void confirm(event, item)} aria-label={`Confirmar prepago de ${item.operationCode}`}
+                        className="flex flex-wrap items-end gap-2">
                         <label className="text-xs">Monto ({item.currencyCode})
                           <input required type="number" min="0.01" step="0.01" value={amount} onChange={event => setAmount(event.target.value)}
                             className="mt-1 block w-28 rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/15 dark:bg-surface-dark-card" /></label>
@@ -147,7 +177,31 @@ export default function ChartersPage() {
                         className="min-h-10 rounded-lg border border-accent-600 px-3 py-2 text-xs font-semibold text-accent-600">Confirmar prepago</button>
                     ))}
                     {/* 3-N24: a server before phase 3, block D sends no version, and no reopening is offered. */}
-                    {canConfirm && item.prepaymentStatus === 'Confirmed' && item.version && (reopening === item.id ? (
+                    {canConfirm && item.prepaymentStatus === 'Confirmed' && item.version && (correcting === item.id ? (
+                      <form onSubmit={event => void confirm(event, item, true)}
+                        aria-label={`Corregir prepago de ${item.operationCode}`} className="space-y-2">
+                        <p className="text-xs">Prepago confirmado: {formatMoney(item.prepaymentAmount, item.currencyCode)} · {item.prepaymentReference}.
+                          Se corrige solo mientras no se haya aplicado a la factura del charter.</p>
+                        <div className="flex flex-wrap items-end gap-2">
+                          <label className="text-xs">Monto corregido ({item.currencyCode})
+                            <input required type="number" min="0.01" step="0.01" value={amount} onChange={event => setAmount(event.target.value)}
+                              className="mt-1 block w-28 rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/15 dark:bg-surface-dark-card" /></label>
+                          <label className="text-xs">Referencia corregida
+                            <input required minLength={2} maxLength={80} value={reference} onChange={event => setReference(event.target.value)}
+                              className="mt-1 block w-36 rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/15 dark:bg-surface-dark-card" /></label>
+                        </div>
+                        <label className="block text-xs">Motivo de la corrección (5 a 500 caracteres)
+                          <textarea required minLength={5} maxLength={500} rows={2} value={reason}
+                            onChange={event => setReason(event.target.value)}
+                            className="mt-1 block w-full rounded-lg border border-black/15 px-2 py-1.5 text-sm dark:border-white/15 dark:bg-surface-dark-card" /></label>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="submit" disabled={busy || !validCorrection(reason)}
+                            className="min-h-10 rounded-lg bg-accent-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Corregir</button>
+                          <button type="button" disabled={busy} onClick={() => setCorrecting(null)}
+                            className="min-h-10 rounded-lg border border-black/15 px-3 py-2 text-xs dark:border-white/15">Cancelar</button>
+                        </div>
+                      </form>
+                    ) : reopening === item.id ? (
                       <form onSubmit={event => void reopen(event, item)} aria-label={`Reabrir cotización de ${item.operationCode}`}
                         className="space-y-2">
                         <p className="text-xs">Prepago anterior: {formatMoney(item.prepaymentAmount, item.currencyCode)} · {item.prepaymentReference}.
@@ -164,8 +218,12 @@ export default function ChartersPage() {
                         </div>
                       </form>
                     ) : (
-                      <button type="button" onClick={() => startReopen(item)}
-                        className="min-h-10 rounded-lg border border-status-warning px-3 py-2 text-xs font-semibold">Reabrir cotización</button>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" onClick={() => startCorrect(item)}
+                          className="min-h-10 rounded-lg border border-accent-600 px-3 py-2 text-xs font-semibold text-accent-600">Corregir prepago</button>
+                        <button type="button" onClick={() => startReopen(item)}
+                          className="min-h-10 rounded-lg border border-status-warning px-3 py-2 text-xs font-semibold">Reabrir cotización</button>
+                      </div>
                     ))}
                   </td>
                 </tr>

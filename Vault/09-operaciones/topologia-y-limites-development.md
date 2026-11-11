@@ -45,10 +45,10 @@ flowchart LR
     API -->|red interna de datos| SQL
     SQL --> DATA[(volumen de datos)]
     SQL --> BACK[(volumen de backups)]
-    MOBILE[Mobile Agent nativo] -. integración de negocio pendiente .-> API
+    MOBILE[Mobile Agent nativo] -. HTTPS con sesión, fuera del VPS .-> API
 ```
 
-El diagrama muestra la frontera prevista, no afirma que cada pantalla ya consuma casos de uso de negocio reales. Los clientes no entran a la red SQL y no hay un backend ni una base por cliente. [Arquitectura](../04-arquitectura/sistema-y-fronteras-de-confianza.md) explica el límite de confianza de la aplicación.
+El diagrama muestra la frontera de red aceptada, no qué versión del código corre en cada carril. *Posterior al commit verificado de esta nota (código de `39a85a46`):* los tres clientes consumen los casos de uso de negocio de la API; Mobile Agent se instala como app nativa y no se aloja en el VPS. Los clientes no entran a la red SQL y no hay un backend ni una base por cliente. [Arquitectura](../04-arquitectura/sistema-y-fronteras-de-confianza.md) explica el límite de confianza de la aplicación.
 
 ## Matriz de responsabilidades
 
@@ -68,7 +68,7 @@ Las [plantillas operativas](../../ops/dokploy/README.md) establecen estas fronte
 
 - El perímetro aceptado solo admite conectividad pública mínima para Tailscale y diagnóstico de red. El firewall del proveedor y la tabla del host son capas independientes; Tailscale Serve no equivale a Funnel.
 - Operaciones administra host, panel y monitoreo. Desarrolladores autorizados usan los Services de aplicación. El acceso humano SQL agrega un grupo específico y un login SQL individual; no se hereda del acceso a una web.
-- La red privada **no sustituye** autenticación de aplicación, RBAC ni aislamiento tenant/estación. La API inicial no implementa aún esos casos de negocio.
+- La red privada **no sustituye** autenticación de aplicación, RBAC ni aislamiento tenant/estación. *Posterior al commit verificado de esta nota:* la API los implementa con JWT y autorización en el servidor; la red privada sigue siendo una capa adicional, no su reemplazo.
 - Production no se construye copiando este Compose: requiere host, secretos, licencia, backup y política de acceso propios.
 
 Antes de diagnosticar una caída, contrasta la topología con el [preflight read-only](../../ops/dokploy/preflight/README.md) y el runbook correspondiente, sin volcar Environment ni datos de contenedor.

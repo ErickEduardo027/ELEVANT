@@ -37,3 +37,9 @@ public sealed record CardPaymentAttemptResponse(Guid Id, Guid InvoiceId, string 
 public sealed record CardPaymentResponse(CardPaymentAttemptResponse Attempt, decimal InvoiceBalance, bool Replayed);
 
 public sealed record CardPaymentListResponse(Guid InvoiceId, IReadOnlyList<CardPaymentAttemptResponse> Attempts);
+
+/// <summary>
+/// 4-N05: whether the airline may pay by card in this environment, and whether the gateway is the simulation
+/// («Simulación — sin validez fiscal»). A simulated gateway is always available.
+/// </summary>
+public sealed record CardPaymentAvailabilityResponse(bool Available, bool Simulated);

@@ -1,42 +1,49 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DepartmentAccessProvider } from '../../access/DepartmentAccessContext';
 import { readSession } from '../../auth/authService';
-import { getApprovedServices } from '../../../services/approvedServicesService';
-import { downloadInvoiceDocument, getInvoiceEmailDeliveries, issueInvoiceFromOperations } from '../../../services/invoicingService';
+import {
+  closeOperationsWithoutCharge, downloadInvoiceDocument, getFinancePendingOperations, getInvoiceEmailDeliveries,
+  issueInvoiceFromOperations,
+} from '../../../services/invoicingService';
 import ToInvoicePage from './ToInvoicePage';
-import { calendarMonth, groupOperations } from './useToInvoiceData';
+import { calendarMonth, selectionProblem, toRow } from './useToInvoiceData';
 
 const observer = vi.hoisted(() => ({ factory: vi.fn() }));
 vi.mock('../../auth/authService', () => ({ readSession: vi.fn() }));
-vi.mock('../../../services/approvedServicesService', () => ({ getApprovedServices: vi.fn() }));
 vi.mock('../../../services/invoicingService', async importOriginal => ({
   ...(await importOriginal()), issueInvoiceFromOperations: vi.fn(), downloadInvoiceDocument: vi.fn(),
-  getInvoiceEmailDeliveries: vi.fn(),
+  getInvoiceEmailDeliveries: vi.fn(), getFinancePendingOperations: vi.fn(), closeOperationsWithoutCharge: vi.fn(),
 }));
 vi.mock('../../../services/accountChangeObserver', () => ({ createPrivateWebAccountChangeObserver: observer.factory }));
 
 const STATION_ID = '20000000-0000-7000-8000-000000000003';
 const DEMO = '50000000-0000-7000-8000-000000000006';
 const OTHER = '50000000-0000-7000-8000-000000000007';
-const service = (id, operationId, operationCode, airlineId, airlineName, extra = {}) => ({
-  id, operationId, operationCode, airlineId, airlineName, preinvoiceId: null, flightNumber: `${operationCode}-F`,
-  operationDate: '2026-08-19', serviceName: 'Baggage', serviceCode: 'BAG', contractCode: 'DEV-CTR',
-  executionStatus: 'Completed', executedQuantity: 1, billingUnit: 'operation', frozenCurrency: 'USD',
-  amount: 100, ready: true, blockingReason: null, ...extra,
+const LIMITS = { maxOperations: 100, maxLines: 500, maxDays: 31 };
+const operation = (id, operationCode, airlineId, airlineName, extra = {}) => ({
+  operationId: id, version: `v-${id}`, operationCode, operationDate: '2026-08-19', airlineId, airlineName,
+  flightNumber: `${operationCode}-F`, contractCode: 'DEV-CTR', currencyCode: 'USD', serviceCount: 1, lineEstimate: 2,
+  estimatedNet: 150, ready: true, blockingReasons: [],
+  services: [{ serviceId: `s-${id}`, serviceCode: 'BAG', serviceName: 'Baggage', ready: true, blockingReason: null,
+    amount: 150, chargeCount: 1 }],
+  ...extra,
 });
-const SERVICES = [
-  service('s1', 'op-1', 'DEV-TAT-0001', DEMO, 'Demo Airlines'),
-  service('s2', 'op-1', 'DEV-TAT-0001', DEMO, 'Demo Airlines', { amount: 50 }),
-  service('s3', 'op-2', 'DEV-TAT-0002', DEMO, 'Demo Airlines'),
-  service('s4', 'op-3', 'DEV-TAT-0003', OTHER, 'Other Airline'),
-  service('s5', 'op-4', 'DEV-TAT-0004', DEMO, 'Demo Airlines', { ready: false, blockingReason: 'missing_frozen_rate' }),
-  service('s6', 'op-5', 'DEV-TAT-0005', DEMO, 'Demo Airlines', { preinvoiceId: 'invoiced' }),
+const OPERATIONS = [
+  operation('op-1', 'DEV-TAT-0001', DEMO, 'Demo Airlines', { operationDate: '2026-08-18' }),
+  operation('op-2', 'DEV-TAT-0002', DEMO, 'Demo Airlines', { estimatedNet: 100 }),
+  operation('op-3', 'DEV-TAT-0003', OTHER, 'Other Airline'),
+  operation('op-4', 'DEV-TAT-0004', DEMO, 'Demo Airlines', { ready: false, blockingReasons: ['exchange_rate_missing'] }),
 ];
+const page = (operations = OPERATIONS, extra = {}) => ({
+  stationId: STATION_ID, limits: LIMITS, airlines: [{ airlineId: DEMO, airlineName: 'Demo Airlines', pendingCount: 3 },
+    { airlineId: OTHER, airlineName: 'Other Airline', pendingCount: 1 }], operations, nextCursor: null,
+  totalPending: operations.length, ...extra,
+});
 
-function renderPage(permissions = ['finance.invoicing.read', 'finance.invoicing.issue']) {
+function renderPage(permissions = ['finance.invoicing.read', 'finance.invoicing.issue'], props = {}) {
   return render(<DepartmentAccessProvider observe={false} initialAccess={{ kind: 'Member', department: 'finance', permissions }}>
-    <ToInvoicePage />
+    <ToInvoicePage {...props} />
   </DepartmentAccessProvider>);
 }
 
@@ -44,67 +51,61 @@ beforeEach(() => {
   vi.mocked(readSession).mockReturnValue({ accountId: 'finance', stationScopes: [{ stationId: STATION_ID, stationCode: 'PUJ' }] });
   observer.factory.mockReset();
   observer.factory.mockReturnValue({ start: vi.fn().mockResolvedValue(), stop: vi.fn() });
-  vi.mocked(getApprovedServices).mockReset();
-  vi.mocked(getApprovedServices).mockResolvedValue({ services: SERVICES, hasMore: false });
+  vi.mocked(getFinancePendingOperations).mockReset();
+  vi.mocked(getFinancePendingOperations).mockResolvedValue(page());
   vi.mocked(issueInvoiceFromOperations).mockReset();
+  vi.mocked(closeOperationsWithoutCharge).mockReset();
   vi.mocked(downloadInvoiceDocument).mockReset();
   vi.mocked(getInvoiceEmailDeliveries).mockReset();
   vi.mocked(getInvoiceEmailDeliveries).mockResolvedValue({ invoiceId: 'inv-1', smtpConfigured: true, deliveries: [] });
 });
 
-describe('groupOperations', () => {
-  it('groups services per operation, skips invoiced ones and blocks an operation with a service not ready', () => {
-    const operations = groupOperations(SERVICES);
-    expect(operations.map(item => item.operationCode)).toEqual(['DEV-TAT-0001', 'DEV-TAT-0002', 'DEV-TAT-0003', 'DEV-TAT-0004']);
-    expect(operations[0]).toMatchObject({ estimate: 150, currency: 'USD', ready: true });
-    expect(operations[3]).toMatchObject({ ready: false, blockingReason: 'missing_frozen_rate' });
-  });
-
-  it('blocks an operation on a service in exception the invoice bills and is not ready (3-N11)', () => {
-    const exception = { executionStatus: 'Exception', executedQuantity: 2 };
-    const blocked = reason => ({ ...exception, ready: false, blockingReason: reason, amount: null });
-    const operations = groupOperations([
-      service('s1', 'op-1', 'DEV-TAT-0001', DEMO, 'Demo Airlines'),
-      service('s2', 'op-1', 'DEV-TAT-0001', DEMO, 'Demo Airlines', blocked('charge_excluded_by_contract')),
-      service('s3', 'op-2', 'DEV-TAT-0002', DEMO, 'Demo Airlines'),
-      service('s4', 'op-2', 'DEV-TAT-0002', DEMO, 'Demo Airlines', blocked('missing_frozen_rate')),
-      service('s5', 'op-3', 'DEV-TAT-0003', DEMO, 'Demo Airlines'),
-      service('s6', 'op-3', 'DEV-TAT-0003', DEMO, 'Demo Airlines', blocked('excluded_in_review')),
-      service('s7', 'op-4', 'DEV-TAT-0004', DEMO, 'Demo Airlines', { ...exception, amount: 20 }),
-      service('s8', 'op-4', 'DEV-TAT-0004', DEMO, 'Demo Airlines', {
-        executionStatus: 'NotPerformed', executedQuantity: 0, ready: false, blockingReason: 'service_not_completed',
-        amount: null,
-      }),
-    ]);
-    expect(operations.map(item => [item.operationCode, item.ready, item.blockingReason])).toEqual([
-      ['DEV-TAT-0001', false, 'charge_excluded_by_contract'],
-      ['DEV-TAT-0002', false, 'missing_frozen_rate'],
-      // OCC excluded it in the review: the invoice leaves it out and bills the rest.
-      ['DEV-TAT-0003', true, null],
-      // A ready service in exception is billed; one not performed has nothing to bill.
-      ['DEV-TAT-0004', true, null],
-    ]);
-    expect(operations[3]).toMatchObject({ estimate: 20, currency: 'USD' });
-  });
-
-  it('a calendar month never exceeds the 31 days the API accepts', () => {
+describe('selection limits (4-N06)', () => {
+  it('a calendar month stays a calendar month', () => {
     expect(calendarMonth('2026-08-19')).toEqual({ from: '2026-08-01', to: '2026-08-31' });
     expect(calendarMonth('2026-03-05', -1)).toEqual({ from: '2026-02-01', to: '2026-02-28' });
     expect(calendarMonth('2026-01-10', -1)).toEqual({ from: '2025-12-01', to: '2025-12-31' });
   });
+
+  it('names the limit an operation would break, never cutting silently', () => {
+    const rows = OPERATIONS.map(toRow);
+    expect(selectionProblem([], rows[0], LIMITS)).toBeNull();
+    expect(selectionProblem([rows[0]], rows[2], LIMITS)).toMatch(/misma aerolínea/);
+    expect(selectionProblem([rows[0]], { ...rows[1], currency: 'DOP' }, LIMITS)).toMatch(/misma moneda/);
+    expect(selectionProblem([rows[0]], { ...rows[1], lineEstimate: 499 }, LIMITS)).toMatch(/500 líneas/);
+    expect(selectionProblem([rows[0]], { ...rows[1], operationDate: '2026-09-18' }, LIMITS)).toMatch(/31 días/);
+    expect(selectionProblem([rows[0]], { ...rows[1], operationDate: '2026-09-17' }, LIMITS)).toBeNull();
+    expect(selectionProblem([rows[0]], rows[1], { ...LIMITS, maxOperations: 1 })).toMatch(/hasta 1 operaciones/);
+    expect(selectionProblem([], rows[3], LIMITS)).toMatch(/no está lista/);
+  });
 });
 
 describe('ToInvoicePage', () => {
-  it('selects operations of one airline only and issues one e-CF invoice with a stable request id', async () => {
+  it('lists the oldest first, publishes the limits and names every block in Spanish', async () => {
+    renderPage();
+    const rows = await screen.findAllByRole('checkbox');
+    expect(rows.map(row => row.getAttribute('aria-label'))).toEqual(['Seleccionar DEV-TAT-0001', 'Seleccionar DEV-TAT-0002',
+      'Seleccionar DEV-TAT-0003', 'Seleccionar DEV-TAT-0004']);
+    expect(screen.getByRole('region', { name: 'Límites de una factura' })).toHaveTextContent('100 operaciones, 500 líneas');
+    expect(screen.getByLabelText('Motivos de DEV-TAT-0004')).toHaveTextContent('Falta la tasa de cambio del día de la operación');
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0004')).toBeDisabled();
+    expect(screen.getByText('Mostrando 4 de 4 pendientes.')).toBeInTheDocument();
+    // Dates are optional filters: everything pending is read without them.
+    expect(getFinancePendingOperations).toHaveBeenCalledWith({ stationId: STATION_ID, from: null, to: null, airlineId: null,
+      limit: 50 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
+  it('issues one airline with the versions on screen and keeps the key after an uncertain result', async () => {
     vi.mocked(issueInvoiceFromOperations).mockRejectedValueOnce(Object.assign(new Error('network'), { status: 0 }))
       .mockResolvedValueOnce({ invoiceId: 'inv-1', number: 'NF-1', fiscalNumber: 'E310000000001', total: 295, currencyCode: 'USD', replayed: false });
     renderPage();
     fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
     expect(screen.getByLabelText('Seleccionar DEV-TAT-0003')).toBeDisabled();
-    expect(screen.getByLabelText('Seleccionar DEV-TAT-0004')).toBeDisabled();
-    expect(screen.queryByLabelText('Seleccionar DEV-TAT-0005')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0003')).toHaveAccessibleDescription(/misma aerolínea/);
     fireEvent.click(screen.getByLabelText('Seleccionar DEV-TAT-0002'));
-    expect(screen.getByText(/2 operaciones · Demo Airlines/)).toBeInTheDocument();
+    const summary = screen.getByRole('region', { name: 'Resumen de la factura' });
+    expect(summary).toHaveTextContent('2 operaciones · Demo Airlines');
+    expect(summary).toHaveTextContent('4 de 500 líneas');
     expect(screen.getByText(/ITBIS 18 %/)).toHaveTextContent('45.00');
 
     fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
@@ -112,15 +113,13 @@ describe('ToInvoicePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
     expect(await screen.findByText('e-NCF E310000000001')).toBeInTheDocument();
     const [first, second] = vi.mocked(issueInvoiceFromOperations).mock.calls.map(([request]) => request);
-    expect(first).toEqual({ stationId: STATION_ID, operationIds: ['op-1', 'op-2'], requestId: expect.any(String) });
-    expect(second.requestId).toBe(first.requestId);
+    expect(first).toEqual({ stationId: STATION_ID, operationIds: ['op-1', 'op-2'], requestId: expect.any(String),
+      operationVersions: [{ operationId: 'op-1', version: 'v-op-1' }, { operationId: 'op-2', version: 'v-op-2' }] });
+    expect(second).toEqual(first);
 
     fireEvent.click(screen.getByRole('button', { name: 'Descargar PDF' }));
     await waitFor(() => expect(downloadInvoiceDocument).toHaveBeenCalledWith('inv-1', 'factura-E310000000001.pdf'));
-    // 1-N08: an invoice nobody could receive says so; nothing claims an email went out.
     expect(await screen.findByText(/No quedó ningún correo en cola/)).toBeInTheDocument();
-    expect(screen.queryByText(/Se envió por correo/)).not.toBeInTheDocument();
-    expect(getInvoiceEmailDeliveries).toHaveBeenCalledWith('inv-1');
   });
 
   it('reads what the invoice queued and follows the queue until the server reports it (1-N08)', async () => {
@@ -132,36 +131,191 @@ describe('ToInvoicePage', () => {
       .mockResolvedValueOnce({ invoiceId: 'inv-1', smtpConfigured: true, deliveries: [queued] })
       .mockResolvedValue({ invoiceId: 'inv-1', smtpConfigured: true,
         deliveries: [{ ...queued, status: 'Failed', reason: 'smtp_rejected' }] });
-    render(<DepartmentAccessProvider observe={false} initialAccess={{ kind: 'Member', department: 'finance',
-      permissions: ['finance.invoicing.read', 'finance.invoicing.issue'] }}><ToInvoicePage emailPollMs={10} /></DepartmentAccessProvider>);
+    renderPage(undefined, { emailPollMs: 10 });
     fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
     fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
     const status = await screen.findByLabelText('Correo de la factura');
     expect(status).toHaveTextContent('Correo en cola para 1 destinatario(s)');
-    expect(status).toHaveTextContent('billing@demo.example.com · En cola');
     await waitFor(() => expect(screen.getByLabelText('Correo de la factura'))
       .toHaveTextContent('Falló · El servidor de correo rechazó el mensaje o el destinatario.'));
   });
 
-  it('explains a mixed-airline rejection from the server', async () => {
-    vi.mocked(issueInvoiceFromOperations).mockRejectedValue(Object.assign(new Error('422'), { status: 422, reasons: ['mixed_airline'] }));
+  it('explains a refusal by its code, never by the server title, and re-reads the list', async () => {
+    vi.mocked(issueInvoiceFromOperations).mockRejectedValue(Object.assign(new Error('The operations changed.'),
+      { status: 409, code: 'version_conflict', title: 'The operations changed.' }));
     renderPage();
     fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
     fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('misma aerolínea');
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Alguna operación cambió desde que cargó la lista');
+    expect(alert).not.toHaveTextContent('The operations changed');
+    await waitFor(() => expect(getFinancePendingOperations).toHaveBeenCalledTimes(2));
+  });
+
+  it('selects a whole airline from the oldest until the limit and says where it stopped', async () => {
+    vi.mocked(getFinancePendingOperations).mockResolvedValue(page([
+      operation('op-1', 'DEV-TAT-0001', DEMO, 'Demo Airlines', { lineEstimate: 300, operationDate: '2026-08-01' }),
+      operation('op-2', 'DEV-TAT-0002', DEMO, 'Demo Airlines', { lineEstimate: 150, operationDate: '2026-08-02' }),
+      operation('op-3', 'DEV-TAT-0003', DEMO, 'Demo Airlines', { lineEstimate: 100, operationDate: '2026-08-03' }),
+    ]));
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0003')).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Toda la aerolínea del período' }));
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0001')).toBeChecked();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0002')).toBeChecked();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0003')).not.toBeChecked();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0003')).toBeDisabled();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0003')).toHaveAccessibleDescription(/500 líneas/);
+    expect(screen.getByText(/Se eligieron 2 de 3 operaciones de Demo Airlines/)).toHaveTextContent('Superaría las 500 líneas');
+  });
+
+  it('selects the whole airline across the pages still on the server, never only the loaded rows (4-N06)', async () => {
+    const demo = (day, extra = {}) => operation(`op-${day}`, `DEV-TAT-00${day}`, DEMO, 'Demo Airlines',
+      { operationDate: `2026-08-${day}`, ...extra });
+    const other = operation('op-other', 'DEV-TAT-0099', OTHER, 'Other Airline', { operationDate: '2026-08-11' });
+    vi.mocked(getFinancePendingOperations)
+      .mockResolvedValueOnce(page([demo('10'), other], { nextCursor: 'cursor-2', totalPending: 5 }))
+      .mockResolvedValueOnce(page([demo('10'), demo('12')], { nextCursor: 'airline-2', totalPending: 4 }))
+      .mockResolvedValueOnce(page([demo('13'), demo('14', { lineEstimate: 499 })], { nextCursor: null, totalPending: 4 }));
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0010'));
+    fireEvent.change(screen.getByLabelText('Buscar operaciones'), { target: { value: '0010' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Toda la aerolínea del período' }));
+    expect(await screen.findByText(/Se eligieron 3 de 4 operaciones de Demo Airlines/))
+      .toHaveTextContent('Superaría las 500 líneas');
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0012')).toBeChecked();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0013')).toBeChecked();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0014')).not.toBeChecked();
+    expect(screen.getByRole('region', { name: 'Resumen de la factura' })).toHaveTextContent('3 operaciones · Demo Airlines');
+    // The airline's own pages from the oldest, at the largest page the server takes; the search no longer hides any.
+    const [, firstRead, secondRead] = vi.mocked(getFinancePendingOperations).mock.calls.map(([query]) => query);
+    expect(firstRead).toMatchObject({ stationId: STATION_ID, airlineId: DEMO, cursor: null, limit: 100 });
+    expect(secondRead).toMatchObject({ airlineId: DEMO, cursor: 'airline-2', limit: 100 });
+    expect(screen.getByLabelText('Buscar operaciones')).toHaveValue('');
+    expect(screen.getAllByRole('checkbox').map(row => row.getAttribute('aria-label'))).toEqual([
+      'Seleccionar DEV-TAT-0010', 'Seleccionar DEV-TAT-0099', 'Seleccionar DEV-TAT-0012', 'Seleccionar DEV-TAT-0013',
+      'Seleccionar DEV-TAT-0014']);
+  });
+
+  it('says so when the airline pages cannot be read and keeps what it could choose', async () => {
+    vi.mocked(getFinancePendingOperations)
+      .mockResolvedValueOnce(page(OPERATIONS.slice(0, 2), { nextCursor: 'cursor-2', totalPending: 4 }))
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { status: 503 }));
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
+    fireEvent.click(screen.getByRole('button', { name: 'Toda la aerolínea del período' }));
+    expect(await screen.findByText(/No se pudieron leer todas las operaciones pendientes de Demo Airlines/))
+      .toHaveTextContent('se eligieron 2 de las cargadas');
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0002')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Toda la aerolínea del período' })).toBeEnabled();
+  });
+
+  it('never shows another station\'s rows while the new one loads, nor calls them the previous data when it fails', async () => {
+    const secondStation = '20000000-0000-7000-8000-000000000004';
+    vi.mocked(readSession).mockReturnValue({ accountId: 'finance', stationScopes: [
+      { stationId: STATION_ID, stationCode: 'PUJ' }, { stationId: secondStation, stationCode: 'SDQ' }] });
+    let fail;
+    vi.mocked(getFinancePendingOperations)
+      .mockResolvedValueOnce(page())
+      .mockImplementationOnce(() => new Promise((_, reject) => { fail = reject; }));
+    renderPage();
+    expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Estación'), { target: { value: secondStation } });
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByTestId('to-invoice-loading')).toBeInTheDocument();
+    expect(vi.mocked(getFinancePendingOperations).mock.calls[1][0]).toMatchObject({ stationId: secondStation });
+    fail(Object.assign(new Error('x'), { status: 503 }));
+    expect(await screen.findByText('No se pudieron cargar las operaciones por facturar.')).toBeInTheDocument();
+    expect(screen.queryByText(/se muestran los datos anteriores/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  });
+
+  it('keeps the rows of the same filters when their revalidation fails and says they were not updated', async () => {
+    renderPage();
+    expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
+    const onChange = observer.factory.mock.calls[0][0];
+    vi.mocked(getFinancePendingOperations).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 503 }));
+    onChange(['finance_invoices']);
+    expect(await screen.findByText(/se muestran los datos anteriores/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0001')).toBeEnabled();
+  });
+
+  it('loads more pages after the cursor and keeps the list when the next page fails', async () => {
+    vi.mocked(getFinancePendingOperations)
+      .mockResolvedValueOnce(page(OPERATIONS.slice(0, 2), { nextCursor: 'cursor-2', totalPending: 4 }))
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { status: 503 }))
+      .mockResolvedValueOnce(page(OPERATIONS.slice(2), { nextCursor: null, totalPending: 4 }));
+    renderPage();
+    expect(await screen.findByText('Mostrando 2 de 4 pendientes.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Cargar más' }));
+    expect(await screen.findByText(/No se pudieron cargar más operaciones/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Seleccionar DEV-TAT-0002')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('Mostrando 4 de 4 pendientes.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cargar más' })).not.toBeInTheDocument();
+    expect(vi.mocked(getFinancePendingOperations).mock.calls[2][0]).toMatchObject({ cursor: 'cursor-2', limit: 50 });
+  });
+
+  it('closes a selection valued at zero without charge with a reason and the same key on a retry (4-N07)', async () => {
+    vi.mocked(issueInvoiceFromOperations).mockRejectedValue(Object.assign(new Error('zero'), { status: 422, code: 'zero_total' }));
+    vi.mocked(closeOperationsWithoutCharge)
+      .mockRejectedValueOnce(Object.assign(new Error('gateway'), { status: 503 }))
+      .mockResolvedValueOnce({ closureId: 'c-1', operationIds: ['op-1'], replayed: false });
+    renderPage();
+    fireEvent.click(await screen.findByLabelText('Seleccionar DEV-TAT-0001'));
+    fireEvent.click(screen.getByRole('button', { name: 'Emitir factura' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('no se emite una factura de 0');
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar sin cargo' }));
+    const dialog = screen.getByRole('dialog', { name: 'Cerrar sin cargo' });
+    const confirm = within(dialog).getByRole('button', { name: 'Confirmar cierre' });
+    expect(confirm).toBeDisabled();
+    fireEvent.change(within(dialog).getByLabelText('Motivo del cierre sin cargo'), { target: { value: 'Servicios sin tarifa' } });
+    fireEvent.click(confirm);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('No se pudo confirmar el cierre');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Confirmar cierre' }));
+    expect(await screen.findByText('1 operación cerrada sin cargo.')).toBeInTheDocument();
+    const [[firstCommand, firstKey], [secondCommand, secondKey]] = vi.mocked(closeOperationsWithoutCharge).mock.calls;
+    expect(firstCommand).toEqual({ stationId: STATION_ID, reason: 'Servicios sin tarifa',
+      operations: [{ operationId: 'op-1', version: 'v-op-1' }] });
+    expect([secondCommand, secondKey]).toEqual([firstCommand, firstKey]);
   });
 
   it('hides issuing without the issue permission and shows the empty state', async () => {
-    vi.mocked(getApprovedServices).mockResolvedValue({ services: [], hasMore: false });
+    vi.mocked(getFinancePendingOperations).mockResolvedValue(page([]));
     renderPage(['finance.invoicing.read']);
     expect(await screen.findByText(/No hay operaciones aprobadas pendientes/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Emitir factura' })).not.toBeInTheDocument();
   });
 
-  it('shows a recoverable error', async () => {
-    vi.mocked(getApprovedServices).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 500 }));
+  it('shows a recoverable error, then the list', async () => {
+    vi.mocked(getFinancePendingOperations).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 500 }));
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: 'Reintentar' }));
     expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
+  });
+
+  it('reads the list again when an invoice of another analyst is announced, and only then (4-N11)', async () => {
+    renderPage();
+    expect(await screen.findByLabelText('Seleccionar DEV-TAT-0001')).toBeInTheDocument();
+    const onChange = observer.factory.mock.calls[0][0];
+    const calls = vi.mocked(getFinancePendingOperations).mock.calls.length;
+    vi.mocked(getFinancePendingOperations).mockResolvedValue(page(OPERATIONS.slice(2)));
+    onChange(['finance_invoices']);
+    await waitFor(() => expect(screen.queryByLabelText('Seleccionar DEV-TAT-0001')).not.toBeInTheDocument());
+    expect(getFinancePendingOperations).toHaveBeenCalledTimes(calls + 1);
+    onChange(['finance_receipts']);
+    onChange(['finance_approved_services']);
+    await waitFor(() => expect(getFinancePendingOperations).toHaveBeenCalledTimes(calls + 2));
+  });
+
+  it('tells an expired session and a station without access apart', async () => {
+    vi.mocked(getFinancePendingOperations).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 401 }));
+    const { unmount } = renderPage();
+    expect(await screen.findByText(/Su sesión expiró/)).toBeInTheDocument();
+    unmount();
+    vi.mocked(getFinancePendingOperations).mockRejectedValueOnce(Object.assign(new Error('x'), { status: 403 }));
+    renderPage();
+    expect(await screen.findByText(/no tiene acceso vigente a la estación/)).toBeInTheDocument();
   });
 });

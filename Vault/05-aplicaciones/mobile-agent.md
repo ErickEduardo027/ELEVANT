@@ -39,7 +39,7 @@ tags:
 
 # Mobile Agent
 
-Mobile Agent es la aplicación nativa para agentes de rampa en tablets Android/iOS. Su destino inicial es una APK Development firmada, no un servicio web del VPS. El repositorio contiene una app Expo ejecutable y un prototipo de trabajo intermitente, pero todavía no una integración de negocio con `Elevant.Api` ni una cadena de distribución firmada.
+Mobile Agent es la aplicación nativa para agentes de rampa en tablets Android/iOS. Su destino inicial es una APK Development firmada, no un servicio web del VPS. La fotografía original de esta nota describía una app Expo con un prototipo de trabajo intermitente, sin integración de negocio con `Elevant.Api`. *Posterior al commit verificado de esta nota (código de `39a85a46`):* los servicios de `src/services` usan el cliente compartido de [`src/config/elevant-api.ts`](../../frontend/mobile-agent/src/config/elevant-api.ts) para la sesión, la tableta, las operaciones asignadas, la ejecución, el chat y el feed de cambios; la sesión vive en el almacenamiento seguro del dispositivo y los comandos sin conexión pasan por una sola cola con clave de idempotencia ([sincronización](../../frontend/mobile-agent/src/synchronization/README.md)). La cadena de distribución firmada sigue pendiente.
 
 ## Ficha de frontera
 
@@ -50,7 +50,7 @@ Mobile Agent es la aplicación nativa para agentes de rampa en tablets Android/i
 | Responsabilidad local | UI nativa, caché temporal, outbox y captura controlada cuando no hay conectividad. |
 | Autoridad real | API para identidad, perfil de agente, estaciones, asignaciones, comandos y resultado canónico. |
 | Distribución | APK Development firmada es objetivo; no existe script/configuración de build firmado en el commit verificado. |
-| Madurez | Prototipo nativo ejecutable, con servicios heredados y almacenamiento local no apto aún para credenciales reales. |
+| Madurez | En la fotografía original, prototipo con servicios heredados; posterior al commit verificado, app integrada con la API y credencial en almacenamiento seguro. |
 
 ## Stack actual
 
@@ -58,7 +58,7 @@ Mobile Agent es la aplicación nativa para agentes de rampa en tablets Android/i
 - React 19.1 y React Native 0.81.
 - TypeScript 5.9.
 - React Navigation y componentes Expo para imagen, picker, red, assets, haptics, linking y sistema.
-- AsyncStorage para sesión/caché/outbox del prototipo.
+- AsyncStorage para cachés y cola local; *posterior al commit verificado,* la credencial de sesión vive en `expo-secure-store` ([sesión](../../frontend/mobile-agent/src/storage/mobile-session.ts)).
 - `@elevant/api-client` observado por Metro como dependencia fuente externa del subproyecto.
 - Identificadores nativos declarados en `app.json` para Android e iOS; esto no prueba firma ni publicación.
 
@@ -67,16 +67,20 @@ Mobile Agent es la aplicación nativa para agentes de rampa en tablets Android/i
 | Ruta | Responsabilidad observada |
 | --- | --- |
 | `src/app/` | Pantallas y navegación file-based de Expo Router. |
-| `src/services/` | Autenticación, vuelos asignados, sincronización y chat contra endpoints prototípicos. |
-| `src/hooks/use-automatic-sync.ts` | Intento de sincronización al iniciar, por intervalo y al volver a estado activo. |
-| `src/config/elevant-api.ts` | Fábrica del cliente OpenAPI compartido, todavía separada de los servicios prototípicos. |
+| `src/services/` | Sesión, tableta, operaciones asignadas, ejecución, incidencias, chat y feed de cambios; *posterior al commit verificado,* todos sobre el cliente compartido. |
+| `src/synchronization/` | *Posterior al commit verificado:* la cola persistente por cuenta, su proyección sobre la vista y el desfase del reloj frente a ELEVANT. |
+| `src/config/elevant-api.ts` | Fábrica del cliente OpenAPI compartido que usan los servicios. |
 | `tests/api-client.metro-smoke.ts` | Smoke de bundle del cliente compartido en Android. |
 
-## Pantallas y recorrido prototípico
+## Pantallas y recorrido
+
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* cada
+pantalla lee y escribe por la API; la tabla conserva el recorrido original y
+la sección «Fase 3» describe la cola actual.
 
 | Ruta Expo | Comportamiento observable |
 | --- | --- |
-| `/` | Inicio de sesión contra el endpoint heredado del Mobile prototype. |
+| `/` | Inicio de sesión contra `POST /api/v1/auth/session` y vínculo de la tableta. |
 | `/home` | Perfil, vuelos asignados, conteo de pendientes y acceso a chat. |
 | `/flight/[id]` | Detalle, servicios e inicio/cierre local de atención. |
 | `/checklist/[id]` | Respuestas y cierre de checklist asociado a la operación local. |
@@ -99,35 +103,30 @@ turnos, carnets y habilitaciones. Fuente:
 [pantalla](../../frontend/mobile-agent/src/app/my-schedule.tsx) y
 [ADR-0026](../../docs/adr/0026-ramp-staff-readiness-and-hr-shifts.md).
 
-## Estado offline actual
+## Estado offline
 
-La implementación guarda con AsyncStorage:
+En la fotografía original, la app guardaba con AsyncStorage una sesión
+prototípica, la caché de vuelos, la atención, el checklist, una outbox con
+claves de reloj y aleatoriedad y los mensajes de chat, contra un endpoint de
+sync que la API .NET no exponía.
 
-- sesión prototípica;
-- caché de vuelos asignados;
-- inicio/fin de atención y checklist por vuelo;
-- incidencias/comandos pendientes en una outbox;
-- mensajes de chat.
-
-Cada elemento de outbox obtiene una clave local que permanece estable mientras el elemento siga almacenado, y el cliente elimina únicamente claves que el endpoint de sync declara aceptadas. Sin embargo:
-
-- no existe un identificador de dispositivo registrado incluido sistemáticamente en cada comando;
-- la clave se genera con reloj y aleatoriedad de JavaScript, no mediante un contrato de idempotencia aprobado;
-- no están documentadas/implementadas migraciones de storage, cifrado, retención ni limpieza para datos reales;
-- la API .NET no expone `/api/mobile/sync`, así que la reconciliación canónica no está integrada.
-
-Por tanto, la outbox demuestra el recorrido de UX, no garantías de entrega exactly-once ni seguridad offline.
+*Posterior al commit verificado de esta nota (código de `39a85a46`):* la
+credencial vive en el almacenamiento seguro del dispositivo y AsyncStorage solo
+guarda cachés y la cola. Cada comando lleva la instalación registrada y una
+clave de idempotencia estable, y el servidor guarda su recibo; la sección
+«Fase 3» describe el orden, los reintentos y las excepciones. La retención y
+el cifrado de las cachés para datos reales siguen sin una política aprobada.
 
 ## Estado de integración
 
-| Capa | Actual | Objetivo |
+| Capa | Fotografía original | Posterior al commit verificado (código de `39a85a46`) |
 | --- | --- | --- |
-| Autenticación | Servicio prototípico y token en AsyncStorage. | Autenticación real; tokens en almacenamiento seguro de plataforma. |
-| Vuelos | Endpoint heredado con fallback a caché. | Contrato OpenAPI y scope derivado por cuenta/agente/estación. |
-| Comandos offline | Outbox local y endpoint heredado de sync. | Device ID registrado + idempotency key estable + recibo almacenado por servidor. |
-| Chat | Poll/merge contra ruta prototípica. | Contrato autorizado; REST confirma estado y tiempo real solo avisa. |
-| Cliente compartido | La fábrica y el smoke Metro existen. | Sustituir gradualmente servicios heredados por operaciones generadas. |
-| Evidencias | Selección de foto prototípica. | Upload seguro a object storage con metadatos, permisos y retención. |
+| Autenticación | Servicio prototípico y token en AsyncStorage. | Sesión de la API con refresh rotativo; credencial en almacenamiento seguro. |
+| Vuelos | Endpoint heredado con fallback a caché. | `GetRampAssignedOperations`, con alcance derivado por cuenta, agente y estación, y caché sin conexión. |
+| Comandos offline | Outbox local y endpoint heredado de sync. | Instalación registrada, clave estable y recibo del servidor. |
+| Chat | Poll/merge contra ruta prototípica. | Conversaciones de la operación por la API; el aviso `ChangedV1` solo invita a releer. |
+| Cliente compartido | La fábrica y el smoke Metro existen. | Los servicios usan el cliente compartido. |
+| Evidencias | Selección de foto prototípica. | Fotos del walk-around en el almacenamiento S3 privado por la API. |
 
 Las peticiones nativas no usan CORS del navegador, pero sí requieren autenticación, autorización y transporte HTTPS. Acceso de red privado no sustituye esos controles.
 
@@ -267,11 +266,10 @@ verificables de:
 
 ## Brechas y desconocidos
 
-- **Brecha actual:** endpoints de autenticación, asignaciones, sync y chat no existen en OpenAPI.
-- **Brecha actual:** token prototípico en AsyncStorage; falta almacenamiento seguro de credenciales.
+- **Brecha cerrada:** posterior al commit verificado, autenticación, asignaciones, ejecución y chat están en OpenAPI y la credencial vive en almacenamiento seguro.
 - **Brecha actual:** protocolo servidor de dispositivo/idempotencia/reconciliación no está implementado de extremo a extremo. *Posterior al commit verificado: desde la fase 3 del ciclo, el inicio, los hitos, los datos del vuelo, las firmas, el walk-around, el charter, los servicios, los cargos, el checklist y el chat viajan por la misma cola con la instalación registrada y, salvo la foto del walk-around, una clave estable. En esa cola el recibo repite el mismo resultado o el mismo código, salvo en tres casos: el `contract_not_in_force` del inicio, que no se guarda y la misma clave vuelve a evaluar; el chat, que se deduplica por la clave del mensaje, y la foto, un `PUT` por marca en el que los mismos bytes cuentan como reintento. Las incidencias, la entrega a OCC, la corrección y la observación de asistencia conservan su propia clave reservada fuera de esa cola ([ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).*
 - **Brecha actual:** no hay configuración EAS ni comando para producir la APK firmada.
-- **Brecha actual:** uploads reales están deshabilitados hasta diseñar object storage.
+- **Brecha cerrada:** posterior al commit verificado, las fotos del walk-around se suben por la API al almacenamiento S3 privado; las incidencias siguen sin adjuntos.
 - **Desconocido:** tablets objetivo, versión mínima de OS, MDM/distribución interna, custodia de firma y política de actualización.
 - **Desconocido:** contrato final de checklist, incidencia, chat y evidencia.
 

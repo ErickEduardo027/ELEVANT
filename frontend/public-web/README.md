@@ -42,17 +42,18 @@ secuencia sintética del prototipo. Contratos consulta versiones aprobadas reale
 incluyendo historial vencido, con cobertura y tarifas de la aerolínea
 autenticada. Solicitudes consulta registros
 operativos reales, paginados y propios de la aerolínea; crear y cancelar siguen
-deshabilitados. Finanzas consulta prefacturas publicadas de su tenant mediante
-`GET /api/v1/airline/portal/preinvoices`; excluye borradores internos y abre
-líneas, disputas, factura no fiscal y estado del pago manual por ID propio.
-Documentos deja atrás el listado de ejemplo: consulta
-prefacturas `Invoiced` del tenant, relee factura y pago y descarga PDFs
-privados desde la API con la sesión vigente. Un vacío real indica que aún no
-hay facturas emitidas en las páginas cargadas; `404`, error recuperable y
-revocación no se reemplazan con mocks. Reportes consulta la primera página
-autorizada de operaciones y prefacturas publicadas, muestra solo conteos de
-registros cargados y enlaza a los historiales paginados; no presenta porcentajes
-de puntualidad, cumplimiento ni facturación total sin un contrato agregado.
+deshabilitados. Finanzas lista las facturas e-CF simuladas del tenant desde su
+estado de cuenta (`/api/v1/airline/portal/treasury`), con e-NCF, estado y saldo,
+y abre cada una por su ID: líneas, movimientos, notas de ajuste, PDF y pago con
+tarjeta. Desde la fase 4 (ADR-0035, bloque 3) la aerolínea ya no consulta,
+acepta ni disputa prefacturas: la prefactura es un paso interno de la emisión y
+sus rutas del portal se retiraron (404). Documentos descarga las facturas y los
+recibos privados desde la API con la sesión vigente. Un vacío real indica que aún
+no hay facturas emitidas; `404`, error recuperable y revocación no se reemplazan
+con mocks. Reportes consulta la primera página autorizada de operaciones y el
+estado de cuenta, muestra solo conteos de registros cargados y enlaza a los
+historiales paginados; no presenta porcentajes de puntualidad, cumplimiento ni
+facturación total sin un contrato agregado.
 Las descargas no son comprobantes fiscales
 ni acreditan una transferencia bancaria. La release #118 está promovida en
 Development; todavía falta aceptar en remoto un ciclo nuevo hasta el recibo.
@@ -61,7 +62,8 @@ La sesión del portal revalida identidad y
 `bootstrap` al recuperar conexión/foco y cada 25 segundos. También escucha
 `ChangedV1` en el hub autorizado: lee `GET /api/v1/changes` con cursor por
 cuenta, vuelve a consultar el `bootstrap` cuando aparece
-`airline_operations` y relee Finanzas al recibir `airline_preinvoices`.
+`airline_operations` y relee Finanzas al recibir `airline_preinvoices` (la emisión todavía anuncia
+así sus facturas) o `airline_treasury`.
 El socket nunca entrega importes ni líneas del tenant; si falla,
 el sondeo HTTP sigue activo. Se conserva la última vista autorizada durante
 un fallo transitorio de red, pero `401`, `403` o pérdida del contexto revocan
@@ -115,33 +117,17 @@ NEXT_PUBLIC_PROTOTYPE_API_URL=https://api.development.elevant.test
 - `/portal/perfil`: identidad y estaciones de la sesión real, y «Usuarios del portal» (fase 2, bloque E): todos los usuarios de la aerolínea ven quién tiene acceso y quién firma; un representante (la cuenta aprovisionada o quien designe AVIAM) invita por correo, desactiva, reactiva y marca firmantes, nunca a sí mismo ni a otro representante. Cada comando lleva su `Idempotency-Key` y la versión en pantalla; la invitación y el aviso a los demás representantes solo quedan en cola. Solo los representantes y los firmantes firman contratos y envían permisos (`signer_required`); a los demás usuarios el portal se lo explica en lugar del formulario.
 - `/portal/contratos`: consulta real y paginada de versiones aprobadas; también muestra borradores y envía observaciones a Contratos, sin aceptar ni activar unilateralmente.
 - `/portal/solicitudes`: historial operativo real y paginado de la aerolínea; distinto de la solicitud comercial de `/solicitar-acceso`.
-- `/portal/finanzas`: consulta real y paginada de prefacturas publicadas, con líneas autorizadas por la API. Una prefactura `Submitted` puede aceptarse tras confirmación explícita; la acción es idempotente y el estado se relee desde la API. Presenta disputas y su decisión, la factura no fiscal emitida y la lectura tenant-scoped de un pago manual registrado por Finanzas. Documentos ofrece el recibo no fiscal de prueba cuando existe ese pago.
+- `/portal/finanzas`: facturas e-CF simuladas del tenant con su e-NCF, saldo, detalle, PDF y pago con tarjeta por el saldo completo; sin prefacturas que aceptar ni disputar (fase 4). Las correcciones son notas de ajuste que emite Finanzas.
 - `/portal/documentos`: consulta y descarga autorizada de facturas y recibos no fiscales de prueba; un vacío no se rellena con fixtures.
-- `/portal/reportes`: resumen de solo lectura de la primera página de operaciones y prefacturas propias, con estados vacíos/errores y enlaces a los historiales completos; no exporta ni afirma métricas globales.
+- `/portal/reportes`: resumen de solo lectura de la primera página de operaciones propias y del estado de cuenta, con estados vacíos/errores y enlaces a los historiales completos; no exporta ni afirma métricas globales.
 - `/dev-airline`: retirada; responde 404.
 
-`/portal/finanzas` también permite seleccionar
-líneas de una prefactura `Submitted`, escribir el motivo y confirmar una disputa
-persistida por `POST /api/v1/airline/portal/preinvoices/{preinvoiceId}/dispute`.
-La respuesta se relee desde la API; el mismo intento usa la misma clave si la
-red falla. La aerolínea consulta su historial de disputas mediante el endpoint
-aditivo `GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/disputes`;
-la respuesta v1 del detalle de prefactura no cambia.
-Finanzas debe resolver cada disputa antes del cierre. En esta rama la aerolínea
-puede releer la decisión y el motivo de Finanzas: una decisión de mantener
-devuelve la prefactura a `Submitted` y permite responder otra vez; una anulada
-permanece visible como historial de solo lectura, sin aceptar ni disputar.
-Una prefactura `Invoiced`
-permite releer su factura no fiscal por
-`GET /api/v1/airline/portal/preinvoices/{preinvoiceId}/invoice`; el portal
-muestra número, fecha, líneas y total emitidos sin inventar saldos. Si Finanzas
-registró un pago manual completo, el portal relee importe y referencia por
-`GET /api/v1/airline/portal/invoices/{invoiceId}/payment`; si aún no lo hay,
-muestra un estado vacío real. No hay verificación bancaria ni documento
-tributario. El recibo y la factura disponibles en Documentos son de prueba y
-no fiscales; su descarga remota con un ciclo nuevo sigue pendiente de prueba.
-Las revisiones financieras en tiempo real mantienen abierta la confirmación de
-la prefactura y la selección de Documentos mientras se releen los IDs
+Las facturas emitidas antes de ADR-0035 conservan su lectura histórica: si
+Finanzas registró un pago manual, el portal relee importe y referencia por
+`GET /api/v1/airline/portal/invoices/{invoiceId}/payment`. No hay verificación
+bancaria ni documento tributario: toda e-CF es una simulación sin validez fiscal.
+Las revisiones financieras en tiempo real mantienen abierta la selección de
+Documentos mientras se releen los IDs
 autorizados, incluso si el registro seleccionado venía de una página
 posterior a la primera. Un error de relectura no conserva el documento
 anterior como si fuera vigente.

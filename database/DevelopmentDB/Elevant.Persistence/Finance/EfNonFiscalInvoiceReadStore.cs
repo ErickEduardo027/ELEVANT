@@ -17,11 +17,13 @@ internal sealed class EfNonFiscalInvoiceReadStore(
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(accountId, cancellationToken);
         if (actor is null ||
-            !actor.HasPermission("finance.reconciliation.read") ||
+            !FinanceInvoicePolicy.CanReadInvoice(actor) ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff)) return null;
         var stationIds = actor.StationScopes.Select(scope => scope.StationId).ToArray();
+        // 4-N02: «Facturas» opens every invoice of its stations; the issuance of «Por facturar» alone, what it issued.
+        var everyInvoice = FinanceInvoicePolicy.ReadsEveryInvoice(actor);
         var now = timeProvider.GetUtcNow();
         var header = await (
             from invoice in context.NonFiscalInvoices.AsNoTracking()
@@ -36,6 +38,7 @@ internal sealed class EfNonFiscalInvoiceReadStore(
                   stationIds.Contains(station.PublicId) &&
                   context.Users.AsNoTracking().Any(account =>
                       account.PublicId == accountId &&
+                      (everyInvoice || account.Id == invoice.IssuedByAccountId) &&
                       context.AccountStationScopes.AsNoTracking().Any(grant =>
                           grant.AccountId == account.Id && grant.StationId == station.Id &&
                           grant.GrantedAt <= now && grant.RevokedAt == null))

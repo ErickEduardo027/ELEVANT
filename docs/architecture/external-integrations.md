@@ -36,6 +36,14 @@ Desde la fase 3 del ciclo ([ADR-0039](../adr/0039-operation-planning-coverage-of
 - Cuando OCC registra la llegada, el tramo pasa a `Manual` y las lecturas posteriores ya no reescriben su hora real.
 - Si el proveedor informa cancelado o desviado un vuelo importado, OCC recibe un aviso una sola vez y decide; el feed no cancela ni desvía nada.
 
+## Pasarela de tarjeta: simulada y apagada por defecto
+
+El pago con tarjeta del portal pasa por el puerto `ICardPaymentGateway` de Application ([ADR-0036](../adr/0036-simulated-card-payment.md)). No hay adaptador de un proveedor real: `SimulatedCardGateway` aprueba o rechaza en memoria las tarjetas de prueba, sin red, y `DisabledCardGateway` ocupa el puerto cuando no hay pasarela. Desde la fase 4 del ciclo ([ADR-0040](../adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)):
+
+- `CardPayments:Mode` elige el adaptador: `Disabled`, por defecto y en `appsettings.Production.json`, o `Simulated`, en `appsettings.Development.json` y en el overlay del arnés E2E. La API se niega a arrancar con `Simulated` fuera de los entornos `Development`, `Test` o `Testing`, o con un valor desconocido.
+- Sin pasarela, `GET airline/portal/card-payments/availability` lo dice, el portal muestra el pago como no disponible y el pago responde `409 card_payments_unavailable` antes de mirar la tarjeta; `DisabledCardGateway` falla si algo llegara a llamarlo.
+- De la tarjeta solo se guardan la marca y los últimos 4 dígitos, junto al estado del intento, su código de rechazo y la autorización; nunca el número, el CVV ni el titular.
+
 ## Regla para nuevos proveedores
 
 Primero se define la necesidad del caso de uso y el puerto mínimo. Después se construye el adaptador. Si se cambia de proveedor, Domain y los contratos públicos solo cambian cuando cambie realmente el producto, no por la forma particular de la API externa.

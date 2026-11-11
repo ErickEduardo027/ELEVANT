@@ -77,6 +77,8 @@ Las páginas 2 y 3 son los términos del Acuerdo Estándar de Servicios en Tierr
   - Queda auditado como `finance.charter.prepayment_confirmed`.
 - private-web añade el módulo «Charters sin contrato» en Finanzas.
 
+> **Actualización (10 de noviembre de 2026).** Confirmar el prepago exige ahora `Idempotency-Key` y la versión leída del charter (`400 idempotency_key_required`, `400 expected_version_required`, `409 version_conflict`). Los mismos datos no cambian nada. Otro monto u otra referencia corrigen un prepago confirmado, con un motivo de 5 a 500 caracteres, solo si nunca tuvo un cobro; si lo tuvo responde `409 charter_prepayment_applied`, y Finanzas revierte ese cobro en «Cobros», reabre el prepago y lo confirma otra vez. Un prepago confirmado después de facturar se aplica en ese momento, una sola vez, y el excedente queda como saldo a favor. El portal del charter ve su factura y su cobro `PREPAGO` y paga el resto con tarjeta. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
+
 **Endpoints**
 
 | Ruta | Para qué |

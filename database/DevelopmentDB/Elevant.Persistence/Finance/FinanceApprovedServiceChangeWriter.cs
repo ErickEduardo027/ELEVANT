@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Realtime;
@@ -8,17 +9,37 @@ namespace Elevant.Persistence.Finance;
 /// <summary>Targets current AVIAM Finance members in the approval transaction.</summary>
 internal static class FinanceApprovedServiceChangeWriter
 {
+    /// <summary>
+    /// 4-N11: an invoice of the station was issued, paid, applied, reversed or adjusted. «Por facturar» and «Facturas»
+    /// read it again; the feed delivers it only to who reads invoicing or «Facturas» at the invoice's station.
+    /// </summary>
+    public const string InvoicesResource = "finance_invoices";
+
     public static async Task AddAsync(
         ElevantDbContext context, long stationId, Guid operationId,
         DateTimeOffset occurredAt, CancellationToken cancellationToken)
         => await AddAsync(context, stationId, operationId, occurredAt,
             "finance_approved_services", cancellationToken);
 
-    public static async Task AddAsync(
+    public static Task AddAsync(
         ElevantDbContext context, long stationId, Guid resourceId,
+        DateTimeOffset occurredAt, string resource, CancellationToken cancellationToken) =>
+        AddAsync(context, stationId, [resourceId], occurredAt, resource, cancellationToken);
+
+    /// <summary>4-N11: the hint of each invoice that changed, for the invoices of one station.</summary>
+    public static Task AddInvoicesAsync(ElevantDbContext context, long stationId, IReadOnlyCollection<Guid> invoiceIds,
+        DateTimeOffset occurredAt, CancellationToken cancellationToken) =>
+        invoiceIds.Count == 0 ? Task.CompletedTask
+            : AddAsync(context, stationId, invoiceIds, occurredAt, InvoicesResource, cancellationToken);
+
+    /// <summary>One hint per resource for every current Finance member of the station.</summary>
+    public static async Task AddAsync(
+        ElevantDbContext context, long stationId, IReadOnlyCollection<Guid> resourceIds,
         DateTimeOffset occurredAt, string resource, CancellationToken cancellationToken)
     {
-        var today = DateOnly.FromDateTime(occurredAt.UtcDateTime);
+        if (resourceIds.Count == 0) return;
+        // A membership is valid by AVIAM's business day (4-N10).
+        var today = BusinessCalendar.Today(occurredAt);
         var recipients = await context.Users.AsNoTracking()
             .Where(account => account.Status == AccountLifecycleStatus.Active &&
                 account.InvitationStatus == InvitationStatus.Accepted && account.EmailConfirmed &&
@@ -41,7 +62,8 @@ internal static class FinanceApprovedServiceChangeWriter
             .Select(account => account.Id).Distinct().ToArrayAsync(cancellationToken);
 
         foreach (var recipient in recipients)
-            AccountChangeOutboxWriter.Add(context, recipient, stationId,
-                resource, resourceId, occurredAt);
+            foreach (var resourceId in resourceIds.Distinct())
+                AccountChangeOutboxWriter.Add(context, recipient, stationId,
+                    resource, resourceId, occurredAt);
     }
 }

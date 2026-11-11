@@ -7,19 +7,18 @@ import ContractApprovalsPage from './contract-approvals/ContractApprovalsPage';
 import InvoicesPage from './invoices/InvoicesPage';
 import ChargesPage, { RULES_BY_METHOD } from './charges/ChargesPage';
 import ExchangeRatesPage from './exchange-rates/ExchangeRatesPage';
-import PreinvoiceLinesEditor from './preinvoices/PreinvoiceLinesEditor';
 import {
-  addPreinvoiceAdjustment, decideContractApproval, editPreinvoiceLine, getContractApproval, getFinanceInvoice, listBillingUnits,
-  listCharges, listContractApprovals, listExchangeRates, listFinanceInvoices, listFinanceServices, recordExchangeRate,
-  recordPartialPayment, saveCharge,
+  decideContractApproval, getContractApproval, getFinanceInvoice, listBillingUnits, listCharges, listContractApprovals,
+  listExchangeRates, listFinanceInvoices, listFinanceServices, recordExchangeRate, saveCharge,
 } from '../../services/financeBookService';
+import * as financeBook from '../../services/financeBookService';
 
 vi.mock('../../services/financeBookService', async importOriginal => ({
   ...(await importOriginal()),
   listContractApprovals: vi.fn(), getContractApproval: vi.fn(), decideContractApproval: vi.fn(),
-  listFinanceInvoices: vi.fn(), getFinanceInvoice: vi.fn(), recordPartialPayment: vi.fn(), issueCreditNote: vi.fn(),
+  listFinanceInvoices: vi.fn(), getFinanceInvoice: vi.fn(),
   listCharges: vi.fn(), saveCharge: vi.fn(), listFinanceServices: vi.fn(), listBillingUnits: vi.fn(),
-  listChargeTariffs: vi.fn().mockResolvedValue([]), editPreinvoiceLine: vi.fn(), addPreinvoiceAdjustment: vi.fn(),
+  listChargeTariffs: vi.fn().mockResolvedValue([]),
   listExchangeRates: vi.fn(), recordExchangeRate: vi.fn(),
 }));
 vi.mock('../../services/financeTreasuryService', async original => ({ ...(await original()),
@@ -218,7 +217,6 @@ describe('InvoicesPage', () => {
         serviceCode: 'BAGGAGE', serviceName: 'Baggage', quantity: 1, billingUnit: 'operation', unitPrice: 125.5, amount: 125.5, reason: null },
       { lineNumber: 2, kind: 'Charge', parentLineNumber: 1, operationCode: 'OP', operationDate: '2026-10-08', serviceCode: 'NIGHT',
         serviceName: 'Nocturno', quantity: 1, billingUnit: 'operation', unitPrice: 10, amount: 10, reason: 'Acordado' }] });
-    recordPartialPayment.mockResolvedValue({ id: 'pay-1' });
     const onOpenReceipt = vi.fn();
     renderWith(<InvoicesPage initialStationId="st-1" onOpenReceipt={onOpenReceipt} />);
     await userEvent.click(await screen.findByRole('button', { name: /NF-0123456789ab/ }));
@@ -226,7 +224,9 @@ describe('InvoicesPage', () => {
     expect(within(drawer).getByText('Acordado')).toBeInTheDocument();
     await userEvent.click(within(drawer).getByRole('button', { name: 'Gestionar cobros y aplicaciones' }));
     expect(onOpenReceipt).toHaveBeenCalledWith(null, expect.objectContaining({ invoiceId: 'inv-1', airlineId: 'a-1', stationId: 'st-1' }));
-    expect(recordPartialPayment).not.toHaveBeenCalled();
+    // 4-N12: the legacy payment and credit-note writers are retired; only the treasury flow remains.
+    expect(Object.keys(financeBook)).not.toContain('recordPartialPayment');
+    expect(Object.keys(financeBook)).not.toContain('issueCreditNote');
   });
 });
 
@@ -342,39 +342,5 @@ describe('Finance list errors (1-E)', () => {
     renderWith(<ExchangeRatesPage />);
     expect(await screen.findByText('No tiene permiso para consultar las tasas de cambio.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
-  });
-});
-
-describe('PreinvoiceLinesEditor', () => {
-  const preinvoice = { id: 'p-1', status: 'Draft', currencyCode: 'USD', version: 'AAA=', lines: [
-    { id: 'l-1', kind: 'Service', parentLineId: null, operationCode: 'OP-1', serviceName: 'Baggage', executedQuantity: 1,
-      billingUnit: 'operation', amount: 125.5, computedAmount: 125.5, isExcluded: false },
-    { id: 'l-2', kind: 'Charge', parentLineId: 'l-1', operationCode: 'OP-1', serviceName: 'Recargo nocturno', executedQuantity: 1,
-      billingUnit: 'operation', amount: 31.38, computedAmount: 31.38, isExcluded: false },
-  ] };
-
-  it('excludes a charge with a reason and the draft version', async () => {
-    editPreinvoiceLine.mockResolvedValue({ id: 'p-1' });
-    const onChanged = vi.fn();
-    render(<PreinvoiceLinesEditor preinvoice={preinvoice} canEdit onChanged={onChanged} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Editar Recargo nocturno' }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'No cobrar este cargo' }));
-    await userEvent.type(screen.getByRole('textbox', { name: /Motivo/ }), 'Servicio diurno');
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-    expect(editPreinvoiceLine).toHaveBeenCalledWith('p-1', 'l-2', { amount: null, exclude: true, reason: 'Servicio diurno', expectedVersion: 'AAA=' });
-    expect(onChanged).toHaveBeenCalledWith('Línea actualizada.');
-  });
-
-  it('adds a discount under a service and is read-only once submitted', async () => {
-    addPreinvoiceAdjustment.mockResolvedValue({ id: 'p-1' });
-    const { rerender } = render(<PreinvoiceLinesEditor preinvoice={preinvoice} canEdit onChanged={vi.fn()} />);
-    await userEvent.click(screen.getByRole('button', { name: 'Ajustar Baggage' }));
-    await userEvent.type(screen.getByRole('textbox', { name: 'Descripción' }), 'Descuento comercial');
-    await userEvent.type(screen.getByRole('spinbutton', { name: /Importe/ }), '-5');
-    await userEvent.type(screen.getByRole('textbox', { name: /Motivo/ }), 'Acuerdo');
-    await userEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-    expect(addPreinvoiceAdjustment).toHaveBeenCalledWith('p-1', expect.objectContaining({ amount: -5, parentLineId: 'l-1' }));
-    rerender(<PreinvoiceLinesEditor preinvoice={{ ...preinvoice, status: 'Submitted' }} canEdit onChanged={vi.fn()} />);
-    expect(screen.queryByRole('button', { name: /Editar/ })).not.toBeInTheDocument();
   });
 });

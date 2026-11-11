@@ -11,4 +11,7 @@ public sealed class FinancePayablesAttachment : Entity<long>
     public string Sha256 { get; init; } = string.Empty;
     public long UploadedByAccountId { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
+    /// <summary>4-N13: removed from its draft; hidden and no longer counted, kept as history when a submission included it.</summary>
+    public DateTimeOffset? RemovedAt { get; set; }
+    public long? RemovedByAccountId { get; set; }
 }

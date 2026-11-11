@@ -1167,16 +1167,22 @@ public sealed class DevelopmentDataSeeder(ElevantDbContext context)
             {
                 Department = Department.Finance,
                 Name = "Analista de facturación",
-                Description = "Facturación de operaciones y consulta de facturas y cobros.",
+                Description = "Facturación de operaciones, facturas, cobros y charters.",
                 IsActive = true,
                 CreatedByAccountId = financeAccountId,
             }, "44000000-0000-7000-8000-000000000001"),
             cancellationToken);
+        // 4-A: the simplified Finance (ADR-0035, block 3) has no preinvoice. The profile invoices from «Por facturar»,
+        // reads «Facturas» with its receipts and statements, confirms charter prepayments and reads the reports. A
+        // database seeded before keeps its older grants (the seed never deletes a row); the catalog's aliases resolve
+        // them to «Por facturar» or to nothing.
         foreach (var code in new[]
                  {
-                     "finance.home.read", "finance.approved_services.read", "finance.approved_services.create",
-                     "finance.preinvoices.read", "finance.preinvoices.update", "finance.preinvoices.issue",
-                     "finance.reconciliation.read", "finance.invoicing.read", "finance.invoicing.issue",
+                     "finance.home.read", "finance.invoicing.read", "finance.invoicing.issue",
+                     "finance.reconciliation.read", "finance.receipts.read", "finance.statements.read",
+                     "finance.charters.read", "finance.charters.confirm", "finance.reports.read",
+                     // 4-N26: the analyst hears when OCC approves operations ready to invoice.
+                     "finance.notifications.read",
                  })
         {
             await GetOrAddAsync(context.AccessProfileGrants,

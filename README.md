@@ -29,7 +29,7 @@ Development y Production son bases físicas distintas:
 - `ElevantDevelopmentDb`: mismas migraciones y fixtures sintéticos mediante un seeder separado e idempotente.
 - `ElevantProductionDb`: mismas migraciones, cero datos de negocio iniciales y ningún comando de seed.
 
-Cada tarea comprueba el nombre físico, el ambiente declarado y un marcador inmutable dentro de la base. Production requiere una segunda confirmación explícita. Facturación documental, chat/notificaciones y archivos/evidencias quedan diferidos hasta cerrar sus reglas y el almacenamiento de objetos.
+Cada tarea comprueba el nombre físico, el ambiente declarado y un marcador inmutable dentro de la base. Production requiere una segunda confirmación explícita. La facturación con e-CF simulado, el chat, las notificaciones y los archivos ya tienen su modelo: los binarios viven en un bucket S3 privado, con metadatos y SHA-256 en SQL. La emisión fiscal real, la retención y el antivirus de los archivos siguen diferidos.
 
 Lea [database-v1.md](docs/architecture/database-v1.md) y [schema-v1.md](docs/database/schema-v1.md) antes de modificar el modelo.
 

@@ -73,6 +73,28 @@ participó ni si existió material anterior fuera de Git. Véase
 | 2026-09-12 | `bea325a` | Registro saneado de aceptación de Development | El repositorio conserva evidencia de runtime, reboot, recuperación y fronteras aceptadas | Telemetría en vivo posterior a ese corte |
 | 2026-09-12 | `0c39257` | Fundación del Vault | El conocimiento inicia un ciclo mantenible y validado | Que todas las áreas posteriores estén ya completas |
 
+## Posterior al commit verificado de esta nota
+
+Estas filas se añadieron el 10 de noviembre de 2026 desde el historial de
+`39a85a46` (`git log --first-parent`); la penúltima, el mismo día, desde el de
+`6cbfb273`, y la última, el 11 de noviembre, desde el de la rama de la fase 4
+antes de su PR. Como en la tabla anterior, el asunto de
+cada merge es un localizador: el comportamiento lo describen las notas
+vigentes de producto, arquitectura y aplicaciones, y ninguna fila acredita
+aceptación en el VPS.
+
+| Fecha Git | Commit o rango | Hito incorporado | Qué demuestra | Qué no demuestra |
+| --- | --- | --- | --- | --- |
+| 2026-09-15 a 2026-09-17 | #87 a #99 | Procedencia del contrato, actor autenticado, sesión real de Private Web, lectura y asignación de operaciones de OCC, operaciones asignadas en la tableta, inicio de la operación y CI del código de Mobile Agent | Los primeros casos de uso de negocio entran en `Development` | Aceptación en el VPS |
+| 2026-09-23 a 2026-09-27 | #100 a #117 | Checklist y servicios, incidencias, entrega y revisión de OCC, corrección y reenvío, circuito comercial de aerolíneas, sesión real del portal, Superadministración comercial, tiempo real del ciclo y medios comerciales | El ciclo integrado gana sus recorridos centrales | Que cada recorrido estuviera completo |
+| 2026-10-01 a 2026-10-19 | merges entre #118 y #151 | Cierre del ciclo integrado, migración de Private Web a Next.js (#125), asistencia, gobernanza por departamento y de empleados, personal en vivo y plataforma de Finanzas (#147) | Los módulos de los cuatro departamentos se incorporan a `Development` | Producción ni aceptación de negocio |
+| 2026-10-26 a 2026-11-02 | #152 a #157 | Correcciones de la revisión docente, marca del correo, rediseño de OCC y su reversión | Las correcciones quedan en `Development` | Que la revisión quedara cerrada en todos sus puntos |
+| 2026-11-03 a 2026-11-05 | #158 a #169 | Bloques de las fases 2 y 3 del ciclo, emisión directa con e-CF simulado (#168, `602fe341`) y pago con tarjeta simulado (#169, `160557b0`) | Las cuatro fases del ciclo tienen código en `Development` | Validez fiscal ni cobro real |
+| 2026-11-05 a 2026-11-07 | `43c030e4`, #170 (`3c6690f7`) y #171 (`b73ed923`) | Arnés E2E del ciclo contra el stack local y correcciones de los huecos de las fases 1 y 2 | Los huecos verificados de esas fases se integran con sus pruebas | Que el arnés corra en CI |
+| 2026-11-07 a 2026-11-09 | `28a43174` a `39a85a46` | Correcciones de los huecos de la fase 3 (rama `fix/huecos-fase3`, con la revisión de sus bloques A a C integrada en `34e90aad`) y de la fase 4 (rama `fix/huecos-fase4`, bloques A a D) | El código que describe el Vault global de la fase 4 | Su merge en `Development`: el historial de `39a85a46` no lo contiene |
+| 2026-11-08 a 2026-11-10 | `9ae53481`, `cbd52512` (que trae #172, `5b722c72`), `c3d86d0f` y `6cbfb273` | El Vault global de la fase 4 (bloque E, con el paso 4-B del arnés); la fase 3 completa entra en `Development`, con la revisión de sus bloques D y A y la corrida E2E de las fases 1 a 3; se integra con merge en la rama de la fase 4, que suma un ajuste del paso E2E de cuentas por pagar y una corrección de la composición de la API | El código que describe [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) | El merge de la fase 4 en `Development`: el historial de `5b722c72` no la contiene |
+| 2026-11-10 a 2026-11-11 | `374e2a6b` a `479a6d9c`, con los merges `9298c99d`, `38fa0e80`, `6c05edb0` y `c412d360` | La documentación de la fase 4 ([ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)) y las correcciones de la revisión de sus bloques A a E (`8b61f567`, `54e0e8a1`, `adce4675`, `9335e657` y `8450f65d`), integradas con merge, más la corrida E2E de las fases 1 a 4 | El código y la documentación del PR de la fase 4 | Su merge en `Development` ni la aceptación en el VPS |
+
 ## Secuencia de maduración
 
 ```mermaid

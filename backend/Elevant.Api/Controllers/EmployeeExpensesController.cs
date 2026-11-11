@@ -41,4 +41,12 @@ public sealed class EmployeeExpensesController(IFinancePayablesStore store) : Fi
     [HttpGet("{id:guid}/attachments/{attachmentId:guid}", Name = "DownloadEmployeeExpenseReceipt")]
     [ProducesResponseType<FileContentResult>(200)]
     public Task<IActionResult> Download(Guid id, Guid attachmentId, CancellationToken ct) => DownloadAsync(store, id, true, attachmentId, ct);
+    /// <summary>
+    /// 4-N13: the requester removes a receipt from its draft expense. It is no longer shown, downloaded nor counted; its
+    /// bytes are erased only when no submission ever included it.
+    /// </summary>
+    [HttpPost("{id:guid}/attachments/{attachmentId:guid}/removals", Name = "RemoveEmployeeExpenseReceipt"), RequestSizeLimit(4096)]
+    [ProducesResponseType<FinancePayablesMutationDto>(200)]
+    public async Task<IActionResult> RemoveReceipt(Guid id, Guid attachmentId, [FromBody] FinancePayablesAttachmentRemovalDto input, CancellationToken ct) =>
+        Respond(await store.RemoveAttachmentAsync(ActorId, id, true, attachmentId, ToData(input), ct), ToDto);
 }

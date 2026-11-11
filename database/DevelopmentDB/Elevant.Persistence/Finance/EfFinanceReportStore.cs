@@ -1,7 +1,9 @@
+using Elevant.Application.Common;
 using System.Globalization;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Application.Finance;
+using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -45,18 +47,10 @@ internal sealed partial class EfFinanceReportStore(
             "revenue" => await RevenueAsync(scope, cancellationToken),
             "receivables" => await ReceivablesAsync(scope, cancellationToken),
             "collections" => await TreasuryCollectionsAsync(scope, cancellationToken),
-            "pipeline" => await PipelineAsync(scope, cancellationToken),
+            "payables" => await PayablesReportAsync(scope, cancellationToken),
             "charges" => await ChargesAsync(scope, cancellationToken),
-            "disputes" => await DisputesAsync(scope, cancellationToken),
-            "tariffs" => await TariffsAsync(scope, cancellationToken),
-            "credit-notes" => await AdjustmentNotesAsync(scope, false, cancellationToken),
-            "debit-notes" => await AdjustmentNotesAsync(scope, true, cancellationToken),
-            "treasury" => await TreasuryReportAsync(scope, cancellationToken),
-            "payables" => await PayablesReportAsync(scope, false, cancellationToken),
-            "suppliers" => await PayablesReportAsync(scope, true, cancellationToken),
-            "expenses" => await ExpensesReportAsync(scope, cancellationToken),
-            "packages" => await PackagesReportAsync(scope, cancellationToken),
-            _ => await FiscalReportAsync(scope, reportKey == "fiscal-simulation", cancellationToken),
+            "sales" => await SalesAsync(scope, cancellationToken),
+            _ => throw new InvalidOperationException("The report catalog and its builders diverged."),
         };
         return new FinanceReportData(definition.Key, definition.Title, definition.Description, filter.From, filter.To,
             reportKey is "revenue" or "receivables" or "collections" ? Consolidation : null, summary, columns, rows, notes);
@@ -69,7 +63,11 @@ internal sealed partial class EfFinanceReportStore(
 
     private static string Month(DateOnly date) => date.ToString("yyyy-MM", CultureInfo.InvariantCulture);
 
-    private static DateOnly DateOf(DateTimeOffset value) => DateOnly.FromDateTime(value.UtcDateTime);
+    /// <summary>4-N10: the business day (America/Santo_Domingo) of an instant, for days and months of the reports.</summary>
+    private static DateOnly DateOf(DateTimeOffset value) => BusinessCalendar.Today(value);
+
+    /// <summary>First instant of a business day in Santo Domingo.</summary>
+    private static DateTimeOffset StartOf(DateOnly day) => BusinessCalendar.StartOfDay(day);
 
     private static FinanceReportColumn Col(string key, string label, string type = "text") => new(key, label, type);
 
@@ -85,26 +83,37 @@ internal sealed partial class EfFinanceReportStore(
         return rate is { } value ? decimal.Round(amount * value, 4) : null;
     }
 
-    private sealed record InvoiceRow(long Id, string Number, long AirlineId, string Airline, string CurrencyCode,
-        decimal Total, DateTimeOffset IssuedAt, DateOnly? DueDate);
+    /// <summary>
+    /// An invoice of the scope. <c>FiscalNumber</c> is the simulated e-NCF (4-N19, 4-N20), null for an invoice issued
+    /// before ADR-0035; <c>NetTotal</c> and <c>TaxTotal</c> are its subtotal and ITBIS when it carries them.
+    /// </summary>
+    private sealed record InvoiceRow(long Id, string Number, string? FiscalNumber, long AirlineId, string Airline,
+        long StationId, string CurrencyCode, decimal Total, decimal? NetTotal, decimal? TaxTotal, DateTimeOffset IssuedAt,
+        DateOnly? DueDate);
 
     private async Task<InvoiceRow[]> InvoicesAsync(Scope scope, bool inPeriod, CancellationToken cancellationToken)
     {
-        var from = new DateTimeOffset(scope.Filter.From.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var to = new DateTimeOffset(scope.Filter.To.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var from = StartOf(scope.Filter.From);
+        var to = EndOf(scope.Filter.To);
         var rows = await (from invoice in context.NonFiscalInvoices.AsNoTracking()
                           join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
                           where scope.StationIds.Contains(invoice.StationId) &&
                                 (scope.AirlineId == null || invoice.AirlineId == scope.AirlineId) &&
                                 (scope.Filter.CurrencyCode == null || invoice.CurrencyCode == scope.Filter.CurrencyCode) &&
                                 (!inPeriod || invoice.CreatedAt >= @from && invoice.CreatedAt < to)
-                          select new { invoice.Id, invoice.Number, invoice.AirlineId, airline.Name, invoice.CurrencyCode,
-                              invoice.Total, invoice.CreatedAt, invoice.DueDate })
+                          select new { invoice.Id, invoice.Number, invoice.FiscalNumber, invoice.AirlineId, airline.Name,
+                              invoice.StationId, invoice.CurrencyCode, invoice.Total, invoice.NetTotal, invoice.TaxTotal,
+                              invoice.CreatedAt, invoice.DueDate })
             .ToArrayAsync(cancellationToken);
-        return rows.Select(row => new InvoiceRow(row.Id, row.Number, row.AirlineId, row.Name, row.CurrencyCode, row.Total,
-            row.CreatedAt, row.DueDate)).ToArray();
+        return rows.Select(row => new InvoiceRow(row.Id, row.Number, row.FiscalNumber, row.AirlineId, row.Name,
+            row.StationId, row.CurrencyCode, row.Total, row.NetTotal, row.TaxTotal, row.CreatedAt, row.DueDate)).ToArray();
     }
 
+    /// <summary>
+    /// «Ingresos por período»: what was invoiced by month of issue, airline and currency. 4-N17: the credit and debit
+    /// notes effective in the period count in the month they take effect: «Notas de crédito» and «Notas de débito» show
+    /// them, and «Total», «Total USD» and «ITBIS» are net of them, so what is reported matches the documents in force.
+    /// </summary>
     private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
         RevenueAsync(Scope scope, CancellationToken cancellationToken)
     {
@@ -113,40 +122,96 @@ internal sealed partial class EfFinanceReportStore(
         var lines = (await context.NonFiscalInvoiceLines.AsNoTracking().Where(line => ids.Contains(line.InvoiceId))
                 .Select(line => new { line.InvoiceId, line.Kind, line.Amount, line.TaxAmount }).ToArrayAsync(cancellationToken))
             .ToLookup(line => line.InvoiceId);
+        var notes = await NotesAsync(scope, cancellationToken);
+        var keys = invoices.Select(invoice => (Month: Month(DateOf(invoice.IssuedAt)), invoice.Airline, invoice.CurrencyCode))
+            .Concat(notes.Select(note => (Month: Month(note.EffectiveOn), note.Airline, note.CurrencyCode)))
+            .Distinct().OrderBy(key => key.Month, StringComparer.Ordinal).ThenBy(key => key.Airline, StringComparer.Ordinal)
+            .ThenBy(key => key.CurrencyCode, StringComparer.Ordinal).ToArray();
         var rows = new List<IReadOnlyList<string?>>();
         decimal consolidated = 0;
         var missingRate = false;
-        foreach (var group in invoices.GroupBy(invoice => (Month: Month(DateOf(invoice.IssuedAt)), invoice.Airline,
-                     invoice.CurrencyCode)).OrderBy(group => group.Key.Month).ThenBy(group => group.Key.Airline))
+        foreach (var key in keys)
         {
+            var group = invoices.Where(invoice => (Month(DateOf(invoice.IssuedAt)), invoice.Airline, invoice.CurrencyCode) == key)
+                .ToArray();
+            var groupNotes = notes.Where(note => (Month(note.EffectiveOn), note.Airline, note.CurrencyCode) == key).ToArray();
             var groupLines = group.SelectMany(invoice => lines[invoice.Id]).ToArray();
-            var total = group.Sum(invoice => invoice.Total);
+            var credited = groupNotes.Where(note => note.Credit).Sum(note => note.Amount);
+            var debited = groupNotes.Where(note => !note.Credit).Sum(note => note.Amount);
+            var total = group.Sum(invoice => invoice.Total) - credited + debited;
             decimal? usd = 0;
             foreach (var invoice in group)
                 usd = usd is null ? null : await ToUsdAsync(invoice.Total, invoice.CurrencyCode, DateOf(invoice.IssuedAt),
                     cancellationToken) is { } converted ? usd + converted : null;
+            foreach (var note in groupNotes)
+                usd = usd is null ? null : await ToUsdAsync(note.Amount, note.CurrencyCode, note.EffectiveOn,
+                    cancellationToken) is { } converted ? usd + (note.Credit ? -converted : converted) : null;
             if (usd is null) missingRate = true; else consolidated += usd.Value;
-            rows.Add([group.Key.Month, group.Key.Airline, group.Key.CurrencyCode, group.Count().ToString(CultureInfo.InvariantCulture),
+            // An ITBIS a legacy line or note never froze stays unknown, never zero.
+            decimal? tax = groupLines.Any(line => line.TaxAmount == null) || groupNotes.Any(note => note.Tax == null) ? null
+                : groupLines.Sum(line => line.TaxAmount ?? 0m) - groupNotes.Where(note => note.Credit).Sum(note => note.Tax!.Value) +
+                  groupNotes.Where(note => !note.Credit).Sum(note => note.Tax!.Value);
+            rows.Add([key.Month, key.Airline, key.CurrencyCode, group.Length.ToString(CultureInfo.InvariantCulture),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Service).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Charge).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Adjustment).Sum(line => line.Amount)),
+                Money(credited), Money(debited),
                 Money(total), usd is null ? null : Money(usd.Value),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Package).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Excess).Sum(line => line.Amount)),
                 Money(groupLines.Where(line => line.Kind == PreinvoiceLineKind.Minimum).Sum(line => line.Amount)),
-                groupLines.Any(line => line.TaxAmount == null) ? null : Money(groupLines.Sum(line => line.TaxAmount ?? 0m))]);
+                tax is null ? null : Money(tax.Value)]);
         }
-        var summary = invoices.GroupBy(invoice => invoice.CurrencyCode)
-            .Select(group => new FinanceReportMetric($"Facturado {group.Key}", Money(group.Sum(invoice => invoice.Total)),
-                "money", group.Key)).Append(new FinanceReportMetric("Consolidado USD", Money(consolidated), "money", "USD"))
+        var currencies = invoices.Select(invoice => invoice.CurrencyCode).Concat(notes.Select(note => note.CurrencyCode))
+            .Distinct().Order(StringComparer.Ordinal).ToArray();
+        var summary = currencies.Where(currency => invoices.Any(invoice => invoice.CurrencyCode == currency))
+            .Select(currency => new FinanceReportMetric($"Facturado {currency}",
+                Money(invoices.Where(invoice => invoice.CurrencyCode == currency).Sum(invoice => invoice.Total)), "money", currency))
+            .Concat(currencies.Select(currency => new FinanceReportMetric($"Facturado neto {currency}",
+                Money(invoices.Where(invoice => invoice.CurrencyCode == currency).Sum(invoice => invoice.Total) -
+                    notes.Where(note => note.CurrencyCode == currency && note.Credit).Sum(note => note.Amount) +
+                    notes.Where(note => note.CurrencyCode == currency && !note.Credit).Sum(note => note.Amount)),
+                "money", currency)))
+            .Append(new FinanceReportMetric("Consolidado USD", Money(consolidated), "money", "USD"))
             .Append(new FinanceReportMetric("Facturas", invoices.Length.ToString(CultureInfo.InvariantCulture), "number"))
             .ToArray();
         return (summary,
             [Col("month", "Mes"), Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("invoices", "Facturas", "number"),
                 Col("services", "Servicios", "money"), Col("charges", "Cargos", "money"), Col("adjustments", "Ajustes", "money"),
+                Col("credit_notes", "Notas de crédito", "money"), Col("debit_notes", "Notas de débito", "money"),
                 Col("total", "Total", "money"), Col("usd", "Total USD", "money"), Col("packages", "Paquetes", "money"),
-                Col("excess", "Excedentes", "money"), Col("minimum", "Mínimos", "money"), Col("tax", "Impuesto incluido", "money")],
+                Col("excess", "Excedentes", "money"), Col("minimum", "Mínimos", "money"), Col("tax", "ITBIS", "money")],
             rows, missingRate ? ["Algunas facturas en DOP no tienen tasa registrada y no se consolidan en USD."] : []);
+    }
+
+    /// <summary>
+    /// 4-N17: a credit or debit note effective in the period, of an invoice of the scope whenever it was issued. <c>Tax</c>
+    /// is the ITBIS it froze, null when any of its lines froze none (a note issued before the breakdown).
+    /// </summary>
+    private sealed record NoteRow(bool Credit, decimal Amount, decimal? Tax, DateOnly EffectiveOn, string Airline,
+        string CurrencyCode);
+
+    private async Task<NoteRow[]> NotesAsync(Scope scope, CancellationToken cancellationToken)
+    {
+        var first = scope.Filter.From;
+        var last = scope.Filter.To;
+        var notes = await (from note in context.Set<FinanceTreasuryAdjustmentNote>().AsNoTracking()
+                           join invoice in context.NonFiscalInvoices.AsNoTracking() on note.InvoiceId equals invoice.Id
+                           join airline in context.Airlines.AsNoTracking() on invoice.AirlineId equals airline.Id
+                           where scope.StationIds.Contains(invoice.StationId) &&
+                                 (scope.AirlineId == null || invoice.AirlineId == scope.AirlineId) &&
+                                 (scope.Filter.CurrencyCode == null || invoice.CurrencyCode == scope.Filter.CurrencyCode) &&
+                                 note.EffectiveOn >= first && note.EffectiveOn <= last
+                           select new { note.Id, note.Kind, note.Amount, note.EffectiveOn, airline.Name, note.CurrencyCode })
+            .ToArrayAsync(cancellationToken);
+        var noteIds = notes.Select(note => note.Id).ToArray();
+        var taxes = (await context.Set<FinanceTreasuryAdjustmentLine>().AsNoTracking().Where(line => noteIds.Contains(line.NoteId))
+                .Select(line => new { line.NoteId, line.TaxAmount }).ToArrayAsync(cancellationToken))
+            .ToLookup(line => line.NoteId);
+        return notes.Select(note => new NoteRow(note.Kind == FinanceTreasuryAdjustmentKind.Credit, note.Amount,
+            taxes[note.Id].Any() && taxes[note.Id].All(line => line.TaxAmount != null)
+                ? taxes[note.Id].Sum(line => line.TaxAmount!.Value) : null,
+            note.EffectiveOn, note.Name, note.CurrencyCode)).ToArray();
     }
 
     private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
@@ -197,190 +262,45 @@ internal sealed partial class EfFinanceReportStore(
     }
 
 
-    private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
-        PipelineAsync(Scope scope, CancellationToken cancellationToken)
-    {
-        var preinvoices = await (from preinvoice in context.Preinvoices.AsNoTracking()
-                                 join airline in context.Airlines.AsNoTracking() on preinvoice.AirlineId equals airline.Id
-                                 where scope.StationIds.Contains(preinvoice.StationId) &&
-                                       (scope.AirlineId == null || preinvoice.AirlineId == scope.AirlineId) &&
-                                       (scope.Filter.CurrencyCode == null || preinvoice.CurrencyCode == scope.Filter.CurrencyCode) &&
-                                       preinvoice.To >= scope.Filter.From && preinvoice.From <= scope.Filter.To
-                                 select new { preinvoice.Status, preinvoice.CurrencyCode, preinvoice.Total, airline.Name })
-            .ToArrayAsync(cancellationToken);
-        // «Aprobado sin prefacturar» counts the billable services only (ServiceBillability, 3-N11).
-        var unbilled = await (from service in context.OperationServices.AsNoTracking().Where(ServiceBillability.Billable)
-                              join operation in context.GroundOperations.AsNoTracking() on service.GroundOperationId equals operation.Id
-                              join turnaround in context.Turnarounds.AsNoTracking() on operation.TurnaroundId equals turnaround.Id
-                              join airline in context.Airlines.AsNoTracking() on turnaround.AirlineId equals airline.Id
-                              where scope.StationIds.Contains(turnaround.StationId) &&
-                                    (scope.AirlineId == null || turnaround.AirlineId == scope.AirlineId) &&
-                                    turnaround.OperationDate >= scope.Filter.From && turnaround.OperationDate <= scope.Filter.To &&
-                                    operation.CurrentStatus == GroundOperationStatus.Approved &&
-                                    service.CurrencyCodeSnapshot != null &&
-                                    (scope.Filter.CurrencyCode == null || service.CurrencyCodeSnapshot == scope.Filter.CurrencyCode) &&
-                                    !context.PreinvoiceLines.Any(line => line.OperationServiceId == service.Id &&
-                                        (line.Kind == PreinvoiceLineKind.Service || line.Kind == PreinvoiceLineKind.Package || line.Kind == PreinvoiceLineKind.Excess) && line.ReleasedAt == null)
-                              select new
-                              {
-                                  airline.Name, Currency = service.CurrencyCodeSnapshot!,
-                                  Amount = service.ExecutedQuantity * (service.UnitPriceSnapshot ?? 0m),
-                              }).ToArrayAsync(cancellationToken);
-        string[] stages = ["Draft", "Submitted", "Disputed", "Accepted", "Invoiced"];
-        var rows = new List<IReadOnlyList<string?>>();
-        foreach (var group in unbilled.GroupBy(item => (item.Name, item.Currency)).OrderBy(group => group.Key.Name))
-            rows.Add(["Aprobado sin prefacturar", group.Key.Name, group.Key.Currency,
-                group.Count().ToString(CultureInfo.InvariantCulture), Money(group.Sum(item => item.Amount))]);
-        foreach (var stage in stages)
-            foreach (var group in preinvoices.Where(item => item.Status.ToString() == stage)
-                         .GroupBy(item => (item.Name, item.CurrencyCode)).OrderBy(group => group.Key.Name))
-                rows.Add([StageLabel(stage), group.Key.Name, group.Key.CurrencyCode,
-                    group.Count().ToString(CultureInfo.InvariantCulture), Money(group.Sum(item => item.Total))]);
-        var summary = new[]
-        {
-            new FinanceReportMetric("Servicios sin prefacturar", unbilled.Length.ToString(CultureInfo.InvariantCulture), "number"),
-            new FinanceReportMetric("Prefacturas en disputa",
-                preinvoices.Count(item => item.Status == PreinvoiceStatus.Disputed).ToString(CultureInfo.InvariantCulture), "number"),
-            new FinanceReportMetric("Prefacturas por aceptar",
-                preinvoices.Count(item => item.Status == PreinvoiceStatus.Submitted).ToString(CultureInfo.InvariantCulture), "number"),
-        };
-        return (summary,
-            [Col("stage", "Etapa"), Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("count", "Cantidad", "number"),
-                Col("amount", "Importe", "money")],
-            rows, ["Los servicios sin prefacturar se valoran con su precio congelado, sin cargos."]);
-    }
-
-    private static string StageLabel(string stage) => stage switch
-    {
-        "Draft" => "Prefactura en borrador",
-        "Submitted" => "Enviada, por aceptar",
-        "Disputed" => "En disputa",
-        "Accepted" => "Aceptada, por facturar",
-        _ => "Facturada",
-    };
-
+    /// <summary>
+    /// «Recargos» (4-A): the charges, contractual minimums and package excesses Finance invoiced, from the frozen lines of
+    /// the invoices in scope whose operation falls in the period, plus the adjustments of invoices issued before ADR-0035.
+    /// Net is the amount before ITBIS; a charge excluded in OCC's review shows a zero amount.
+    /// </summary>
     private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
         ChargesAsync(Scope scope, CancellationToken cancellationToken)
     {
-        var lines = await (from line in context.PreinvoiceLines.AsNoTracking()
-                           join preinvoice in context.Preinvoices.AsNoTracking() on line.PreinvoiceId equals preinvoice.Id
-                           where scope.StationIds.Contains(preinvoice.StationId) && preinvoice.Status != PreinvoiceStatus.Voided &&
-                                 (scope.AirlineId == null || preinvoice.AirlineId == scope.AirlineId) &&
-                                 (scope.Filter.CurrencyCode == null || preinvoice.CurrencyCode == scope.Filter.CurrencyCode) &&
-                                 line.OperationDate >= scope.Filter.From && line.OperationDate <= scope.Filter.To &&
-                                 line.Kind != PreinvoiceLineKind.Service
-                           select new
-                           {
-                               line.Kind, line.ServiceCode, line.ServiceName, line.CurrencyCode, line.ComputedAmount,
-                               line.Amount, line.IsExcluded, line.EditedAt, line.AdjustmentReason,
-                           }).ToArrayAsync(cancellationToken);
-        var rows = new List<IReadOnlyList<string?>>();
-        foreach (var group in lines.Where(line => line.Kind != PreinvoiceLineKind.Adjustment)
-                     .GroupBy(line => (line.Kind, line.ServiceCode, line.ServiceName, line.CurrencyCode)).OrderBy(group => group.Key.ServiceCode))
-        {
-            var computed = group.Sum(line => line.ComputedAmount ?? line.Amount);
-            var billed = group.Sum(line => line.Amount);
-            rows.Add([LineKind(group.Key.Kind), $"{group.Key.ServiceCode} · {group.Key.ServiceName}", group.Key.CurrencyCode,
-                group.Count().ToString(CultureInfo.InvariantCulture),
-                group.Count(line => line.EditedAt != null).ToString(CultureInfo.InvariantCulture),
-                Money(computed), Money(billed), Money(billed - computed), null]);
-        }
-        foreach (var line in lines.Where(line => line.Kind == PreinvoiceLineKind.Adjustment))
-            rows.Add(["Ajuste", line.ServiceName, line.CurrencyCode, "1", "1", Money(0), Money(line.Amount), Money(line.Amount),
-                line.AdjustmentReason]);
-        var charges = lines.Where(line => line.Kind == PreinvoiceLineKind.Charge).ToArray();
-        var summary = new[]
-        {
-            new FinanceReportMetric("Cargos aplicados", charges.Length.ToString(CultureInfo.InvariantCulture), "number"),
-            new FinanceReportMetric("Cargos editados por Finanzas",
-                charges.Count(line => line.EditedAt != null).ToString(CultureInfo.InvariantCulture), "number"),
-            new FinanceReportMetric("Ajustes manuales",
-                lines.Count(line => line.Kind == PreinvoiceLineKind.Adjustment).ToString(CultureInfo.InvariantCulture), "number"),
-        };
-        return (summary,
-            [Col("kind", "Tipo"), Col("concept", "Concepto"), Col("currency", "Moneda"), Col("count", "Líneas", "number"),
-                Col("edited", "Editadas", "number"), Col("computed", "Calculado", "money"), Col("billed", "Facturado", "money"),
-                Col("difference", "Diferencia", "money"), Col("reason", "Motivo")],
-            rows, ["Incluye prefacturas no anuladas; un cargo excluido figura con importe facturado cero."]);
-    }
-
-    private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
-        DisputesAsync(Scope scope, CancellationToken cancellationToken)
-    {
-        var from = new DateTimeOffset(scope.Filter.From.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var to = new DateTimeOffset(scope.Filter.To.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var disputes = await (from dispute in context.PreinvoiceDisputes.AsNoTracking()
-                              join preinvoice in context.Preinvoices.AsNoTracking() on dispute.PreinvoiceId equals preinvoice.Id
-                              join airline in context.Airlines.AsNoTracking() on preinvoice.AirlineId equals airline.Id
-                              join resolutionCandidate in context.PreinvoiceDisputeResolutions.AsNoTracking()
-                                  on dispute.Id equals resolutionCandidate.DisputeId into resolutions
-                              from resolution in resolutions.DefaultIfEmpty()
-                              where scope.StationIds.Contains(preinvoice.StationId) &&
-                                    (scope.AirlineId == null || preinvoice.AirlineId == scope.AirlineId) &&
-                                    (scope.Filter.CurrencyCode == null || preinvoice.CurrencyCode == scope.Filter.CurrencyCode) &&
-                                    dispute.CreatedAt >= @from && dispute.CreatedAt < to
-                              select new
-                              {
-                                  dispute.Id, airline.Name, preinvoice.CurrencyCode,
-                                  Decision = resolution == null ? null : resolution.Decision,
-                                  Amount = (from selection in context.PreinvoiceDisputeLines
-                                            join line in context.PreinvoiceLines on selection.PreinvoiceLineId equals line.Id
-                                            where selection.DisputeId == dispute.Id
-                                            select (decimal?)line.Amount).Sum() ?? 0m,
-                              }).ToArrayAsync(cancellationToken);
-        var rows = disputes.GroupBy(item => (item.Name, item.CurrencyCode)).OrderBy(group => group.Key.Name)
+        var ids = (await InvoicesAsync(scope, false, cancellationToken)).Select(invoice => invoice.Id).ToArray();
+        var lines = await context.NonFiscalInvoiceLines.AsNoTracking()
+            .Where(line => ids.Contains(line.InvoiceId) && line.OperationDate >= scope.Filter.From &&
+                line.OperationDate <= scope.Filter.To &&
+                (line.Kind == PreinvoiceLineKind.Charge || line.Kind == PreinvoiceLineKind.Minimum ||
+                 line.Kind == PreinvoiceLineKind.Excess || line.Kind == PreinvoiceLineKind.Adjustment))
+            .Select(line => new { line.Kind, line.ServiceCode, line.ServiceName, line.CurrencyCode, line.Amount,
+                line.NetAmount, line.TaxAmount })
+            .ToArrayAsync(cancellationToken);
+        var rows = lines.GroupBy(line => (line.Kind, line.ServiceCode, line.ServiceName, line.CurrencyCode))
+            .OrderBy(group => group.Key.Kind).ThenBy(group => group.Key.ServiceCode, StringComparer.Ordinal)
+            .ThenBy(group => group.Key.CurrencyCode, StringComparer.Ordinal)
             .Select(group => (IReadOnlyList<string?>)
             [
-                group.Key.Name, group.Key.CurrencyCode, group.Count().ToString(CultureInfo.InvariantCulture),
-                group.Count(item => item.Decision == null).ToString(CultureInfo.InvariantCulture),
-                group.Count(item => item.Decision == "Maintain").ToString(CultureInfo.InvariantCulture),
-                group.Count(item => item.Decision == "Void").ToString(CultureInfo.InvariantCulture),
-                Money(group.Sum(item => item.Amount)),
+                LineKind(group.Key.Kind), Concept(group.Key.ServiceCode, group.Key.ServiceName), group.Key.CurrencyCode,
+                group.Count().ToString(CultureInfo.InvariantCulture), Money(group.Sum(line => line.NetAmount ?? line.Amount)),
+                group.Any(line => line.TaxAmount == null) ? null : Money(group.Sum(line => line.TaxAmount ?? 0m)),
+                Money(group.Sum(line => line.Amount)),
             ]).ToArray();
-        var summary = new[]
-        {
-            new FinanceReportMetric("Disputas", disputes.Length.ToString(CultureInfo.InvariantCulture), "number"),
-            new FinanceReportMetric("Pendientes", disputes.Count(item => item.Decision == null).ToString(CultureInfo.InvariantCulture),
-                "number"),
-        };
+        var summary = lines.GroupBy(line => line.CurrencyCode).OrderBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => new FinanceReportMetric($"Recargos {group.Key}", Money(group.Sum(line => line.Amount)), "money",
+                group.Key))
+            .Append(new FinanceReportMetric("Cargos facturados",
+                lines.Count(line => line.Kind == PreinvoiceLineKind.Charge).ToString(CultureInfo.InvariantCulture), "number"))
+            .ToArray();
         return (summary,
-            [Col("airline", "Aerolínea"), Col("currency", "Moneda"), Col("disputes", "Disputas", "number"),
-                Col("pending", "Pendientes", "number"), Col("maintained", "Mantenidas", "number"),
-                Col("voided", "Anuladas", "number"), Col("amount", "Importe disputado", "money")],
-            rows, []);
+            [Col("kind", "Tipo"), Col("concept", "Concepto"), Col("currency", "Moneda"), Col("count", "Líneas", "number"),
+                Col("net", "Neto", "money"), Col("tax", "ITBIS", "money"), Col("total", "Total", "money")],
+            rows, ["Usa las líneas congeladas de las facturas emitidas, por fecha de operación. Los ajustes son de facturas anteriores a la facturación directa."]);
     }
 
-    private async Task<(IReadOnlyList<FinanceReportMetric>, IReadOnlyList<FinanceReportColumn>, IReadOnlyList<IReadOnlyList<string?>>, IReadOnlyList<string>)>
-        TariffsAsync(Scope scope, CancellationToken cancellationToken)
-    {
-        var lines = await (from line in context.NonFiscalInvoiceLines.AsNoTracking()
-                           join invoice in context.NonFiscalInvoices.AsNoTracking() on line.InvoiceId equals invoice.Id
-                           join service in context.ServiceDefinitions.AsNoTracking() on line.ServiceCode equals service.Code
-                           where scope.StationIds.Contains(invoice.StationId) && line.Kind == PreinvoiceLineKind.Service &&
-                                 (scope.AirlineId == null || invoice.AirlineId == scope.AirlineId) &&
-                                 (scope.Filter.CurrencyCode == null || invoice.CurrencyCode == scope.Filter.CurrencyCode) &&
-                                 line.OperationDate >= scope.Filter.From && line.OperationDate <= scope.Filter.To
-                           select new { ServiceId = service.Id, line.ServiceCode, line.ServiceName, line.CurrencyCode,
-                               line.ExecutedQuantity, line.UnitPrice, line.Amount }).ToArrayAsync(cancellationToken);
-        var rows = new List<IReadOnlyList<string?>>();
-        foreach (var group in lines.GroupBy(line => (line.ServiceId, line.ServiceCode, line.ServiceName, line.CurrencyCode))
-                     .OrderByDescending(group => group.Sum(line => line.Amount)))
-        {
-            var basePrice = (await FinanceTariffLookup.ServiceRatesAsync(context, group.Key.CurrencyCode, scope.Filter.To, null,
-                [group.Key.ServiceId], cancellationToken)).GetValueOrDefault(group.Key.ServiceId)?.UnitPrice;
-            var quantity = group.Sum(line => line.ExecutedQuantity);
-            var amount = group.Sum(line => line.Amount);
-            var average = quantity == 0 ? 0 : amount / quantity;
-            rows.Add([$"{group.Key.ServiceCode} · {group.Key.ServiceName}", group.Key.CurrencyCode,
-                Number(quantity), Money(amount), Money(average), basePrice is { } price ? Money(price) : null,
-                basePrice is > 0 ? Number(decimal.Round((average - basePrice.Value) / basePrice.Value * 100m, 1)) : null]);
-        }
-        return ([new FinanceReportMetric("Servicios facturados", lines.Length.ToString(CultureInfo.InvariantCulture), "number")],
-            [Col("service", "Servicio"), Col("currency", "Moneda"), Col("quantity", "Cantidad", "number"),
-                Col("amount", "Facturado", "money"), Col("average", "Precio medio", "money"), Col("base", "Tarifa base", "money"),
-                Col("deviation", "Desviación", "percent")],
-            rows, ["La tarifa base es la publicada al cierre del período."]);
-    }
-
-
+    private static string Concept(string code, string name) =>
+        string.IsNullOrWhiteSpace(code) ? name : $"{code} · {name}";
 }

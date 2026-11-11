@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Data;
 using System.Security.Cryptography;
 using System.Text;
@@ -24,16 +25,22 @@ internal sealed partial class FinancePayablesStore(ElevantDbContext context, IAc
     private sealed class Fault(string code) : Exception(code) { public string Code { get; } = code; }
     private static void Require(bool condition, string code = "invalid") { if (!condition) throw new Fault(code); }
     private static string Version(byte[] value) => Convert.ToBase64String(value);
-    private static void Match(byte[] value, string? expected) => Require(!string.IsNullOrEmpty(expected) && Version(value) == expected, "conflict");
+    private static void Match(byte[] value, string? expected) =>
+        Require(!string.IsNullOrEmpty(expected) && Version(value) == expected, FinancePayablesProblems.VersionConflict);
+    /// <summary>A required reason has 5 to 500 characters; an optional one only fits its column (4-N27).</summary>
+    private static void RequireReason(string? reason, bool required) =>
+        Require(required ? FinancePayablesPolicy.ValidReason(reason) : FinancePayablesPolicy.ValidOptionalReason(reason),
+            FinancePayablesProblems.ReasonRequired);
     private static bool Text(string? value, int max) => !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= max;
     private static bool OptionalText(string? value, int max) => value is null || value.Trim().Length <= max;
     private static bool Finance(Actor a, string permission) => a.Context.EffectiveAccess?.Department == Department.Finance && a.Context.HasPermission(permission);
     private static void Scope(Actor a, long station) => Require(a.Stations.Contains(station), "not_found");
-    private DateOnly SettlementToday => DateOnly.FromDateTime(clock.GetUtcNow().UtcDateTime);
-    private DateTimeOffset SettlementCutoff => new(SettlementToday.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+    // 4-N10: payables settle by AVIAM's business day in Santo Domingo, like receivables.
+    private DateOnly SettlementToday => BusinessCalendar.Today(clock.GetUtcNow());
+    private DateTimeOffset SettlementCutoff => BusinessCalendar.StartOfDay(SettlementToday.AddDays(1));
     private void RequireSettlementDate(DateOnly date) => Require(date != default && date <= SettlementToday);
-    // Current projections use the same inclusive UTC day as the as-of AP/expense reports.
-    private IQueryable<FinancePayablesApplication> CurrentApplications()
+    // Current projections use the same inclusive business day as the as-of AP/expense reports.
+    private IQueryable<FinancePayablesApplication> EffectiveApplications()
     {
         var today = SettlementToday; var end = SettlementCutoff;
         return from application in context.Set<FinancePayablesApplication>()
@@ -41,6 +48,19 @@ internal sealed partial class FinancePayablesStore(ElevantDbContext context, IAc
             where payment.PaidOn <= today && payment.CreatedAt < end && application.AppliedAt < end
             select application;
     }
+    /// <summary>4-N04: what is applied now; an application stops counting once a reversal names it before the cut-off.</summary>
+    private IQueryable<FinancePayablesApplication> CurrentApplications()
+    {
+        var end = SettlementCutoff;
+        return EffectiveApplications().Where(application =>
+            !context.Set<FinancePayablesReversal>().Any(r => r.ApplicationId == application.Id && r.ReversedAt < end));
+    }
+    /// <summary>4-N04: the void of a whole payment is its reversal without an application.</summary>
+    private IQueryable<FinancePayablesReversal> PaymentVoids() =>
+        context.Set<FinancePayablesReversal>().Where(r => r.ApplicationId == null);
+    /// <summary>Every retained application that no reversal names (write caps and corrections, whatever its dates).</summary>
+    private IQueryable<FinancePayablesApplication> ActiveApplications() =>
+        context.Set<FinancePayablesApplication>().Where(x => !context.Set<FinancePayablesReversal>().Any(r => r.ApplicationId == x.Id));
     private IQueryable<EmployeeExpensePayment> CurrentReimbursements()
     {
         var today = SettlementToday; var end = SettlementCutoff;
@@ -91,7 +111,7 @@ internal sealed partial class FinancePayablesStore(ElevantDbContext context, IAc
                 var receipt = await context.Set<FinancePayablesCommand>().SingleOrDefaultAsync(x => x.ActorAccountId == actor.Id && x.RequestId == requestId, ct);
                 if (receipt is not null)
                 {
-                    Require(receipt.ContentHash == hash && receipt.Operation == operation, "conflict");
+                    Require(receipt.ContentHash == hash && receipt.Operation == operation, FinancePayablesProblems.IdempotencyConflict);
                     var replayId = resourceId ?? receipt.ResourceId;
                     if (operation.StartsWith("supplier.", StringComparison.Ordinal)) await SupplierAsync(actor, replayId, ct);
                     else if (operation.StartsWith("payable.payment.", StringComparison.Ordinal)) await PaymentAsync(actor, replayId, ct);
@@ -111,12 +131,26 @@ internal sealed partial class FinancePayablesStore(ElevantDbContext context, IAc
         }
         catch (Fault f) { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail(f.Code); }
         catch (FinancialDocumentUnavailableException) { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail("unavailable"); }
-        catch (DbUpdateConcurrencyException) { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail("conflict"); }
-        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 or 547 or 1205 })
-        { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail("conflict"); }
+        catch (DbUpdateConcurrencyException)
+        { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail(FinancePayablesProblems.VersionConflict); }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 } duplicate)
+        { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail(DuplicateCode(duplicate.Message)); }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 547 })
+        { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail(FinancePayablesProblems.Invalid); }
+        catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 1205 })
+        { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail(FinancePayablesProblems.VersionConflict); }
         catch (SqlException ex) when (ex.Number == 1205)
-        { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail("conflict"); }
+        { context.ChangeTracker.Clear(); return FinancePayablesResult<FinancePayablesMutation>.Fail(FinancePayablesProblems.VersionConflict); }
     }
+    /// <summary>
+    /// 4-N27: the unique index a racing write hit, by its name: the supplier's document reference, the station's supplier
+    /// code, or a payment reversal recorded meanwhile. Any other one (a command receipt) is a stale read.
+    /// </summary>
+    internal static string DuplicateCode(string message) =>
+        message.Contains("IX_supplier_invoices_supplier_id_document_reference", StringComparison.Ordinal) ? FinancePayablesProblems.DuplicateReference
+        : message.Contains("IX_suppliers_scope_station_id_code", StringComparison.Ordinal) ? FinancePayablesProblems.DuplicateSupplierCode
+        : message.Contains("IX_payable_payment_reversals_", StringComparison.Ordinal) ? FinancePayablesProblems.AlreadyReversed
+        : FinancePayablesProblems.VersionConflict;
     private void Audit(Actor actor, string action, string entity, Guid id, string? reason = null) =>
         CommercialAuditWriter.Add(context, actor.Id, action, entity, id, reason?.Trim());
 

@@ -26,6 +26,15 @@ import {
   type ReopenCharterPrepaymentCommand,
 } from "./charters";
 import {
+  isFinancePendingOperationsResponse,
+  isNoChargeClosureResponse,
+  normalizedNoChargeClosure,
+  normalizedPendingOperationsQuery,
+  type CloseOperationsWithoutChargeCommand,
+  type FinancePendingOperationsQuery,
+} from "./financeInvoicing";
+import { isFinanceHomeResponse } from "./financeHome";
+import {
   AIRCRAFT_SIZE_CATEGORIES,
   CHARGE_MARK_SOURCES,
   isFinanceCloseRulesResponse,
@@ -219,11 +228,6 @@ import {
   getGetAirlineOperationUrl,
   getGetAirlineApprovedOperationEvidenceUrl,
   getGetAirlineOperationalRequestsUrl,
-  getGetAirlinePreinvoiceUrl,
-  getGetAirlinePreinvoiceDisputesUrl,
-  getAcceptAirlinePreinvoiceUrl,
-  getDisputeAirlinePreinvoiceUrl,
-  getGetAirlinePreinvoicesUrl,
   getListManagedContractsUrl,
   getGetPublicCommercialCatalogUrl,
   getSubmitCommercialRequestUrl,
@@ -248,8 +252,6 @@ import {
   getRetireCommercialServiceUrl,
   getDecideServiceClosureUrl,
   getReopenServiceUrl,
-  getGetFinanceApprovedServicesUrl,
-  getListFinancePreinvoicesUrl,
   getListFinanceTariffsUrl,
   getListHumanResourcesPermitsUrl,
   getRecordHumanResourcesPermitUrl,
@@ -266,31 +268,25 @@ import {
   getResolveHumanResourcesAvailabilityRequestUrl,
   getGetHumanResourcesShiftAssignmentOptionsUrl,
   getRecordHumanResourcesShiftUrl,
-  getListFinanceReconciliationUrl,
-  getCreatePreinvoiceDraftUrl,
-  getGetPreinvoiceDraftUrl,
-  getGetFinancePreinvoiceDisputesUrl,
-  getResolveFinancePreinvoiceDisputeUrl,
-  getIssueFinanceInvoiceUrl,
   getIssueInvoiceFromOperationsUrl,
+  getGetFinancePendingOperationsUrl,
+  getGetFinanceHomeUrl,
+  getCloseOperationsWithoutChargeUrl,
   getPayAirlineInvoiceByCardUrl,
   getGetAirlineInvoiceCardPaymentsUrl,
   getGetFinanceInvoiceCardPaymentsUrl,
   getGetAirlineCardPaymentReceiptUrl,
+  getGetAirlineCardPaymentAvailabilityUrl,
   getGetFinanceInvoiceDocumentByIdUrl,
   getGetAirlineInvoiceDocumentByIdUrl,
-  getGetFinanceInvoiceByPreinvoiceUrl,
-  getGetAirlineInvoiceByPreinvoiceUrl,
+  getGetFinanceAdjustmentNoteDocumentUrl,
+  getGetAirlineAdjustmentNoteDocumentUrl,
   getGetAirlinePaymentByInvoiceUrl,
   getGetAirlineInvoiceStatementUrl,
   type AirlineInvoiceStatementResponse,
-  getGetAirlineInvoiceDocumentUrl,
   getGetAirlinePaymentReceiptUrl,
-  getGetFinanceInvoiceDocumentUrl,
   getGetFinancePaymentReceiptUrl,
   getGetFinancePaymentByInvoiceUrl,
-  getRecordNonFiscalPaymentUrl,
-  getSubmitPreinvoiceUrl,
   getGetAirlinePortalBootstrapUrl,
   getAssignOccPlanningOperationUrl,
   getCreateSessionUrl,
@@ -465,27 +461,17 @@ import {
   type AirlinePortalOperationResponse,
   type AirlineApprovedOperationEvidenceResponse,
   type AirlineOperationalRequestPageResponse,
-  type AirlinePreinvoiceDetailResponse,
-  type AcceptAirlinePreinvoiceRequest,
-  type AcceptAirlinePreinvoiceResponse,
-  type DisputeAirlinePreinvoiceRequest,
-  type DisputeAirlinePreinvoiceResponse,
-  type PreinvoiceDisputeListResponse,
-  type ResolvePreinvoiceDisputeRequest,
-  type ResolvePreinvoiceDisputeResponse,
-  type IssueFinanceInvoiceRequest,
   type IssueInvoiceFromOperationsRequest,
+  type FinancePendingOperationsResponse,
+  type FinanceHomeResponse,
+  type NoChargeClosureResponse,
   type PayInvoiceByCardBody,
   type CardPaymentAttemptResponse,
   type CardPaymentListResponse,
   type CardPaymentResponse,
+  type CardPaymentAvailabilityResponse,
   type IssuedInvoiceResponse,
-  type IssueFinanceInvoiceResponse,
-  type NonFiscalInvoiceResponse,
   type NonFiscalPaymentLookupResponse,
-  type RecordNonFiscalPaymentRequest,
-  type RecordNonFiscalPaymentResponse,
-  type AirlinePreinvoicePageResponse,
   type ManagedContractPageData,
   type ListManagedContractsParams,
   type PublicCommercialCatalog,
@@ -498,9 +484,6 @@ import {
   type CommercialInboxData,
   type ContractDraftReadinessData,
   type ContractDraftScopeData,
-  type FinanceApprovedServicesResponse,
-  type FinancePreinvoicePageData,
-  type ListFinancePreinvoicesParams,
   type FinanceTariffPageData,
   type ListFinanceTariffsParams,
   type HumanResourcesPermitPage,
@@ -532,17 +515,9 @@ import {
   type ListHumanResourcesShiftsParams,
   type HumanResourcesShiftRecorded,
   type RecordHumanResourcesShiftInput,
-  type FinanceReconciliationPageData,
-  type ListFinanceReconciliationParams,
-  type CreatePreinvoiceDraftRequest,
-  type CreatePreinvoiceDraftResponse,
-  type PreinvoiceDraftResponse,
-  type SubmitPreinvoiceRequest,
-  type SubmitPreinvoiceResponse,
   type GetAirlineContractsParams,
   type GetAirlineOperationsParams,
   type GetAirlineOperationalRequestsParams,
-  type GetAirlinePreinvoicesParams,
   type GetAccountChangesParams,
   type AirlinePortalBootstrapResponse,
   type CreateSessionRequest,
@@ -712,14 +687,12 @@ export type GetAirlineContractsOptions = Omit<ElevantRequestInit, "body" | "meth
 export type GetAirlineOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineApprovedOperationEvidenceOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type GetAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type GetPreinvoiceDisputesOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type ResolvePreinvoiceDisputeOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type IssueFinanceInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type IssueInvoiceFromOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinancePendingOperationsOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type GetFinanceHomeOptions = Omit<ElevantRequestInit, "body" | "method">;
+export type CloseOperationsWithoutChargeOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type PayInvoiceByCardOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalInvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type RecordNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetNonFiscalPaymentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinancialDocumentOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesReportOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -804,15 +777,10 @@ export type HumanResourcesScheduleWarningsQuery =
   Required<Pick<ListHumanResourcesScheduleWarningsParams,
     "stationId" | "from" | "to">> &
   Pick<ListHumanResourcesScheduleWarningsParams, "page" | "limit" | "includeReadiness">;
-export type AcceptAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type DisputeAirlinePreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetAirlineOperationalRequestsOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type GetAirlinePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetManagedContractsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetPublicCommercialCatalogOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type SubmitCommercialRequestOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type GetFinanceApprovedServicesOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type GetFinancePreinvoicesOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetFinanceTariffsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type GetHumanResourcesPermitsOptions = Omit<ElevantRequestInit, "body" | "method">;
 export type RecordHumanResourcesPermitOptions = Omit<ElevantRequestInit, "body" | "method">;
@@ -836,15 +804,6 @@ export type HumanResourcesShiftsQuery = Omit<ListHumanResourcesShiftsParams, "fr
   readonly from: string;
   readonly to: string;
 };
-export type GetFinanceReconciliationOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type CreatePreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type GetPreinvoiceDraftOptions = Omit<ElevantRequestInit, "body" | "method">;
-export type SubmitPreinvoiceOptions = Omit<ElevantRequestInit, "body" | "method">;
-export interface FinanceApprovedServicesQuery {
-  readonly stationId: string;
-  readonly from: string;
-  readonly to: string;
-}
 export type GetOccPlanningSnapshotOptions = Omit<
   ElevantRequestInit,
   "body" | "method"
@@ -1017,26 +976,6 @@ export interface ElevantApiClient {
     parameters?: GetAirlineOperationalRequestsParams,
     options?: GetAirlineOperationalRequestsOptions,
   ): Promise<AirlineOperationalRequestPageResponse>;
-  getAirlinePreinvoices(
-    parameters?: GetAirlinePreinvoicesParams,
-    options?: GetAirlinePreinvoicesOptions,
-  ): Promise<AirlinePreinvoicePageResponse>;
-  getAirlinePreinvoice(
-    preinvoiceId: string,
-    options?: GetAirlinePreinvoiceOptions,
-  ): Promise<AirlinePreinvoiceDetailResponse>;
-  getAirlinePreinvoiceDisputes(
-    preinvoiceId: string,
-    options?: GetPreinvoiceDisputesOptions,
-  ): Promise<PreinvoiceDisputeListResponse>;
-  acceptAirlinePreinvoice(
-    preinvoiceId: string, request: AcceptAirlinePreinvoiceRequest,
-    options?: AcceptAirlinePreinvoiceOptions,
-  ): Promise<AcceptAirlinePreinvoiceResponse>;
-  disputeAirlinePreinvoice(
-    preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest,
-    options?: DisputeAirlinePreinvoiceOptions,
-  ): Promise<DisputeAirlinePreinvoiceResponse>;
   getManagedContracts(
     parameters?: ListManagedContractsParams,
     options?: GetManagedContractsOptions,
@@ -1052,14 +991,6 @@ export interface ElevantApiClient {
     request: SubmitCommercialRequestRequest,
     options?: SubmitCommercialRequestOptions,
   ): Promise<SubmitCommercialRequestResponse>;
-  getFinanceApprovedServices(
-    query: FinanceApprovedServicesQuery,
-    options?: GetFinanceApprovedServicesOptions,
-  ): Promise<FinanceApprovedServicesResponse>;
-  getFinancePreinvoices(
-    query: ListFinancePreinvoicesParams,
-    options?: GetFinancePreinvoicesOptions,
-  ): Promise<FinancePreinvoicePageData>;
   getFinanceTariffs(
     query: ListFinanceTariffsParams,
     options?: GetFinanceTariffsOptions,
@@ -1174,41 +1105,50 @@ export interface ElevantApiClient {
   listRampAgentReadiness(options?: GetHumanResourcesReportOptions): Promise<RampAgentReadinessData[]>;
   /** The signed-in ramp agent's shifts (up to 31 days) and current documents. */
   getOwnRampSchedule(from: string, to: string, options?: GetHumanResourcesReportOptions): Promise<RampAgentScheduleData>;
-  getFinanceReconciliation(
-    query: ListFinanceReconciliationParams,
-    options?: GetFinanceReconciliationOptions,
-  ): Promise<FinanceReconciliationPageData>;
-  createPreinvoiceDraft(
-    request: CreatePreinvoiceDraftRequest,
-    options?: CreatePreinvoiceDraftOptions,
-  ): Promise<CreatePreinvoiceDraftResponse>;
-  getPreinvoiceDraft(
-    draftId: string, expectedStationId: string,
-    options?: GetPreinvoiceDraftOptions,
-  ): Promise<PreinvoiceDraftResponse>;
-  getFinancePreinvoiceDisputes(
-    draftId: string,
-    options?: GetPreinvoiceDisputesOptions,
-  ): Promise<PreinvoiceDisputeListResponse>;
-  resolveFinancePreinvoiceDispute(
-    preinvoiceId: string, request: ResolvePreinvoiceDisputeRequest,
-    options?: ResolvePreinvoiceDisputeOptions,
-  ): Promise<ResolvePreinvoiceDisputeResponse>;
-  issueFinanceInvoice(
-    request: IssueFinanceInvoiceRequest,
-    options?: IssueFinanceInvoiceOptions,
-  ): Promise<IssueFinanceInvoiceResponse>;
-  /** ADR-0035: one simulated e-CF invoice for one or several approved operations of one airline. */
+  /**
+   * ADR-0035: one simulated e-CF invoice for approved operations of one airline. The request id is the idempotency
+   * key; 4-N29: `operationVersions` (optional while older clients exist) covers every operation with the version on
+   * screen, and the key with another account, station or operations is 409 `idempotency_conflict`.
+   */
   issueInvoiceFromOperations(
     request: IssueInvoiceFromOperationsRequest,
     options?: IssueInvoiceFromOperationsOptions,
   ): Promise<IssuedInvoiceResponse>;
+  /**
+   * «Por facturar» (4-N16): the station's pending operations from the oldest, with the limits of one invoice, the
+   * airline facet, each operation's version, estimated lines and blocking codes, and the next cursor.
+   */
+  getFinancePendingOperations(
+    query: FinancePendingOperationsQuery,
+    options?: GetFinancePendingOperationsOptions,
+  ): Promise<FinancePendingOperationsResponse>;
+  /**
+   * «Inicio» of Finance (4-A, 4-N02): the station's indicators at the business day of Santo Domingo. A section is null
+   * when the account's template does not include its module; 403 `forbidden` without «Inicio» or the station.
+   */
+  getFinanceHome(stationId: string, options?: GetFinanceHomeOptions): Promise<FinanceHomeResponse>;
+  /**
+   * 4-N07: closes operations valued at zero without an invoice, with the versions on screen, a reason of 5 to 500
+   * characters and the intent's Idempotency-Key (201 created, 200 replayed).
+   */
+  closeOperationsWithoutCharge(
+    command: CloseOperationsWithoutChargeCommand,
+    idempotencyKey: string,
+    options?: CloseOperationsWithoutChargeOptions,
+  ): Promise<NoChargeClosureResponse>;
   getFinanceInvoiceDocumentById(
     invoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
   getAirlineInvoiceDocumentById(
     invoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
+  /**
+   * 4-N17: the PDF of a credit or debit note of an invoice of Finance's stations: its e-NCF E34/E33 when it modifies an
+   * E31 invoice, the frozen ITBIS of each line and «Simulación — sin validez fiscal».
+   */
+  getFinanceAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
+  /** 4-N17: the PDF of a credit or debit note of the airline's own invoice, within the portal's scope. */
+  getAirlineAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
   /** ADR-0036: pays the whole balance with a simulated card; the same key and body replay the attempt. */
   payAirlineInvoiceByCard(
     invoiceId: string, request: PayInvoiceByCardBody, idempotencyKey: string,
@@ -1217,18 +1157,11 @@ export interface ElevantApiClient {
   getAirlineInvoiceCardPayments(invoiceId: string, options?: GetFinancialDocumentOptions): Promise<CardPaymentListResponse>;
   getFinanceInvoiceCardPayments(invoiceId: string, options?: GetFinancialDocumentOptions): Promise<CardPaymentListResponse>;
   getAirlineCardPaymentReceipt(attemptId: string, options?: GetFinancialDocumentOptions): Promise<Blob>;
-  getFinanceInvoiceByPreinvoice(
-    preinvoiceId: string,
-    options?: GetNonFiscalInvoiceOptions,
-  ): Promise<NonFiscalInvoiceResponse>;
-  getAirlineInvoiceByPreinvoice(
-    preinvoiceId: string,
-    options?: GetNonFiscalInvoiceOptions,
-  ): Promise<NonFiscalInvoiceResponse>;
-  recordNonFiscalPayment(
-    request: RecordNonFiscalPaymentRequest,
-    options?: RecordNonFiscalPaymentOptions,
-  ): Promise<RecordNonFiscalPaymentResponse>;
+  /**
+   * 4-N05: whether this environment takes card payments and whether the gateway is the simulation; the portal hides
+   * the card form when it is unavailable.
+   */
+  getAirlineCardPaymentAvailability(options?: GetFinancialDocumentOptions): Promise<CardPaymentAvailabilityResponse>;
   getFinancePaymentByInvoice(
     invoiceId: string,
     options?: GetNonFiscalPaymentOptions,
@@ -1241,22 +1174,12 @@ export interface ElevantApiClient {
     invoiceId: string,
     options?: GetNonFiscalPaymentOptions,
   ): Promise<AirlineInvoiceStatementResponse>;
-  getAirlineInvoiceDocument(
-    preinvoiceId: string, options?: GetFinancialDocumentOptions,
-  ): Promise<Blob>;
   getAirlinePaymentReceipt(
     invoiceId: string, options?: GetFinancialDocumentOptions,
-  ): Promise<Blob>;
-  getFinanceInvoiceDocument(
-    preinvoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
   getFinancePaymentReceipt(
     invoiceId: string, options?: GetFinancialDocumentOptions,
   ): Promise<Blob>;
-  submitPreinvoice(
-    draftId: string, request: SubmitPreinvoiceRequest,
-    options?: SubmitPreinvoiceOptions,
-  ): Promise<SubmitPreinvoiceResponse>;
   getOccPlanningSnapshot(
     parameters?: GetOccPlanningSnapshotParams,
     options?: GetOccPlanningSnapshotOptions,
@@ -1793,7 +1716,11 @@ export interface ElevantApiClient {
     idempotencyKey: string, options?: ReportRampIncidentOptions): Promise<RampCharterResponse>;
   /** Finance: charters of its stations and their prepayment. */
   getFinanceCharters(options?: GetHumanResourcesReportOptions): Promise<FinanceCharterListResponse>;
-  confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand,
+  /**
+   * 4-N22: confirms the prepayment with the version Finance saw and the intent's Idempotency-Key; confirmed after the
+   * invoice it settles it. Another amount or reference corrects it with a reason while it was never applied.
+   */
+  confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<FinanceCharterResponse>;
   /** 3-N24: Finance reopens a confirmed prepayment as a new quotation, with its reason and the version it saw. */
   reopenFinanceCharterPrepayment(charterId: string, command: ReopenCharterPrepaymentCommand, idempotencyKey: string,
@@ -4076,112 +4003,26 @@ function isAirlineOperationalRequestPageResponse(
   });
 }
 
-function isAirlinePreinvoicePageResponse(
-  value: unknown,
-): value is AirlinePreinvoicePageResponse {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "preinvoices"]) ||
-      !isInt32(value.page) || value.page < 1 || !isInt32(value.limit) ||
-      value.limit < 1 || value.limit > 50 || typeof value.hasMore !== "boolean" ||
-      !Array.isArray(value.preinvoices) || value.preinvoices.length > value.limit ||
-      (value.hasMore && value.preinvoices.length !== value.limit)) return false;
-  const ids = new Set<string>();
-  return value.preinvoices.every(item => {
-    if (!isRecord(item) || !hasOnlyKeys(item,
-      ["id", "stationId", "stationCode", "from", "to", "currencyCode", "total",
-        "status", "createdAt"]) || !isUuid(item.id) || ids.has(item.id) ||
-        !isUuid(item.stationId) || !isNonEmptyString(item.stationCode) ||
-        !isDateOnly(item.from) || !isDateOnly(item.to) || item.from > item.to ||
-        typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
-        !isFiniteNumber(item.total) || item.total < 0 ||
-        !["Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(item.status)) ||
-        !isDateTimeOffset(item.createdAt)) return false;
-    ids.add(item.id);
-    return true;
-  });
-}
-
-function isAirlinePreinvoiceDetailResponse(value: unknown): value is AirlinePreinvoiceDetailResponse {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "stationId", "stationCode",
-      "from", "to", "currencyCode", "total", "status", "createdAt", "lines"]) ||
-      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 500)
-    return false;
-  const { lines, ...header } = value;
-  if (!isAirlinePreinvoicePageResponse({ page: 1, limit: 1, hasMore: false,
-    preinvoices: [header] })) return false;
-  const periodFrom = String(value.from);
-  const periodTo = String(value.to);
-  const ids = new Set<string>();
-  const validLines = lines.every(line => {
-    if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationCode", "operationDate",
-        "serviceCode", "serviceName", "executedQuantity", "billingUnit",
-        "unitPrice", "amount", "kind", "parentLineId", "reason"])) return false;
-    const kind = line.kind === undefined ? "Service" : String(line.kind);
-    if (!PRICED_LINE_KINDS.includes(kind) || !isUuid(line.id) || ids.has(line.id) ||
-        !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
-        line.operationDate < periodFrom || line.operationDate > periodTo ||
-        !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
-        !isNonEmptyString(line.billingUnit) || !isPricedLineAmounts(line, kind) ||
-        !isOptionalNullable(line.parentLineId, isUuid) || (kind === "Charge" && !isUuid(line.parentLineId)) ||
-        !isOptionalNullable(line.reason, isString)) return false;
-    ids.add(line.id);
-    return true;
-  });
-  return validLines;
-}
-
-function isPreinvoiceDisputes(value: unknown): boolean {
-  if (!Array.isArray(value) || value.length > 50) return false;
-  const disputeIds = new Set<string>();
-  return value.every(dispute => {
-    if (!isRecord(dispute) || !hasOnlyKeys(dispute,
-        ["id", "subject", "description", "createdAt", "lineIds", "resolution"]) ||
-        !isUuid(dispute.id) || disputeIds.has(dispute.id) ||
-        !isNonEmptyString(dispute.subject) || dispute.subject.length > 160 ||
-        !isNonEmptyString(dispute.description) || dispute.description.length > 1000 ||
-        !isDateTimeOffset(dispute.createdAt) ||
-        !Array.isArray(dispute.lineIds) || dispute.lineIds.length < 1 ||
-        dispute.lineIds.length > 50 ||
-        !isOptionalNullable(dispute.resolution, resolution =>
-          isRecord(resolution) && hasOnlyKeys(resolution,
-            ["id", "decision", "reason", "resolvedAt"]) &&
-          isUuid(resolution.id) &&
-          (resolution.decision === "Maintain" || resolution.decision === "Void") &&
-          isNonEmptyString(resolution.reason) && resolution.reason.length <= 1000 &&
-          isDateTimeOffset(resolution.resolvedAt))) return false;
-    const selected = new Set<string>();
-    for (const id of dispute.lineIds) {
-      if (!isUuid(id) || selected.has(id)) return false;
-      selected.add(id);
-    }
-    disputeIds.add(dispute.id);
-    return true;
-  });
-}
-
-function isPreinvoiceDisputeListResponse(value: unknown, preinvoiceId: string):
-  value is PreinvoiceDisputeListResponse {
-  return isRecord(value) && hasOnlyKeys(value, ["preinvoiceId", "disputes"]) &&
-    value.preinvoiceId === preinvoiceId && isPreinvoiceDisputes(value.disputes);
-}
-
-function isResolvePreinvoiceDisputeResponse(value: unknown, preinvoiceId: string,
-  decision: string): value is ResolvePreinvoiceDisputeResponse {
-  return isRecord(value) && hasOnlyKeys(value,
-    ["id", "preinvoiceId", "status", "replayed"]) &&
-    isUuid(value.id) && value.preinvoiceId === preinvoiceId &&
-    value.status === (decision === "Void" ? "Voided" : "Submitted") &&
-    typeof value.replayed === "boolean";
-}
-
 function validatedIssueInvoiceFromOperationsRequest(
   request: IssueInvoiceFromOperationsRequest,
 ): IssueInvoiceFromOperationsRequest {
-  if (!isRecord(request) || !hasOnlyKeys(request, ["stationId", "operationIds", "requestId"]) ||
+  if (!isRecord(request) || !hasOnlyKeys(request, ["stationId", "operationIds", "requestId", "operationVersions"]) ||
       !isUuid(request.stationId) || !isUuid(request.requestId) || !Array.isArray(request.operationIds) ||
       request.operationIds.length < 1 || request.operationIds.length > 100 ||
       !request.operationIds.every(isUuid) ||
       new Set(request.operationIds.map((id) => id.toLowerCase())).size !== request.operationIds.length)
     throw new TypeError("Invoice issuance request is invalid.");
+  // 4-N29: the versions on screen, when sent, cover every operation exactly once.
+  const versions = request.operationVersions;
+  if (versions !== undefined && versions !== null) {
+    const ids = new Set(request.operationIds.map((id) => id.toLowerCase()));
+    if (!Array.isArray(versions) || versions.length !== ids.size ||
+        !versions.every((item) => isRecord(item) && hasOnlyKeys(item, ["operationId", "version"]) &&
+          isUuid(item.operationId) && ids.has(item.operationId.toLowerCase()) && typeof item.version === "string" &&
+          item.version.trim().length > 0 && item.version.length <= 64) ||
+        new Set(versions.map((item) => item.operationId.toLowerCase())).size !== versions.length)
+      throw new TypeError("Invoice issuance request is invalid.");
+  }
   return request;
 }
 
@@ -4204,6 +4045,12 @@ function isCardPaymentAttempt(value: unknown, invoiceId: string): value is CardP
       (value.declineCode === null || value.declineCode === undefined)
     : typeof value.declineCode === "string" && (value.authorizationCode === null || value.authorizationCode === undefined) &&
       (value.receiptId === null || value.receiptId === undefined);
+}
+
+/** 4-N05: two flags only; a simulated gateway is always available. */
+function isCardPaymentAvailability(value: unknown): value is CardPaymentAvailabilityResponse {
+  return isRecord(value) && hasOnlyKeys(value, ["available", "simulated"]) && typeof value.available === "boolean" &&
+    typeof value.simulated === "boolean" && (!value.simulated || value.available);
 }
 
 function isCardPaymentList(value: unknown, invoiceId: string): value is CardPaymentListResponse {
@@ -4235,65 +4082,8 @@ function isIssuedInvoiceResponse(value: unknown): value is IssuedInvoiceResponse
     (value.currencyCode === "USD" || value.currencyCode === "DOP") && typeof value.replayed === "boolean";
 }
 
-function isIssueFinanceInvoiceResponse(value: unknown,
-  request: IssueFinanceInvoiceRequest): value is IssueFinanceInvoiceResponse {
-  return isRecord(value) && hasOnlyKeys(value,
-    ["id", "preinvoiceId", "number", "kind", "replayed"]) &&
-    isUuid(value.id) && value.preinvoiceId === request.preinvoiceId &&
-    value.number === `NF-${value.id.replaceAll("-", "")}` &&
-    value.kind === "NonFiscal" && typeof value.replayed === "boolean";
-}
-
-function isNonFiscalInvoiceResponse(value: unknown, preinvoiceId: string):
-  value is NonFiscalInvoiceResponse {
-  if (!isRecord(value) || !hasOnlyKeys(value,
-      ["id", "preinvoiceId", "airlineId", "stationId", "number", "kind",
-        "currencyCode", "total", "issuedAt", "lines"]) ||
-      !isUuid(value.id) || value.preinvoiceId !== preinvoiceId ||
-      !isUuid(value.airlineId) || !isUuid(value.stationId) ||
-      value.number !== `NF-${value.id.replaceAll("-", "")}` ||
-      value.kind !== "NonFiscal" ||
-      typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
-      !isFiniteNumber(value.total) || value.total < 0 ||
-      !isDateTimeOffset(value.issuedAt) || !Array.isArray(value.lines) ||
-      value.lines.length < 1 || value.lines.length > 500) return false;
-  const ids = new Set<string>();
-  let previousNumber = 0;
-  for (let index = 0; index < value.lines.length; index++) {
-    const line = value.lines[index];
-    if (!isRecord(line) || !hasOnlyKeys(line,
-        ["id", "lineNumber", "operationCode", "operationDate", "serviceCode",
-          "serviceName", "executedQuantity", "billingUnit", "unitPrice", "amount", "kind", "parentLineNumber",
-          "reason"])) return false;
-    const kind = line.kind === undefined ? "Service" : String(line.kind);
-    if (!PRICED_LINE_KINDS.includes(kind) || !isUuid(line.id) || ids.has(line.id) ||
-        !isInt32(line.lineNumber) || line.lineNumber <= previousNumber ||
-        !isNonEmptyString(line.operationCode) || !isDateOnly(line.operationDate) ||
-        !isNonEmptyString(line.serviceCode) || !isNonEmptyString(line.serviceName) ||
-        !isNonEmptyString(line.billingUnit) || !isPricedLineAmounts(line, kind) ||
-        !isOptionalNullable(line.parentLineNumber, isInt32) || !isOptionalNullable(line.reason, isString))
-      return false;
-    previousNumber = line.lineNumber;
-    ids.add(line.id);
-  }
-  // SQL validates decimal(19,4) snapshots at issuance. Re-adding parsed JSON
-  // numbers here can reject a valid large invoice due to IEEE-754 rounding.
-  return true;
-}
-
 function isPaymentReference(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9-]{8,80}$/.test(value);
-}
-
-function isRecordNonFiscalPaymentResponse(value: unknown,
-  request: RecordNonFiscalPaymentRequest): value is RecordNonFiscalPaymentResponse {
-  return isRecord(value) && hasOnlyKeys(value,
-    ["id", "invoiceId", "reference", "currencyCode", "amount", "replayed"]) &&
-    isUuid(value.id) && value.invoiceId === request.invoiceId &&
-    value.reference === request.reference &&
-    typeof value.currencyCode === "string" && /^[A-Z]{3}$/.test(value.currencyCode) &&
-    isFiniteNumber(value.amount) && value.amount >= 0 &&
-    typeof value.replayed === "boolean";
 }
 
 function isNonFiscalPaymentLookupResponse(value: unknown, invoiceId: string):
@@ -4309,18 +4099,6 @@ function isNonFiscalPaymentLookupResponse(value: unknown, invoiceId: string):
     typeof payment.currencyCode === "string" && /^[A-Z]{3}$/.test(payment.currencyCode) &&
     isFiniteNumber(payment.amount) && payment.amount >= 0 &&
     isDateTimeOffset(payment.recordedAt);
-}
-
-function isAcceptAirlinePreinvoiceResponse(value: unknown): value is AcceptAirlinePreinvoiceResponse {
-  return isRecord(value) && hasOnlyKeys(value, ["id", "status", "replayed"]) &&
-    isUuid(value.id) && value.status === "Accepted" &&
-    typeof value.replayed === "boolean";
-}
-
-function isDisputeAirlinePreinvoiceResponse(value: unknown): value is DisputeAirlinePreinvoiceResponse {
-  return isRecord(value) && hasOnlyKeys(value, ["id", "disputeId", "status", "replayed"]) &&
-    isUuid(value.id) && isUuid(value.disputeId) && value.status === "Disputed" &&
-    typeof value.replayed === "boolean";
 }
 
 function isPublicCommercialCatalog(value: unknown): value is PublicCommercialCatalog {
@@ -4419,30 +4197,6 @@ function isCommercialRequestReceipt(value: unknown): value is SubmitCommercialRe
   return isRecord(value) && hasOnlyKeys(value, ["reference", "replayed"]) &&
     isNonEmptyString(value.reference) && value.reference.length <= 128 &&
     typeof value.replayed === "boolean";
-}
-
-function validatedFinanceApprovedServicesQuery(
-  query: FinanceApprovedServicesQuery,
-): FinanceApprovedServicesQuery {
-  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "from", "to"]) ||
-      !isUuid(query.stationId) || !isDateOnly(query.from) || !isDateOnly(query.to) ||
-      (Date.parse(`${query.to}T00:00:00Z`) - Date.parse(`${query.from}T00:00:00Z`)) /
-        86_400_000 > 30 || query.to < query.from)
-    throw new TypeError("Finance evidence station and date range are invalid.");
-  return query as unknown as FinanceApprovedServicesQuery;
-}
-
-function validatedFinancePreinvoiceQuery(
-  query: ListFinancePreinvoicesParams,
-): ListFinancePreinvoicesParams {
-  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "page", "limit"]) ||
-      !isUuid(query.stationId) ||
-      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
-      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 50)))
-    throw new TypeError("Finance preinvoice station or paging is invalid.");
-  return { stationId: query.stationId,
-    ...(query.page === undefined ? {} : { page: query.page }),
-    ...(query.limit === undefined ? {} : { limit: query.limit }) };
 }
 
 function validatedFinanceTariffQuery(
@@ -4927,156 +4681,9 @@ function isFinanceTariffPageData(value: unknown): value is FinanceTariffPageData
   });
 }
 
-function validatedFinanceReconciliationQuery(
-  query: ListFinanceReconciliationParams,
-): ListFinanceReconciliationParams {
-  if (!isRecord(query) || !hasOnlyKeys(query, ["stationId", "page", "limit"]) ||
-      !isUuid(query.stationId) ||
-      (query.page !== undefined && (!isInt32(query.page) || query.page < 1 || query.page > 10_000)) ||
-      (query.limit !== undefined && (!isInt32(query.limit) || query.limit < 1 || query.limit > 50)))
-    throw new TypeError("Finance reconciliation station or paging is invalid.");
-  return { stationId: query.stationId,
-    ...(query.page === undefined ? {} : { page: query.page }),
-    ...(query.limit === undefined ? {} : { limit: query.limit }) };
-}
-
-function isFinanceReconciliationPageData(value: unknown): value is FinanceReconciliationPageData {
-  if (!isRecord(value) || !hasOnlyKeys(value,
-    ["stationId", "page", "limit", "hasMore", "rows"]) ||
-      !isUuid(value.stationId) || !isInt32(value.page) || value.page < 1 ||
-      !isInt32(value.limit) || value.limit < 1 || value.limit > 50 ||
-      typeof value.hasMore !== "boolean" || !Array.isArray(value.rows) ||
-      value.rows.length > value.limit ||
-      (value.hasMore && value.rows.length !== value.limit)) return false;
-  const ids = new Set<string>();
-  return value.rows.every(item => {
-    if (!isRecord(item) || !hasOnlyKeys(item,
-      ["preinvoiceId", "airlineId", "airlineName", "from", "to", "currencyCode",
-        "preinvoiceTotal", "preinvoiceStatus", "invoiceId", "invoiceNumber",
-        "invoiceTotal", "issuedAt", "paymentId", "paymentReference",
-        "paymentAmount", "paymentRecordedAt"]) ||
-        !isUuid(item.preinvoiceId) || ids.has(item.preinvoiceId) ||
-        !isUuid(item.airlineId) || !isNonEmptyString(item.airlineName) ||
-        !isDateOnly(item.from) || !isDateOnly(item.to) || item.to < item.from ||
-        typeof item.currencyCode !== "string" || !/^[A-Z]{3}$/.test(item.currencyCode) ||
-        !isFiniteNumber(item.preinvoiceTotal) || item.preinvoiceTotal < 0 ||
-        !["Accepted", "Invoiced"].includes(String(item.preinvoiceStatus))) return false;
-    ids.add(item.preinvoiceId);
-    const invoiceFields = [item.invoiceId, item.invoiceNumber, item.invoiceTotal, item.issuedAt];
-    const paymentFields = [item.paymentId, item.paymentReference,
-      item.paymentAmount, item.paymentRecordedAt];
-    if (item.preinvoiceStatus === "Accepted")
-      return invoiceFields.every(field => field == null) &&
-        paymentFields.every(field => field == null);
-    if (!isUuid(item.invoiceId) || !isNonEmptyString(item.invoiceNumber) ||
-        !isFiniteNumber(item.invoiceTotal) || item.invoiceTotal !== item.preinvoiceTotal ||
-        !isDateTimeOffset(item.issuedAt)) return false;
-    if (paymentFields.every(field => field == null)) return true;
-    return isUuid(item.paymentId) && isNonEmptyString(item.paymentReference) &&
-      isFiniteNumber(item.paymentAmount) && item.paymentAmount === item.invoiceTotal &&
-      isDateTimeOffset(item.paymentRecordedAt);
-  });
-}
-
-function isFinancePreinvoicePageData(value: unknown): value is FinancePreinvoicePageData {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["page", "limit", "hasMore", "preinvoices"]) ||
-      !isInt32(value.page) || value.page < 1 ||
-      !isInt32(value.limit) || value.limit < 1 || value.limit > 50 ||
-      typeof value.hasMore !== "boolean" || !Array.isArray(value.preinvoices) ||
-      value.preinvoices.length > value.limit ||
-      (value.hasMore && value.preinvoices.length !== value.limit)) return false;
-  const ids = new Set<string>();
-  return value.preinvoices.every(item => {
-    if (!isRecord(item) || !hasOnlyKeys(item, ["id", "airlineId", "airlineName",
-        "stationId", "from", "to", "currencyCode", "total", "status",
-        "lineCount", "createdAt"]) || !isUuid(item.id) || ids.has(item.id) ||
-        !isUuid(item.airlineId) || !isNonEmptyString(item.airlineName) ||
-        !isUuid(item.stationId) || !isDateOnly(item.from) || !isDateOnly(item.to) ||
-        item.to < item.from || typeof item.currencyCode !== "string" ||
-        !/^[A-Z]{3}$/.test(item.currencyCode) ||
-        !isFiniteNumber(item.total) || item.total < 0 ||
-        !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(item.status)) ||
-        !isInt32(item.lineCount) || item.lineCount < 1 || item.lineCount > 100 ||
-        !isDateTimeOffset(item.createdAt)) return false;
-    ids.add(item.id);
-    return true;
-  });
-}
-
-function isFinanceApprovedServicesResponse(value: unknown): value is FinanceApprovedServicesResponse {
-  return isRecord(value) &&
-    hasOnlyKeys(value, ["stationId", "from", "to", "services", "hasMore"]) &&
-    isUuid(value.stationId) && isDateOnly(value.from) && isDateOnly(value.to) &&
-    typeof value.hasMore === "boolean" && Array.isArray(value.services) &&
-    value.services.length <= 200 &&
-    value.services.every((service) => isRecord(service) &&
-      hasOnlyKeys(service, ["id", "operationId", "turnaroundId", "approvedSubmissionId",
-        "operationCode", "operationDate", "airlineId", "airlineName", "flightNumber", "contractCode",
-        "serviceCode", "serviceName", "executionStatus", "contractedQuantity",
-        "executedQuantity", "billingUnit", "frozenUnitPrice", "frozenCurrency",
-        "ready", "blockingReason", "amount", "preinvoiceId", "charges"]) &&
-      (service.charges === undefined || service.charges === null || (Array.isArray(service.charges) &&
-        service.charges.length <= 50 && service.charges.every((charge: unknown) => isRecord(charge) &&
-          hasOnlyKeys(charge, ["code", "source"]) && isNonEmptyString(charge.code) &&
-          isOneOf(charge.source, CHARGE_MARK_SOURCES)))) &&
-      isUuid(service.id) && isUuid(service.operationId) && isUuid(service.turnaroundId) &&
-      isUuid(service.approvedSubmissionId) && isNonEmptyString(service.operationCode) &&
-      isDateOnly(service.operationDate) && isUuid(service.airlineId) &&
-      isNonEmptyString(service.airlineName) &&
-      isString(service.flightNumber) && isOptionalNullable(service.contractCode, isNonEmptyString) &&
-      isNonEmptyString(service.serviceCode) && isNonEmptyString(service.serviceName) &&
-      ["Planned", "InProgress", "Completed", "NotPerformed", "Exception"].includes(
-        String(service.executionStatus)) &&
-      isFiniteNumber(service.contractedQuantity) && service.contractedQuantity >= 0 &&
-      isFiniteNumber(service.executedQuantity) && service.executedQuantity >= 0 &&
-      isString(service.billingUnit) &&
-      isOptionalNullable(service.frozenUnitPrice, value => isFiniteNumber(value) && value >= 0) &&
-      isOptionalNullable(service.frozenCurrency, value =>
-        typeof value === "string" && /^[A-Z]{3}$/.test(value)) &&
-      isOptionalNullable(service.preinvoiceId, isUuid) &&
-      typeof service.ready === "boolean" &&
-      // 3-N11: a service in exception with an executed quantity is billed too (ServiceBillability).
-      (service.ready
-        ? ["Completed", "Exception"].includes(String(service.executionStatus)) && service.executedQuantity > 0 &&
-          isNonEmptyString(service.billingUnit) && isFiniteNumber(service.frozenUnitPrice) &&
-          typeof service.frozenCurrency === "string" &&
-          /^[A-Z]{3}$/.test(service.frozenCurrency) &&
-          (service.blockingReason === null || service.blockingReason === undefined) &&
-          isFiniteNumber(service.amount) && service.amount >= 0
-        : isNonEmptyString(service.blockingReason) &&
-          (service.amount === null || service.amount === undefined)));
-}
-
-function validatedPreinvoiceDraftRequest(
-  request: CreatePreinvoiceDraftRequest,
-): CreatePreinvoiceDraftRequest {
-  if (!isRecord(request) ||
-      !hasOnlyKeys(request, ["stationId", "from", "to", "requestId", "serviceIds"]) ||
-      !isUuid(request.stationId) || !isUuid(request.requestId) ||
-      !isDateOnly(request.from) || !isDateOnly(request.to) ||
-      request.to < request.from ||
-      (Date.parse(`${request.to}T00:00:00Z`) - Date.parse(`${request.from}T00:00:00Z`)) /
-        86_400_000 > 30 || !Array.isArray(request.serviceIds) ||
-      request.serviceIds.length < 1 || request.serviceIds.length > 100 ||
-      !request.serviceIds.every(isUuid) ||
-      new Set(request.serviceIds).size !== request.serviceIds.length)
-    throw new TypeError("Preinvoice draft selection is invalid.");
-  return request as unknown as CreatePreinvoiceDraftRequest;
-}
-
-function isPreinvoiceDraftCreateResponse(value: unknown): value is CreatePreinvoiceDraftResponse {
-  return isRecord(value) && hasOnlyKeys(value, ["id", "replayed"]) &&
-    isUuid(value.id) && typeof value.replayed === "boolean";
-}
-
-function isSubmitPreinvoiceResponse(value: unknown): value is SubmitPreinvoiceResponse {
-  return isRecord(value) && hasOnlyKeys(value, ["id", "status", "replayed"]) &&
-    isUuid(value.id) && value.status === "Submitted" &&
-    typeof value.replayed === "boolean";
-}
-
 const PRICED_LINE_KINDS = ["Service", "Charge", "Adjustment", "Package", "Excess", "Minimum"];
-const INVOICE_STATUSES = ["Pending", "PartiallyPaid", "Paid", "Overdue"];
+/** Projected invoice statuses; 4-N24: credited to zero without any payment is «Anulada» (Voided), never «Pagada». */
+const INVOICE_STATUSES = ["Pending", "PartiallyPaid", "Paid", "Overdue", "Voided"];
 const PAYMENT_METHODS = ["Transfer", "Check", "Cash", "Other", "Card"];
 
 function isStatementText(value: unknown, maximum: number): value is string {
@@ -5151,51 +4758,6 @@ function isAirlineInvoiceStatementResponse(
       isDateTimeOffset(note.issuedAt));
 }
 
-/**
- * Service lines bill a positive executed quantity; charges may bill zero (inside a
- * grace period) and adjustments may be negative discounts.
- */
-function isPricedLineAmounts(line: Record<string, unknown>, kind: string): boolean {
-  return isFiniteNumber(line.executedQuantity) &&
-    (kind === "Service" ? line.executedQuantity > 0 : line.executedQuantity >= 0) &&
-    isFiniteNumber(line.unitPrice) && line.unitPrice >= 0 &&
-    isFiniteNumber(line.amount) && (kind === "Adjustment" || line.amount >= 0);
-}
-
-function isPreinvoiceDraftResponse(value: unknown): value is PreinvoiceDraftResponse {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "airlineId", "airlineName",
-      "stationId", "from", "to", "currencyCode", "total", "status", "lines", "version"]) ||
-      (value.version !== undefined && value.version !== null && !isNonEmptyString(value.version)) ||
-      !isUuid(value.id) || !isUuid(value.airlineId) || !isUuid(value.stationId) ||
-      !isNonEmptyString(value.airlineName) || !isDateOnly(value.from) ||
-      !isDateOnly(value.to) || value.to < value.from ||
-      typeof value.currencyCode !== "string" || !/^[A-Z]{3}$/.test(value.currencyCode) ||
-      !isFiniteNumber(value.total) || value.total < 0 ||
-      !["Draft", "Submitted", "Disputed", "Accepted", "Invoiced", "Voided"].includes(String(value.status)) ||
-      !Array.isArray(value.lines) || value.lines.length < 1 || value.lines.length > 500)
-    return false;
-  const validLines = value.lines.every((line, index) => {
-    if (!isRecord(line) || !hasOnlyKeys(line, ["id", "operationServiceId", "approvedSubmissionId", "lineNumber",
-        "operationCode", "operationDate", "serviceCode", "serviceName",
-        "executedQuantity", "billingUnit", "unitPrice", "currencyCode", "amount", "kind", "parentLineId",
-        "computedQuantity", "computedAmount", "isExcluded", "adjustmentReason", "editedAt"])) return false;
-    const kind = line.kind === undefined ? "Service" : String(line.kind);
-    return PRICED_LINE_KINDS.includes(kind) && isUuid(line.id) &&
-      (kind === "Adjustment" ? isOptionalNullable(line.operationServiceId, isUuid) : isUuid(line.operationServiceId)) &&
-      (kind === "Adjustment" ? isOptionalNullable(line.approvedSubmissionId, isUuid) : isUuid(line.approvedSubmissionId)) &&
-      isOptionalNullable(line.parentLineId, isUuid) && (kind !== "Charge" || isUuid(line.parentLineId)) &&
-      line.lineNumber === index + 1 && isNonEmptyString(line.operationCode) &&
-      isDateOnly(line.operationDate) && String(line.operationDate) >= String(value.from) &&
-      String(line.operationDate) <= String(value.to) && isNonEmptyString(line.serviceCode) &&
-      isNonEmptyString(line.serviceName) && isNonEmptyString(line.billingUnit) &&
-      line.currencyCode === value.currencyCode && isPricedLineAmounts(line, kind) &&
-      isOptionalNullable(line.computedQuantity, isFiniteNumber) && isOptionalNullable(line.computedAmount, isFiniteNumber) &&
-      (line.isExcluded === undefined || typeof line.isExcluded === "boolean") &&
-      isOptionalNullable(line.adjustmentReason, isString) && isOptionalNullable(line.editedAt, isDateTimeOffset);
-  });
-  return validLines;
-}
-
 function validatedAirlineContractParams(parameters: GetAirlineContractsParams): GetAirlineContractsParams {
   if (!isRecord(parameters) ||
     (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
@@ -5225,19 +4787,6 @@ function validatedAirlineRequestParams(
     (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
     (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
     throw new TypeError("Airline request paging is invalid.");
-  return {
-    ...(parameters.page === undefined ? {} : { page: parameters.page }),
-    ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
-  };
-}
-
-function validatedAirlinePreinvoiceParams(
-  parameters: GetAirlinePreinvoicesParams,
-): GetAirlinePreinvoicesParams {
-  if (!isRecord(parameters) || !hasOnlyKeys(parameters, ["page", "limit"]) ||
-    (parameters.page !== undefined && (!isInt32(parameters.page) || parameters.page < 1 || parameters.page > 10_000)) ||
-    (parameters.limit !== undefined && (!isInt32(parameters.limit) || parameters.limit < 1 || parameters.limit > 50)))
-    throw new TypeError("Airline preinvoice paging is invalid.");
   return {
     ...(parameters.page === undefined ? {} : { page: parameters.page }),
     ...(parameters.limit === undefined ? {} : { limit: parameters.limit }),
@@ -6481,81 +6030,6 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw malformedResponse(result.status);
       return result.data;
     },
-    async getAirlinePreinvoices(
-      parameters: GetAirlinePreinvoicesParams = {},
-      options?: GetAirlinePreinvoicesOptions,
-    ) {
-      const paging = validatedAirlinePreinvoiceParams(parameters);
-      const result = await execute(getGetAirlinePreinvoicesUrl({ ...paging, includeVoided: true }),
-        { ...options, method: "GET" }, true);
-      if (!isAirlinePreinvoicePageResponse(result.data) ||
-          result.data.page !== (paging.page ?? 1) ||
-          result.data.limit !== (paging.limit ?? 20))
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async getAirlinePreinvoice(
-      preinvoiceId: string, options?: GetAirlinePreinvoiceOptions,
-    ) {
-      if (!isUuid(preinvoiceId)) throw new TypeError("Preinvoice ID must be a UUID.");
-      const result = await execute(getGetAirlinePreinvoiceUrl(preinvoiceId, { includeVoided: true }),
-        { ...options, method: "GET" }, true);
-      if (!isAirlinePreinvoiceDetailResponse(result.data) ||
-          result.data.id !== preinvoiceId) throw malformedResponse(result.status);
-      return result.data;
-    },
-    async getAirlinePreinvoiceDisputes(
-      preinvoiceId: string, options?: GetPreinvoiceDisputesOptions,
-    ) {
-      const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      const result = await execute(getGetAirlinePreinvoiceDisputesUrl(id, { includeResolutions: true }),
-        { ...options, method: "GET" }, true);
-      if (!isPreinvoiceDisputeListResponse(result.data, id))
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async acceptAirlinePreinvoice(
-      preinvoiceId: string, request: AcceptAirlinePreinvoiceRequest,
-      options?: AcceptAirlinePreinvoiceOptions,
-    ) {
-      const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      if (!isRecord(request) || !hasOnlyKeys(request, ["requestId"]) ||
-          !isUuid(request.requestId))
-        throw new TypeError("Preinvoice acceptance request is invalid.");
-      const headers = headersFrom(options?.headers, "Request headers");
-      headers.set("content-type", "application/json");
-      const result = await execute(getAcceptAirlinePreinvoiceUrl(id),
-        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
-      if (!isAcceptAirlinePreinvoiceResponse(result.data) || result.data.id !== id)
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async disputeAirlinePreinvoice(
-      preinvoiceId: string, request: DisputeAirlinePreinvoiceRequest,
-      options?: DisputeAirlinePreinvoiceOptions,
-    ) {
-      const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      if (!isRecord(request) || !hasOnlyKeys(request,
-          ["requestId", "subject", "description", "lineIds"]) ||
-          !isUuid(request.requestId) ||
-          !isNonEmptyString(request.subject) || request.subject.trim() !== request.subject ||
-          request.subject.length > 160 ||
-          !isNonEmptyString(request.description) ||
-          request.description.trim() !== request.description ||
-          request.description.length > 1000 ||
-          !Array.isArray(request.lineIds) || request.lineIds.length < 1 ||
-          request.lineIds.length > 50 ||
-          request.lineIds.some(lineId => !isUuid(lineId)) ||
-          new Set(request.lineIds).size !== request.lineIds.length)
-        throw new TypeError("Preinvoice dispute request is invalid.");
-      const headers = headersFrom(options?.headers, "Request headers");
-      headers.set("content-type", "application/json");
-      const result = await execute(getDisputeAirlinePreinvoiceUrl(id),
-        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
-      if (!isDisputeAirlinePreinvoiceResponse(result.data) || result.data.id !== id)
-        throw malformedResponse(result.status);
-      return result.data;
-    },
     async getManagedContracts(
       parameters: ListManagedContractsParams = {}, options?: GetManagedContractsOptions,
     ) {
@@ -6599,33 +6073,6 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         { ...options, method: "POST", headers, body: JSON.stringify(body) });
       if (!isCommercialRequestReceipt(result.data) || result.status !== 200 ||
           result.data.replayed !== true)
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async getFinanceApprovedServices(
-      query: FinanceApprovedServicesQuery,
-      options?: GetFinanceApprovedServicesOptions,
-    ) {
-      const scope = validatedFinanceApprovedServicesQuery(query);
-      const result = await execute(getGetFinanceApprovedServicesUrl(scope),
-        { ...options, method: "GET" }, true);
-      if (!isFinanceApprovedServicesResponse(result.data) ||
-          result.data.stationId !== scope.stationId ||
-          result.data.from !== scope.from || result.data.to !== scope.to)
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async getFinancePreinvoices(
-      query: ListFinancePreinvoicesParams,
-      options?: GetFinancePreinvoicesOptions,
-    ) {
-      const scope = validatedFinancePreinvoiceQuery(query);
-      const result = await execute(getListFinancePreinvoicesUrl(scope),
-        { ...options, method: "GET" }, true);
-      if (!isFinancePreinvoicePageData(result.data) ||
-          result.data.page !== (scope.page ?? 1) ||
-          result.data.limit !== (scope.limit ?? 20) ||
-          result.data.preinvoices.some(item => item.stationId !== scope.stationId))
         throw malformedResponse(result.status);
       return result.data;
     },
@@ -6958,89 +6405,6 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isRampAgentSchedule(result.data)) throw malformedResponse(result.status);
       return result.data;
     },
-    async getFinanceReconciliation(
-      query: ListFinanceReconciliationParams,
-      options?: GetFinanceReconciliationOptions,
-    ) {
-      const scope = validatedFinanceReconciliationQuery(query);
-      const result = await execute(getListFinanceReconciliationUrl(scope),
-        { ...options, method: "GET" }, true);
-      if (!isFinanceReconciliationPageData(result.data) ||
-          result.data.stationId !== scope.stationId ||
-          result.data.page !== (scope.page ?? 1) ||
-          result.data.limit !== (scope.limit ?? 20))
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async createPreinvoiceDraft(
-      request: CreatePreinvoiceDraftRequest,
-      options?: CreatePreinvoiceDraftOptions,
-    ) {
-      const selection = validatedPreinvoiceDraftRequest(request);
-      const headers = headersFrom(options?.headers, "Request headers");
-      headers.set("content-type", "application/json");
-      const result = await execute(getCreatePreinvoiceDraftUrl(),
-        { ...options, method: "POST", headers, body: JSON.stringify(selection) }, true);
-      if (!isPreinvoiceDraftCreateResponse(result.data))
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async getPreinvoiceDraft(
-      draftId: string, expectedStationId: string,
-      options?: GetPreinvoiceDraftOptions,
-    ) {
-      const draft = validatedUuid(draftId, "draftId");
-      const station = validatedUuid(expectedStationId, "expectedStationId");
-      const result = await execute(getGetPreinvoiceDraftUrl(draft),
-        { ...options, method: "GET" }, true);
-      if (!isPreinvoiceDraftResponse(result.data) ||
-          result.data.id !== draft || result.data.stationId !== station)
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async getFinancePreinvoiceDisputes(
-      draftId: string, options?: GetPreinvoiceDisputesOptions,
-    ) {
-      const id = validatedUuid(draftId, "draftId");
-      const result = await execute(getGetFinancePreinvoiceDisputesUrl(id, { includeResolutions: true }),
-        { ...options, method: "GET" }, true);
-      if (!isPreinvoiceDisputeListResponse(result.data, id))
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async resolveFinancePreinvoiceDispute(
-      preinvoiceId: string, request: ResolvePreinvoiceDisputeRequest,
-      options?: ResolvePreinvoiceDisputeOptions,
-    ) {
-      const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      if (!isRecord(request) || !hasOnlyKeys(request,
-          ["requestId", "decision", "reason"]) || !isUuid(request.requestId) ||
-          (request.decision !== "Maintain" && request.decision !== "Void") ||
-          !isNonEmptyString(request.reason) || request.reason.trim() !== request.reason ||
-          request.reason.length > 1000)
-        throw new TypeError("Dispute resolution request is invalid.");
-      const headers = headersFrom(options?.headers, "Request headers");
-      headers.set("content-type", "application/json");
-      const result = await execute(getResolveFinancePreinvoiceDisputeUrl(id),
-        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
-      if (!isResolvePreinvoiceDisputeResponse(result.data, id, request.decision))
-        throw malformedResponse(result.status);
-      return result.data;
-    },
-    async issueFinanceInvoice(
-      request: IssueFinanceInvoiceRequest, options?: IssueFinanceInvoiceOptions,
-    ) {
-      if (!isRecord(request) || !hasOnlyKeys(request, ["preinvoiceId", "requestId"]) ||
-          !isUuid(request.preinvoiceId) || !isUuid(request.requestId))
-        throw new TypeError("Invoice issuance request is invalid.");
-      const headers = headersFrom(options?.headers, "Request headers");
-      headers.set("content-type", "application/json");
-      const result = await execute(getIssueFinanceInvoiceUrl(),
-        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
-      if (!isIssueFinanceInvoiceResponse(result.data, request))
-        throw malformedResponse(result.status);
-      return result.data;
-    },
     async issueInvoiceFromOperations(
       request: IssueInvoiceFromOperationsRequest, options?: IssueInvoiceFromOperationsOptions,
     ) {
@@ -7052,39 +6416,32 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       if (!isIssuedInvoiceResponse(result.data)) throw malformedResponse(result.status);
       return result.data;
     },
-    async getFinanceInvoiceByPreinvoice(
-      preinvoiceId: string, options?: GetNonFiscalInvoiceOptions,
-    ) {
-      const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      const result = await execute(getGetFinanceInvoiceByPreinvoiceUrl(id),
-        { ...options, method: "GET" }, true);
-      if (!isNonFiscalInvoiceResponse(result.data, id))
-        throw malformedResponse(result.status);
+    async getFinancePendingOperations(query: FinancePendingOperationsQuery,
+      options?: GetFinancePendingOperationsOptions) {
+      const params = normalizedPendingOperationsQuery(query);
+      if (params === null) throw new TypeError("The pending operations query is invalid.");
+      const result = await execute(getGetFinancePendingOperationsUrl(params), { ...options, method: "GET" }, true);
+      if (!isFinancePendingOperationsResponse(result.data, params.stationId)) throw malformedResponse(result.status);
       return result.data;
     },
-    async getAirlineInvoiceByPreinvoice(
-      preinvoiceId: string, options?: GetNonFiscalInvoiceOptions,
-    ) {
-      const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      const result = await execute(getGetAirlineInvoiceByPreinvoiceUrl(id),
-        { ...options, method: "GET" }, true);
-      if (!isNonFiscalInvoiceResponse(result.data, id))
-        throw malformedResponse(result.status);
+    async getFinanceHome(stationId: string, options?: GetFinanceHomeOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      const result = await execute(getGetFinanceHomeUrl({ stationId: station }), { ...options, method: "GET" }, true);
+      if (!isFinanceHomeResponse(result.data, station)) throw malformedResponse(result.status);
       return result.data;
     },
-    async recordNonFiscalPayment(
-      request: RecordNonFiscalPaymentRequest, options?: RecordNonFiscalPaymentOptions,
-    ) {
-      if (!isRecord(request) || !hasOnlyKeys(request,
-          ["invoiceId", "requestId", "reference"]) ||
-          !isUuid(request.invoiceId) || !isUuid(request.requestId) ||
-          !isPaymentReference(request.reference))
-        throw new TypeError("Payment request is invalid.");
+    async closeOperationsWithoutCharge(command: CloseOperationsWithoutChargeCommand, idempotencyKey: string,
+      options?: CloseOperationsWithoutChargeOptions) {
+      const body = normalizedNoChargeClosure(command);
+      if (body === null) throw new TypeError("The no-charge closure is invalid.");
       const headers = headersFrom(options?.headers, "Request headers");
       headers.set("content-type", "application/json");
-      const result = await execute(getRecordNonFiscalPaymentUrl(),
-        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
-      if (!isRecordNonFiscalPaymentResponse(result.data, request))
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
+      const result = await execute(getCloseOperationsWithoutChargeUrl(),
+        { ...options, method: "POST", headers, body: JSON.stringify(body) }, true);
+      if ((result.status !== 201 && result.status !== 200) ||
+          !isNoChargeClosureResponse(result.data, body.operations.map((item) => item.operationId)) ||
+          result.data.replayed !== (result.status === 200))
         throw malformedResponse(result.status);
       return result.data;
     },
@@ -7118,17 +6475,9 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
         throw malformedResponse(result.status);
       return result.data;
     },
-    getAirlineInvoiceDocument(preinvoiceId: string, options?: GetFinancialDocumentOptions) {
-      const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      return executePdf(getGetAirlineInvoiceDocumentUrl(id), options);
-    },
     getAirlinePaymentReceipt(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");
       return executePdf(getGetAirlinePaymentReceiptUrl(id), options);
-    },
-    getFinanceInvoiceDocument(preinvoiceId: string, options?: GetFinancialDocumentOptions) {
-      const id = validatedUuid(preinvoiceId, "preinvoiceId");
-      return executePdf(getGetFinanceInvoiceDocumentUrl(id), options);
     },
     getFinanceInvoiceDocumentById(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");
@@ -7167,29 +6516,24 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const id = validatedUuid(attemptId, "attemptId");
       return executePdf(getGetAirlineCardPaymentReceiptUrl(id), options);
     },
+    async getAirlineCardPaymentAvailability(options?: GetFinancialDocumentOptions) {
+      const result = await execute(getGetAirlineCardPaymentAvailabilityUrl(), { ...options, method: "GET" }, true);
+      if (!isCardPaymentAvailability(result.data)) throw malformedResponse(result.status);
+      return result.data;
+    },
     getAirlineInvoiceDocumentById(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");
       return executePdf(getGetAirlineInvoiceDocumentByIdUrl(id), options);
     },
+    getFinanceAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions) {
+      return executePdf(getGetFinanceAdjustmentNoteDocumentUrl(validatedUuid(noteId, "noteId")), options);
+    },
+    getAirlineAdjustmentNoteDocument(noteId: string, options?: GetFinancialDocumentOptions) {
+      return executePdf(getGetAirlineAdjustmentNoteDocumentUrl(validatedUuid(noteId, "noteId")), options);
+    },
     getFinancePaymentReceipt(invoiceId: string, options?: GetFinancialDocumentOptions) {
       const id = validatedUuid(invoiceId, "invoiceId");
       return executePdf(getGetFinancePaymentReceiptUrl(id), options);
-    },
-    async submitPreinvoice(
-      draftId: string, request: SubmitPreinvoiceRequest,
-      options?: SubmitPreinvoiceOptions,
-    ) {
-      const draft = validatedUuid(draftId, "draftId");
-      if (!isRecord(request) || !hasOnlyKeys(request, ["requestId"]) ||
-          !isUuid(request.requestId))
-        throw new TypeError("Preinvoice submission request is invalid.");
-      const headers = headersFrom(options?.headers, "Request headers");
-      headers.set("content-type", "application/json");
-      const result = await execute(getSubmitPreinvoiceUrl(draft),
-        { ...options, method: "POST", headers, body: JSON.stringify(request) }, true);
-      if (!isSubmitPreinvoiceResponse(result.data) || result.data.id !== draft)
-        throw malformedResponse(result.status);
-      return result.data;
     },
     async getOccPlanningSnapshot(
       parameters: GetOccPlanningSnapshotParams = {},
@@ -8650,15 +7994,17 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return result.data;
     },
     async confirmFinanceCharterPrepayment(charterId: string, command: ConfirmCharterPrepaymentCommand,
-      options?: GetHumanResourcesReportOptions) {
+      idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
       const charter = validatedUuid(charterId, "charterId");
       const body = normalizedPrepayment(command);
       if (body === null) throw new TypeError("The prepayment is invalid.");
       const headers = headersFrom(options?.headers, "Request headers");
       headers.set("content-type", "application/json");
+      headers.set("idempotency-key", validatedUuid(idempotencyKey, "idempotencyKey"));
       const result = await execute(getConfirmFinanceCharterPrepaymentUrl(charter),
         { ...options, method: "PUT", headers, body: JSON.stringify(body) }, true);
-      if (!isFinanceCharterResponse(result.data)) throw malformedResponse(result.status);
+      if (!isFinanceCharterResponse(result.data) || result.data.id.toLowerCase() !== charter)
+        throw malformedResponse(result.status);
       return result.data;
     },
     async reopenFinanceCharterPrepayment(charterId: string, command: ReopenCharterPrepaymentCommand,

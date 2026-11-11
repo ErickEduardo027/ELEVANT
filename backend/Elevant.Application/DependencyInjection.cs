@@ -39,21 +39,11 @@ public static class DependencyInjection
         services.AddScoped<GetAirlineOperationsHandler>();
         services.AddScoped<GetAirlineOperationHandler>();
         services.AddScoped<GetAirlineOperationalRequestsHandler>();
-        services.AddScoped<GetAirlinePreinvoicesHandler>();
-        services.AddScoped<AcceptAirlinePreinvoiceHandler>();
-        services.AddScoped<DisputeAirlinePreinvoiceHandler>();
         services.AddScoped<SubmitCommercialRequestHandler>();
-        services.AddScoped<GetFinanceApprovedServicesHandler>();
-        services.AddScoped<CreatePreinvoiceDraftHandler>();
-        services.AddScoped<SubmitPreinvoiceHandler>();
-        services.AddScoped<ResolvePreinvoiceDisputeHandler>();
-        services.AddScoped<IssueFinanceInvoiceHandler>();
         services.AddScoped<GetNonFiscalInvoiceHandler>();
-        services.AddScoped<RecordNonFiscalPaymentHandler>();
         services.AddScoped<GetNonFiscalPaymentHandler>();
         services.AddScoped<GetAirlineInvoiceStatementHandler>();
         services.AddScoped<GetFinancialDocumentHandler>();
-        services.AddScoped<GetPreinvoiceDraftHandler>();
         services.AddScoped<GetCurrentSessionHandler>();
         services.AddScoped<GetOccPlanningSnapshotHandler>();
         services.AddScoped<GetOccAircraftTrafficHandler>();
@@ -73,7 +63,13 @@ public static class DependencyInjection
         services.AddScoped<OperationDocumentHandler>();
         services.AddScoped<CharterHandler>();
         services.AddScoped<Elevant.Application.Finance.IssueInvoiceHandler>();
+        services.AddScoped<Elevant.Application.Finance.CloseOperationsWithoutChargeHandler>();
+        services.AddScoped<Elevant.Application.Finance.GetFinancePendingOperationsHandler>();
         services.AddScoped<Elevant.Application.Finance.PayInvoiceByCardHandler>();
+        services.AddScoped<Elevant.Application.Finance.CardPaymentAvailabilityHandler>();
+        // 4-N05: without Infrastructure (tools, tests) there is no card gateway; AddInfrastructure registers the real one.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services,
+            Elevant.Application.Finance.CardPaymentAvailability.Disabled);
         services.AddScoped<Elevant.Application.Finance.FinanceCloseRulesHandler>();
         services.AddScoped<AirlineServiceOrderHandler>();
         services.AddScoped<RampServiceChargesHandler>();

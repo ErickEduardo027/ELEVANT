@@ -35,6 +35,14 @@ describe("airline invoice statement", () => {
     await expect(client(statement).getAirlineInvoiceStatement(invoiceId)).resolves.toEqual(statement);
   });
 
+  it("accepts an invoice credited to zero without any payment as Voided (4-N24)", async () => {
+    const voided = { ...statement, paid: 0, credited: 135.5, balance: 0, status: "Voided", payments: [],
+      creditNotes: [{ number: "TC-1", amount: 135.5, reason: "Factura emitida por error", issuedAt: "2026-10-09T13:00:00.000+00:00" }] };
+    await expect(client(voided).getAirlineInvoiceStatement(invoiceId)).resolves.toEqual(voided);
+    await expect(client({ ...voided, status: "Credited" }).getAirlineInvoiceStatement(invoiceId))
+      .rejects.toBeInstanceOf(ElevantApiError);
+  });
+
   it("rejects an inconsistent balance, staff names or a charge without a valid parent", async () => {
     await expect(client({ ...statement, balance: 1 }).getAirlineInvoiceStatement(invoiceId))
       .rejects.toBeInstanceOf(ElevantApiError);

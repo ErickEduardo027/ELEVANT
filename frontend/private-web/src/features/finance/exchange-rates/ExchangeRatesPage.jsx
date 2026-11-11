@@ -9,17 +9,18 @@ import LoadFailure, { loadFailure } from '../components/LoadFailure';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { correctExchangeRate, listExchangeRates, recordExchangeRate } from '../../../services/financeBookService';
 import { financeTariffMessage } from '../../../services/financeErrors';
+import { addDays, businessToday } from '../../../services/businessDay';
 
 const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
-const isoDate = date => date.toISOString().slice(0, 10);
 
 /** Daily USD→DOP rates Finance records by hand. Corrections never overwrite: they supersede. */
 export default function ExchangeRatesPage() {
   const { access } = useDepartmentAccess();
   const canCreate = Boolean(access?.can('finance.exchange_rates.create'));
   const canManage = Boolean(access?.can('finance.exchange_rates.update'));
-  const today = new Date();
-  const [range, setRange] = useState({ from: isoDate(new Date(today.getTime() - 30 * 86400000)), to: isoDate(today) });
+  // 4-N10: the business day of Santo Domingo, the one the server takes a rate date on.
+  const today = businessToday();
+  const [range, setRange] = useState({ from: addDays(today, -30), to: today });
   const [history, setHistory] = useState(false);
   const [rates, setRates] = useState(null);
   const [form, setForm] = useState(null);
@@ -65,7 +66,7 @@ export default function ExchangeRatesPage() {
     <div className="mx-auto max-w-[1100px] space-y-5">
       <PageHeader eyebrow="Finanzas" title="Tasas de cambio"
         description="Tasa diaria USD → DOP registrada por Finanzas. Se usa para consolidar reportes y convertir cargos entre monedas."
-        actions={canCreate && <button type="button" onClick={() => setForm({ rateDate: isoDate(today), rate: '', source: 'Banco Central RD' })}
+        actions={canCreate && <button type="button" onClick={() => setForm({ rateDate: today, rate: '', source: 'Banco Central RD' })}
           className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Registrar tasa</button>} />
       <div className="flex flex-wrap items-end gap-3">
         <label className="text-xs font-semibold">Desde<input type="date" value={range.from} onChange={event => setRange(current => ({ ...current, from: event.target.value }))} className={fieldClass} /></label>
@@ -99,7 +100,7 @@ export default function ExchangeRatesPage() {
         {form && (
           <form id="exchange-rate-form" onSubmit={submit} className="space-y-3">
             {error && <p role="alert" className="rounded-lg bg-status-danger/10 p-3 text-sm text-status-danger">{error}</p>}
-            {!form.correcting && <label className="block text-xs font-semibold">Fecha<input required type="date" max={isoDate(today)} value={form.rateDate} onChange={event => setForm(current => ({ ...current, rateDate: event.target.value }))} className={fieldClass} /></label>}
+            {!form.correcting && <label className="block text-xs font-semibold">Fecha<input required type="date" max={today} value={form.rateDate} onChange={event => setForm(current => ({ ...current, rateDate: event.target.value }))} className={fieldClass} /></label>}
             <label className="block text-xs font-semibold">DOP por 1 USD<input required type="number" min="0.000001" step="0.000001" value={form.rate} onChange={event => setForm(current => ({ ...current, rate: event.target.value }))} className={fieldClass} /></label>
             <label className="block text-xs font-semibold">Fuente<input required maxLength={120} value={form.source} onChange={event => setForm(current => ({ ...current, source: event.target.value }))} className={fieldClass} /></label>
           </form>

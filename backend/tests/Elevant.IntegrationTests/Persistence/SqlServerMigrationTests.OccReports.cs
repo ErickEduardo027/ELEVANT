@@ -201,13 +201,13 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(units[templates[1].BillingUnitSnapshot], services[serviceNames[templates[1].ServiceDefinitionId]][2]);
         Assert.DoesNotContain(services.Values, row => row[2] == templates[0].BillingUnitSnapshot);
         Assert.Equal("1", services[serviceNames[templates[0].ServiceDefinitionId]][4]);
-        // The same set Finance has «Aprobado sin prefacturar» for the day (ServiceBillability, 3-N11).
-        var pipeline = await scope.ServiceProvider.GetRequiredService<IFinanceReportStore>().GetAsync(FinanceAccount,
-            "pipeline", new FinanceReportFilter(day, day, station.PublicId, null, null), ct);
-        Assert.NotNull(pipeline);
-        var count = pipeline.Columns.ToList().FindIndex(column => column.Key == "count");
-        var unbilled = Assert.Single(pipeline.Rows, row => row[0] == "Aprobado sin prefacturar");
-        Assert.Equal(services.Values.Sum(row => Number(row[3])), Number(unbilled[count]!));
+        // The same set Finance has in «Por facturar» for the day (ServiceBillability, 3-N11). The preinvoice pipeline
+        // report left with the preinvoice (4-A): the pending operations of the day are the cross-check.
+        var toInvoice = await scope.ServiceProvider.GetRequiredService<Elevant.Application.Finance.IFinancePendingOperationsReadStore>()
+            .GetAsync(new Elevant.Application.Finance.GetFinancePendingOperationsQuery(FinanceAccount, station.PublicId, day, day,
+                null, null), ct);
+        Assert.NotNull(toInvoice);
+        Assert.Equal(services.Values.Sum(row => Number(row[3])), (decimal)toInvoice.Operations.Sum(item => item.Services.Count));
 
         // 3-N26: the review lists the incident in Spanish, its decision in the station's local time, and the status of
         // every operation is Spanish.

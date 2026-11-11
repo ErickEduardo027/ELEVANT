@@ -105,7 +105,7 @@ El modelo incluye identidad, referencia, personal, contratos, operaciones, integ
 - Relaciones operativas, contractuales y de auditoría evitan cascade delete.
 - El modelo ofrece un vínculo opcional a la tarifa y campos opcionales de snapshot de importe/moneda para preservar la condición comercial ejecutada. Exigir su presencia y coherencia todavía es una regla pendiente; no debe asumirse como invariante aplicada.
 - KPIs, contadores y etiquetas derivadas son proyecciones, no tablas autoritativas por defecto.
-- Binarios de evidencia no pertenecen a SQL; una capacidad futura conservará metadatos/object keys cuando exista object storage.
+- Binarios de evidencia no pertenecen a SQL. *Posterior al commit verificado (código de `39a85a46`): SQL conserva sus metadatos, claves y SHA-256, y los bytes viven en un bucket S3 privado ([medios privados](../04-arquitectura/medios-comerciales-privados.md)).*
 
 Consulta [Base de datos v1](../../docs/architecture/database-v1.md) para el modelo completo y [Dominio](../03-dominio/README.md) para significado, coherencias implementadas y brechas.
 
@@ -155,7 +155,7 @@ El acceso humano de Development es una frontera controlada y separada para manip
 - **Límite actual:** las aplicaciones no deben acoplarse a nombres de tabla ni entidades EF.
 - **Límite actual:** una operación CRUD de datos Development no sustituye una migración para cambios estructurales.
 - **Brecha de aplicación:** gran parte del modelo aún no tiene casos de uso ni endpoints públicos.
-- **Brecha futura:** persistencia de archivos/evidencias requiere object storage y un contrato aprobado.
+- **Brecha cerrada:** posterior al commit verificado de esta nota (código de `39a85a46`), la API guarda archivos y evidencias en un bucket S3 privado con metadatos y SHA-256 en SQL; la retención y el antivirus siguen abiertos ([brechas del dominio](../03-dominio/brechas-y-preguntas-abiertas.md)).
 - **Desconocido:** qué partes del modelo v1 necesitarán ajustes al implementar los primeros vertical slices; se decidirá con pruebas y reglas, no desde fixtures.
 - **Futuro explícito:** `database/ProductionDB` permanece reservado y no es una dependencia desplegada actual.
 

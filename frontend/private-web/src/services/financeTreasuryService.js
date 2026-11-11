@@ -1,5 +1,10 @@
+import { createPrivateWebApiClient } from '../config/elevantApiClient';
+import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
+import { businessToday } from './businessDay';
 import { commercialApi } from './commercialGovernanceApi';
 import { newRequestId } from './financeBookService';
+import { TREASURY_PROBLEM_MESSAGES } from './financeErrors';
+import { problemMessage } from './problemMessages';
 
 const query = values => {
   const search = new URLSearchParams();
@@ -25,6 +30,36 @@ export const getTreasuryAdjustments = (invoiceId, options) => read(`/finance/inv
 export const issueTreasuryAdjustment = (invoiceId, body) => post(`/finance/invoices/${id(invoiceId)}/adjustment-notes`, body);
 export const getTreasuryStatement = (filters, options) => read(`/finance/statements${query(filters)}`, options);
 
+/**
+ * 4-N17: saves the PDF of a credit or debit note with a readable name: its e-NCF E34/E33 when it modifies an E31
+ * invoice, the ITBIS frozen for each line and «Simulación — sin validez fiscal».
+ */
+export async function downloadAdjustmentNoteDocument(noteId, fileName) {
+  let blob;
+  try {
+    blob = await createPrivateWebApiClient({ getAccessToken: () => readSession()?.token })
+      .getFinanceAdjustmentNoteDocument(noteId, { cache: 'no-store' });
+  } catch (error) {
+    if (error?.status === 401) handleUnauthorizedResponse({ status: 401 });
+    throw error;
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+/** 4-N17: a note on an E31 invoice has its own simulated e-NCF: E34 credits the invoice, E33 debits it. */
+export const isFiscalNoteNumber = number => /^E3[34][0-9]{10}$/.test(String(number ?? ''));
+
+/** «Nota de crédito electrónica E34…» for a note with an e-NCF; the internal TC-/TD- number otherwise. */
+export function adjustmentNoteTitle(note) {
+  const kind = note?.kind === 'Credit' ? 'crédito' : 'débito';
+  return isFiscalNoteNumber(note?.number) ? `Nota de ${kind} electrónica ${note.number}` : `Nota de ${kind} ${note?.number ?? ''}`.trim();
+}
+
 /** Rejects invalid decimal text and amounts that would lose precision during JSON conversion. */
 export function parseTreasuryAmount(value, { allowZero = false } = {}) {
   const text = String(value ?? '').trim();
@@ -44,16 +79,30 @@ export function treasuryIntent(previous, payload) {
   const signature = JSON.stringify(payload);
   return previous?.signature === signature ? previous : { signature, body: { requestId: newRequestId(), ...payload } };
 }
-export const treasuryToday = () => new Date().toISOString().slice(0, 10);
+/** 4-N10: the day of Finance is the business day of AVIAM in Santo Domingo, the one the server checks. */
+export const treasuryToday = (now = new Date()) => businessToday(now);
 export function formatTreasuryMoney(value, currency) {
   if (value === null || value === undefined || value === '' || !Number.isFinite(Number(value))) return '—';
   return `${currency ? `${currency} ` : ''}${Number(value).toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
 }
+/** The default code of a treasury refusal by its status, for an answer that carries none. */
+const TREASURY_DEFAULT_CODES = Object.freeze({ 400: 'invalid_treasury_request', 404: 'not_found', 409: 'treasury_conflict' });
+
+/**
+ * Spanish text of a treasury failure (phase 4, block A): the code names the cause (4-N10: a date before the day of the
+ * invoice or the receipt); an answer without a code takes the default of its status. Never the server's text.
+ */
+/** Spanish text of a note PDF that could not be downloaded (4-N17), by its Problem Details code. */
+export function noteDocumentError(error) {
+  return problemMessage(error, TREASURY_PROBLEM_MESSAGES, {
+    forbidden: 'No tiene permiso para descargar las notas de ajuste de esta estación.',
+    fallback: 'No se pudo descargar el PDF de la nota. Intente de nuevo.',
+  });
+}
+
 export function treasuryError(error) {
-  if (error?.status === 401) return 'La sesión expiró. Vuelva a iniciar sesión.';
-  if (error?.status === 403) return 'No tiene permiso para esta acción.';
-  if (error?.status === 404) return 'El documento no está disponible en su estación o aerolínea.';
-  if (error?.status === 409) return 'El saldo, la versión o la referencia cambió. Recargue el documento antes de preparar otra solicitud.';
-  if (error?.status === 400) return 'Revise importes, fechas y motivos de la solicitud.';
-  return error?.status ? 'No se pudo completar la acción. Intente de nuevo.' : error?.message || 'No hay conexión con ELEVANT. Intente de nuevo.';
+  const code = typeof error?.code === 'string' ? error.code : TREASURY_DEFAULT_CODES[error?.status];
+  return problemMessage(code ? { status: error.status, code } : error, TREASURY_PROBLEM_MESSAGES, {
+    fallback: 'No se pudo completar la acción. Revise la conexión e intente de nuevo.',
+  });
 }

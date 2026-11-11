@@ -42,11 +42,28 @@ Cada cierre debe aportar:
 
 | ID | Pregunta abierta | Por qué bloquea | Evidencia necesaria |
 | --- | --- | --- | --- |
-| PQ-01 | ¿Cuál es el primer resultado de usuario que debe funcionar de extremo a extremo? | Hoy existen muchos prototipos y ninguna operación de negocio en OpenAPI | Decisión de alcance con actor, escenario y criterio de aceptación |
-| PQ-02 | ¿Cuál es la matriz mínima de roles, permisos, tenant y scopes por caso de uso? | Los roles de UI no son autorización y la API aún no autentica | Taller de autorización + pruebas de acceso/denegación |
+| PQ-01 | ¿Cuál es el primer resultado de usuario que debe funcionar de extremo a extremo? | En el commit verificado existían muchos prototipos y ninguna operación de negocio en OpenAPI | Decisión de alcance con actor, escenario y criterio de aceptación |
+| PQ-02 | ¿Cuál es la matriz mínima de roles, permisos, tenant y scopes por caso de uso? | Los roles de UI no son autorización; en el commit verificado, la API aún no autenticaba | Taller de autorización + pruebas de acceso/denegación |
 | PQ-03 | ¿Qué estados y transiciones son válidos para solicitud, turnaround, operación, servicio, submission y revisión? | El esquema conserva eventos, pero no define por sí solo la máquina de estados | Reglas de dominio aprobadas con concurrencia y corrección |
 | PQ-04 | ¿Qué constituye una operación lista, enviada, aprobada o devuelta? | Afecta OCC, móvil, evidencia y procesos posteriores | Criterios operativos validados con actores internos |
 | PQ-05 | ¿Qué información de vuelo es manual, importada o proveniente de un proveedor, y con qué frescura? | La integración externa es solo futura | Fuente autorizada, contrato, límites y política de degradación |
+
+Posterior al commit verificado de esta nota (código de `39a85a46`), las cinco
+tienen respuesta en decisiones y código:
+
+- **PQ-01:** el ciclo de cuatro fases, de la solicitud pública al cobro
+  ([recorridos](recorridos-end-to-end.md)).
+- **PQ-02:** el catálogo de permisos por departamento, módulo y acción, con
+  organización y estación resueltas en el servidor
+  ([ADR-0015](../../docs/adr/0015-department-user-governance.md),
+  [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md)).
+- **PQ-03 y PQ-04:** las transiciones de contrato, operación, envío y revisión
+  ([ADR-0024](../../docs/adr/0024-airline-permits-and-contract-lifecycle.md),
+  [ADR-0034](../../docs/adr/0034-operational-close-occ-to-finance.md),
+  [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
+- **PQ-05:** el feed AeroDataBox con presupuesto de unidades, apagado por
+  defecto, y la llegada que registra OCC prevalece sobre la del proveedor
+  ([ADR-0028](../../docs/adr/0028-aerodatabox-flight-feed-with-unit-budget.md)).
 
 ## Antes de un piloto con usuarios
 
@@ -68,6 +85,13 @@ Cada cierre debe aportar:
 | PQ-14 | ¿Cómo se distribuye y actualiza Mobile Agent y quién custodia la firma? | Builds no confiables o incompatibles | Estrategia de canales, firma, versionado y rollback |
 | PQ-15 | ¿Cómo se publica el sitio externo sin mezclarlo con el acceso privado de Development? | Frontera de red/ambiente incorrecta | Diseño Production aprobado y pruebas de exposición |
 | PQ-16 | ¿Cuándo entran facturación documental, conciliación, chat/notificaciones y analítica materializada? | Implementar desde mocks contradice la v1 | Priorización, reglas y ADR/diseño por módulo |
+
+Posterior al commit verificado de esta nota (código de `39a85a46`): de PQ-16
+ya existen la facturación con e-CF simulado
+([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)), el chat y
+las notificaciones ([ADR-0029](../../docs/adr/0029-ramp-realtime-alerts-and-chat-read-state.md));
+siguen abiertas la conectividad fiscal real, la conciliación bancaria y la
+analítica materializada.
 
 ## Contexto humano e historia aún desconocidos
 
@@ -96,7 +120,7 @@ El orden muestra dependencias lógicas derivadas; no es roadmap, compromiso ni f
 
 - [README del monorepo](../../README.md): visión y pendientes generales.
 - [Private Web](../../frontend/private-web/README.md), [Public Web](../../frontend/public-web/README.md) y [Mobile Agent](../../frontend/mobile-agent/README.md): brechas declaradas por cliente.
-- [Backend](../../backend/README.md): ausencia de autenticación y endpoints funcionales.
+- [Backend](../../backend/README.md): superficie funcional del backend; el estado vigente por capacidad está en el [Mapa de capacidades](mapa-de-capacidades.md).
 - [Base de datos v1](../../docs/architecture/database-v1.md): decisiones persistentes y capacidades diferidas.
 - [Ambientes](../../docs/deployment/environments.md): decisiones pendientes para Production y distribución móvil.
 

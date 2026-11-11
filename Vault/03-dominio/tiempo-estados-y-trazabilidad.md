@@ -147,7 +147,40 @@ una sola migración aditiva:
   [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md)).
   El portal muestra en la zona de la estación las horas de la operación y de
   las firmas, y Planificación abre en el día de hoy de la estación. Finanzas
-  sigue contando el día UTC (hueco 4-N10 de la fase 4).
+  seguía contando el día UTC (hueco 4-N10) hasta la fase 4 (abajo).
+
+La fase 4 del ciclo (código de `39a85a46`, también posterior al commit
+verificado;
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md))
+sumó estados, historia y reglas de tiempo con dos migraciones aditivas:
+
+- **Día hábil de Finanzas:** todo día de Finanzas es el de
+  `America/Santo_Domingo`, nunca el UTC ni el de la estación: emisión y
+  vencimiento, PDF, reportes, cobros, notas, tarjeta, correos, el aviso de
+  vencida y cuentas por pagar. Una aplicación o una nota fechada antes del día
+  hábil en que se emitió la factura responde `effective_before_invoice`, y un
+  movimiento anterior a su cobro, `effective_before_receipt`.
+- **Borrador interno:** `NoCharge` cierra sin cargo, con motivo y auditoría,
+  las operaciones cuya valoración es 0; no tiene reversa. Desde la revisión
+  del bloque A (`8b61f567`), un borrador anterior sin factura (`Draft`,
+  `Submitted`, `Disputed` o `Accepted`) pasa a `Voided` y libera sus líneas
+  cuando una emisión o un cierre sin cargo lo encuentra; la auditoría
+  `finance.invoicing.stale_draft_released` guarda el estado que tenía, su
+  total, su moneda y sus operaciones, bajo la clave de quien lo liberó.
+- **Factura:** «Anulada» (`Voided`) es una proyección, no un estado guardado:
+  la factura sin cobros que las notas de crédito llevaron a 0. El aviso de
+  factura vencida sale una sola vez, marcado por su entrada de auditoría.
+- **Factura de proveedor y pagos:** una rechazada vuelve a `Draft` (etapa
+  `Correction`), y un borrador, una rechazada o una aprobada sin aplicaciones
+  activas pasan a `Voided` (etapa `Void`), siempre con motivo. Revertir una
+  aplicación o anular un pago escribe una fila inmutable en
+  `commercial.payable_payment_reversals`; el pago y sus aplicaciones no
+  cambian.
+- **Gasto:** el solicitante lo retira (etapa `Withdrawal`), corrige uno
+  rechazado (`Correction`) o lo descarta (`Cancelled`, etapa `Discard`),
+  siempre con motivo, y sin otro revisor en su departamento lo revisa Finanzas
+  por escalamiento (`Escalation`). Un comprobante quitado se conserva marcado
+  con quién y cuándo.
 
 ## Historia explícita y ausencia deliberada
 

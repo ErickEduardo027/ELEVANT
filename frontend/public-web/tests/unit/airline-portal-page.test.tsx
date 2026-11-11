@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { ElevantApiError, type AirlineApprovedOperationEvidenceResponse,
   type AirlineOperationPageResponse,
   type AirlineOperationalRequestPageResponse, type AirlinePortalBootstrapResponse,
-  type NonFiscalPaymentLookupResponse, type PreinvoiceDisputeListResponse,
+  type NonFiscalPaymentLookupResponse,
   type SessionActorResponse } from "@elevant/api-client";
 
 import { AirlinePortalPage } from "@/components/portal/AirlinePortalPage";
@@ -56,40 +56,14 @@ const initialRequestPage: AirlineOperationalRequestPageResponse = {
 let requestPage = initialRequestPage;
 let financeRevision = 0;
 const getRequests = vi.fn(async () => requestPage);
-const initialPreinvoicePage = { page: 1, limit: 20, hasMore: false,
-  preinvoices: [{ id: "74000000-0000-7000-8000-000000000001",
-    stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
-    from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
-    status: "Submitted", createdAt: "2026-08-20T12:00:00Z" }] };
-let preinvoicePage = initialPreinvoicePage;
-const getPreinvoices = vi.fn(async () => preinvoicePage);
-const getPreinvoice = vi.fn(async (id: string) => ({
-  id, stationId: "20000000-0000-7000-8000-000000000003", stationCode: "PUJ",
-  from: "2026-08-18", to: "2026-08-19", currencyCode: "USD", total: 125.5,
-  status: "Submitted", createdAt: "2026-08-20T12:00:00Z",
-  lines: [{ id: "74000000-0000-7000-8000-000000000002",
-    operationCode: "DEV-TAT-0021", operationDate: "2026-08-18",
-    serviceCode: "GPU", serviceName: "Ground power",
-    executedQuantity: 1, billingUnit: "hour", unitPrice: 125.5, amount: 125.5 }],
-}));
-const acceptPreinvoice = vi.fn<(_id: string) => Promise<void>>(async () => {});
-const getPreinvoiceDisputes = vi.fn<(_id: string) => Promise<PreinvoiceDisputeListResponse>>(
-  async (id: string) => ({ preinvoiceId: id, disputes: [] }));
-const getPreinvoiceInvoice = vi.fn(async (id: string) => ({ preinvoiceId: id,
-  id: '74000000-0000-7000-8000-000000000009',
-  number: 'NF-74000000000070008000000000000009', kind: 'NonFiscal',
-  currencyCode: 'USD', total: 125.5, issuedAt: '2026-09-28T16:00:00Z',
-  lines: [{ id: '74000000-0000-7000-8000-000000000010', lineNumber: 1,
-    operationCode: 'DEV-TAT-0021', operationDate: '2026-08-18',
-    serviceCode: 'GPU', serviceName: 'Ground power', executedQuantity: 1,
-    billingUnit: 'hour', unitPrice: 125.5, amount: 125.5 }] }));
+const internalDraftId = "74000000-0000-7000-8000-000000000001";
 const getInvoicePayment = vi.fn<(invoiceId: string) => Promise<NonFiscalPaymentLookupResponse>>(
   async (invoiceId: string) => ({ invoiceId,
   payment: { id: '74000000-0000-7000-8000-000000000011', invoiceId,
     reference: 'BANK-TEST-123', currencyCode: 'USD', amount: 125.5,
     recordedAt: '2026-09-28T17:00:00Z' } }));
 const statementOf = (invoiceId: string, paid: number) => ({ invoiceId,
-  number: "NF-74000000000070008000000000000009", preinvoiceId: "74000000-0000-7000-8000-000000000001",
+  number: "NF-74000000000070008000000000000009", preinvoiceId: internalDraftId,
   currencyCode: "USD", total: 125.5, paid, credited: 0, balance: 125.5 - paid,
   issuedAt: "2026-09-28T16:00:00Z", dueDate: "2026-10-28", status: paid > 0 ? "PartiallyPaid" : "Pending", daysOverdue: 0,
   lines: [{ lineNumber: 1, kind: "Service", parentLineNumber: null, operationCode: "DEV-TAT-0021",
@@ -104,17 +78,17 @@ const statementOf = (invoiceId: string, paid: number) => ({ invoiceId,
 const getInvoiceStatement = vi.fn(async (invoiceId: string) => statementOf(invoiceId, 50));
 const getInvoiceDocument = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" }));
 const getPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7\n%%EOF"], { type: "application/pdf" }));
-const disputePreinvoice = vi.fn<(_id: string, _request: { requestId: string;
-  subject: string; description: string; lineIds: string[] }) => Promise<void>>(async () => {});
 
 const getTreasuryStatement = vi.fn<(asOf: string, stationId?: string, signal?: AbortSignal) => Promise<AirlineTreasuryStatement>>(async asOf => ({ airlineId: bootstrap.airlineId, asOf, invoices: [], receipts: [], movements: [], aging: [] }));
-const getTreasuryInvoice = vi.fn(async (id: string): Promise<AirlineTreasuryInvoiceDetail> => ({ invoice: { id, preinvoiceId: initialPreinvoicePage.preinvoices[0].id,
+const getTreasuryInvoice = vi.fn(async (id: string): Promise<AirlineTreasuryInvoiceDetail> => ({ invoice: { id, preinvoiceId: internalDraftId,
   number: "NF-74000000000070008000000000000009", stationId: bootstrap.stations[0].id, stationCode: "PUJ", currencyCode: "USD",
   total: 125.5, legacyPaid: 50, legacyCredited: 0, applied: 0, credited: 0, debited: 0, balance: 75.5, dueDate: null, daysOverdue: 0, agingBucket: "Current" }, lines: [], movements: [], notes: [] }));
 type PayCall = (invoiceId: string, body: Record<string, unknown>, key: string) => Promise<unknown>;
 const payInvoiceByCard = vi.fn<PayCall>(async () => { throw new Error("not mocked"); });
 const getInvoiceCardPayments = vi.fn(async (invoiceId: string) => ({ invoiceId, attempts: [] as unknown[] }));
 const getCardPaymentReceipt = vi.fn(async () => new Blob(["%PDF-1.7"], { type: "application/pdf" }));
+// 4-N05: the environment of these tests has the simulated gateway.
+const getCardPaymentAvailability = vi.fn(async () => ({ available: true, simulated: true }));
 const getTreasuryReceipt = vi.fn(async () => { throw new ElevantApiError({ kind: "http", status: 404 }); });
 
 // 2-N20: the profile lists the airline's portal users and what the session may do.
@@ -125,16 +99,15 @@ const getPortalUsers = vi.fn(async () => ({
 }));
 
 vi.mock("@/components/auth/AirlineSessionProvider", () => ({
-  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getPreinvoices, getPreinvoice, getPreinvoiceDisputes, getPreinvoiceInvoice, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getPaymentReceipt, acceptPreinvoice, disputePreinvoice, operationRevision: 0, financeRevision }),
+  useAirlineSession: () => ({ status: "ready", session: { actor, bootstrap: { ...bootstrap, currentOperations }, expiresAt: "2099-01-01T00:00:00Z" }, getPortalUsers, getOperations, getOperation, getApprovedEvidence, getServiceOrder, downloadServiceOrder, getRequests, getInvoicePayment, getInvoiceStatement, getTreasuryStatement, getTreasuryInvoice, getTreasuryReceipt, getInvoiceDocument, payInvoiceByCard, getInvoiceCardPayments, getCardPaymentReceipt, getCardPaymentAvailability, getPaymentReceipt, operationRevision: 0, financeRevision }),
 }));
 
 afterEach(() => { cleanup(); currentOperations = bootstrap.currentOperations; historyPage = {
   page: 1, limit: 20, hasMore: false, operations: bootstrap.currentOperations,
 }; detailOperation = bootstrap.currentOperations[0]; approvedEvidence = emptyEvidence;
   getOperations.mockClear(); getOperation.mockClear(); getApprovedEvidence.mockClear();
-  requestPage = initialRequestPage; getRequests.mockClear(); getPreinvoice.mockClear(); getPreinvoiceDisputes.mockClear(); getPreinvoiceInvoice.mockClear(); getInvoicePayment.mockClear(); getInvoiceStatement.mockClear();
-  preinvoicePage = initialPreinvoicePage;
-  getPreinvoices.mockClear(); getInvoiceDocument.mockClear(); getPaymentReceipt.mockClear(); acceptPreinvoice.mockClear(); disputePreinvoice.mockClear(); financeRevision = 0; });
+  requestPage = initialRequestPage; getRequests.mockClear(); getInvoicePayment.mockClear(); getInvoiceStatement.mockClear();
+  getInvoiceDocument.mockClear(); getPaymentReceipt.mockClear(); financeRevision = 0; });
 
 it("shows historical flights from the tenant-scoped API page, not only the bootstrap window", async () => {
   historyPage = { page: 1, limit: 20, hasMore: false, operations: [
@@ -325,7 +298,7 @@ it("shows an honest empty state when the airline has no operational requests", a
 });
 
 const ecfInvoice = (overrides: Partial<AirlineTreasuryInvoice> = {}): AirlineTreasuryInvoice => ({
-  id: "74000000-0000-7000-8000-000000000009", preinvoiceId: initialPreinvoicePage.preinvoices[0].id,
+  id: "74000000-0000-7000-8000-000000000009", preinvoiceId: internalDraftId,
   number: "NF-74000000000070008000000000000009", fiscalNumber: "E310000000001",
   stationId: bootstrap.stations[0].id, stationCode: "PUJ", currencyCode: "USD", total: 148.09,
   legacyPaid: 0, legacyCredited: 0, applied: 0, credited: 0, debited: 0, balance: 148.09,
@@ -353,7 +326,6 @@ it("lists invoices with their e-NCF, status and balance, without preinvoice deci
   expect(screen.getByRole("region", { name: "Factura NF-OLD" })).toHaveTextContent("Vencida");
   expect(screen.getByLabelText("Resumen de facturas")).toHaveTextContent("USD 296.18");
   expect(screen.queryByRole("button", { name: /Aceptar prefactura|Disputar prefactura/ })).not.toBeInTheDocument();
-  expect(getPreinvoices).not.toHaveBeenCalled();
 });
 
 it("opens an invoice detail and downloads its PDF by invoice id", async () => {

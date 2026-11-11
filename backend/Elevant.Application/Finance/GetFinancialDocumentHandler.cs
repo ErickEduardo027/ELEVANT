@@ -21,8 +21,9 @@ public sealed class GetFinancialDocumentHandler(
     GetNonFiscalInvoiceHandler invoices, GetNonFiscalPaymentHandler payments,
     IFinancialDocumentStore documents, INonFiscalInvoiceReadStore? invoiceLookup = null)
 {
-    public async Task<AirlineFinancialDocumentResult> GetAirlineInvoiceAsync(
-        Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken = default)
+    // 4-A: the internal draft addresses an invoice only inside this handler; callers use the invoice id.
+    private async Task<AirlineFinancialDocumentResult> GetAirlineInvoiceAsync(
+        Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken)
     {
         var first = await invoices.GetForAirlineAsync(accountId, preinvoiceId, cancellationToken);
         if (!first.IsSuccess) return AirlineFinancialDocumentResult.Failed(first.Failure!.Value);
@@ -50,8 +51,8 @@ public sealed class GetFinancialDocumentHandler(
             : AirlineFinancialDocumentResult.Failed(AirlinePortalFailure.NotFound);
     }
 
-    public async Task<FinancialDocumentData?> GetFinanceInvoiceAsync(
-        Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken = default)
+    private async Task<FinancialDocumentData?> GetFinanceInvoiceAsync(
+        Guid accountId, Guid preinvoiceId, CancellationToken cancellationToken)
     {
         var first = await invoices.GetForFinanceAsync(accountId, preinvoiceId, cancellationToken);
         if (first is null) return null;

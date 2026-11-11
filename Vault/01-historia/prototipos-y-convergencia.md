@@ -184,7 +184,7 @@ que es una capa de evidencia distinta del código y de los tests:
 
 - [Reglas del monorepo](../../AGENTS.md): precedencia de contratos y carácter descartable de los prototipos.
 - [Backend prototipo](../../backend-prototipo/README.md): alcance original del servidor temporal.
-- [Backend .NET](../../backend/README.md) y [contrato OpenAPI](../../docs/api/openapi-contract.md): superficie técnica disponible y casos de uso todavía ausentes.
+- [Backend .NET](../../backend/README.md) y [contrato OpenAPI](../../docs/api/openapi-contract.md): en ese corte, superficie técnica disponible y casos de uso todavía ausentes; el estado vigente está en el [Mapa de capacidades](../02-producto/mapa-de-capacidades.md).
 - [Private Web](../../frontend/private-web/README.md), [Public Web](../../frontend/public-web/README.md) y [Mobile Agent](../../frontend/mobile-agent/README.md): capacidades observadas y límites vigentes de cada cliente.
 - [Database v1](../../docs/architecture/database-v1.md): conceptos seleccionados y capacidades diferidas.
 - [Estructura del repositorio](../../docs/architecture/repository-structure.md): fronteras resultantes.

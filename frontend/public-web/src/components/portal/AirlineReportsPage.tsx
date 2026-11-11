@@ -6,9 +6,10 @@ import type { AirlineOperationPageResponse } from "@elevant/api-client";
 
 import { useAirlineSession } from "@/components/auth/AirlineSessionProvider";
 import type { AirlineTreasuryStatement } from "@/lib/airline-treasury-service";
-import { invoiceStatus, invoiceTitle } from "./AirlineFinancePage";
+import { invoiceStatus, invoiceTitle } from "./financeDocuments";
 import styles from "./AirlinePortalPage.module.css";
 import { operationStatusLabel } from "@/lib/operation-status";
+import { businessToday } from "@/lib/business-day";
 
 type ReportSnapshot = {
   revision: string;
@@ -33,7 +34,7 @@ export function AirlineReportsPage({ airlineName }: { airlineName: string }) {
 
   useEffect(() => {
     const request = ++generation.current;
-    void Promise.all([getOperations(1), getTreasuryStatement(new Date().toISOString().slice(0, 10))]).then(([operations, statement]) => {
+    void Promise.all([getOperations(1), getTreasuryStatement(businessToday())]).then(([operations, statement]) => {
       if (request !== generation.current) return;
       setSnapshot({ revision, operations, statement });
       setError(null);

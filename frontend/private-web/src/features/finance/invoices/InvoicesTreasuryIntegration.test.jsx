@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { DepartmentAccessProvider, administratorAccess } from '../../access/DepartmentAccessContext';
 import InvoicesPage from './InvoicesPage';
@@ -66,4 +66,28 @@ it('shows the airline card attempts with brand and last four digits only', async
     expect(section).toHaveTextContent('autorización ABC234');
     expect(section).toHaveTextContent('fondos insuficientes');
     expect(getInvoiceCardPayments).toHaveBeenCalledWith('i-1');
+});
+
+it('names an invoice credited in full without payments «Anulada» and filters by it (4-N24)', async () => {
+    const voided = { ...summary, id: 'v-1', number: 'NF-QA-VOIDED', paid: 0, credited: 1000, balance: 0, status: 'Voided' };
+    vi.mocked(listFinanceInvoices).mockResolvedValue({ invoices: [voided] });
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', ['finance.reconciliation.read'])}>
+        <InvoicesPage initialStationId="st-1" /></DepartmentAccessProvider>);
+    const row = (await screen.findByRole('button', { name: /NF-QA-VOIDED/ })).closest('tr');
+    expect(row).toHaveTextContent('Anulada');
+    expect(row).not.toHaveTextContent('Pagada');
+    await userEvent.selectOptions(screen.getByLabelText('Estado'), 'Voided');
+    expect(listFinanceInvoices).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'Voided' }));
+});
+
+it('reads the invoices again when the window regains focus, keeping the page on screen (4-N11)', async () => {
+    vi.mocked(listFinanceInvoices).mockResolvedValue({ invoices: [summary] });
+    render(<DepartmentAccessProvider observe={false} initialAccess={administratorAccess('finance', ['finance.reconciliation.read'])}>
+        <InvoicesPage initialStationId="st-1" /></DepartmentAccessProvider>);
+    await screen.findByRole('button', { name: /NF-TEST-INV/ });
+    const calls = vi.mocked(listFinanceInvoices).mock.calls.length;
+    vi.mocked(listFinanceInvoices).mockResolvedValue({ invoices: [{ ...summary, balance: 0, paid: 1000, status: 'Paid' }] });
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    await waitFor(() => expect(screen.getByRole('button', { name: /NF-TEST-INV/ }).closest('tr')).toHaveTextContent('Pagada'));
+    expect(listFinanceInvoices).toHaveBeenCalledTimes(calls + 1);
 });

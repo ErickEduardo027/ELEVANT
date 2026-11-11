@@ -46,16 +46,46 @@ public static partial class CharterRules
     }
 
     /// <summary>The reason Finance reopens a confirmed prepayment (3-N24): 8 to 500 characters.</summary>
-    public static string? NormalizeReopenReason(string? value)
+    public static string? NormalizeReopenReason(string? value) => NormalizeReason(value, 8);
+
+    /// <summary>
+    /// 4-N22: the reason Finance corrects a confirmed prepayment that was not applied yet: 5 to 500 characters, like the
+    /// other reasons of phase 4.
+    /// </summary>
+    public static string? NormalizeCorrectionReason(string? value) => NormalizeReason(value, 5);
+
+    /// <summary>A prepayment Finance can confirm: positive, at most 10 000 000 and with two decimals.</summary>
+    public static bool IsValidPrepaymentAmount(decimal amount) =>
+        amount > 0 && amount <= 10_000_000m && decimal.Round(amount, 2) == amount;
+
+    /// <summary>The length of a treasury receipt's reference (<c>commercial.finance_treasury_receipts.reference</c>).</summary>
+    public const int ReceiptReferenceLength = 120;
+
+    /// <summary>
+    /// 4-N22: the reference of the receipt a confirmed prepayment becomes, «PREPAGO» and the bank reference. With
+    /// <paramref name="receiptId"/> (the airline already has a receipt with that reference: one transfer paid two of its
+    /// charters, or Finance reversed the prepayment and confirmed it again with the same bank reference) the receipt's
+    /// own id follows, so every receipt keeps a reference of its own; the bank reference is shortened to fit the column,
+    /// never the id.
+    /// </summary>
+    public static string PrepaymentReceiptReference(string? bankReference, Guid? receiptId = null)
+    {
+        var reference = $"PREPAGO {bankReference}".Trim();
+        var suffix = receiptId is { } id ? $" · {id:N}" : string.Empty;
+        var room = ReceiptReferenceLength - suffix.Length;
+        return (reference.Length <= room ? reference : reference[..room].TrimEnd()) + suffix;
+    }
+
+    private static string? NormalizeReason(string? value, int minimumLength)
     {
         var normalized = value?.Trim();
-        return normalized is { Length: >= 8 and <= 500 } &&
+        return normalized is { Length: <= 500 } && normalized.Length >= minimumLength &&
                !normalized.Any(character => char.IsControl(character) && character is not ('\t' or '\n' or '\r'))
             ? normalized : null;
     }
 }
 
-/// <summary>Problem Details codes of the charter commands (3-N24).</summary>
+/// <summary>Problem Details codes of the charter commands (3-N24, 4-N22).</summary>
 public static class CharterCodes
 {
     /// <summary>The prepayment is confirmed: no service is added until Finance reopens the quotation.</summary>
@@ -63,6 +93,21 @@ public static class CharterCodes
 
     /// <summary>Only a confirmed prepayment is reopened.</summary>
     public const string PrepaymentNotConfirmed = "charter_prepayment_not_confirmed";
+
+    /// <summary>
+    /// 4-N22: the prepayment already became a receipt on the charter's invoice. It is not corrected nor reopened in
+    /// place: Finance reverses that receipt in «Cobros», then reopens the prepayment and confirms it again.
+    /// </summary>
+    public const string PrepaymentApplied = "charter_prepayment_applied";
+
+    /// <summary>
+    /// 4-N22: the prepayment's receipt met a receipt of the airline posted at the same moment (the same reference, or
+    /// the treasury account of the same invoice). Nothing was written: Finance re-reads the charter and confirms again.
+    /// </summary>
+    public const string PrepaymentReceiptConflict = "charter_prepayment_receipt_conflict";
+
+    /// <summary>4-N22: an amount or a reference Finance cannot confirm (the charter commands' fallback code).</summary>
+    public const string InvalidRequest = "invalid_charter_request";
 }
 
 /// <summary>A catalog service the agent can add to a charter, priced at Finance's base tariff.</summary>
@@ -100,8 +145,6 @@ public sealed record CharterPrepaymentItem(Guid Id, Guid OperationId, string Ope
     string PrepaymentStatus, decimal? PrepaymentAmount, string? PrepaymentReference, DateTimeOffset? PrepaymentConfirmedAt,
     string? Version = null);
 
-public enum CharterPrepaymentFailure { NotFound, Conflict }
-
 public interface ICharterStore
 {
     Task<CharterView?> ReadForAgentAsync(Guid accountId, IReadOnlyCollection<Guid> stations, Guid operationId,
@@ -115,9 +158,15 @@ public interface ICharterStore
     Task<IReadOnlyList<CharterPrepaymentItem>> ListForFinanceAsync(IReadOnlyCollection<Guid> stations,
         CancellationToken cancellationToken = default);
 
-    Task<(CharterPrepaymentItem? Item, CharterPrepaymentFailure? Failure)> ConfirmPrepaymentAsync(Guid accountId,
-        IReadOnlyCollection<Guid> stations, Guid charterId, decimal amount, string reference, string? requestId,
-        CancellationToken cancellationToken = default);
+    /// <summary>
+    /// 4-N22: Finance confirms the prepayment with an Idempotency-Key and the version it saw. A pending one becomes
+    /// confirmed and, when the charter's operation is already invoiced, settles that invoice in the same transaction (the
+    /// excess stays as the airline's credit). The same amount and reference again change nothing; another amount or
+    /// reference corrects it with <paramref name="reason"/> while it was never applied (<c>charter_prepayment_applied</c>).
+    /// </summary>
+    Task<MasterDataResult<CharterPrepaymentItem>> ConfirmPrepaymentAsync(Guid accountId,
+        IReadOnlyCollection<Guid> stations, Guid charterId, decimal amount, string reference, string? reason,
+        string expectedVersion, Guid idempotencyKey, string? requestId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// 3-N24: Finance reopens a confirmed prepayment (a new quotation) with its reason and the version it saw; the
@@ -186,23 +235,31 @@ public sealed class CharterHandler(IActorContextResolver actors, ICharterStore s
         return failure is not null ? (null, failure) : (await store.ListForFinanceAsync(stations!, cancellationToken), null);
     }
 
-    public async Task<(CharterPrepaymentItem? Item, OccReviewFailure? Failure)> ConfirmPrepaymentAsync(Guid accountId,
-        Guid charterId, decimal amount, string? reference, string? requestId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 4-N22: Finance confirms the prepayment with an Idempotency-Key and the version it saw (<c>finance.charters.confirm</c>).
+    /// A reason (5 to 500 characters) is what corrects a confirmed prepayment that was never applied; without one, a
+    /// correction is <c>reason_required</c>.
+    /// </summary>
+    public async Task<(CharterPrepaymentItem? Item, OccReviewFailure? Failure, string? Code)> ConfirmPrepaymentAsync(
+        Guid accountId, Guid charterId, decimal amount, string? reference, string? reason, string? expectedVersion,
+        Guid? idempotencyKey, string? requestId, CancellationToken cancellationToken = default)
     {
-        var normalized = CharterRules.NormalizeReference(reference);
-        if (charterId == Guid.Empty || amount <= 0 || amount > 10_000_000m || decimal.Round(amount, 2) != amount ||
-            normalized is null)
-            return (null, OccReviewFailure.InvalidRequest);
         var (stations, failure) = await FinanceStationsAsync(accountId, FinanceConfirmPermission, cancellationToken);
-        if (failure is not null) return (null, failure);
-        var (item, writeFailure) = await store.ConfirmPrepaymentAsync(accountId, stations!, charterId, amount, normalized,
-            requestId, cancellationToken);
-        return writeFailure switch
-        {
-            null => (item, null),
-            CharterPrepaymentFailure.NotFound => (null, OccReviewFailure.NotFound),
-            _ => (null, OccReviewFailure.Conflict),
-        };
+        if (failure is not null) return (null, failure, null);
+        if (idempotencyKey is not { } key || key == Guid.Empty)
+            return (null, OccReviewFailure.InvalidRequest, "idempotency_key_required");
+        if (string.IsNullOrWhiteSpace(expectedVersion))
+            return (null, OccReviewFailure.InvalidRequest, "expected_version_required");
+        var normalized = CharterRules.NormalizeReference(reference);
+        if (!CharterRules.IsValidPrepaymentAmount(amount) || normalized is null)
+            return (null, OccReviewFailure.InvalidRequest, CharterCodes.InvalidRequest);
+        string? correction = null;
+        if (!string.IsNullOrWhiteSpace(reason) && (correction = CharterRules.NormalizeCorrectionReason(reason)) is null)
+            return (null, OccReviewFailure.InvalidRequest, "reason_required");
+        if (charterId == Guid.Empty) return (null, OccReviewFailure.NotFound, "not_found");
+        var result = await store.ConfirmPrepaymentAsync(accountId, stations!, charterId, amount, normalized, correction,
+            expectedVersion.Trim(), key, requestId, cancellationToken);
+        return Map(result);
     }
 
     /// <summary>
@@ -224,15 +281,18 @@ public sealed class CharterHandler(IActorContextResolver actors, ICharterStore s
         if (charterId == Guid.Empty) return (null, OccReviewFailure.NotFound, "not_found");
         var result = await store.ReopenPrepaymentAsync(accountId, stations!, charterId, normalized, expectedVersion.Trim(),
             key, requestId, cancellationToken);
-        return result.Failure switch
-        {
-            null => (result.Value, null, null),
-            MasterDataFailure.NotFound => (null, OccReviewFailure.NotFound, result.Code),
-            MasterDataFailure.Forbidden => (null, OccReviewFailure.Forbidden, null),
-            MasterDataFailure.Invalid => (null, OccReviewFailure.InvalidRequest, result.Code),
-            _ => (null, OccReviewFailure.Conflict, result.Code),
-        };
+        return Map(result);
     }
+
+    private static (CharterPrepaymentItem? Item, OccReviewFailure? Failure, string? Code) Map(
+        MasterDataResult<CharterPrepaymentItem> result) => result.Failure switch
+    {
+        null => (result.Value, null, null),
+        MasterDataFailure.NotFound => (null, OccReviewFailure.NotFound, result.Code),
+        MasterDataFailure.Forbidden => (null, OccReviewFailure.Forbidden, null),
+        MasterDataFailure.Invalid => (null, OccReviewFailure.InvalidRequest, result.Code),
+        _ => (null, OccReviewFailure.Conflict, result.Code),
+    };
 
     private async Task<(Guid[]? Stations, RampOperationsFailure? Failure)> RampStationsAsync(Guid accountId,
         CancellationToken cancellationToken)

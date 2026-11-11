@@ -1,3 +1,4 @@
+using Elevant.Application.Common;
 using System.Globalization;
 using PdfSharp;
 using PdfSharp.Drawing;
@@ -193,8 +194,14 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         }
     }
 
+    /// <summary>4-N10: EMISIÓN and the signature date are the business day in Santo Domingo, as the screens show.</summary>
     private static string Date(DateTimeOffset value) =>
-        value.ToUniversalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        BusinessCalendar.Today(value).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+    /// <summary>The local time of the document in Santo Domingo, marked as such (4-N10).</summary>
+    private static string Stamp(DateTimeOffset value) =>
+        TimeZoneInfo.ConvertTime(value, BusinessCalendar.Zone()).ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture) +
+        " hora RD";
 
     public byte[] RenderReceipt(NonFiscalPaymentData payment, string invoiceNumber)
     {
@@ -246,7 +253,8 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         page.Size = PageSize.A4;
         using (var graphics = XGraphics.FromPdfPage(page))
         {
-            DrawFrame(graphics, page, heading, caption, "Recibo de pago con tarjeta", receipt.ReceiptReference, receipt.PaidAt, 1);
+            DrawFrame(graphics, page, heading, caption, "Recibo de pago con tarjeta", receipt.ReceiptReference, receipt.PaidAt, 1,
+                SimulationFrame);
             var rows = new (string Label, string Value)[]
             {
                 ("Aerolínea", receipt.AirlineName),
@@ -271,12 +279,111 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         return output.ToArray();
     }
 
+    /// <summary>
+    /// 4-N17: a credit or debit note. One that modifies an E31 invoice prints its own e-NCF (E34 credit, E33 debit),
+    /// the e-NCF it modifies, the net, ITBIS and total frozen per line, a security code and a simulated QR; an older
+    /// note (TC-/TD-) prints its lines. Every page says «Simulación — sin validez fiscal».
+    /// </summary>
+    public byte[] RenderAdjustmentNote(FinanceAdjustmentNoteDocumentData note)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+        if (string.IsNullOrWhiteSpace(note.Number) || note.Lines is null || note.Lines.Count == 0 ||
+            note.CurrencyCode.Length != 3 || note.Amount <= 0)
+            throw new ArgumentException("The adjustment note snapshot is incomplete.", nameof(note));
+        var credit = note.Kind == "Credit";
+        var fiscal = FinanceInvoicePolicy.IsFiscalNumber(note.Number, FinanceInvoicePolicy.NoteFiscalPrefix(credit));
+        var kindLabel = credit ? "Nota de crédito" : "Nota de débito";
+        using var document = new PdfDocument();
+        document.Info.Title = fiscal ? $"{kindLabel} electrónica {note.Number}" : $"{kindLabel} {note.Number}";
+        document.Info.Subject = FinanceInvoicePolicy.Disclaimer;
+        document.Info.Author = "ELEVANT";
+        var body = ElevantPdfFonts.Regular(9);
+        var caption = ElevantPdfFonts.Regular(8);
+        var heading = ElevantPdfFonts.Regular(16);
+        var net = note.Lines.Sum(line => line.NetAmount ?? line.Amount);
+        var tax = note.Lines.All(line => line.TaxAmount is not null) ? note.Lines.Sum(line => line.TaxAmount!.Value) : (decimal?)null;
+        var modifies = note.InvoiceFiscalNumber is null ? note.InvoiceNumber : $"{note.InvoiceFiscalNumber} (interno {note.InvoiceNumber})";
+        var securityCode = fiscal ? FinanceInvoicePolicy.SecurityCode(note.Number, note.Amount, note.IssuedAt, note.CustomerCode) : null;
+        var lineIndex = 0;
+        while (lineIndex < note.Lines.Count)
+        {
+            var page = document.AddPage();
+            page.Size = PageSize.A4;
+            using var graphics = XGraphics.FromPdfPage(page);
+            var width = page.Width.Point;
+            graphics.DrawRectangle(new XSolidBrush(Navy), 0, 0, width, 96);
+            DrawText(graphics, note.IssuerName, heading, XColors.White, Margin, 24, 300);
+            DrawText(graphics, $"RNC {note.IssuerRnc} · Estación {note.StationCode}", caption, XColors.White, Margin, 52, 300);
+            DrawText(graphics, FinanceInvoicePolicy.Disclaimer.ToUpperInvariant(), caption, XColors.White, Margin, 68, 300);
+            DrawText(graphics, (fiscal ? $"{kindLabel} electrónica" : kindLabel).ToUpperInvariant(), caption, XColors.White,
+                340, 24, 210);
+            DrawText(graphics, fiscal ? $"e-NCF {note.Number}" : note.Number, heading, XColors.White, 340, 40, 210);
+            DrawText(graphics, $"Modifica: {modifies}", caption, XColors.White, 340, 68, 210);
+
+            DrawText(graphics, "CLIENTE", caption, Muted, Margin, 112, 200);
+            DrawText(graphics, note.CustomerName, body, Navy, Margin, 126, 280);
+            DrawText(graphics, "EMISIÓN", caption, Muted, 340, 112, 100);
+            DrawText(graphics, Date(note.IssuedAt), body, Navy, 340, 126, 100);
+            DrawText(graphics, "VIGENCIA", caption, Muted, 450, 112, 100);
+            DrawText(graphics, note.EffectiveOn.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), body, Navy, 450, 126, 100);
+            DrawText(graphics, $"Motivo: {note.Reason}", caption, Muted, Margin, 142, width - 2 * Margin);
+
+            var y = 164d;
+            DrawText(graphics, "OPERACIÓN", caption, Muted, Margin, y, 110);
+            DrawText(graphics, "SERVICIO / CARGO", caption, Muted, 158, y, 170);
+            DrawText(graphics, "CANT.", caption, Muted, 332, y, 44);
+            DrawText(graphics, "NETO", caption, Muted, 380, y, 60);
+            DrawText(graphics, "ITBIS", caption, Muted, 444, y, 50);
+            DrawText(graphics, "TOTAL", caption, Muted, 498, y, 60);
+            graphics.DrawLine(new XPen(Muted, 0.4), Margin, y + 16, width - Margin, y + 16);
+            y += 24;
+            while (lineIndex < note.Lines.Count && y + RowHeight < page.Height.Point - 200)
+            {
+                var line = note.Lines[lineIndex++];
+                DrawText(graphics, line.OperationCode, body, Navy, Margin, y, 108);
+                DrawText(graphics, $"{line.ServiceCode} · {line.ServiceName}", body, Navy, 158, y, 170);
+                DrawText(graphics, Money(line.Quantity), body, Navy, 332, y, 44);
+                DrawText(graphics, Money(line.NetAmount ?? line.Amount), body, Navy, 380, y, 60);
+                DrawText(graphics, line.TaxAmount is { } lineTax ? Money(lineTax) : "—", body, Navy, 444, y, 50);
+                DrawText(graphics, Money(line.Amount), body, Navy, 498, y, 60);
+                graphics.DrawLine(new XPen(XColor.FromArgb(225, 231, 239), 0.3), Margin, y + 18, width - Margin, y + 18);
+                y += RowHeight;
+            }
+            if (lineIndex == note.Lines.Count)
+            {
+                var bottom = page.Height.Point - 180;
+                if (securityCode is not null)
+                {
+                    DrawSimulatedQr(graphics, $"{note.Number}|{securityCode}|{note.Amount}", Margin, bottom, 84);
+                    DrawText(graphics, $"Código de seguridad {securityCode}", body, Navy, Margin + 96, bottom, 220);
+                    DrawText(graphics, $"Firma {Date(note.IssuedAt)}", caption, Muted, Margin + 96, bottom + 16, 220);
+                    DrawText(graphics, "QR de consulta simulado: no se valida ante la DGII.", caption, Muted,
+                        Margin + 96, bottom + 32, 220);
+                }
+                DrawText(graphics, "SUBTOTAL", caption, Muted, 380, bottom, 80);
+                DrawText(graphics, $"{note.CurrencyCode} {Money(net)}", body, Navy, 460, bottom, 98);
+                DrawText(graphics, "ITBIS", caption, Muted, 380, bottom + 18, 80);
+                DrawText(graphics, tax is { } total ? $"{note.CurrencyCode} {Money(total)}" : "—", body, Navy, 460, bottom + 18, 98);
+                graphics.DrawLine(new XPen(Muted, 0.4), 380, bottom + 36, width - Margin, bottom + 36);
+                DrawText(graphics, credit ? "TOTAL ACREDITADO" : "TOTAL DEBITADO", caption, Blue, 380, bottom + 42, 80);
+                DrawText(graphics, $"{note.CurrencyCode} {Money(note.Amount)}", body, Blue, 460, bottom + 42, 98);
+            }
+            graphics.DrawLine(new XPen(Muted, 0.4), Margin, page.Height.Point - 51, width - Margin, page.Height.Point - 51);
+            DrawText(graphics, $"{FinanceInvoicePolicy.Disclaimer}. Documento de demostración de ELEVANT.", caption, Muted,
+                Margin, page.Height.Point - 41, 380);
+            DrawText(graphics, $"Pág. {document.PageCount}", caption, Muted, width - Margin - 47, page.Height.Point - 41, 47);
+        }
+        using var output = new MemoryStream();
+        document.Save(output, false);
+        return output.ToArray();
+    }
+
     public byte[] RenderReport(FinanceReportData report, string filterSummary)
     {
         ArgumentNullException.ThrowIfNull(report);
         using var document = new PdfDocument();
         document.Info.Title = report.Title;
-        document.Info.Subject = "Non-fiscal finance report";
+        document.Info.Subject = FinanceInvoicePolicy.Disclaimer;
         document.Info.Author = "ELEVANT";
         var body = ElevantPdfFonts.Regular(8);
         var caption = ElevantPdfFonts.Regular(8);
@@ -292,7 +399,7 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
             page.Orientation = PageOrientation.Landscape;
             using var graphics = XGraphics.FromPdfPage(page);
             DrawFrame(graphics, page, heading, caption, report.Title,
-                $"{report.From:yyyy-MM-dd} – {report.To:yyyy-MM-dd}", generatedAt, document.PageCount);
+                $"{report.From:yyyy-MM-dd} – {report.To:yyyy-MM-dd}", generatedAt, document.PageCount, SimulationFrame);
             var y = 160d;
             if (first)
             {
@@ -333,20 +440,34 @@ public sealed class FinancialDocumentPdfRenderer : IFinancialDocumentPdfRenderer
         return stream.ToArray();
     }
 
+    /// <summary>The banner and the footer a document's frame prints.</summary>
+    private sealed record Frame(string Banner, string Footer);
+
+    /// <summary>The legacy non-fiscal invoice (before ADR-0035) and the manual receipt keep their frame.</summary>
+    private static readonly Frame NonFiscalFrame =
+        new("DOCUMENTO NO FISCAL · DESARROLLO", "Sin NCF, impuestos ni validez fiscal.");
+
+    /// <summary>
+    /// 4-N20: what the simulated e-CF produces (the card receipt next to its e-NCF, the reports) never says «Sin NCF»:
+    /// it is framed as a simulation without fiscal validity.
+    /// </summary>
+    private static readonly Frame SimulationFrame =
+        new(FinanceInvoicePolicy.Disclaimer.ToUpperInvariant(), FinanceInvoicePolicy.Disclaimer + ".");
+
     private static void DrawFrame(XGraphics graphics, PdfPage page, XFont heading,
-        XFont caption, string title, string reference, DateTimeOffset timestamp, int pageNumber)
+        XFont caption, string title, string reference, DateTimeOffset timestamp, int pageNumber, Frame? frame = null)
     {
+        frame ??= NonFiscalFrame;
         graphics.DrawRectangle(new XSolidBrush(Navy), 0, 0, page.Width.Point, 109);
         DrawText(graphics, "ELEVANT", heading, XColors.White, Margin, 30, 220);
-        DrawText(graphics, "DOCUMENTO NO FISCAL · DESARROLLO", caption,
+        DrawText(graphics, frame.Banner, caption,
             XColors.White, Margin, 68, 360);
         DrawText(graphics, title, heading, Navy, Margin, 130, 350);
         DrawText(graphics, reference, caption, Muted, 383, 136, 166);
-        DrawText(graphics, timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm 'UTC'",
-            CultureInfo.InvariantCulture), caption, Muted, 383, 155, 166);
+        DrawText(graphics, Stamp(timestamp), caption, Muted, 383, 155, 166);
         graphics.DrawLine(new XPen(Muted, 0.4), Margin, page.Height.Point - 51,
             page.Width.Point - Margin, page.Height.Point - 51);
-        DrawText(graphics, "Sin NCF, impuestos ni validez fiscal.", caption, Muted,
+        DrawText(graphics, frame.Footer, caption, Muted,
             Margin, page.Height.Point - 41, 350);
         DrawText(graphics, $"Pág. {pageNumber}", caption, Muted,
             page.Width.Point - Margin - 47, page.Height.Point - 41, 47);

@@ -97,8 +97,10 @@ internal static class FinancePackageValuation
                 join draft in context.Preinvoices.AsNoTracking() on line.PreinvoiceId equals draft.Id
                 where entry.ConsumptionId == consumption.Id && line.ReleasedAt == null
                 select new { entry.ComponentId, entry.Quantity, entry.BaseAmount, draft.Status }).ToArrayAsync(ct);
-            // A new draft cannot depend on unissued coverage that may still be voided.
-            if (history.Any(x => x.Status != PreinvoiceStatus.Invoiced)) return new("package_scope_has_unissued_preinvoice", result);
+            // A new draft cannot depend on unissued coverage that may still be voided; a no-charge closure (4-N07) is
+            // final like an invoice, so its consumption counts.
+            if (history.Any(x => x.Status is not (PreinvoiceStatus.Invoiced or PreinvoiceStatus.NoCharge)))
+                return new("package_scope_has_unissued_preinvoice", result);
             decimal quantity;
             if (component.BillingUnit is "minute" or "hour")
             {

@@ -334,6 +334,8 @@ test("hueco 1-C · Contratos crea una enmienda del contrato activo y Finanzas ap
 
   // Finance approves the prices without any conflict: the amendment starts after the version in force.
   await loginPrivate(page, "finance");
+  // 4-A: «Aprobación de contratos» lives in «Configuración».
+  await openModule(page, "Configuración");
   await openModule(page, "Aprobación de contratos");
   await page.getByRole("button", { name: new RegExp(contract.airline) }).first().click();
   await page.getByRole("button", { name: "Aprobar precios" }).click();

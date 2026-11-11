@@ -25,7 +25,7 @@ public sealed partial class SqlServerMigrationTests
         var station = await setup.Stations.SingleAsync(s => s.Code == "PUJ", ct);
         var account = await setup.Users.SingleAsync(u => u.PublicId == FinanceAccount, ct);
         var now = DateTimeOffset.UtcNow;
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var today = Elevant.Application.Common.BusinessCalendar.Today(now);
         async Task<NonFiscalInvoice> InvoiceAsync(string currency = "USD")
         {
             var pre = new Preinvoice { PublicId = Guid.NewGuid(), AirlineId = airline.Id, StationId = station.Id,
@@ -195,21 +195,6 @@ public sealed partial class SqlServerMigrationTests
         Assert.Single(invoiceRace, r => r.Failure == FinanceTreasuryFailure.Conflict);
         statement = (await RunAsync(s => s.StatementAsync(FinanceAccount, today, station.PublicId, airline.PublicId, ct)))!;
         Assert.Equal(400m, Assert.Single(statement.Invoices, i => i.Id == raceInvoice.PublicId).Balance);
-        var legacyRaceInvoice = await InvoiceAsync();
-        var contender = competitors.Single(r => !invoiceRace[competitors.IndexOf(r)].IsSuccess);
-        var treasuryTask = RunAsync(s => s.ApplyAsync(FinanceAccount, contender.Id,
-            new(Guid.NewGuid(), contender.Version, today, "Race historical entry", [new(legacyRaceInvoice.PublicId, "0", 600m)]), ct));
-        async Task<Elevant.Application.Finance.RecordNonFiscalPaymentResult> LegacyPayAsync()
-        {
-            await using var context = CreateContext(database.ConnectionString);
-            return await new EfNonFiscalPaymentStore(context, TimeProvider.System).RecordAsync(new(FinanceAccount,
-                legacyRaceInvoice.PublicId, Guid.NewGuid(), "RACE-LEGACY-PAYMENT", 600m, PaymentMethod.Transfer, today), ct);
-        }
-        var legacyTask = LegacyPayAsync(); await Task.WhenAll(treasuryTask, legacyTask);
-        var treasuryRaceResult = await treasuryTask; var legacyRaceResult = await legacyTask;
-        Assert.Equal(1, (treasuryRaceResult.IsSuccess ? 1 : 0) + (legacyRaceResult.IsSuccess ? 1 : 0));
-        statement = (await RunAsync(s => s.StatementAsync(FinanceAccount, today, station.PublicId, airline.PublicId, ct)))!;
-        Assert.Equal(400m, Assert.Single(statement.Invoices, i => i.Id == legacyRaceInvoice.PublicId).Balance);
         // A purely monetary invoice line has no executed quantity to return.
         var monetaryInvoice = await InvoiceAsync();
         var monetarySource = new PreinvoiceLine { PublicId = Guid.NewGuid(), PreinvoiceId = monetaryInvoice.PreinvoiceId,

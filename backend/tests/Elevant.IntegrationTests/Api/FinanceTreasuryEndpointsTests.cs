@@ -57,6 +57,35 @@ public sealed class FinanceTreasuryEndpointsTests(ElevantApiFactory factory) : I
         stub.Failure = FinanceTreasuryFailure.Conflict;
         using var conflict = await client.PostAsJsonAsync($"/api/v1/finance/receipts/{receipt.Id}/applications", allocation, ct);
         Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        // Phase 4, block A: every refusal carries a code, the store's when it names the cause (4-N10).
+        Assert.Equal("treasury_conflict", await CodeAsync(conflict, ct));
+        (stub.Failure, stub.Code) = (FinanceTreasuryFailure.Invalid, "effective_before_invoice");
+        using var early = await client.PostAsJsonAsync($"/api/v1/finance/receipts/{receipt.Id}/applications", allocation, ct);
+        Assert.Equal((HttpStatusCode.BadRequest, "effective_before_invoice"), (early.StatusCode, await CodeAsync(early, ct)));
+        // 4-N09: a card receipt of the portal is never reversed; the refusal names it.
+        (stub.Failure, stub.Code) = (FinanceTreasuryFailure.Conflict, "card_payment_not_reversible");
+        using var card = await client.PostAsJsonAsync($"/api/v1/finance/receipts/{receipt.Id}/reversals",
+            new FinanceTreasuryReverseRequest(Guid.NewGuid(), "AAAAAQ==", new DateOnly(2026, 10, 18), "Reverse the card"), ct);
+        Assert.Equal((HttpStatusCode.Conflict, "card_payment_not_reversible"), (card.StatusCode, await CodeAsync(card, ct)));
+    }
+    /// <summary>4-N17: Finance downloads the PDF of a note with its e-NCF; an unknown note is a coded 404.</summary>
+    [Fact]
+    public async Task FinanceDownloadsTheNoteWithItsEcf()
+    {
+        var stub = new Stub(); await using var app = App(stub); using var client = app.CreateClient();
+        var ct = TestContext.Current.CancellationToken;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Token());
+        using var pdf = await client.GetAsync($"/api/v1/finance/adjustment-notes/{stub.NoteId}/document", ct);
+        Assert.Equal((HttpStatusCode.OK, "application/pdf"), (pdf.StatusCode, pdf.Content.Headers.ContentType?.MediaType));
+        Assert.Equal("nota-E340000000001.pdf", pdf.Content.Headers.ContentDisposition?.FileName?.Trim('"'));
+        Assert.Equal(Account, stub.Actor);
+        using var missing = await client.GetAsync($"/api/v1/finance/adjustment-notes/{Guid.NewGuid()}/document", ct);
+        Assert.Equal((HttpStatusCode.NotFound, "not_found"), (missing.StatusCode, await CodeAsync(missing, ct)));
+    }
+    private static async Task<string?> CodeAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct));
+        return json.RootElement.TryGetProperty("code", out var code) ? code.GetString() : null;
     }
     [Fact]
     public async Task MissingReadScopeDoesNotRevealReceiptAndForbiddenMutationsReturn403()
@@ -87,9 +116,9 @@ public sealed class FinanceTreasuryEndpointsTests(ElevantApiFactory factory) : I
     {
         public Guid Actor { get; private set; } public Guid Resource { get; private set; }
         public FinanceTreasuryReceiptInput? Receipt { get; private set; } public FinanceTreasuryApplyInput? Allocation { get; private set; }
-        public bool Replayed { get; set; } public FinanceTreasuryFailure? Failure { get; set; }
+        public bool Replayed { get; set; } public FinanceTreasuryFailure? Failure { get; set; } public string? Code { get; set; }
         private readonly Guid _id = Guid.NewGuid();
-        private Task<FinanceTreasuryResult> Result() => Task.FromResult(Failure is { } failure ? FinanceTreasuryResult.Failed(failure) : new(_id, "v1", Replayed, null));
+        private Task<FinanceTreasuryResult> Result() => Task.FromResult(Failure is { } failure ? FinanceTreasuryResult.Failed(failure, Code) : new(_id, "v1", Replayed, null));
         public Task<FinanceTreasuryResult> RecordAsync(Guid actorId, FinanceTreasuryReceiptInput input, CancellationToken cancellationToken = default)
         { Actor = actorId; Receipt = input; return Result(); }
         public Task<FinanceTreasuryResult> ApplyAsync(Guid actorId, Guid receiptId, FinanceTreasuryApplyInput input, CancellationToken cancellationToken = default)
@@ -106,5 +135,11 @@ public sealed class FinanceTreasuryEndpointsTests(ElevantApiFactory factory) : I
         public Task<FinanceTreasuryAdjustmentsData?> AdjustmentsAsync(Guid actorId, Guid invoiceId, CancellationToken cancellationToken = default) => Task.FromResult<FinanceTreasuryAdjustmentsData?>(null);
         public Task<FinanceTreasuryResult> IssueAdjustmentAsync(Guid actorId, Guid invoiceId, FinanceTreasuryAdjustmentInput input, CancellationToken cancellationToken = default) => Result();
         public Task<FinanceTreasuryStatementData?> StatementAsync(Guid actorId, DateOnly asOf, Guid? stationId, Guid? airlineId, CancellationToken cancellationToken = default) => Task.FromResult<FinanceTreasuryStatementData?>(null);
+        public Guid NoteId { get; } = Guid.NewGuid();
+        public Task<FinanceAdjustmentNoteDocumentData?> AdjustmentNoteDocumentAsync(Guid actorId, Guid noteId, CancellationToken cancellationToken = default)
+        { Actor = actorId; return Task.FromResult<FinanceAdjustmentNoteDocumentData?>(noteId == NoteId ? new FinanceAdjustmentNoteDocumentData(NoteId, "E340000000001", "Credit", Guid.NewGuid(), "NF-QA", "E310000000001", "USD", 59m,
+            new DateOnly(2026, 10, 18), DateTimeOffset.UtcNow, "Servicio cobrado de más", "AVIAM Ltd.", "130000001", "QA Airline", "QA",
+            "PUJ", [new FinanceAdjustmentNoteDocumentLineData(1, "DEV-TAT-0001", "GPU", "Ground power", 1m, 59m, 50m, 9m, 18m)]) : null); }
+        public Task<AirlineTreasuryReadResult<FinanceAdjustmentNoteDocumentData>> PortalAdjustmentNoteDocumentAsync(Guid actorId, Guid noteId, CancellationToken cancellationToken = default) => Task.FromResult(new AirlineTreasuryReadResult<FinanceAdjustmentNoteDocumentData>(null, FinanceTreasuryFailure.Forbidden));
     }
 }

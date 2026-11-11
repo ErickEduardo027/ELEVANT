@@ -95,9 +95,9 @@ Esta regla evita tres errores:
 
 ## Límite de implementación actual
 
-El `ElevantDbContext` reúne los módulos en una sola unidad de persistencia y las migraciones materializan sus relaciones. Sin embargo, `Elevant.Application` todavía no contiene los casos de uso de negocio y `Elevant.Api` no expone autenticación ni endpoints del dominio. Por eso este mapa describe el modelo implementado, no una superficie HTTP disponible.
+El `ElevantDbContext` reúne los módulos en una sola unidad de persistencia y las migraciones materializan sus relaciones. Posterior al commit verificado de esta nota (código de `39a85a46`): `Elevant.Application` contiene los casos de uso de Operations, Commercial, Finance, Identity e Integration, y `Elevant.Api` los expone con autenticación JWT en 400 operaciones ([API compartida](../05-aplicaciones/api-compartida.md)). Este mapa sigue describiendo el modelo; la superficie HTTP vive en OpenAPI.
 
-Los futuros vertical slices deben respetar estas fronteras sin exponer entidades EF directamente. Una ruptura coordinada requiere contrato OpenAPI, autorización server-side, migración compatible y pruebas de aislamiento.
+Cada caso de uso respeta estas fronteras sin exponer entidades EF directamente. Una ruptura coordinada requiere contrato OpenAPI, autorización server-side, migración compatible y pruebas de aislamiento.
 
 ## Relacionados
 

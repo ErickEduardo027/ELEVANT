@@ -61,7 +61,7 @@ flowchart LR
 | Controlador → runtime | Gates de estado, dependencia, salud y compatibilidad | Un no-op aceptado no recrea contenedores; un fallo no equivale a rollback destructivo. |
 | Runtime → observación | Health y logs; backup/restore-check del carril DB | Ni un check de API/web dispara por sí mismo el backup ni la última aceptación documentada prueba salud actual. |
 | Persona → SQL | Service privado → gateway → login limitado | Red y permiso SQL son controles independientes; no es acceso de los clientes. |
-| Mobile → APK | Diseño pendiente → aprobación → futura implementación | La plantilla móvil actual no produce ni distribuye APK. |
+| Mobile → APK | Diseño pendiente → aprobación → futura implementación | El workflow móvil no produce ni distribuye APK; *posterior al commit verificado,* `mobile-ci.yml` valida lint, tipos, pruebas y bundle. |
 
 Las columnas del Canvas usan texto numerado además de colores; no hay significado que dependa sólo del tono. La Base es un catálogo **de las notas 07/09/10**, no de todas las tarjetas externas del Canvas. Este índice conserva acceso completo en GitHub o sin abrir las vistas nativas de Obsidian.
 

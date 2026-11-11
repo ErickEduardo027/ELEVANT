@@ -127,10 +127,10 @@ OpenAPI inicial. Desde entonces:
 - los manifiestos de Vite, Next y Expo declaran el mismo paquete local y CI
   comprueba que puede integrarse en sus toolchains.
 
-En el corte, el snapshot contiene sólo la operación técnica de ping. La
-dependencia declarada y las pruebas de bundle no demuestran que los adaptadores
-de negocio ya consuman operaciones generadas: autenticación y endpoints de
-dominio siguen pendientes. El mecanismo sí fija cómo incorporar cada contrato
+En el corte, el snapshot contenía sólo la operación técnica de ping. La
+dependencia declarada y las pruebas de bundle no demostraban que los adaptadores
+de negocio ya consumieran operaciones generadas: autenticación y endpoints de
+dominio seguían pendientes en ese momento. El mecanismo sí fija cómo incorporar cada contrato
 nuevo sin derivar DTOs desde entidades EF o mocks.
 
 El 16 de septiembre, ADR-0014 cerró una circularidad de procedencia: un commit

@@ -22,9 +22,15 @@ export interface CharterDetailsCommand {
   readonly chargesPayableBy: string | null;
 }
 
+/**
+ * Finance confirms the prepayment with the version it saw (4-N22). Another amount or reference corrects a confirmed
+ * prepayment that was never applied, with its reason (5 to 500 characters).
+ */
 export interface ConfirmCharterPrepaymentCommand {
   readonly amount: number;
   readonly reference: string;
+  readonly version: string;
+  readonly reason?: string | null;
 }
 
 /** Finance reopens a confirmed prepayment as a new quotation (3-N24), with its reason and the version it saw. */
@@ -93,12 +99,23 @@ export const normalizedCharterDetails = (command: CharterDetailsCommand): Charte
   return carrierAddress === undefined || chargesPayableBy === undefined ? null : { carrierAddress, chargesPayableBy };
 };
 
+/**
+ * The confirmation as the API takes it (4-N22): an amount in cents, a safe reference, the version Finance saw and, to
+ * correct a confirmed prepayment, a reason of 5 to 500 characters.
+ */
 export const normalizedPrepayment = (command: ConfirmCharterPrepaymentCommand): ConfirmCharterPrepaymentCommand | null => {
   if (!isRecord(command) || typeof command.amount !== "number" || !(command.amount > 0) || command.amount > 10_000_000 ||
-      Math.round(command.amount * 100) !== command.amount * 100 || typeof command.reference !== "string")
+      Math.round(command.amount * 100) !== command.amount * 100 || typeof command.reference !== "string" ||
+      typeof command.version !== "string")
     return null;
   const reference = command.reference.trim();
-  return /^[A-Za-z0-9 /#.-]{2,80}$/.test(reference) ? { amount: command.amount, reference } : null;
+  const version = command.version.trim();
+  if (!/^[A-Za-z0-9 /#.-]{2,80}$/.test(reference) || version.length === 0 || version.length > 64) return null;
+  if (command.reason === null || command.reason === undefined) return { amount: command.amount, reference, version };
+  if (typeof command.reason !== "string") return null;
+  const reason = command.reason.trim().replace(/\s+/g, " ");
+  if (reason.length === 0) return { amount: command.amount, reference, version };
+  return reason.length >= 5 && reason.length <= 500 ? { amount: command.amount, reference, version, reason } : null;
 };
 
 /** The reopening as the API takes it: a reason of 8 to 500 characters and the version Finance saw. */

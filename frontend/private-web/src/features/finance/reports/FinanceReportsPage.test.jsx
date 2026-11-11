@@ -44,23 +44,54 @@ describe('FinanceReportsPage', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Exportar PDF' }));
     expect(downloadFinanceReport).toHaveBeenCalledWith('revenue', 'pdf', expect.objectContaining({ stationId: 'st-1' }));
     getFinanceReport.mockResolvedValue({ ...revenue, key: 'receivables', rows: [], notes: [] });
-    await userEvent.click(screen.getByRole('tab', { name: 'Cuentas por cobrar' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Cuentas por cobrar y antigüedad' }));
     expect(await screen.findByText('Sin datos')).toBeInTheDocument();
     expect(getFinanceReport).toHaveBeenLastCalledWith('receivables', expect.any(Object));
   });
 
-  it('hides export without the export permission and explains a forbidden read', async () => {
-    getFinanceReport.mockRejectedValue(Object.assign(new Error('forbidden'), { status: 403 }));
+  it('hides export without the export permission and shows a forbidden read as unauthorized, without retry', async () => {
+    getFinanceReport.mockRejectedValue(Object.assign(new Error('Finance report access is forbidden.'), { status: 403, code: 'forbidden' }));
     renderPage(['finance.reports.read']);
-    expect(await screen.findByRole('alert')).toHaveTextContent(/No tiene acceso/);
+    expect(await screen.findByRole('alert')).toHaveTextContent('No tiene acceso a este reporte en las estaciones elegidas.');
+    expect(screen.queryByText(/forbidden/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Exportar CSV' })).not.toBeInTheDocument();
   });
 
+  it('offers exactly the six reports of the simplified Finance (4-A)', async () => {
+    getFinanceReport.mockResolvedValue(revenue);
+    renderPage(); await screen.findByText('Nota de prueba.');
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Ingresos por período',
+      'Cuentas por cobrar y antigüedad', 'Cobranza', 'Cuentas por pagar', 'Recargos', 'Ventas (e-CF simulado)']);
+    for (const retired of ['Pipeline de facturación', 'Disputas', 'Estado fiscal', 'Simulación fiscal', 'Notas de crédito'])
+      expect(screen.queryByRole('tab', { name: retired })).not.toBeInTheDocument();
+  });
+
+  it('explains a refused report by its code in Spanish and retries it', async () => {
+    getFinanceReport.mockRejectedValueOnce(Object.assign(new Error('Unknown finance report.'), { status: 400, code: 'unknown_finance_report' }))
+      .mockResolvedValueOnce(revenue);
+    renderPage();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ese reporte ya no existe en Finanzas. Elija uno de la lista.');
+    expect(screen.queryByText('Unknown finance report.')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    expect(await screen.findByText('Nota de prueba.')).toBeInTheDocument();
+    expect(getFinanceReport).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('explains a refused export by its code and keeps the report on screen', async () => {
+    getFinanceReport.mockResolvedValue(revenue);
+    downloadFinanceReport.mockRejectedValueOnce(Object.assign(new Error('Unknown export format.'), { status: 400, code: 'invalid_report_export_format' }));
+    renderPage(); await screen.findByText('Nota de prueba.');
+    await userEvent.click(screen.getByRole('button', { name: 'Exportar CSV' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ese formato de exportación no existe. Exporte en CSV, Excel o PDF.');
+    expect(screen.getByText('Nota de prueba.')).toBeInTheDocument();
+  });
+
   it.each([
-    ['debit-notes', 'Notas de débito'], ['treasury', 'Movimientos de tesorería'], ['payables', 'Cuentas por pagar'],
-    ['suppliers', 'Estado de proveedores'], ['expenses', 'Gastos de empleados'], ['packages', 'Paquetes facturados'],
-    ['fiscal', 'Estado fiscal'], ['fiscal-simulation', 'Simulación fiscal'],
-  ])('loads and exports %s through the existing CSV, Excel and PDF pipeline', async (key, label) => {
+    ['revenue', 'Ingresos por período'], ['receivables', 'Cuentas por cobrar y antigüedad'], ['collections', 'Cobranza'],
+    ['payables', 'Cuentas por pagar'], ['charges', 'Recargos'], ['sales', 'Ventas (e-CF simulado)'],
+  ])('loads and exports %s through the CSV, Excel and PDF pipeline', async (key, label) => {
     getFinanceReport.mockImplementation(async selected => ({ ...revenue, key: selected }));
     renderPage(); await screen.findByText('Nota de prueba.');
     await userEvent.click(screen.getByRole('tab', { name: label }));
@@ -89,12 +120,12 @@ describe('FinanceReportsPage', () => {
     renderPage(); await screen.findByText('Nota de prueba.');
     await userEvent.click(screen.getByRole('tab', { name: 'Cuentas por pagar' }));
     expect(screen.getByRole('button', { name: 'Exportar Excel' })).toBeDisabled();
-    await userEvent.click(screen.getByRole('tab', { name: 'Estado fiscal' }));
+    await userEvent.click(screen.getByRole('tab', { name: 'Ventas (e-CF simulado)' }));
     resolveOld({ ...revenue, key: 'payables', notes: ['Stale payable response'] });
-    resolveLatest({ ...revenue, key: 'fiscal', notes: ['Fiscal separate'] });
-    await screen.findByText('Fiscal separate');
+    resolveLatest({ ...revenue, key: 'sales', notes: ['Sales separate'] });
+    await screen.findByText('Sales separate');
     expect(screen.queryByText('Stale payable response')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
-    expect(downloadFinanceReport).toHaveBeenLastCalledWith('fiscal', 'xlsx', expect.any(Object));
+    expect(downloadFinanceReport).toHaveBeenLastCalledWith('sales', 'xlsx', expect.any(Object));
   });
 });

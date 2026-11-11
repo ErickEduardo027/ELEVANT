@@ -1,28 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import Modal from '../../../components/Modal';
+import ReasonField, { validReason } from '../../../components/ReasonField';
 import { useDepartmentAccess } from '../../access/DepartmentAccessContext';
-import { downloadInvoiceDocument, getInvoiceEmailDeliveries } from '../../../services/invoicingService';
+import { blockingReasonMessage, downloadInvoiceDocument, getInvoiceEmailDeliveries } from '../../../services/invoicingService';
 import { reasonLabel, statusLabel } from '../../../services/emailDeliveries';
 import { useToInvoiceData } from './useToInvoiceData';
 
-const BLOCKING_LABELS = {
-  approved_evidence_mismatch: 'Evidencia aprobada ausente o distinta',
-  service_not_completed: 'Servicio no completado',
-  no_executed_quantity: 'Sin cantidad ejecutada',
-  missing_frozen_rate: 'Sin tarifa congelada',
-  // 3-N11 and 3-N29: OCC excluded the service in the review, or it carries a charge its contract excludes.
-  excluded_in_review: 'Excluido por OCC en la revisión',
-  charge_excluded_by_contract: 'Lleva un cargo que el contrato excluye: pida a OCC reabrir la revisión',
-  invalid_currency: 'Moneda inválida',
-  invalid_billing_unit: 'Unidad de cobro inválida',
-  invalid_amount: 'Importe fuera de rango',
-  nothing_to_invoice: 'Sin servicios facturables',
-  requires_review: 'Requiere revisión',
-};
-
 const field = 'mt-1 w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm dark:border-white/10 dark:bg-surface-dark';
 const chip = 'rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold dark:border-white/10';
+const primary = 'rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50';
 
 function money(value, currency) {
   if (value === null || value === undefined || !currency) return '—';
@@ -102,8 +90,7 @@ function IssuedInvoice({ issue, onDismiss, emailPollMs }) {
       </p>
       <InvoiceEmailStatus invoiceId={invoice.invoiceId} pollMs={emailPollMs} />
       <div className="mt-3 flex flex-wrap gap-2">
-        <button type="button" onClick={save} disabled={download === 'loading'}
-          className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
+        <button type="button" onClick={save} disabled={download === 'loading'} className={primary}>
           {download === 'loading' ? 'Preparando PDF…' : 'Descargar PDF'}
         </button>
         <button type="button" onClick={onDismiss} className={chip}>Cerrar</button>
@@ -113,12 +100,43 @@ function IssuedInvoice({ issue, onDismiss, emailPollMs }) {
   );
 }
 
-/** «Por facturar»: approved operations not yet invoiced, issued as one simulated e-CF invoice (ADR-0035). */
+/** 4-N07: the reason of a no-charge closure (5 to 500 characters) and the operations it closes. */
+function NoChargeDialog({ data, open, onClose }) {
+  const [reason, setReason] = useState('');
+  const closing = data.closure.status === 'closing';
+  const operations = data.issue.operations ?? [];
+  async function confirm() {
+    if (await data.closeWithoutCharge(reason)) { setReason(''); onClose(); }
+  }
+  return <Modal open={open} onClose={closing ? () => {} : onClose} title="Cerrar sin cargo" busy={closing}
+    footer={<>
+      <button type="button" className={chip} onClick={onClose} disabled={closing}>Cancelar</button>
+      <button type="button" className={primary} onClick={confirm} disabled={closing || !validReason(reason)}>
+        {closing ? 'Cerrando…' : 'Confirmar cierre'}
+      </button>
+    </>}>
+    <p>Estas operaciones salen de «Por facturar» sin factura ni e-NCF. El cierre no se revierte.</p>
+    <p className="mt-2 font-mono text-xs">{operations.map(item => item.operationCode).join(' · ')}</p>
+    <div className="mt-3">
+      <ReasonField label="Motivo del cierre sin cargo" value={reason} onChange={setReason}
+        hint="Queda en la auditoría de Finanzas." />
+    </div>
+    {data.closure.status === 'error' && <p role="alert" className="mt-2 text-sm text-status-danger">{data.closure.message}</p>}
+  </Modal>;
+}
+
+/**
+ * «Por facturar» (ADR-0035, phase 4, block A): approved operations not yet invoiced, from the oldest, issued as one
+ * simulated e-CF invoice within the limits of one invoice, or closed without charge when their valuation is zero.
+ */
 export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) {
   const data = useToInvoiceData(initialStationId);
   const { access } = useDepartmentAccess();
   const canIssue = Boolean(access?.can('finance.invoicing.issue'));
-  const { summary } = data;
+  const [closing, setClosing] = useState(false);
+  const base = useId();
+  const { summary, limits } = data;
+  const shown = data.status === 'loading' || data.status === 'success';
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-5 3xl:max-w-[1760px]">
@@ -126,12 +144,18 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-signal-500">Facturación</p>
         <h1 className="mt-1 text-2xl font-bold">Por facturar</h1>
         <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">
-          Operaciones aprobadas por OCC que aún no tienen factura. Facture una sola o agrupe varias de la misma aerolínea por semana o mes.
+          Operaciones aprobadas por OCC que aún no tienen factura, de la más antigua a la más reciente. Facture una sola o agrupe varias de la misma aerolínea por semana o mes.
         </p>
       </header>
 
       {data.issue.status === 'issued' && <IssuedInvoice issue={data.issue} onDismiss={data.dismissIssue} emailPollMs={emailPollMs} />}
       {data.issue.status === 'error' && <p role="alert" className="rounded-xl bg-status-danger/10 p-4 text-sm">{data.issue.message}</p>}
+      {data.issue.status === 'zero' && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-status-warning/10 p-4 text-sm">
+        <span>{data.issue.message}</span>
+        {canIssue && <button type="button" className={primary} onClick={() => { data.resetClosure(); setClosing(true); }}>Cerrar sin cargo</button>}
+      </div>}
+      {data.issue.status === 'closed' && <p role="status" className="rounded-xl bg-status-success/10 p-4 text-sm">
+        {data.issue.count === 1 ? '1 operación cerrada sin cargo.' : `${data.issue.count} operaciones cerradas sin cargo.`}</p>}
 
       <section className="rounded-2xl border border-black/5 bg-white/70 p-4 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
@@ -149,7 +173,7 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
           <label className="text-xs font-semibold">Aerolínea
             <select aria-label="Filtrar por aerolínea" value={data.airline} onChange={event => data.setAirline(event.target.value)} className={field}>
               <option value="all">Todas</option>
-              {data.airlines.map(item => <option key={item} value={item}>{item}</option>)}
+              {data.airlines.map(item => <option key={item.airlineId} value={item.airlineId}>{item.airlineName} ({item.pendingCount})</option>)}
             </select>
           </label>
           <label className="text-xs font-semibold">Buscar
@@ -158,6 +182,7 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
           </label>
           <div className="flex flex-wrap items-center gap-2 sm:col-span-2 xl:col-span-5">
             <span className="text-xs font-semibold">Período:</span>
+            <button type="button" className={chip} onClick={data.clearPeriod}>Todo lo pendiente</button>
             <button type="button" className={chip} onClick={() => data.setWeek(-1)}>Semana pasada</button>
             <button type="button" className={chip} onClick={() => data.setWeek(0)}>Esta semana</button>
             <button type="button" className={chip} onClick={() => data.setMonth(-1)}>Mes pasado</button>
@@ -166,36 +191,46 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
         </div>
       </section>
 
+      <section aria-label="Límites de una factura" className="rounded-xl border border-black/5 bg-black/[0.02] p-3 text-xs dark:border-white/5 dark:bg-white/[0.03]">
+        Una factura admite hasta {limits.maxOperations} operaciones, {limits.maxLines} líneas y operaciones de un máximo de {limits.maxDays} días.
+        Cada servicio es una línea, más sus cargos y su mínimo contractual; si lo cubre un paquete, en lugar del mínimo suma la base y el excedente del paquete.
+      </section>
+
       {data.status === 'invalid-range' && <p role="alert" className="rounded-xl bg-status-warning/10 p-4 text-sm">
-        Elija un período de hasta 31 días, con «Hasta» igual o posterior a «Desde».</p>}
+        Elija «Hasta» igual o posterior a «Desde», o deje las fechas vacías para ver todo lo pendiente.</p>}
       {data.status === 'forbidden' && <p role="alert" className="rounded-xl bg-status-warning/10 p-4 text-sm">
         Esta sesión no tiene acceso vigente a la estación solicitada.</p>}
       {data.status === 'unauthorized' && <p role="alert" className="rounded-xl bg-status-warning/10 p-4 text-sm">
         Su sesión expiró. Inicie sesión de nuevo.</p>}
       {data.status === 'error' && <div role="alert" className="rounded-2xl bg-white p-6 dark:bg-surface-dark-card">
         <p className="font-semibold text-status-danger">No se pudieron cargar las operaciones por facturar.</p>
-        <button type="button" onClick={data.retry} className="mt-3 rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white">Reintentar</button>
+        <button type="button" onClick={data.retry} className={`mt-3 ${primary}`}>Reintentar</button>
       </div>}
+      {data.stale && data.status === 'success' && <p role="alert" className="rounded-xl bg-status-warning/10 p-3 text-xs">
+        No se pudo actualizar la lista; se muestran los datos anteriores.{' '}
+        <button type="button" onClick={data.retry} className="font-semibold underline">Reintentar</button></p>}
 
       {summary.count > 0 && <section aria-label="Resumen de la factura" className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-accent-600/20 bg-white p-4 shadow-md dark:bg-surface-dark-card">
         <div className="text-sm">
           <p className="font-semibold">{summary.count} {summary.count === 1 ? 'operación' : 'operaciones'} · {summary.airlineName}</p>
           <p className="text-xs text-text-secondary-light">
-            Estimado: subtotal {money(summary.net, summary.currency)} · ITBIS 18 % {money(summary.tax, summary.currency)} · total {money(summary.total, summary.currency)}.
+            {summary.lines} de {limits.maxLines} líneas · Estimado: subtotal {money(summary.net, summary.currency)} · ITBIS 18 % {money(summary.tax, summary.currency)} · total {money(summary.total, summary.currency)}.
             La factura aplica paquetes, mínimos y cargos.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button type="button" className={chip} onClick={data.selectAirline}>Toda la aerolínea del período</button>
+          <button type="button" className={chip} onClick={data.selectAirline} disabled={data.picking} aria-busy={data.picking}>
+            {data.picking ? 'Eligiendo operaciones…' : 'Toda la aerolínea del período'}</button>
           <button type="button" className={chip} onClick={data.clearSelection}>Quitar selección</button>
           {canIssue && <button type="button" onClick={data.issueInvoice} disabled={data.issue.status === 'issuing'}
             className="rounded-xl bg-accent-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm disabled:opacity-50">
             {data.issue.status === 'issuing' ? 'Emitiendo factura…' : 'Emitir factura'}
           </button>}
         </div>
+        {data.notice && <p role="status" className="basis-full text-xs text-amber-700">{data.notice}</p>}
       </section>}
 
-      {(data.status === 'loading' || data.status === 'success') &&
+      {shown &&
         <section className="overflow-hidden rounded-2xl border border-black/5 bg-white/70 shadow-sm dark:border-white/5 dark:bg-surface-dark-card">
           {data.status === 'loading'
             ? <div data-testid="to-invoice-loading" className="h-64 animate-pulse bg-black/[0.03] dark:bg-white/[0.03]" />
@@ -203,31 +238,49 @@ export default function ToInvoicePage({ initialStationId, emailPollMs = 5000 }) 
               ? <div className="overflow-x-auto"><table className="table-stack w-full text-left text-sm">
                 <thead className="bg-black/[0.025] text-xs uppercase text-text-secondary-light dark:bg-white/[0.025]"><tr>
                   <th className="px-3 py-3">Elegir</th><th className="px-5 py-3">Operación</th><th className="px-5 py-3">Aerolínea / vuelo</th>
-                  <th className="px-5 py-3">Fecha</th><th className="px-5 py-3">Servicios</th>
+                  <th className="px-5 py-3">Fecha</th><th className="px-5 py-3">Servicios</th><th className="px-5 py-3 text-right">Líneas</th>
                   <th className="px-5 py-3 text-right">Neto estimado</th><th className="px-5 py-3">Estado</th>
                 </tr></thead>
                 <tbody className="divide-y divide-black/5 dark:divide-white/5">
-                  {data.operations.map(item => <tr key={item.id}>
-                    <td className="px-3 py-4"><input type="checkbox" aria-label={`Seleccionar ${item.operationCode}`}
-                      checked={data.selectedIds.includes(item.id)} disabled={!data.canSelect(item)} onChange={() => data.toggle(item.id)} /></td>
-                    <td className="px-5 py-4"><span className="block font-mono text-xs font-semibold">{item.operationCode}</span>
-                      <span className="text-xs text-text-secondary-light">{item.contractCode || 'Sin contrato'}</span></td>
-                    <td className="px-5 py-4">{item.airlineName}<span className="block text-xs text-text-secondary-light">{item.flightNumber || '—'}</span></td>
-                    <td className="px-5 py-4">{date(item.operationDate)}</td>
-                    <td className="px-5 py-4 text-xs">{item.services.filter(service => service.ready).map(service => service.serviceName).join(' · ') || '—'}</td>
-                    <td className="px-5 py-4 text-right font-semibold tabular-nums">{money(item.estimate, item.currency)}</td>
-                    <td className="px-5 py-4">{item.ready
-                      ? <span className="rounded-full bg-status-success/10 px-2.5 py-1 text-xs font-semibold text-status-success">Lista para facturar</span>
-                      : <span className="rounded-full bg-status-warning/10 px-2.5 py-1 text-xs font-semibold text-amber-700">{BLOCKING_LABELS[item.blockingReason] ?? 'Requiere revisión'}</span>}</td>
-                  </tr>)}
+                  {data.operations.map(item => {
+                    const problem = data.selectedIds.includes(item.id) ? null : data.whyNot(item);
+                    const describedBy = `${base}-${item.id}-why`;
+                    return <tr key={item.id}>
+                      <td className="px-3 py-4"><input type="checkbox" aria-label={`Seleccionar ${item.operationCode}`}
+                        aria-describedby={problem ? describedBy : undefined}
+                        checked={data.selectedIds.includes(item.id)} disabled={!data.canSelect(item)} onChange={() => data.toggle(item.id)} /></td>
+                      <td className="px-5 py-4"><span className="block font-mono text-xs font-semibold">{item.operationCode}</span>
+                        <span className="text-xs text-text-secondary-light">{item.contractCode || 'Sin contrato'}</span></td>
+                      <td className="px-5 py-4">{item.airlineName}<span className="block text-xs text-text-secondary-light">{item.flightNumber || '—'}</span></td>
+                      <td className="px-5 py-4">{date(item.operationDate)}</td>
+                      <td className="px-5 py-4 text-xs">{item.services.map(service => service.serviceName).join(' · ') || '—'}</td>
+                      <td className="px-5 py-4 text-right tabular-nums">{item.lineEstimate}</td>
+                      <td className="px-5 py-4 text-right font-semibold tabular-nums">{money(item.estimate, item.currency)}</td>
+                      <td className="px-5 py-4">{item.ready
+                        ? <span className="rounded-full bg-status-success/10 px-2.5 py-1 text-xs font-semibold text-status-success">Lista para facturar</span>
+                        : <ul aria-label={`Motivos de ${item.operationCode}`} className="space-y-1 text-xs text-amber-700">
+                          {item.blockingReasons.map(code => <li key={code}>{blockingReasonMessage(code)}</li>)}</ul>}
+                        {item.ready && item.estimate === 0 && <span className="mt-1 block text-xs text-text-secondary-light">
+                          Sin importe estimado: si la factura da 0, ciérrela sin cargo.</span>}
+                        {problem && <span id={describedBy} className="mt-1 block text-xs text-text-secondary-light">{item.ready ? problem : 'No se puede elegir: vea los motivos.'}</span>}
+                      </td>
+                    </tr>;
+                  })}
                 </tbody>
               </table></div>
-              : <p className="p-6 text-sm text-text-secondary-light">{data.totalOperations
-                ? 'Ninguna operación coincide con los filtros.'
-                : 'No hay operaciones aprobadas pendientes de facturar en este período.'}</p>}
+              : <p className="p-6 text-sm text-text-secondary-light">{data.totalLoaded
+                ? 'Ninguna operación coincide con la búsqueda.'
+                : 'No hay operaciones aprobadas pendientes de facturar.'}</p>}
         </section>}
-      {data.status === 'success' && data.hasMore && <p role="status" className="text-xs text-text-secondary-light">
-        El período tiene más servicios de los que se muestran. Acote las fechas para ver todas las operaciones.</p>}
+      {data.status === 'success' && data.totalPending > 0 && <div className="flex flex-wrap items-center gap-3 text-xs text-text-secondary-light">
+        <p role="status">Mostrando {data.totalLoaded} de {data.totalPending} pendientes.</p>
+        {data.hasMore && <button type="button" className={chip} onClick={data.loadMore} disabled={data.more === 'loading'}>
+          {data.more === 'loading' ? 'Cargando…' : 'Cargar más'}</button>}
+        {data.more === 'error' && <span role="alert" className="text-status-danger">No se pudieron cargar más operaciones.{' '}
+          <button type="button" onClick={data.loadMore} className="font-semibold underline">Reintentar</button></span>}
+      </div>}
+
+      <NoChargeDialog data={data} open={closing && data.issue.status === 'zero'} onClose={() => setClosing(false)} />
     </div>
   );
 }

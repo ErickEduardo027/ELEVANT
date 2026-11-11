@@ -39,11 +39,12 @@ const KINDS = {
   contract_version_withdrawn: { title: 'Contratos retiró una versión sin las dos firmas', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_renewal_blocked: { title: 'La renovación automática de un contrato no pudo iniciarse', target: { moduleId: CONTRACT_MODULE_IDS.CONTRACTS } },
   contract_approval: { title: 'Contrato pendiente de aprobación', target: { moduleId: FINANCE_MODULE_IDS.CONTRACT_APPROVALS } },
-  preinvoice_accepted: { title: 'La aerolínea aceptó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
-  preinvoice_disputed: { title: 'La aerolínea disputó una prefactura', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
+  // 4-A: the airline no longer accepts or disputes preinvoices; Finance corrects an invoice with its adjustment notes.
   invoice_paid: { title: 'La aerolínea pagó una factura con tarjeta', target: { moduleId: FINANCE_MODULE_IDS.RECONCILIATION } },
   // 3-A (phase 3, block A): OCC cancelled a charter with a prepayment; the refund follows Cobros, never automatic.
   charter_cancelled: { title: 'OCC canceló un charter con prepago: revise la devolución', target: { moduleId: FINANCE_MODULE_IDS.CHARTERS } },
+  // 4-N26 (phase 4, block A): one alert per airline, station and business day when OCC approves billable operations.
+  operation_ready_to_invoice: { title: 'OCC aprobó operaciones listas para facturar', target: { moduleId: FINANCE_MODULE_IDS.TO_INVOICE } },
 };
 
 export function describeNotification(item) {

@@ -27,24 +27,11 @@ public static class DependencyInjection
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var modeText = configuration["FinanceFiscal:Mode"] ?? "Off";
-        if (!Enum.TryParse<FiscalMode>(modeText, false, out var fiscalMode) || !Enum.IsDefined(fiscalMode))
-            throw new InvalidOperationException("FinanceFiscal:Mode is invalid.");
-        var environment = configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ?? "Production";
-        services.AddSingleton(new FinanceFiscalOptions { Mode = fiscalMode, Environment = environment });
-        var archiveMode = configuration["FinanceFiscal:ArchiveMode"] ?? "PrivateObjectStore";
-        if (archiveMode == "LocalDirectory")
-        {
-            if (environment is not ("Development" or "Test")) throw new InvalidOperationException("Local fiscal archive requires Development or Test.");
-            var directory = configuration["FinanceFiscal:ArchiveDirectory"];
-            if (string.IsNullOrWhiteSpace(directory)) throw new InvalidOperationException("An explicit private fiscal archive directory is required.");
-            services.AddSingleton<IFiscalArtifactArchive>(new FinanceFiscalFileArchive(directory));
-        }
-        else if (archiveMode != "PrivateObjectStore") throw new InvalidOperationException("FinanceFiscal:ArchiveMode is invalid.");
-        services.AddSingleton<IOfficialEcfXmlValidator, OfficialEcfXmlValidator>();
-        services.AddSingleton<IFiscalProvider, FinanceFiscalLocalSimulator>();
-        services.AddSingleton<IFiscalCallbackAuthenticator, FinanceFiscalRejectCallbacks>();
-        services.AddSingleton<IFiscalArtifactBuilder, FinanceFiscalArtifactBuilder>();
+        // 4-A, 4-N20: the fiscal simulation and the XML preflight were retired with «Documentos fiscales»; the
+        // simulated e-CF of the invoice (ADR-0035) needs no FinanceFiscal configuration.
+        // The host key «environment» is what WebApplicationFactory.UseEnvironment sets; the variables win when present.
+        var environment = configuration["DOTNET_ENVIRONMENT"] ?? configuration["ASPNETCORE_ENVIRONMENT"] ??
+            configuration["environment"] ?? "Production";
         services.AddFlightAwareShell(configuration);
         // Paid flight feed (ADR-0028): only the synchronizer calls it, within the unit budget.
         var aeroDataBox = configuration.GetSection(Elevant.Infrastructure.Integrations.AeroDataBox.AeroDataBoxOptions.SectionName)
@@ -88,7 +75,7 @@ public static class DependencyInjection
             Elevant.Application.Commercial.AirlineRegistryLookup>();
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
-        services.AddSingleton<Elevant.Application.Finance.ICardPaymentGateway, SimulatedCardGateway>();
+        AddCardPayments(services, configuration, environment);
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
         services.AddSingleton<IOccReportRenderer, OccReportRenderer>();
@@ -99,5 +86,33 @@ public static class DependencyInjection
         services.AddSingleton<IHumanResourcesReportXlsxRenderer, HumanResourcesReportXlsxRenderer>();
 
         return services;
+    }
+
+    /// <summary>Configuration section of the card gateway (4-N05).</summary>
+    public const string CardPaymentsModeKey = "CardPayments:Mode";
+
+    /// <summary>
+    /// 4-N05: the card gateway is chosen explicitly. <c>CardPayments:Mode</c> is Disabled by default; Simulated
+    /// (ADR-0036) only runs in Development or Test, so a Production API with it never starts. Without a gateway the
+    /// portal shows card payment as unavailable and every payment is refused before the card is checked.
+    /// </summary>
+    private static void AddCardPayments(IServiceCollection services, IConfiguration configuration, string environment)
+    {
+        var configured = configuration[CardPaymentsModeKey]?.Trim();
+        // Only the exact names: no numbers and no flag combinations.
+        var mode = string.IsNullOrEmpty(configured) ? CardPaymentMode.Disabled
+            : Enum.GetValues<CardPaymentMode>().Cast<CardPaymentMode?>().SingleOrDefault(value =>
+                  string.Equals(value.ToString(), configured, StringComparison.OrdinalIgnoreCase))
+              ?? throw new InvalidOperationException("CardPayments:Mode must be Disabled or Simulated.");
+        if (mode == CardPaymentMode.Simulated)
+        {
+            if (environment is not ("Development" or "Test" or "Testing"))
+                throw new InvalidOperationException("The simulated card gateway requires Development or Test.");
+            services.AddSingleton<ICardPaymentGateway, SimulatedCardGateway>();
+            services.AddSingleton(CardPaymentAvailability.SimulatedGateway);
+            return;
+        }
+        services.AddSingleton<ICardPaymentGateway, DisabledCardGateway>();
+        services.AddSingleton(CardPaymentAvailability.Disabled);
     }
 }

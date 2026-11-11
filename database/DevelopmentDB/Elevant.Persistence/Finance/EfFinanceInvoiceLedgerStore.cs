@@ -1,12 +1,9 @@
-using System.Data;
-using System.Globalization;
+using Elevant.Application.Common;
 using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Abstractions.Identity;
 using Elevant.Domain.Entities.Commercial;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
-using Elevant.Persistence.Commercial;
-using Elevant.Persistence.Operations;
 using Microsoft.EntityFrameworkCore;
 
 namespace Elevant.Persistence.Finance;
@@ -69,7 +66,8 @@ internal sealed class EfFinanceInvoiceLedgerStore(
             .GroupBy(item => item.InvoiceId).Select(group => new { group.Key, Sum = group.Sum(item => item.Amount) })
             .ToDictionaryAsync(item => item.Key, item => item.Sum, cancellationToken);
         var treasury = await FinanceTreasuryBalances.TotalsAsync(context, ids, cancellationToken);
-        var today = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
+        // 4-N10: an invoice due today is not overdue until the business day in Santo Domingo ends.
+        var today = BusinessCalendar.Today(timeProvider.GetUtcNow());
         return rows.Select(row =>
         {
             var movements = treasury[row.Id];
@@ -77,8 +75,8 @@ internal sealed class EfFinanceInvoiceLedgerStore(
             var creditedAmount = credited.GetValueOrDefault(row.Id) + movements.Credited - movements.Debited;
             var balance = row.Total - paidAmount - creditedAmount;
             var overdueDays = balance > 0 && row.DueDate is { } due && due < today ? today.DayNumber - due.DayNumber : 0;
-            var status = balance <= 0 ? "Paid" : overdueDays > 0 ? "Overdue" : paidAmount + creditedAmount > 0
-                ? "PartiallyPaid" : "Pending";
+            // 4-N24: credited to zero without any payment is «Anulada», never «Pagada».
+            var status = Elevant.Application.Finance.FinanceInvoiceStatus.Of(balance, paidAmount, creditedAmount, overdueDays);
             return new FinanceInvoiceSummaryData(row.PublicId, row.Number, row.PreinvoiceId, row.AirlineId, row.Airline,
                 row.StationId, row.StationCode, row.CurrencyCode, row.Total, paidAmount, creditedAmount, balance,
                 row.IssuedAt, row.DueDate, status, overdueDays, row.FiscalNumber);
@@ -86,14 +84,21 @@ internal sealed class EfFinanceInvoiceLedgerStore(
     }
 
     public async Task<FinanceInvoicePageData?> ListAsync(Guid actorId, Guid? stationId, Guid? airlineId, string? status,
-        int page, int limit, CancellationToken cancellationToken = default)
+        int page, int limit, string? search = null, CancellationToken cancellationToken = default)
     {
-        if (page < 1 || limit is < 1 or > 100) return null;
+        if (page < 1 || limit is < 1 or > 100 || search is { Length: > 40 }) return null;
         var stations = await StationsAsync(actorId, "finance.reconciliation.read", cancellationToken);
         if (stations is null || stationId is { } requested && !stations.Contains(requested)) return null;
         var scope = stationId is { } only ? [only] : stations;
-        var rows = await Invoices(scope).Where(row => airlineId == null || row.AirlineId == airlineId)
-            .OrderByDescending(row => row.IssuedAt).ToArrayAsync(cancellationToken);
+        var query = Invoices(scope).Where(row => airlineId == null || row.AirlineId == airlineId);
+        // 4-N21: the e-NCF or the internal number by prefix, or the airline by any part, before balances are computed.
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var text = search.Trim();
+            query = query.Where(row => row.Number.StartsWith(text) ||
+                (row.FiscalNumber != null && row.FiscalNumber.StartsWith(text)) || row.Airline.Contains(text));
+        }
+        var rows = await query.OrderByDescending(row => row.IssuedAt).ToArrayAsync(cancellationToken);
         var summaries = (await SummariesAsync(rows, cancellationToken))
             .Where(item => status is null || item.Status == status).ToArray();
         return new FinanceInvoicePageData(page, limit, page * limit < summaries.Length,
@@ -171,76 +176,5 @@ internal sealed class EfFinanceInvoiceLedgerStore(
         return new AirlineInvoiceStatementData(summary.Id, summary.Number, summary.PreinvoiceId, summary.CurrencyCode,
             summary.Total, summary.Paid, summary.Credited, summary.Balance, summary.IssuedAt, summary.DueDate,
             summary.Status, summary.DaysOverdue, lines, payments, notes);
-    }
-
-    /// <summary>A credit note reduces the balance and never exceeds it; the request id makes it idempotent.</summary>
-    public async Task<FinanceCatalogResult> IssueCreditNoteAsync(Guid actorId, Guid invoiceId, IssueCreditNoteInput input,
-        CancellationToken cancellationToken = default)
-    {
-        var stations = await StationsAsync(actorId, "finance.reconciliation.create", cancellationToken);
-        if (stations is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.Forbidden);
-        if (input is null || input.RequestId == Guid.Empty || input.Amount is <= 0 or > 900_000_000_000m ||
-            decimal.Round(input.Amount, 4) != input.Amount || input.Reason?.Trim().Length is not (>= 3 and <= 1000))
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Invalid);
-        var strategy = context.Database.CreateExecutionStrategy();
-        try
-        {
-            return await strategy.ExecuteAsync(async () =>
-            {
-                context.ChangeTracker.Clear();
-                await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable,
-                    cancellationToken);
-                var row = await Invoices(stations).SingleOrDefaultAsync(item => item.PublicId == invoiceId, cancellationToken);
-                if (row is null) return FinanceCatalogResult.Failed(FinanceCatalogFailure.NotFound);
-                // Both correction writers serialize on the same immutable invoice.
-                _ = await context.NonFiscalInvoices.FromSqlInterpolated(
-                    $"SELECT * FROM [commercial].[non_fiscal_invoices] WITH (UPDLOCK, HOLDLOCK) WHERE [id] = {row.Id}")
-                    .AsNoTracking().SingleAsync(cancellationToken);
-                var accountId = await context.Users.Where(user => user.PublicId == actorId).Select(user => user.Id)
-                    .SingleAsync(cancellationToken);
-                var prior = await context.NonFiscalCreditNotes.AsNoTracking()
-                    .SingleOrDefaultAsync(note => note.RequestId == input.RequestId, cancellationToken);
-                if (prior is not null)
-                    return prior.InvoiceId == row.Id && prior.Amount == input.Amount && prior.IssuedByAccountId == accountId
-                        ? FinanceCatalogResult.Success(prior.PublicId)
-                        : FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
-                var balance = (await SummariesAsync([row], cancellationToken))[0].Balance;
-                var legacyCredited = await context.NonFiscalCreditNotes.AsNoTracking().Where(n => n.InvoiceId == row.Id)
-                    .SumAsync(n => (decimal?)n.Amount, cancellationToken) ?? 0m;
-                var allocatedCredited = await context.Set<FinanceTreasuryAdjustmentNote>().AsNoTracking()
-                    .Where(n => n.InvoiceId == row.Id && n.Kind == FinanceTreasuryAdjustmentKind.Credit)
-                    .SumAsync(n => (decimal?)n.Amount, cancellationToken) ?? 0m;
-                // Debits change the receivable balance, never the original credit ceiling.
-                if (input.Amount > balance || input.Amount > row.Total - legacyCredited - allocatedCredited)
-                    return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
-                var now = timeProvider.GetUtcNow();
-                var id = Guid.CreateVersion7();
-                context.NonFiscalCreditNotes.Add(new NonFiscalCreditNote
-                {
-                    PublicId = id, InvoiceId = row.Id, IssuedByAccountId = accountId, RequestId = input.RequestId,
-                    Number = $"NC-{id:N}", CurrencyCode = row.CurrencyCode, Amount = input.Amount,
-                    Reason = input.Reason.Trim(), CreatedAt = now, UpdatedAt = now,
-                });
-                CommercialAuditWriter.Add(context, accountId, "finance.credit_note.issued", "commercial.non_fiscal_credit_notes",
-                    id, input.Reason.Trim(),
-                    new AuditFieldChangeData("credit_note.amount", null, input.Amount.ToString(CultureInfo.InvariantCulture)));
-                var invoice = await context.NonFiscalInvoices.AsNoTracking().SingleAsync(item => item.Id == row.Id,
-                    cancellationToken);
-                await FinanceApprovedServiceChangeWriter.AddAsync(context, invoice.StationId, row.PreinvoiceId, now,
-                    "finance_preinvoices", cancellationToken);
-                var organization = await context.Airlines.AsNoTracking().Where(airline => airline.Id == invoice.AirlineId)
-                    .Select(airline => airline.OrganizationId).SingleAsync(cancellationToken);
-                await AirlineOperationChangeWriter.AddPreinvoiceAsync(context, organization, row.PreinvoiceId, now,
-                    cancellationToken);
-                await context.SaveChangesAsync(cancellationToken);
-                await transaction.CommitAsync(cancellationToken);
-                return FinanceCatalogResult.Success(id);
-            });
-        }
-        catch (DbUpdateException)
-        {
-            context.ChangeTracker.Clear();
-            return FinanceCatalogResult.Failed(FinanceCatalogFailure.Conflict);
-        }
     }
 }

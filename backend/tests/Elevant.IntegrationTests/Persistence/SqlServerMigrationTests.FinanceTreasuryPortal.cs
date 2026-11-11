@@ -6,6 +6,7 @@ using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Finance;
 using Elevant.Persistence.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 namespace Elevant.IntegrationTests.Persistence;
 public sealed partial class SqlServerMigrationTests
 {
@@ -23,7 +24,7 @@ public sealed partial class SqlServerMigrationTests
             where o.PublicId == organizationId select a).SingleAsync(ct);
         var station = await setup.Stations.SingleAsync(s => s.Code == "PUJ", ct);
         var account = await setup.Users.SingleAsync(u => u.PublicId == FinanceAccount, ct);
-        var now = DateTimeOffset.UtcNow; var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var now = DateTimeOffset.UtcNow; var today = Elevant.Application.Common.BusinessCalendar.Today(now);
         var foreignOrganization = new Organization { PublicId = Guid.NewGuid(), Code = "QA-TREASURY-OTHER", LegalName = "Other synthetic airline", DisplayName = "Other synthetic airline",
             Type = OrganizationType.AirlineCustomer, Status = OrganizationStatus.Active };
         setup.Organizations.Add(foreignOrganization); await setup.SaveChangesAsync(ct);
@@ -88,5 +89,87 @@ public sealed partial class SqlServerMigrationTests
         Assert.Equal(FinanceTreasuryFailure.Forbidden, (await store.PortalStatementAsync(FinanceAccount, today, null, ct)).Failure);
         var invoiceCount = await setup.NonFiscalInvoices.CountAsync(ct); var receiptCount = await setup.Set<FinanceTreasuryReceipt>().CountAsync(ct);
         Assert.Equal(invoiceCount, await context.NonFiscalInvoices.CountAsync(ct)); Assert.Equal(receiptCount, await context.Set<FinanceTreasuryReceipt>().CountAsync(ct));
+    }
+
+    /// <summary>
+    /// 4-N08: a charter never has a contract (ADR-0033). An airline whose contract is still a draft sees its charter invoice
+    /// and the PREPAGO receipt in the portal, and pays the rest by card; the charter of another airline opens nothing.
+    /// </summary>
+    [Fact]
+    public async Task CharterAirlineWithoutContractSeesItsInvoiceAndPaysTheRestByCard()
+    {
+        var ct = TestContext.Current.CancellationToken; var master = ResolveMasterConnection(); if (master is null) return;
+        await using var db = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var provider = await SeededFinanceProviderAsync(db, ct);
+        await using var setup = CreateContext(db.ConnectionString);
+        var operation = await ApproveForInvoicingAsync(setup, "DEV-TAT-0001", ct);
+        var turnaround = await setup.Turnarounds.AsNoTracking().SingleAsync(item => item.OperationCode == "DEV-TAT-0001", ct);
+        var station = await setup.Stations.AsNoTracking().SingleAsync(item => item.Id == turnaround.StationId, ct);
+        var financeId = await setup.Users.Where(item => item.PublicId == FinanceAccount).Select(item => item.Id).SingleAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        setup.Set<Elevant.Domain.Entities.Operations.CharterAgreement>().Add(new Elevant.Domain.Entities.Operations.CharterAgreement
+        {
+            PublicId = Guid.NewGuid(), TurnaroundId = turnaround.Id, AirlineId = turnaround.AirlineId, CurrencyCode = "USD",
+            PrepaymentStatus = CharterPrepaymentStatus.Confirmed, PrepaymentAmount = 10m,
+            PrepaymentReference = "TRF-QA-CHARTER", PrepaymentConfirmedAt = now, PrepaymentConfirmedByAccountId = financeId,
+            CreatedByAccountId = financeId, CreatedAt = now, UpdatedAt = now,
+        });
+        await setup.SaveChangesAsync(ct);
+        Elevant.Application.Finance.IssueInvoiceResult issued;
+        await using (var scope = provider.CreateAsyncScope())
+            issued = await Handler(scope.ServiceProvider).HandleAsync(
+                new Elevant.Application.Finance.IssueInvoiceRequest(FinanceAccount, station.PublicId, [operation], Guid.NewGuid()), ct);
+        Assert.True(issued.IsSuccess, $"{issued.Failure} {issued.Reason}");
+        // The airline has no approved contract: only its charter can open the station.
+        var contracts = await setup.Contracts.Where(item => item.AirlineId == turnaround.AirlineId).Select(item => item.Id).ToArrayAsync(ct);
+        await setup.ContractVersions.Where(item => contracts.Contains(item.ContractId))
+            .ExecuteUpdateAsync(set => set.SetProperty(item => item.Status, ContractVersionStatus.Draft), ct);
+
+        // A charter of another airline at another station opens nothing for this one.
+        var other = new Elevant.Domain.Entities.Reference.Station { PublicId = Guid.CreateVersion7(),
+            AirportId = (await setup.Airports.SingleAsync(item => item.IataCode == "MIA", ct)).Id, Code = "MIA",
+            Name = "AVIAM MIA Test", IanaTimeZone = "America/New_York", IsActive = true, CreatedAt = now, UpdatedAt = now };
+        setup.Stations.Add(other); await setup.SaveChangesAsync(ct);
+        var foreignOrganization = new Organization { PublicId = Guid.NewGuid(), Code = "QA-CHARTER-OTHER", LegalName = "Other charter airline",
+            DisplayName = "Other charter airline", Type = OrganizationType.AirlineCustomer, Status = OrganizationStatus.Active };
+        setup.Organizations.Add(foreignOrganization); await setup.SaveChangesAsync(ct);
+        var foreign = new Elevant.Domain.Entities.Reference.Airline { PublicId = Guid.NewGuid(), OrganizationId = foreignOrganization.Id,
+            Name = "Other charter airline", IataCode = "QY", IcaoCode = "QYT", IsActive = true };
+        setup.Airlines.Add(foreign); await setup.SaveChangesAsync(ct);
+        var foreignTurnaround = new Elevant.Domain.Entities.Operations.Turnaround { PublicId = Guid.NewGuid(), OperationCode = "DEV-TAT-QY",
+            AirlineId = foreign.Id, StationId = other.Id, OperationDate = turnaround.OperationDate, AircraftTypeId = turnaround.AircraftTypeId,
+            AircraftRegistration = "HI-QY", CurrentStatus = turnaround.CurrentStatus, Source = turnaround.Source, CreatedAt = now, UpdatedAt = now };
+        setup.Turnarounds.Add(foreignTurnaround); await setup.SaveChangesAsync(ct);
+        setup.Set<Elevant.Domain.Entities.Operations.CharterAgreement>().Add(new Elevant.Domain.Entities.Operations.CharterAgreement
+        {
+            PublicId = Guid.NewGuid(), TurnaroundId = foreignTurnaround.Id, AirlineId = foreign.Id, CurrencyCode = "USD",
+            PrepaymentStatus = CharterPrepaymentStatus.Pending, CreatedByAccountId = financeId,
+            CreatedAt = now, UpdatedAt = now,
+        });
+        await setup.SaveChangesAsync(ct);
+
+        var airlineAccount = Guid.Parse("40000000-0000-7000-8000-000000000003");
+        var today = Elevant.Application.Common.BusinessCalendar.Today(now);
+        await using var context = CreateContext(db.ConnectionString);
+        var store = new FinanceTreasuryStore(context, new EfActorContextResolver(context, TimeProvider.System), TimeProvider.System);
+        var statement = await store.PortalStatementAsync(airlineAccount, today, null, ct);
+        Assert.True(statement.IsSuccess);
+        var invoice = Assert.Single(statement.Data!.Invoices);
+        Assert.Equal((issued.InvoiceId!.Value, station.Code, issued.Total!.Value - 10m), (invoice.Id, invoice.StationCode, invoice.Balance));
+        Assert.Equal("PREPAGO TRF-QA-CHARTER", Assert.Single(statement.Data.Receipts).Reference);
+        Assert.True((await store.PortalInvoiceAsync(airlineAccount, invoice.Id, ct)).IsSuccess);
+        Assert.True((await store.PortalStatementAsync(airlineAccount, today, station.PublicId, ct)).IsSuccess);
+        Assert.Equal(FinanceTreasuryFailure.NotFound, (await store.PortalStatementAsync(airlineAccount, today, other.PublicId, ct)).Failure);
+
+        // The rest is paid by card, always the whole balance.
+        await using (var cardContext = CreateContext(db.ConnectionString))
+        {
+            var cards = new EfCardPaymentStore(cardContext, TimeProvider.System, new Elevant.Infrastructure.Finance.SimulatedCardGateway());
+            var paid = await cards.PayAsync(new Elevant.Application.Finance.PayInvoiceByCardRequest(airlineAccount, invoice.Id,
+                Guid.NewGuid(), "Casey Airline", "4111111111111111", 12, 2030, "123", invoice.Balance), ct);
+            Assert.Equal(("Approved", 0m), (paid.Attempt!.Status, paid.InvoiceBalance));
+        }
+        context.ChangeTracker.Clear();
+        Assert.Equal(0m, Assert.Single((await store.PortalStatementAsync(airlineAccount, today, null, ct)).Data!.Invoices).Balance);
     }
 }

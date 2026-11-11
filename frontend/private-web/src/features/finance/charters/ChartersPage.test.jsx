@@ -34,6 +34,67 @@ beforeEach(() => {
   mocks.list.mockResolvedValue([CONFIRMED, PENDING]);
 });
 
+describe('ChartersPage confirmation and correction of a prepayment (4-N22)', () => {
+  it('confirms a pending prepayment with the version and the intent key, then re-reads', async () => {
+    const user = userEvent.setup();
+    mocks.confirm.mockResolvedValue({ ...PENDING, prepaymentStatus: 'Confirmed' });
+    renderPage();
+    const row = (await screen.findByText('PUJ-20261108-005')).closest('tr');
+    await user.click(within(row).getByRole('button', { name: 'Confirmar prepago' }));
+    const form = within(row).getByRole('form', { name: 'Confirmar prepago de PUJ-20261108-005' });
+    await user.type(within(form).getByLabelText('Referencia'), ' TRF-002 ');
+    await user.click(within(form).getByRole('button', { name: 'Confirmar' }));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(PENDING.id,
+      { amount: 150, reference: 'TRF-002', version: PENDING.version }, expect.stringMatching(UUID)));
+    expect(await screen.findByText(
+      'Prepago confirmado para PUJ-20261108-005. Si el charter ya estaba facturado, se aplicó a su factura.'))
+      .toBeInTheDocument();
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(2));
+  });
+
+  it('corrects a confirmed prepayment with a reason and the version it saw', async () => {
+    const user = userEvent.setup();
+    mocks.confirm.mockResolvedValue({ ...CONFIRMED, prepaymentAmount: 18 });
+    renderPage();
+    const row = (await screen.findByText('PUJ-20261108-004')).closest('tr');
+    await user.click(within(row).getByRole('button', { name: 'Corregir prepago' }));
+    const form = within(row).getByRole('form', { name: 'Corregir prepago de PUJ-20261108-004' });
+    const amount = within(form).getByLabelText('Monto corregido (USD)');
+    expect(amount).toHaveValue(180);
+    expect(within(form).getByLabelText('Referencia corregida')).toHaveValue('TRF-001');
+    const submit = within(form).getByRole('button', { name: 'Corregir' });
+    expect(submit).toBeDisabled();
+    await user.clear(amount);
+    await user.type(amount, '18');
+    await user.type(within(form).getByLabelText('Motivo de la corrección (5 a 500 caracteres)'), ' Se capturó 180 ');
+    await user.click(submit);
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(CONFIRMED.id,
+      { amount: 18, reference: 'TRF-001', version: CONFIRMED.version, reason: 'Se capturó 180' },
+      expect.stringMatching(UUID)));
+    expect(await screen.findByText('Prepago corregido para PUJ-20261108-004.')).toBeInTheDocument();
+  });
+
+  it('explains an applied prepayment, closes the form and re-reads; a lost answer keeps its key', async () => {
+    const user = userEvent.setup();
+    mocks.confirm
+      .mockRejectedValueOnce(failure(null, null, 'No se pudo confirmar la corrección del prepago. Actualice la lista antes de intentarlo de nuevo.'))
+      .mockRejectedValueOnce(failure(409, 'charter_prepayment_applied',
+        'El prepago ya se aplicó a la factura del charter. Revierta el cobro en «Cobros» y reabra el prepago para corregirlo.'));
+    renderPage();
+    const row = (await screen.findByText('PUJ-20261108-004')).closest('tr');
+    await user.click(within(row).getByRole('button', { name: 'Corregir prepago' }));
+    await user.type(within(row).getByLabelText('Motivo de la corrección (5 a 500 caracteres)'), 'Monto mal capturado');
+    await user.click(within(row).getByRole('button', { name: 'Corregir' }));
+    expect(await screen.findByText(/No se pudo confirmar la corrección del prepago/)).toBeInTheDocument();
+    await user.click(within(row).getByRole('button', { name: 'Corregir' }));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledTimes(2));
+    expect(mocks.confirm.mock.calls[1][2]).toBe(mocks.confirm.mock.calls[0][2]);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Revierta el cobro en «Cobros»');
+    expect(within(row).queryByRole('form')).not.toBeInTheDocument();
+    await waitFor(() => expect(mocks.list).toHaveBeenCalledTimes(3));
+  });
+});
+
 describe('ChartersPage reopening of a confirmed prepayment (3-N24)', () => {
   it('reopens a confirmed prepayment with a reason, the version and the intent key, then re-reads', async () => {
     const user = userEvent.setup();

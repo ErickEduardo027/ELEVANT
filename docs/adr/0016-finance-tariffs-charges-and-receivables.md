@@ -102,6 +102,13 @@ Finanzas necesita:
 - La aerolínea ve cada cargo y ajuste como línea propia, con su motivo, y puede
   disputarlo.
 
+> **Actualización (10 de noviembre de 2026).** La prefactura salió del
+> producto: es solo el borrador interno de la emisión desde operaciones, sin
+> edición de líneas ni ajustes de Finanzas, y la aerolínea ya no la acepta ni la
+> disputa. Una factura emitida se corrige con una nota de crédito o débito, que
+> sobre una factura e-CF lleva su propio e-NCF y su ITBIS congelado. Ver
+> [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
+
 ### Cuentas por cobrar no fiscales
 
 - La factura gana vencimiento, calculado con el plazo del perfil de
@@ -112,6 +119,14 @@ Finanzas necesita:
   No se guarda.
 - La aerolínea consulta su estado de cuenta por un endpoint nuevo
   (`airline/portal/invoices/{id}/statement`), sin nombres de personal.
+
+> **Actualización (10 de noviembre de 2026).** Los cobros se registran en
+> «Cobros y aplicaciones»: el pago y la nota de crédito heredados
+> (`POST finance/payments` y `POST finance/invoices/{id}/credit-notes`) responden
+> `410 legacy_finance_route_retired`. El estado proyectado suma «Anulada»
+> (`Voided`), la factura sin cobros que las notas de crédito llevaron a 0, y el
+> vencimiento y los días de mora cuentan el día hábil de Santo Domingo. Ver
+> [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
 
 ### Reportes
 
@@ -127,6 +142,12 @@ Finanzas necesita:
 - Exportan a CSV (con BOM y protección contra fórmulas) o a PDF no fiscal, con
   `finance.reports.export`.
 - La exportación queda auditada.
+
+> **Actualización (10 de noviembre de 2026).** Los reportes son seis: Ingresos
+> por período (neto de notas), Cuentas por cobrar y antigüedad, Cobranza,
+> Cuentas por pagar, Recargos y Ventas (e-CF simulado). Se exportan en CSV, XLSX
+> o PDF, y los PDF llevan el marco «Simulación — sin validez fiscal». Ver
+> [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
 
 ### Permisos
 

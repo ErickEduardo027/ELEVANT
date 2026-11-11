@@ -13,6 +13,11 @@ public sealed class FinanceTreasuryReceipt : AuditableEntity
     public DateOnly ReceivedOn { get; set; }
     public decimal Amount { get; set; }
     public string Reason { get; set; } = string.Empty;
+    /// <summary>
+    /// 4-N22: the charter whose confirmed prepayment this receipt is; one receipt per charter while it is not reversed,
+    /// so the prepayment is never applied twice.
+    /// </summary>
+    public long? CharterAgreementId { get; set; }
 }
 /// <summary>Append-only cash/application event. Reversals preserve the original amounts and exchange rate.</summary>
 public sealed class FinanceTreasuryMovement : AuditableEntity

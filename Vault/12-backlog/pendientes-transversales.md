@@ -33,9 +33,8 @@ Esta matriz es un **índice de brechas verificables**, no una lista de tareas ya
 
 | Brecha o decisión | Dependencia antes de ejecutar | Prueba mínima para cerrarla | Fuente dueña |
 | --- | --- | --- | --- |
-| Primer caso de uso real, identidad y permisos | Acordar actor, resultado, tenant/estación, estados y denegaciones | API/contrato, pruebas negativas, cliente consumidor y evidencia de recorrido completo | [Producto](../02-producto/preguntas-abiertas.md) y [Dominio](../03-dominio/brechas-y-preguntas-abiertas.md) |
-| Sustituir mocks de los tres clientes | Caso de uso y contrato OpenAPI aprobados; adapter y estados de error | Pruebas de integración y aislamiento, sin usar fixtures como datos reales | [Aplicaciones](../05-aplicaciones/README.md) |
-| Mobile APK de Development | Integración .NET, alcance offline, identidad, firma, canal y dispositivos | CI móvil activo, APK firmada trazable, distribución restringida y aceptación en tablet | [Diseño APK](../07-entrega/mobile-apk-ci-cd.md) |
+| Retirar los adaptadores heredados de Private Web | Retirar, o sustituir por un caso de uso con contrato OpenAPI, lo que todavía lee `NEXT_PUBLIC_PROTOTYPE_API_URL` (el sondeo heredado del buzón y los reportes operativos antiguos de `reportsService.js`), y decidir el modo demo del tablero de Gestión Humana | Ningún código de Private Web llama al origen del prototipo y las pruebas cubren los estados de error | [Aplicaciones](../05-aplicaciones/README.md) y [brechas del dominio](../03-dominio/brechas-y-preguntas-abiertas.md) |
+| Mobile APK de Development | Alcance offline aceptado, identidad, firma, canal y dispositivos | CI móvil activo, APK firmada trazable, distribución restringida y aceptación en tablet | [Diseño APK](../07-entrega/mobile-apk-ci-cd.md) |
 | Alertas externas y heartbeats | Canal/proveedor, privacidad, periodos, responsables y prueba controlada | Detección de fallo y silencio para SQL y cada carril, sin duplicar jobs | [Hardening](../../docs/deployment/development-hardening-backlog.md) |
 | Protección técnica de ramas | Plan y permisos GitHub compatibles, checks estables y política de excepción | Push directo, PR sin aprobación y check fallido efectivamente bloqueados | [Protección de ramas](../../.github/BRANCH_PROTECTION.md) |
 | Simulacros periódicos de recuperación | Política de frecuencia, alcance, custodio y entorno seguro | Ensayo fechado con restauración, RPO/RTO medidos y acciones correctivas | [Backups](../09-operaciones/backups-y-restore-check.md) y [recuperación](../09-operaciones/mantenimiento-reboot-y-recuperacion.md) |
@@ -48,8 +47,12 @@ Esta matriz es un **índice de brechas verificables**, no una lista de tareas ya
 | Perfil `OCC-` de una aerolínea charter ya vinculada | Decisión de producto: archivar el perfil comercial sin verificar que OCC creó, o conservarlo, en Superadministración | Tras la aprobación comercial que vincula la aerolínea, el perfil `OCC-…` deja de figurar como una aerolínea por verificar, con auditoría | [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md) |
 | Restablecer la clave de usuarios internos | Registrar en la API los proveedores de tokens de Identity, o asignar la contraseña temporal sin token, como ya hace Clientes | `POST governance/departments/{department}/users/{id}/password-reset` y `POST governance/users/{id}/password-reset` asignan la contraseña temporal, el primer ingreso exige cambiarla y una prueba de integración cubre ambas rutas | [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and-portal-accounts.md) y [Gobernanza por departamento](../03-dominio/gobernanza-por-departamento.md) |
 | Correo de contratos (revisión docente) | Proveedor de correo, plantillas y consentimiento; hoy el PDF se descarga y se firma en la aplicación | Envío del PDF a la aerolínea al aprobar y al firmar, con reintento y auditoría | [Correcciones de la revisión](../05-aplicaciones/correcciones-revision-docente-2026-10.md) |
-| Posiciones combinadas (9-Alfa, 32-Bravo) | Definir en datos qué posiciones se bloquean entre sí | La API rechaza ocupar una posición bloqueada por su combinada y el mapa lo muestra | [Correcciones de la revisión](../05-aplicaciones/correcciones-revision-docente-2026-10.md) |
 | Notificaciones fuera de la aplicación | Canal (correo o push del navegador) y preferencias por usuario | Una alerta llega con la aplicación cerrada y respeta las preferencias | [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md) |
+| Fiscal real y pasarela de tarjeta real | Proveedor fiscal autorizado, certificado, secuencias autorizadas y RNC real del emisor; contrato y revisión de cumplimiento de una pasarela | Un e-CF aceptado en el ambiente de pruebas de la DGII y un cobro real conciliado, sin datos de tarjeta en logs ni auditoría | [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md) y [riesgos de seguridad](../10-seguridad/riesgos-y-controles-pendientes.md) |
+| Conciliación bancaria, tasas automáticas y libro mayor | Decisión de producto y fuente de extractos y tasas | Cobros conciliados contra el banco y tasas obtenidas sin captura manual | [Brechas del dominio](../03-dominio/brechas-y-preguntas-abiertas.md) |
+| Contract de la emisión de facturas (ADR-0040) | Private Web publicada con la versión que siempre envía `operationVersions` | La emisión desde operaciones rechaza una llamada sin `operationVersions` | [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) |
+| «Por facturar» con volumen real | Datos o una carga representativa de una estación con muchas operaciones pendientes | La lectura, que hoy ordena y pagina en memoria, medida con ese volumen, o paginada en SQL con el mismo orden y los mismos motivos de bloqueo | [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) |
+| Charter en el recorrido E2E | Una corrida de la fase 3 que deje un charter facturado | El paso del charter de la fase 4 pasa sin saltarse: el portal del charter ve su factura y su cobro `PREPAGO` | [Pruebas y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md) |
 | Historia anterior a Git | Entrevista consentida y fuente contemporánea si existe | Testimonio fechado atribuido por rol, incertidumbres separadas de hechos | [Orígenes](../01-historia/origenes-y-limites-de-evidencia.md) |
 
 Las filas «Contract de los comandos comerciales» y «Restablecer la clave de
@@ -90,6 +93,43 @@ fase también había añadido, se cerró el mismo día: la
 [guía](../../docs/api/consumer-guidelines.md) ya no da por fuera del corte la
 creación de escalas, el relevo, la ejecución de servicios ni las escrituras
 offline de la tablet, y describe sus recibos ligados a la instalación.
+
+El 10 de noviembre de 2026, también después del commit verificado, la
+revisión del Vault contra el código de la fase 4 del ciclo (`39a85a46`) retiró
+tres filas cuyo resultado ya cuenta otra nota verificada:
+
+- **Primer caso de uso real, identidad y permisos.** Las cuatro fases del
+  ciclo tienen casos de uso autorizados en el servidor, contrato OpenAPI y
+  clientes consumidores ([Mapa de capacidades](../02-producto/mapa-de-capacidades.md)).
+- **Sustituir mocks de los tres clientes.** Public Web y Mobile Agent ya no
+  dependen del prototipo; la fila se acota a los adaptadores heredados que
+  quedan en Private Web.
+- **Posiciones combinadas.** El mapa de posiciones aplica las combinaciones
+  configuradas en los datos maestros
+  ([ADR-0030](../../docs/adr/0030-position-coverage-per-shift-and-combined-stands.md)).
+
+La misma revisión añadió las filas «Fiscal real y pasarela de tarjeta real» y
+«Conciliación bancaria, tasas automáticas y libro mayor»: el e-CF y la
+pasarela de la fase 4 son simulaciones marcadas «Simulación — sin validez
+fiscal».
+
+El mismo día, también después del commit verificado, la fase 4 del ciclo
+(código de `39a85a46`;
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md))
+cerró los huecos de facturación, cobro y cuentas por pagar que el párrafo de
+la fase 3 daba por abiertos. Añadió cuatro filas: el contract de la emisión de
+facturas, la medición de «Por facturar» con volumen real, el charter en el
+recorrido E2E y los borradores internos antiguos sin factura. Ninguna fila
+anterior se cierra con ella.
+
+El 11 de noviembre de 2026, también después del commit verificado, se retiró
+la fila «Borradores internos antiguos sin factura», cuyo resultado ya cuentan
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)
+y [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md): desde la
+revisión del bloque A de la fase 4 (`8b61f567`), la emisión y el cierre sin
+cargo anulan y liberan esos borradores, con la auditoría
+`finance.invoicing.stale_draft_released`, y «Por facturar» ya no los cuenta
+como `pending_preinvoice`.
 
 ## Cómo convertir una fila en trabajo
 

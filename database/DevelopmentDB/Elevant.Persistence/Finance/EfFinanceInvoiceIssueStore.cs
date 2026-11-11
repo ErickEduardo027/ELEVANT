@@ -1,6 +1,5 @@
-using System.Data;
+using Elevant.Application.Common;
 using System.Text.Json;
-using Elevant.Application.Abstractions.Finance;
 using Elevant.Application.Finance;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
@@ -8,76 +7,27 @@ using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
 using Elevant.Persistence.Identity;
 using Elevant.Persistence.Operations;
-using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Elevant.Persistence.Finance;
 
-/// <summary>Issues one non-fiscal invoice from accepted immutable snapshots.</summary>
+/// <summary>
+/// Issues the invoice of the internal draft (ADR-0035, block 3) inside the issuance transaction of «Por facturar»:
+/// the frozen lines, the next simulated e-NCF and the audit. It has no endpoint and no permission of its own.
+/// </summary>
 internal sealed class EfFinanceInvoiceIssueStore(
-    ElevantDbContext context, TimeProvider timeProvider) : IFinanceInvoiceIssueStore
+    ElevantDbContext context, TimeProvider timeProvider)
 {
-    public async Task<IssueFinanceInvoiceResult> IssueAsync(
-        IssueFinanceInvoiceCommand command, CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(command);
-        var strategy = context.Database.CreateExecutionStrategy();
-        IssueFinanceInvoiceResult? attempt = null;
-        try
-        {
-            return await strategy.ExecuteInTransactionAsync(
-                async token =>
-                {
-                    context.ChangeTracker.Clear();
-                    attempt = await IssueInsideTransactionAsync(command, token);
-                    if (!attempt.IsSuccess) context.ChangeTracker.Clear();
-                    return attempt;
-                },
-                async token =>
-                {
-                    context.ChangeTracker.Clear();
-                    if (attempt is null || !attempt.IsSuccess) return attempt is not null;
-                    return await context.NonFiscalInvoices.AsNoTracking().AnyAsync(item =>
-                        item.PublicId == attempt.InvoiceId && item.Number == attempt.Number &&
-                        item.RequestId == command.RequestId &&
-                        context.Preinvoices.AsNoTracking().Any(preinvoice =>
-                            preinvoice.Id == item.PreinvoiceId &&
-                            preinvoice.PublicId == command.PreinvoiceId) &&
-                        context.Users.AsNoTracking().Any(account =>
-                            account.Id == item.IssuedByAccountId &&
-                            account.PublicId == command.AccountId), token);
-                },
-                IsolationLevel.Serializable, cancellationToken);
-        }
-        catch (DbUpdateException exception) when (IsUniquenessConflict(exception.GetBaseException()))
-        {
-            context.ChangeTracker.Clear();
-            return await ReplayOrConflictAsync(command, cancellationToken);
-        }
-        catch (RetryLimitExceededException exception) when (IsUniquenessConflict(exception.GetBaseException()))
-        {
-            context.ChangeTracker.Clear();
-            return await ReplayOrConflictAsync(command, cancellationToken);
-        }
-        catch (SqlException exception) when (IsUniquenessConflict(exception))
-        {
-            context.ChangeTracker.Clear();
-            return await ReplayOrConflictAsync(command, cancellationToken);
-        }
-    }
-
     /// <summary>ADR-0035: issues the invoice of the internal draft inside the caller's transaction.</summary>
     internal Task<IssueFinanceInvoiceResult> IssueForInvoicingAsync(IssueFinanceInvoiceCommand command,
-        CancellationToken cancellationToken) => IssueInsideTransactionAsync(command, cancellationToken, requirePermission: false);
+        CancellationToken cancellationToken) => IssueInsideTransactionAsync(command, cancellationToken);
 
     private async Task<IssueFinanceInvoiceResult> IssueInsideTransactionAsync(
-        IssueFinanceInvoiceCommand command, CancellationToken cancellationToken, bool requirePermission = true)
+        IssueFinanceInvoiceCommand command, CancellationToken cancellationToken)
     {
         var actor = await new EfActorContextResolver(context, timeProvider)
             .ResolveAsync(command.AccountId, cancellationToken);
         if (actor is null ||
-            requirePermission && !actor.HasPermission("finance.preinvoices.issue") ||
             !actor.Memberships.Any(membership =>
                 membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff))
@@ -175,7 +125,8 @@ internal sealed class EfFinanceInvoiceIssueStore(
             StationId = scope.StationId, IssuedByAccountId = accountId,
             RequestId = command.RequestId, Number = $"NF-{invoiceId:N}",
             CurrencyCode = scope.CurrencyCode, Total = scope.Total,
-            PaymentTermDays = terms, DueDate = DateOnly.FromDateTime(now.UtcDateTime).AddDays(terms),
+            // 4-N10: the terms run from the business day of issue in Santo Domingo.
+            PaymentTermDays = terms, DueDate = BusinessCalendar.Today(now).AddDays(terms),
             CreatedAt = now, UpdatedAt = now,
         };
         invoice.NetTotal = lines.Sum(l => l.NetAmount ?? l.Amount);
@@ -232,50 +183,11 @@ internal sealed class EfFinanceInvoiceIssueStore(
             RequestId = command.RequestId.ToString("D"),
             Reason = "Finance issued a non-fiscal invoice from an accepted frozen preinvoice.",
         });
-        await FinanceApprovedServiceChangeWriter.AddAsync(context,
-            scope.StationId, scope.PublicId, now, "finance_preinvoices", cancellationToken);
         await AirlineOperationChangeWriter.AddPreinvoiceAsync(context,
             scope.AirlineOrganizationId, scope.PublicId, now, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
         return IssueFinanceInvoiceResult.Success(invoiceId, invoice.Number, false);
     }
-
-    private async Task<IssueFinanceInvoiceResult> ReplayOrConflictAsync(
-        IssueFinanceInvoiceCommand command, CancellationToken cancellationToken)
-    {
-        var actor = await new EfActorContextResolver(context, timeProvider)
-            .ResolveAsync(command.AccountId, cancellationToken);
-        if (actor is null ||
-            !actor.HasPermission("finance.preinvoices.issue") ||
-            !actor.Memberships.Any(membership =>
-                membership.OrganizationType == OrganizationType.AviamOperator &&
-                membership.Kind == MembershipKind.InternalStaff))
-            return IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Forbidden);
-        var now = timeProvider.GetUtcNow();
-        var prior = await (
-            from invoice in context.NonFiscalInvoices.AsNoTracking()
-            join preinvoice in context.Preinvoices.AsNoTracking()
-                on invoice.PreinvoiceId equals preinvoice.Id
-            join station in context.Stations.AsNoTracking()
-                on preinvoice.StationId equals station.Id
-            join account in context.Users.AsNoTracking()
-                on invoice.IssuedByAccountId equals account.Id
-            where invoice.RequestId == command.RequestId &&
-                  preinvoice.PublicId == command.PreinvoiceId &&
-                  account.PublicId == command.AccountId &&
-                  actor.StationScopes.Select(scope => scope.StationId).Contains(station.PublicId) &&
-                  context.AccountStationScopes.AsNoTracking().Any(grant =>
-                      grant.AccountId == account.Id && grant.StationId == station.Id &&
-                      grant.GrantedAt <= now && grant.RevokedAt == null)
-            select new { invoice.PublicId, invoice.Number })
-            .SingleOrDefaultAsync(cancellationToken);
-        return prior is null
-            ? IssueFinanceInvoiceResult.Failed(IssueFinanceInvoiceFailure.Conflict)
-            : IssueFinanceInvoiceResult.Success(prior.PublicId, prior.Number, true);
-    }
-
-    private static bool IsUniquenessConflict(Exception exception) =>
-        exception is SqlException sql && IsUniquenessConflict(sql.Number);
 
     internal static bool IsUniquenessConflict(int sqlNumber) => sqlNumber is 2601 or 2627;
 }

@@ -1,6 +1,9 @@
 namespace Elevant.Application.Abstractions.Finance;
 
-/// <summary>Balance-derived status: Paid, PartiallyPaid, Overdue (past due with balance) or Pending.</summary>
+/// <summary>
+/// Balance-derived status (<see cref="Elevant.Application.Finance.FinanceInvoiceStatus"/>): Paid, PartiallyPaid, Overdue
+/// (past due with balance), Pending or Voided (credited to zero without any payment, 4-N24).
+/// </summary>
 public sealed record FinanceInvoiceSummaryData(Guid Id, string Number, Guid PreinvoiceId, Guid AirlineId, string Airline,
     Guid StationId, string StationCode, string CurrencyCode, decimal Total, decimal Paid, decimal Credited,
     decimal Balance, DateTimeOffset IssuedAt, DateOnly? DueDate, string Status, int DaysOverdue,
@@ -21,8 +24,6 @@ public sealed record FinanceCreditNoteData(Guid Id, string Number, decimal Amoun
 public sealed record FinanceInvoiceDetailData(FinanceInvoiceSummaryData Summary, IReadOnlyList<FinanceInvoiceLineData> Lines,
     IReadOnlyList<FinancePaymentData> Payments, IReadOnlyList<FinanceCreditNoteData> CreditNotes);
 
-public sealed record IssueCreditNoteInput(Guid RequestId, decimal Amount, string Reason);
-
 /// <summary>What an airline sees of its own invoice: no internal staff names.</summary>
 public sealed record AirlineInvoicePaymentData(string Reference, string Method, DateOnly? PaidOn, decimal Amount,
     DateTimeOffset RecordedAt);
@@ -34,18 +35,19 @@ public sealed record AirlineInvoiceStatementData(Guid InvoiceId, string Number, 
     string Status, int DaysOverdue, IReadOnlyList<FinanceInvoiceLineData> Lines,
     IReadOnlyList<AirlineInvoicePaymentData> Payments, IReadOnlyList<AirlineInvoiceCreditNoteData> CreditNotes);
 
-/// <summary>Non-fiscal invoices with their payments, credit notes and outstanding balance.</summary>
+/// <summary>Invoices with their payments, credit notes and outstanding balance (read only).</summary>
 public interface IFinanceInvoiceLedgerStore
 {
+    /// <summary>
+    /// The invoices of the actor's stations, newest first. <paramref name="search"/> (up to 40 characters) matches the
+    /// start of the e-NCF or of the number, or any part of the airline name (4-N21). Null when forbidden.
+    /// </summary>
     Task<FinanceInvoicePageData?> ListAsync(Guid actorId, Guid? stationId, Guid? airlineId, string? status, int page,
-        int limit, CancellationToken cancellationToken = default);
+        int limit, string? search = null, CancellationToken cancellationToken = default);
 
     Task<FinanceInvoiceDetailData?> GetAsync(Guid actorId, Guid invoiceId, CancellationToken cancellationToken = default);
 
     /// <summary>Statement of one invoice owned by the airline organization; null when it is not theirs.</summary>
     Task<AirlineInvoiceStatementData?> GetStatementForAirlineAsync(Guid organizationId, Guid invoiceId,
-        CancellationToken cancellationToken = default);
-
-    Task<FinanceCatalogResult> IssueCreditNoteAsync(Guid actorId, Guid invoiceId, IssueCreditNoteInput input,
         CancellationToken cancellationToken = default);
 }

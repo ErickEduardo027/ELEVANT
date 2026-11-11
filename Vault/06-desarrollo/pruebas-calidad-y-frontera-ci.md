@@ -92,9 +92,10 @@ y [ADR-0037](../../docs/adr/0037-commercial-cycle-requests-drafts-amendments-and
   repositorio, sin trazas ni reporte HTML. Los pasos exactos están en la
   [guía de desarrollo local](../../docs/workflows/local-development.md#recorrido-e2e-del-ciclo-completo)
   y en el [README de Public Web](../../frontend/public-web/README.md).
-- **Qué no es.** Ningún workflow de CI lo ejecuta, y los huecos todavía
-  abiertos figuran como `test.fixme("hueco …")`. Una corrida verde es evidencia
-  local: no reemplaza CI ni prueba un despliegue.
+- **Qué no es.** Ningún workflow de CI lo ejecuta. En ese corte, los huecos
+  todavía abiertos figuraban como `test.fixme("hueco …")`; el estado vigente
+  está en la fase 4, abajo. Una corrida verde es evidencia local: no reemplaza
+  CI ni prueba un despliegue.
 
 Desde la fase 2 del ciclo (código de `50e7778f`, también posterior al commit
 verificado;
@@ -107,8 +108,8 @@ verificado;
 - **Pasos de la fase 2.** Los huecos de la fase 2 ya son pruebas reales
   ([pruebas de la fase 2](../../frontend/public-web/tests/e2e-cycle/fase2-preoperacion.spec.ts)).
   El paso que importa vuelos se salta si la API no usa el proveedor simulado,
-  para no gastar nunca unidades de pago. Las fases 3 y 4 todavía tienen pasos
-  `test.fixme`.
+  para no gastar nunca unidades de pago. En ese corte, las fases 3 y 4 todavía
+  tenían pasos `test.fixme`.
 
 Desde la fase 3 del ciclo (código de `f2d5c52c`, también posterior al commit
 verificado;
@@ -117,8 +118,8 @@ verificado;
 - **Pasos de la fase 3.** Ya no queda ningún `test.fixme` en las
   [pruebas de la fase 3](../../frontend/public-web/tests/e2e-cycle/fase3-operacion.spec.ts):
   los pasos de los huecos 3-A a 3-K son pruebas reales, y un paso final
-  comprueba los reportes de OCC y de Gestión Humana. Solo la fase 4 conserva
-  pasos `test.fixme`.
+  comprueba los reportes de OCC y de Gestión Humana. En ese corte, solo la
+  fase 4 conservaba pasos `test.fixme` (ver abajo).
 - **Franja horaria.** El recorrido corre entre las 08:30 y las 22:30 de la hora
   local, porque la fase 2 elige la plantilla de turno del agente sintético que
   cubre el vuelo de la corrida. Los pasos de la fase 3 que necesitan otra
@@ -131,6 +132,41 @@ verificado;
   del agente sintético. Para una corrida limpia se recrea el stack (`down -v`)
   y se aparta `passwords.json` del estado del arnés, porque el seed vuelve a
   las contraseñas iniciales.
+
+Desde la fase 4 del ciclo (código de `39a85a46`, el paso 4-B y el retiro del
+último `test.fixme` de `9ae53481`, el ajuste del paso de cuentas por pagar de
+`c3d86d0f`, la revisión del bloque A de `8b61f567`, la del bloque D de
+`9335e657` y la del bloque E de `8450f65d`, también posteriores al commit
+verificado;
+[ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+[ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)):
+
+- **Pasos de la fase 4.** Ya no queda ningún `test.fixme` en las
+  [pruebas de la fase 4](../../frontend/public-web/tests/e2e-cycle/fase4-facturacion.spec.ts):
+  la emisión, el pago con tarjeta, la nota de crédito, el estado de cuenta, los
+  reportes, el menú de Finanzas, las cuentas por pagar y los gastos son pruebas
+  reales. Dos pasos se saltan con su motivo cuando la corrida no dejó lo que
+  necesitan: el estado de cuenta del portal, si no se emitió la nota de
+  crédito, y el charter, mientras la corrida de la fase 3 no deje un charter
+  facturado; las pruebas SQL cubren el charter (4-N08 y 4-N22). El paso de
+  cuentas por pagar anula desde «Pagos del proveedor» de una factura anulada un
+  pago con remanente que bloqueaba el retiro del proveedor
+  (`supplier_has_open_balance`), y después lo retira. El último paso
+  comprueba, sin navegador, que el Vault describe el ciclo como el código: cada
+  operación que cita el mapa de capacidades existe en el snapshot y ninguna
+  nota vigente describe la API como vacía ni da por inexistentes la
+  autenticación, las rutas de negocio, el tiempo real o el almacenamiento
+  privado. La puerta real de esa regla es `npm run vault:ci`.
+- **Pasarela simulada.** El mismo overlay activa `CardPayments__Mode=Simulated`:
+  las tarjetas de prueba se aprueban o rechazan en memoria, sin red.
+- **Reapertura en la fase 3.** El paso que reabre la aprobación se salta si la
+  operación del ciclo ya se facturó o si la retiene un borrador con factura
+  emitida (`pending_preinvoice`): su corrección es una nota de crédito.
+- **Corrida registrada.** El 11 de noviembre de 2026 las fases 1 a 4 pasaron
+  contra el stack local recreado con la rama completa: 63 de 64 pasos
+  en verde (14, 18, 20 y 11) y uno saltado por diseño, el del charter, en
+  7,2 minutos.
 
 ## Qué agrega cada workflow activo
 

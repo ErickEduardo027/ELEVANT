@@ -59,3 +59,31 @@ it('still sends a command without a key, as older screens did (expand)', async (
   await book.deleteChargeTariffDraft(ID, 'AAA=');
   expect(sent().map(request => request.key)).toEqual([null, null]);
 });
+
+it('asks «Facturas» for pages of 25 with the search, and only for the fields that are set (4-N21)', async () => {
+  const book = await import('./financeBookService');
+  await book.listFinanceInvoices({ stationId: 'st-1', status: '', search: 'E3100', page: 2 });
+  await book.listFinanceInvoices();
+  expect(sent().map(request => request.url)).toEqual([
+    'https://api.example.test/api/v1/finance/invoices?page=2&limit=25&stationId=st-1&search=E3100',
+    'https://api.example.test/api/v1/finance/invoices?page=1&limit=25',
+  ]);
+  expect(book.INVOICE_PAGE_SIZE).toBe(25);
+});
+
+it('keeps the Problem Details code of a refused report export', async () => {
+  const book = await import('./financeBookService');
+  fetch.mockImplementationOnce(async () => new Response(JSON.stringify({ title: 'Unknown export format.', code: 'invalid_report_export_format' }),
+    { status: 400, headers: { 'content-type': 'application/problem+json' } }));
+  await expect(book.downloadFinanceReport('sales', 'docx', { from: '2026-11-01', to: '2026-11-08' }))
+    .rejects.toMatchObject({ status: 400, code: 'invalid_report_export_format', message: 'No se pudo generar la exportación.' });
+  fetch.mockImplementationOnce(async () => new Response('not json', { status: 500 }));
+  await expect(book.downloadFinanceReport('sales', 'csv', { from: '2026-11-01', to: '2026-11-08' }))
+    .rejects.toMatchObject({ status: 500, code: undefined });
+});
+
+it('no longer offers the retired preinvoice edits nor the legacy payment and credit note (4-A, 4-N12)', async () => {
+  const book = await import('./financeBookService');
+  for (const retired of ['editPreinvoiceLine', 'addPreinvoiceAdjustment', 'issueCreditNote', 'recordPartialPayment'])
+    expect(book).not.toHaveProperty(retired);
+});

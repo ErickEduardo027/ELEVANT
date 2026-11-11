@@ -9,7 +9,7 @@ function formatMoney(value, currency) {
   if (value === null || value === undefined || !Number.isFinite(amount)) return '—';
   return (currency ? currency + ' ' : '') + amount.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 }
-import { downloadPayablesAttachment, uploadPayablesAttachment } from '../../../services/financePayablesService';
+import { downloadPayablesAttachment, removePayablesAttachment, uploadPayablesAttachment } from '../../../services/financePayablesService';
 import { payablesError } from './usePayablesWorkspace';
 export const fieldClass = 'mt-1 block w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm focus-visible:outline-accent-600 dark:border-white/10 dark:bg-surface-dark';
 export const panelClass = 'rounded-2xl border border-black/10 bg-white p-4 dark:border-white/10 dark:bg-surface-dark-card sm:p-5';
@@ -23,8 +23,17 @@ export function Choice({ label, value, onChange, choices = [], required = false,
     <option value="">{required ? 'Seleccione…' : empty}</option>{choices.map(x => <option key={x.id} value={x.id}>{x.code} · {x.name}</option>)}
   </select></Field>;
 }
-const statuses = { Draft: ['Borrador', 'warning'], Submitted: ['En revisión de departamento', 'info'], DepartmentApproved: ['Pendiente de Finanzas', 'info'], Approved: ['Aprobado', 'success'], Rejected: ['Rechazado', 'danger'] };
-export function DocumentStatus({ status, expense = false }) { const [label, tone] = statuses[status] ?? [status, 'neutral']; return <StatusBadge label={status === 'Submitted' && !expense ? 'En revisión de Finanzas' : label} tone={tone} />; }
+const statuses = { Draft: ['Borrador', 'warning'], Submitted: ['En revisión de departamento', 'info'], DepartmentApproved: ['Pendiente de Finanzas', 'info'], Approved: ['Aprobado', 'success'], Rejected: ['Rechazado', 'danger'],
+  // 4-N03: a voided supplier invoice; 4-N13: a discarded expense. Both stay in the history.
+  Voided: ['Anulada', 'neutral'], Cancelled: ['Descartado', 'neutral'] };
+export function DocumentStatus({ status, expense = false }) { const [label, tone] = statuses[status] ?? ['Estado desconocido', 'neutral']; return <StatusBadge label={status === 'Submitted' && !expense ? 'En revisión de Finanzas' : label} tone={tone} />; }
+/** The review history in Spanish: who decided what at each stage, never the stored English value. */
+const STAGES = { Submission: 'Presentación', Department: 'Revisión del departamento', Escalation: 'Revisión escalada a Finanzas', Finance: 'Revisión de Finanzas',
+  Correction: 'Corrección', Void: 'Anulación', Withdrawal: 'Retiro', Discard: 'Descarte' };
+const DECISIONS = { Submitted: 'Enviado a revisión', DepartmentApproved: 'Aprobado por el departamento', Approved: 'Aprobado', Rejected: 'Rechazado',
+  Draft: 'Devuelto a borrador', Voided: 'Anulado', Cancelled: 'Descartado' };
+export const reviewStage = stage => STAGES[stage] ?? 'Revisión';
+export const reviewDecision = decision => DECISIONS[decision] ?? 'Decisión registrada';
 export function MutationNotice({ mutation }) {
   return <><div aria-live="polite">{mutation.success && <p role="status" className="rounded-lg border border-status-success/30 p-3 text-sm">{mutation.success}</p>}</div>
     {mutation.error && <div role="alert" className="rounded-lg border border-status-danger/40 p-3 text-sm"><p>{mutation.error}</p>{mutation.retry && <button className={buttonClass + ' mt-2'} type="button" disabled={mutation.busy} onClick={mutation.retry}>Reintentar acción</button>}</div>}</>;
@@ -89,21 +98,43 @@ export function DocumentDetails({ detail: d, expense = false, options }) {
     {options && <dl className="flex flex-wrap gap-4 text-xs">{[['stationId', 'Estación operativa', options.stations], ['airlineId', 'Aerolínea', options.airlines], ['turnaroundId', 'Escala', options.turnarounds], ['serviceId', 'Servicio', options.services]].filter(([key]) => d.dimensions?.[key]).map(([key, label, choices]) => <div key={key}><dt className="font-semibold">{label}</dt><dd>{choices.find(choice => choice.id === d.dimensions[key])?.name ?? 'Referencia histórica'}</dd></div>)}</dl>}
     <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">Tasa a DOP {d.fx.rateToDop} · {d.fx.source} · {d.fx.rateDate} · Total DOP {formatMoney(d.totalDop)}</p>
     <StackedTable><table className="table-stack w-full text-left text-sm"><thead><tr>{['Línea', 'Cantidad', 'Precio', 'Impuesto', 'Total'].map(h => <th className="p-2 text-xs" key={h}>{h}</th>)}</tr></thead><tbody>{d.lines.map(l => <tr key={l.id} className="border-t border-black/5 dark:border-white/5"><td className="p-2">{l.description}</td><td className="p-2 tabular-nums">{l.quantity}</td><td className="p-2">{formatMoney(l.unitPrice, d.fx.currency)}</td><td className="p-2">{formatMoney(l.taxAmount)}</td><td className="p-2">{formatMoney(l.total)}</td></tr>)}</tbody></table></StackedTable>
-    {d.reviews.length > 0 && <details><summary className="cursor-pointer text-sm font-semibold">Historial de revisión ({d.reviews.length})</summary><ol className="mt-2 space-y-2 text-xs">{d.reviews.map((r, i) => <li key={i} className="border-l-2 border-accent-600/40 pl-3">{r.stage} · {r.decision} · {new Date(r.at).toLocaleString('es-DO')}{r.reason && <p>{r.reason}</p>}</li>)}</ol></details>}
+    {d.reviews.length > 0 && <details><summary className="cursor-pointer text-sm font-semibold">Historial de revisión ({d.reviews.length})</summary><ol className="mt-2 space-y-2 text-xs">{d.reviews.map((r, i) => <li key={i} className="border-l-2 border-accent-600/40 pl-3">{reviewStage(r.stage)} · {reviewDecision(r.decision)} · {new Date(r.at).toLocaleString('es-DO')}{r.reason && <p>{r.reason}</p>}</li>)}</ol></details>}
   </div>;
 }
 export function PrivateAttachments({ kind, detail, editable, mutation }) {
   const [file, setFile] = useState(null); const [error, setError] = useState(''); const [downloading, setDownloading] = useState(null);
+  const [removing, setRemoving] = useState(null);
   const receipts = detail.receipts ?? detail.attachments ?? [];
   async function download(id) { setDownloading(id); setError(''); try { await downloadPayablesAttachment(kind, detail.id, id); } catch (e) { setError(payablesError(e)); } finally { setDownloading(null); } }
+  // 4-N13: a receipt uploaded by mistake leaves the draft after a confirmation, as a status change of the document.
+  async function remove(receipt) {
+    if (await mutation.run('remove:' + kind + ':' + detail.id + ':' + receipt.id, { expectedVersion: detail.version },
+      body => removePayablesAttachment(kind, detail.id, receipt.id, body))) setRemoving(null);
+  }
   return <section className="space-y-3 border-t border-black/10 pt-4 dark:border-white/10"><h3 className="font-semibold">Comprobantes privados</h3>
     {error && <p role="alert">{error}</p>}{receipts.length === 0 && <p className="text-sm text-text-secondary-light dark:text-text-secondary-dark">Sin comprobantes adjuntos.</p>}
-    <ul className="flex flex-wrap gap-2">{receipts.map((r, i) => <li key={r.id}><button className={buttonClass} disabled={downloading !== null} onClick={() => download(r.id)} type="button">Descargar comprobante {i + 1} · {Math.ceil(r.length / 1024)} KB</button></li>)}</ul>
+    <ul className="flex flex-wrap gap-2">{receipts.map((r, i) => <li key={r.id} className="flex flex-wrap gap-2"><button className={buttonClass} disabled={downloading !== null} onClick={() => download(r.id)} type="button">Descargar comprobante {i + 1} · {Math.ceil(r.length / 1024)} KB</button>
+      {editable && <button className={buttonClass} disabled={mutation.busy} onClick={() => setRemoving({ ...r, number: i + 1 })} type="button">Quitar comprobante {i + 1}</button>}</li>)}</ul>
+    {editable && removing && <div role="group" aria-label={'Quitar comprobante ' + removing.number} className="space-y-2 rounded-xl border border-status-warning/40 p-3 text-sm">
+      <p>El comprobante {removing.number} deja de mostrarse y de contar para el envío. Si nunca se presentó a revisión, se borra; si ya se presentó, queda oculto en el historial.</p>
+      <div className="flex flex-wrap gap-2"><button className={primaryClass} type="button" disabled={mutation.busy} onClick={() => void remove(removing)}>Sí, quitar el comprobante</button><button className={buttonClass} type="button" disabled={mutation.busy} onClick={() => setRemoving(null)}>Conservar comprobante</button></div>
+    </div>}
     {editable && <form className="flex flex-wrap items-end gap-3" onSubmit={e => { e.preventDefault(); if (!file) return; setError(''); if (file.size > 8 * 1024 * 1024 || !['application/pdf', 'image/png', 'image/jpeg'].includes(file.type)) { setError('Use PDF, PNG o JPEG de hasta 8 MB.'); return; } void mutation.run('upload:' + kind + ':' + detail.id, { expectedVersion: detail.version, fileInfo: { size: file.size, name: file.name, type: file.type, lastModified: file.lastModified } }, body => uploadPayablesAttachment(kind, detail.id, { requestId: body.requestId, expectedVersion: body.expectedVersion, file })); }}><Field label="Adjuntar comprobante privado"><input className={fieldClass} required type="file" accept="application/pdf,image/png,image/jpeg" onChange={e => setFile(e.target.files[0] ?? null)} disabled={mutation.busy} /></Field><button className={buttonClass} disabled={mutation.busy || !file} type="submit">Subir comprobante</button><p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">PDF, PNG o JPEG · máximo 8 MB</p></form>}
   </section>;
 }
-export function DecisionForm({ decision, busy, onConfirm, onCancel }) {
-  const [reason, setReason] = useState('');
-  return <form className="space-y-3 rounded-xl border border-accent-600/30 p-4" onSubmit={e => { e.preventDefault(); onConfirm(reason.trim() || null); }}><h3 className="font-semibold">Confirmar revisión del documento</h3><Field label="Motivo de la decisión"><textarea className={fieldClass} maxLength={500} required={decision === 'Rejected'} value={reason} onChange={e => setReason(e.target.value)} disabled={busy} /></Field><div className="flex gap-2"><button type="submit" className={primaryClass} disabled={busy}>Confirmar decisión</button><button type="button" className={buttonClass} disabled={busy} onClick={onCancel}>Cancelar decisión</button></div></form>;
+/** Decisions that change a document's history and so keep their reason (phase 4: 5 to 500 characters). */
+export const REASONED_DECISIONS = Object.freeze(['Rejected', 'Draft', 'Voided', 'Cancelled']);
+export const MINIMUM_REASON = 5;
+export function DecisionForm({ decision, busy, onConfirm, onCancel, title = 'Confirmar revisión del documento', confirmLabel = 'Confirmar decisión', notice }) {
+  const [reason, setReason] = useState(''); const [invalid, setInvalid] = useState(false);
+  const required = REASONED_DECISIONS.includes(decision);
+  return <form className="space-y-3 rounded-xl border border-accent-600/30 p-4" onSubmit={e => {
+    e.preventDefault(); const text = reason.trim();
+    if (required && text.length < MINIMUM_REASON) { setInvalid(true); return; }
+    onConfirm(text || null);
+  }}><h3 className="font-semibold">{title}</h3>{notice && <p className="text-sm">{notice}</p>}
+    <Field label="Motivo de la decisión"><textarea className={fieldClass} minLength={required ? MINIMUM_REASON : undefined} maxLength={500} required={required} aria-invalid={invalid || undefined} value={reason} onChange={e => { setReason(e.target.value); setInvalid(false); }} disabled={busy} /></Field>
+    {invalid && <p role="alert" className="text-sm text-status-danger">Escriba un motivo de 5 a 500 caracteres.</p>}
+    <div className="flex gap-2"><button type="submit" className={primaryClass} disabled={busy}>{confirmLabel}</button><button type="button" className={buttonClass} disabled={busy} onClick={onCancel}>Cancelar decisión</button></div></form>;
 }
 export { EmptyState, StackedTable, formatMoney };

@@ -24,6 +24,7 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
     private const string AddServiceCommand = "ramp.charter.service.add.v1";
     private const string DetailsCommand = "ramp.charter.details.update.v1";
     private const string ReopenAction = "finance.charter.prepayment.reopen";
+    private const string ConfirmAction = "finance.charter.prepayment.confirm";
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     public async Task<CharterView?> ReadForAgentAsync(Guid accountId, IReadOnlyCollection<Guid> stations, Guid operationId,
@@ -135,76 +136,100 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
         return items;
     }
 
-    public async Task<(CharterPrepaymentItem? Item, CharterPrepaymentFailure? Failure)> ConfirmPrepaymentAsync(
-        Guid accountId, IReadOnlyCollection<Guid> stations, Guid charterId, decimal amount, string reference,
-        string? requestId, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// 4-N22: the confirmation is a command of its own (Idempotency-Key receipt, expected version, one serializable
+    /// transaction). Pending becomes confirmed and settles the charter's invoice when it was already issued; the same
+    /// amount and reference again change nothing; another amount or reference corrects a prepayment that never became a
+    /// receipt, with its reason and the before and after in the audit. Once applied it is <c>charter_prepayment_applied</c>:
+    /// Finance reverses that receipt, reopens the prepayment and confirms it again. A receipt of the airline posted at the
+    /// same moment that takes what the prepayment's receipt needs (its reference, the invoice's account) is
+    /// <c>charter_prepayment_receipt_conflict</c>, never a stale charter.
+    /// </summary>
+    public async Task<MasterDataResult<CharterPrepaymentItem>> ConfirmPrepaymentAsync(Guid accountId,
+        IReadOnlyCollection<Guid> stations, Guid charterId, decimal amount, string reference, string? reason,
+        string expectedVersion, Guid idempotencyKey, string? requestId, CancellationToken cancellationToken = default)
     {
-        var allowed = stations.Where(id => id != Guid.Empty).Distinct().ToArray();
-        var found = await (from agreement in context.Set<CharterAgreement>()
-                           join turnaround in context.Turnarounds.AsNoTracking() on agreement.TurnaroundId equals turnaround.Id
-                           join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
-                           join airline in context.Airlines.AsNoTracking() on agreement.AirlineId equals airline.Id
-                           where agreement.PublicId == charterId && allowed.Contains(station.PublicId)
-                           select new { agreement, station.Id, airline.OrganizationId, TurnaroundPublicId = turnaround.PublicId })
-            .SingleOrDefaultAsync(cancellationToken);
-        if (found is null) return (null, CharterPrepaymentFailure.NotFound);
-        // The lookup joins read-only tables, which makes the whole query untracked: load the row to change.
-        var agreementRow = await context.Set<CharterAgreement>().SingleAsync(item => item.Id == found.agreement.Id,
-            cancellationToken);
-        if (agreementRow.PrepaymentStatus == CharterPrepaymentStatus.Confirmed)
-            // Confirming the same payment again is a retry; another amount or reference is a conflict.
-            return agreementRow.PrepaymentAmount == amount && agreementRow.PrepaymentReference == reference
-                ? (await ItemAsync(agreementRow.Id, cancellationToken), null)
-                : (null, CharterPrepaymentFailure.Conflict);
+        var found = await FinanceScopeAsync(stations, charterId, cancellationToken);
+        if (found is null) return MasterDataResult<CharterPrepaymentItem>.Failed(MasterDataFailure.NotFound, "not_found");
         var account = await context.Users.AsNoTracking().Where(user => user.PublicId == accountId)
             .Select(user => new { user.Id, user.UserName }).SingleOrDefaultAsync(cancellationToken);
-        if (account is null) return (null, CharterPrepaymentFailure.NotFound);
+        if (account is null) return MasterDataResult<CharterPrepaymentItem>.Failed(MasterDataFailure.NotFound, "not_found");
         var now = RampReceiptRunner.Truncate(timeProvider.GetUtcNow());
-        agreementRow.PrepaymentStatus = CharterPrepaymentStatus.Confirmed;
-        agreementRow.PrepaymentAmount = amount;
-        agreementRow.PrepaymentReference = reference;
-        agreementRow.PrepaymentConfirmedAt = now;
-        agreementRow.PrepaymentConfirmedByAccountId = account.Id;
-        agreementRow.UpdatedAt = now;
-        context.AuditEntries.Add(new AuditEntry
-        {
-            PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
-            ActorAccountId = account.Id, ActorDisplay = account.UserName, Action = "finance.charter.prepayment_confirmed",
-            EntityType = nameof(CharterAgreement), EntityPublicId = agreementRow.PublicId,
-            OrganizationId = found.OrganizationId, StationId = found.Id, Source = AuditSource.Api,
-            CorrelationId = Guid.CreateVersion7(), RequestId = requestId,
-            Reason = "Finance confirmed the charter carrier's prepayment.",
-            MetadataJson = JsonSerializer.Serialize(new { amount, reference, turnaroundId = found.TurnaroundPublicId }, Json),
-        });
-        try
-        {
-            await context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            context.ChangeTracker.Clear();
-            return (null, CharterPrepaymentFailure.Conflict);
-        }
-        return (await ItemAsync(agreementRow.Id, cancellationToken), null);
+        var hash = CommercialCommandReceipts.Hash(new { charterId, amount, reference, reason, expected = expectedVersion });
+        return await MasterDataCommand.RunAsync(context, idempotencyKey, account.Id, ConfirmAction, hash,
+            CharterCodes.PrepaymentReceiptConflict, now, async () =>
+            {
+                var agreement = await context.Set<CharterAgreement>().SingleAsync(item => item.Id == found.AgreementId,
+                    cancellationToken);
+                if (MasterDataCommand.Version(agreement.RowVersion) != expectedVersion)
+                    return Step.Fail(MasterDataFailure.Conflict, "version_conflict");
+                var confirmed = agreement.PrepaymentStatus == CharterPrepaymentStatus.Confirmed;
+                // The prepayment already says this: nothing to write.
+                if (confirmed && agreement.PrepaymentAmount == amount && agreement.PrepaymentReference == reference)
+                    return Step.Done(agreement.PublicId);
+                var before = new { amount = agreement.PrepaymentAmount, reference = agreement.PrepaymentReference };
+                if (confirmed)
+                {
+                    if (reason is null) return Step.Fail(MasterDataFailure.Invalid, "reason_required");
+                    // Even a reversed receipt closes the correction: the new amount is confirmed again from Pending.
+                    if (await CharterPrepaymentPosting.HasReceiptAsync(context, agreement, true, cancellationToken))
+                        return Step.Fail(MasterDataFailure.Conflict, CharterCodes.PrepaymentApplied);
+                }
+                agreement.PrepaymentStatus = CharterPrepaymentStatus.Confirmed;
+                agreement.PrepaymentAmount = amount;
+                agreement.PrepaymentReference = reference;
+                agreement.PrepaymentConfirmedAt = now;
+                agreement.PrepaymentConfirmedByAccountId = account.Id;
+                agreement.UpdatedAt = now;
+                await context.SaveChangesAsync(cancellationToken);
+                // Confirmed after the invoice: the prepayment settles it now, never twice.
+                var applied = await CharterPrepaymentPosting.ApplyToIssuedInvoiceAsync(context, agreement, account.Id, now,
+                    cancellationToken);
+                context.AuditEntries.Add(new AuditEntry
+                {
+                    PublicId = Guid.CreateVersion7(), OccurredAt = now, ActorType = AuditActorType.Account,
+                    ActorAccountId = account.Id, ActorDisplay = account.UserName,
+                    Action = confirmed ? "finance.charter.prepayment_corrected" : "finance.charter.prepayment_confirmed",
+                    EntityType = nameof(CharterAgreement), EntityPublicId = agreement.PublicId,
+                    OrganizationId = found.OrganizationId, StationId = found.StationId, Source = AuditSource.Api,
+                    CorrelationId = Guid.CreateVersion7(), RequestId = requestId,
+                    Reason = confirmed ? reason : "Finance confirmed the charter carrier's prepayment.",
+                    MetadataJson = JsonSerializer.Serialize(new
+                    {
+                        amount, reference, turnaroundId = found.TurnaroundPublicId,
+                        before = confirmed ? before : null,
+                        appliedToInvoiceId = applied?.InvoiceId, applied = applied?.Applied,
+                    }, Json),
+                });
+                await context.SaveChangesAsync(cancellationToken);
+                return Step.Done(agreement.PublicId);
+            }, _ => ItemAsync(found.AgreementId, cancellationToken), cancellationToken);
     }
+
+    /// <summary>The charter of one of Finance's stations, with what its commands audit.</summary>
+    private async Task<FinanceCharterScope?> FinanceScopeAsync(IReadOnlyCollection<Guid> stations, Guid charterId,
+        CancellationToken cancellationToken)
+    {
+        var allowed = stations.Where(id => id != Guid.Empty).Distinct().ToArray();
+        return await (from agreement in context.Set<CharterAgreement>().AsNoTracking()
+                      join turnaround in context.Turnarounds.AsNoTracking() on agreement.TurnaroundId equals turnaround.Id
+                      join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
+                      join airline in context.Airlines.AsNoTracking() on agreement.AirlineId equals airline.Id
+                      where agreement.PublicId == charterId && allowed.Contains(station.PublicId)
+                      select new FinanceCharterScope(agreement.Id, station.Id, airline.OrganizationId, turnaround.PublicId,
+                          context.GroundOperations.Where(item => item.TurnaroundId == turnaround.Id)
+                              .Select(item => (long?)item.Id).FirstOrDefault()))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private sealed record FinanceCharterScope(long AgreementId, long StationId, long OrganizationId,
+        Guid TurnaroundPublicId, long? OperationId);
 
     public async Task<MasterDataResult<CharterPrepaymentItem>> ReopenPrepaymentAsync(Guid accountId,
         IReadOnlyCollection<Guid> stations, Guid charterId, string reason, string expectedVersion, Guid idempotencyKey,
         string? requestId, CancellationToken cancellationToken = default)
     {
-        var allowed = stations.Where(id => id != Guid.Empty).Distinct().ToArray();
-        var found = await (from agreement in context.Set<CharterAgreement>().AsNoTracking()
-                           join turnaround in context.Turnarounds.AsNoTracking() on agreement.TurnaroundId equals turnaround.Id
-                           join station in context.Stations.AsNoTracking() on turnaround.StationId equals station.Id
-                           join airline in context.Airlines.AsNoTracking() on agreement.AirlineId equals airline.Id
-                           where agreement.PublicId == charterId && allowed.Contains(station.PublicId)
-                           select new
-                           {
-                               AgreementId = agreement.Id, StationId = station.Id, airline.OrganizationId,
-                               TurnaroundPublicId = turnaround.PublicId,
-                               OperationId = context.GroundOperations.Where(item => item.TurnaroundId == turnaround.Id)
-                                   .Select(item => (long?)item.Id).FirstOrDefault(),
-                           }).SingleOrDefaultAsync(cancellationToken);
+        var found = await FinanceScopeAsync(stations, charterId, cancellationToken);
         if (found is null) return MasterDataResult<CharterPrepaymentItem>.Failed(MasterDataFailure.NotFound, "not_found");
         var account = await context.Users.AsNoTracking().Where(user => user.PublicId == accountId)
             .Select(user => new { user.Id, user.UserName }).SingleOrDefaultAsync(cancellationToken);
@@ -220,6 +245,9 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
                     return Step.Fail(MasterDataFailure.Conflict, "version_conflict");
                 if (agreement.PrepaymentStatus != CharterPrepaymentStatus.Confirmed)
                     return Step.Fail(MasterDataFailure.Conflict, CharterCodes.PrepaymentNotConfirmed);
+                // 4-N22: a prepayment that settled the invoice is reopened only after Finance reverses its receipt.
+                if (await CharterPrepaymentPosting.HasReceiptAsync(context, agreement, false, cancellationToken))
+                    return Step.Fail(MasterDataFailure.Conflict, CharterCodes.PrepaymentApplied);
                 var before = new
                 {
                     amount = agreement.PrepaymentAmount, reference = agreement.PrepaymentReference,

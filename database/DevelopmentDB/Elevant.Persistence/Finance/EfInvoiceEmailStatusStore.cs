@@ -16,15 +16,12 @@ namespace Elevant.Persistence.Finance;
 internal sealed class EfInvoiceEmailStatusStore(ElevantDbContext context, TimeProvider timeProvider)
     : IInvoiceEmailStatusStore
 {
-    private static readonly string[] ReadPermissions =
-        ["finance.invoicing.read", "finance.invoicing.issue", "finance.reconciliation.read"];
-
     public async Task<IReadOnlyList<InvoiceEmailDeliveryData>?> ListAsync(Guid actorId, Guid invoiceId,
         CancellationToken cancellationToken = default)
     {
         if (actorId == Guid.Empty || invoiceId == Guid.Empty) return null;
         var actor = await new EfActorContextResolver(context, timeProvider).ResolveAsync(actorId, cancellationToken);
-        if (actor is null || !ReadPermissions.Any(actor.HasPermission) ||
+        if (actor is null || !FinanceInvoicePolicy.CanReadInvoiceEmails(actor) ||
             !actor.Memberships.Any(membership => membership.OrganizationType == OrganizationType.AviamOperator &&
                 membership.Kind == MembershipKind.InternalStaff)) return null;
         var stations = actor.StationScopes.Select(scope => scope.StationId).ToArray();

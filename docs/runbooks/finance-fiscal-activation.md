@@ -1,5 +1,12 @@
 # Finanzas: simulación fiscal, archivo y gates de activación
 
+> **Retirado del producto en la fase 4 (4-A, 4-N20).** El módulo «Documentos fiscales», su simulador local, el
+> preflight `POST /api/v1/finance/fiscal-xml/validate` y la configuración `FinanceFiscal:*` ya no existen: la API no
+> lee esas claves ni publica estas rutas, y los enlaces de código de este runbook apuntan a archivos borrados. Las
+> tablas, las migraciones aplicadas y los XSD oficiales se conservan. La factura lleva el e-NCF simulado de
+> [ADR-0035](../adr/0035-direct-invoicing-simulated-ecf.md), marcado «Simulación — sin validez fiscal». Lo que sigue
+> se conserva solo como historia.
+
 ## Alcance y estado
 
 Este runbook describe las capacidades de la rama de integración y los gates de una futura conexión real. No autoriza contratar, activar un proveedor, cargar certificados, emitir e-CF, promover Production ni desplegar. El proveedor fiscal está **sin seleccionar**. La conectividad real permanece fuera de la etapa aprobada.

@@ -105,8 +105,6 @@ public static class DependencyInjection
         services.AddScoped<IPositionCoverageStore, EfPositionCoverageStore>();
         services.AddScoped<IAirlinePortalReadStore, EfAirlinePortalReadStore>();
         services.AddScoped<IAirlinePortalStandingStore, EfAirlinePortalStandingStore>();
-        services.AddScoped<IAirlinePreinvoiceAcceptanceStore, EfAirlinePreinvoiceAcceptanceStore>();
-        services.AddScoped<IAirlinePreinvoiceDisputeStore, EfAirlinePreinvoiceDisputeStore>();
         services.AddScoped<IAffiliationStore, EfAffiliationStore>();
         services.AddScoped<ICommercialIntakeStore, EfCommercialIntakeStore>();
         services.AddScoped<ICommercialCatalogStore, EfCommercialCatalogStore>();
@@ -145,38 +143,29 @@ public static class DependencyInjection
                 new Elevant.Persistence.Finance.EfCardReceiptAttachmentResolver(
                     provider.GetRequiredService<Elevant.Persistence.Finance.EfCardPaymentStore>(),
                     provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
+                // 4-N23: the PDF of the credit or debit note its email announces.
+                new Elevant.Persistence.Finance.EfAdjustmentNoteAttachmentResolver(
+                    provider.GetRequiredService<ElevantDbContext>(),
+                    provider.GetRequiredService<IFinancialDocumentPdfRenderer>()),
             ]));
         services.AddScoped<IAirlinePermitStore, EfAirlinePermitStore>();
         services.AddScoped<IAirlinePortalUserStore, EfAirlinePortalUserStore>();
         services.AddScoped<IContractLifecycleStore, EfContractLifecycleStore>();
-        services.AddScoped<IFinanceApprovedServicesReadStore, EfFinanceApprovedServicesReadStore>();
+        // 4-N23: the one notice of each invoice that passed its due date with a balance.
+        services.AddScoped<Elevant.Application.Finance.IInvoiceOverdueNoticeStore, EfInvoiceOverdueNoticeStore>();
+        services.AddScoped<Elevant.Application.Finance.IFinancePendingOperationsReadStore, EfFinancePendingOperationsReadStore>();
         services.AddScoped<IFinanceTariffReadStore, EfFinanceTariffReadStore>();
         services.AddScoped<IFinanceTariffBookStore, EfFinanceTariffBookStore>();
         services.AddScoped<IFinancePackageStore, EfFinancePackageStore>();
-        services.AddScoped<IFinanceTaxStore, FinanceTaxStore>();
-        // The persistence-only host has no fiscal transport. Resolve the optional sidecar ports
-        // when the fiscal feature is used, as with the private financial document renderer below.
-        services.AddScoped<IFinanceFiscalStore>(provider => new FinanceFiscalStore(
-            provider.GetRequiredService<ElevantDbContext>(), provider.GetRequiredService<IActorContextResolver>(),
-            provider.GetRequiredService<TimeProvider>(), provider.GetRequiredService<Elevant.Application.Finance.FinanceFiscalOptions>(),
-            provider.GetRequiredService<IFiscalArtifactArchive>(), provider.GetRequiredService<IFiscalProvider>(),
-            provider.GetRequiredService<IFiscalCallbackAuthenticator>(), provider.GetRequiredService<IFiscalArtifactBuilder>()));
-        services.TryAddScoped<IFiscalArtifactArchive, FinanceFiscalPrivateArchive>();
         services.AddScoped<IFinancePayablesStore, FinancePayablesStore>();
         services.AddScoped<IFinanceTreasuryStore, FinanceTreasuryStore>();
-        services.AddScoped<IFinancePreinvoiceReviewStore, EfFinancePreinvoiceReviewStore>();
-        services.AddScoped<IPreinvoiceLineEditStore, EfPreinvoiceLineEditStore>();
         services.AddScoped<IFinanceInvoiceLedgerStore, EfFinanceInvoiceLedgerStore>();
         services.AddScoped<IFinanceReportStore, EfFinanceReportStore>();
+        services.AddScoped<IFinanceHomeStore, EfFinanceHomeStore>();
         services.AddScoped<IFinanceReportExportAudit, EfFinanceReportExportAudit>();
-        services.AddScoped<IFinanceReconciliationReadStore, EfFinanceReconciliationReadStore>();
-        services.AddScoped<IFinancePreinvoiceListStore, EfFinancePreinvoiceListStore>();
+        // ADR-0035, block 3: the internal draft and its invoice exist only inside the issuance of «Por facturar».
         services.AddScoped<EfPreinvoiceDraftStore>();
-        services.AddScoped<IPreinvoiceDraftStore>(provider => provider.GetRequiredService<EfPreinvoiceDraftStore>());
-        services.AddScoped<IPreinvoiceSubmissionStore, EfPreinvoiceSubmissionStore>();
-        services.AddScoped<IPreinvoiceDisputeResolutionStore, EfPreinvoiceDisputeResolutionStore>();
         services.AddScoped<EfFinanceInvoiceIssueStore>();
-        services.AddScoped<IFinanceInvoiceIssueStore>(provider => provider.GetRequiredService<EfFinanceInvoiceIssueStore>());
         services.AddScoped<EfNonFiscalInvoiceReadStore>();
         services.AddScoped<INonFiscalInvoiceReadStore>(provider => provider.GetRequiredService<EfNonFiscalInvoiceReadStore>());
         services.AddScoped<Elevant.Application.Finance.IInvoiceIssuanceStore, EfInvoiceIssuanceStore>();
@@ -187,7 +176,6 @@ public static class DependencyInjection
             provider.GetRequiredService<TimeProvider>(),
             provider.GetRequiredService<Elevant.Application.Finance.ICardPaymentGateway>()));
         services.AddScoped<Elevant.Application.Finance.ICardPaymentStore>(provider => provider.GetRequiredService<EfCardPaymentStore>());
-        services.AddScoped<INonFiscalPaymentStore, EfNonFiscalPaymentStore>();
         services.AddScoped<INonFiscalPaymentReadStore, EfNonFiscalPaymentReadStore>();
         services.AddScoped<IPrivateFinancialObjectStore>(
             _ => new S3PrivateFinancialObjectStore(configuration));

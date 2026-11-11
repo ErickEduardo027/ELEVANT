@@ -22,7 +22,6 @@ public sealed partial class SqlServerMigrationTests
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ElevantDbContext>();
         var packages = scope.ServiceProvider.GetRequiredService<IFinancePackageStore>();
-        var draftStore = scope.ServiceProvider.GetRequiredService<IPreinvoiceDraftStore>();
         var definition = await db.ServiceDefinitions.SingleAsync(x => x.Code == "BAGGAGE", ct);
         var create = new SavePackageInput(Guid.NewGuid(), "GPU-QA", "GPU sintético", "USD", 500, "Turnaround", null, null, new(2026,1,1), null, [new(definition.PublicId, "minute", 60, 15, 20)], null);
         Assert.Equal("forbidden", (await packages.SaveAsync(ContractsAccount, null, create, ct)).Code);
@@ -67,30 +66,27 @@ public sealed partial class SqlServerMigrationTests
         await db.SaveChangesAsync(ct);
         var station = await db.Stations.Where(x => x.Id == tat.StationId).Select(x => x.PublicId).SingleAsync(ct);
         var command = new CreatePreinvoiceDraftCommand(FinanceAccount, station, tat.OperationDate, tat.OperationDate, Guid.NewGuid(), services.Select(x => x.PublicId).ToArray());
-        var invoiceDraft = await draftStore.CreateAsync(command, ct); Assert.True(invoiceDraft.IsSuccess, invoiceDraft.Reason);
-        var detail = (await draftStore.GetAsync(FinanceAccount, invoiceDraft.DraftId!.Value, ct))!;
-        Assert.Equal(540, detail.Total);
-        Assert.Equal(500, Assert.Single(detail.Lines, x => x.Kind == "Package").Amount);
-        Assert.Equal(40, Assert.Single(detail.Lines, x => x.Kind == "Excess").Amount);
-        Assert.All(detail.Lines.Where(x => x.Kind == "Service"), x => Assert.Equal(0, x.Amount));
-        Assert.Equal(invoiceDraft.DraftId, (await draftStore.CreateAsync(command, ct)).DraftId);
-        Assert.Equal(PreinvoiceDraftFailure.Conflict, (await draftStore.CreateAsync(command with { RequestId = Guid.NewGuid() }, ct)).Failure);
-        Assert.Equal(2, await db.Set<PackageConsumptionEntry>().CountAsync(ct));
-        var review = scope.ServiceProvider.GetRequiredService<IFinancePreinvoiceReviewStore>();
-        var cancel = new PreinvoiceReviewInput(Guid.NewGuid(), detail.Version, "Corregir agrupación sintética");
-        Assert.True((await review.CancelAsync(FinanceAccount, detail.Id, cancel, ct)).IsSuccess);
-        Assert.True((await review.CancelAsync(FinanceAccount, detail.Id, cancel, ct)).IsSuccess);
-        async Task<PreinvoiceDraftResult> CompeteAsync()
+        // 4-A: the valuation is the internal draft of an issuance. Two of them racing for the same services reserve
+        // them, and the package consumption, exactly once.
+        async Task<PreinvoiceDraftResult> CompeteAsync(Guid requestId)
         {
             await using var contender = provider.CreateAsyncScope();
-            return await contender.ServiceProvider.GetRequiredService<IPreinvoiceDraftStore>().CreateAsync(command with { RequestId = Guid.NewGuid() }, ct);
+            return await ValuationDraftAsync(contender.ServiceProvider, command with { RequestId = requestId }, ct);
         }
-        var race = await Task.WhenAll(CompeteAsync(), CompeteAsync());
+        Guid[] requests = [Guid.NewGuid(), Guid.NewGuid()];
+        var race = await Task.WhenAll(requests.Select(CompeteAsync));
         Assert.Single(race, result => result.IsSuccess);
         Assert.Single(race, result => result.Failure == PreinvoiceDraftFailure.Conflict);
-        var winner = race.Single(result => result.IsSuccess);
-        Assert.Equal(540, (await draftStore.GetAsync(FinanceAccount, winner.DraftId!.Value, ct))!.Total);
-        Assert.Equal(4, await db.Set<PackageConsumptionEntry>().CountAsync(ct));
+        var winner = Array.FindIndex(race, result => result.IsSuccess);
+        var (total, lines) = await ValuationOfAsync(db, race[winner].DraftId!.Value, ct);
+        Assert.Equal(540, total);
+        Assert.Equal(500, Assert.Single(lines, x => x.Kind == PreinvoiceLineKind.Package).Amount);
+        Assert.Equal(40, Assert.Single(lines, x => x.Kind == PreinvoiceLineKind.Excess).Amount);
+        Assert.All(lines.Where(x => x.Kind == PreinvoiceLineKind.Service), x => Assert.Equal(0, x.Amount));
+        var replay = await CompeteAsync(requests[winner]);
+        Assert.Equal((race[winner].DraftId, true), (replay.DraftId, replay.Replayed));
+        Assert.Equal(PreinvoiceDraftFailure.Conflict, (await CompeteAsync(Guid.NewGuid())).Failure);
+        Assert.Equal(2, await db.Set<PackageConsumptionEntry>().CountAsync(ct));
         Assert.Equal(2, await db.PreinvoiceLines.CountAsync(line => line.Kind == PreinvoiceLineKind.Service && line.ReleasedAt == null, ct));
     }
 }

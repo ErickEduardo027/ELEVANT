@@ -65,9 +65,12 @@ internal sealed class EfAccountChangeReadStore(
         var hasClosureAccess = access?.Has("contracts.service_closures.read") == true ||
             access?.Has("operations.service_closures.read") == true;
         var hasReceiptsAccess = access?.Has("finance.receipts.read") == true;
+        // 4-N11: «Por facturar» is read with invoicing; «Facturas» with invoicing or reconciliation.
+        var hasInvoicingAccess = hasFinanceAccess && access!.Has("finance.invoicing.read");
+        var hasInvoicesAccess = hasFinanceAccess && (access!.Has("finance.invoicing.read") ||
+            access.Has("finance.reconciliation.read"));
         var hasPayablesAccess = access?.Has("finance.payables.read") == true || access?.Has("finance.suppliers.read") == true;
         var hasExpensesAccess = access?.Has("finance.expenses.read") == true || access?.Kind == DepartmentAssignmentKind.Administrator;
-        var hasFiscalAccess = access?.Has("finance.fiscal.read") == true;
         var rows = await context.AccountChanges.AsNoTracking()
             .Where(change => change.RecipientAccountId == accountInternalId &&
                 change.Id > after &&
@@ -115,22 +118,24 @@ internal sealed class EfAccountChangeReadStore(
                                                   device.InstallationId == installationId &&
                                                   device.RevokedAt == null)))))))))) &&
                 (change.Resource != "finance_approved_services" ||
-                    (hasFinanceAccess && change.StationId != null &&
+                    (hasInvoicingAccess && change.StationId != null &&
                      context.GroundOperations.Any(operation =>
                          operation.PublicId == change.ResourceId &&
                          operation.CurrentStatus == GroundOperationStatus.Approved &&
                          context.Turnarounds.Any(turnaround =>
                              turnaround.Id == operation.TurnaroundId &&
                              turnaround.StationId == change.StationId)))) &&
+                // 4-N11: an invoice of the station was issued, paid, applied, reversed or adjusted.
+                (change.Resource != "finance_invoices" ||
+                    (hasInvoicesAccess && change.StationId != null &&
+                     context.NonFiscalInvoices.Any(invoice =>
+                         invoice.PublicId == change.ResourceId && invoice.StationId == change.StationId))) &&
                 (change.Resource != "finance_receipts" || hasReceiptsAccess) &&
                 (change.Resource != "finance_payables" || hasPayablesAccess) &&
                 (change.Resource != "finance_expenses" || hasExpensesAccess) &&
-                (change.Resource != "finance_fiscal" || hasFiscalAccess) &&
-                (change.Resource != "finance_preinvoices" ||
-                    (hasFinanceAccess && change.StationId != null &&
-                     context.Preinvoices.Any(draft =>
-                         draft.PublicId == change.ResourceId &&
-                         draft.StationId == change.StationId))) &&
+                // 4-A: «Documentos fiscales» and the preinvoice screens were retired; nothing writes these hints any more
+                // and the ones already stored are never delivered.
+                change.Resource != "finance_fiscal" && change.Resource != "finance_preinvoices" &&
                 (change.Resource != "finance_tariffs" ||
                     (hasFinanceAccess && change.StationId != null &&
                      context.ContractVersions.Any(version =>
