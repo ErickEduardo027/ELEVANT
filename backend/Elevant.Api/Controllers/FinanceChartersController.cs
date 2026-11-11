@@ -42,8 +42,9 @@ public sealed class FinanceChartersController(CharterHandler handler) : Controll
     /// 4-N22: confirms the prepayment with an Idempotency-Key and the version Finance saw (a stale one is 409
     /// <c>version_conflict</c>). Confirmed after the charter was invoiced, it settles that invoice at once and the excess
     /// stays as the airline's credit. The same amount and reference again change nothing; another amount or reference
-    /// corrects it with a reason while it was never applied, else 409 <c>charter_prepayment_applied</c>. Every refusal
-    /// but a 401 carries its code.
+    /// corrects it with a reason while it was never applied, else 409 <c>charter_prepayment_applied</c>. A receipt of the
+    /// airline posted at the same moment is 409 <c>charter_prepayment_receipt_conflict</c>: nothing was written. Every
+    /// refusal but a 401 carries its code.
     /// </summary>
     [RequestSizeLimit(BodyLimitBytes)]
     [CharterCommandProblemDetails]
@@ -142,6 +143,8 @@ public sealed class FinanceChartersController(CharterHandler handler) : Controll
                 "not_found" => "El charter ya no existe o no está en su alcance.",
                 CharterCodes.PrepaymentNotConfirmed => "El prepago no está confirmado.",
                 CharterCodes.PrepaymentApplied => "El prepago ya se aplicó a la factura del charter.",
+                CharterCodes.PrepaymentReceiptConflict =>
+                    "Otro cobro de la aerolínea se registró al mismo tiempo. Vuelva a cargar el charter.",
                 CharterCodes.InvalidRequest => "Revise el monto y la referencia del prepago.",
                 _ => "El charter cambió mientras lo revisaba. Vuelva a cargarlo.",
             };

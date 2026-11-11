@@ -169,11 +169,12 @@ const OCC_INCIDENT_CODES = ["incident_transition_invalid", "incident_report_inva
   "operation_closed", "invalid_incident_request"] as const;
 /**
  * Charter (phase 3, block D, 3-N24): no service is added on a confirmed prepayment; only a confirmed one is reopened.
- * Phase 4, block C (4-N22): a prepayment already applied to the invoice is neither corrected nor reopened in place, and
- * an amount or a reference the confirmation cannot take.
+ * Phase 4, block C (4-N22): a prepayment already applied to the invoice is neither corrected nor reopened in place, an
+ * amount or a reference the confirmation cannot take, and a receipt of the airline posted at the same moment as the
+ * prepayment's (nothing was written; re-read and confirm again).
  */
 const CHARTER_CODES = ["charter_prepayment_confirmed", "charter_prepayment_not_confirmed", "charter_prepayment_applied",
-  "invalid_charter_request"] as const;
+  "invalid_charter_request", "charter_prepayment_receipt_conflict"] as const;
 /**
  * OCC and Gestión Humana reports (phase 3, block E, 3-N13): an export over its row limit is refused, never cut; a
  * malformed or out-of-range query; an unknown report; a station outside the caller's scope or no longer active.
