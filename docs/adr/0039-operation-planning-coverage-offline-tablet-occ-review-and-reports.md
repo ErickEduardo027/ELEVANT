@@ -218,7 +218,7 @@ Ningún bloque toca el seed, la configuración (`appsettings*.json`), `backend/c
 - **Turno en otra estación.** Si `shift_day_taken` responde porque el turno del agente ese día es de otra estación, el panel de OCC no lo encuentra (`shift_not_found`): muestra el aviso, pero no ofrece el ajuste.
 - **`airlineId` de `airline_code_in_use`.** `ElevantApiError` no conserva esa extensión, así que «Nuevo vuelo» elige la aerolínea existente por nombre o IATA.
 - **La unidad en el panel de asignación.** El panel de asignación de Planificación (`frontend/private-web/src/features/planning/components/OccAssignmentPanel.jsx`) muestra la unidad de cada servicio del contrato tal como la guarda la tarifa, con su código (`operation`), porque no usa `unitLabel`. El detalle del vuelo y Revisión ya la muestran con su nombre.
-- **Fase 4 «Facturación».** Sus 32 huecos siguen abiertos, entre ellos el día UTC de Finanzas (4-N10) y el prepago de un charter confirmado después de facturar (4-N22). En el arnés quedan `test.fixme` los pasos 4-A y 4-B.
+- **Fase 4 «Facturación».** Sus 32 huecos siguen abiertos, entre ellos el día UTC de Finanzas (4-N10) y el prepago de un charter confirmado después de facturar (4-N22). En el arnés quedan `test.fixme` los pasos 4-A y 4-B. *Cerrados el 10 de noviembre de 2026; en el arnés ya no queda ningún `test.fixme` ([ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).*
 
 ## Trazabilidad de huecos
 

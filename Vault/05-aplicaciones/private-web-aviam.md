@@ -399,9 +399,11 @@ y [servicio de sesión](../../frontend/private-web/src/services/humanResourcesVe
 > [!NOTE] Finanzas en la fase 4
 > Posterior al commit verificado de esta nota: este bloque describe el código
 > de la fase 4 del ciclo (`39a85a46`;
-> [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
-> [ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Las reglas y los
-> permisos están en [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
+> [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+> [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
+> [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md),
+> que recoge las decisiones de la fase). Las reglas y los permisos están en
+> [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
 
 `/contratos` y `/finanzas` son shells protegidos que cambian módulos mediante
 estado interno, no rutas independientes para cada pestaña, y solo muestran los

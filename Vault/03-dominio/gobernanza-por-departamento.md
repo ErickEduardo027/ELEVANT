@@ -165,8 +165,9 @@ versión envían los comandos del mapa de posiciones, lo lee también quien tien
 
 **Cambios de la fase 4 del ciclo**, también posteriores al commit verificado
 (código de `39a85a46`;
-[ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
-[Finanzas](finanzas-tarifas-cargos-y-cobros.md)):
+[ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)
+y [Finanzas](finanzas-tarifas-cargos-y-cobros.md)):
 
 - el menú de Finanzas queda en Inicio · Facturación (Por facturar, Facturas con
   sus pestañas Cobros y Estados de cuenta, Charters) · Cuentas por pagar
@@ -190,7 +191,12 @@ versión envían los comandos del mapa de posiciones, lo lee también quien tien
   gasto propio nunca necesitó un código de Finanzas, y Finanzas recibe «Mis
   gastos» sin permiso;
 - el perfil sembrado «Analista de facturación» de Development recibe
-  `finance.notifications.read` y ya no tiene códigos de prefactura.
+  `finance.notifications.read` y ya no tiene códigos de prefactura;
+- la segregación de funciones de cuentas por pagar y gastos compara personas,
+  no permisos: Development siembra una sola cuenta de Finanzas, que no aprueba
+  una factura de proveedor que registró o envió ni da la aprobación final de un
+  gasto que revisó por escalamiento. Para cerrar ese ciclo en Development hace
+  falta que Gobernanza cree otra cuenta de Finanzas.
 
 Un alias retirado solo se atribuye al departamento de su prefijo, para que una
 plantilla guardada siga validando, y la normalización de los grants lo descarta
@@ -299,11 +305,13 @@ Posterior al commit verificado de esta nota (código de `8a79fe70`):
   informó cancelado o desviado un vuelo importado, que un cambio de posición dejó
   una operación sin agente elegible y que una operación sin iniciar perdió su
   contrato.
-- Desde la fase 4 (código de `39a85a46`), Finanzas recibe
-  `operation_ready_to_invoice` cuando OCC aprueba operaciones con servicios
-  facturables, una por aerolínea, estación y día hábil, solo si también abre
-  «Por facturar» (`finance.invoicing.read`); abre esa pantalla. El aviso de
-  factura pagada con tarjeta (`invoice_paid`) llega a quien abre «Facturas».
+- Desde la fase 4 (código de `39a85a46`;
+  [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)),
+  Finanzas recibe `operation_ready_to_invoice` cuando OCC aprueba operaciones
+  con servicios facturables, una por aerolínea, estación y día hábil, solo si
+  también abre «Por facturar» (`finance.invoicing.read`); abre esa pantalla. El
+  aviso de factura pagada con tarjeta (`invoice_paid`) llega a quien abre
+  «Facturas».
 
 **Pruebas.** Cada tipo tiene una prueba SQL que comprueba quién la recibe y quién
 no, el filtro por estación, la marca de leída, la reaparición como no leída de

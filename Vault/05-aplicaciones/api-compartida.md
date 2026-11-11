@@ -173,6 +173,12 @@ Los archivos `appsettings*.json` y `.env.example` contienen forma y
 placeholders seguros. No copies valores reales a documentación, logs ni
 imágenes.
 
+Posterior al commit verificado de esta nota (`6cbfb273`): el entorno con el
+que la API compara `CardPayments:Mode` sale de `DOTNET_ENVIRONMENT`, de
+`ASPNETCORE_ENVIRONMENT` o, si faltan, de la clave `environment` del host, la
+que fija `UseEnvironment`; sin ninguno es `Production`
+([ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
+
 ## Presencia operativa
 
 El [controlador](../../backend/Elevant.Api/Controllers/OperationalPresenceController.cs)
@@ -195,8 +201,9 @@ la autoridad.
 - El e-CF y la pasarela de tarjeta son simulaciones; no hay proveedor fiscal
   ni pasarela reales.
 - No hay conciliación bancaria ni obtención automática de tasas.
-- Algunos comandos aceptan todavía la `Idempotency-Key` opcional, a la espera
-  del paso «contract» ([brechas](../03-dominio/brechas-y-preguntas-abiertas.md)).
+- Algunos comandos aceptan todavía la `Idempotency-Key` opcional, y la emisión
+  de facturas `operationVersions` opcional, a la espera del paso «contract»
+  ([brechas](../03-dominio/brechas-y-preguntas-abiertas.md)).
 
 ## Fuentes y relaciones
 

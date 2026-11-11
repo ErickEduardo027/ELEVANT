@@ -149,7 +149,8 @@ al entregar y la asignación de equipos no tiene comando.
 
 **Actores:** Finanzas y la aerolínea
 ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
-[ADR-0036](../../docs/adr/0036-simulated-card-payment.md)).
+[ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
 
 | Paso | Operaciones | Cobertura |
 | --- | --- | --- |
@@ -163,7 +164,8 @@ al entregar y la asignación de equipos no tiene comando.
 
 Spec: [fase 4](../../frontend/public-web/tests/e2e-cycle/fase4-facturacion.spec.ts).
 El e-CF y la pasarela son simulación: «Simulación — sin validez fiscal».
-Abierto (**?**): conectividad fiscal real, pasarela real y conciliación bancaria.
+Abierto (**?**): conectividad fiscal real, pasarela real, conciliación bancaria
+y el paso «contract» que volverá obligatorio `operationVersions` en la emisión.
 
 ## Consultar como cliente
 

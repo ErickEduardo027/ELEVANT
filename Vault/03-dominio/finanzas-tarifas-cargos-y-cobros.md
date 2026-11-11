@@ -87,7 +87,11 @@ tags:
 Esta nota describe el código del commit verificado, con las cuatro fases del
 ciclo. No acredita merge en otra rama, despliegue, emisión fiscal real ni cobro
 real: la factura e-CF y la pasarela de tarjeta son simulaciones y cada documento
-lo dice con «Simulación — sin validez fiscal».
+lo dice con «Simulación — sin validez fiscal». Las decisiones de la fase 4
+«Facturación» están en
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md),
+y lo que cambió después del commit verificado se señala como «Posterior al
+commit verificado».
 
 Contratos gobierna el catálogo de servicios y negocia y propone las versiones
 del contrato; Finanzas gobierna precios y paquetes, aprueba los precios de cada
@@ -175,14 +179,29 @@ Development usa 15 % para el nocturno y el festivo, como el formulario de AVIAM.
 Desde [ADR-0039](../../docs/adr/0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md):
 
 - **Una sola regla de lo facturable.** Se factura un servicio completado o en excepción, con cantidad ejecutada, que OCC no excluyó en la revisión ([`ServiceBillability`](../../backend/Elevant.Application/Finance/ServiceBillability.cs)). La aplican «Por facturar», el borrador interno, la emisión e-CF, los recargos automáticos y los reportes, también «Servicios ejecutados por aerolínea» de OCC.
-- **Exclusión de OCC.** OCC excluye de la facturación, con motivo, un servicio en excepción con cantidad mientras la revisión sigue abierta. El tiempo extra y la demora que marca ELEVANT van a un servicio completado antes que a uno en excepción, y si OCC excluye el servicio que los lleva pasan al siguiente servicio facturable que los admite: la operación los sigue facturando una vez (corrección de la revisión del bloque D de la fase 3, `3b749a94`).
+- **Exclusión de OCC.** OCC excluye de la facturación, con motivo, un servicio en excepción con cantidad mientras la revisión sigue abierta.
 - **Cargos que el contrato excluye.** OCC ya no los ve ni los añade. Un cargo heredado de ese tipo bloquea el servicio, y con él su operación, en «Por facturar» y en la emisión con `charge_excluded_by_contract`, hasta que OCC reabra la revisión y lo quite: nunca se valora en 0 sin aviso ([política](../../backend/Elevant.Application/Finance/FinanceApprovedServicePolicy.cs)).
 - **Lo firmado.** OCC solo aprueba la Orden de Servicio firmada o corregida por OCC, y los recargos automáticos se proyectan en la Orden antes de la firma: Finanzas factura lo que firmó la aerolínea. Una aprobación de la que nada se facturó se reabre en OCC; una ya facturada se corrige con una nota de crédito.
 - **Recargos recalculados.** El reenvío de una corrección mide el tiempo en tierra hasta la primera entrega y retira solo los recargos automáticos que ya no se detectan, y la evidencia que llega mientras OCC revisa los recalcula.
 
+Posterior al commit verificado de esta nota: la integración de Development en
+la rama de la fase 4 (`cbd52512`) trajo la corrección de la revisión del bloque
+D de la fase 3 (`3b749a94`), que esa verificación no cubre:
+
+- El tiempo extra y la demora que marca ELEVANT van a un servicio completado
+  antes que a uno en excepción, y si OCC excluye el servicio que los lleva pasan
+  al siguiente servicio facturable que los admite: la operación los sigue
+  facturando una vez ([recargos](../../database/DevelopmentDB/Elevant.Persistence/Operations/AutomaticSurchargeApplier.cs)).
+- La Orden de Servicio de una ronda de corrección proyecta los recargos como
+  la reentrega, así que OCC aprueba la reentrega firmada.
+- El cliente compartido conserva el motivo `charge_excluded_by_contract` o
+  `excluded_in_review` de una emisión rechazada, y la web lo explica en
+  español ([códigos](../../packages/api-client/src/errors.ts)).
+
 ## Facturación de operaciones aprobadas
 
-Desde la fase 4 ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md))
+Desde la fase 4 ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)
+y [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md))
 Finanzas factura directamente las operaciones aprobadas por OCC, sin prefactura
 visible ni aceptación de la aerolínea.
 
@@ -250,6 +269,11 @@ La aerolínea paga su factura desde el portal, siempre por el saldo completo ([A
 - La [pasarela simulada](../../backend/Elevant.Infrastructure/Finance/SimulatedCardGateway.cs) aprueba 4111 1111 1111 1111 y 5555 5555 5555 4444, rechaza 4000 0000 0000 0002 (fondos) y 0069 (vencida), responde error de procesador con 0119 y rechaza cualquier otra.
 - Un pago aprobado crea un cobro con método `Card` aplicado a la factura, el correo «Pago recibido» con recibo PDF y el aviso `invoice_paid` para quien abre «Facturas». Rechazos y errores quedan como intentos en `commercial.card_payment_attempts`.
 - Solo se guardan la marca, los últimos 4 dígitos y la autorización: nunca el número, el CVV, el vencimiento ni el titular, tampoco en auditoría, correos o avisos.
+
+Posterior al commit verificado de esta nota (`6cbfb273`): el entorno con el que
+la API compara `CardPayments:Mode` sale de `DOTNET_ENVIRONMENT`, de
+`ASPNETCORE_ENVIRONMENT` o, si faltan, de la clave `environment` del host, la
+que fija `UseEnvironment`; sin ninguno es `Production`.
 
 ## Charters sin contrato
 
@@ -382,7 +406,7 @@ hay pasarela de tarjeta real, conciliación bancaria, libro mayor ni obtención
 automática de tasas, y esta nota no acredita despliegue. Odoo es referencia de
 negocio fijada y revisada; ELEVANT conserva su implementación C#/React y su UI.
 
-- [ADR-0016](../../docs/adr/0016-finance-tariffs-charges-and-receivables.md), [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y [ADR-0036](../../docs/adr/0036-simulated-card-payment.md)
+- [ADR-0016](../../docs/adr/0016-finance-tariffs-charges-and-receivables.md), [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md), [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md), que recoge las decisiones de la fase 4
 - [Plan de la plataforma de Finanzas](../../docs/superpowers/plans/2026-10-18-finance-platform.md), histórico
 - [Matriz Odoo y licencias](../../docs/reference/odoo-finance-adaptation.md)
 - [Backend y contratos actuales](../../backend/README.md)

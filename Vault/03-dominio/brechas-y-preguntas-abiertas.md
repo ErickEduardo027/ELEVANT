@@ -103,6 +103,11 @@ cerró.
   firmada (ADR-0039, [ADR-0032](../../docs/adr/0032-aviam-forms-signatures-and-walkaround.md)).
 - **Reconciliación tras reconectar.** La tableta y las webs reconcilian el
   cursor del feed y releen por REST; SignalR solo acelera el aviso.
+- **Comandos sin conexión.** La tableta guarda sus comandos en una sola cola
+  por cuenta, FIFO por operación, y los reenvía con su clave; el inicio y los
+  servicios llevan la hora del toque, y el recibo repite el mismo resultado o el
+  mismo código. El detalle, con sus excepciones, está en
+  [Mobile Agent](../05-aplicaciones/mobile-agent.md) (ADR-0039).
 - **Precedencia de la llegada.** La llegada que registra OCC prevalece sobre
   la del proveedor, y la importación del feed se vincula a la escala del mismo
   vuelo en lugar de duplicarla (ADR-0039).
@@ -113,7 +118,12 @@ cerró.
   aerolínea; una corrección es una nota de crédito y el cobro con tarjeta es
   siempre por el saldo completo ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
   [ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). No hay reclamos ni
-  disputas en el sistema, por decisión de producto.
+  disputas en el sistema, por decisión de producto. La fase 4 cerró los huecos
+  de facturación, cobro y cuentas por pagar: emisión atómica, cierre sin cargo,
+  día hábil de Santo Domingo, notas con su e-NCF, pasarela elegida por
+  configuración, pagos a proveedores que se revierten, segregación de funciones
+  y gastos que se retiran y se escalan
+  ([ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
 
 ## Siguen abiertas
 
@@ -121,8 +131,12 @@ cerró.
 
 - El paso «contract» que vuelva obligatoria la `Idempotency-Key` en los
   comandos que hoy la aceptan opcional, sobre todo los comerciales, de
-  gobernanza y de OCC ampliados en las fases 1 a 3, y la versión esperada en los
-  que todavía no la exigen. Es un cambio coordinado con los clientes desplegados.
+  gobernanza y de OCC ampliados en las fases 1 a 3, la versión esperada en los
+  que todavía no la exigen y `operationVersions` en la emisión de facturas, que
+  la fase 4 añadió opcional. Es un cambio coordinado con los clientes
+  desplegados.
+- Las respuestas `401` no llevan `code`, como en el resto del repositorio: los
+  clientes las tratan por su estado como sesión vencida.
 - Una consulta general de auditoría: hoy se lee por área y Superadministración
   solo ve la de gobernanza, comercial y Gestión Humana
   ([almacén](../../database/DevelopmentDB/Elevant.Persistence/Identity/EfGovernanceStore.cs)).
@@ -176,7 +190,15 @@ cerró.
   arranca fuera de Development, Test o Testing, o ninguna
   ([composición](../../backend/Elevant.Infrastructure/DependencyInjection.cs)).
 - Los datos heredados que ninguna migración corrige, como las versiones de
-  contrato que una aprobación anterior ya recortó.
+  contrato que una aprobación anterior ya recortó o un borrador interno antiguo
+  sin factura que sigue reteniendo sus servicios (`pending_preinvoice`):
+  liberarlo es una decisión sobre los datos.
+- «Por facturar» trae todas las operaciones pendientes de la estación, las
+  ordena y las pagina en memoria: alcanza con el volumen actual, y falta
+  medirla con datos reales.
+- El recorrido E2E todavía no pasa por un charter: su paso se salta mientras la
+  corrida de la fase 3 no deje un charter facturado, y las pruebas SQL cubren
+  su factura en el portal y el prepago aplicado una sola vez.
 
 ### Operación, evidencia y revisión
 

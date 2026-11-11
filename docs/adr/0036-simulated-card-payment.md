@@ -25,6 +25,8 @@ Erick pidió que la aerolínea pague en el portal con una tarjeta simulada y con
   | 4000 0000 0000 0119 | Error del procesador: `processing_error` (se reintenta) |
   | Cualquier otra con Luhn válido | Rechazada: `card_not_accepted` |
 
+> **Actualización (10 de noviembre de 2026).** La pasarela se elige con `CardPayments:Mode`: `Disabled` por defecto y en `appsettings.Production.json`, o `Simulated`, que solo arranca en los entornos `Development`, `Test` o `Testing`; en otro, la API no inicia. Sin pasarela, `GET airline/portal/card-payments/availability` lo dice, el portal muestra el pago como no disponible y `POST …/card-payments` responde `409 card_payments_unavailable` antes de mirar la tarjeta. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
+
 **2. Pago del total.**
 - `POST airline/portal/invoices/{invoiceId}/card-payments` con `Idempotency-Key`. El cuerpo lleva titular, número, vencimiento, CVV y monto.
 - Solo se pagan facturas de la aerolínea de la cuenta (`AIRLINE_CLIENT`). El monto debe ser el **saldo completo**; si no, responde `409 amount_mismatch`. Una factura saldada da `409 invoice_paid`.
@@ -38,6 +40,8 @@ Erick pidió que la aerolínea pague en el portal con una tarjeta simulada y con
 - **Idempotencia:** la misma clave con el mismo cuerpo devuelve el intento guardado (`200`, `replayed`). Con otro cuerpo responde `409 idempotency_conflict`. La huella del cuerpo es SHA-256 de la factura, el monto, la marca y los últimos 4 dígitos, nunca del número completo.
 - El portal reintenta un resultado incierto (de red) con la misma clave. Tras un rechazo, o para otra tarjeta, usa una clave nueva.
 - Finanzas no puede registrar a mano un cobro `Card`.
+
+> **Actualización (10 de noviembre de 2026).** Tesorería tampoco revierte ni devuelve un cobro `Card` (`409 card_payment_not_reversible`): se corrige con una nota de crédito, que sobre una factura E31 lleva su e-NCF `E34`. Toda negativa del pago, salvo el `401`, lleva `code` además de los `reasons`. El portal de un charter paga así el resto de su factura. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
 
 **3. Datos de tarjeta.** Solo se guardan la **marca, los últimos 4 dígitos**, el estado, el código de rechazo y la autorización. Nunca el número completo, el CVV ni el nombre del titular, ni en la base ni en la auditoría ni en los correos (lo comprueba la prueba de integración). En producción se usaría el formulario tokenizado de un proveedor de pagos.
 

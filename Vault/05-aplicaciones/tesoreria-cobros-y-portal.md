@@ -45,9 +45,11 @@ tags:
 
 # Cobros, aplicaciones y consulta de aerolínea
 
-Esta nota describe el código del commit verificado, con la fase 4 del ciclo. No
-acredita merge en otra rama, despliegue ni aceptación operativa. Las reglas de
-facturación, notas y tarjeta están en
+Esta nota describe el código del commit verificado, con la fase 4 del ciclo,
+cuyas decisiones recoge
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
+No acredita merge en otra rama, despliegue ni aceptación operativa. Las reglas
+de facturación, notas y tarjeta están en
 [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md).
 
 ## De dónde nace un cobro

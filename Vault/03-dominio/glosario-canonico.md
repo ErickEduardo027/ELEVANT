@@ -194,8 +194,9 @@ Posterior al commit verificado de esta nota: estos términos, y las filas
 «Marca de cargo», «Ajuste», «Nota de crédito», «e-NCF», «Saldo» y «Día hábil»
 de arriba, describen el código de la fase 4 «Facturación y cobro»
 (`39a85a46`; [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
-[ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
-[Finanzas](finanzas-tarifas-cargos-y-cobros.md)).
+[ADR-0036](../../docs/adr/0036-simulated-card-payment.md),
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)
+y [Finanzas](finanzas-tarifas-cargos-y-cobros.md)).
 
 | Término | Significado | No confundir con |
 | --- | --- | --- |

@@ -247,7 +247,8 @@ La definición de servicio es catálogo; la tarifa pertenece a una versión cont
 ### De la entrega aprobada a la factura
 
 Posterior al commit verificado de esta nota: desde la fase 4 del ciclo (código
-de `39a85a46`; [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md))
+de `39a85a46`; [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md))
 Finanzas factura directamente las operaciones aprobadas por OCC desde «Por
 facturar» (`GET finance/invoicing/pending-operations` y
 `POST finance/invoices/from-operations`). La prefactura es solo el borrador

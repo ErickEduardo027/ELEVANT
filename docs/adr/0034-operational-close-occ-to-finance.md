@@ -80,6 +80,8 @@ Fase 3 del ciclo operativo, bloque 5: el cierre de la operación entre OCC y Fin
 
 - **Servicios aprobados:** atajos «Semana pasada» y «Esta semana» (de domingo a sábado) y los recargos de cada servicio con su origen.
 
+> **Actualización (10 de noviembre de 2026).** «Servicios aprobados» se retiró con su endpoint. «Por facturar» lee `GET finance/invoicing/pending-operations`: solo las operaciones aprobadas que esperan factura, de la más antigua a la más reciente, con todos sus motivos de bloqueo y los atajos de semana (de domingo a sábado) y de mes. Finanzas sigue valorando la evidencia aprobada, ahora desde «Por facturar» y la emisión, y al aprobar OCC recibe la alerta `operation_ready_to_invoice`. Ver [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
+
 **5. Cierre operacional del día.**
 
 - Reporte nuevo de OCC, `daily-close`. Por vuelo muestra:

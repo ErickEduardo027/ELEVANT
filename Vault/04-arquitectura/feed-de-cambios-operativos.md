@@ -243,9 +243,10 @@ Tampoco esto demuestra latencia en el VPS ni entrega con la aplicación cerrada.
 
 Posterior al commit verificado de esta nota: esta sección describe el código de
 la fase 4 del ciclo (`39a85a46`;
-[ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
-[ADR-0036](../../docs/adr/0036-simulated-card-payment.md)). Las pistas siguen
-sin llevar datos.
+[ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+[ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
+Las pistas siguen sin llevar datos.
 
 **Pistas nuevas o ampliadas:**
 
@@ -258,8 +259,9 @@ sin llevar datos.
   «Facturas» relee con ella y al recuperar el foco
   ([vista](../../frontend/private-web/src/features/finance/invoices/InvoicesPage.jsx)).
 - `finance_approved_services` ahora exige `finance.invoicing.read` y se
-  anuncia también por cada operación facturada; «Por facturar» e Inicio la
-  escuchan ([datos de Por facturar](../../frontend/private-web/src/features/finance/invoicing/useToInvoiceData.js)).
+  anuncia también por cada operación facturada o cerrada sin cargo; «Por
+  facturar» e Inicio la escuchan
+  ([datos de Por facturar](../../frontend/private-web/src/features/finance/invoicing/useToInvoiceData.js)).
 - `airline_treasury` sigue anunciando cada cambio de la cartera de la
   aerolínea, también el pago con tarjeta y el prepago de un charter aplicado.
 - `airline_preinvoices` la sigue escribiendo la emisión sobre su borrador

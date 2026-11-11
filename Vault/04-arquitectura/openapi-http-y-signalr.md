@@ -163,7 +163,11 @@ llevan un `code` estable en `Extensions`
 ([GovernanceResults](../../backend/Elevant.Api/Controllers/GovernanceResults.cs)).
 Una excepción inesperada se registra y produce un 500 genérico con `traceId`,
 sin stack trace ni texto de la excepción. Los status code pages cubren los
-códigos sin cuerpo.
+códigos sin cuerpo. Una escritura retirada que un cliente anterior todavía
+puede llamar responde `410` con su `code` (`legacy_governance_retired` y, en
+Finanzas, `legacy_finance_route_retired`;
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)),
+y la ruta de un módulo borrado responde `404` a una sesión válida.
 
 ## Readiness y liveness
 

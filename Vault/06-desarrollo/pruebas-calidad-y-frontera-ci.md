@@ -132,16 +132,20 @@ verificado;
   y se aparta `passwords.json` del estado del arnés, porque el seed vuelve a
   las contraseñas iniciales.
 
-Desde la fase 4 del ciclo (código de `39a85a46`, también posterior al commit
-verificado; [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md) y
-[ADR-0036](../../docs/adr/0036-simulated-card-payment.md)):
+Desde la fase 4 del ciclo (código de `39a85a46` y el ajuste del paso de cuentas
+por pagar de `c3d86d0f`, también posteriores al commit verificado;
+[ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+[ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)):
 
 - **Pasos de la fase 4.** Ya no queda ningún `test.fixme` en las
   [pruebas de la fase 4](../../frontend/public-web/tests/e2e-cycle/fase4-facturacion.spec.ts):
   la emisión, el pago con tarjeta, la nota de crédito, el estado de cuenta, los
   reportes, el menú de Finanzas, las cuentas por pagar y los gastos son pruebas
   reales. Dos pasos se saltan con su motivo cuando la corrida no dejó lo que
-  necesitan: la nota de crédito y un charter facturado. El último paso
+  necesitan: el estado de cuenta del portal, si no se emitió la nota de
+  crédito, y el charter, mientras la corrida de la fase 3 no deje un charter
+  facturado; las pruebas SQL cubren el charter (4-N08 y 4-N22). El último paso
   comprueba, sin navegador, que el Vault describe el ciclo como el código: cada
   operación que cita el mapa de capacidades existe en el snapshot y ninguna
   nota vigente describe la API como vacía. La puerta real de esa regla es

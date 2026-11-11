@@ -146,6 +146,13 @@ líneas liberadas: esos hechos son historial, no datos descartables. La columna
 `released_at` conserva precisión UTC de milisegundos (`datetimeoffset(3)`).
 Conciliación y recibo continúan pendientes; esta rama no está desplegada.
 
+> **Actualización (10 de noviembre de 2026).** La fase 4 del ciclo retiró del
+> producto la prefactura visible, la disputa y su resolución, con sus endpoints
+> y sus pantallas. Sus tablas, sus migraciones y las filas ya guardadas se
+> conservan como historia, y la prefactura sigue existiendo como borrador
+> interno de la emisión desde operaciones
+> ([ADR-0040](../adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
+
 ## Factura no fiscal en la rama de integración
 
 `NonFiscalInvoices` agrega `commercial.non_fiscal_invoices` y
@@ -157,6 +164,15 @@ durables. Los índices únicos de prefactura, clave y línea fuente impiden dupl
 la emisión. La aerolínea relee su propia factura mediante una ruta tenant-scoped;
 no se infiere un documento tributario ni un pago. La migración es aditiva,
 sin DML de negocio y aún no está desplegada.
+
+> **Actualización (10 de noviembre de 2026).** Desde la fase 4 del ciclo toda
+> factura nace de «Por facturar» como e-CF simulada
+> ([ADR-0035](../adr/0035-direct-invoicing-simulated-ecf.md)) y se sigue
+> guardando en `commercial.non_fiscal_invoices`, colgada de un borrador interno
+> que la misma transacción serializable crea, acepta y emite. La emisión desde
+> una prefactura aceptada (`POST finance/invoices`) responde
+> `410 legacy_finance_route_retired`
+> ([ADR-0040](../adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
 
 ## Revisión comercial y aerolíneas sin IATA
 
@@ -261,6 +277,67 @@ bloque toca el seed. El modelo anterior a esta migración declara obligatorio el
 agente que reporta una incidencia: si la API vuelve a esa versión después de que
 OCC reporte una, falla donde carga esa incidencia completa.
 
+## La facturación: notas con ITBIS, prepago del charter y cuentas por pagar
+
+`20261109030826_AddAdjustmentNoteTaxAndCharterPrepaymentLink` y
+`20261109064156_AddPayablesCorrections`, en ese orden y posteriores a
+`AddOccIncidentsReviewReopenAndServiceOrderCorrections`, son las dos
+migraciones de la fase 4 del ciclo
+([ADR-0040](../adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
+Son aditivas, sin `HasData` ni DML de negocio, y todas sus claves foráneas son
+`NO ACTION`:
+
+- `commercial.finance_treasury_adjustment_lines`: `net_amount` y `tax_amount`
+  (`decimal(19,4)`) y `tax_rate` (`decimal(9,4)`), que admiten nulos. Una nota
+  sobre una factura e-CF congela ahí el neto, el ITBIS y la tasa de cada línea
+  que ajusta; una nota anterior, o la de una línea sin ITBIS, no congela nada.
+- `commercial.finance_treasury_receipts`: `charter_agreement_id` (`bigint`,
+  admite nulos, FK a `ops.charter_agreements`) con el índice filtrado
+  `IX_finance_treasury_receipts_charter_agreement_id`. El cobro `PREPAGO`
+  guarda su charter, así que un prepago no se aplica dos veces.
+- `commercial.payable_payment_reversals`, tabla nueva: cada reverso de una
+  aplicación o anulación de un pago a proveedor es una fila inmutable con
+  `public_id` único, el pago, la aplicación opcional, el motivo
+  (`nvarchar(500)`, `ck_payable_payment_reversal_reason`), la cuenta y
+  `reversed_at` (`datetimeoffset(3)`). Un índice único por aplicación, filtrado
+  por `[application_id] IS NOT NULL`, y otro por pago, filtrado por
+  `[application_id] IS NULL`, impiden revertir dos veces; el pago y sus
+  aplicaciones nunca cambian.
+- `commercial.finance_payables_attachments`: `removed_at`
+  (`datetimeoffset(3)`) y `removed_by_account_id` (FK a la cuenta, con índice),
+  que admiten nulos: un comprobante quitado se conserva marcado.
+- `IX_supplier_invoices_supplier_id_document_reference` se recrea, único, con
+  el filtro `[status] <> N'Voided'`: anular una factura de proveedor libera su
+  referencia.
+
+El `Down` de la primera se detiene (`THROW 52400` y `52401`) si alguna nota
+congeló su ITBIS o algún cobro está vinculado a un charter, y el de la segunda
+(`THROW 52410` a `52413`) si hay reversos, comprobantes quitados, facturas de
+proveedor anuladas o gastos descartados: son instantáneas fiscales e historia
+de tesorería y de cuentas por pagar que se conservan, y el índice sin filtro no
+se puede recrear sobre una factura anulada. Ambas están registradas en
+`database/DevelopmentDB/scripts/diagnostics/verify-development.sql`, la cadena
+queda en 57 migraciones y `has-pending-model-changes` no reporta cambios.
+
+El resto de la fase cabe en columnas que ya existían:
+
+- `NoCharge` del borrador interno, en `commercial.preinvoices.status` (hasta 16
+  caracteres, sin CHECK);
+- `Voided` de la factura de proveedor, `Cancelled` del gasto y las etapas
+  `Correction`, `Void`, `Withdrawal`, `Discard` y `Escalation`, en columnas de
+  texto de hasta 32;
+- los propósitos de correo `AdjustmentNoteIssued` e `InvoiceOverdue`, en la
+  columna de propósito (hasta 24);
+- los recibos de los comandos nuevos, en `commercial.finance_pricing_commands`
+  y `commercial.finance_payables_commands`.
+
+«Anulada» de una factura es una proyección, y la marca del aviso de vencida,
+una entrada de auditoría (`finance.invoice.overdue_notified`). El seed solo
+inserta los grants nuevos del perfil «Analista de facturación». El modelo
+anterior a la fase no conoce `NoCharge`, `Voided` de la factura de proveedor
+ni `Cancelled` del gasto: volver a esa API sobre una base que ya los usa no es
+un rollback probado.
+
 ## Diferido explícitamente
 
 - emisión fiscal, documentos PDF, recibos y ledger de conciliación;
@@ -270,5 +347,13 @@ OCC reporte una, falla donde carga esa incidencia completa.
 - notificaciones y chat;
 - documentos y evidencia binaria;
 - proyecciones analíticas materializadas.
+
+> **Actualización (10 de noviembre de 2026).** De la primera viñeta, la emisión
+> fiscal real y la conciliación bancaria siguen diferidas. La prefactura, la
+> factura no fiscal y el pago manual de Development salieron del producto en la
+> fase 4: Finanzas emite un e-CF simulado con su PDF desde las operaciones
+> aprobadas y registra los cobros en «Cobros y aplicaciones»
+> ([ADR-0035](../adr/0035-direct-invoicing-simulated-ecf.md),
+> [ADR-0040](../adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
 
 Los mocks actuales tienen reglas incompletas o contradictorias para esas capacidades. Los binarios usarán almacenamiento S3-compatible; SQL conservará metadatos y object keys cuando se diseñe el módulo. Hasta entonces no se improvisan carpetas persistentes en el VPS ni columnas blob.

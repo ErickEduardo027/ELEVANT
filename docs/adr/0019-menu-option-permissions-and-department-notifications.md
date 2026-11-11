@@ -62,6 +62,20 @@ En la revisión del proyecto del 19-oct-2026, el profesor observó lo siguiente:
   Así, las plantillas y las cuentas existentes conservan su acceso. Los grants
   de gestión de `finance.catalog.*` se descartan y no se trasladan a Contratos,
   para no conceder escritura en otro departamento.
+
+  > **Actualización (10 de noviembre de 2026).** El menú de Finanzas es Inicio ·
+  > Facturación · Cuentas por pagar · Reportes · Configuración · Usuarios, y
+  > Cobros y Estados de cuenta son subventanas de Facturas. Los módulos
+  > retirados se conservan como alias: `finance.preinvoices.read` y
+  > `finance.approved_services.read` dan `finance.invoicing.read`, y
+  > `finance.preinvoices.issue` y `.manage` dan `finance.invoicing.issue`; los
+  > demás códigos de la prefactura, los tratamientos tributarios, los documentos
+  > fiscales, el registro heredado de pagos y notas (`finance.reconciliation.create`
+  > y `.record`) y `finance.expenses.create`, `.update` y `.manage` no dan nada.
+  > Un alias vacío se atribuye al departamento de su prefijo, así que una
+  > plantilla guardada sigue validando. La única acción nueva es
+  > `finance.payables.reverse`, y Finanzas tiene «Mis gastos» sin permiso. Ver
+  > [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
 - **Subventanas (actualización del 2 de noviembre de 2026).** Una función que vive
   dentro de otra pantalla es un módulo con `Parent` (Solicitudes de clausura
   dentro de Servicios, Notas de ajuste dentro de Facturas, Asistencia dentro de
@@ -140,6 +154,14 @@ En la revisión del proyecto del 19-oct-2026, el profesor observó lo siguiente:
   > es automática. Revisión suma la subventana «Incidencias» (`operations.incidents.read` y
   > `operations.incidents.update`). Ver
   > [ADR-0039](0039-operation-planning-coverage-offline-tablet-occ-review-and-reports.md).
+
+  > **Actualización (10 de noviembre de 2026).** Finanzas ya no recibe
+  > prefacturas aceptadas o disputadas: la prefactura salió del producto. Recibe
+  > `operation_ready_to_invoice` cuando OCC aprueba una operación con servicios
+  > facturables, una por aerolínea, estación y día hábil, si además tiene
+  > `finance.invoicing.read`, además del pago con tarjeta de una factura
+  > (`invoice_paid`, [ADR-0036](0036-simulated-card-payment.md)). Ver
+  > [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md).
 
 - **Lectura.** `GET department-notifications` y `PUT …/{id}/read` vuelven a
   comprobar el acceso actual. El feed de cambios de cuenta solo anuncia

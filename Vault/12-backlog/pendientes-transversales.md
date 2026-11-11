@@ -50,6 +50,10 @@ Esta matriz es un **índice de brechas verificables**, no una lista de tareas ya
 | Notificaciones fuera de la aplicación | Canal (correo o push del navegador) y preferencias por usuario | Una alerta llega con la aplicación cerrada y respeta las preferencias | [ADR-0019](../../docs/adr/0019-menu-option-permissions-and-department-notifications.md) |
 | Fiscal real y pasarela de tarjeta real | Proveedor fiscal autorizado, certificado, secuencias autorizadas y RNC real del emisor; contrato y revisión de cumplimiento de una pasarela | Un e-CF aceptado en el ambiente de pruebas de la DGII y un cobro real conciliado, sin datos de tarjeta en logs ni auditoría | [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md) y [riesgos de seguridad](../10-seguridad/riesgos-y-controles-pendientes.md) |
 | Conciliación bancaria, tasas automáticas y libro mayor | Decisión de producto y fuente de extractos y tasas | Cobros conciliados contra el banco y tasas obtenidas sin captura manual | [Brechas del dominio](../03-dominio/brechas-y-preguntas-abiertas.md) |
+| Contract de la emisión de facturas (ADR-0040) | Private Web publicada con la versión que siempre envía `operationVersions` | La emisión desde operaciones rechaza una llamada sin `operationVersions` | [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) |
+| «Por facturar» con volumen real | Datos o una carga representativa de una estación con muchas operaciones pendientes | La lectura, que hoy ordena y pagina en memoria, medida con ese volumen, o paginada en SQL con el mismo orden y los mismos motivos de bloqueo | [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) |
+| Charter en el recorrido E2E | Una corrida de la fase 3 que deje un charter facturado | El paso del charter de la fase 4 pasa sin saltarse: el portal del charter ve su factura y su cobro `PREPAGO` | [Pruebas y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md) |
+| Borradores internos antiguos sin factura | Decisión sobre los datos | Los servicios que retiene un borrador anterior a la emisión atómica dejan de bloquear su operación (`pending_preinvoice`), con auditoría, o se decide conservarlos | [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) |
 | Historia anterior a Git | Entrevista consentida y fuente contemporánea si existe | Testimonio fechado atribuido por rol, incertidumbres separadas de hechos | [Orígenes](../01-historia/origenes-y-limites-de-evidencia.md) |
 
 Las filas «Contract de los comandos comerciales» y «Restablecer la clave de
@@ -109,6 +113,15 @@ La misma revisión añadió las filas «Fiscal real y pasarela de tarjeta real»
 «Conciliación bancaria, tasas automáticas y libro mayor»: el e-CF y la
 pasarela de la fase 4 son simulaciones marcadas «Simulación — sin validez
 fiscal».
+
+El mismo día, también después del commit verificado, la fase 4 del ciclo
+(código de `39a85a46`;
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md))
+cerró los huecos de facturación, cobro y cuentas por pagar que el párrafo de
+la fase 3 daba por abiertos. Añadió cuatro filas: el contract de la emisión de
+facturas, la medición de «Por facturar» con volumen real, el charter en el
+recorrido E2E y los borradores internos antiguos sin factura. Ninguna fila
+anterior se cierra con ella.
 
 ## Cómo convertir una fila en trabajo
 

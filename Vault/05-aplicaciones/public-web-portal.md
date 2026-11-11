@@ -83,8 +83,10 @@ tags:
 > Lo que atribuye a la fase 4 (el estado «Anulada», las notas con su PDF, el
 > estado de cuenta con saldo a favor, la disponibilidad de la tarjeta y la
 > revalidación sin vaciar la pantalla) también es posterior: describe el código
-> de `39a85a46` ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md)
-> y [ADR-0036](../../docs/adr/0036-simulated-card-payment.md)).
+> de `39a85a46` ([ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
+> [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
+> [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md),
+> que recoge las decisiones de la fase 4).
 
 Public Web combina la landing pública con el acceso de aerolíneas. En Development, la aerolínea entra desde `/login` y utiliza `/portal`; la antigua ruta separada `/dev-airline` fue retirada. El portal ya autentica y consulta un bootstrap real de la API, pero no es un portal operacional completo ni una capacidad de Production.
 
