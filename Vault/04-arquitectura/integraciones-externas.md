@@ -200,14 +200,11 @@ En el árbol local de `feat/adminocc-redesignall`, Monitoreo y Posiciones conser
 
 ## Evidencia binaria y object storage
 
-El objetivo documentado es almacenar futuros binarios —por ejemplo, fotos o documentos— en un servicio S3-compatible y conservar en SQL sólo metadata/object keys. En el commit verificado:
+El objetivo documentado es almacenar los binarios —por ejemplo, fotos o documentos— en un servicio S3-compatible y conservar en SQL sólo metadata/object keys. El commit verificado ya tenía el adapter S3 privado de los PDF financieros y el contrato de carga y descarga de medios comerciales (`CommercialMediaController`).
 
-- no existe adapter de object storage;
-- no existe contrato HTTP de carga/descarga;
-- Mobile mantiene evidencia real deshabilitada;
-- no se debe improvisar BLOB SQL ni almacenamiento persistente local.
+*Posterior al commit verificado (código de `39a85a46`): la API guarda en el mismo bucket privado, con metadatos y SHA-256 en SQL, los medios comerciales, los PDF financieros, los comprobantes de cuentas por pagar y gastos y las fotos del walk-around de la tableta ([medios](medios-comerciales-privados.md)). La retención, el antivirus y el cifrado de los objetos siguen abiertos.*
 
-Proveedor, cifrado, límites, tipos, retención, autorización, URLs de descarga y borrado siguen sin decidir.
+No se improvisa BLOB SQL ni almacenamiento persistente local.
 
 ## Regla para incorporar un proveedor
 

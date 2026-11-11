@@ -135,8 +135,9 @@ verificado;
 
 Desde la fase 4 del ciclo (código de `39a85a46`, el paso 4-B y el retiro del
 último `test.fixme` de `9ae53481`, el ajuste del paso de cuentas por pagar de
-`c3d86d0f` y la revisión del bloque A de `8b61f567`, también posteriores al
-commit verificado;
+`c3d86d0f`, la revisión del bloque A de `8b61f567`, la del bloque D de
+`9335e657` y la del bloque E de `8450f65d`, también posteriores al commit
+verificado;
 [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
 [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
 [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)):
@@ -148,11 +149,15 @@ commit verificado;
   reales. Dos pasos se saltan con su motivo cuando la corrida no dejó lo que
   necesitan: el estado de cuenta del portal, si no se emitió la nota de
   crédito, y el charter, mientras la corrida de la fase 3 no deje un charter
-  facturado; las pruebas SQL cubren el charter (4-N08 y 4-N22). El último paso
+  facturado; las pruebas SQL cubren el charter (4-N08 y 4-N22). El paso de
+  cuentas por pagar anula desde «Pagos del proveedor» de una factura anulada un
+  pago con remanente que bloqueaba el retiro del proveedor
+  (`supplier_has_open_balance`), y después lo retira. El último paso
   comprueba, sin navegador, que el Vault describe el ciclo como el código: cada
   operación que cita el mapa de capacidades existe en el snapshot y ninguna
-  nota vigente describe la API como vacía. La puerta real de esa regla es
-  `npm run vault:ci`.
+  nota vigente describe la API como vacía ni da por inexistentes la
+  autenticación, las rutas de negocio, el tiempo real o el almacenamiento
+  privado. La puerta real de esa regla es `npm run vault:ci`.
 - **Pasarela simulada.** El mismo overlay activa `CardPayments__Mode=Simulated`:
   las tarjetas de prueba se aprueban o rechazan en memoria, sin red.
 - **Reapertura en la fase 3.** El paso que reabre la aprobación se salta si la

@@ -294,7 +294,12 @@ Son aditivas, sin `HasData` ni DML de negocio, y todas sus claves foráneas son
 - `commercial.finance_treasury_receipts`: `charter_agreement_id` (`bigint`,
   admite nulos, FK a `ops.charter_agreements`) con el índice filtrado
   `IX_finance_treasury_receipts_charter_agreement_id`. El cobro `PREPAGO`
-  guarda su charter, así que un prepago no se aplica dos veces.
+  guarda su charter, así que un prepago no se aplica dos veces; los cobros que
+  la emisión registró antes de esta columna conservan `charter_agreement_id`
+  en NULL (no hay UPDATE de datos) y se reconocen por el motivo del prepago y
+  su aplicación, con ese motivo, a la factura de la operación del charter. La
+  referencia sigue siendo única por aerolínea: si `PREPAGO {referencia}` ya
+  existe, el cobro agrega su propio id dentro de los 120 caracteres.
 - `commercial.payable_payment_reversals`, tabla nueva: cada reverso de una
   aplicación o anulación de un pago a proveedor es una fila inmutable con
   `public_id` único, el pago, la aplicación opcional, el motivo
@@ -355,5 +360,11 @@ un rollback probado.
 > aprobadas y registra los cobros en «Cobros y aplicaciones»
 > ([ADR-0035](../adr/0035-direct-invoicing-simulated-ecf.md),
 > [ADR-0040](../adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
+> Las notificaciones y el chat de la operación (`ops.operational_notifications`,
+> `ops.operation_messages`) y los documentos y la evidencia binaria ya están en
+> el modelo: los bytes viven en un bucket S3 privado y SQL guarda sus
+> metadatos, claves y SHA-256 (`commercial.media_assets`,
+> `commercial.financial_documents`, `commercial.finance_payables_attachments`
+> y `ops.operation_damage_marks`). La retención y el antivirus siguen abiertos.
 
-Los mocks actuales tienen reglas incompletas o contradictorias para esas capacidades. Los binarios usarán almacenamiento S3-compatible; SQL conservará metadatos y object keys cuando se diseñe el módulo. Hasta entonces no se improvisan carpetas persistentes en el VPS ni columnas blob.
+Los mocks actuales tienen reglas incompletas o contradictorias para esas capacidades. Los binarios usan almacenamiento S3-compatible y SQL conserva metadatos y object keys; no se improvisan carpetas persistentes en el VPS ni columnas blob.
