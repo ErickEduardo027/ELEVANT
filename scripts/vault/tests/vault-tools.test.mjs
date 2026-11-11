@@ -527,6 +527,47 @@ test("rejects empty-API claims once the OpenAPI snapshot publishes operations (4
   });
 });
 
+// The four gaps a client note kept after the API had closed them, the third wrapped across lines.
+const STALE_CLIENT_GAPS = [
+  "- **Brecha actual:** autenticación y autorización reales no existen en la API compartida.",
+  "- **Brecha actual:** las rutas de negocio usadas por servicios heredados no están en el OpenAPI vigente.",
+  "- **Brecha actual:** SignalR y el proveedor de vuelos están\n  reservados, no entregan datos reales a estas vistas.",
+  "- **Brecha actual:** carga de evidencias requiere una capacidad de object storage todavía no diseñada.",
+].join("\n");
+
+test("rejects client gaps that describe authentication, routes, realtime and storage as absent (4-B)", () => {
+  withFixture((root) => {
+    publishOperations(root, ["GetSystemPing", "CreateSession"]);
+    writeFileSync(
+      path.join(root, "Vault", "guides", "guide.md"),
+      note({
+        id: "guide",
+        title: "Guide",
+        verifiedCommit: headCommit(root),
+        body: [
+          "[Home](../README.md)",
+          "",
+          STALE_CLIENT_GAPS,
+          "",
+          "- **Brecha cerrada:** la API autentica y autoriza en el servidor; las rutas de negocio están en el snapshot y las del prototipo no están en el OpenAPI vigente.",
+        ].join("\n"),
+      }),
+      "utf8",
+    );
+    const issues = issuesFrom(() => validateVault(root, { checkInventory: false }));
+    const stale = issues
+      .split("\n")
+      .filter((issue) => issue.includes("describes the API as absent"));
+    // The closed gap on line 28 states the current code, so it passes.
+    assert.deepEqual(stale, [
+      "Vault/guides/guide.md: note describes the API as absent although the OpenAPI snapshot publishes 2 operations (line 22)",
+      "Vault/guides/guide.md: note describes the API as absent although the OpenAPI snapshot publishes 2 operations (line 23)",
+      "Vault/guides/guide.md: note describes the API as absent although the OpenAPI snapshot publishes 2 operations (line 24)",
+      "Vault/guides/guide.md: note describes the API as absent although the OpenAPI snapshot publishes 2 operations (line 26)",
+    ]);
+  });
+});
+
 test("accepts the same claim while the snapshot publishes no business operations", () => {
   withFixture((root) => {
     writeFileSync(
