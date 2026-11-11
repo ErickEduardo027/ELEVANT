@@ -20,7 +20,11 @@ public sealed record FinancePayablesAttachmentView(Guid Id, string ContentType, 
 
 public sealed record FinancePayablesReviewView(string Stage, string Decision, Guid ActorId, DateTimeOffset At, string? Reason);
 
-public sealed record FinancePayablesView(Guid Id, Guid SupplierId, string SupplierName, Guid ScopeStationId, string DocumentReference, DateOnly DocumentDate, DateOnly DueDate, string Status, FinancePayablesFx Fx, FinancePayablesDimensions Dimensions, decimal Total, decimal TotalDop, decimal Paid, decimal Remaining, string Version, IReadOnlyList<FinancePayablesLineView> Lines, IReadOnlyList<FinancePayablesAttachmentView> Attachments, IReadOnlyList<FinancePayablesReviewView> Reviews);
+/// <summary>
+/// A supplier invoice as its reader sees it. 4-N14: <see cref="ApprovalBlocked"/> is true when the reader's person created
+/// or submitted it, so the store refuses that reader's approval and another person of Finance approves it.
+/// </summary>
+public sealed record FinancePayablesView(Guid Id, Guid SupplierId, string SupplierName, Guid ScopeStationId, string DocumentReference, DateOnly DocumentDate, DateOnly DueDate, string Status, FinancePayablesFx Fx, FinancePayablesDimensions Dimensions, decimal Total, decimal TotalDop, decimal Paid, decimal Remaining, string Version, IReadOnlyList<FinancePayablesLineView> Lines, IReadOnlyList<FinancePayablesAttachmentView> Attachments, IReadOnlyList<FinancePayablesReviewView> Reviews, bool ApprovalBlocked = false);
 
 public sealed record FinancePayablesPaymentSave(Guid RequestId, Guid SupplierId, Guid ScopeStationId, DateOnly PaidOn, string Reference, FinancePayablesFx Fx, decimal Amount);
 

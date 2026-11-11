@@ -42188,6 +42188,7 @@
       },
       "FinancePayablesViewDto": {
         "required": [
+          "approvalBlocked",
           "attachments",
           "dimensions",
           "documentDate",
@@ -42288,6 +42289,9 @@
             "items": {
               "$ref": "#/components/schemas/FinancePayablesReviewViewDto"
             }
+          },
+          "approvalBlocked": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false

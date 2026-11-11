@@ -146,6 +146,25 @@ public sealed class FinancePayablesEndpointsTests(ElevantApiFactory factory) : I
         Assert.Equal(["payment.reverse", "payment.reverse"], stub.Calls.ToArray());
     }
 
+    /// <summary>
+    /// 4-N14: a supplier invoice tells its reader, in its detail and in the list, whether the store refuses that reader's
+    /// approval, so the screen hides it from the invoice's creator and submitters.
+    /// </summary>
+    [Fact]
+    public async Task AnInvoiceTellsItsReaderWhetherItsApprovalIsBlocked()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var date = new DateOnly(2026, 10, 18);
+        var invoice = new FinancePayablesView(Guid.NewGuid(), Guid.NewGuid(), "Synthetic supplier", Guid.NewGuid(), "SUP-1", date, date.AddDays(30),
+            "Submitted", new("USD", 60m, "Synthetic FX", date), new(), 10m, 600m, 0m, 10m, "AAAAAAAAB9E=", [], [], [], ApprovalBlocked: true);
+        await using var app = App(new Stub(FinancePayablesProblems.Forbidden, invoice));
+        using var client = Authorized(app);
+        using var detail = JsonDocument.Parse(await client.GetStringAsync($"/api/v1/finance/payables/{invoice.Id}", ct));
+        Assert.True(detail.RootElement.GetProperty("approvalBlocked").GetBoolean());
+        using var list = JsonDocument.Parse(await client.GetStringAsync("/api/v1/finance/payables", ct));
+        Assert.True(Assert.Single(list.RootElement.EnumerateArray()).GetProperty("approvalBlocked").GetBoolean());
+    }
+
     [Fact]
     public async Task AnUnknownActorIsAskedToAuthenticate()
     {
@@ -196,8 +215,11 @@ public sealed class FinancePayablesEndpointsTests(ElevantApiFactory factory) : I
         return client;
     }
 
-    /// <summary>A store that refuses every call with one code and records what reached it.</summary>
-    private sealed class Stub(string code) : IFinancePayablesStore
+    /// <summary>
+    /// A store that refuses every call with one code and records what reached it; with <paramref name="invoice"/> it reads
+    /// that supplier invoice instead.
+    /// </summary>
+    private sealed class Stub(string code, FinancePayablesView? invoice = null) : IFinancePayablesStore
     {
         public List<string> Calls { get; } = [];
 
@@ -211,8 +233,10 @@ public sealed class FinancePayablesEndpointsTests(ElevantApiFactory factory) : I
         public Task<FinancePayablesResult<SupplierView>> GetSupplierAsync(Guid actorId, Guid id, CancellationToken ct = default) => Refuse<SupplierView>("supplier");
         public Task<FinancePayablesResult<FinancePayablesMutation>> SaveSupplierAsync(Guid actorId, Guid? id, SupplierSave input, CancellationToken ct = default) => Refuse<FinancePayablesMutation>("supplier.save");
         public Task<FinancePayablesResult<FinancePayablesMutation>> DeleteSupplierAsync(Guid actorId, Guid id, FinancePayablesDecision input, CancellationToken ct = default) => Refuse<FinancePayablesMutation>("supplier.retire");
-        public Task<FinancePayablesResult<IReadOnlyList<FinancePayablesView>>> ListInvoicesAsync(Guid actorId, FinancePayablesFilter filter, CancellationToken ct = default) => Refuse<IReadOnlyList<FinancePayablesView>>("payables");
-        public Task<FinancePayablesResult<FinancePayablesView>> GetInvoiceAsync(Guid actorId, Guid id, CancellationToken ct = default) => Refuse<FinancePayablesView>("payable");
+        public Task<FinancePayablesResult<IReadOnlyList<FinancePayablesView>>> ListInvoicesAsync(Guid actorId, FinancePayablesFilter filter, CancellationToken ct = default) =>
+            invoice is null ? Refuse<IReadOnlyList<FinancePayablesView>>("payables") : Task.FromResult(new FinancePayablesResult<IReadOnlyList<FinancePayablesView>>([invoice]));
+        public Task<FinancePayablesResult<FinancePayablesView>> GetInvoiceAsync(Guid actorId, Guid id, CancellationToken ct = default) =>
+            invoice is null ? Refuse<FinancePayablesView>("payable") : Task.FromResult(new FinancePayablesResult<FinancePayablesView>(invoice));
         public Task<FinancePayablesResult<FinancePayablesMutation>> SaveInvoiceAsync(Guid actorId, Guid? id, FinancePayablesSave input, CancellationToken ct = default) => Refuse<FinancePayablesMutation>("payable.save");
         public Task<FinancePayablesResult<FinancePayablesMutation>> DecideInvoiceAsync(Guid actorId, Guid id, FinancePayablesDecision input, CancellationToken ct = default) => Refuse<FinancePayablesMutation>("payable.decide");
         public Task<FinancePayablesResult<IReadOnlyList<FinancePayablesPaymentView>>> ListPaymentsAsync(Guid actorId, FinancePayablesFilter filter, CancellationToken ct = default) => Refuse<IReadOnlyList<FinancePayablesPaymentView>>("payments");

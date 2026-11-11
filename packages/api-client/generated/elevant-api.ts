@@ -2621,6 +2621,7 @@ export interface FinancePayablesViewDto {
   lines: FinancePayablesLineViewDto[];
   attachments: FinancePayablesAttachmentViewDto[];
   reviews: FinancePayablesReviewViewDto[];
+  approvalBlocked: boolean;
 }
 
 export interface FinancePendingAirlineResponse {

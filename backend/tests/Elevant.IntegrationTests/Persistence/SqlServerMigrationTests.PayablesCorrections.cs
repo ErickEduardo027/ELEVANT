@@ -322,7 +322,8 @@ public sealed partial class SqlServerMigrationTests
     /// <summary>
     /// 4-N14: who creates or submits a supplier invoice does not approve it, and who approves it neither applies a payment
     /// to it nor recorded that payment; the comparison is by person. Rejecting and paying an invoice another person
-    /// approved stay possible for its creator.
+    /// approved stay possible for its creator. The invoice tells each reader, in its detail and in the list, whether its
+    /// approval is blocked for that reader, also for the creator who did not submit it.
     /// </summary>
     [Fact]
     public async Task SupplierInvoicesSeparateRegisteringApprovingAndPaying()
@@ -340,7 +341,15 @@ public sealed partial class SqlServerMigrationTests
             await store.DecideInvoiceAsync(actor, id, new(Guid.NewGuid(), (await ViewAsync(id)).Version, decision, reason), ct);
         var invoice = (await store.SaveInvoiceAsync(FinanceAccount, null, new(Guid.NewGuid(), supplier, station.PublicId, "SOD-0001", PayablesDate,
             PayablesDate.AddDays(30), PayablesUsd, new(), [PayablesLine()]), ct)).Value!.Id;
+        async Task<bool> BlockedAsync(Guid reader) => (await store.GetInvoiceAsync(reader, invoice, ct)).Value!.ApprovalBlocked;
+        async Task<bool> ListedBlockedAsync(Guid reader) =>
+            Assert.Single((await store.ListInvoicesAsync(reader, new(SupplierId: supplier), ct)).Value!).ApprovalBlocked;
+        Assert.True(await BlockedAsync(FinanceAccount)); Assert.False(await BlockedAsync(submitter));
         Assert.True((await DecideAsync(submitter, invoice, "Submitted")).IsSuccess);
+        // The creator who did not submit it, the submitter and a third person read what the approval below answers them.
+        Assert.True(await BlockedAsync(FinanceAccount)); Assert.True(await ListedBlockedAsync(FinanceAccount));
+        Assert.True(await BlockedAsync(submitter)); Assert.True(await ListedBlockedAsync(submitter));
+        Assert.False(await BlockedAsync(approver)); Assert.False(await ListedBlockedAsync(approver));
         Assert.Equal("segregation_of_duties", (await DecideAsync(FinanceAccount, invoice, "Approved")).Failure);
         Assert.Equal("segregation_of_duties", (await DecideAsync(submitter, invoice, "Approved")).Failure);
         // The creator may still send it back.

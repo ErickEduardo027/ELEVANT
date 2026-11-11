@@ -20,7 +20,12 @@ public sealed record FinancePayablesAttachmentViewDto(Guid Id, string ContentTyp
 
 public sealed record FinancePayablesReviewViewDto(string Stage, string Decision, Guid ActorId, DateTimeOffset At, string? Reason);
 
-public sealed record FinancePayablesViewDto(Guid Id, Guid SupplierId, string SupplierName, Guid ScopeStationId, string DocumentReference, DateOnly DocumentDate, DateOnly DueDate, string Status, FinancePayablesFxDto Fx, FinancePayablesDimensionsDto Dimensions, decimal Total, decimal TotalDop, decimal Paid, decimal Remaining, string Version, IReadOnlyList<FinancePayablesLineViewDto> Lines, IReadOnlyList<FinancePayablesAttachmentViewDto> Attachments, IReadOnlyList<FinancePayablesReviewViewDto> Reviews);
+/// <summary>
+/// A supplier invoice. 4-N14: <c>approvalBlocked</c> is true when the reader's person created or submitted it, whatever
+/// its status: the API refuses that reader's approval with <c>segregation_of_duties</c> and another person of Finance
+/// approves it. Rejecting it stays possible.
+/// </summary>
+public sealed record FinancePayablesViewDto(Guid Id, Guid SupplierId, string SupplierName, Guid ScopeStationId, string DocumentReference, DateOnly DocumentDate, DateOnly DueDate, string Status, FinancePayablesFxDto Fx, FinancePayablesDimensionsDto Dimensions, decimal Total, decimal TotalDop, decimal Paid, decimal Remaining, string Version, IReadOnlyList<FinancePayablesLineViewDto> Lines, IReadOnlyList<FinancePayablesAttachmentViewDto> Attachments, IReadOnlyList<FinancePayablesReviewViewDto> Reviews, bool ApprovalBlocked = false);
 
 public sealed record FinancePayablesPaymentSaveDto(Guid RequestId, Guid SupplierId, Guid ScopeStationId, DateOnly PaidOn, string Reference, FinancePayablesFxDto Fx, decimal Amount);
 

@@ -15,7 +15,7 @@ export const PAYABLES_PROBLEM_MESSAGES = Object.freeze({
   duplicate_reference: 'Ya existe una factura activa de este proveedor con ese número de documento.',
   duplicate_supplier_code: 'Ya existe un proveedor con ese código en la estación.',
   supplier_inactive: 'El proveedor está retirado: reactívelo en Proveedores para continuar.',
-  supplier_has_open_balance: 'El proveedor tiene facturas en curso, saldo pendiente o pagos sin aplicar: anúlelos o liquídelos antes de retirarlo.',
+  supplier_has_open_balance: 'El proveedor tiene facturas en curso, saldo pendiente o pagos sin aplicar: anúlelos o liquídelos en Facturas de proveedores antes de retirarlo.',
   invoice_has_applications: 'La factura tiene pagos aplicados: revierta esas aplicaciones antes de anularla.',
   payment_has_applications: 'El pago tiene aplicaciones activas: reviértalas antes de anular el pago.',
   payment_voided: 'El pago está anulado: ya no se puede aplicar.',

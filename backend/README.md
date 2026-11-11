@@ -651,7 +651,10 @@ con tenant derivado por el servidor. Ningún registro confirma fondos bancarios.
   motivo y libera su número de documento. Una aprobada nunca vuelve a Draft y
   una en revisión se decide antes de anularla. Quien creó o envió la factura no
   la aprueba, y quien la aprobó no registra ni aplica pagos contra ella
-  (`segregation_of_duties`, comparado por persona).
+  (`segregation_of_duties`, comparado por persona). Cada factura leída trae
+  `approvalBlocked`: es verdadero cuando la persona que la lee la creó o la
+  envió, con la misma regla de la aprobación, para que la pantalla no le
+  ofrezca aprobarla.
 - `api/v1/finance/payable-payments`: pago separado de sus applications;
   varias facturas, pagos parciales, saldo y remanente, sin sobreaplicación.
   `payable-payments/{id}/reversals` revierte una aplicación (`applicationId`)

@@ -7,7 +7,7 @@ describe('payables Problem Details in Spanish (4-N27)', () => {
   it.each([
     ['segregation_of_duties', 403, 'Otra persona de Finanzas debe aprobar o pagar este documento.'],
     ['duplicate_reference', 409, 'Ya existe una factura activa de este proveedor con ese número de documento.'],
-    ['supplier_has_open_balance', 409, 'El proveedor tiene facturas en curso, saldo pendiente o pagos sin aplicar: anúlelos o liquídelos antes de retirarlo.'],
+    ['supplier_has_open_balance', 409, 'El proveedor tiene facturas en curso, saldo pendiente o pagos sin aplicar: anúlelos o liquídelos en Facturas de proveedores antes de retirarlo.'],
     ['supplier_inactive', 409, 'El proveedor está retirado: reactívelo en Proveedores para continuar.'],
     ['expense_date_outside_assignment', 400, 'La fecha del gasto está fuera de su asignación a esta estación.'],
     ['receipt_required', 400, 'Adjunte un comprobante antes de enviar.'],

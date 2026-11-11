@@ -11,14 +11,14 @@ vi.mock('../../../services/commercialGovernanceApi', () => ({ commercialApi: vi.
 vi.mock('../../auth/authService', () => ({ readSession: () => ({ accountId: 'me', stationScopes: [{ stationId: 'st1', stationCode: 'PUJ' }] }), handleUnauthorizedResponse: vi.fn() }));
 const options = { stations: [{ id: 'st1', code: 'PUJ', name: 'Punta Cana' }], suppliers: [{ id: 'supplier', code: 'SP', name: 'Proveedor de rampa' }], airlines: [], services: [], turnarounds: [], currencies: ['USD', 'DOP'], employeeId: 'emp-me', department: 'Finance', canCreateOwnExpense: true, canReadOwnExpenses: true, canReviewDepartmentExpenses: true, canReadFinanceExpenses: true, canApproveFinanceExpenses: true, canPayFinanceExpenses: true };
 const fx = { currency: 'USD', rateToDop: 60, source: 'Tasa revisada', rateDate: '2026-10-18' };
-const invoice = { id: 'bill', supplierId: 'supplier', supplierName: 'Proveedor de rampa', scopeStationId: 'st1', documentReference: 'SUP-1', documentDate: '2026-10-18', dueDate: '2026-11-18', status: 'Approved', fx, dimensions: {}, total: 1000, totalDop: 60000, paid: 300, remaining: 700, version: 'bill-v1', lines: [{ id: 'line', number: 1, description: 'Combustible', quantity: 1, unitPrice: 1000, taxAmount: 0, total: 1000 }], attachments: [], reviews: [] };
+const invoice = { id: 'bill', supplierId: 'supplier', supplierName: 'Proveedor de rampa', scopeStationId: 'st1', documentReference: 'SUP-1', documentDate: '2026-10-18', dueDate: '2026-11-18', status: 'Approved', fx, dimensions: {}, total: 1000, totalDop: 60000, paid: 300, remaining: 700, version: 'bill-v1', lines: [{ id: 'line', number: 1, description: 'Combustible', quantity: 1, unitPrice: 1000, taxAmount: 0, total: 1000 }], attachments: [], reviews: [], approvalBlocked: false };
 let failure;
 const writes = () => commercialApi.mock.calls.filter(([, o]) => o?.method);
 function mount(ui, permissions, department = 'finance', kind = 'Administrator') {
   return render(<DepartmentAccessProvider observe={false} initialAccess={{ kind, department, permissions }}>{ui}</DepartmentAccessProvider>);
 }
 beforeEach(() => {
-  failure = null; invoice.status = 'Approved';
+  failure = null; invoice.status = 'Approved'; invoice.approvalBlocked = false;
   commercialApi.mockImplementation(async (path, optionsArg) => {
     if (optionsArg?.method) { if (failure) { const e = failure; failure = null; throw e; } return { id: 'created', replayed: false }; }
     if (path.includes('/options')) return options;
@@ -202,21 +202,82 @@ describe('Finance supplier, payable and expense pages', () => {
       expect(within(region).getByText(/Presentación · Enviado a revisión/)).toBeInTheDocument();
       expect(within(region).getByText(/Anulación · Anulado/)).toBeInTheDocument();
       expect(within(region).queryByText(/Void|Submission/)).not.toBeInTheDocument();
+      // The voided invoice offers no action of its own; 4-N04, 4-N15: the payments of its supplier stay voidable below.
+      const payments = within(region).getByRole('region', { name: 'Pagos del proveedor' });
+      await within(payments).findByRole('listitem', { name: 'Pago Transferencia' });
+      const actions = within(region).queryAllByRole('button').filter(button => !payments.contains(button));
       for (const name of [/Anular/, /Corregir/, /Aprobar/, /Rechazar/, /Enviar/, /Registrar pago/, /Aplicar pago/, /Editar/])
-        expect(within(region).queryByRole('button', { name })).not.toBeInTheDocument();
+        expect(actions.filter(button => name.test(button.textContent ?? '')).map(button => button.textContent)).toEqual([]);
     } finally { invoice.reviews = reviews; }
   });
-  it('does not offer the approval to who submitted the bill nor the payment to who approved it (4-N14)', async () => {
+  it('voids from a voided invoice the payment its reversed application left unapplied (4-N04, 4-N15)', async () => {
+    // The only approved invoice of the supplier had its application reversed and was voided: the payment keeps its remainder.
+    invoice.status = 'Voided';
+    const reversed = { id: 'app-reversed', invoiceId: 'bill', paymentAmount: 100, invoiceAmount: 100, rateToInvoice: 1, appliedAt: '2026-10-18T12:00:00Z',
+      reversedAt: '2026-10-19T12:00:00Z', reversalReason: 'Aplicado a la factura equivocada' };
+    const payment = { id: 'payment', supplierId: 'supplier', scopeStationId: 'st1', reference: 'Transferencia', paidOn: '2026-10-18', fx, amount: 900,
+      applied: 0, remaining: 900, version: 'payment-v1', applications: [reversed], voidedAt: null, voidReason: null };
+    commercialApi.mockImplementation(async (path, request) => {
+      if (request?.method) return { id: 'payment', replayed: false };
+      if (path.includes('/options')) return options;
+      if (path.startsWith('/finance/payable-payments?')) return [payment];
+      if (path === '/finance/payables/bill') return { ...invoice, paid: 0, remaining: 0 };
+      if (path.startsWith('/finance/payables?')) return [{ ...invoice, paid: 0, remaining: 0 }];
+      throw new Error('Unexpected path ' + path);
+    });
+    mount(<PayablesPage />, ['finance.payables.read', 'finance.payables.reverse']);
+    await userEvent.click(await screen.findByRole('button', { name: /SUP-1/ }));
+    const panel = await screen.findByRole('region', { name: 'Pagos del proveedor' });
+    const item = await within(panel).findByRole('listitem', { name: 'Pago Transferencia' });
+    expect(item).toHaveTextContent('Disponible');
+    expect(within(item).getByText('Esta factura')).toBeInTheDocument();
+    expect(within(item).getByText(/Revertida: Aplicado a la factura equivocada/)).toBeInTheDocument();
+    expect(within(item).queryByRole('button', { name: 'Revertir aplicación' })).not.toBeInTheDocument();
+    await userEvent.click(within(item).getByRole('button', { name: 'Anular pago' }));
+    await userEvent.type(within(panel).getByLabelText('Motivo de la decisión'), 'Pago registrado por error');
+    await userEvent.click(within(panel).getByRole('button', { name: 'Confirmar anulación' }));
+    await waitFor(() => expect(writes()).toHaveLength(1));
+    expect(writes()[0][0]).toBe('/finance/payable-payments/payment/reversals');
+    expect(JSON.parse(writes()[0][1].body)).toEqual({ expectedVersion: 'payment-v1', reason: 'Pago registrado por error', requestId: expect.any(String) });
+  });
+  it.each(['Draft', 'Submitted', 'Rejected'])('lists and voids the supplier payments from a %s invoice too (4-N04, 4-N15)', async status => {
+    invoice.status = status;
+    mount(<PayablesPage />, ['finance.payables.read', 'finance.payables.reverse']);
+    await userEvent.click(await screen.findByRole('button', { name: /SUP-1/ }));
+    const panel = await screen.findByRole('region', { name: 'Pagos del proveedor' });
+    const item = await within(panel).findByRole('listitem', { name: 'Pago Transferencia' });
+    expect(item).toHaveTextContent('Disponible');
+    expect(within(item).getByRole('button', { name: 'Anular pago' })).toBeEnabled();
+  });
+  it.each([
+    ['who submitted it', 'me'],
+    ['who created the draft another person submitted', 'other'],
+  ])('does not offer the approval to %s, as the server says (4-N14)', async (_name, submitter) => {
     const reviews = invoice.reviews;
     try {
-      invoice.status = 'Submitted';
-      invoice.reviews = [{ stage: 'Submission', decision: 'Submitted', actorId: 'me', at: '2026-10-18T12:00:00Z', reason: null }];
-      const { unmount } = mount(<PayablesPage />, ['finance.payables.read', 'finance.payables.approve', 'finance.payables.pay']);
+      invoice.status = 'Submitted'; invoice.approvalBlocked = true;
+      invoice.reviews = [{ stage: 'Submission', decision: 'Submitted', actorId: submitter, at: '2026-10-18T12:00:00Z', reason: null }];
+      mount(<PayablesPage />, ['finance.payables.read', 'finance.payables.approve', 'finance.payables.pay']);
       await userEvent.click(await screen.findByRole('button', { name: /SUP-1/ }));
       expect(await screen.findByText('Otra persona de Finanzas debe aprobar esta factura.')).toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'Aprobar factura' })).not.toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Rechazar factura' })).toBeInTheDocument();
-      unmount();
+    } finally { invoice.reviews = reviews; }
+  });
+  it('offers the approval to another person of Finance, whoever submitted the bill (4-N14)', async () => {
+    const reviews = invoice.reviews;
+    try {
+      invoice.status = 'Submitted';
+      invoice.reviews = [{ stage: 'Submission', decision: 'Submitted', actorId: 'other', at: '2026-10-18T12:00:00Z', reason: null }];
+      mount(<PayablesPage />, ['finance.payables.read', 'finance.payables.approve']);
+      await userEvent.click(await screen.findByRole('button', { name: /SUP-1/ }));
+      expect(await screen.findByRole('button', { name: 'Aprobar factura' })).toBeInTheDocument();
+      expect(screen.queryByText('Otra persona de Finanzas debe aprobar esta factura.')).not.toBeInTheDocument();
+    } finally { invoice.reviews = reviews; }
+  });
+  it('does not offer the payment to who approved the bill (4-N14)', async () => {
+    const reviews = invoice.reviews;
+    try {
       invoice.status = 'Approved';
       invoice.reviews = [{ stage: 'Submission', decision: 'Submitted', actorId: 'other', at: '2026-10-18T12:00:00Z', reason: null },
         { stage: 'Finance', decision: 'Approved', actorId: 'me', at: '2026-10-18T13:00:00Z', reason: null }];
@@ -273,7 +334,7 @@ describe('Finance supplier, payable and expense pages', () => {
     expect(screen.getByText('Solo se puede retirar un proveedor sin facturas en curso, saldo pendiente ni pagos sin aplicar. Se conserva todo el historial.')).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Motivo del retiro'), 'Proveedor sin contrato');
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar retiro' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('El proveedor tiene facturas en curso, saldo pendiente o pagos sin aplicar: anúlelos o liquídelos antes de retirarlo.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('El proveedor tiene facturas en curso, saldo pendiente o pagos sin aplicar: anúlelos o liquídelos en Facturas de proveedores antes de retirarlo.');
     expect(writes()[0][0]).toBe('/finance/suppliers/supplier');
     expect(JSON.parse(writes()[0][1].body)).toMatchObject({ decision: 'Retired', reason: 'Proveedor sin contrato', expectedVersion: 'supplier-v1' });
   });
