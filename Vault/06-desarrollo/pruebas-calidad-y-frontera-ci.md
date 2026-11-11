@@ -132,8 +132,9 @@ verificado;
   y se aparta `passwords.json` del estado del arnés, porque el seed vuelve a
   las contraseñas iniciales.
 
-Desde la fase 4 del ciclo (código de `39a85a46` y el ajuste del paso de cuentas
-por pagar de `c3d86d0f`, también posteriores al commit verificado;
+Desde la fase 4 del ciclo (código de `39a85a46`, el paso 4-B y el retiro del
+último `test.fixme` de `9ae53481`, y el ajuste del paso de cuentas por pagar de
+`c3d86d0f`, también posteriores al commit verificado;
 [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
 [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
 [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)):

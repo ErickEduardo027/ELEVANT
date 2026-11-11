@@ -75,5 +75,5 @@ Erick pidió eliminar la prefactura y facturar directamente las operaciones comp
 
 **Queda fuera de este bloque**
 - **Pago con tarjeta** desde el portal (bloque 2).
-- **Borrado** del código, endpoints y permisos de prefactura, y simplificación del resto de Finanzas (bloque 3). *Hecho el 10 de noviembre de 2026 ([ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).*
+- **Borrado** del código, endpoints y permisos de prefactura, y simplificación del resto de Finanzas (bloque 3). *Hecho en el bloque B de la fase 4 (`b0928bd9`, 8 de noviembre de 2026; [ADR-0040](0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).*
 - **RNC real de AVIAM y del cliente.** El emisor usa un RNC simulado y el cliente su razón social; el modelo comercial no guarda aún RNC revisados.
