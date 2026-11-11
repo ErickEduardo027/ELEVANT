@@ -133,8 +133,9 @@ verificado;
   las contraseñas iniciales.
 
 Desde la fase 4 del ciclo (código de `39a85a46`, el paso 4-B y el retiro del
-último `test.fixme` de `9ae53481`, y el ajuste del paso de cuentas por pagar de
-`c3d86d0f`, también posteriores al commit verificado;
+último `test.fixme` de `9ae53481`, el ajuste del paso de cuentas por pagar de
+`c3d86d0f` y la revisión del bloque A de `8b61f567`, también posteriores al
+commit verificado;
 [ADR-0035](../../docs/adr/0035-direct-invoicing-simulated-ecf.md),
 [ADR-0036](../../docs/adr/0036-simulated-card-payment.md) y
 [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)):
@@ -154,8 +155,8 @@ Desde la fase 4 del ciclo (código de `39a85a46`, el paso 4-B y el retiro del
 - **Pasarela simulada.** El mismo overlay activa `CardPayments__Mode=Simulated`:
   las tarjetas de prueba se aprueban o rechazan en memoria, sin red.
 - **Reapertura en la fase 3.** El paso que reabre la aprobación se salta si la
-  operación del ciclo ya se facturó o si la retiene un borrador interno
-  antiguo: su corrección es una nota de crédito.
+  operación del ciclo ya se facturó o si la retiene un borrador con factura
+  emitida (`pending_preinvoice`): su corrección es una nota de crédito.
 - **Sin corrida registrada.** Esta nota no registra todavía una corrida de la
   fase 4 contra el stack local.
 

@@ -128,7 +128,7 @@ saldo, pero no devuelve efectivo.
 - Contratos puede negociar excepciones; la revisión de Finanzas conserva la comparación. Una enmienda crea otra versión y no cambia ejecución o facturas anteriores.
 - Los paquetes congelan base, componentes incluidos y bloques de excedente por turnaround, tramo o período. El consumo se reserva bajo transacción serializable y no vuelve a cobrar el mismo bloque comenzado.
 - Ejemplo sintético GPU: base 500, 60 minutos incluidos, bloque de 15 a 20; 60/61/75/76/83 minutos producen 500/520/520/540/540.
-- El consumo de un paquete cuenta cuando lo retiene una factura o un cierre sin cargo. Un borrador interno antiguo sin factura, de antes de la fase 4, que retiene el mismo ámbito bloquea la valoración con `package_scope_has_unissued_preinvoice`; no existe un comando que lo libere ([valoración](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs)).
+- El consumo de un paquete cuenta cuando lo retiene una factura o un cierre sin cargo. *Posterior al commit verificado de esta nota (revisión del bloque A de la fase 4, `8b61f567`):* un borrador anterior sin factura que retiene, en la estación, consumo de un paquete de la versión de contrato que se factura ya no bloquea: la emisión y el cierre sin cargo lo anulan y liberan antes de valorar, con la auditoría `finance.invoicing.stale_draft_released` ([liberación](../../database/DevelopmentDB/Elevant.Persistence/Finance/StaleInternalDrafts.cs)). `package_scope_has_unissued_preinvoice` queda para un borrador con factura emitida que todavía retiene ese consumo, y la pantalla pide avisar a soporte técnico ([valoración](../../database/DevelopmentDB/Elevant.Persistence/Finance/FinancePackageValuation.cs)).
 - Los mínimos de cantidad generan un complemento trazable solo en versiones modernas con `PricingPolicyVersion > 0`. La cobertura de paquete no recibe otro mínimo de servicio. El legado conserva su semántica.
 - Falta de tarifa/FX, cobertura ambigua o base porcentual de paquete sin definir bloquea; no se convierte en precio cero.
 
@@ -221,17 +221,35 @@ de mes, «Toda la aerolínea del período», «Cargar más» y «Mostrando N de 
 Los límites de una factura son uno solo y el servidor los publica en la misma
 respuesta ([política](../../backend/Elevant.Application/Finance/FinanceInvoicePolicy.cs)):
 100 operaciones, 500 líneas y 31 días (`too_many_operations`, `too_many_lines`,
-`date_window_exceeded`). Nada se recorta en silencio. Un borrador interno
-antiguo sin factura que todavía retiene un servicio muestra la operación
-bloqueada con `pending_preinvoice`.
+`date_window_exceeded`). Nada se recorta en silencio.
+
+Posterior al commit verificado de esta nota, la revisión del bloque A de la
+fase 4 (`8b61f567`) cambió tres cosas de «Por facturar»:
+
+- Un borrador interno antiguo sin factura, o una prefactura del módulo
+  retirado en `Draft`, `Submitted`, `Disputed` o `Accepted`, no bloquea la
+  operación: la emisión y el cierre sin cargo lo anulan y liberan dentro de su
+  transacción, con la auditoría `finance.invoicing.stale_draft_released` y el
+  estado que tenía ([liberación](../../database/DevelopmentDB/Elevant.Persistence/Finance/StaleInternalDrafts.cs)).
+  Solo un borrador con factura emitida que todavía retiene un servicio muestra
+  la operación bloqueada con `pending_preinvoice`, y la pantalla pide avisar a
+  soporte técnico.
+- «Toda la aerolínea del período» cuenta todo el período, no solo las filas
+  cargadas: limpia la búsqueda y, si quedan páginas, lee antes de elegir las
+  pendientes de esa aerolínea. Avisa si no pudo leerlas, si el resto no cabe
+  en una factura o si quedan pendientes sin revisar.
+- Cambiar de estación, aerolínea o período vacía la tabla y muestra la carga
+  y, si falla, el error, nunca los datos anteriores; solo la revalidación de
+  los mismos filtros conserva las filas, y si falla las marca como no
+  actualizadas.
 
 ### Emisión
 
 - `POST finance/invoices/from-operations` (`IssueInvoiceFromOperations`, permiso `finance.invoicing.issue`) emite una factura para una operación o para varias de la misma aerolínea y moneda.
 - La emisión es **una sola transacción serializable** ([almacén](../../database/DevelopmentDB/Elevant.Persistence/Finance/EfInvoiceIssuanceStore.cs)): crea el borrador interno, valora paquetes, mínimos y recargos, aplica **ITBIS 18 %** fijo a cada línea y emite. Cualquier fallo hace rollback completo: el borrador nunca queda confirmado y las operaciones siguen en «Por facturar». Estación, aerolínea y organización activas se validan antes de escribir (`station_inactive`, `airline_inactive`).
 - Cada factura recibe un **e-NCF `E31` + 10 dígitos** consecutivo, un código de seguridad, su fecha de firma y el RNC simulado del emisor. El PDF tiene formato de factura de crédito fiscal, con las horas en hora RD, y dice «Simulación — sin validez fiscal».
-- Se rechaza una operación no aprobada (`operation_not_approved`) o ya facturada (`already_invoiced`), una mezcla de aerolíneas (`mixed_airline`) y una selección sin nada facturable (`nothing_to_invoice`); cada salida lleva Problem Details con `code` y conserva `reasons` para los clientes anteriores ([códigos](../../backend/Elevant.Application/Finance/InvoicingCodes.cs)).
-- **Idempotencia.** La emisión conserva el `requestId` del cuerpo: el mismo cuerpo responde `200` con la factura ya emitida (`replayed`); el mismo `requestId` con otra cuenta, estación u operaciones, o ya usado en un cierre sin cargo, da `409 idempotency_conflict`. `operationVersions`, opcional, sirve como versión esperada (`version_conflict`).
+- Se rechaza una operación no aprobada (`operation_not_approved`) o ya facturada (`already_invoiced`), una mezcla de aerolíneas (`mixed_airline`) y una selección sin nada facturable (`nothing_to_invoice`); cada salida lleva Problem Details con `code` y conserva `reasons` para los clientes anteriores ([códigos](../../backend/Elevant.Application/Finance/InvoicingCodes.cs)). *Posterior al commit verificado de esta nota (`8b61f567`):* por HTTP, más de 100 operaciones en la emisión o en el cierre sin cargo responde `400 too_many_operations` desde el filtro de binding ([filtro](../../backend/Elevant.Api/Controllers/InvoicingProblems.cs)), no el genérico `invalid_invoice_request`.
+- **Idempotencia.** La emisión conserva el `requestId` del cuerpo: el mismo cuerpo responde `200` con la factura ya emitida (`replayed`); el mismo `requestId` con otra cuenta, estación u operaciones, o ya usado en un cierre sin cargo, da `409 idempotency_conflict`. `operationVersions`, opcional, sirve como versión esperada (`version_conflict`). *Posterior al commit verificado de esta nota (`8b61f567`):* la emisión guarda ese cuerpo, con sus `operationVersions`, en el recibo `finance.invoice.issue` de `commercial.finance_pricing_commands`, así que el mismo `requestId` con otras versiones, o sin ellas cuando la primera las llevaba (y al revés), también da `409 idempotency_conflict`; una factura emitida antes de ese recibo se sigue comparando por su cuenta, su estación y sus operaciones.
 - **Total 0.** Una factura nunca se emite por 0: responde `422 zero_total` sin consumir e-NCF ni encolar correo. Esas operaciones se cierran con `POST finance/invoicing/no-charge-closures` (`CloseOperationsWithoutCharge`): `Idempotency-Key`, la versión de cada operación, un motivo de 5 a 500 caracteres y `finance.invoicing.issue`. Deja el borrador interno en `NoCharge` con la auditoría `finance.invoicing.closed_no_charge`, conserva el consumo del paquete y no tiene reversa, como una factura emitida. Una operación con importe responde `422 operation_has_charge`.
 - **Charter.** Si la escala tiene un charter con el prepago confirmado en la moneda de la factura, la emisión registra el cobro `PREPAGO {referencia}` y lo aplica hasta el total ([prepago](../../database/DevelopmentDB/Elevant.Persistence/Finance/CharterPrepaymentPosting.cs)); el excedente queda como saldo a favor.
 - **Correo.** La aerolínea recibe «Factura emitida» con el PDF: indica el total, el vencimiento y el prepago aplicado, nunca el saldo. Desde la fase 1, la factura muestra el estado real de esos correos (`GET finance/invoices/{id}/email-deliveries`): en cola, enviado, fallido con su motivo o sin destinatarios, y en ese caso pide entregar el PDF por otro canal.
@@ -330,9 +348,16 @@ Aprobación de contratos, Tasas de cambio, Unidades de cobro) · Usuarios del
 departamento.
 
 La [matriz del servidor](../../backend/Elevant.Domain/Governance/DepartmentPermissionCatalog.cs)
-define un módulo por opción. «Por facturar» y el PDF de la factura recién
-emitida dependen de `finance.invoicing.*`, e Inicio, con su propio permiso de
-lectura, muestra cada sección según el permiso de su módulo. Los códigos de módulos
+define un módulo por opción. «Por facturar» depende de `finance.invoicing.read`,
+y su emisión, de `finance.invoicing.issue`; Inicio, con su propio permiso de
+lectura, muestra cada sección según el permiso de su módulo. *Posterior al
+commit verificado de esta nota (revisión del bloque B de la fase 4,
+`54e0e8a1`):* el PDF de una factura lo abre «Facturas»
+(`finance.reconciliation.read`) para toda factura de sus estaciones, y
+`finance.invoicing.issue` solo para las que emitió la propia cuenta
+([política](../../backend/Elevant.Application/Finance/FinanceInvoicePolicy.cs));
+leer «Por facturar» sin emitir no abre ninguna, aunque sí el estado de sus
+correos (`GET finance/invoices/{id}/email-deliveries`). Los códigos de módulos
 retirados se conservan como alias para no romper perfiles guardados:
 `finance.approved_services.read` y `finance.preinvoices.read` resuelven a
 `finance.invoicing.read`; `finance.preinvoices.issue` y `.manage`, a

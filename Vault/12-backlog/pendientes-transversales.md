@@ -53,7 +53,6 @@ Esta matriz es un **índice de brechas verificables**, no una lista de tareas ya
 | Contract de la emisión de facturas (ADR-0040) | Private Web publicada con la versión que siempre envía `operationVersions` | La emisión desde operaciones rechaza una llamada sin `operationVersions` | [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) |
 | «Por facturar» con volumen real | Datos o una carga representativa de una estación con muchas operaciones pendientes | La lectura, que hoy ordena y pagina en memoria, medida con ese volumen, o paginada en SQL con el mismo orden y los mismos motivos de bloqueo | [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) |
 | Charter en el recorrido E2E | Una corrida de la fase 3 que deje un charter facturado | El paso del charter de la fase 4 pasa sin saltarse: el portal del charter ve su factura y su cobro `PREPAGO` | [Pruebas y frontera con CI](../06-desarrollo/pruebas-calidad-y-frontera-ci.md) |
-| Borradores internos antiguos sin factura | Decisión sobre los datos | Los servicios que retiene un borrador anterior a la emisión atómica dejan de bloquear su operación (`pending_preinvoice`), con auditoría, o se decide conservarlos | [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md) |
 | Historia anterior a Git | Entrevista consentida y fuente contemporánea si existe | Testimonio fechado atribuido por rol, incertidumbres separadas de hechos | [Orígenes](../01-historia/origenes-y-limites-de-evidencia.md) |
 
 Las filas «Contract de los comandos comerciales» y «Restablecer la clave de
@@ -122,6 +121,15 @@ la fase 3 daba por abiertos. Añadió cuatro filas: el contract de la emisión d
 facturas, la medición de «Por facturar» con volumen real, el charter en el
 recorrido E2E y los borradores internos antiguos sin factura. Ninguna fila
 anterior se cierra con ella.
+
+El 11 de noviembre de 2026, también después del commit verificado, se retiró
+la fila «Borradores internos antiguos sin factura», cuyo resultado ya cuentan
+[ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)
+y [Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md): desde la
+revisión del bloque A de la fase 4 (`8b61f567`), la emisión y el cierre sin
+cargo anulan y liberan esos borradores, con la auditoría
+`finance.invoicing.stale_draft_released`, y «Por facturar» ya no los cuenta
+como `pending_preinvoice`.
 
 ## Cómo convertir una fila en trabajo
 

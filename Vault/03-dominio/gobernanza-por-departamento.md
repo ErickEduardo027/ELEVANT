@@ -181,10 +181,13 @@ y [Finanzas](finanzas-tarifas-cargos-y-cobros.md)):
   `.manage` a `finance.invoicing.issue`, y los demás (tributarios, fiscal,
   `finance.reconciliation.create`) no conceden nada, así que un perfil guardado
   no falla;
-- `finance.reconciliation` se rotula «Facturas»; «Por facturar» y el PDF de
-  una factura recién emitida dependen de `finance.invoicing.*`, e Inicio, con
-  su propio permiso de lectura, muestra cada sección según el permiso de su
-  módulo;
+- `finance.reconciliation` se rotula «Facturas» y abre el PDF de toda factura
+  de sus estaciones; «Por facturar» depende de `finance.invoicing.read`, y el
+  PDF de la factura recién emitida, de `finance.invoicing.issue`, que desde la
+  revisión del bloque B (`54e0e8a1`) solo abre las que emitió la propia cuenta:
+  leer «Por facturar» sin emitir no abre facturas, aunque sí el estado de sus
+  correos. Inicio, con su propio permiso de lectura, muestra cada sección según
+  el permiso de su módulo;
 - la única acción nueva es `finance.payables.reverse` («Anular facturas y
   revertir pagos»);
 - `finance.expenses.create`, `.update` y `.manage` pasan a alias vacíos: el

@@ -161,7 +161,12 @@ sumó estados, historia y reglas de tiempo con dos migraciones aditivas:
   hábil en que se emitió la factura responde `effective_before_invoice`, y un
   movimiento anterior a su cobro, `effective_before_receipt`.
 - **Borrador interno:** `NoCharge` cierra sin cargo, con motivo y auditoría,
-  las operaciones cuya valoración es 0; no tiene reversa.
+  las operaciones cuya valoración es 0; no tiene reversa. Desde la revisión
+  del bloque A (`8b61f567`), un borrador anterior sin factura (`Draft`,
+  `Submitted`, `Disputed` o `Accepted`) pasa a `Voided` y libera sus líneas
+  cuando una emisión o un cierre sin cargo lo encuentra; la auditoría
+  `finance.invoicing.stale_draft_released` guarda el estado que tenía, su
+  total, su moneda y sus operaciones, bajo la clave de quien lo liberó.
 - **Factura:** «Anulada» (`Voided`) es una proyección, no un estado guardado:
   la factura sin cobros que las notas de crédito llevaron a 0. El aviso de
   factura vencida sale una sola vez, marcado por su entrada de auditoría.

@@ -124,6 +124,11 @@ cerró.
   configuración, pagos a proveedores que se revierten, segregación de funciones
   y gastos que se retiran y se escalan
   ([ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)).
+  *Posterior al commit verificado de esta nota (revisión del bloque A de la
+  fase 4, `8b61f567`):* un borrador interno antiguo sin factura ya no bloquea
+  su operación: la emisión o el cierre sin cargo que lo encuentra lo anula y
+  libera, con auditoría. Solo un borrador con factura emitida sigue
+  bloqueándola (`pending_preinvoice`).
 
 ## Siguen abiertas
 
@@ -194,9 +199,7 @@ cerró.
   arranca fuera de Development, Test o Testing, o ninguna
   ([composición](../../backend/Elevant.Infrastructure/DependencyInjection.cs)).
 - Los datos heredados que ninguna migración corrige, como las versiones de
-  contrato que una aprobación anterior ya recortó o un borrador interno antiguo
-  sin factura que sigue reteniendo sus servicios (`pending_preinvoice`):
-  liberarlo es una decisión sobre los datos.
+  contrato que una aprobación anterior ya recortó.
 - «Por facturar» trae todas las operaciones pendientes de la estación, las
   ordena y las pagina en memoria: alcanza con el volumen actual, y falta
   medirla con datos reales.
