@@ -124,10 +124,10 @@ describe("Problem Details codes", () => {
 
   it("knows the charter prepayment codes of phase 4 (block C, 4-N22)", () => {
     // Applied to the invoice, the prepayment is reversed in «Cobros» before it is reopened; the confirmation takes a key,
-    // the version and, to correct it, a reason.
+    // the version and, to correct it, a reason; a receipt of the airline posted at the same moment has its own code.
     for (const code of ["charter_prepayment_applied", "invalid_charter_request", "charter_prepayment_not_confirmed",
-      "idempotency_key_required", "expected_version_required", "reason_required", "version_conflict",
-      "idempotency_conflict"])
+      "charter_prepayment_receipt_conflict", "idempotency_key_required", "expected_version_required", "reason_required",
+      "version_conflict", "idempotency_conflict"])
       expect(ELEVANT_API_ERROR_CODES).toContain(code);
   });
 

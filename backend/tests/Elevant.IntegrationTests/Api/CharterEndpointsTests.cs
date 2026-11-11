@@ -103,6 +103,16 @@ public sealed class CharterEndpointsTests(ElevantApiFactory factory) : IClassFix
         state.ConfirmFailure = (MasterDataFailure.Conflict, "charter_prepayment_applied");
         Assert.Equal((HttpStatusCode.Conflict, "charter_prepayment_applied"),
             await Send(Confirm("""{"amount":300,"reference":"TRF-0002","version":"AAAA","reason":"Monto mal capturado"}""")));
+        // A receipt of the airline posted at the same moment is not a stale charter: its own code and Spanish title.
+        state.ConfirmFailure = (MasterDataFailure.Conflict, CharterCodes.PrepaymentReceiptConflict);
+        using (var concurrent = await client.SendAsync(Confirm("""{"amount":260,"reference":"TRF-0001","version":"AAAA"}"""),
+                   ct))
+        {
+            var problem = await concurrent.Content.ReadFromJsonAsync<JsonElement>(ct);
+            Assert.Equal((HttpStatusCode.Conflict, "charter_prepayment_receipt_conflict",
+                    "Otro cobro de la aerolínea se registró al mismo tiempo. Vuelva a cargar el charter."),
+                (concurrent.StatusCode, problem.GetProperty("code").GetString(), problem.GetProperty("title").GetString()));
+        }
         state.ConfirmFailure = (MasterDataFailure.NotFound, "not_found");
         Assert.Equal((HttpStatusCode.NotFound, "not_found"),
             await Send(Confirm("""{"amount":260,"reference":"TRF-0001","version":"AAAA"}""")));

@@ -11597,8 +11597,9 @@ export const getConfirmFinanceCharterPrepaymentUrl = (charterId: string,) => {
  * @summary 4-N22: confirms the prepayment with an Idempotency-Key and the version Finance saw (a stale one is 409
 `version_conflict`). Confirmed after the charter was invoiced, it settles that invoice at once and the excess
 stays as the airline's credit. The same amount and reference again change nothing; another amount or reference
-corrects it with a reason while it was never applied, else 409 `charter_prepayment_applied`. Every refusal
-but a 401 carries its code.
+corrects it with a reason while it was never applied, else 409 `charter_prepayment_applied`. A receipt of the
+airline posted at the same moment is 409 `charter_prepayment_receipt_conflict`: nothing was written. Every
+refusal but a 401 carries its code.
  */
 export const confirmFinanceCharterPrepayment = async (charterId: string,
     confirmCharterPrepaymentRequest?: ConfirmCharterPrepaymentRequest, options?: RequestInit): Promise<FinanceCharterResponse> => {

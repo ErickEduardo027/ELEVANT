@@ -14,6 +14,8 @@ function client() {
 export const CHARTER_PROBLEM_MESSAGES = Object.freeze({
   // 4-N22: applied to the invoice, the prepayment is reversed in «Cobros» before it is reopened or corrected.
   charter_prepayment_applied: 'El prepago ya se aplicó a la factura del charter. Revierta el cobro en «Cobros» y reabra el prepago para corregirlo.',
+  // 4-N22: another receipt of the airline was posted at the same moment; nothing was saved.
+  charter_prepayment_receipt_conflict: 'Otro cobro de la aerolínea se registró al mismo tiempo y el prepago no se guardó. Se actualizó la lista; confírmelo de nuevo.',
   invalid_charter_request: 'Revise el monto y la referencia del prepago.',
   charter_prepayment_not_confirmed: 'El prepago ya no está confirmado. Se actualizó la lista.',
   charter_prepayment_confirmed: 'El prepago ya está confirmado: reabra la cotización para agregar servicios.',

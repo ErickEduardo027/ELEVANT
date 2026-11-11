@@ -49,6 +49,33 @@ public sealed class CharterRulesTests
         Assert.False(CharterRules.IsValidPrepaymentAmount(1.005m));
     }
 
+    /// <summary>
+    /// 4-N22: a prepayment becomes the receipt «PREPAGO» and its bank reference. A reference the airline already used
+    /// carries the receipt's own id, so two receipts of one bank reference never share it; the id is never cut, the bank
+    /// reference is shortened to the column's 120 characters.
+    /// </summary>
+    [Fact]
+    public void APrepaymentReceiptKeepsAReferenceOfItsOwnWithinTheColumn()
+    {
+        var id = Guid.Parse("0199a3f2-c1d4-7e8b-9a0f-1e2d3c4b5a69");
+        Assert.Equal("PREPAGO TRF-0001", CharterRules.PrepaymentReceiptReference("TRF-0001"));
+        Assert.Equal("PREPAGO TRF-0001 · 0199a3f2c1d47e8b9a0f1e2d3c4b5a69",
+            CharterRules.PrepaymentReceiptReference("TRF-0001", id));
+        Assert.NotEqual(CharterRules.PrepaymentReceiptReference("TRF-0001", id),
+            CharterRules.PrepaymentReceiptReference("TRF-0001", Guid.CreateVersion7()));
+
+        // The longest bank reference Finance can confirm keeps the whole id after it.
+        var longest = CharterRules.NormalizeReference("TRF-" + new string('7', 76))!;
+        Assert.Equal(80, longest.Length);
+        Assert.Equal($"PREPAGO {longest}", CharterRules.PrepaymentReceiptReference(longest));
+        var suffixed = CharterRules.PrepaymentReceiptReference(longest, id);
+        Assert.Equal(CharterRules.ReceiptReferenceLength, suffixed.Length);
+        Assert.Equal($"PREPAGO {longest}"[..85] + " · 0199a3f2c1d47e8b9a0f1e2d3c4b5a69", suffixed);
+        // A cut that ends on a space leaves no space before the id.
+        var spaced = CharterRules.NormalizeReference(new string('7', 76) + " TRF")!;
+        Assert.EndsWith("7777 · 0199a3f2c1d47e8b9a0f1e2d3c4b5a69", CharterRules.PrepaymentReceiptReference(spaced, id));
+    }
+
     [Fact]
     public void TextIsTrimmedAndBoundedAndReferencesAreSafe()
     {

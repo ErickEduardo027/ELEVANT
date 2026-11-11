@@ -58,6 +58,24 @@ public static partial class CharterRules
     public static bool IsValidPrepaymentAmount(decimal amount) =>
         amount > 0 && amount <= 10_000_000m && decimal.Round(amount, 2) == amount;
 
+    /// <summary>The length of a treasury receipt's reference (<c>commercial.finance_treasury_receipts.reference</c>).</summary>
+    public const int ReceiptReferenceLength = 120;
+
+    /// <summary>
+    /// 4-N22: the reference of the receipt a confirmed prepayment becomes, «PREPAGO» and the bank reference. With
+    /// <paramref name="receiptId"/> (the airline already has a receipt with that reference: one transfer paid two of its
+    /// charters, or Finance reversed the prepayment and confirmed it again with the same bank reference) the receipt's
+    /// own id follows, so every receipt keeps a reference of its own; the bank reference is shortened to fit the column,
+    /// never the id.
+    /// </summary>
+    public static string PrepaymentReceiptReference(string? bankReference, Guid? receiptId = null)
+    {
+        var reference = $"PREPAGO {bankReference}".Trim();
+        var suffix = receiptId is { } id ? $" · {id:N}" : string.Empty;
+        var room = ReceiptReferenceLength - suffix.Length;
+        return (reference.Length <= room ? reference : reference[..room].TrimEnd()) + suffix;
+    }
+
     private static string? NormalizeReason(string? value, int minimumLength)
     {
         var normalized = value?.Trim();
@@ -81,6 +99,12 @@ public static class CharterCodes
     /// place: Finance reverses that receipt in «Cobros», then reopens the prepayment and confirms it again.
     /// </summary>
     public const string PrepaymentApplied = "charter_prepayment_applied";
+
+    /// <summary>
+    /// 4-N22: the prepayment's receipt met a receipt of the airline posted at the same moment (the same reference, or
+    /// the treasury account of the same invoice). Nothing was written: Finance re-reads the charter and confirms again.
+    /// </summary>
+    public const string PrepaymentReceiptConflict = "charter_prepayment_receipt_conflict";
 
     /// <summary>4-N22: an amount or a reference Finance cannot confirm (the charter commands' fallback code).</summary>
     public const string InvalidRequest = "invalid_charter_request";

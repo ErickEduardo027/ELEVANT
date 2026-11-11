@@ -141,7 +141,9 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
     /// transaction). Pending becomes confirmed and settles the charter's invoice when it was already issued; the same
     /// amount and reference again change nothing; another amount or reference corrects a prepayment that never became a
     /// receipt, with its reason and the before and after in the audit. Once applied it is <c>charter_prepayment_applied</c>:
-    /// Finance reverses that receipt, reopens the prepayment and confirms it again.
+    /// Finance reverses that receipt, reopens the prepayment and confirms it again. A receipt of the airline posted at the
+    /// same moment that takes what the prepayment's receipt needs (its reference, the invoice's account) is
+    /// <c>charter_prepayment_receipt_conflict</c>, never a stale charter.
     /// </summary>
     public async Task<MasterDataResult<CharterPrepaymentItem>> ConfirmPrepaymentAsync(Guid accountId,
         IReadOnlyCollection<Guid> stations, Guid charterId, decimal amount, string reference, string? reason,
@@ -154,8 +156,8 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
         if (account is null) return MasterDataResult<CharterPrepaymentItem>.Failed(MasterDataFailure.NotFound, "not_found");
         var now = RampReceiptRunner.Truncate(timeProvider.GetUtcNow());
         var hash = CommercialCommandReceipts.Hash(new { charterId, amount, reference, reason, expected = expectedVersion });
-        return await MasterDataCommand.RunAsync(context, idempotencyKey, account.Id, ConfirmAction, hash, "version_conflict",
-            now, async () =>
+        return await MasterDataCommand.RunAsync(context, idempotencyKey, account.Id, ConfirmAction, hash,
+            CharterCodes.PrepaymentReceiptConflict, now, async () =>
             {
                 var agreement = await context.Set<CharterAgreement>().SingleAsync(item => item.Id == found.AgreementId,
                     cancellationToken);
@@ -170,7 +172,7 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
                 {
                     if (reason is null) return Step.Fail(MasterDataFailure.Invalid, "reason_required");
                     // Even a reversed receipt closes the correction: the new amount is confirmed again from Pending.
-                    if (await CharterPrepaymentPosting.HasReceiptAsync(context, agreement.Id, true, cancellationToken))
+                    if (await CharterPrepaymentPosting.HasReceiptAsync(context, agreement, true, cancellationToken))
                         return Step.Fail(MasterDataFailure.Conflict, CharterCodes.PrepaymentApplied);
                 }
                 agreement.PrepaymentStatus = CharterPrepaymentStatus.Confirmed;
@@ -244,7 +246,7 @@ internal sealed class EfCharterStore(ElevantDbContext context, TimeProvider time
                 if (agreement.PrepaymentStatus != CharterPrepaymentStatus.Confirmed)
                     return Step.Fail(MasterDataFailure.Conflict, CharterCodes.PrepaymentNotConfirmed);
                 // 4-N22: a prepayment that settled the invoice is reopened only after Finance reverses its receipt.
-                if (await CharterPrepaymentPosting.HasReceiptAsync(context, agreement.Id, false, cancellationToken))
+                if (await CharterPrepaymentPosting.HasReceiptAsync(context, agreement, false, cancellationToken))
                     return Step.Fail(MasterDataFailure.Conflict, CharterCodes.PrepaymentApplied);
                 var before = new
                 {

@@ -76,6 +76,11 @@ describe('financeChartersService', () => {
     mocks.confirm.mockRejectedValueOnce(problem(409, 'version_conflict'));
     await expect(confirmCharterPrepayment(charterId, confirmation, key)).rejects.toMatchObject({ status: 409,
       message: 'El charter cambió mientras lo revisaba. Se actualizó la lista; intente de nuevo.' });
+    // Another receipt of the airline posted at the same moment is not a stale charter: nothing was saved.
+    mocks.confirm.mockRejectedValueOnce(problem(409, 'charter_prepayment_receipt_conflict'));
+    await expect(confirmCharterPrepayment(charterId, confirmation, key)).rejects.toMatchObject({ status: 409,
+      code: 'charter_prepayment_receipt_conflict',
+      message: 'Otro cobro de la aerolínea se registró al mismo tiempo y el prepago no se guardó. Se actualizó la lista; confírmelo de nuevo.' });
     mocks.confirm.mockRejectedValueOnce(new TypeError('Failed to fetch https://internal'));
     await expect(confirmCharterPrepayment(charterId, { ...confirmation, reason: 'Monto mal capturado' }, key))
       .rejects.toMatchObject({ status: null,

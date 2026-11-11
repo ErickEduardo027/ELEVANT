@@ -10750,7 +10750,7 @@
         "tags": [
           "FinanceCharters"
         ],
-        "summary": "4-N22: confirms the prepayment with an Idempotency-Key and the version Finance saw (a stale one is 409\n`version_conflict`). Confirmed after the charter was invoiced, it settles that invoice at once and the excess\nstays as the airline's credit. The same amount and reference again change nothing; another amount or reference\ncorrects it with a reason while it was never applied, else 409 `charter_prepayment_applied`. Every refusal\nbut a 401 carries its code.",
+        "summary": "4-N22: confirms the prepayment with an Idempotency-Key and the version Finance saw (a stale one is 409\n`version_conflict`). Confirmed after the charter was invoiced, it settles that invoice at once and the excess\nstays as the airline's credit. The same amount and reference again change nothing; another amount or reference\ncorrects it with a reason while it was never applied, else 409 `charter_prepayment_applied`. A receipt of the\nairline posted at the same moment is 409 `charter_prepayment_receipt_conflict`: nothing was written. Every\nrefusal but a 401 carries its code.",
         "operationId": "ConfirmFinanceCharterPrepayment",
         "parameters": [
           {

@@ -91,6 +91,14 @@ describe("Charter client (ADR-0033)", () => {
     answer = { ...financeCharter, id: "90000000-0000-7000-8000-000000000099" };
     await expect(client.confirmFinanceCharterPrepayment(financeCharter.id,
       { amount: 1500, reference: "TRF-0001", version: "AAAA" }, key)).rejects.toMatchObject({ kind: "malformed-response" });
+    // A receipt of the airline posted at the same moment keeps its own code: nothing was written, the screen re-reads.
+    const concurrent = createElevantApiClient({ baseUrl: "https://api.example.test", fetch: async () => Response.json(
+      { title: "Otro cobro de la aerolínea se registró al mismo tiempo. Vuelva a cargar el charter.", status: 409,
+        code: "charter_prepayment_receipt_conflict" },
+      { status: 409, headers: { "content-type": "application/problem+json" } }) });
+    await expect(concurrent.confirmFinanceCharterPrepayment(financeCharter.id,
+      { amount: 1500, reference: "TRF-0001", version: "AAAA" }, key))
+      .rejects.toMatchObject({ kind: "http", status: 409, code: "charter_prepayment_receipt_conflict" });
   });
 
   it("reads planning options that carry the charter flag", async () => {
