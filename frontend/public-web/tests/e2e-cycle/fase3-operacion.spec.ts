@@ -1038,7 +1038,7 @@ test("hueco 3-H · OCC reabre una operación aprobada que aún no se facturó", 
   const day = stationDay(flight.arrivalAt);
   /**
    * The run's operation in «Por facturar» (4-A: «Servicios aprobados» was retired with its endpoint), with the codes
-   * that block it; an older draft that still holds it shows as pending_preinvoice.
+   * that block it; a draft with an issued invoice that still holds it shows as pending_preinvoice (4-N01).
    */
   const toInvoice = async () => (await expectCall<{ operations: Array<{ operationId: string; blockingReasons: string[] }> }>(
     200, finance, "GET", `/finance/invoicing/pending-operations?stationId=${station}&from=${day}&to=${day}&limit=100`))
@@ -1047,7 +1047,7 @@ test("hueco 3-H · OCC reabre una operación aprobada que aún no se facturó", 
   if (review.status === "Approved") {
     const listed = await toInvoice();
     if (listed.length === 0 || listed.some(item => item.blockingReasons.includes("pending_preinvoice"))) {
-      test.skip(true, "La operación del ciclo ya está en una prefactura: su corrección es una nota de crédito.");
+      test.skip(true, "La operación del ciclo ya no está en «Por facturar» o la retiene un borrador con factura emitida: su corrección es una nota de crédito.");
       return;
     }
   }
