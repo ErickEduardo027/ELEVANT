@@ -192,7 +192,7 @@ también posterior al commit verificado;
 - **Pruebas automáticas.** Unitarias del reloj, las reglas, la numeración, los
   aeropuertos, la regla de códigos de posición (con un archivo de casos que
   leen también las pruebas de JavaScript), el manejador y la configuración; de
-  la API (endpoints y worker) y de arquitectura; 15 pruebas SQL del almacén
+  la API (endpoints y worker) y de arquitectura; 16 pruebas SQL del almacén
   ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.DemoFlights.cs));
   del cliente compartido, y de private-web: panel, estado, servicio, diálogo de
   importación y etiquetas «Demo».

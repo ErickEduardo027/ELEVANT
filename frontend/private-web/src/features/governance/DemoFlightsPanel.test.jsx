@@ -252,6 +252,28 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
       'OCC ya importó este vuelo. Recibirá el aviso de vuelo cancelado por el proveedor y decidirá qué hacer con la escala.');
   });
 
+  it('says a flight nobody imported still reaches its stand before «Terminar demo» sends it off', async () => {
+    // At 14:01 the first aircraft taxies to its stand (on-block 14:08) and the second one has been parked since 14:00:50.
+    listDemoFlights.mockResolvedValue(list([flight({ touchdownAt: '2026-11-12T14:00:30+00:00' }),
+      flight({ id: '70000000-0000-7000-8000-000000000003', arrivalFlightNumber: 'ZZ9005', departureFlightNumber: 'ZZ9006',
+        touchdownAt: '2026-11-12T14:00:20+00:00', onBlockAt: '2026-11-12T14:00:50+00:00' })]));
+    renderPanel();
+    const [taxiing, parked] = within(await screen.findByRole('list', { name: 'Vuelos demo de hoy' })).getAllByRole('listitem');
+    expect(taxiing).toHaveTextContent('Aterrizó, rueda a la posición');
+    expect(parked).toHaveTextContent('En posición desde las 10:00');
+
+    await userEvent.click(within(taxiing).getByRole('button', { name: 'Terminar demo' }));
+    let dialog = screen.getByRole('alertdialog', { name: 'Terminar demo' });
+    expect(dialog).toHaveTextContent(
+      'El avión saldrá de la posición en cuanto llegue a ella. El vuelo ZZ9001 dejará los vuelos propuestos de OCC.');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Volver' }));
+
+    await userEvent.click(within(parked).getByRole('button', { name: 'Terminar demo' }));
+    dialog = screen.getByRole('alertdialog', { name: 'Terminar demo' });
+    expect(dialog).toHaveTextContent('El avión saldrá ahora de la posición. El vuelo ZZ9005 dejará los vuelos propuestos de OCC.');
+    expect(cancelDemoFlight).not.toHaveBeenCalled();
+  });
+
   it('shows the loading, empty, unauthorized and recoverable error states', async () => {
     let answer;
     loadDemoFlightOptions.mockImplementationOnce(() => new Promise(resolve => { answer = resolve; }));

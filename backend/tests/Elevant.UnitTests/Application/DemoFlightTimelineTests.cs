@@ -214,13 +214,32 @@ public sealed class DemoFlightTimelineTests
         AssertDeparture(marked, At(14, 50), At(14, 55), At(15, 5));
         Assert.Equal(DemoFlightPhase.Departed, marked.PhaseAt(At(14, 56)));
         Assert.Equal(DemoFlightState.Finished, marked.State);
+    }
 
-        // «Terminar demo» on a flight nobody imported marks the take-off at once, even while it still taxis in.
-        var ended = DemoFlightTimeline.Resolve(Facts(markedTakeoffAt: At(14, 6)), At(14, 6, 30));
-        AssertDeparture(ended, At(14, 1), At(14, 6), At(14, 16));
-        Assert.Equal(DemoFlightPhase.Departed, ended.PhaseAt(At(14, 6, 30)));
-        Assert.Equal(DemoFlightPhase.Gone, ended.PhaseAt(At(14, 16)));
-        Assert.Equal(DemoFlightState.Finished, ended.State);
+    /// <summary>
+    /// No writer marks a take-off sooner than a taxi after the on-block: the worker writes the one this clock planned,
+    /// and «Terminar demo» brings the off-block forward instead. A row that says so anyway never puts the departure
+    /// before the arrival: the aircraft parks, leaves at once and takes off a taxi later. The marked take-off still ends
+    /// the flight.
+    /// </summary>
+    [Theory]
+    [InlineData(8, 6 * 60)]  // 14:06, while it taxis in: minus the taxi, it would have left its stand on approach
+    [InlineData(8, 60)]      // 14:01, on approach
+    [InlineData(8, 10 * 60)] // 14:10, parked, but sooner than a taxi after the on-block
+    [InlineData(2, 40)]      // two minutes to the stand: 14:00:40 minus the taxi is before the aircraft appeared
+    public void ATakeoffMarkedTooSoonNeverPutsTheDepartureBeforeTheOnBlock(int minutesToOnBlock, int markedAfterSeconds)
+    {
+        var onBlock = Appear.AddMinutes(minutesToOnBlock);
+        var markedAt = Appear.AddSeconds(markedAfterSeconds);
+        var timeline = DemoFlightTimeline.Resolve(
+            new DemoFlightFacts(Appear, onBlock, onBlock.AddMinutes(60), false, markedAt, null, null, null, null, false), markedAt);
+
+        Assert.True(timeline.OffBlockAt >= timeline.OnBlockAt);
+        Assert.True(timeline.TakeoffAt >= timeline.OffBlockAt + DemoFlightTimeline.TaxiOut);
+        AssertDeparture(timeline, onBlock, onBlock.AddMinutes(5), onBlock.AddMinutes(15));
+        Assert.Equal(DemoFlightState.Finished, timeline.State);
+        Assert.Equal([DemoFlightPhase.TaxiIn, DemoFlightPhase.TaxiOut, DemoFlightPhase.Departed, DemoFlightPhase.Gone],
+            new[] { timeline.TouchdownAt, onBlock, onBlock.AddMinutes(5), onBlock.AddMinutes(15) }.Select(timeline.PhaseAt));
     }
 
     [Fact]
@@ -238,6 +257,161 @@ public sealed class DemoFlightTimelineTests
         AssertDeparture(
             DemoFlightTimeline.Resolve(Facts(imported: true, handedOffAt: At(14, 30), finishRequestedAt: At(14, 20)), At(14, 31)),
             At(14, 30), At(14, 35), At(14, 45));
+    }
+
+    /// <summary>
+    /// «Terminar demo» on a flight nobody imported writes the same off-block and closes the pair at once, without an
+    /// account: the flight is finished, but its aircraft still parks, leaves its stand and takes off in that order.
+    /// </summary>
+    [Fact]
+    public void FinishingAFlightNobodyImportedEndsItWithTheDepartureInOrder()
+    {
+        // Asked at 14:06, while it taxis in: the off-block written is the on-block.
+        var taxiing = DemoFlightTimeline.Resolve(Facts(finishRequestedAt: OnBlock, dismissedBySystem: true), At(14, 6));
+        Assert.Equal(DemoFlightState.Finished, taxiing.State);
+        AssertDeparture(taxiing, OnBlock, At(14, 13), At(14, 23));
+        Assert.Equal([DemoFlightPhase.TaxiIn, DemoFlightPhase.TaxiOut, DemoFlightPhase.Departed, DemoFlightPhase.Gone],
+            new[] { At(14, 6), OnBlock, At(14, 13), At(14, 23) }.Select(taxiing.PhaseAt));
+
+        // Asked while it is parked: it leaves at that instant.
+        var parked = DemoFlightTimeline.Resolve(Facts(finishRequestedAt: At(14, 20), dismissedBySystem: true), At(14, 20));
+        Assert.Equal(DemoFlightState.Finished, parked.State);
+        AssertDeparture(parked, At(14, 20), At(14, 25), At(14, 35));
+        Assert.Equal(DemoFlightPhase.TaxiOut, parked.PhaseAt(At(14, 20)));
+    }
+
+    /// <summary>
+    /// Whatever the tablet, OCC, the superadministrator and the worker wrote, and whenever they wrote it, the instants
+    /// come in order: the aircraft appears, touches down, parks, leaves its stand, takes off a taxi later and vanishes
+    /// once it was in sight long enough. Its phase never moves back as time passes, a cancelled aircraft is gone from its
+    /// cancel instant, and an instant or an end, once known, never changes later. The facts are random but repeatable
+    /// (one seed per case): the schedule as the trigger writes it, with spans down to zero, and every other fact absent
+    /// or at any instant from before the trigger to after the longest wait.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void TheInstantsComeInOrderWhateverTheRowsSay(int seed)
+    {
+        var random = new Random(seed);
+        for (var sample = 0; sample < 400; sample++)
+        {
+            var facts = RandomFacts(random);
+            var latest = facts.ScheduledOffBlockAt + DemoFlightTimeline.MaxHold + TimeSpan.FromHours(1);
+            var nows = Enumerable.Range(0, 8).Select(_ => Between(random, facts.AppearAt.AddMinutes(-5), latest))
+                .Append(facts.ScheduledOffBlockAt + DemoFlightTimeline.MaxHold).Order().ToArray();
+            DemoFlightTimeline? earlier = null;
+            foreach (var now in nows)
+            {
+                var timeline = DemoFlightTimeline.Resolve(facts, now);
+                var context = $"seed {seed}, sample {sample}, {facts} at {now:O} gives {timeline}";
+                AssertInOrder(facts, timeline, context);
+                // The state follows the phase: a flight is never active once its aircraft is gone.
+                Assert.True(timeline.State != DemoFlightState.Active || timeline.PhaseAt(now) != DemoFlightPhase.Gone, context);
+                AssertPhasesMoveForward(timeline, random, latest, context);
+                if (earlier is not null) AssertNothingKnownChanges(earlier, timeline, context);
+                earlier = timeline;
+            }
+        }
+    }
+
+    private static DateTimeOffset Between(Random random, DateTimeOffset from, DateTimeOffset to) =>
+        from.AddMilliseconds(random.NextInt64(0, (long)(to - from).TotalMilliseconds + 1));
+
+    /// <summary>
+    /// The schedule as the trigger writes it, with spans down to zero (the form asks 2 to 30 minutes to the stand and
+    /// 20 to 240 on the ground), and every other fact absent or at any instant around the flight.
+    /// </summary>
+    private static DemoFlightFacts RandomFacts(Random random)
+    {
+        var onBlock = Between(random, Appear, Appear.AddMinutes(30));
+        var scheduledOffBlock = Between(random, onBlock, onBlock.AddMinutes(240));
+        var earliest = Appear.AddMinutes(-10);
+        var latest = scheduledOffBlock + DemoFlightTimeline.MaxHold + TimeSpan.FromHours(1);
+        DateTimeOffset? Maybe(DateTimeOffset from) => random.Next(3) == 0 ? Between(random, from, latest) : null;
+        return new DemoFlightFacts(Appear, onBlock, scheduledOffBlock, Imported: random.Next(2) == 0,
+            MarkedTakeoffAt: Maybe(earliest), PushbackAt: Maybe(earliest), HandedOffAt: Maybe(earliest),
+            FinishRequestedAt: Maybe(earliest), CancelledAt: random.Next(5) == 0 ? Between(random, Appear, latest) : null,
+            DismissedBySystem: random.Next(4) == 0);
+    }
+
+    private static void AssertInOrder(DemoFlightFacts facts, DemoFlightTimeline timeline, string context)
+    {
+        Assert.True((timeline.AppearAt, timeline.OnBlockAt, timeline.ScheduledOffBlockAt) ==
+            (facts.AppearAt, facts.OnBlockAt, facts.ScheduledOffBlockAt), context);
+        Assert.True(timeline.AppearAt <= timeline.TouchdownAt && timeline.TouchdownAt <= timeline.OnBlockAt, context);
+        if (facts.CancelledAt is { } cancelledAt)
+        {
+            Assert.True(timeline.State == DemoFlightState.Cancelled && timeline.OffBlockAt is null &&
+                timeline.TakeoffAt is null && timeline.VanishAt == cancelledAt, context);
+            return;
+        }
+        Assert.True(timeline.State != DemoFlightState.Cancelled, context);
+        if (timeline.OffBlockAt is not { } offBlockAt)
+        {
+            // An imported aircraft waits for its agent: nothing after the stand is known yet.
+            Assert.True(facts.Imported && timeline.TakeoffAt is null && timeline.VanishAt is null, context);
+            return;
+        }
+        Assert.True(timeline.OnBlockAt <= offBlockAt, context);
+        Assert.True(timeline.TakeoffAt == offBlockAt + DemoFlightTimeline.TaxiOut, context);
+        Assert.True(timeline.VanishAt == timeline.TakeoffAt + DemoFlightTimeline.DepartureVisible, context);
+        // A take-off the worker could have marked is read back as it is.
+        if (facts.MarkedTakeoffAt >= facts.OnBlockAt + DemoFlightTimeline.TaxiOut)
+            Assert.True(timeline.TakeoffAt == facts.MarkedTakeoffAt, context);
+    }
+
+    private static void AssertPhasesMoveForward(DemoFlightTimeline timeline, Random random, DateTimeOffset latest,
+        string context)
+    {
+        var times = new[]
+            {
+                timeline.AppearAt, timeline.TouchdownAt, timeline.OnBlockAt, timeline.OffBlockAt, timeline.TakeoffAt,
+                timeline.VanishAt,
+            }
+            .OfType<DateTimeOffset>()
+            .SelectMany(at => new[] { at.AddMilliseconds(-1), at, at.AddMilliseconds(1) })
+            .Concat(Enumerable.Range(0, 8).Select(_ => Between(random, timeline.AppearAt.AddMinutes(-5), latest)))
+            .Order().ToArray();
+        var phases = times.Select(timeline.PhaseAt).ToArray();
+        for (var index = 1; index < phases.Length; index++)
+            Assert.True(phases[index] >= phases[index - 1],
+                $"{context}: {phases[index - 1]} at {times[index - 1]:O}, then {phases[index]} at {times[index]:O}");
+
+        if (timeline.State == DemoFlightState.Cancelled)
+        {
+            // Gone from the cancel instant and never on its way out before it.
+            var cancelledAt = timeline.VanishAt!.Value;
+            Assert.True(timeline.PhaseAt(cancelledAt) == DemoFlightPhase.Gone &&
+                times.Where(at => at < cancelledAt).All(at => timeline.PhaseAt(at) <= DemoFlightPhase.Parked), context);
+            return;
+        }
+        if (timeline.OffBlockAt is not { } offBlockAt)
+        {
+            // Waiting for its agent, the aircraft stays at its stand.
+            Assert.True(phases.All(phase => phase <= DemoFlightPhase.Parked), context);
+            return;
+        }
+        // No phase of the departure is skipped: the taxi out and the time in sight last what they should.
+        var takeoffAt = timeline.TakeoffAt!.Value;
+        var vanishAt = timeline.VanishAt!.Value;
+        Assert.True(timeline.PhaseAt(offBlockAt) == DemoFlightPhase.TaxiOut &&
+            timeline.PhaseAt(takeoffAt.AddMilliseconds(-1)) == DemoFlightPhase.TaxiOut &&
+            timeline.PhaseAt(takeoffAt) == DemoFlightPhase.Departed &&
+            timeline.PhaseAt(vanishAt.AddMilliseconds(-1)) == DemoFlightPhase.Departed &&
+            timeline.PhaseAt(vanishAt) == DemoFlightPhase.Gone, context);
+    }
+
+    private static void AssertNothingKnownChanges(DemoFlightTimeline earlier, DemoFlightTimeline later, string context)
+    {
+        Assert.True(later.TouchdownAt == earlier.TouchdownAt, context);
+        if (earlier.VanishAt is not null)
+            Assert.True((later.OffBlockAt, later.TakeoffAt, later.VanishAt) ==
+                (earlier.OffBlockAt, earlier.TakeoffAt, earlier.VanishAt), context);
+        if (earlier.State != DemoFlightState.Active) Assert.True(later.State == earlier.State, context);
     }
 
     [Theory]

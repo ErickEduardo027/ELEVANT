@@ -78,13 +78,15 @@ function confirmation({ flight, intent, phase }) {
       ? 'OCC ya importó este vuelo. Recibirá el aviso de vuelo cancelado por el proveedor y decidirá qué hacer con la escala.'
       : `El vuelo ${flight.arrivalFlightNumber} saldrá de los vuelos propuestos de OCC.`,
   };
+  // The off-block comes forward whether OCC imported the flight or not, never before the aircraft reaches its stand.
+  const leaves = phase === 'TaxiIn'
+    ? 'El avión saldrá de la posición en cuanto llegue a ella.'
+    : 'El avión saldrá ahora de la posición.';
   return {
     title: 'Terminar demo', confirmLabel: 'Terminar demo', busyLabel: 'Terminando…',
-    description: !flight.imported
-      ? `El avión saldrá ahora y el vuelo ${flight.arrivalFlightNumber} dejará los vuelos propuestos de OCC.`
-      : phase === 'TaxiIn'
-        ? 'El avión saldrá de la posición en cuanto llegue a ella. La operación de OCC sigue su curso.'
-        : 'El avión saldrá ahora de la posición. La operación de OCC sigue su curso.',
+    description: flight.imported
+      ? `${leaves} La operación de OCC sigue su curso.`
+      : `${leaves} El vuelo ${flight.arrivalFlightNumber} dejará los vuelos propuestos de OCC.`,
   };
 }
 

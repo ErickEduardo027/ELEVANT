@@ -491,29 +491,33 @@ internal sealed class EfDemoFlightStore(ElevantDbContext context, IActorContextR
                         await ProviderFlightAlerts.AlertOccAsync(context, turnaroundId, kind, now, cancellationToken);
                     state = nameof(DemoFlightState.Cancelled);
                 }
-                else if (!confirmed)
-                {
-                    // Nobody imported it: the aircraft is gone now and the pair leaves the review. No account on the
-                    // rows, so the flight reads as finished and not cancelled; the audit entry says who ended it.
-                    group.Departure.RunwayAt = now;
-                    Report(group.Departure, DemoProviderStatus.Departed, now);
-                    foreach (var row in group.Rows.Where(row => row.Status == ExternalFlightProposalStatus.Proposed))
-                        Dismiss(row, now, null);
-                    state = nameof(DemoFlightState.Finished);
-                }
                 else
                 {
-                    // The off-block comes forward, never before the aircraft parks; the worker marks the take-off.
+                    // The off-block comes forward, never before the aircraft parks, whether OCC imported the flight or
+                    // not, and the clock has the take-off a taxi later. No runway time is written here: only the worker
+                    // writes one, the take-off the clock planned, so the departure never comes before the arrival.
                     var revisedAt = now < timeline.OnBlockAt ? timeline.OnBlockAt : now;
                     group.Departure.RevisedAt = revisedAt;
                     Report(group.Departure, DemoProviderStatus.GateClosed, now);
-                    if (await ProviderLegAsync(group.Departure.FlightLegId, cancellationToken) is { } leg)
+                    if (confirmed)
                     {
-                        leg.EstimatedAt = revisedAt;
-                        leg.SourceObservedAt = now;
-                        leg.UpdatedAt = now;
+                        if (await ProviderLegAsync(group.Departure.FlightLegId, cancellationToken) is { } leg)
+                        {
+                            leg.EstimatedAt = revisedAt;
+                            leg.SourceObservedAt = now;
+                            leg.UpdatedAt = now;
+                        }
+                        state = "Finishing";
                     }
-                    state = "Finishing";
+                    else
+                    {
+                        // Nobody imported it: the pair leaves the review at once and the worker never writes it again.
+                        // No account on the rows, so the flight reads as finished and not cancelled; the audit entry says
+                        // who ended it.
+                        foreach (var row in group.Rows.Where(row => row.Status == ExternalFlightProposalStatus.Proposed))
+                            Dismiss(row, now, null);
+                        state = nameof(DemoFlightState.Finished);
+                    }
                 }
                 MasterDataCommand.Audit(context, accountId,
                     intent == DemoFlightIntent.Cancel ? "governance.demo_flight.cancelled" : "governance.demo_flight.finished",

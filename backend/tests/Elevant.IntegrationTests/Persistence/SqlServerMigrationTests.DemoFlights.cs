@@ -1025,6 +1025,83 @@ public sealed partial class SqlServerMigrationTests
         Assert.Empty(await demo.Listed());
     }
 
+    /// <summary>
+    /// «Terminar demo» on a pair nobody imported brings the off-block forward as it does on an imported one, never
+    /// before the aircraft parks, and closes the pair at once without an account. Neither leg gets a runway time, so the
+    /// departure the superadministrator follows always comes after the arrival, and the worker never writes the closed
+    /// pair again.
+    /// </summary>
+    [Fact]
+    public async Task FinishingADemoFlightNobodyImportedLeavesAfterTheArrival()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var master = ResolveMasterConnection();
+        if (master is null) return;
+        await using var database = await TemporaryDatabase.CreateAsync(master, "Development", ct);
+        await using var demo = await DemoFlightsAsync(database, ct);
+        // Triggered together: when they are ended the first one still taxies in and the second one is parked.
+        var taxiing = await demo.Triggered(minutes: 8);
+        var parked = await demo.Triggered(minutes: 2);
+        demo.Clock.Now = taxiing.TouchdownAt.AddSeconds(30);
+        var finishedAt = demo.Now;
+        Assert.Equal(("TaxiIn", "Parked"), ((await demo.Flight(taxiing.Id)).Phase, (await demo.Flight(parked.Id)).Phase));
+        var hints = await demo.PlanningHints();
+        var occAccounts = await demo.OccAccounts();
+
+        foreach (var (flight, offBlockAt, phase) in new[]
+                 {
+                     (taxiing, taxiing.OnBlockAt, "TaxiIn"),
+                     (parked, finishedAt, "TaxiOut"),
+                 })
+        {
+            var ended = await demo.End(flight.Id, "Finish");
+            Assert.True(ended.Failure is null, ended.Code);
+            var shown = ended.Value!;
+            Assert.Equal(("Finished", phase, offBlockAt, offBlockAt.AddMinutes(5), offBlockAt.AddMinutes(15)),
+                (shown.State, shown.Phase, shown.OffBlockAt, shown.TakeoffAt, shown.VanishAt));
+            Assert.True(shown.AppearAt <= shown.TouchdownAt && shown.TouchdownAt <= shown.OnBlockAt &&
+                shown.OnBlockAt <= shown.OffBlockAt);
+            // The departure says when the aircraft leaves its stand; neither leg says it used the runway.
+            var rows = await demo.Rows(flight.Id);
+            Assert.Equal(("GateClosed", offBlockAt, null, finishedAt),
+                (rows.Departure.ProviderStatus, rows.Departure.RevisedAt, rows.Departure.RunwayAt, rows.Departure.LastSeenAt));
+            Assert.Equal(("Approaching", null), (rows.Arrival.ProviderStatus, rows.Arrival.RunwayAt));
+            Assert.All(new[] { rows.Arrival, rows.Departure }, row => Assert.Equal(
+                (ExternalFlightProposalStatus.Dismissed, finishedAt, null), (row.Status, row.DecidedAt, row.DecidedByAccountId)));
+        }
+        // Both leave OCC's review and the station's limit at once, and OCC heard of each end.
+        Assert.Empty(await demo.Feed());
+        var dismissed = await demo.Feed(OccFlightFeedView.Dismissed);
+        Assert.Equal(4, dismissed.Count);
+        Assert.All(dismissed, item => Assert.Null(item.RunwayAt));
+        Assert.Equal(0, (await demo.Options()).Limits.Active);
+        Assert.Equal(hints + 2 * occAccounts, await demo.PlanningHints());
+
+        // Each aircraft goes on in order until it vanishes, and the worker never writes the closed pairs.
+        var closed = (Taxiing: await demo.Rows(taxiing.Id), Parked: await demo.Rows(parked.Id));
+        foreach (var (at, first, second) in new[]
+                 {
+                     (taxiing.OnBlockAt, "TaxiOut", "TaxiOut"),
+                     (finishedAt.AddMinutes(5), "TaxiOut", "Departed"),
+                     (taxiing.OnBlockAt.AddMinutes(5), "Departed", "Departed"),
+                     (finishedAt.AddMinutes(15), "Departed", "Gone"),
+                     (taxiing.OnBlockAt.AddMinutes(15), "Gone", "Gone"),
+                 })
+        {
+            demo.Clock.Now = at;
+            Assert.Equal(0, await demo.Tick());
+            var (one, two) = (await demo.Flight(taxiing.Id), await demo.Flight(parked.Id));
+            Assert.Equal(("Finished", first, "Finished", second), (one.State, one.Phase, two.State, two.Phase));
+            foreach (var (before, flight) in new[] { (closed.Taxiing, taxiing), (closed.Parked, parked) })
+            {
+                var rows = await demo.Rows(flight.Id);
+                Assert.Equal(before.Arrival.RowVersion, rows.Arrival.RowVersion);
+                Assert.Equal(before.Departure.RowVersion, rows.Departure.RowVersion);
+            }
+        }
+        Assert.Equal(hints + 2 * occAccounts, await demo.PlanningHints());
+    }
+
     /// <summary>Every refusal of the demo commands has its stable code, and none of them writes anything.</summary>
     [Fact]
     public async Task DemoFlightRefusalsHaveTheirCodes()
@@ -1178,14 +1255,17 @@ public sealed partial class SqlServerMigrationTests
         var rows = await demo.Rows(flight.Id);
         Assert.Equal((ExternalFlightProposalStatus.Proposed, "Approaching"), (rows.Arrival.Status, rows.Arrival.ProviderStatus));
 
-        // «Terminar demo» while nobody imported it: the aircraft is gone now and the pair leaves OCC's review.
+        // «Terminar demo» while nobody imported it: the pair leaves OCC's review at once, and the aircraft, which still
+        // taxies in, parks before it leaves.
         var key = Guid.NewGuid();
         var finished = await demo.End(flight.Id, "Finish", key);
         Assert.Null(finished.Failure);
-        Assert.Equal(("Finished", "Departed", demo.Now, demo.Now.AddMinutes(10)),
-            (finished.Value!.State, finished.Value.Phase, finished.Value.TakeoffAt, finished.Value.VanishAt));
+        Assert.Equal(("Finished", "TaxiIn", flight.OnBlockAt, flight.OnBlockAt.AddMinutes(5), flight.OnBlockAt.AddMinutes(15)),
+            (finished.Value!.State, finished.Value.Phase, finished.Value.OffBlockAt, finished.Value.TakeoffAt,
+                finished.Value.VanishAt));
         rows = await demo.Rows(flight.Id);
-        Assert.Equal(("Departed", demo.Now), (rows.Departure.ProviderStatus, rows.Departure.RunwayAt));
+        Assert.Equal(("GateClosed", flight.OnBlockAt, null),
+            (rows.Departure.ProviderStatus, rows.Departure.RevisedAt, rows.Departure.RunwayAt));
         Assert.All(new[] { rows.Arrival, rows.Departure }, row =>
             Assert.Equal((ExternalFlightProposalStatus.Dismissed, demo.Now, null), (row.Status, row.DecidedAt, row.DecidedByAccountId)));
         Assert.True((await demo.End(flight.Id, "Finish", key)).Replayed);
