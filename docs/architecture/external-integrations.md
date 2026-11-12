@@ -44,6 +44,15 @@ El pago con tarjeta del portal pasa por el puerto `ICardPaymentGateway` de Appli
 - Sin pasarela, `GET airline/portal/card-payments/availability` lo dice, el portal muestra el pago como no disponible y el pago responde `409 card_payments_unavailable` antes de mirar la tarjeta; `DisabledCardGateway` falla si algo llegara a llamarlo.
 - De la tarjeta solo se guardan la marca y los últimos 4 dígitos, junto al estado del intento, su código de rechazo y la autorización; nunca el número, el CVV ni el titular.
 
+## Vuelos demo: sin proveedor externo
+
+Los vuelos demo que dispara Superadministración ([ADR-0041](../adr/0041-demo-flights-and-punta-cana-stands.md)) no llaman a ningún proveedor. La API escribe en `integration.external_flight_proposals` dos propuestas de un proveedor propio, `Demo`, y `DemoFlightProgressWorker` las hace avanzar con el reloj del servidor (`DemoFlightTimeline`):
+
+- `DemoFlights:Mode` los activa: `Disabled` por defecto y en `appsettings.Production.json`, y `Enabled` en `appsettings.Development.json`. La API se niega a arrancar con `Enabled` fuera de los entornos `Development`, `Test` o `Testing`, o con un valor desconocido. Apagados, los endpoints existen igual: las lecturas responden `enabled: false` y los comandos, `409 demo_flights_unavailable`.
+- No tocan el feed pagado: `GetActivityAsync` excluye sus propuestas y sus escalas, así que nunca adelantan una lectura de AeroDataBox ni gastan unidades. La revisión de OCC no empareja tramos de proveedores distintos, y una propuesta demo descartada no se restaura.
+- Su matrícula (`HIDM01` a `HIDM99`) no la emite ningún registro, así que nunca coincide con un avión real, y sus números de vuelo (desde el 9001) esquivan los que la estación ya conoce ese día.
+- El aeropuerto contraparte sale de `ref.airports` o del catálogo interno `DemoAirports`, con datos públicos de referencia, sin consultar a nadie.
+
 ## Regla para nuevos proveedores
 
 Primero se define la necesidad del caso de uso y el puerto mínimo. Después se construye el adaptador. Si se cambia de proveedor, Domain y los contratos públicos solo cambian cuando cambie realmente el producto, no por la forma particular de la API externa.

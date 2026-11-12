@@ -123,3 +123,13 @@ una prueba unitaria que simula el día minuto a minuto.
 > activos a la vez. La plantilla del VPS Development no lo define: allí el feed sigue siendo
 > AeroDataBox. Ver
 > [ADR-0038](0038-preoperation-contract-lifecycle-permits-master-data-and-workforce-readiness.md).
+
+> **Actualización (12 de noviembre de 2026).** Los vuelos demo de Superadministración son
+> propuestas de un proveedor propio, `Demo`, que la API escribe sin llamar a nadie.
+> `GetActivityAsync` las excluye, y también las escalas con `ExternalProvider = "Demo"`: un
+> vuelo demo nunca adelanta una lectura de AeroDataBox ni gasta unidades. La revisión nunca
+> empareja tramos de proveedores distintos, ni de dos vuelos demo distintos; la importación
+> rechaza esa pareja con `flight_proposals_not_pairable`, y una propuesta demo descartada no se
+> restaura (`flight_proposal_passed`). La lista marca esos tramos con `isDemo`, que solo viaja
+> cuando es verdadero. Ver
+> [ADR-0041](0041-demo-flights-and-punta-cana-stands.md).

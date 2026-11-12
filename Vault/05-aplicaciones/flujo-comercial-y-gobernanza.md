@@ -35,6 +35,9 @@ sources:
   - packages/api-client/src/client.ts
   - packages/api-client/src/commercialRequests.ts
   - frontend/private-web/src/features/governance/GovernanceShell.jsx
+  - frontend/private-web/src/features/governance/DemoFlightsPanel.jsx
+  - backend/Elevant.Api/Controllers/DemoFlightsController.cs
+  - docs/adr/0041-demo-flights-and-punta-cana-stands.md
   - frontend/private-web/src/services/contractsHomeService.js
   - frontend/private-web/src/features/contracts/home/ContractsHomePage.jsx
   - frontend/private-web/src/features/contracts/requests/CommercialIntakePage.jsx
@@ -295,6 +298,18 @@ envío y la bandeja de correos: propósito, estado (en cola, enviado, falló o
 descartado), motivo y documento o cuenta relacionados, sin cuerpos. La
 [guía de rampa](../../docs/workflows/ramp-agent-readiness.md) distingue el
 perfil operativo de la elegibilidad de OCC para una tarea concreta.
+
+Desde el PR A1 del plan «OCC a nivel NOC» (código de `cba00f73`),
+**Configuración** abre con el panel «Vuelo demo», solo para el
+superadministrador. Donde `DemoFlights:Mode` lo permite, que es el entorno de
+desarrollo, dispara un vuelo de prueba de una aerolínea con contrato vigente
+hoy en la estación: dos propuestas del proveedor «Demo» que OCC ve llegar,
+importa y opera como cualquier otro vuelo; en otro entorno, el panel dice que
+están apagados. Una vez importado se
+factura como tal, así que conviene usar una aerolínea de prueba. La lista
+«Vuelos demo de hoy» sigue cada vuelo y ofrece «Cancelar vuelo» o «Terminar
+demo» ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md),
+[panel](../../frontend/private-web/src/features/governance/DemoFlightsPanel.jsx)).
 
 El POST público vuelve a validar que los servicios elegidos sigan activos y publicados. La lista visible y la admisión usan el mismo predicado del servidor; un UUID conocido de un servicio interno no amplía el catálogo público. La admisión mantiene una transacción serializable entre esa lectura y su escritura: una retirada concurrente no se intercala entre ambas. Una relectura fallida en el formulario conserva la última selección y permite reintentar; el servidor sigue siendo la autoridad al enviar.
 El cliente compartido no introduce un máximo de 1 000 entradas que el endpoint de catálogo no promete; un catálogo mayor sigue sujeto a validación de forma e identificadores. Una futura paginación requiere un cambio coordinado de API y clientes.
