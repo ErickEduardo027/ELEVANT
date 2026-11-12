@@ -163,3 +163,25 @@ describe('mapOccupancyToRampPositions with coverage and combined stands (ADR-003
     expect(a2).toMatchObject({ status: 'disabled', combinedConfiguration: 'A01', linkedPositionId: 'A1' });
   });
 });
+
+describe('mapOccupancyToRampPositions with demo flights (ADR-0041)', () => {
+  const reference = [{ id: 'A1', terminal: 'A', lat: 18.5641, lon: -68.3602 }, { id: 'A2', terminal: 'A', lat: 18.5642, lon: -68.3603 },
+    { id: 'A3', terminal: 'A', lat: 18.5643, lon: -68.3604 }];
+  const turnaround = (id, extra = {}) => ({ turnaroundId: id, operationCode: `PUJ-${id}`, airlineName: 'Demo Airlines',
+    arrivalFlightNumber: 'ZZ9001', departureFlightNumber: 'ZZ9002', arrivedAt: null, status: 'Confirmed', ...extra });
+  const stand = (code, turnarounds) => ({ standId: `id-${code}`, code, terminalCode: 'A', status: turnarounds.length ? 'planned' : 'available',
+    turnarounds });
+
+  it('carries isDemo from the flight the stand shows, and only when the server marks it true', () => {
+    const [demo, real, free] = mapOccupancyToRampPositions(reference, { positions: [
+      // The parked flight is the one the stand shows, even when a demo flight comes next.
+      stand('A01', [turnaround('t-1', { isDemo: true })]),
+      stand('A02', [turnaround('t-2', { arrivedAt: '2026-11-12T14:00:00Z' }), turnaround('t-3', { isDemo: true })]),
+      stand('A03', [])] });
+    expect(demo).toMatchObject({ id: 'A1', isDemo: true });
+    expect(real).toMatchObject({ id: 'A2', isDemo: false, flightNumber: 'ZZ9001' });
+    expect(free).toMatchObject({ id: 'A3', isDemo: false });
+    // The listed turnarounds keep their own mark for the drawer.
+    expect(real.turnarounds.map(item => item.isDemo === true)).toEqual([false, true]);
+  });
+});

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Badge from '../../../components/Badge';
 import {
   dismissOccFlightProposal, FLIGHT_FEED_VIEWS, flightFeedMessage, importOccFlightProposals, loadOccFlightFeed,
   pauseReasonText, placementReasons, refreshOccFlightFeed, REFRESH_MESSAGES, restoreOccFlightProposal,
@@ -6,6 +7,7 @@ import {
 import { getManualTurnaroundOptions } from '../../../services/planningService';
 import { createCommandKeyHolder } from '../../../services/commandKeys';
 import { isConflict } from '../../../services/problemMessages';
+import { normalizeStandCode } from '../../../services/standCodes';
 
 const buttonClass = 'min-h-9 rounded-lg border border-accent-600/40 px-3 text-xs font-semibold text-accent-600 disabled:cursor-not-allowed disabled:opacity-50';
 const primaryClass = 'min-h-9 rounded-lg bg-accent-600 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50';
@@ -63,13 +65,25 @@ function typeLabel(type) {
   return `${type.manufacturer} ${type.model} · ${type.icaoCode}`;
 }
 
+/** Stands in natural order: A1, A2, A10, AN1, B20. */
+const STAND_ORDER = new Intl.Collator('es', { numeric: true });
+
+/** A demo flight the superadministrator triggered (ADR-0041) is always labelled as such. */
+function DemoMark({ item }) {
+  return item.isDemo === true ? <>{' '}<Badge label="Demo" /></> : null;
+}
+
 /**
  * Flights the provider proposed (ADR-0028). OCC pairs each arrival with its departure and imports the turnaround with
  * its aircraft type and stand (2-B), imports a carrier without contract as a charter (ADR-0033), dismisses legs it will
  * not operate and restores a dismissed one while its flight has not passed (2-N36). Opening the dialog never calls the
  * provider; only «Actualizar ahora» may, within the server's limits.
+ *
+ * `revision` changes when OCC's planning changed (`occ_planning`, ADR-0041): the list is read again without going back
+ * to «cargando» and what OCC chose for each arrival stays, so a demo flight that landed meanwhile costs no conflict. A
+ * demo arrival comes with the stand of its gate already chosen.
  */
-export default function ProviderFlightsDialog({ stationId, date, timeZone, onClose, onImported }) {
+export default function ProviderFlightsDialog({ stationId, date, timeZone, onClose, onImported, revision = 0 }) {
   const [view, setView] = useState('Contracted');
   const [state, setState] = useState({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -86,9 +100,15 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
     const controller = new AbortController();
     loadOccFlightFeed(stationId, date, { signal: controller.signal, view })
       .then(data => setState({ status: 'success', view, data }))
-      .catch(error => { if (error?.name !== 'AbortError') setState({ status: 'error', view, error }); });
+      .catch(error => {
+        if (error?.name === 'AbortError') return;
+        // A re-read that fails keeps the list on screen and says so; only a refusal of access replaces it.
+        setState(previous => (previous.status === 'success' && previous.view === view && ![401, 403].includes(error?.status)
+          ? { ...previous, refreshFailed: true }
+          : { status: 'error', view, error }));
+      });
     return () => controller.abort();
-  }, [stationId, date, view, attempt]);
+  }, [stationId, date, view, attempt, revision]);
 
   const canImport = Boolean(state.data?.canImport);
   // The active aircraft types and stands of the station, the same catalogs as «Nuevo vuelo» («type once»). A re-read
@@ -113,14 +133,23 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
   const proposals = useMemo(() => current.data?.proposals ?? [], [current.data]);
   const openDepartures = proposals.filter(item => item.direction === 'Departure' && item.status === 'Proposed');
   const arrivals = proposals.filter(item => item.direction === 'Arrival');
+  const stands = useMemo(() => [...(catalog.stands ?? [])].sort((left, right) => STAND_ORDER.compare(left.code, right.code)),
+    [catalog.stands]);
+  /** The stand a demo arrival's gate names (ADR-0041), compared as the API compares stand codes; '' without one. */
+  const gateStandId = arrival => {
+    if (arrival.isDemo !== true || !arrival.gate) return '';
+    const gate = normalizeStandCode(arrival.gate);
+    return stands.find(stand => normalizeStandCode(stand.code) === gate)?.id ?? '';
+  };
+  // Only what OCC changed is kept, by proposal: a re-read never undoes it, and the rest follows the suggestions.
   const choiceOf = arrival => ({
     departureId: choices[arrival.proposalId]?.departureId ?? arrival.suggestedDepartureId ?? '',
     aircraftTypeId: choices[arrival.proposalId]?.aircraftTypeId ??
       (catalog.aircraftTypes?.some(type => type.id === arrival.suggestedAircraftTypeId) ? arrival.suggestedAircraftTypeId : ''),
-    standId: choices[arrival.proposalId]?.standId ?? '',
+    standId: choices[arrival.proposalId]?.standId ?? gateStandId(arrival),
   });
   const choose = (arrival, field, value) => setChoices(all => ({
-    ...all, [arrival.proposalId]: { ...choiceOf(arrival), ...all[arrival.proposalId], [field]: value },
+    ...all, [arrival.proposalId]: { ...all[arrival.proposalId], [field]: value },
   }));
   const pairedDepartures = new Set(arrivals.map(item => choiceOf(item).departureId).filter(Boolean));
   const loneDepartures = view === 'Dismissed' ? proposals.filter(item => item.direction === 'Departure')
@@ -214,6 +243,8 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                   result => REFRESH_MESSAGES[result.status] ?? 'Listo.')}>
                 {busy === 'refresh' ? 'Consultando…' : 'Actualizar ahora'}</button>}
             </div>
+            {current.refreshFailed && <p role="status" className="text-xs text-status-warning">
+              No se pudo actualizar la lista: se muestra la última lectura.</p>}
             {message.text && <div role={message.tone === 'danger' ? 'alert' : 'status'}
               className={message.tone === 'danger' ? 'text-status-danger' : 'text-status-success'}>
               <p>{message.text}</p>
@@ -231,9 +262,11 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                   const choice = choiceOf(arrival);
                   const imported = arrival.status === 'Confirmed';
                   const suggested = Boolean(arrival.suggestedAircraftTypeId) && choice.aircraftTypeId === arrival.suggestedAircraftTypeId;
+                  const gateStand = gateStandId(arrival);
+                  const standSuggested = Boolean(gateStand) && choice.standId === gateStand;
                   return <li key={arrival.proposalId} className="rounded-xl border border-black/5 p-3 dark:border-white/10">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p><strong>{arrival.flightNumber}</strong> · {arrival.airlineName} · desde {arrival.counterpartIata ?? '¿?'}
+                      <p><strong>{arrival.flightNumber}</strong><DemoMark item={arrival} /> · {arrival.airlineName} · desde {arrival.counterpartIata ?? '¿?'}
                         {' · '}<Times item={arrival} timeZone={timeZone} /><Details item={arrival} /></p>
                       {imported && <span className="rounded-md bg-status-success/10 px-2 py-0.5 text-xs text-status-success">Importado</span>}
                       {view === 'Dismissed' && canImport && <button type="button" className={buttonClass} disabled={Boolean(busy)}
@@ -254,11 +287,11 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                             <option value="">Sin tipo de avión</option>
                             {catalog.aircraftTypes.map(type => <option key={type.id} value={type.id}>{typeLabel(type)}</option>)}
                           </select></label>
-                        <label className="text-xs">Posición
+                        <label className="text-xs">Posición{standSuggested ? ' (sugerida)' : ''}
                           <select className={selectClass} value={choice.standId}
                             onChange={event => choose(arrival, 'standId', event.target.value)}>
                             <option value="">Sin posición (asignar después)</option>
-                            {catalog.stands.map(stand => <option key={stand.id} value={stand.id}>
+                            {stands.map(stand => <option key={stand.id} value={stand.id}>
                               {stand.code} · Terminal {stand.terminal?.code ?? '—'}</option>)}
                           </select></label>
                       </>}
@@ -277,7 +310,7 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
                 <ul className="space-y-2" aria-label={view === 'Dismissed' ? 'Salidas descartadas' : 'Salidas sin llegada'}>
                   {loneDepartures.map(item => <li key={item.proposalId}
                     className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/5 p-3 dark:border-white/10">
-                    <p><strong>{item.flightNumber}</strong> · {item.airlineName} · hacia {item.counterpartIata ?? '¿?'} · <Times item={item} timeZone={timeZone} /></p>
+                    <p><strong>{item.flightNumber}</strong><DemoMark item={item} /> · {item.airlineName} · hacia {item.counterpartIata ?? '¿?'} · <Times item={item} timeZone={timeZone} /></p>
                     {canImport && (view === 'Dismissed'
                       ? <button type="button" className={buttonClass} disabled={Boolean(busy)} onClick={() => void restore(item)}>
                         {busy === `restore-${item.proposalId}` ? 'Restaurando…' : 'Restaurar'}</button>

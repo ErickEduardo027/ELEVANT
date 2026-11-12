@@ -1,3 +1,4 @@
+import Badge from '../../../components/Badge';
 import StatusBadge from '../../../components/StatusBadge';
 import { STATUS_COLORS } from '../../dashboard/statusMeta';
 import { EyeIcon } from './icons';
@@ -62,6 +63,8 @@ export default function FlightCard({ flight, now, onSelect }) {
       <div className="flex flex-wrap items-center gap-3">
         <StatusBadge tone={meta.color} label={meta.label} />
         <span className="font-mono text-sm font-semibold text-ink-900 dark:text-text-primary-dark">{flight.operationCode}</span>
+        {/* ADR-0041: a demo flight the superadministrator triggered is always labelled as such. */}
+        {flight.isDemo && <Badge label="Demo" />}
         <span className="text-sm text-text-secondary-light dark:text-text-secondary-dark">
           {flight.airlineIata} · {flight.airlineName}
         </span>

@@ -5,6 +5,7 @@ import ShellFrame from '../shell/ShellFrame';
 import { LayoutGridIcon, ShieldCheckIcon, SettingsIcon, PlaneIcon, UsersIcon, MapPinIcon } from '../shell/components/icons';
 import AirlinesPanel from './AirlinesPanel';
 import ClientsPanel from './ClientsPanel';
+import DemoFlightsPanel from './DemoFlightsPanel';
 import EmailDeliveryPanel from './EmailDeliveryPanel';
 import InternalUsersPanel from './InternalUsersPanel';
 import StationsPanel from './StationsPanel';
@@ -33,7 +34,7 @@ const MODULE_INFO = {
   validations: { label: 'Validaciones de acceso', description: 'Todas las altas solicitadas por los departamentos.' },
   airlines: { label: 'Aerolíneas', description: 'Catálogo de aerolíneas solicitantes.' },
   stations: { label: 'Estaciones', description: 'Estaciones de la plataforma: alta, nombre, zona horaria y desactivación.' },
-  settings: { label: 'Configuración', description: 'Políticas de acceso, roles heredados y auditoría.' },
+  settings: { label: 'Configuración', description: 'Vuelo demo, correo del sistema, políticas de acceso y auditoría.' },
 };
 
 const modules = [
@@ -145,6 +146,7 @@ export default function GovernanceShell({ user, onLogout }) {
             onArchive={(id, version) => run(() => archiveManagedAirline(id, version), 'Aerolínea archivada.')}
             onEnrich={() => run(enrichManagedAirlines, 'Fichas históricas sin edición manual revisadas.')}
             onCheckRegistry={async id => { const result = await checkManagedAirlineRegistry(id); await refresh(); return result; }} />}
+          {status === 'ready' && moduleId === 'settings' && <DemoFlightsPanel />}
           {status === 'ready' && moduleId === 'settings' && <EmailDeliveryPanel />}
           {status === 'ready' && moduleId === 'settings' && <GovernanceSettings snapshot={snapshot} run={run} />}
         </div>
