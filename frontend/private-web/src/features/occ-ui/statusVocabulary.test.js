@@ -4,6 +4,15 @@ import { SIGNALS, STAND_STATES, STAND_STATE_KEYS, TAGS, isInOperation } from './
 
 const stateTokens = state => [state.fill.token, state.outline.token].filter(token => token !== null);
 
+// A palette value as [red, green, blue, alpha]: `#rrggbb` is opaque, `rgb(r g b / a)` carries its alpha.
+function rgba(value) {
+  const hex = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/.exec(value);
+  if (hex) return [...hex.slice(1).map(pair => Number.parseInt(pair, 16)), 1];
+  const rgb = /^rgb\((\d+) (\d+) (\d+) \/ ([\d.]+)\)$/.exec(value);
+  if (rgb) return rgb.slice(1).map(Number);
+  throw new Error(`Not a palette colour: ${value}`);
+}
+
 describe('stand states', () => {
   it('lists the seven stand states of the contracts page with their Spanish and English labels', () => {
     expect(STAND_STATE_KEYS).toEqual([
@@ -31,12 +40,27 @@ describe('stand states', () => {
     expect(drawing).toEqual({
       available: ['none', null, 0, 1, '--occ-line-strong', null, 'code'],
       planned: ['none', null, 0, 1.5, '--occ-muted', [4, 3], 'flight-time'],
-      arriving: ['tint', '--occ-panel-raised', 0.4, 2.5, '--occ-text', null, 'lead-in'],
+      arriving: ['tint', '--occ-arriving-fill', 1, 2.5, '--occ-text', null, 'lead-in'],
       occupied: ['solid', '--occ-panel-raised', 1, 2, '--occ-text', null, 'footprint-progress'],
       releasing: ['solid', '--occ-panel-raised', 1, 2, '--occ-text', null, 'clock'],
       disabled: ['hatch', '--occ-line-strong', 1, 1.5, '--occ-line-strong', [2, 2], 'combined-link'],
       unverified: ['none', null, 0, 1, '--occ-faint', [1, 3], 'muted-code'],
     });
+
+    // «Llegando» is the raised slab at 40 %, in a token of its own: a legend drawn in HTML paints it as it is,
+    // since Tailwind has no opacity modifier for an occ colour.
+    const [red, green, blue, alpha] = rgba(OCC_PALETTE['--occ-arriving-fill']);
+    expect([red, green, blue]).toEqual(rgba(OCC_PALETTE['--occ-panel-raised']).slice(0, 3));
+    expect(alpha).toBe(0.4);
+  });
+
+  it('every fill paints its token as it is, and only a see-through fill has an alpha', () => {
+    for (const key of STAND_STATE_KEYS) {
+      const { kind, token, opacity } = STAND_STATES[key].fill;
+      // No consumer dims a fill on its own, so a map, a canvas and a legend in HTML paint the same colour.
+      expect(opacity, key).toBe(kind === 'none' ? 0 : 1);
+      if (kind !== 'none') expect(rgba(OCC_PALETTE[token])[3] < 1, `${key}: ${token}`).toBe(kind === 'tint');
+    }
   });
 
   it('every pair of stand states differs in a channel other than colour', () => {

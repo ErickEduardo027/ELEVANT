@@ -57,6 +57,7 @@ Decisiones de Erick del 12 de noviembre de 2026:
 | `--occ-panel-raised` | `#2A3439` | encabezados y fila elegida («Losa») |
 | `--occ-panel-float` | `rgb(32 40 45 / 0.94)` | paneles flotantes, casi opacos y sin desenfoque |
 | `--occ-field` | `#161E22` | fondo de los campos |
+| `--occ-arriving-fill` | `rgb(42 52 57 / 0.4)` | relleno de una posición «Llegando»: la losa al 40 % |
 | `--occ-line` | `#394348` | juntas |
 | `--occ-line-strong` | `#768289` | borde de todo control |
 | `--occ-text` | `#E8EEF1` | texto y tecla principal («Pintura blanca») |
@@ -81,7 +82,7 @@ Decisiones de Erick del 12 de noviembre de 2026:
   - `--occ-panel-muted` es `--occ-panel-raised`, hasta que ninguna clase lo use.
   - Los seis nombres del chat reparan sus hojas sin tocarlas: `--occ-ui-soft` (`--occ-panel-raised`), `--occ-ui-line` (`--occ-line`), `--occ-ui-glass` (`--occ-field`), `--occ-ui-text` (`--occ-text`), `--occ-ui-solid` (`--occ-panel`) y `--occ-ui-muted` (`--occ-muted`).
   - `--occ-signal` se retira junto con su llave de Tailwind.
-- **Tailwind.** `tailwind.config.js` expone cada token como `colors.occ.<nombre>: 'var(--occ-…)'` y suma `panel-raised`, `panel-float`, `faint`, `warn-soft` y `danger-soft`. **Nunca se usa un modificador de opacidad sobre una clase `occ-*`**: con un color `var()`, Tailwind no genera la clase. `bg-occ-panel/90` no pintaba nada; para los fondos tenues existen los tokens `-soft`.
+- **Tailwind.** `tailwind.config.js` expone cada token como `colors.occ.<nombre>: 'var(--occ-…)'` y suma `panel-raised`, `panel-float`, `faint`, `warn-soft` y `danger-soft`. **Nunca se usa un modificador de opacidad sobre una clase `occ-*`**: con un color `var()`, Tailwind no genera la clase. `bg-occ-panel/90` no pintaba nada; para los fondos tenues existen los tokens `-soft`, y para el relleno de «Llegando», `--occ-arriving-fill`.
 - **Para JavaScript.** `src/features/occ-ui/occPalette.js` exporta `OCC_PALETTE` (token → valor, solo los colores) y `occColor(token)`. Es para quien no lee variables CSS: la pintura de MapLibre, los iconos de canvas y el SVG dibujado en código. Una prueba de paridad lo compara con `occ.css`, y un nombre desconocido lanza un error en lugar de pintar `undefined`. Los mapas tomarán de ahí los colores de estado y guardarán en su propio módulo solo los del mapa base.
 - **Contraste (WCAG 2), sobre el panel y sobre la losa:**
   - texto, 12,8:1 y 10,9:1; secundario, 8,8:1 y 7,5:1; tenue, 5,7:1 y 4,9:1;
@@ -136,13 +137,13 @@ Las leyendas leen las palabras y los dibujos de `statusVocabulary.js`: un estado
 
 **6. Un solo vocabulario** (`src/features/occ-ui/`, datos puros con su texto en español y en inglés).
 - `statusVocabulary.js`:
-  - `STAND_STATES`: los siete estados de posición, clave → `{ es, en, fill, outline, dash, extra }`. El archivo guarda cómo se llama y se dibuja cada estado; las reglas de «Cuándo» las aplicará el modelo de posiciones de los mapas.
+  - `STAND_STATES`: los siete estados de posición, clave → `{ es, en, fill, outline, dash, extra }`. El archivo guarda cómo se llama y se dibuja cada estado; las reglas de «Cuándo» las aplicará el modelo de posiciones de los mapas. Cada relleno se pinta tal cual, sin una opacidad aparte: el de «Llegando» es translúcido y lleva su alfa en su propio token, así el mapa, el canvas y una leyenda en HTML pintan el mismo color.
 
     | Clave | Español | Inglés | Cuándo | Relleno | Contorno | Marca |
     |---|---|---|---|---|---|---|
     | `available` | Libre | Free | sin visita | ninguno | 1 px continuo, `line-strong` | código |
     | `planned` | Planificada | Planned | asignada, el vuelo llega en más de 15 min | ninguno | 1,5 px a trazos 4-3, `muted` | vuelo, hora y huella a trazos |
-    | `arriving` | Llegando | Arriving | asignada, el vuelo llega en 15 min o menos, aterrizó o rueda, y aún no está en la posición | `panel-raised` al 40 % | 2,5 px continuo, `text` | línea de entrada resaltada, «en N min» |
+    | `arriving` | Llegando | Arriving | asignada, el vuelo llega en 15 min o menos, aterrizó o rueda, y aún no está en la posición | `--occ-arriving-fill` (`panel-raised` al 40 %) | 2,5 px continuo, `text` | línea de entrada resaltada, «en N min» |
     | `occupied` | Ocupada | Occupied | el avión está en la posición, del calzo al push-back | `panel-raised` | 2 px continuo, `text` | huella y barra de avance |
     | `releasing` | Por liberar | Releasing | ocupada y la salida es en 15 min o menos | `panel-raised` | 2 px continuo, `text` | reloj, «sale en N min» |
     | `disabled` | Inhabilitada | Disabled | anulada por una posición combinada | rayado, `line-strong` | 1,5 px a trazos 2-2 | «Anulada por 9A» y la línea de enlace |

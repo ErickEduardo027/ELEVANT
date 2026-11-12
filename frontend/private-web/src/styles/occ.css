@@ -16,6 +16,11 @@
   --occ-panel-float: rgb(32 40 45 / 0.94);
   --occ-field: #161e22;
 
+  /* Stand state «Llegando» (src/features/occ-ui/statusVocabulary.js): the raised
+     slab at 40 %, in a token of its own so that maps and HTML legends paint it
+     as it is, with no opacity modifier. */
+  --occ-arriving-fill: rgb(42 52 57 / 0.4);
+
   /* Joints, control boundaries and text. */
   --occ-line: #394348;
   --occ-line-strong: #768289;

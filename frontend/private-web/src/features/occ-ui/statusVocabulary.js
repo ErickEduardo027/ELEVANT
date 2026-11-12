@@ -22,7 +22,11 @@ const SLAB_FILL = { kind: 'solid', token: '--occ-panel-raised', opacity: 1 };
 
 /**
  * How each stand state reads and is drawn.
- * - `fill.kind`: `none`, `tint` (the token at `opacity`), `solid`, or `hatch` (diagonal lines in the token colour).
+ * - `fill.kind`: `none`, `tint` (a see-through fill: the map shows through it), `solid`, or `hatch` (diagonal lines
+ *   in the token colour). A fill paints its token as it is: a see-through fill keeps its alpha in a token of its own
+ *   (`--occ-arriving-fill`, the raised slab at 40 %), so a map, a canvas and a legend drawn in HTML paint the same
+ *   colour. `fill.opacity` is 1 whenever there is something to paint and 0 for `none`; a map passes it as
+ *   `fill-opacity`.
  * - `outline.width` is in pixels; `dash` is `[dash, gap]`, also in pixels, or `null` for a solid line. A MapLibre
  *   `line-dasharray` counts in line widths, so a map divides both numbers by the width.
  * - `extra` names the mark that goes with the state: `code` (the stand code), `flight-time` (flight, time and a
@@ -41,7 +45,7 @@ export const STAND_STATES = deepFreeze({
   },
   arriving: {
     es: 'Llegando', en: 'Arriving',
-    fill: { kind: 'tint', token: '--occ-panel-raised', opacity: 0.4 },
+    fill: { kind: 'tint', token: '--occ-arriving-fill', opacity: 1 },
     outline: { token: '--occ-text', width: 2.5 }, dash: null, extra: 'lead-in',
   },
   occupied: {
