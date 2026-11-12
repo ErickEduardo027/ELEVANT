@@ -682,8 +682,12 @@ estructura de ninguna pantalla: los textos, roles, nombres accesibles y
   definiera son ahora alias de los tokens: el chat vuelve a tener fondos y
   bordes. [`tailwind.config.js`](../../frontend/private-web/tailwind.config.js)
   suma `panel-raised`, `panel-float`, `faint`, `warn-soft` y `danger-soft`, y
-  retira `signal`. Una clase `occ-*` nunca lleva modificador de opacidad:
-  Tailwind no la genera.
+  retira `signal`. No todos los tokens tienen clase: `--occ-field`,
+  `--occ-primary`, `--occ-primary-hover`, los `--occ-on-*`, los `--occ-*-fill`
+  y `--occ-scrim` solo existen como variables CSS hasta que un PR añada su
+  llave, y una guarda falla si una clase de color `occ-*` nombra un color sin
+  llave. Una clase `occ-*` nunca lleva modificador de opacidad: Tailwind no la
+  genera.
 - **Puente de estilos heredados.** La mayoría de las pantallas del OCC todavía
   usa clases heredadas (`bg-white`, `dark:bg-surface-dark-card`,
   `text-text-secondary-*`…). La hoja

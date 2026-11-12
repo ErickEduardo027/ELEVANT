@@ -146,6 +146,27 @@ function generateTailwindUtilities() {
   return tailwindUtilities;
 }
 
+// A Tailwind colour utility on an OCC colour (`bg-occ-panel`, `divide-occ-line`): the utility alone, without the variant
+// before it or the opacity modifier after it, which the bridge and the occ-ui guard handle. A name put together at run
+// time (`'bg-occ-' + tone`) is not matched: Tailwind cannot read it either. The prefixes are regular expression parts.
+const COLOUR_UTILITIES = [
+  'bg', 'text', 'border', 'border-[xysetrbl]', 'divide', 'outline', 'ring', 'ring-offset', 'fill', 'stroke',
+  'from', 'via', 'to', 'placeholder', 'caret', 'accent', 'decoration', 'shadow',
+];
+const OCC_COLOUR_CLASS = new RegExp(`(?<![\\w-])(?:${COLOUR_UTILITIES.join('|')})-occ-[a-z0-9]+(?:-[a-z0-9]+)*(?![\\w-])`, 'g');
+
+// The plain utilities (no variant, no modifier) for which Tailwind, with the project's configuration, writes no rule.
+async function utilitiesWithoutCss(classes) {
+  const root = await postcss([tailwindcss({
+    ...tailwindConfig,
+    content: [{ raw: classes.join(' '), extension: 'html' }],
+    corePlugins: { preflight: false },
+  })]).process('@tailwind utilities;', { from: undefined }).then(result => result.root);
+  const generated = new Set();
+  root.walkRules(rule => rule.selectors.forEach(selector => generated.add(/^\.([\w-]+)/.exec(selector)?.[1])));
+  return classes.filter(className => !generated.has(className));
+}
+
 // The legacy colour classes of the script files under some folders, as `file: class`.
 const legacyClassesIn = files => files.filter(file => SCRIPT_FILE.test(file))
   .flatMap(file => findLegacyColourClasses(readSource(file)).map(className => `${file}: ${className}`));
@@ -783,5 +804,24 @@ describe('OCC legacy bridge', () => {
     expect(tailwindReads.filter(name => !isDefined(name))).toEqual([]);
     // Tailwind reads the OCC colours from the scope, where every OCC element inherits them.
     expect(readVariables(JSON.stringify(colors.occ)).filter(name => !occScopeTokens.has(name))).toEqual([]);
+  });
+
+  it('every occ colour class in app/ and src/ generates CSS, so its colour has a key in colors.occ', async () => {
+    // The matcher keeps the utility and drops its variant and its opacity modifier; plain names and variables are not
+    // colour classes.
+    const sample = "hover:bg-occ-primary text-occ-text/80 divide-occ-line-strong occ-console-stage data-occ-bridge "
+      + "var(--occ-panel) rounded-occ-panel 'bg-occ-' + tone";
+    expect([...sample.matchAll(OCC_COLOUR_CLASS)].map(([className]) => className))
+      .toEqual(['bg-occ-primary', 'text-occ-text', 'divide-occ-line-strong']);
+    // Tailwind writes nothing for a colour that colors.occ lacks, and nothing else would fail.
+    expect(await utilitiesWithoutCss(['bg-occ-not-a-colour', 'bg-occ-panel', 'divide-occ-line']))
+      .toEqual(['bg-occ-not-a-colour']);
+
+    const used = ['app', 'src'].flatMap(folder => sourceFilesUnder(folder)).filter(file => SCRIPT_FILE.test(file))
+      .flatMap(file => [...readSource(file).matchAll(OCC_COLOUR_CLASS)].map(([className]) => ({ file, className })));
+    expect(used.length).toBeGreaterThan(100);
+    const withoutCss = new Set(await utilitiesWithoutCss([...new Set(used.map(({ className }) => className))]));
+    expect(used.filter(({ className }) => withoutCss.has(className)).map(({ file, className }) => `${file}: ${className}`),
+      'add the colour to colors.occ in tailwind.config.js').toEqual([]);
   });
 });

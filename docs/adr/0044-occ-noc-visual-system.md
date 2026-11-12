@@ -82,7 +82,9 @@ Decisiones de Erick del 12 de noviembre de 2026:
   - `--occ-panel-muted` es `--occ-panel-raised`, hasta que ninguna clase lo use.
   - Los seis nombres del chat reparan sus hojas sin tocarlas: `--occ-ui-soft` (`--occ-panel-raised`), `--occ-ui-line` (`--occ-line`), `--occ-ui-glass` (`--occ-field`), `--occ-ui-text` (`--occ-text`), `--occ-ui-solid` (`--occ-panel`) y `--occ-ui-muted` (`--occ-muted`).
   - `--occ-signal` se retira junto con su llave de Tailwind.
-- **Tailwind.** `tailwind.config.js` expone cada token como `colors.occ.<nombre>: 'var(--occ-…)'` y suma `panel-raised`, `panel-float`, `faint`, `warn-soft` y `danger-soft`. **Nunca se usa un modificador de opacidad sobre una clase `occ-*`**: con un color `var()`, Tailwind no genera la clase. `bg-occ-panel/90` no pintaba nada; para los fondos tenues existen los tokens `-soft`, y para el relleno de «Llegando», `--occ-arriving-fill`.
+- **Tailwind.** No todos los tokens tienen clase. `tailwind.config.js` expone en `colors.occ`, cada uno como `'<nombre>': 'var(--occ-<nombre>)'`, solo estos colores: `canvas`, `panel`, `panel-raised`, `panel-float`, `panel-muted`, `line`, `line-strong`, `text`, `muted`, `faint`, `accent`, `accent-soft`, `ok`, `warn`, `warn-soft`, `danger`, `danger-soft` y los siete del riel (`nav`, `nav-line`, `nav-text`, `nav-muted`, `nav-hover`, `nav-active` y `nav-accent`). De ellos, U1 suma `panel-raised`, `panel-float`, `faint`, `warn-soft` y `danger-soft`.
+  - `--occ-field`, `--occ-arriving-fill`, `--occ-primary`, `--occ-primary-hover`, los cuatro `--occ-on-*`, `--occ-warn-fill`, `--occ-danger-fill` y `--occ-scrim` solo existen como variables CSS. Tailwind no genera la clase de un color sin llave: `bg-occ-primary` no pintaría nada. El PR que necesite una de esas clases añade su llave a `colors.occ`; si no, falla una guarda (sección 4). Los radios `--occ-radius-*` tampoco tienen clase.
+  - **Nunca se usa un modificador de opacidad sobre una clase `occ-*`**: con un color `var()`, Tailwind no genera la clase. `bg-occ-panel/90` no pintaba nada; para los fondos tenues existen los tokens `-soft`, y para el relleno de «Llegando», `--occ-arriving-fill`.
 - **Para JavaScript.** `src/features/occ-ui/occPalette.js` exporta `OCC_PALETTE` (token → valor, solo los colores) y `occColor(token)`. Es para quien no lee variables CSS: la pintura de MapLibre, los iconos de canvas y el SVG dibujado en código. Una prueba de paridad lo compara con `occ.css`, y un nombre desconocido lanza un error en lugar de pintar `undefined`. Los mapas tomarán de ahí los colores de estado y guardarán en su propio módulo solo los del mapa base.
 - **Contraste (WCAG 2), sobre el panel y sobre la losa:**
   - texto, 12,8:1 y 10,9:1; secundario, 8,8:1 y 7,5:1; tenue, 5,7:1 y 4,9:1;
@@ -121,6 +123,7 @@ Decisiones de Erick del 12 de noviembre de 2026:
   - una regla de las hojas que importa `app/layout.jsx`, o de una hoja montada bajo `/admin-occ`, copia con `@apply` un color heredado y no tiene una regla de `occ.css` que la repinte con más peso dentro de la misma consulta de contenedor, ni un motivo para quedar fuera;
   - una carpeta de `MIGRATED_FOLDERS` usa una clase de color heredada;
   - `occ-ui` usa desenfoque, degradados o un modificador de opacidad sobre `occ-*`;
+  - una clase de color `occ-*` de `app/` o `src/`, sin su variante ni su modificador de opacidad, no genera CSS con la configuración del proyecto, como `bg-occ-primary`, cuyo color no está en `colors.occ`;
   - una pareja de la paleta pierde su contraste, o el chat lee una variable que nadie define;
   - el chat dibuja el foco o la selección con un color fijo que `occ.css` no supera, también frente al borde del puente al pasar el cursor.
 - **Cómo sale una pantalla del puente.**
@@ -182,7 +185,7 @@ Las leyendas leen las palabras y los dibujos de `statusVocabulary.js`: un estado
 - Losas planas separadas por juntas de 1 px, sin sombras, degradados ni `backdrop-filter`.
 - Radios por papel (`--occ-radius-*`): 2 px las placas, 4 px los controles, 6 px los paneles y 8 px lo superpuesto. Los paneles flotantes usan `--occ-panel-float`, casi opaco (0,94) y sin desenfoque.
 - Movimiento sobrio: solo se mueven los aviones, y solo parpadea una alerta urgente que nadie recibió. Con «reducir movimiento», las animaciones y transiciones del OCC duran 0,01 ms.
-- En U1, `occ.css` ya no tiene degradados, sombras ni desenfoque (lo comprueba una prueba), y el puente quita el desenfoque y las sombras de las clases heredadas. El tamaño mínimo y los rótulos se corrigen pantalla por pantalla, de U3 a U6.
+- En U1, `occ.css` ya no tiene degradados, sombras ni desenfoque (lo comprueba una prueba). El puente quita el desenfoque y las sombras de las clases heredadas, y `occ.css` quita la sombra que `tokens.css` pone a las filas de las tablas apiladas (sección 4). El tamaño mínimo y los rótulos se corrigen pantalla por pantalla, de U3 a U6.
 
 ### Lo que añadirán U2 a U6
 
