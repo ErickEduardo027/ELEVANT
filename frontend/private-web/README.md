@@ -146,10 +146,16 @@ de API al origen HTTPS privado de Development. Monitoreo y Mapa de posiciones
 usan MapLibre en local y en la imagen publicada; no requieren una clave de
 Google. `predev` y `prebuild` copian el worker y su módulo compartido desde la
 versión instalada de MapLibre a `public/assets/maplibre/`. La verificación del
-build y la certificación de la imagen comprueban esos dos archivos. Si cambias
-de versión de MapLibre, vuelve a ejecutar `npm ci` y el build; no edites los
-archivos generados. Los estilos públicos se cargan desde los orígenes permitidos
-por la CSP y necesitan conectividad del navegador a esos proveedores.
+build y la certificación de la imagen comprueban esos dos archivos. Desde
+MapLibre 6.13 el worker es autocontenido y `maplibre-gl-shared.mjs` llega
+vacío (el paquete lo conserva por compatibilidad): es normal que pese 0 bytes.
+La verificación del build falla si el worker vuelve a importar un módulo que
+no se copia. `maplibre-gl` va con versión exacta en `package.json`: el worker
+servido y el bundle deben ser de la misma versión, así que cada subida es un
+cambio deliberado. Si cambias de versión de MapLibre, vuelve a ejecutar
+`npm ci` y el build; no edites los archivos generados. Los estilos públicos se
+cargan desde los orígenes permitidos por la CSP y necesitan conectividad del
+navegador a esos proveedores.
 
 El mapa base de PUJ aparece en Monitoreo aun sin coordenadas de aeronaves y lo
 indica explícitamente. Otras estaciones no usan el centro de PUJ. La selección
