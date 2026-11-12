@@ -11,6 +11,7 @@ using Elevant.Application.Abstractions.Commercial;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Elevant.Infrastructure.Integrations.OpenSky;
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Integration.DemoFlights;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -76,6 +77,7 @@ public static class DependencyInjection
         services.AddJwtAccessTokens(configuration);
         services.AddSingleton<IFinancialDocumentPdfRenderer, FinancialDocumentPdfRenderer>();
         AddCardPayments(services, configuration, environment);
+        AddDemoFlights(services, configuration, environment);
         services.AddSingleton<IFinanceReportXlsxRenderer, FinanceReportXlsxRenderer>();
         services.AddSingleton<IHumanResourcesReportPdfRenderer, HumanResourcesReportPdfRenderer>();
         services.AddSingleton<IOccReportRenderer, OccReportRenderer>();
@@ -114,5 +116,27 @@ public static class DependencyInjection
         }
         services.AddSingleton<ICardPaymentGateway, DisabledCardGateway>();
         services.AddSingleton(CardPaymentAvailability.Disabled);
+    }
+
+    /// <summary>Configuration key of the demo flights the superadministrator triggers (ADR-0041).</summary>
+    public const string DemoFlightsModeKey = "DemoFlights:Mode";
+
+    /// <summary>
+    /// ADR-0041: demo flights are chosen explicitly. <c>DemoFlights:Mode</c> is Disabled by default; Enabled only runs in
+    /// Development or Test, so a Production API with it never starts. The endpoints exist in every environment (the
+    /// OpenAPI document never depends on the mode): while it is off every command answers
+    /// <c>demo_flights_unavailable</c>, the reads answer <c>enabled: false</c> and the progress worker does not run.
+    /// </summary>
+    private static void AddDemoFlights(IServiceCollection services, IConfiguration configuration, string environment)
+    {
+        var configured = configuration[DemoFlightsModeKey]?.Trim();
+        // Only the exact names: no numbers and no flag combinations.
+        var mode = string.IsNullOrEmpty(configured) ? DemoFlightMode.Disabled
+            : Enum.GetValues<DemoFlightMode>().Cast<DemoFlightMode?>().SingleOrDefault(value =>
+                  string.Equals(value.ToString(), configured, StringComparison.OrdinalIgnoreCase))
+              ?? throw new InvalidOperationException("DemoFlights:Mode must be Disabled or Enabled.");
+        if (mode == DemoFlightMode.Enabled && environment is not ("Development" or "Test" or "Testing"))
+            throw new InvalidOperationException("Demo flights require Development or Test.");
+        services.AddSingleton(mode == DemoFlightMode.Enabled ? DemoFlightAvailability.On : DemoFlightAvailability.Disabled);
     }
 }

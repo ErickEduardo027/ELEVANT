@@ -66,6 +66,8 @@ public static class ServiceCollectionExtensions
         services.AddHostedService<Elevant.Api.Finance.InvoiceOverdueNoticeWorker>();
         services.AddHostedService<Elevant.Api.HumanResources.HumanResourcesDocumentWorker>();
         services.AddHostedService<Elevant.Api.Integration.FlightFeedSyncWorker>();
+        // ADR-0041: always registered; it returns at once where DemoFlights:Mode is off.
+        services.AddHostedService<Elevant.Api.Integration.DemoFlightProgressWorker>();
         if (!string.IsNullOrWhiteSpace(configuration["MediaStorage:Endpoint"]))
             services.AddHostedService<CommercialMediaCleanupWorker>();
         services.AddExceptionHandler<GlobalExceptionHandler>();

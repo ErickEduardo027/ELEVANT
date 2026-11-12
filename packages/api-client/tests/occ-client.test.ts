@@ -704,6 +704,38 @@ describe("OCC planning API client", () => {
     expect(observedSignal).toBe(controller.signal);
   });
 
+  it("accepts isDemo absent or true and rejects false, null and a non-boolean (ADR-0041)", async () => {
+    const marked = (mark: Record<string, unknown>) => ({
+      ...deepClone(snapshot),
+      turnarounds: [snapshot.turnarounds[0]!,
+        { ...deepClone(snapshot.turnarounds[0]!), id: "70000000-0000-7000-8000-000000000013", ...mark }],
+    });
+    const read = (body: unknown) => createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async () => jsonResponse(body),
+    }).getOccPlanningSnapshot();
+
+    await expect(read(marked({}))).resolves.toEqual(marked({}));
+    const demo = await read(marked({ isDemo: true }));
+    expect(demo.turnarounds.map(item => item.isDemo)).toEqual([undefined, true]);
+    for (const isDemo of [false, null, "true", 0])
+      await expect(read(marked({ isDemo }))).rejects.toMatchObject({ kind: "malformed-response" });
+
+    // The turnaround detail carries the same turnaround, mark included.
+    const version = "AAAAAAAAB+E=";
+    const detail = (mark: Record<string, unknown>) => ({ station, turnaround: { ...deepClone(snapshot.turnarounds[0]!), ...mark },
+      version, isCharter: false, allowedActions: [] });
+    const readDetail = (body: unknown) => createElevantApiClient({
+      baseUrl: "https://api.example.test",
+      getAccessToken: () => "occ-token",
+      fetch: async () => jsonResponse(body, 200, { etag: `"${version}"` }),
+    }).getOccTurnaround(turnaroundId);
+    await expect(readDetail(detail({ isDemo: true }))).resolves.toMatchObject({ turnaround: { turnaround: { isDemo: true } } });
+    await expect(readDetail(detail({}))).resolves.toMatchObject({ etag: `"${version}"` });
+    await expect(readDetail(detail({ isDemo: false }))).rejects.toMatchObject({ kind: "malformed-response" });
+  });
+
   it("accepts the API's nullable OCC branches and empty projections", async () => {
     const minimalSnapshot: OccPlanningSnapshotResponse = {
       station,

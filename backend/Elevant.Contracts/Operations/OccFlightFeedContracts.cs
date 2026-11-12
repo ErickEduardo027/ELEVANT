@@ -12,14 +12,17 @@ public sealed record OccFlightFeedBudgetResponse(bool Configured, string Provide
 /// <summary>
 /// A leg the provider reported for a registered airline. <paramref name="Version"/> is the rowversion in base64
 /// (the expected version of an import or a restore); <paramref name="SuggestedAircraftTypeId"/> is the active
-/// aircraft type the provider's model matches (2-B).
+/// aircraft type the provider's model matches (2-B). <paramref name="IsDemo"/> is true for a leg of a demo flight
+/// (ADR-0041) and absent otherwise: the key is written only when true, so a client deployed before it keeps
+/// validating every list without a demo flight.
 /// </summary>
 public sealed record OccFlightProposalResponse(Guid ProposalId, string Direction, string FlightNumber, Guid AirlineId,
     string AirlineName, string? AirlineIataCode, string? CounterpartIata, string? CounterpartName, bool CounterpartKnown,
     DateTimeOffset ScheduledAt, DateTimeOffset? RevisedAt, DateTimeOffset? RunwayAt, string ProviderStatus,
     string? AircraftRegistration, string? AircraftModel, string? Terminal, string? Gate, string Status,
     Guid? TurnaroundId, Guid? SuggestedDepartureId, DateTimeOffset LastSeenAt, string Version,
-    Guid? SuggestedAircraftTypeId);
+    Guid? SuggestedAircraftTypeId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsDemo = null);
 
 public sealed record OccFlightFeedResponse(Guid StationId, string StationCode, DateOnly Date, OccFlightFeedBudgetResponse Budget,
     DateTimeOffset? LastReadAt, DateTimeOffset? NextManualRefreshAt, bool CanImport,

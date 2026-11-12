@@ -11,6 +11,7 @@ export * from "./catalog";
 export * from "./contractDocuments";
 export * from "./airlinePermits";
 export * from "./masterData";
+export * from "./demoFlights";
 export * from "./flightFeedReview";
 export * from "./occTurnarounds";
 export * from "./occIncidents";
@@ -295,6 +296,18 @@ export {
   type StationAirportData,
   type CreateStationInput,
   type UpdateStationInput,
+  type CreateDemoFlightRequest,
+  type CancelDemoFlightRequest,
+  type DemoFlightResponse,
+  type DemoFlightListResponse,
+  type DemoFlightOptionsResponse,
+  type DemoStationOptionResponse,
+  type DemoAirlineOptionResponse,
+  type DemoAirportOptionResponse,
+  type DemoAircraftTypeOptionResponse,
+  type DemoStandOptionResponse,
+  type DemoFlightLimitsResponse,
+  type DemoFlightWarningResponse,
   type OccMasterData,
   type MasterTerminalData,
   type MasterStandData,

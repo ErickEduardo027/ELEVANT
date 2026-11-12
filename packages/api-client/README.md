@@ -96,6 +96,21 @@ el prepago con la versión vista y la clave del intento; otro monto o
 referencia lo corrige con un motivo de 5 a 500 caracteres mientras no se haya
 aplicado.
 
+Vuelos demo (ADR-0041, solo el superadministrador):
+`getDemoFlightOptions(stationId?)` y `listDemoFlights(stationId?)` leen el
+formulario y los vuelos de las últimas 24 horas con `enabled` y la hora del
+servidor; donde `DemoFlights:Mode` está apagado responden `enabled: false`.
+`createDemoFlight(input, idempotencyKey)` valida antes de enviar (de 2 a 30
+minutos hasta la posición, de 20 a 240 en tierra, `standChoice` `None` o
+`Specific`, sin claves desconocidas) y acepta 201 o 200 en la repetición.
+`cancelDemoFlight(demoFlightId, "Cancel" | "Finish", idempotencyKey)` no
+envía versión: el servidor contrasta la intención con la fase. Los códigos
+nuevos son `demo_flights_unavailable`, `invalid_demo_flight`,
+`demo_origin_unknown`, `demo_flight_limit_reached` y `demo_flight_closed`. La
+propuesta del feed, la escala de planificación y la del mapa de posiciones
+traen `isDemo` solo cuando es `true`; sus validadores aceptan la clave ausente
+o `true`. La app móvil no lee estas respuestas.
+
 `getFinanceTariffs({ stationId, page?, limit? })` lista hasta 50 tarifas de
 versiones contractuales publicadas que cubren la estación con grant vigente de
 Finanzas. Rechaza parámetros fuera de rango, respuestas de otra estación,

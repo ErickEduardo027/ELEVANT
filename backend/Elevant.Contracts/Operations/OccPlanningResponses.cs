@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Elevant.Contracts.Operations;
 
 public sealed record OccPlanningSnapshotResponse(
@@ -87,6 +89,10 @@ public sealed record OccOperationServiceResponse(
     string BillingUnit,
     string Status);
 
+/// <summary>
+/// A turnaround of the planning snapshot and of the turnaround detail. <paramref name="IsDemo"/> is true for the
+/// turnaround of a demo flight OCC imported (ADR-0041) and absent otherwise: the key is written only when true.
+/// </summary>
 public sealed record OccTurnaroundResponse(
     Guid Id,
     string OperationCode,
@@ -100,7 +106,8 @@ public sealed record OccTurnaroundResponse(
     OccGroundOperationResponse? Operation,
     IReadOnlyList<OccAssignedAgentResponse> Agents,
     IReadOnlyList<OccAssignedEquipmentResponse> Equipment,
-    IReadOnlyList<OccOperationServiceResponse> Services);
+    IReadOnlyList<OccOperationServiceResponse> Services,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IsDemo = null);
 
 public sealed record OccPlanningOptionsResponse(
     OccPlanningTurnaroundContextResponse Turnaround,

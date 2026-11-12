@@ -202,7 +202,9 @@ public sealed class OccPositionsController(IOccPositionStore store) : Controller
 
     private static OccPositionTurnaroundResponse Turnaround(OccPositionTurnaroundData item) => new(item.TurnaroundId,
         item.OperationCode, item.AirlineName, item.AircraftRegistration, item.ArrivalFlightNumber, item.DepartureFlightNumber,
-        item.ArrivalScheduledAt, item.ArrivedAt, item.DepartureScheduledAt, item.AssignedFrom, item.Status);
+        item.ArrivalScheduledAt, item.ArrivedAt, item.DepartureScheduledAt, item.AssignedFrom, item.Status,
+        // ADR-0041: true or absent, never false, so a client deployed before the mark keeps validating.
+        item.IsDemo == true ? true : null);
 
     private bool TryAccount(out Guid actorId) =>
         Guid.TryParse(User.FindFirstValue(JwtRegisteredClaimNames.Sub), out actorId) && actorId != Guid.Empty;
