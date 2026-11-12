@@ -1,48 +1,75 @@
-/* Identidad del espacio OCC (Centro de Operaciones). Solo aplica dentro de
-   `[data-department="occ"]`, que pone ShellFrame cuando AdminOccLayout lo pide;
-   los demás departamentos no ven estas variables. Las clases `*-occ-*` de
-   tailwind.config.js leen estos valores. */
+/* Identity of the OCC workspace (operations control centre). It applies only
+   inside `[data-department="occ"]`, which ShellFrame sets when AdminOccLayout
+   asks for it; the other departments never see these variables.
+   The OCC is dark only: one token block, with no light values and no
+   dependency on the `dark` class. The `*-occ-*` classes of tailwind.config.js
+   read these values, and src/features/occ-ui/occPalette.js mirrors the colours
+   for JavaScript consumers (a parity test compares the two files). */
 [data-department='occ'] {
-  --occ-canvas: #eef2f7;
-  --occ-panel: #ffffff;
-  --occ-panel-muted: #f5f7fb;
-  --occ-line: rgba(11, 31, 63, 0.1);
-  --occ-line-strong: rgba(11, 31, 63, 0.2);
-  --occ-text: #0b1f3f;
-  --occ-muted: #566275;
-  --occ-accent: #145dc4;
-  --occ-accent-soft: rgba(20, 93, 196, 0.1);
-  --occ-ok: #13795a;
-  --occ-warn: #8a5d0b;
-  --occ-danger: #b23a31;
-  --occ-signal: #f2661e;
-  /* El riel de navegación es navy en ambos temas: es la firma del espacio. */
-  --occ-nav: #0b1f3f;
-  --occ-nav-line: rgba(255, 255, 255, 0.08);
-  --occ-nav-text: #d3deee;
-  --occ-nav-muted: #8fa2bf;
-  --occ-nav-hover: rgba(255, 255, 255, 0.06);
-  --occ-nav-active: rgba(91, 155, 245, 0.16);
-  --occ-nav-accent: #6aa5f7;
-  color-scheme: light;
-}
-
-.dark [data-department='occ'] {
-  --occ-canvas: #060e1a;
-  --occ-panel: #0b1a2e;
-  --occ-panel-muted: #0f2139;
-  --occ-line: rgba(148, 178, 220, 0.12);
-  --occ-line-strong: rgba(148, 178, 220, 0.24);
-  --occ-text: #e8eef7;
-  --occ-muted: #97a8c0;
-  --occ-accent: #5b9bf5;
-  --occ-accent-soft: rgba(91, 155, 245, 0.14);
-  --occ-ok: #4cc99a;
-  --occ-warn: #e3b65c;
-  --occ-danger: #f07a70;
-  --occ-nav: #040b16;
-  --occ-nav-line: rgba(148, 178, 220, 0.1);
   color-scheme: dark;
+
+  /* Surfaces: rail, page, panels, raised slabs, floating panels, input wells. */
+  --occ-nav: #0f161a;
+  --occ-canvas: #161e22;
+  --occ-panel: #20282d;
+  --occ-panel-raised: #2a3439;
+  --occ-panel-float: rgb(32 40 45 / 0.94);
+  --occ-field: #161e22;
+
+  /* Joints, control boundaries and text. */
+  --occ-line: #394348;
+  --occ-line-strong: #768289;
+  --occ-text: #e8eef1;
+  --occ-muted: #bcc8ce;
+  --occ-faint: #95a2a9;
+
+  /* Cyan: what is selected or can be acted on. The primary action is a light key. */
+  --occ-accent: #6fd4f5;
+  --occ-accent-soft: #2d444d;
+  --occ-on-accent: #0f161a;
+  --occ-primary: #e8eef1;
+  --occ-primary-hover: #ffffff;
+  --occ-on-primary: #0f161a;
+
+  /* Signals: amber asks for attention, red is urgent. Normal states carry no hue. */
+  --occ-warn: #fdc14f;
+  --occ-warn-fill: #fdc14f;
+  --occ-warn-soft: #434032;
+  --occ-on-warn: #0f161a;
+  --occ-danger: #f5746d;
+  --occ-danger-fill: #f5746d;
+  --occ-danger-soft: #423437;
+  --occ-on-danger: #0f161a;
+  --occ-scrim: rgb(15 22 26 / 0.72);
+
+  /* Navigation rail. */
+  --occ-nav-line: #252c30;
+  --occ-nav-text: #c9d3d8;
+  --occ-nav-muted: #95a2a9;
+  --occ-nav-hover: #1a2227;
+  --occ-nav-active: #252c30;
+  --occ-nav-accent: #6fd4f5;
+
+  /* Radius by role: plates, controls, panels, overlays. */
+  --occ-radius-plate: 2px;
+  --occ-radius-control: 4px;
+  --occ-radius-panel: 6px;
+  --occ-radius-overlay: 8px;
+
+  /* Aliases kept for the classes that still use them. */
+  --occ-ok: var(--occ-text);
+  --occ-panel-muted: var(--occ-panel-raised);
+
+  /* The chat stylesheets read these names and nothing else defines them. */
+  --occ-ui-soft: var(--occ-panel-raised);
+  --occ-ui-line: var(--occ-line);
+  --occ-ui-glass: var(--occ-field);
+  --occ-ui-text: var(--occ-text);
+  --occ-ui-solid: var(--occ-panel);
+  --occ-ui-muted: var(--occ-muted);
+
+  font-family: var(--font-manrope), system-ui, 'Segoe UI', sans-serif;
+  font-weight: 500;
 }
 
 [data-department='occ'] :focus-visible {
@@ -54,41 +81,23 @@
   outline-color: var(--occ-nav-accent);
 }
 
-[data-department='occ'] .occ-dashboard {
-  font-family: var(--font-manrope), system-ui, sans-serif;
-  background: radial-gradient(ellipse at 45% -12%, rgba(20, 93, 196, 0.13), transparent 55%);
-}
-
-.dark [data-department='occ'] .occ-dashboard {
-  background: radial-gradient(ellipse at 42% -12%, rgba(54, 113, 183, 0.18), transparent 58%);
-}
-
+/* Layout of the current dashboard console. It only places the panels; every
+   colour comes from the tokens above. */
 [data-department='occ'] .occ-dashboard-map-panel {
   box-shadow: none;
 }
 
-.dark [data-department='occ'] .occ-dashboard-map-panel {
-  box-shadow: none;
-}
-
 [data-department='occ'] .occ-console-stage {
-  --occ-glass: rgba(249, 252, 255, 0.84);
-  --occ-stage-line: rgba(35, 81, 131, 0.2);
+  --occ-glass: var(--occ-panel-float);
+  --occ-stage-line: var(--occ-line);
   display: grid;
   grid-template-columns: minmax(0, 1.9fr) minmax(315px, 0.83fr);
   grid-template-rows: 730px auto;
   overflow: hidden;
   border: 1px solid var(--occ-stage-line);
   border-radius: 24px;
-  background: #e5f0fb;
-  box-shadow: 0 28px 60px rgba(9, 31, 63, 0.16), inset 0 1px rgba(255, 255, 255, 0.7);
-}
-
-.dark [data-department='occ'] .occ-console-stage {
-  --occ-glass: rgba(8, 25, 44, 0.78);
-  --occ-stage-line: rgba(150, 200, 255, 0.18);
-  background: radial-gradient(circle at 70% 0, #183d5a, #061424 62%);
-  box-shadow: 0 30px 70px rgba(0, 5, 16, 0.55), inset 0 1px rgba(228, 247, 255, 0.11);
+  background: var(--occ-canvas);
+  box-shadow: none;
 }
 
 [data-department='occ'] .occ-console-stage .occ-dashboard-map-panel {
@@ -113,9 +122,6 @@
   border: 1px solid var(--occ-stage-line);
   border-radius: 13px;
   background: var(--occ-glass);
-  box-shadow: 0 7px 24px rgba(8, 24, 42, 0.12), inset 0 1px rgba(255, 255, 255, 0.22);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  backdrop-filter: blur(18px) saturate(145%);
 }
 
 [data-department='occ'] .occ-stage-primary {
@@ -148,8 +154,6 @@
 [data-department='occ'] .occ-console-stage .occ-stage-weather > div:nth-child(2) > div:nth-child(2),
 [data-department='occ'] .occ-console-stage .occ-stage-weather > div:nth-child(2) > div:nth-child(3) {
   background: var(--occ-glass);
-  -webkit-backdrop-filter: blur(16px) saturate(135%);
-  backdrop-filter: blur(16px) saturate(135%);
 }
 
 [data-department='occ'] .occ-stage-primary > div:nth-child(2) > div:nth-child(2),
@@ -181,8 +185,6 @@
   grid-row: 2;
   border-top: 1px solid var(--occ-stage-line);
   background: var(--occ-glass);
-  -webkit-backdrop-filter: blur(24px) saturate(140%);
-  backdrop-filter: blur(24px) saturate(140%);
 }
 
 [data-department='occ'] .occ-console-stage .maplibregl-ctrl-top-right { top: 72px; }
@@ -197,11 +199,6 @@
 
 [data-department='occ'] .occ-summary-strip dl > div { padding: 10px 18px; }
 [data-department='occ'] .occ-summary-strip dd { font-variant-numeric: tabular-nums; }
-
-[data-department='occ'] .occ-workbench > section,
-[data-department='occ'] .occ-workbench > div > section {
-  box-shadow: 0 12px 32px rgba(8, 32, 63, 0.06);
-}
 
 @media (max-width: 1199px) {
   [data-department='occ'] .occ-console-stage {
