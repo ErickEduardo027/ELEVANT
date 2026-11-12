@@ -13,8 +13,11 @@ import OccTopbar from './shell/OccTopbar';
 
 // Marco propio del Centro de Operaciones: riel navy, barra contextual PUJ y
 // tokens `occ-*`. Comparte con los demás departamentos solo ShellFrame/AppShell.
+// `data-occ-bridge` enciende el puente de estilos heredados
+// (src/styles/occ-legacy-bridge.css); quitarlo lo apaga entero.
 const OCC_FRAME = {
   department: 'occ',
+  rootAttributes: { 'data-occ-bridge': '' },
   SidebarComponent: OccSidebar,
   TopbarComponent: OccTopbar,
   rootClassName: 'bg-occ-canvas text-occ-text',

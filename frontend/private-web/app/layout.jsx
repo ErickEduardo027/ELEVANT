@@ -2,6 +2,7 @@ import '../src/styles/tokens.css';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import './globals.css';
 import '../src/styles/occ.css';
+import '../src/styles/occ-legacy-bridge.css';
 import { Suspense } from 'react';
 import { headers } from 'next/headers';
 import { connection } from 'next/server';

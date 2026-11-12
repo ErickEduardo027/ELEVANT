@@ -100,13 +100,16 @@
   box-shadow: none;
 }
 
+/* The panels meet at flush joints inside the stage. Their `rounded-xl` gets a
+   radius from the legacy bridge with the same weight as this rule, and the
+   bridge loads later, hence the !important (as on the stage borders below). */
 [data-department='occ'] .occ-console-stage .occ-dashboard-map-panel {
   position: relative;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 0;
+  border-radius: 0 !important;
   background: transparent;
 }
 
