@@ -6,6 +6,9 @@ import { dirname, relative, resolve, sep } from 'node:path';
 // What paints inside the OCC frame: the routes of /admin-occ and the shell that wraps them.
 export const OCC_ENTRY_POINTS = Object.freeze(['app/admin-occ', 'src/features/admin-occ/AdminOccLayout.jsx']);
 
+// The root layout: its stylesheets load on every page, the OCC frame included.
+export const ROOT_LAYOUT = 'app/layout.jsx';
+
 // Files that are listed but whose imports are not followed. RoleLayout is the switch between departments:
 // it imports every department's shell, and under /admin-occ it mounts only AdminOccLayout, which is an
 // entry point of its own. Following it would hand the OCC bridge the classes of Contracts, Finance,
@@ -69,6 +72,15 @@ export function importClosure(entryPoints, { root = process.cwd(), stops = [] } 
 /** The files mounted inside the OCC frame. */
 export function occMountedFiles(root = process.cwd()) {
   return importClosure(OCC_ENTRY_POINTS, { root, stops: OCC_SCAN_STOPS });
+}
+
+/** The project stylesheets that the root layout imports, in import order; a package's stylesheet is left out. */
+export function globalStylesheets(root = process.cwd()) {
+  const layout = resolve(root, ROOT_LAYOUT);
+  return [...readFileSync(layout, 'utf8').matchAll(IMPORT_SPECIFIER)]
+    .map(match => resolveImport(root, layout, match[1] ?? match[2]))
+    .filter(file => file !== null && file.endsWith('.css'))
+    .map(file => toPosix(relative(root, file)));
 }
 
 /** The scripts and stylesheets of a folder, without test files. */

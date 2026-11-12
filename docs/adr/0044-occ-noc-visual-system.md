@@ -93,13 +93,14 @@ Decisiones de Erick del 12 de noviembre de 2026:
 
 **4. El puente heredado.** `src/styles/occ-legacy-bridge.css` es una hoja generada y versionada que repinta con los tokens oscuros las clases heredadas de las pantallas montadas bajo `/admin-occ`. `app/layout.jsx` la importa justo después de `occ.css`. No cambia ningún JSX, texto, rol, nombre accesible ni `data-testid`.
 - **Alcance e interruptor.** Todas las reglas están limitadas a `[data-department="occ"][data-occ-bridge]`. `AdminOccLayout` pone `data-occ-bridge` en la raíz del marco con la prop nueva `rootAttributes` de `ShellFrame`. Quitar ese atributo apaga el puente entero, y fuera del OCC no existe.
-- **Peso.** La regla de cada clase pesa al menos dos atributos y una clase: gana a la utilidad simple de Tailwind (una clase) y a la `dark:` (dos clases) sin depender del orden. La regla por defecto, para los bordes y anillos sin color, no pesa nada (`:where`), así cualquier clase de color le gana.
+- **Peso.** La regla de cada clase pesa al menos dos atributos y una clase: gana a la utilidad simple de Tailwind (una clase) y a la `dark:` (dos clases) sin depender del orden. La regla por defecto, para los bordes y anillos sin color, no pesa nada (`:where`), así cualquier clase de color le gana. Solo una entrada de selectores simples y sin clases puede llevar `!important`, que es la única forma de ganar a un estilo en línea; hoy es la franja de estado.
 - **Manifiesto** (`src/styles/occLegacyBridgeMap.js`):
-  - `OCC_LEGACY_BRIDGE`: 42 entradas `{ id, declarations, classes, inside?, pairs?, selectors? }`, en orden:
+  - `OCC_LEGACY_BRIDGE`: 43 entradas `{ id, declarations, classes, inside?, pairs?, selectors?, important? }`, en orden:
     - texto y superficies (panel, losa, fondo, campo y panel flotante);
-    - fondos tenues, rellenos con su tinta (la acción principal es la tecla clara) y puntos de estado;
+    - fondos tenues, rellenos con su tinta y puntos de estado. La acción principal es la tecla clara. Entre los estados, el ámbar y el rojo quedan solo para `status-warning` y `status-danger`. Los demás estados (`info`, `active`, `success` y `neutral`) y el naranja de marca `signal-500` (antetítulos, numeraciones, contadores y puntos) no llevan tono: el estado activo y los contadores son un relleno claro con su tinta, `success` es un punto del color del texto, e `info` y `neutral` van en el secundario. El naranja conserva el cian solo donde marcaba la fila elegida (`border-signal-500` y `ring-signal-500`);
     - velo, juntas, bordes de control, anillos y contornos;
     - el borde rojo de un campo inválido, por encima de cualquier otro borde;
+    - la franja de estado que `FlightCard` (Planificación), `FlightListItem` (Monitoreo de vuelos) y `PositionListItem` (Mapa de posiciones) pintan en línea con `STATUS_COLORS` pasa a junta (`--occ-line`), con `!important`; la insignia ya dice el estado;
     - pares, como el texto rojo sobre el fondo rojo tenue, que pasa a texto normal;
     - plano: sin desenfoque, y las sombras se anulan con `--tw-shadow` para que sobrevivan los anillos de foco;
     - radios por papel (6 px los paneles y 4 px los controles);
@@ -115,14 +116,21 @@ Decisiones de Erick del 12 de noviembre de 2026:
   - una regla sale del alcance, selecciona algo fuera del marco o no gana a la utilidad de Tailwind que repinta;
   - un archivo montado bajo `/admin-occ` usa una clase de color heredada que el manifiesto no cubre. El recorrido (`src/styles/occSourceScan.js`) sigue las importaciones desde `app/admin-occ/**` y `AdminOccLayout.jsx`, y se detiene en `src/app/RoleLayout.jsx`, que importa los marcos de los demás departamentos;
   - el manifiesto repite una clase o usa un token que `occ.css` no define;
+  - un estado normal o el naranja de marca recibe ámbar, rojo o cian (salvo el contorno de lo elegido), o una clase de `status-warning` o `status-danger` pierde su señal;
+  - aparece `!important` fuera de una entrada de selectores simples marcada `important`, o un archivo montado bajo `/admin-occ` pinta en línea una franja de estado que el puente no alcanza (la prueba monta las tarjetas y las filas en jsdom);
+  - una regla de las hojas que importa `app/layout.jsx`, o de una hoja montada bajo `/admin-occ`, copia con `@apply` un color heredado y no tiene una regla de `occ.css` que la repinte con más peso dentro de la misma consulta de contenedor, ni un motivo para quedar fuera;
   - una carpeta de `MIGRATED_FOLDERS` usa una clase de color heredada;
   - `occ-ui` usa desenfoque, degradados o un modificador de opacidad sobre `occ-*`;
-  - una pareja de la paleta pierde su contraste, o el chat lee una variable que nadie define.
+  - una pareja de la paleta pierde su contraste, o el chat lee una variable que nadie define;
+  - el chat dibuja el foco o la selección con un color fijo que `occ.css` no supera, también frente al borde del puente al pasar el cursor.
 - **Cómo sale una pantalla del puente.**
   1. Un commit mecánico cambia las clases heredadas de la carpeta por clases `occ-*` y primitivas de `occ-ui`, sin reestructurar el JSX y con los mismos textos, roles, nombres accesibles y `data-testid`. La reestructura, si la hay, va en otro commit.
   2. La carpeta entra en `MIGRATED_FOLDERS`: desde entonces la guarda prohíbe allí las clases de color heredadas.
   3. Se borran del manifiesto las clases que ya no usa ningún archivo montado y se regenera la hoja.
 - **Páginas compartidas.** Usuarios (`DepartmentUsersPage`), Mis gastos (`DepartmentExpensesPage`) y los componentes de `src/components/` se quedan en el puente. No se editan para el OCC, porque otros departamentos y sus pruebas dependen de ellos; fuera del OCC no cambian.
+- **Lo que repara `occ.css` fuera del puente.** Dos reglas que no salen de una clase del DOM, así que el puente no las alcanza:
+  - las tablas apiladas: por debajo de 40rem, `tokens.css` convierte cada fila de una `table-stack` en una tarjeta copiando con `@apply` la tarjeta heredada (blanca o azul marino translúcida), su sombra y su radio de 12 px. Lo usan Usuarios, Mis gastos, Revisión y el tablero de escalas del dashboard. Bajo el OCC esa tarjeta es una losa de panel plana con juntas y radio de panel, y sus rótulos van en el secundario;
+  - el chat, hasta que U6 lo rehaga: su hoja dibuja la conversación elegida y el foco del redactor en el azul heredado `#145dc4` (2,4:1 sobre el panel). Bajo el OCC los dos van en cian, con más peso que la hoja del chat y que el borde del puente al pasar el cursor.
 - **Lo que el puente no hace.** No cambia el tamaño del texto, las mayúsculas ni la disposición. El texto menor de 12 px y los rótulos en mayúsculas siguen hasta que cada pantalla se migre.
 - *Descartado:*
   - cambiar de golpe las clases de más de cien archivos (la lección del #156);
@@ -190,7 +198,7 @@ Cada uno amplía la nota del Vault de Private Web. Un cambio de estas decisiones
 
 ## Consecuencias
 
-- Todas las pantallas montadas bajo `/admin-occ` pasan a los tokens oscuros, directamente o a través del puente, sin reestructurar el JSX de ninguna, y el chat vuelve a tener fondos y bordes. Los textos, roles, nombres accesibles y los 26 `data-testid` del OCC no cambian; solo desaparece de la barra el botón de tema, con su nombre accesible.
+- Todas las pantallas montadas bajo `/admin-occ` pasan a los tokens oscuros, directamente, a través del puente o con las reparaciones de `occ.css`, sin reestructurar el JSX de ninguna, y el chat vuelve a tener fondos y bordes. Quedan los colores en línea que lista «Queda pendiente». Los textos, roles, nombres accesibles y los 26 `data-testid` del OCC no cambian; solo desaparece de la barra el botón de tema, con su nombre accesible.
 - Los demás departamentos conservan su tema y su aspecto: los tokens y el puente solo existen bajo `[data-department="occ"]`. Una cuenta con tema claro ve el OCC en oscuro y recupera su tema al salir; desde el OCC nunca se escribe `elevant-theme`.
 - Sin cambios fuera de AVIAM Web:
   - no cambian la API, el OpenAPI, el cliente compartido ni la base, y no hay migración;
@@ -206,7 +214,8 @@ Cada uno amplía la nota del Vault de Private Web. Un cambio de estas decisiones
 
 **Queda pendiente**
 - **Primer pintado.** El script pone la clase `dark` antes de pintar, pero hasta que monta el marco se ve el fondo oscuro de `body`, azul marino (`#0A1220`), y luego la pizarra del OCC (`#161E22`). Lo cubrirá la pantalla de arranque de U4. La certificación de la imagen todavía no comprueba ese primer pintado: lo cubren las pruebas con jsdom.
-- **La consola actual** conserva su disposición con selectores `nth-child` en `occ.css`, ahora solo con colores de los tokens, hasta que U3 borre el dashboard viejo. Hasta entonces, `--occ-panel-muted` sigue como alias, y las cuatro clases `bg-occ-panel/90` y `/95` de la consola las cubre el puente.
+- **La consola actual** conserva su disposición con selectores `nth-child` en `occ.css`, ahora solo con colores de los tokens, hasta que U3 borre el dashboard viejo. Hasta entonces, `--occ-panel-muted` sigue como alias, y las cuatro clases `bg-occ-panel/90` y `/95` de la consola las cubre el puente. Su tablero de escalas pinta todavía en cian el punto de «Planificada», «Programada» y «Confirmada» con `bg-occ-accent`, una clase nativa del OCC que el puente no toca y que U1 no cambia en el JSX.
+- **Colores de estado en línea fuera de las franjas.** Las leyendas y el resumen de Monitoreo de vuelos y del mapa de posiciones (`FlightLegend`, `PositionLegend` y `PositionSummary`) y los marcadores de esos mapas (`AircraftMarker` y `positionMarkerIcons.js`) siguen pintando con los colores de `STATUS_COLORS` en línea o en código. Los rehacen el carril de mapas y U5 con `occPalette.js` y `statusVocabulary.js`.
 - **Texto menor de 12 px y rótulos en mayúsculas** en las pantallas heredadas, hasta que cada una se migre.
 - **El puente depende de los nombres de las clases:** una correspondencia puede verse mal en una página compartida o en un elemento pequeño. Lo mitigan las pruebas de cobertura, las capturas y el interruptor por atributo.
 - **Limpieza del manifiesto.** Ninguna prueba avisa todavía de una clase del manifiesto que ya no usa ningún archivo: al migrar una carpeta se borran a mano.

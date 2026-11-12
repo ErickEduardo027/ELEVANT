@@ -3,15 +3,23 @@
 // the stylesheet drifts from this list or when a file mounted under /admin-occ uses a legacy colour class that has no
 // line here. The bridge changes no JSX: removing `data-occ-bridge` from the OCC shell switches all of it off.
 //
-// Each entry is { id, declarations, classes, inside?, pairs?, selectors? }:
+// Each entry is { id, declarations, classes, inside?, pairs?, selectors?, important? }:
 // - `declarations`: CSS property → value, only with tokens that src/styles/occ.css defines.
 // - `classes`: Tailwind classes, with their variants (`dark:`, `hover:`, `focus:`, `sm:`, …), that get the declarations.
 // - `inside`: classes of descendants that take the entry's `color` (the text of a button inside a fill).
 // - `pairs`: [a, b]: an element with class b that has class a too, or sits inside an element with class a, takes the
 //   declarations.
-// - `selectors`: plain selectors, for a state that a global rule paints and the bridge would otherwise cover.
+// - `selectors`: plain selectors, for a state that a global rule or an inline style paints and the bridge would
+//   otherwise cover.
+// - `important`: the declarations carry !important, the only way to beat an inline style. Only an entry of plain
+//   selectors and no class may set it.
 // The order of the list is the order of the stylesheet: when two classes of one element set the same property with the
 // same specificity, the entry further down wins.
+//
+// Colour follows the «cabina oscura» rule: normal states carry no hue. Amber and red belong to `status-warning` and
+// `status-danger` only, and cyan to what is selected or can be acted on. The other statuses (`info`, `active`,
+// `success`, `neutral`) and the brand orange `signal-500` (eyebrows, numbering, counters, unread and status dots) are
+// plain text colours; the orange keeps cyan only where it outlined the selected item.
 
 export const OCC_BRIDGE_SCOPE = '[data-department="occ"][data-occ-bridge]';
 
@@ -37,7 +45,10 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
     id: 'text-muted',
     declarations: { color: 'var(--occ-muted)' },
     // `text-ink-600` has no colour in tailwind.config.js; every use sits next to `dark:text-text-secondary-dark`.
-    classes: ['text-text-secondary-light', 'dark:text-text-secondary-dark', 'text-ink-600', 'text-white/80'],
+    // `text-signal-500` is the brand orange of eyebrows, numbering and notes such as «pendiente de primer acceso».
+    classes: [
+      'text-text-secondary-light', 'dark:text-text-secondary-dark', 'text-ink-600', 'text-white/80', 'text-signal-500',
+    ],
   },
   {
     id: 'text-faint',
@@ -57,7 +68,7 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
   {
     id: 'text-warn',
     declarations: { color: 'var(--occ-warn)' },
-    classes: ['text-status-warning', 'text-signal-500'],
+    classes: ['text-status-warning'],
   },
   {
     id: 'text-ok',
@@ -78,9 +89,10 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
   {
     id: 'surface-raised',
     declarations: { 'background-color': 'var(--occ-panel-raised)' },
+    // `bg-signal-500/15` is the tag of a custom permission level (PermissionMatrix): a note, not an alarm.
     classes: [
       'bg-black/5', 'bg-black/10', 'bg-black/[.03]', 'bg-black/[0.025]', 'bg-black/[0.03]', 'bg-ink-900/[0.035]',
-      'bg-white/[0.03]', 'bg-status-success/10', 'bg-slate-50/70',
+      'bg-white/[0.03]', 'bg-status-success/10', 'bg-signal-500/15', 'bg-slate-50/70',
       'dark:bg-white/5', 'dark:bg-white/10', 'dark:bg-white/[.03]', 'dark:bg-white/[.04]', 'dark:bg-white/[0.025]',
       'dark:bg-white/[0.03]', 'dark:bg-white/[0.035]', 'dark:bg-white/[0.04]', 'dark:bg-slate-900/40',
       'hover:bg-black/5', 'dark:hover:bg-white/5',
@@ -120,11 +132,13 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
   {
     id: 'tint-warn',
     declarations: { 'background-color': 'var(--occ-warn-soft)' },
-    classes: ['bg-status-warning/10', 'bg-status-warning/15', 'bg-signal-500/15', 'hover:bg-status-warning/10'],
+    classes: ['bg-status-warning/10', 'bg-status-warning/15', 'hover:bg-status-warning/10'],
   },
 
   // 4. Fills carry their own ink, on the element and on the `text-white` inside them. The primary action is the light
-  //    key; status dots take a plain colour.
+  //    key. Amber and red fill warning and danger only; a normal state («En operación», «Rodaje»…) and the orange of
+  //    counters and dots get a plain light fill, in the text colour, with the key's ink. The other status dots are
+  //    text («success») or secondary («info», «neutral»).
   {
     id: 'fill-primary',
     declarations: { 'background-color': 'var(--occ-primary)', color: 'var(--occ-on-primary)' },
@@ -145,7 +159,13 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
   {
     id: 'fill-warn',
     declarations: { 'background-color': 'var(--occ-warn-fill)', color: 'var(--occ-on-warn)' },
-    classes: ['bg-status-warning', 'bg-signal-500', 'bg-status-active'],
+    classes: ['bg-status-warning'],
+    inside: ['text-white'],
+  },
+  {
+    id: 'fill-neutral',
+    declarations: { 'background-color': 'var(--occ-text)', color: 'var(--occ-on-primary)' },
+    classes: ['bg-signal-500', 'bg-status-active'],
     inside: ['text-white'],
   },
   {
@@ -154,14 +174,9 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
     classes: ['bg-status-success'],
   },
   {
-    id: 'dot-accent',
-    declarations: { 'background-color': 'var(--occ-accent)' },
-    classes: ['bg-status-info'],
-  },
-  {
     id: 'dot-muted',
     declarations: { 'background-color': 'var(--occ-muted)' },
-    classes: ['bg-status-neutral'],
+    classes: ['bg-status-info', 'bg-status-neutral'],
   },
 
   // 5. Scrim behind drawers and dialogs.
@@ -172,7 +187,7 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
   },
 
   // 6. Joints, control boundaries, rings, outlines. Every control boundary is `line-strong`; cyan marks the selected
-  //    item and the focus.
+  //    item and the focus (`border-signal-500` and `ring-signal-500` outline the selected flight or stand row).
   {
     id: 'border-line',
     declarations: { 'border-color': 'var(--occ-line)' },
@@ -246,6 +261,17 @@ export const OCC_LEGACY_BRIDGE = Object.freeze([
     declarations: { 'border-color': 'var(--occ-danger)' },
     classes: [],
     selectors: ['[aria-invalid="true"]:not([type="checkbox"]):not([type="radio"])'],
+  },
+  {
+    // FlightCard (Planificación), FlightListItem (Monitoreo de vuelos) and PositionListItem (Mapa de posiciones) draw a
+    // status stripe with an inline colour of dashboard/statusMeta.js: blue, orange, green, amber or red. Their badge
+    // already names the status, so under the OCC the stripe is a joint like the rest of the border. Only !important
+    // outweighs an inline style.
+    id: 'status-stripe',
+    declarations: { 'border-left-color': 'var(--occ-line)' },
+    classes: [],
+    selectors: ['[data-testid="flight-card"]', '[data-testid="flight-list-item"]', '[data-testid="position-list-item"]'],
+    important: true,
   },
 
   // 7. Pairs. Red text on the red tint reads below 4.5:1, so on that tint the text is plain and the colour stays in the

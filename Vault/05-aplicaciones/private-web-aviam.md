@@ -694,13 +694,22 @@ estructura de ninguna pantalla: los textos, roles, nombres accesibles y
   radios, solo bajo `[data-department="occ"][data-occ-bridge]`.
   `AdminOccLayout` pone ese atributo con `rootAttributes` de
   [`ShellFrame`](../../frontend/private-web/src/features/shell/ShellFrame.jsx);
-  quitarlo apaga el puente entero. Las
+  quitarlo apaga el puente entero. Los estados normales quedan sin color: el
+  ámbar solo pinta la atención, el rojo lo urgente y el cian lo elegido o
+  accionable. La franja de estado que las tarjetas de Planificación y las filas
+  de Monitoreo de vuelos y del mapa de posiciones pintan en línea pasa a junta,
+  con la única regla `!important` del puente. Fuera del puente, `occ.css`
+  repinta las tarjetas de
+  las tablas apiladas (`table-stack`, que
+  [`tokens.css`](../../frontend/private-web/src/styles/tokens.css) dibuja con
+  `@apply`) y el foco y la selección del chat. Las
   [guardas](../../frontend/private-web/src/styles/occStyleGuard.test.js) fallan
-  si la hoja se desvía del manifiesto o si un archivo montado bajo
-  `/admin-occ` usa una clase de color heredada sin correspondencia; hoy son 290
-  archivos, 106 de ellos con clases heredadas. Usuarios, Mis gastos y los
-  componentes de `src/components` se quedan en el puente porque los comparten
-  otros departamentos; fuera del OCC no cambian.
+  si la hoja se desvía del manifiesto, si un archivo montado bajo
+  `/admin-occ` usa una clase de color heredada sin correspondencia o si una
+  hoja global copia con `@apply` un color heredado que el OCC no repinta; hoy
+  son 290 archivos, 106 de ellos con clases heredadas. Usuarios, Mis gastos y
+  los componentes de `src/components` se quedan en el puente porque los
+  comparten otros departamentos; fuera del OCC no cambian.
 - **Vocabulario.**
   [`occPalette.js`](../../frontend/private-web/src/features/occ-ui/occPalette.js)
   da los mismos colores a quien no lee variables CSS (mapas, iconos dibujados
@@ -717,7 +726,11 @@ estructura de ninguna pantalla: los textos, roles, nombres accesibles y
 Límites: hasta que monta el marco se ve el fondo azul marino de `body`
 (`#0A1220`) y luego la pizarra del OCC; queda para la pantalla de arranque que
 planifica el ADR. El texto menor de 12 px y los rótulos en mayúsculas de las
-pantallas heredadas siguen hasta que cada una se migre. El contraste se
+pantallas heredadas siguen hasta que cada una se migre. Las leyendas, el
+resumen y los marcadores de Monitoreo de vuelos y del mapa de posiciones aún
+pintan sus colores de estado en línea, y el tablero de escalas del dashboard
+marca en cian los estados planificados; los rehacen el carril de mapas, U3 y
+U5. El contraste se
 comprobó por cálculo, con pruebas: el texto mide 12,8:1 sobre los paneles y el
 mínimo, rojo sobre la losa, 4,6:1. Nada de esto acredita un despliegue ni una
 revisión visual en el VPS.

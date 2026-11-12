@@ -86,6 +86,40 @@
   outline-color: var(--occ-nav-accent);
 }
 
+/* The chat stylesheet (src/features/chat/ChatWorkspace.module.css, rebuilt in
+   U6) draws the selected conversation and the focused composer in the legacy
+   blue #145dc4, 2.4:1 on the panel and 1.7:1 on the selected row. Under the
+   OCC both are cyan. The selection rule (0,4,1) outweighs the module (0,2,0)
+   and the bridge's hover border (0,4,0); the focus rule (0,3,1) outweighs the
+   module (0,3,0). */
+[data-department='occ'] [data-occ-chat-layout] [aria-label] button[aria-current='true'] {
+  border-color: var(--occ-accent);
+}
+
+[data-department='occ'] [data-occ-chat-layout] textarea:focus-visible {
+  outline-color: var(--occ-accent);
+}
+
+/* Stacked tables (src/styles/tokens.css): below 40rem each row of a
+   `table-stack` becomes a card through @apply, which copies the legacy white
+   or navy card, its shadow and its 12 px radius into `.table-stack tbody > tr`,
+   where the bridge cannot reach them. Under the OCC the card is a flat panel
+   slab and its labels are secondary text. `table.` outweighs the dark variant
+   of those rules: (0,2,3) against (0,2,2), and (0,2,5) against (0,2,4). */
+@container (max-width: 39.98rem) {
+  [data-department='occ'] table.table-stack tbody > tr {
+    border-color: var(--occ-line);
+    border-radius: var(--occ-radius-panel);
+    background-color: var(--occ-panel);
+    --tw-shadow: 0 0 #0000;
+    --tw-shadow-colored: 0 0 #0000;
+  }
+
+  [data-department='occ'] table.table-stack tbody > tr > td::before {
+    color: var(--occ-muted);
+  }
+}
+
 /* Layout of the current dashboard console. It only places the panels; every
    colour comes from the tokens above. */
 [data-department='occ'] .occ-dashboard-map-panel {

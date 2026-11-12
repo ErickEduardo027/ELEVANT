@@ -6,7 +6,8 @@
    of occ.css. It applies only under [data-department="occ"][data-occ-bridge]: AdminOccLayout sets data-occ-bridge on
    the shell, and removing that attribute switches the whole bridge off. Every class rule is worth at least two
    attributes and a class, so it beats the plain (one class) and dark: (two classes) utilities of Tailwind whatever the
-   order; the defaults rule weighs nothing, so every colour class beats it. */
+   order; the defaults rule weighs nothing, so every colour class beats it. Only an entry of plain selectors may carry
+   !important, the one way to beat an inline style. */
 
 /* defaults */
 :where([data-department="occ"][data-occ-bridge]) *,
@@ -32,7 +33,8 @@
 [data-department="occ"][data-occ-bridge] .text-text-secondary-light,
 [data-department="occ"][data-occ-bridge] .dark\:text-text-secondary-dark,
 [data-department="occ"][data-occ-bridge] .text-ink-600,
-[data-department="occ"][data-occ-bridge] .text-white\/80 {
+[data-department="occ"][data-occ-bridge] .text-white\/80,
+[data-department="occ"][data-occ-bridge] .text-signal-500 {
   color: var(--occ-muted);
 }
 
@@ -57,8 +59,7 @@
 }
 
 /* text-warn */
-[data-department="occ"][data-occ-bridge] .text-status-warning,
-[data-department="occ"][data-occ-bridge] .text-signal-500 {
+[data-department="occ"][data-occ-bridge] .text-status-warning {
   color: var(--occ-warn);
 }
 
@@ -90,6 +91,7 @@
 [data-department="occ"][data-occ-bridge] .bg-ink-900\/\[0\.035\],
 [data-department="occ"][data-occ-bridge] .bg-white\/\[0\.03\],
 [data-department="occ"][data-occ-bridge] .bg-status-success\/10,
+[data-department="occ"][data-occ-bridge] .bg-signal-500\/15,
 [data-department="occ"][data-occ-bridge] .bg-slate-50\/70,
 [data-department="occ"][data-occ-bridge] .dark\:bg-white\/5,
 [data-department="occ"][data-occ-bridge] .dark\:bg-white\/10,
@@ -146,7 +148,6 @@
 /* tint-warn */
 [data-department="occ"][data-occ-bridge] .bg-status-warning\/10,
 [data-department="occ"][data-occ-bridge] .bg-status-warning\/15,
-[data-department="occ"][data-occ-bridge] .bg-signal-500\/15,
 [data-department="occ"][data-occ-bridge] .hover\:bg-status-warning\/10:hover {
   background-color: var(--occ-warn-soft);
 }
@@ -183,16 +184,23 @@
 }
 
 /* fill-warn */
-[data-department="occ"][data-occ-bridge] .bg-status-warning,
-[data-department="occ"][data-occ-bridge] .bg-signal-500,
-[data-department="occ"][data-occ-bridge] .bg-status-active {
+[data-department="occ"][data-occ-bridge] .bg-status-warning {
   background-color: var(--occ-warn-fill);
   color: var(--occ-on-warn);
 }
-[data-department="occ"][data-occ-bridge] .bg-status-warning .text-white,
+[data-department="occ"][data-occ-bridge] .bg-status-warning .text-white {
+  color: var(--occ-on-warn);
+}
+
+/* fill-neutral */
+[data-department="occ"][data-occ-bridge] .bg-signal-500,
+[data-department="occ"][data-occ-bridge] .bg-status-active {
+  background-color: var(--occ-text);
+  color: var(--occ-on-primary);
+}
 [data-department="occ"][data-occ-bridge] .bg-signal-500 .text-white,
 [data-department="occ"][data-occ-bridge] .bg-status-active .text-white {
-  color: var(--occ-on-warn);
+  color: var(--occ-on-primary);
 }
 
 /* dot-text */
@@ -200,12 +208,8 @@
   background-color: var(--occ-text);
 }
 
-/* dot-accent */
-[data-department="occ"][data-occ-bridge] .bg-status-info {
-  background-color: var(--occ-accent);
-}
-
 /* dot-muted */
+[data-department="occ"][data-occ-bridge] .bg-status-info,
 [data-department="occ"][data-occ-bridge] .bg-status-neutral {
   background-color: var(--occ-muted);
 }
@@ -316,6 +320,13 @@
 /* invalid-field */
 [data-department="occ"][data-occ-bridge] [aria-invalid="true"]:not([type="checkbox"]):not([type="radio"]) {
   border-color: var(--occ-danger);
+}
+
+/* status-stripe */
+[data-department="occ"][data-occ-bridge] [data-testid="flight-card"],
+[data-department="occ"][data-occ-bridge] [data-testid="flight-list-item"],
+[data-department="occ"][data-occ-bridge] [data-testid="position-list-item"] {
+  border-left-color: var(--occ-line) !important;
 }
 
 /* danger-tint-text */
