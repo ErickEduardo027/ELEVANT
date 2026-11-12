@@ -5,7 +5,7 @@ import { __state } from 'maplibre-gl';
 import FlightMap from './FlightMap';
 
 vi.mock('maplibre-gl', () => {
-  const state = { maps: [], workerUrl: null };
+  const state = { maps: [], workerUrl: null, failConstructor: false };
 
   class FakeMarker {
     constructor(options) {
@@ -32,6 +32,10 @@ vi.mock('maplibre-gl', () => {
     constructor(options) {
       if (state.workerUrl !== '/assets/maplibre/maplibre-gl-worker.mjs') {
         throw new Error('MapLibre worker URL must be configured before creating a map');
+      }
+      if (state.failConstructor) {
+        // MapLibre 6.7+ throws GPUInitializationError from the constructor when WebGL2 is missing.
+        throw new Error('Failed to initialize WebGL2');
       }
       this.options = options;
       this.markers = [];
@@ -113,7 +117,20 @@ describe('FlightMap', () => {
   beforeEach(() => {
     __state.maps.length = 0;
     __state.workerUrl = null;
+    __state.failConstructor = false;
     cleanup();
+  });
+
+  it('keeps the page and says the map is unavailable when the map cannot start (no WebGL2)', () => {
+    __state.failConstructor = true;
+    const { getByRole, queryByLabelText, getByTestId } = render(
+      <FlightMap flights={[flight({ id: 1 })]} selectedFlightId={1} onSelectFlight={() => {}} theme="light" />
+    );
+    expect(__state.maps).toHaveLength(0);
+    expect(getByRole('alert')).toHaveTextContent('El mapa no está disponible en este navegador');
+    expect(getByTestId('flight-map-container')).toBeInTheDocument();
+    expect(queryByLabelText('Restablecer vista')).toBeNull();
+    expect(queryByLabelText('Centrar PUJ')).toBeNull();
   });
 
   it('mounts a map centered on PUJ with the navigation control and the airport marker', () => {
