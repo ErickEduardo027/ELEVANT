@@ -6,6 +6,7 @@ using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Common;
 using Elevant.Application.Identity;
 using Elevant.Application.Integration;
+using Elevant.Application.Integration.DemoFlights;
 using Elevant.Application.Operations;
 using Elevant.Domain.Entities.Audit;
 using Elevant.Domain.Entities.Commercial;
@@ -77,10 +78,14 @@ internal sealed class EfOccFlightFeedStore(
                               Proposal = proposal, AirlinePublicId = airline.PublicId, AirlineName = airline.Name,
                               airline.IataCode, TurnaroundPublicId = turnaround == null ? (Guid?)null : turnaround.PublicId,
                           }).ToArrayAsync(cancellationToken);
-        var suggestions = SuggestDepartures(rows.Select(row => row.Proposal).ToArray());
+        var listed = rows.Select(row => row.Proposal).ToArray();
+        var suggestions = SuggestDepartures(listed);
         var types = await AircraftTypeCandidatesAsync(cancellationToken);
 
         var now = timeProvider.GetUtcNow();
+        // ADR-0041: the worker never writes a demo pair nobody imported, so what OCC read stays importable; the
+        // status and the runway time of those legs come from the demo clock at this instant.
+        var demo = await DemoFlightGroups.ShownAsync(context, listed, now, cancellationToken);
         var (dayStart, monthStart) = EfFlightFeedSyncStore.UsagePeriods(now);
         var usage = context.Set<ProviderUsageEntry>().AsNoTracking().Where(entry => entry.Provider == feed.Provider);
         var unitsMonth = await usage.Where(entry => entry.OccurredAt >= monthStart).SumAsync(entry => entry.Units, cancellationToken);
@@ -100,18 +105,25 @@ internal sealed class EfOccFlightFeedStore(
             new OccFlightFeedBudgetData(feed.IsConfigured, feed.Provider, unitsToday, budget.DailyUnits, unitsMonth,
                 budget.MonthlyUnits, paused, paused is null ? null : lease!.LastError),
             lastRead, nextManual > now ? nextManual : null, actor!.HasPermission(CreatePermission),
-            rows.Select(row => new OccFlightProposalData(row.Proposal.PublicId, row.Proposal.Direction.ToString(),
-                row.Proposal.FlightNumber, row.AirlinePublicId, row.AirlineName, row.IataCode, row.Proposal.CounterpartIata,
-                row.Proposal.CounterpartName, row.Proposal.CounterpartAirportId is not null, row.Proposal.ScheduledAt,
-                row.Proposal.RevisedAt, row.Proposal.RunwayAt, row.Proposal.ProviderStatus, row.Proposal.AircraftRegistration,
-                row.Proposal.AircraftModel, row.Proposal.Terminal, row.Proposal.Gate, row.Proposal.Status.ToString(),
-                row.TurnaroundPublicId,
-                suggestions.TryGetValue(row.Proposal.Id, out var suggested) ? suggested : null, row.Proposal.LastSeenAt,
-                Version(row.Proposal.RowVersion), AircraftModelMatcher.Suggest(row.Proposal.AircraftModel, types))).ToArray());
+            rows.Select(row =>
+            {
+                var (providerStatus, runwayAt) = demo.TryGetValue(row.Proposal.Id, out var shown)
+                    ? shown
+                    : (row.Proposal.ProviderStatus, row.Proposal.RunwayAt);
+                return new OccFlightProposalData(row.Proposal.PublicId, row.Proposal.Direction.ToString(),
+                    row.Proposal.FlightNumber, row.AirlinePublicId, row.AirlineName, row.IataCode, row.Proposal.CounterpartIata,
+                    row.Proposal.CounterpartName, row.Proposal.CounterpartAirportId is not null, row.Proposal.ScheduledAt,
+                    row.Proposal.RevisedAt, runwayAt, providerStatus, row.Proposal.AircraftRegistration,
+                    row.Proposal.AircraftModel, row.Proposal.Terminal, row.Proposal.Gate, row.Proposal.Status.ToString(),
+                    row.TurnaroundPublicId,
+                    suggestions.TryGetValue(row.Proposal.Id, out var suggested) ? suggested : null, row.Proposal.LastSeenAt,
+                    Version(row.Proposal.RowVersion), AircraftModelMatcher.Suggest(row.Proposal.AircraftModel, types),
+                    DemoFlightGroups.Mark(row.Proposal.Provider));
+            }).ToArray());
     }
 
     /// <summary>
-    /// Pairs each open arrival with the departure it most likely turns into: same airline, same
+    /// Pairs each open arrival with the departure it most likely turns into: same airline and provider, same
     /// aircraft when both registrations are known, otherwise the next departure 20 minutes to 8
     /// hours later. Each departure is suggested once. OCC always confirms the pair.
     /// </summary>
@@ -123,6 +135,7 @@ internal sealed class EfOccFlightFeedStore(
         foreach (var arrival in open.Where(item => item.Direction == FlightDirection.Arrival).OrderBy(item => item.ScheduledAt))
         {
             var candidates = departures.Where(departure => departure.AirlineId == arrival.AirlineId &&
+                SameSource(arrival, departure) &&
                 departure.ScheduledAt - arrival.ScheduledAt >= MinTurn && departure.ScheduledAt - arrival.ScheduledAt <= MaxTurn)
                 .ToArray();
             var match = arrival.AircraftRegistration is { } registration
@@ -135,6 +148,15 @@ internal sealed class EfOccFlightFeedStore(
         }
         return result;
     }
+
+    /// <summary>
+    /// A pair comes from one provider: a demo leg (ADR-0041) never joins the paid feed's, and the two legs of a demo
+    /// flight only pair with each other, so no flight is left half imported.
+    /// </summary>
+    private static bool SameSource(ExternalFlightProposal arrival, ExternalFlightProposal departure) =>
+        arrival.Provider == departure.Provider &&
+        (arrival.Provider != DemoFlightProvider.Name ||
+         DemoFlightNumbering.DemoIdOf(arrival.ExternalReference) == DemoFlightNumbering.DemoIdOf(departure.ExternalReference));
 
     public async Task<OccFlightImportResult> ImportAsync(Guid actorId, OccFlightImportInput input, Guid? idempotencyKey,
         CancellationToken cancellationToken = default)
@@ -240,7 +262,8 @@ internal sealed class EfOccFlightFeedStore(
             return Failed(OccFlightFeedFailure.Conflict, "version_conflict");
         if (arrival.Direction != FlightDirection.Arrival || departure.Direction != FlightDirection.Departure ||
             arrival.StationId != departure.StationId || arrival.AirlineId != departure.AirlineId ||
-            departure.ScheduledAt <= arrival.ScheduledAt || departure.ScheduledAt - arrival.ScheduledAt > TimeSpan.FromHours(24))
+            departure.ScheduledAt <= arrival.ScheduledAt || departure.ScheduledAt - arrival.ScheduledAt > TimeSpan.FromHours(24) ||
+            !SameSource(arrival, departure))
             return Failed(OccFlightFeedFailure.Conflict, "flight_proposals_not_pairable");
         if (arrival.CounterpartAirportId is not { } originId || departure.CounterpartAirportId is not { } destinationId)
             return Failed(OccFlightFeedFailure.CounterpartUnknown, "flight_counterpart_unknown");
@@ -531,8 +554,10 @@ internal sealed class EfOccFlightFeedStore(
             return RestoreFailed(OccFlightFeedFailure.Conflict, "flight_proposal_not_dismissed");
         if (Version(proposal.RowVersion) != expectedVersion) return RestoreFailed(OccFlightFeedFailure.Conflict, "version_conflict");
         var now = Now();
-        // Only while the flight has not passed: its runway, revised or scheduled time is still ahead.
-        if ((proposal.RunwayAt ?? proposal.RevisedAt ?? proposal.ScheduledAt) <= now)
+        // Only while the flight has not passed: its runway, revised or scheduled time is still ahead. A dismissed demo
+        // leg (ADR-0041) belongs to a flight that was cancelled or is over: it never comes back.
+        if (proposal.Provider == DemoFlightProvider.Name ||
+            (proposal.RunwayAt ?? proposal.RevisedAt ?? proposal.ScheduledAt) <= now)
             return RestoreFailed(OccFlightFeedFailure.Conflict, "flight_proposal_passed");
         if (await NotInForceAirlines(proposal.StationId).AnyAsync(id => id == proposal.AirlineId, cancellationToken))
             return RestoreFailed(OccFlightFeedFailure.Conflict, "contract_not_in_force");

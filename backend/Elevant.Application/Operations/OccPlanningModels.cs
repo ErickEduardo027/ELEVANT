@@ -88,7 +88,9 @@ public sealed record OccTurnaroundData(
     OccGroundOperationData? Operation,
     IReadOnlyList<OccAssignedAgentData> Agents,
     IReadOnlyList<OccAssignedEquipmentData> Equipment,
-    IReadOnlyList<OccOperationServiceData> Services);
+    IReadOnlyList<OccOperationServiceData> Services,
+    // True for the turnaround of a demo flight OCC imported (ADR-0041); null for any other, never false.
+    bool? IsDemo = null);
 
 public sealed record OccPlanningSnapshotData(
     OccStationData Station,

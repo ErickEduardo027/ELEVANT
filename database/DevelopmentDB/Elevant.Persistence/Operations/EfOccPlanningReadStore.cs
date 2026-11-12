@@ -6,6 +6,7 @@ using Elevant.Domain.Entities.Operations;
 using Elevant.Domain.Entities.Workforce;
 using Elevant.Domain.Enumerations;
 using Elevant.Infrastructure.Persistence;
+using Elevant.Persistence.Integration;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -89,6 +90,7 @@ internal sealed class EfOccPlanningReadStore(
                     turnaround.OperationCode,
                     turnaround.OperationDate,
                     turnaround.CurrentStatus,
+                    turnaround.ExternalProvider,
                     Airline = new OccAirlineData(
                         airline.PublicId,
                         airline.IataCode ?? string.Empty,
@@ -281,7 +283,8 @@ internal sealed class EfOccPlanningReadStore(
                 item.Operation,
                 operationId.HasValue ? agentsByOperation[operationId.Value].ToArray() : [],
                 operationId.HasValue ? equipmentByOperation[operationId.Value].ToArray() : [],
-                operationId.HasValue ? servicesByOperation[operationId.Value].ToArray() : []);
+                operationId.HasValue ? servicesByOperation[operationId.Value].ToArray() : [],
+                DemoFlightGroups.Mark(item.ExternalProvider));
         }).ToArray();
     }
 
