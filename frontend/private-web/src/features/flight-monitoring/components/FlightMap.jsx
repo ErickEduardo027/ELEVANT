@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Map as MaplibreMap, Marker, NavigationControl, LngLatBounds, setWorkerUrl } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { PUJ_COORDINATES } from '../flightMonitoringMappers';
@@ -32,15 +32,23 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
   const onPopoverPositionRef = useRef(onPopoverPosition);
   onPopoverPositionRef.current = onPopoverPosition;
   const recomputePopoverPositionRef = useRef(() => {});
+  const [mapUnavailable, setMapUnavailable] = useState(false);
 
   useEffect(() => {
-    setWorkerUrl('/assets/maplibre/maplibre-gl-worker.mjs');
-    const map = new MaplibreMap({
-      container: containerRef.current,
-      style: STYLE_URLS[theme] ?? STYLE_URLS.light,
-      center: [PUJ_COORDINATES.longitude, PUJ_COORDINATES.latitude],
-      zoom: INITIAL_ZOOM,
-    });
+    let map;
+    try {
+      setWorkerUrl('/assets/maplibre/maplibre-gl-worker.mjs');
+      map = new MaplibreMap({
+        container: containerRef.current,
+        style: STYLE_URLS[theme] ?? STYLE_URLS.light,
+        center: [PUJ_COORDINATES.longitude, PUJ_COORDINATES.latitude],
+        zoom: INITIAL_ZOOM,
+      });
+    } catch {
+      // Since MapLibre 6.7 the constructor throws when the browser has no WebGL2: keep the page and say so.
+      setMapUnavailable(true);
+      return undefined;
+    }
     map.addControl(new NavigationControl(), 'top-right');
 
     const airportMarker = new Marker({ element: createAirportMarkerElement() })
@@ -148,6 +156,13 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
   return (
     <div className="absolute inset-0 overflow-hidden rounded-2xl">
       <div ref={containerRef} data-testid="flight-map-container" className="h-full w-full" />
+      {mapUnavailable && (
+        <div role="alert" className="absolute inset-0 z-20 overflow-y-auto bg-white/95 p-5 text-ink-900 dark:bg-surface-dark-card/95 dark:text-text-primary-dark">
+          <h3 className="text-base font-semibold">{t('map.unavailableTitle')}</h3>
+          <p className="mt-1 text-sm text-text-secondary-light dark:text-text-secondary-dark">{t('map.unavailableDescription')}</p>
+        </div>
+      )}
+      {!mapUnavailable && (
       <div className="absolute right-3 top-3 z-10 flex flex-col gap-1.5">
         <button
           type="button"
@@ -168,6 +183,7 @@ export default function FlightMap({ flights, selectedFlightId, onSelectFlight, t
           <CrosshairIcon className="h-4 w-4 text-ink-900 dark:text-text-primary-dark" />
         </button>
       </div>
+      )}
     </div>
   );
 }

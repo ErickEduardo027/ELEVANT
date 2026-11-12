@@ -12,6 +12,8 @@ export const flightMonitoringMessages = {
     map: {
       resetView: 'Restablecer vista',
       centerPuj: 'Centrar PUJ',
+      unavailableTitle: 'El mapa no está disponible en este navegador',
+      unavailableDescription: 'La lista de vuelos sigue funcionando. Para ver el mapa, usa un navegador con la aceleración gráfica activada.',
     },
     legend: { title: 'Leyenda' },
     chips: {
@@ -129,6 +131,8 @@ export const flightMonitoringMessages = {
     map: {
       resetView: 'Reset view',
       centerPuj: 'Center on PUJ',
+      unavailableTitle: 'The map is not available in this browser',
+      unavailableDescription: 'The flight list keeps working. To see the map, use a browser with graphics acceleration turned on.',
     },
     legend: { title: 'Legend' },
     chips: {
