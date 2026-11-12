@@ -80,6 +80,9 @@ public static class DependencyInjection
         services.AddScoped<OperationalCommunicationHandler>();
         services.AddSingleton<OperationalPresenceRegistry>();
         services.AddScoped<OperationalPresenceHandler>();
+        // ADR-0041: without Infrastructure (tools, tests) there is no DemoFlights:Mode and demo flights stay off.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services,
+            Elevant.Application.Integration.DemoFlights.DemoFlightAvailability.Disabled);
         return services;
     }
 }

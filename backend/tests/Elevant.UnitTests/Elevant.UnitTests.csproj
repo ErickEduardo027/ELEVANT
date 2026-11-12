@@ -23,4 +23,9 @@
     <ProjectReference Include="..\..\Elevant.Infrastructure\Elevant.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- One stand-code rule for the API and the web (ADR-0041): both test suites read the same vectors. -->
+    <None Include="..\..\Elevant.Application\Operations\StandCodes.vectors.json" Link="Fixtures\StandCodes.vectors.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

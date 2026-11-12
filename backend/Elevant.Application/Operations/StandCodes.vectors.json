@@ -1,0 +1,28 @@
+{
+  "normalize": [
+    { "input": "A01", "expected": "A1" },
+    { "input": "a-1", "expected": "A1" },
+    { "input": "A 1", "expected": "A1" },
+    { "input": "A.01", "expected": "A1" },
+    { "input": "A1", "expected": "A1" },
+    { "input": "AN01", "expected": "AN1" },
+    { "input": "B20", "expected": "B20" },
+    { "input": "A10", "expected": "A10" },
+    { "input": "A010", "expected": "A10" },
+    { "input": "09A", "expected": "9A" },
+    { "input": "1", "expected": "1" },
+    { "input": "A0", "expected": "A0" },
+    { "input": "FBO", "expected": "FBO" },
+    { "input": "A00", "expected": "A0" },
+    { "input": "b032", "expected": "B32" },
+    { "input": " bn-06 ", "expected": "BN6" },
+    { "input": "030a", "expected": "30A" },
+    { "input": "A1B2", "expected": "A1B2" },
+    { "input": "", "expected": "" }
+  ],
+  "distinct": [
+    ["1", "A1"],
+    ["9A", "A9"],
+    ["23A", "A23"]
+  ]
+}
