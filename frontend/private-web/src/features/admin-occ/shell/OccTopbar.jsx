@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useTranslation } from '../../../i18n/LanguageScope';
 import { SUPPORTED_LANGUAGES } from '../../../i18n/languageStore';
-import { BellIcon, MenuIcon, MoonIcon, SunIcon } from '../../shell/components/icons';
+import { BellIcon, MenuIcon } from '../../shell/components/icons';
 import { occShellMessages } from './occShellMessages';
 
 function useUtcClock(locale) {
@@ -85,8 +85,10 @@ function MobileUserMenu({ user, onLogout, t }) {
   );
 }
 
+// The OCC is dark only, so this bar has no theme button: the `theme` and
+// `onToggleTheme` props that AppShell sends to every top bar are not read here.
 export default function OccTopbar({
-  navigation = [], notificationsCount = 0, notificationsEnabled = true, theme, onToggleTheme,
+  navigation = [], notificationsCount = 0, notificationsEnabled = true,
   user, onOpenMenu, onOpenNotifications, onLogout,
 }) {
   const { t, language, locale, setLanguage } = useTranslation(occShellMessages);
@@ -118,12 +120,6 @@ export default function OccTopbar({
         <span aria-hidden="true" className="hidden h-5 w-px bg-occ-line md:block" />
 
         <LanguageToggle language={language} setLanguage={setLanguage} t={t} />
-
-        <button type="button" onClick={onToggleTheme}
-          aria-label={theme === 'dark' ? t('themeToLight') : t('themeToDark')}
-          className="flex h-9 w-9 items-center justify-center rounded-md text-occ-text hover:bg-occ-panel-muted">
-          {theme === 'dark' ? <SunIcon className="h-[18px] w-[18px]" /> : <MoonIcon className="h-[18px] w-[18px]" />}
-        </button>
 
         {notificationsEnabled && (
           <button type="button" onClick={onOpenNotifications}

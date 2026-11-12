@@ -1,7 +1,6 @@
 import AppShell from '../shell/AppShell';
 import DevPreviewPanel from '../dashboard/components/DevPreviewPanel';
 import { useMemo } from 'react';
-import { useTheme } from '../shell/useTheme';
 import { allowedNavigation, useDepartmentAccess } from '../access/DepartmentAccessContext';
 import { useNavigationGuard } from '../access/useNavigationGuard';
 import NoModulesNotice from '../access/NoModulesNotice';
@@ -22,7 +21,6 @@ const OCC_FRAME = {
 };
 
 export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout, children }) {
-  const { theme, toggleTheme } = useTheme();
   const { forceState, setForceState } = useAdminOccPreview();
   const { access } = useDepartmentAccess();
   const navigation = useMemo(() => allowedNavigation(ADMIN_OCC_NAVIGATION, access), [access]);
@@ -40,7 +38,7 @@ export default function AdminOccLayout({ user = CURRENT_USER_MOCK, onLogout, chi
         frameProps={OCC_FRAME}
       >{empty ? <NoModulesNotice /> : permitted ? children : null}</AppShell>
       {process.env.NODE_ENV === 'development' && (
-        <DevPreviewPanel theme={theme} forceState={forceState} onToggleTheme={toggleTheme} onSetForceState={setForceState} defaultOpen={false} />
+        <DevPreviewPanel forceState={forceState} onSetForceState={setForceState} defaultOpen={false} />
       )}
     </LanguageScope>
   );
