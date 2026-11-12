@@ -13,8 +13,8 @@ import {
 const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const repositoryRoot = path.resolve(projectRoot, '../..');
 
-test('the MapLibre worker copy preserves the worker and its relative shared import', async () => {
-  const { copyMapLibreWorkerAssets } = await import('./copy-maplibre-worker.mjs');
+test('the MapLibre worker copy preserves the worker and every module it imports', async () => {
+  const { copyMapLibreWorkerAssets, findUncopiedWorkerImports } = await import('./copy-maplibre-worker.mjs');
   const destination = await mkdtemp(path.join(tmpdir(), 'elevant-maplibre-'));
   try {
     await copyMapLibreWorkerAssets(destination);
@@ -22,10 +22,26 @@ test('the MapLibre worker copy preserves the worker and its relative shared impo
     const shared = await readFile(path.join(destination, 'maplibre-gl-shared.mjs'));
     assert.deepEqual(worker, await readFile(path.join(projectRoot, 'node_modules/maplibre-gl/dist/maplibre-gl-worker.mjs')));
     assert.deepEqual(shared, await readFile(path.join(projectRoot, 'node_modules/maplibre-gl/dist/maplibre-gl-shared.mjs')));
-    assert.match(worker.toString(), /from["']\.\/maplibre-gl-shared\.mjs["']/);
+    assert.deepEqual(findUncopiedWorkerImports(worker.toString()), []);
   } finally {
     await rm(destination, { recursive: true, force: true });
   }
+});
+
+test('a MapLibre worker import that the copy would leave behind is reported', async () => {
+  const { findUncopiedWorkerImports } = await import('./copy-maplibre-worker.mjs');
+  // The worker of MapLibre 6.4 imported the shared module; from 6.13 it imports nothing.
+  assert.deepEqual(findUncopiedWorkerImports('import{a as b}from"./maplibre-gl-shared.mjs";self.worker=b;'), []);
+  assert.deepEqual(findUncopiedWorkerImports('self.worker=1;export{a as default};'), []);
+  assert.deepEqual(
+    findUncopiedWorkerImports([
+      'import{a}from"./maplibre-gl-chunk.mjs";',
+      "import './maplibre-gl-polyfill.mjs';",
+      'export*from"../maplibre-gl-shared.mjs";',
+      'const lazy=await import(`./maplibre-gl-lazy.mjs`);',
+    ].join('')),
+    ['./maplibre-gl-chunk.mjs', './maplibre-gl-polyfill.mjs', '../maplibre-gl-shared.mjs', './maplibre-gl-lazy.mjs'],
+  );
 });
 
 const validEnvironment = {

@@ -169,13 +169,17 @@ Monitoreo OCC usa el alcance PUJ de la sesión e ignora un enlace a otra estaci�
 En esta rama, las vistas de PUJ usan MapLibre sin cambiar a Google por una
 variable local. El mapa base de Monitoreo se monta aunque ningún vuelo tenga
 coordenadas verificadas, con un aviso que distingue cartografía de telemetría.
-El worker y su importación compartida se copian juntos desde la dependencia
-fijada antes de desarrollo y build; la certificación comprueba que la imagen
-sirve ambos módulos. Esta evidencia es local y de CI; la disponibilidad remota
-requiere la promoción y comprobación del operador. Fuentes: [vista de
+El worker y el módulo compartido del paquete se copian juntos desde la
+dependencia fijada antes de desarrollo y build; la certificación comprueba que
+la imagen sirve ambos archivos. Desde MapLibre 6.13 el worker es autocontenido
+y el módulo compartido llega vacío; la verificación del build exige que todo
+módulo que el worker importe esté entre los archivos copiados. Esta evidencia
+es local y de CI; la disponibilidad remota requiere la promoción y comprobación
+del operador. Fuentes: [vista de
 Monitoreo](../../frontend/private-web/src/features/flight-monitoring/FlightMonitoringPage.jsx),
 [mapa de posiciones](../../frontend/private-web/src/features/positions-map/components/PositionMap.jsx),
-[script de copia](../../frontend/private-web/scripts/copy-maplibre-worker.mjs) y
+[script de copia](../../frontend/private-web/scripts/copy-maplibre-worker.mjs),
+[verificación del build](../../frontend/private-web/scripts/verify-maplibre-worker.mjs) y
 [certificación](../../frontend/private-web/scripts/certify-image.sh).
 
 En la rama de integración, Monitoreo y Mapa releen la estación autorizada

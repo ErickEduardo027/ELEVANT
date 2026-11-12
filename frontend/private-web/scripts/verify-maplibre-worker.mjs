@@ -3,6 +3,8 @@ import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { findUncopiedWorkerImports } from './copy-maplibre-worker.mjs';
+
 const projectRoot = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const assetRoot = path.join(projectRoot, 'public/assets/maplibre');
 const packageRoot = path.join(projectRoot, 'node_modules/maplibre-gl/dist');
@@ -15,7 +17,12 @@ for (const name of assetNames) {
 }
 
 const worker = await readFile(path.join(assetRoot, assetNames[0]), 'utf8');
-assert.match(worker, /from["']\.\/maplibre-gl-shared\.mjs["']/, 'The worker must import its colocated shared module');
+const uncopiedImports = findUncopiedWorkerImports(worker);
+assert.equal(
+  uncopiedImports.length,
+  0,
+  `The MapLibre worker imports modules that are not copied next to it: ${uncopiedImports.join(', ')}`,
+);
 
 const chunks = [];
 async function visit(directory) {
