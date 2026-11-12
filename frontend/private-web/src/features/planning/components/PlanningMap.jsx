@@ -64,7 +64,7 @@ export default function PlanningMap({ stationId, date, flights = [], timeZone, o
     <section aria-label={t('map.label')} className="grid gap-4 lg:grid-cols-[7fr_minmax(16rem,3fr)]">
       <div className={`${panelClass} relative min-h-[460px] overflow-hidden`}>
         <PositionMap ref={mapRef} positions={positions} selectedPositionId={selectedId} onSelectPosition={setSelectedId}
-          theme="light" viewMode="2d" />
+          theme="dark" viewMode="2d" />
       </div>
       <aside className={`${panelClass} space-y-3 p-4 text-sm`}>
         <p className="text-xs text-text-secondary-light dark:text-text-secondary-dark">

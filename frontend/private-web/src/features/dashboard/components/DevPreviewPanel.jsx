@@ -23,7 +23,8 @@ const STATE_BUTTONS = [
   { state: 'chatDisconnected', label: 'Chat: desconectado' },
 ];
 
-export default function DevPreviewPanel({ theme, forceState, onToggleTheme, onSetForceState, defaultOpen = true }) {
+// Development-only preview of forced screen states. It offers no theme toggle: the OCC is dark only.
+export default function DevPreviewPanel({ forceState, onSetForceState, defaultOpen = true }) {
   const [open, setOpen] = useState(() => {
     if (typeof window === 'undefined') return defaultOpen;
     if (defaultOpen) return true;
@@ -42,13 +43,6 @@ export default function DevPreviewPanel({ theme, forceState, onToggleTheme, onSe
       <p className="mb-2 font-semibold uppercase tracking-wide text-text-secondary-light dark:text-text-secondary-dark">
         Vista previa (solo desarrollo)
       </p>
-      <button
-        type="button"
-        onClick={onToggleTheme}
-        className="mb-2 w-full rounded-md border border-black/10 px-2 py-1 text-left dark:border-white/10"
-      >
-        Tema: {theme === 'light' ? 'claro' : 'oscuro'}
-      </button>
       <div className="grid grid-cols-2 gap-1.5">
         {STATE_BUTTONS.map(({ state, label }) => (
           <button

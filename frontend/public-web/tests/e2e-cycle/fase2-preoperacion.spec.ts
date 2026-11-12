@@ -283,7 +283,10 @@ test("OCC revisa el mapa de posiciones y el feed de vuelos sin llamar al proveed
   const station = version.stations.find(item => item.code === "PUJ")!;
   await loginPrivate(page, "occ");
   await goPrivate(page, "/admin-occ/positions-map");
-  await page.waitForLoadState("networkidle");
+  // Wait for the map itself, not for an idle network: in `next dev` MapLibre 6.16 leaves the script of a worker that
+  // React's double mount terminated in flight, so the network never goes idle on a map screen.
+  await expect(page.getByTestId("position-map-container")).toBeVisible();
+  await expect(page.locator(".maplibregl-canvas").first()).toBeVisible();
   await snap(page, "fase2-occ-mapa-posiciones");
   // Only reads the stored feed: the E2E stack runs the simulated feed (or none), never AeroDataBox, so no paid unit is spent.
   const token = await login("occ");

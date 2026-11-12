@@ -1,44 +1,70 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { isOccPath } from './occTheme';
 
 const STORAGE_KEY = 'elevant-theme';
 
-function readInitialTheme() {
-  return 'light';
-}
+const ThemeContext = createContext(null);
 
-  const ThemeContext = createContext(null);
-
-// Same mechanism as the Admin/OCC reference shell: a single `theme` state
+// Same mechanism as the Admin/OCC reference shell: a single `theme` value
 // toggles the `dark` class on the document root, which Tailwind's
 // `darkMode: 'class'` strategy picks up everywhere (Sidebar, Topbar,
 // content, badges).
 //
 // Contexto compartido: antes cada consumidor de useTheme() tenía su propio
-// useState independiente, así que alternar el tema desde un componente
-// (p.ej. DevPreviewPanel) no se reflejaba en otro (p.ej. AppShell o los
-// mapas de MapLibre) hasta el próximo montaje. Un solo Provider en la raíz
-// del árbol resuelve esto sin cambiar la API pública de useTheme().
+// useState independiente, así que alternar el tema desde un componente no se
+// reflejaba en otro (p.ej. AppShell o los mapas de MapLibre) hasta el próximo
+// montaje. Un solo Provider en la raíz del árbol resuelve esto sin cambiar la
+// API pública de useTheme().
+//
+// The OCC is dark only: while the route is under /admin-occ the theme is
+// `dark`, `toggleTheme` does nothing and `elevant-theme` is not written.
+// Every other department keeps the account's own theme.
 export function ThemeProvider({ children }) {
-  const [theme, setTheme] = useState(readInitialTheme);
+  const occ = isOccPath(usePathname());
+  // The account's own theme. It is light on the server and on the first client
+  // render; the stored choice arrives after mount.
+  const [userTheme, setUserTheme] = useState('light');
+  const theme = occ ? 'dark' : userTheme;
 
+  // Keep this effect ahead of the one that stores the theme: it has to read the
+  // stored choice before the first light render is written over it. The guard
+  // against the first render's value also keeps that choice when Strict Mode
+  // runs the effects twice.
   useEffect(() => {
     const stored = window.localStorage?.getItem(STORAGE_KEY);
     const preferred = stored === 'light' || stored === 'dark'
       ? stored
       : window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    if (preferred !== theme) setTheme(preferred);
+    if (preferred !== userTheme) setUserTheme(preferred);
   }, []);
 
-  useEffect(() => {
+  // Before paint, so a client navigation into the OCC never shows a light frame
+  // (app/layout.jsx covers the first load with a boot script). The route is a
+  // dependency because the Contracts, Finance and Governance shells switch the
+  // class on their own: entering the OCC puts it back even when the value did
+  // not change. As an effect it also runs again when React remounts the tree in
+  // development, which can reset the attributes of <html> and drop the class
+  // the boot script added.
+  useLayoutEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
-    window.localStorage?.setItem(STORAGE_KEY, theme);
-  }, [theme]);
+  }, [theme, occ]);
+
+  // Only the account's own theme is stored, and never from the OCC.
+  useEffect(() => {
+    if (!occ) window.localStorage?.setItem(STORAGE_KEY, userTheme);
+  }, [occ, userTheme]);
 
   const toggleTheme = useCallback(() => {
-    setTheme(value => (value === 'light' ? 'dark' : 'light'));
-  }, []);
+    if (occ) return;
+    setUserTheme(value => (value === 'light' ? 'dark' : 'light'));
+  }, [occ]);
 
-  return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>;
+  // The provider renders again on every navigation: keep the value stable so
+  // its consumers do not.
+  const value = useMemo(() => ({ theme, toggleTheme }), [theme, toggleTheme]);
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 }
 
 // Null outside a ThemeProvider; lets standalone screens (login) degrade gracefully.
