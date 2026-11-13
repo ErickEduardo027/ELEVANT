@@ -8,10 +8,12 @@ using Elevant.Infrastructure.Identity;
 using Elevant.Infrastructure.Operations;
 using Elevant.Infrastructure.Commercial;
 using Elevant.Application.Abstractions.Commercial;
+using Elevant.Infrastructure.Integrations.AirTraffic;
 using Elevant.Infrastructure.Integrations.FlightAware;
 using Elevant.Infrastructure.Integrations.OpenSky;
 using Elevant.Application.Abstractions.Operations;
 using Elevant.Application.Integration.DemoFlights;
+using Elevant.Application.Operations.AirPicture;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -66,6 +68,7 @@ public static class DependencyInjection
                 { Timeout = TimeSpan.FromSeconds(10) },
                 openSky,
                 provider.GetRequiredService<TimeProvider>()));
+        AddAirTraffic(services, configuration);
         // Public airline registries, asked in this order (ADR-0023).
         services.AddSingleton<Elevant.Application.Abstractions.Commercial.IAirlineRegistrySource>(_ =>
             new Elevant.Infrastructure.Integrations.AirlineRegistry.WikidataAirlineRegistrySource(
@@ -138,5 +141,68 @@ public static class DependencyInjection
         if (mode == DemoFlightMode.Enabled && environment is not ("Development" or "Test" or "Testing"))
             throw new InvalidOperationException("Demo flights require Development or Test.");
         services.AddSingleton(mode == DemoFlightMode.Enabled ? DemoFlightAvailability.On : DemoFlightAvailability.Disabled);
+    }
+
+    /// <summary>
+    /// ADR-0042 (contracts 1.3): the live aircraft of the OCC map. <c>AirTraffic:Enabled</c> is off by default and
+    /// <c>AirTraffic:Providers</c> lists, in order, the networks to read (<c>AdsbFi</c>, <c>AdsbLol</c>). The section is
+    /// checked on every start, also while it is off, so a wrong value never waits for the day it is switched on. Off or
+    /// with an empty list the provider is <see cref="UnconfiguredAirTrafficProvider"/> and nothing is ever called. No
+    /// environment is refused: <c>appsettings.json</c> leaves it off.
+    /// </summary>
+    private static void AddAirTraffic(IServiceCollection services, IConfiguration configuration)
+    {
+        var section = configuration.GetSection(AirTrafficOptions.SectionName);
+        // «AirTraffic:Providers=AdsbFi» is one value, not a list: the binder would drop it and switch the traffic off.
+        if (!string.IsNullOrWhiteSpace(section[nameof(AirTrafficOptions.Providers)]))
+            throw new InvalidOperationException("AirTraffic:Providers must be a list (AirTraffic:Providers:0, :1).");
+        var options = section.Get<AirTrafficOptions>() ?? new();
+        var profiles = new List<ReadsbProfile>();
+        foreach (var name in options.Providers)
+        {
+            var profile = ReadsbProfile.Find(name) ??
+                throw new InvalidOperationException("AirTraffic:Providers accepts only AdsbFi and AdsbLol.");
+            if (profiles.Contains(profile))
+                throw new InvalidOperationException("AirTraffic:Providers names a provider more than once.");
+            profiles.Add(profile);
+        }
+        var settings = AirTrafficSettingsFrom(options);
+        if (!settings.Enabled || profiles.Count == 0)
+        {
+            services.AddSingleton<IAirTrafficProvider, UnconfiguredAirTrafficProvider>();
+            services.AddSingleton(AirTrafficSettings.Disabled);
+            return;
+        }
+        var key = options.ApiKey;
+        services.AddSingleton(settings);
+        services.AddSingleton<IAirTrafficProvider>(provider =>
+        {
+            var time = provider.GetRequiredService<TimeProvider>();
+            return new FailoverAirTrafficProvider(
+                [.. profiles.Select(profile => new ReadsbAirTrafficProvider(ReadsbAirTrafficProvider.CreateHttpClient(),
+                    profile, profile.TakesKey ? key : null, time))],
+                time);
+        });
+    }
+
+    /// <summary>The settings of the section; a value out of range stops the start.</summary>
+    private static AirTrafficSettings AirTrafficSettingsFrom(AirTrafficOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.StationCode))
+            throw new InvalidOperationException("AirTraffic:StationCode is required.");
+        if (!double.IsFinite(options.CenterLatitude) || options.CenterLatitude is < -90 or > 90 ||
+            !double.IsFinite(options.CenterLongitude) || options.CenterLongitude is < -180 or > 180)
+            throw new InvalidOperationException("AirTraffic:CenterLatitude and AirTraffic:CenterLongitude must be a position on Earth.");
+        if (options.RadiusNm is < 1 or > AirTrafficSettings.MaxRadiusNm)
+            throw new InvalidOperationException("AirTraffic:RadiusNm must be from 1 to 250.");
+        if (options.IntervalSeconds < AirTrafficSettings.MinimumInterval.TotalSeconds)
+            throw new InvalidOperationException("AirTraffic:IntervalSeconds must be at least 10.");
+        if (options.IdleAfterSeconds < options.IntervalSeconds)
+            throw new InvalidOperationException("AirTraffic:IdleAfterSeconds must be at least AirTraffic:IntervalSeconds.");
+        if (options.TrailMinutes is < 1 or > AirTrafficSettings.MaxTrailMinutes)
+            throw new InvalidOperationException("AirTraffic:TrailMinutes must be from 1 to 180.");
+        return new AirTrafficSettings(options.Enabled, options.StationCode.Trim().ToUpperInvariant(), options.CenterLatitude,
+            options.CenterLongitude, options.RadiusNm, TimeSpan.FromSeconds(options.IntervalSeconds),
+            TimeSpan.FromSeconds(options.IdleAfterSeconds), TimeSpan.FromMinutes(options.TrailMinutes));
     }
 }

@@ -86,6 +86,12 @@ public static class DependencyInjection
         services.AddScoped<Elevant.Application.Integration.DemoFlights.DemoFlightHandler>();
         // ADR-0041: «Cargar posiciones de Punta Cana», under the same DemoFlights:Mode.
         services.AddScoped<Elevant.Application.Operations.DemoStation.DemoStationHandler>();
+        // ADR-0042: without Infrastructure (tools, tests) there is no AirTraffic section: no network is ever read.
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton<
+            Elevant.Application.Abstractions.Operations.IAirTrafficProvider,
+            Elevant.Application.Abstractions.Operations.UnconfiguredAirTrafficProvider>(services);
+        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions.TryAddSingleton(services,
+            Elevant.Application.Operations.AirPicture.AirTrafficSettings.Disabled);
         return services;
     }
 }
