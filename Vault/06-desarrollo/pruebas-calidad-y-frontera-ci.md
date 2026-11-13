@@ -212,9 +212,10 @@ a `ff066d47`, también posterior al commit verificado;
   posiciones la da libre mientras Planificación y la tablet la siguen nombrando.
   La limpieza ya no pulsa «Liberar»: el agente entrega la operación y OCC libera
   la cobertura que creó la prueba.
-- **Sin corrida registrada.** El PR lo entregó escrito contra los selectores y
-  los textos reales, sin un stack local con el que ejecutarlo. Ningún workflow
-  de CI lo corre.
+- **Corrida local.** El 13 de noviembre de 2026, antes de mergear el PR A2, el
+  proyecto pasó 8 de 8 en 8,9 minutos contra el stack `elevant-ciclo`
+  reconstruido desde cero con esa rama. Es evidencia local, no de un despliegue,
+  y ningún workflow de CI lo corre.
 - **Pruebas automáticas.** Unitarias del catálogo, el plan de la carga, el
   sorteo, la elegibilidad, el manejador de la carga y la regla del push-back; de
   arquitectura, la paridad del catálogo con el conjunto de datos del mapa, que
