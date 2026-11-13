@@ -107,11 +107,30 @@ const demoRow = (item: DemoFlight) => demoPanel().getByRole("list", { name: "Vue
   .filter({ hasText: `${item.arrivalFlightNumber} / ${item.departureFlightNumber}` }).first();
 
 /**
+ * Puts «Configuración» back on the Superadmin page. Under `next dev`, the first visit to a route that the dev server has
+ * not compiled yet reloads every open page of the app (Fast Refresh rebuilds it), and the Superadmin shell opens again
+ * on «Inicio»; a production build never does this. The session lives in sessionStorage, so the tab is still signed in.
+ */
+async function showDemoPanel() {
+  if (!(await demoPanel().isVisible())) await openModule(superadminPage, "Configuración");
+  await expect(demoPanel()).toBeVisible();
+}
+
+/** Waits until a flight's row in «Vuelos demo de hoy» says `text`, reopening the panel if a dev reload closed it. */
+async function expectDemoRow(item: DemoFlight, text: string | RegExp, timeout = 15_000) {
+  await expect(async () => {
+    await showDemoPanel();
+    await expect(demoRow(item)).toContainText(text, { timeout: 5_000 });
+  }).toPass({ timeout });
+}
+
+/**
  * «Disparar vuelo demo»: Demo Airlines from Miami and back, the seeded A320, the stand (or «Sin posición») and the
  * minutes. Returns the new flight as the API lists it, once the panel announced it.
  */
 async function trigger(token: string, choice: { stand: DemoStand | null; minutes: number; groundMinutes: number }) {
   const before = new Set((await demoList(token)).list.flights.map(item => item.id));
+  await showDemoPanel();
   const form = demoPanel().getByRole("form", { name: "Disparar vuelo demo" });
   // A select inside its label is named by the label and the chosen option, hence the anchored names.
   await form.getByRole("combobox", { name: /^Aerolínea/ }).selectOption(airlineId);
@@ -166,8 +185,11 @@ test.beforeAll(async ({ browser }, testInfo) => {
   occContext = await browser.newContext({ viewport });
   superadminPage = await superadminContext.newPage();
   occPage = await occContext.newPage();
-  await loginPrivate(superadminPage, "superadmin");
+  // OCC first, with the one OCC screen the spec opens later: under `next dev` compiling a route reloads every open
+  // page, so it happens now, before the Superadmin's panel is on screen (showDemoPanel covers what is left).
   await loginPrivate(occPage, "occ");
+  await goPrivate(occPage, "/admin-occ/planning");
+  await loginPrivate(superadminPage, "superadmin");
 });
 
 test.afterAll(async () => {
@@ -195,7 +217,7 @@ test("Superadmin dispara un vuelo demo hacia una posición libre de la Terminal 
   airlineId = airline!.id;
   aircraftTypeId = type!.id;
 
-  await openModule(superadminPage, "Configuración");
+  await showDemoPanel();
   // Exact: the badge of a stack where they are off, «No disponible en este entorno», contains these words too.
   await expect(demoPanel().getByText("Disponible en este entorno", { exact: true })).toBeVisible();
   flight = await trigger(superadmin, { stand: stand!, minutes: 2, groundMinutes: 20 });
@@ -205,7 +227,7 @@ test("Superadmin dispara un vuelo demo hacia una posición libre de la Terminal 
   expect(ms(flight.onBlockAt) - ms(flight.appearAt)).toBe(2 * MINUTE);
   expect(ms(flight.onBlockAt) - ms(flight.touchdownAt)).toBe(90_000);
   expect(ms(flight.scheduledOffBlockAt) - ms(flight.onBlockAt)).toBe(20 * MINUTE);
-  await expect(demoRow(flight)).toContainText(`OCC aún no lo importa · Posición sugerida ${stand!.code}`);
+  await expectDemoRow(flight, `OCC aún no lo importa · Posición sugerida ${stand!.code}`);
   await snap(superadminPage, "demo-superadmin-vuelo-creado");
 
   // OCC's review already lists both legs, marked as demo: the arrival with the stand as its gate, its departure and the
@@ -256,8 +278,7 @@ test("OCC ve el vuelo demo con «Demo» y su posición preseleccionada y lo impo
   expect(board.data.positions.find(item => item.code === stand!.code)?.turnarounds
     .find(item => item.turnaroundId === turnaroundId)?.isDemo, "the positions board marks the demo flight").toBe(true);
   // The Superadmin's list follows OCC's side of the flight (it is read every 5 to 20 seconds).
-  await expect(demoRow(flight!)).toContainText(`Importado por OCC · ${operationCode} · Posición ${stand!.code}`,
-    { timeout: 45_000 });
+  await expectDemoRow(flight!, `Importado por OCC · ${operationCode} · Posición ${stand!.code}`, 45_000);
   await snap(superadminPage, "demo-superadmin-importado");
 });
 
@@ -303,14 +324,13 @@ test("El avión demo aterriza, la tablet marca BLOCK_ON y PUSHBACK y el vuelo de
   expect(leaving.phase).toBe("TaxiOut");
   expect(Math.abs(ms(leaving.offBlockAt!) - ms(pushbackAt))).toBeLessThan(1_000);
   expect(ms(leaving.takeoffAt!) - ms(leaving.offBlockAt!)).toBe(5 * MINUTE);
-  const row = demoRow(flight!);
-  await expect(row).toContainText("Saliendo", { timeout: 60_000 });
+  await expectDemoRow(flight!, "Saliendo", 60_000);
   await snap(superadminPage, "demo-superadmin-saliendo");
 
   // The worker stamps the take-off on the departure leg at that instant; a marked take-off finishes the demo flight.
   const departed = await pollTurnaround("departure", "the worker stamps the take-off", 7 * MINUTE);
   expect(ms(departed.departure!.actualAt!)).toBe(ms(leaving.takeoffAt!));
-  await expect(row).toContainText(/Despegó|Terminado/, { timeout: 60_000 });
+  await expectDemoRow(flight!, /Despegó|Terminado/, 60_000);
   await snap(superadminPage, "demo-superadmin-despego");
   expect((await demoFlight(superadmin, flight!.id)).state).toBe("Finished");
 });
@@ -319,8 +339,8 @@ test("Un segundo vuelo demo se cancela antes de tocar pista y sale de los vuelos
   const superadmin = await login("superadmin");
   const second = await trigger(superadmin, { stand: null, minutes: 15, groundMinutes: 20 });
   expect([second.state, second.suggestedStandCode ?? null]).toEqual(["Active", null]);
+  await expectDemoRow(second, "En aproximación");
   const row = demoRow(second);
-  await expect(row).toContainText("En aproximación");
   await row.getByRole("button", { name: "Cancelar vuelo" }).click();
   const confirm = superadminPage.getByRole("alertdialog", { name: "Cancelar vuelo demo" });
   await expect(confirm).toContainText(`El vuelo ${second.arrivalFlightNumber} saldrá de los vuelos propuestos de OCC.`);
