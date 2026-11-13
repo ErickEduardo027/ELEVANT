@@ -799,7 +799,13 @@ que la rehace (U3, U5 y U6).
   y abre el
   [cajón «Alertas y avisos»](../../frontend/private-web/src/features/admin-occ/shell/OccAlertsDrawer.jsx),
   con las alertas sin recibir primero, los avisos recientes y «Ver historial de
-  avisos». «Recibido» es el recibo de lectura por cuenta que ya existía
+  avisos». Si la primera lectura de los avisos falla, el botón dice «Alertas:
+  sin datos» con el triángulo ámbar; si falla una relectura, conserva el último
+  número atenuado, con «, sin actualizar», y su descripción accesible da la
+  hora de la última lectura buena. Por debajo de 1536 px, «: sin datos» y
+  «, sin actualizar» quedan para los lectores de pantalla. En los dos casos el
+  cajón ofrece «Reintentar».
+  «Recibido» es el recibo de lectura por cuenta que ya existía
   (`PUT notifications/{id}/read`), así que el conteo es el mismo en todas las
   pantallas y después de recargar. Los
   [toasts](../../frontend/private-web/src/features/admin-occ/shell/occToastQueue.js)

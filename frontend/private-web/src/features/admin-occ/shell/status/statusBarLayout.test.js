@@ -50,6 +50,18 @@ describe('status bar layout', () => {
     expect(STATUS_BAR_LAYOUT.sources.label).toBe('sr-only xl:not-sr-only');
   });
 
+  it('says why the alerts count cannot be trusted only from 1536 px, where the bar has room for it', () => {
+    // «: sin datos» and «, sin actualizar» come when ELEVANT fails, often while the live link and the sources show
+    // their longest words; below 1536 px the triangle and the dimmed count say it, and the words stay for screen
+    // readers. The alerts keep their own word from 640 px.
+    expect(STATUS_BAR_LAYOUT.alerts.detailFrom).toBe(BREAKPOINTS['2xl']);
+    expect(STATUS_BAR_LAYOUT.alerts.detail).toBe('sr-only 2xl:not-sr-only');
+    expect(statusBarAt(BREAKPOINTS['2xl'] - 1).bar.alerts).toBe('full');
+    // No other element has words after its word.
+    const withDetail = Object.entries(STATUS_BAR_LAYOUT).filter(([, rule]) => rule.detailFrom !== null);
+    expect(withDetail.map(([element]) => element)).toEqual(['alerts']);
+  });
+
   it('adds Punta Cana next to the station plate from 1280 px', () => {
     expect(statusBarAt(1279).bar).not.toHaveProperty('stationCity');
     expect(statusBarAt(1280).bar).toHaveProperty('stationCity', 'full');
@@ -69,8 +81,9 @@ describe('status bar layout', () => {
       } else {
         expect(rule.bar, element).toBe('');
       }
-      // A reduced element keeps its word for screen readers: hidden on screen, never removed.
+      // A reduced element keeps its word for screen readers: hidden on screen, never removed. So do the words after it.
       expect(rule.label, element).toBe(rule.fullFrom === null ? '' : `sr-only ${screenAt(rule.fullFrom)}:not-sr-only`);
+      expect(rule.detail, element).toBe(rule.detailFrom === null ? '' : `sr-only ${screenAt(rule.detailFrom)}:not-sr-only`);
       expect(rule.menu, element).toBe(rule.menuBelow === null ? '' : `${screenAt(rule.menuBelow)}:hidden`);
     }
   });

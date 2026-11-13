@@ -69,6 +69,10 @@ export const occShellMessages = {
         one: '{count} alerta',
         many: '{count} alertas',
         unavailable: 'Alertas',
+        // Why the count cannot be trusted, right after the words above: the first read of the notices failed
+        // («Alertas: sin datos») or the last refresh did («3 alertas, sin actualizar»).
+        failedDetail: ': sin datos',
+        staleDetail: ', sin actualizar',
       },
     },
     legend: { label: 'Leyenda' },
@@ -160,6 +164,8 @@ export const occShellMessages = {
         one: '{count} alert',
         many: '{count} alerts',
         unavailable: 'Alerts',
+        failedDetail: ': no data',
+        staleDetail: ', not updated',
       },
     },
     legend: { label: 'Legend' },

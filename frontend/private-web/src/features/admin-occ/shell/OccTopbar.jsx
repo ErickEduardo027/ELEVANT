@@ -78,11 +78,13 @@ export default function OccTopbar({ navigation = [], user, onOpenMenu, onLogout 
       <OccLiveIndicator live={live} className={LAYOUT.live.bar} labelClassName={LAYOUT.live.label} />
       <OccSourcesButton sources={sources} className={LAYOUT.sources.bar} labelClassName={LAYOUT.sources.label} />
       {/* Without the notices permission there is nothing to count, and the notifications page is not open to the
-          account either. */}
+          account either. A failed refresh keeps the last count, marked with the time of that read, as the drawer
+          does. */}
       {notices.status !== 'forbidden' && (
-        <OccAlertsButton ref={alertsButton} summary={summary} status={notices.status} onOpen={openAlerts}
-          expanded={alertsOpen} controls={alertsOpen ? drawerId : undefined} className={LAYOUT.alerts.bar}
-          labelClassName={LAYOUT.alerts.label} />
+        <OccAlertsButton ref={alertsButton} summary={summary} status={notices.status}
+          staleSince={notices.refreshFailed ? notices.fetchedAt : null} onOpen={openAlerts} expanded={alertsOpen}
+          controls={alertsOpen ? drawerId : undefined} className={LAYOUT.alerts.bar}
+          labelClassName={LAYOUT.alerts.label} detailClassName={LAYOUT.alerts.detail} />
       )}
       <OccClocks className={LAYOUT.localClock.bar} utcClassName={LAYOUT.utcClock.bar} />
       <OccLanguageToggle className={LAYOUT.language.bar} />

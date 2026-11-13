@@ -4,13 +4,16 @@ import { useId } from 'react';
 import { useTranslation } from '../../../../i18n/LanguageScope';
 import { BellIcon } from '../../../shell/components/icons';
 import OccGlyph from '../../../occ-ui/OccGlyph';
-import { SIGNALS } from '../../../occ-ui/statusVocabulary';
+import { SIGNALS, TAGS } from '../../../occ-ui/statusVocabulary';
 import { occShellMessages } from '../occShellMessages';
+import { formatStationTime } from './OccClocks';
 import { STATUS_CONTROL, STATUS_CONTROL_REST, STATUS_TONE } from './statusBarLayout';
 
-// The notices have been read, with alerts or without; while they load, after a failure or without permission the
-// button cannot count anything and says «Alertas» in neutral.
+// How the button reads the status of the shell's notices (useOccResource): read, with alerts or without; failed, a
+// first read that failed or ran out of time, which the drawer can retry; anything else (loading, idle, an account the
+// server refused) counts nothing and says «Alertas» in neutral.
 const READ_STATUSES = new Set(['success', 'empty']);
+const FAILED_STATUSES = new Set(['error', 'timeout']);
 const ALERT_SIGNALS = new Set(['urgent', 'attention']);
 
 // Words of a phrase in a span of their own, with the spaces around them left outside it: an accessible name trims
@@ -40,33 +43,58 @@ function CountPhrase({ template, count, wordClassName }) {
  * whose word is the button's description: shape and word, never colour alone. `onOpen` opens the alerts. When the
  * button opens a panel, `expanded` is passed on as `aria-expanded` (with `aria-haspopup="dialog"`) and `controls`, the
  * panel's id while it is open, as `aria-controls`; `ref` reaches the button, so the panel can give focus back to it.
+ *
+ * Two states say that the count cannot be trusted, with the amber triangle unless an urgent alert is already known:
+ * - the first read failed or timed out: «Alertas: sin datos», with no count;
+ * - a refresh failed after a good read (`staleSince`, the ISO instant of that read): the last count stays, dimmed,
+ *   followed by «, sin actualizar», and the description says «Sin actualizar desde las 14:02» (station time).
+ * Either way the button still opens the alerts, whose drawer offers «Reintentar».
+ *
  * `labelClassName` goes on the words, never on the count: below 640 px the bar shows the glyph and the number, and the
- * words stay for screen readers.
+ * words stay for screen readers. `detailClassName` goes on «: sin datos» and «, sin actualizar», which the bar shows
+ * only where it always has room for them (statusBarLayout.js).
  */
 export default function OccAlertsButton({
-  ref, summary, status, onOpen, expanded, controls, className = '', labelClassName = '',
+  ref, summary, status, staleSince = null, onOpen, expanded, controls, className = '', labelClassName = '',
+  detailClassName = '',
 }) {
-  const { t, language } = useTranslation(occShellMessages);
-  const wordId = useId();
+  const { t, language, locale } = useTranslation(occShellMessages);
+  const descriptionId = useId();
   const read = READ_STATUSES.has(status);
+  const failed = FAILED_STATUSES.has(status);
+  const stale = read && staleSince != null;
   const count = read ? Math.max(0, summary?.unreceivedCount ?? 0) : 0;
   const highest = count > 0 && ALERT_SIGNALS.has(summary?.highest) ? summary.highest : null;
-  let phrase;
-  if (!read) phrase = <span className={labelClassName}>{t('status.alerts.unavailable')}</span>;
-  else if (count === 0) phrase = <span className={labelClassName}>{t('status.alerts.none')}</span>;
+  // A count the button cannot vouch for asks for attention; a known urgent alert keeps its own signal.
+  const signal = highest ?? (failed || stale ? 'attention' : null);
+  const description = [
+    highest ? SIGNALS[highest][language] : null,
+    stale ? TAGS.stale[language].replace('{time}', formatStationTime(staleSince, locale)) : null,
+  ].filter(Boolean).join('. ');
+
+  let words;
+  if (!read) words = <span className={labelClassName}>{t('status.alerts.unavailable')}</span>;
+  else if (count === 0) words = <span className={labelClassName}>{t('status.alerts.none')}</span>;
   else {
-    phrase = <CountPhrase template={t(count === 1 ? 'status.alerts.one' : 'status.alerts.many')} count={count}
+    words = <CountPhrase template={t(count === 1 ? 'status.alerts.one' : 'status.alerts.many')} count={count}
       wordClassName={labelClassName} />;
   }
+  let detail = null;
+  if (failed) detail = t('status.alerts.failedDetail');
+  else if (stale) detail = t('status.alerts.staleDetail');
 
   return (
     <button ref={ref} type="button" onClick={onOpen} aria-expanded={expanded} aria-controls={controls}
-      aria-haspopup={expanded === undefined ? undefined : 'dialog'} aria-describedby={highest ? wordId : undefined}
-      data-alert-priority={highest ?? 'none'}
-      className={`${STATUS_CONTROL} ${STATUS_TONE[highest] ?? STATUS_CONTROL_REST} ${className}`}>
-      {highest ? <OccGlyph name={highest} /> : <BellIcon className="h-4 w-4 shrink-0 text-occ-muted" />}
-      {highest ? <span id={wordId} hidden>{SIGNALS[highest][language]}</span> : null}
-      {phrase}
+      aria-haspopup={expanded === undefined ? undefined : 'dialog'}
+      aria-describedby={description ? descriptionId : undefined} data-alert-priority={highest ?? 'none'}
+      className={`${STATUS_CONTROL} ${STATUS_TONE[signal] ?? STATUS_CONTROL_REST} ${className}`}>
+      {signal ? <OccGlyph name={signal} /> : <BellIcon className="h-4 w-4 shrink-0 text-occ-muted" />}
+      {description ? <span id={descriptionId} hidden>{description}</span> : null}
+      {/* The last count of a failed refresh is dimmed, as the «Sin actualizar» tag draws stale data. */}
+      <span className={stale ? 'text-occ-muted' : undefined}>
+        {words}
+        {detail ? <span className={detailClassName}>{detail}</span> : null}
+      </span>
     </button>
   );
 }

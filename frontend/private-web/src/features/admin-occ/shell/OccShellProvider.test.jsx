@@ -373,6 +373,55 @@ describe('OccShellProvider', () => {
     expect(screen.getByRole('group', { name: 'Idioma' })).toBeInTheDocument();
   });
 
+  it('tells in the bar when the notices could not be read and when a refresh failed', async () => {
+    const { createObserver } = fakeObservers();
+    const incident = notice('incident_reported');
+    // The first and the third read fail. An implementation, not «once» answers: beforeEach replaces it, so a failure
+    // here leaves nothing queued for the next test.
+    let reads = 0;
+    loadOperationalNotifications.mockImplementation(async () => {
+      reads += 1;
+      if (reads === 1 || reads === 3) {
+        throw new Error('No fue posible completar la solicitud. Comprueba la conexión e intenta nuevamente.');
+      }
+      return { notifications: [incident], hasMore: false };
+    });
+    const bar = <OccTopbar navigation={ADMIN_OCC_NAVIGATION} user={{ name: 'Alex Operations', role: 'OCC' }} />;
+    render(frame(bar, { createObserver, overlays: false }));
+    // While the first read is under way the bar counts nothing, in neutral.
+    expect(screen.getByRole('button', { name: 'Alertas' })).toBeInTheDocument();
+
+    // The first read fails: the bar says so, with the attention triangle and none of the error's words.
+    await flush();
+    const failed = screen.getByRole('button', { name: 'Alertas: sin datos' });
+    expect(failed.querySelector('[data-occ-glyph]')).toHaveAttribute('data-shape', 'triangle');
+    expect(screen.queryByText(/No fue posible/)).not.toBeInTheDocument();
+
+    // «Reintentar» in the drawer reads again at once.
+    fireEvent.click(failed);
+    const drawer = screen.getByRole('dialog', { name: 'Alertas y avisos' });
+    await act(async () => { fireEvent.click(within(drawer).getByRole('button', { name: 'Reintentar' })); });
+    await flush();
+    expect(loadOperationalNotifications).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('button', { name: '1 alerta', description: 'Urgente' })).toBeInTheDocument();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Cerrar' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    // The safety poll's read fails: the last count stays, marked with the time of the read that gave it (14:00 UTC,
+    // 10:00 in Punta Cana).
+    await flush(60_000);
+    expect(loadOperationalNotifications).toHaveBeenCalledTimes(3);
+    const stale = screen.getByRole('button', {
+      name: '1 alerta, sin actualizar', description: 'Urgente. Sin actualizar desde las 10:00',
+    });
+    expect(within(stale).getByTestId('notifications-badge')).toHaveTextContent('1');
+
+    // The next good read takes the mark away.
+    await flush(60_000);
+    expect(loadOperationalNotifications).toHaveBeenCalledTimes(4);
+    expect(screen.getByRole('button', { name: '1 alerta', description: 'Urgente' })).toBeInTheDocument();
+  });
+
   it('a received alert takes its toast away, and opening the alerts clears the toasts', async () => {
     const { created, createObserver } = fakeObservers();
     const old = notice('operation_submitted');

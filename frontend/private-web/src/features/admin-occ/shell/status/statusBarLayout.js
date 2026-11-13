@@ -4,21 +4,25 @@ import { BREAKPOINTS } from '../../../../config/breakpoints';
 // pure map: the bar's components take their classes from here, and statusBarLayout.test.js checks that the classes
 // say what the widths say. jsdom applies no CSS, so the rules are tested on this map and not on the rendered bar.
 //
-// Two rules are narrower than C.3, because the bar has to fit beside the rail (248 px expanded from 1024 px, 72 px
+// Three rules are narrower than C.3, because the bar has to fit beside the rail (248 px expanded from 1024 px, 72 px
 // from 640 px, none below): the sources keep their word only from 1280 px, since between 1024 and 1279 px the
-// expanded rail leaves too little room for it and the module name; and below 640 px the alerts show their glyph and
-// count, so that the bar fits a 320 px phone.
+// expanded rail leaves too little room for it and the module name; below 640 px the alerts show their glyph and
+// count, so that the bar fits a 320 px phone; and the alerts say in words why their count cannot be trusted
+// («: sin datos», «, sin actualizar») only from 1536 px. Those words come when ELEVANT fails, often while the live link
+// and the sources show their longest words, and only from 1536 px is there room for all of them at once. Below it
+// the amber triangle and the dimmed count say it, and the words stay for screen readers.
 //
 // Widths are in px, from src/config/breakpoints.js (the same numbers as Tailwind's screens):
 // - `from`: the narrowest width at which the element shows in the bar (0: always);
 // - `until`: it shows only below this width;
 // - `fullFrom`: below this width it shows reduced, as its glyph alone (its word stays for screen readers);
+// - `detailFrom`: below this width the words that follow its word (`detail`) stay for screen readers only;
 // - `menuBelow`: below this width it moves into the account menu.
-// `bar` is the element's class in the bar, `label` the class of its word, `menu` its class inside the account menu.
-// They are literal strings so that Tailwind finds and generates them.
+// `bar` is the element's class in the bar, `label` the class of its word, `detail` the class of the words after it,
+// `menu` its class inside the account menu. They are literal strings so that Tailwind finds and generates them.
 
-const rule = fields => Object.freeze({ from: 0, until: null, fullFrom: null, menuBelow: null, bar: '', label: '',
-  menu: '', ...fields });
+const rule = fields => Object.freeze({ from: 0, until: null, fullFrom: null, detailFrom: null, menuBelow: null, bar: '',
+  label: '', detail: '', menu: '', ...fields });
 
 export const STATUS_BAR_LAYOUT = Object.freeze({
   menu: rule({ until: BREAKPOINTS.sm, bar: 'sm:hidden' }),
@@ -27,7 +31,8 @@ export const STATUS_BAR_LAYOUT = Object.freeze({
   module: rule({ from: BREAKPOINTS.sm, bar: 'hidden sm:block' }),
   live: rule({ fullFrom: BREAKPOINTS.sm, label: 'sr-only sm:not-sr-only' }),
   sources: rule({ from: BREAKPOINTS.sm, fullFrom: BREAKPOINTS.xl, bar: 'hidden sm:flex', label: 'sr-only xl:not-sr-only' }),
-  alerts: rule({ fullFrom: BREAKPOINTS.sm, label: 'sr-only sm:not-sr-only' }),
+  alerts: rule({ fullFrom: BREAKPOINTS.sm, detailFrom: BREAKPOINTS['2xl'], label: 'sr-only sm:not-sr-only',
+    detail: 'sr-only 2xl:not-sr-only' }),
   localClock: rule({}),
   utcClock: rule({ from: BREAKPOINTS.lg, bar: 'hidden lg:flex' }),
   language: rule({ from: BREAKPOINTS.lg, menuBelow: BREAKPOINTS.lg, bar: 'hidden lg:flex', menu: 'lg:hidden' }),

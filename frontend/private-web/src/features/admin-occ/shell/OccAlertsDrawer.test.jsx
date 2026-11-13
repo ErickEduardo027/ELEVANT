@@ -51,7 +51,7 @@ function renderHarness(notices = {}) {
 }
 
 async function openDrawer(user) {
-  await user.click(screen.getByRole('button', { name: /^\d+ alertas?$|^Sin alertas$|^Alertas$/ }));
+  await user.click(screen.getByRole('button', { name: /^\d+ alertas?$|^Sin alertas$|^Alertas(?:: sin datos)?$/ }));
   return screen.getByRole('dialog', { name: 'Alertas y avisos' });
 }
 
@@ -182,6 +182,8 @@ describe('OccAlertsDrawer', () => {
     const user = userEvent.setup();
     const retry = vi.fn();
     const view = render(<AlertsHarness shell={createOccShellValue({ notices: { status: 'error', items: [], retry } })} />);
+    // The bar's button already says that the notices could not be read, and still opens the drawer.
+    expect(screen.getByRole('button', { name: 'Alertas: sin datos' })).toBeInTheDocument();
     let drawer = await openDrawer(user);
     expect(within(drawer).getByRole('alert')).toHaveTextContent('No se pudieron cargar los avisos.');
     await user.click(within(drawer).getByRole('button', { name: 'Reintentar' }));

@@ -230,3 +230,30 @@ it('shows a neutral Alertas while the notices load', () => {
   const alerts = screen.getByRole('button', { name: 'Alertas' });
   expect(within(alerts).queryByTestId('notifications-badge')).not.toBeInTheDocument();
 });
+
+it('says when the notices could not be read, and marks the count of a failed refresh', async () => {
+  window.history.replaceState({}, '', '/admin-occ/dashboard');
+  const retry = vi.fn();
+  const view = render(topbar({}, createOccShellValue({ notices: { status: 'timeout', items: [], retry } })));
+  const failed = screen.getByRole('button', { name: 'Alertas: sin datos' });
+  expect(failed.querySelector('[data-occ-glyph]')).toHaveAttribute('data-shape', 'triangle');
+  // The bar shows the reason only where it has room for it (statusBarLayout.js).
+  expect(within(failed).getByText(': sin datos').className).toBe('sr-only 2xl:not-sr-only');
+  // The button still opens the alerts, whose drawer offers to read them again.
+  await userEvent.click(failed);
+  const drawer = screen.getByRole('dialog', { name: 'Alertas y avisos' });
+  expect(within(drawer).getByRole('alert')).toHaveTextContent('No se pudieron cargar los avisos.');
+  await userEvent.click(within(drawer).getByRole('button', { name: 'Reintentar' }));
+  expect(retry).toHaveBeenCalledOnce();
+  view.unmount();
+
+  // A refresh that failed keeps the count of the last good read, at 18:02 UTC (14:02 in Punta Cana), and says so.
+  render(topbar({}, createOccShellValue({
+    notices: { status: 'success', items: DAY(), refreshFailed: true, fetchedAt: '2026-11-12T18:02:00.000Z' },
+  })));
+  const stale = screen.getByRole('button', {
+    name: '3 alertas, sin actualizar', description: 'Urgente. Sin actualizar desde las 14:02',
+  });
+  expect(within(stale).getByTestId('notifications-badge')).toHaveTextContent(/^3$/);
+  expect(within(stale).getByText(', sin actualizar').className).toBe('sr-only 2xl:not-sr-only');
+});
