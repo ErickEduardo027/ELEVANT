@@ -975,8 +975,9 @@ no hay polígonos, tráfico en vivo ni aviones 3D.
   en pantalla mientras llega la respuesta: la página no vuelve al esqueleto y
   el mapa no se crea de nuevo. Un cambio de estación o de cuenta sí empieza
   vacío.
-- **Laboratorio y suite visual.** `/map-lab` existe solo en desarrollo: siete
-  escenas fijas del mapa, sin sesión ni API. La ruta lo importa solo en la rama
+- **Laboratorio y suite visual.** `/map-lab` existe solo en desarrollo: ocho
+  escenas fijas del mapa (la octava, la revisión del plano de MDPC, llegó con
+  el PR M3), sin sesión ni API. La ruta lo importa solo en la rama
   de desarrollo, y el build de producción comprueba que no lo incluye
   ([`verify-map-chunks.mjs`](../../frontend/private-web/scripts/verify-map-chunks.mjs)).
   La suite visual corre con Playwright en Chrome, fuera del CI: ver
