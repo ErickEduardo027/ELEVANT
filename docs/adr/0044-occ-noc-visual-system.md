@@ -193,7 +193,7 @@ Las leyendas leen las palabras y los dibujos de `statusVocabulary.js`: un estado
 |---|---|
 | U2 «Marco del OCC» | Un proveedor único con los refrescos agrupados (`useOccResource`); la barra de estado (estación, enlace en vivo, fuentes, alertas, relojes y «Leyenda»); el riel reagrupado en «En vivo», «Planificar», «Revisar» y «Estación», con los mismos 14 módulos; el cajón de alertas y avisos; y el enlace para saltar al contenido. *Además, sus carpetas `src/features/admin-occ/shell` y `src/features/admin-occ/live` entran en `MIGRATED_FOLDERS` (nota del 13 de noviembre de 2026, punto 11).* |
 | U3 «Consola» | Las primitivas de `occ-ui`. El mapa a pantalla completa con sus paneles flotantes: «Tablero», «Alertas», «Posiciones», el selector de vistas y el «Inspector». Importar y asignar sin salir del mapa, la pastilla «Llegada nueva» y el respaldo en cuadrícula. Borra el dashboard viejo y el CSS con `nth-child` de `occ.css`, y añade la primera carpeta a `MIGRATED_FOLDERS`. *Ya no es la primera: U2 añade las dos carpetas del marco, y U3, las suyas (nota del 13 de noviembre de 2026, punto 11).* |
-| U4 «Pantalla de arranque» | `admin-occ/boot/`: el isotipo y el logo ELEVANT · OCC, el fondo «rutas que se trazan» y una línea de progreso, desde la verificación de la sesión hasta que la consola está lista. |
+| U4 «Pantalla de arranque» | `admin-occ/boot/`: el isotipo y el logo ELEVANT · OCC, el fondo «rutas que se trazan» y una línea de progreso, desde la verificación de la sesión hasta que la consola está lista. *Llegó antes que U3: aparece cuando el cliente conoce la sesión, espera el acceso y después el primer aviso de la consola o del mapa, o 6 s; no precarga datos, y su carpeta entra en `MIGRATED_FOLDERS` (nota del 13 de noviembre de 2026 sobre U4, puntos 2, 3, 8 y 9).* |
 | U5 «Pantallas de mapa» | Monitoreo de vuelos, Mapa de posiciones y Planificación con sus plantillas, y las dos vistas nuevas de Planificación. |
 | U6 «Resto de pantallas» | Cobertura, Revisión, Notificaciones, Chat, Datos maestros, Tablets, Contratos listos y Reportes con `occ-ui`. Limpia el código muerto y deja el puente solo para las páginas compartidas. |
 
@@ -216,7 +216,7 @@ Cada uno amplía la nota del Vault de Private Web. Un cambio de estas decisiones
   Además, `ShellFrame.test.jsx` suma un caso, y el caso del botón de tema de `DevPreviewPanel.test.jsx` pasa a comprobar que no lo hay.
 
 **Queda pendiente**
-- **Primer pintado.** El script pone la clase `dark` antes de pintar, pero hasta que monta el marco se ve el fondo oscuro de `body`, azul marino (`#0A1220`), y luego la pizarra del OCC (`#161E22`). Lo cubrirá la pantalla de arranque de U4. La certificación de la imagen todavía no comprueba ese primer pintado: lo cubren las pruebas con jsdom.
+- **Primer pintado.** El script pone la clase `dark` antes de pintar, pero hasta que monta el marco se ve el fondo oscuro de `body`, azul marino (`#0A1220`), y luego la pizarra del OCC (`#161E22`). Lo cubrirá la pantalla de arranque de U4. La certificación de la imagen todavía no comprueba ese primer pintado: lo cubren las pruebas con jsdom. *U4 lo cubre solo en parte: la pantalla de arranque no está en el HTML del servidor y aparece solo en la primera entrada después de iniciar sesión (nota del 13 de noviembre de 2026 sobre U4, punto 10).*
 - **La consola actual** conserva su disposición con selectores `nth-child` en `occ.css`, ahora solo con colores de los tokens, hasta que U3 borre el dashboard viejo. Hasta entonces, `--occ-panel-muted` sigue como alias, y las cuatro clases `bg-occ-panel/90` y `/95` de la consola las cubre el puente. Su tablero de escalas pinta todavía en cian el punto de «Planificada», «Programada» y «Confirmada» con `bg-occ-accent`, una clase nativa del OCC que el puente no toca y que U1 no cambia en el JSX.
 - **Colores de estado en línea fuera de las franjas.** Las leyendas y el resumen de Monitoreo de vuelos y del mapa de posiciones (`FlightLegend`, `PositionLegend` y `PositionSummary`) y los marcadores de esos mapas (`AircraftMarker` y `positionMarkerIcons.js`) siguen pintando con los colores de `STATUS_COLORS` en línea o en código. Los rehacen el carril de mapas y U5 con `occPalette.js` y `statusVocabulary.js`.
 - **Texto menor de 12 px y rótulos en mayúsculas** en las pantallas heredadas, hasta que cada una se migre.
@@ -401,3 +401,90 @@ U2 cambia solo el marco del OCC: el proveedor, la barra de estado, el riel, el c
   - en `shell/`: `OccShellProvider`, `occShellMessages`, `railBadges`, `occToastQueue`, `OccAlertsDrawer` y las siete de `status/`;
   - en `occ-ui/`: `OccGlyph`, `OccPlate`, `OccPopover`, `OccStandSwatch`, `OccDrawer`, `OccAlertQueue` y `OccToastStack`;
   - además, `alertModel`, `navigation`, `AdminOccLayout`, `RoleLayout`, `useOccReviewQueue` y `ShellFrameVariant`.
+
+## Nota del 13 de noviembre de 2026: U4 «Pantalla de arranque del OCC»
+
+U4 añade la pantalla de arranque del OCC que pidió el dueño (decisión 14). Vive en `src/features/admin-occ/boot/` y no reestructura ninguna pantalla. Fuera de esa carpeta y de las pruebas solo cambian cuatro archivos: el montaje en `src/app/RoleLayout.jsx`, una llamada en Panorama (`src/features/dashboard/DashboardRoute.jsx`), `src/features/auth/authService.js`, que borra la marca de la pantalla, y la lista `MIGRATED_FOLDERS` de `src/styles/occLegacyBridgeMap.js`. El código llegó en dos pasos: el orquestador con su proveedor (`4eda1303`) y el aspecto final, con las rutas que se trazan (`bcfd6fd7`). U4 llega antes que U3 a propósito: la interfaz que necesita está fijada en la sección 2.6 de la página de contratos del plan, y Panorama hace de consola hasta que U3 lo reemplace. El diseño del sistema visual es anterior a la decisión 14 y no tenía pantalla de arranque: la definen la página de contratos y el plan. Esta nota amplía las decisiones de arriba sin reescribirlas y dice dónde U4 se aparta del plan y del diseño; donde difieren, manda la página de contratos.
+
+**1. Una pantalla por pestaña, por encima de las dos compuertas.**
+- `RoleLayout` monta `OccBootProvider` (`boot/OccBootProvider.jsx`) solo con `role === 'adminOcc'`, por fuera de `ProtectedRole` y de `DepartmentAccessProvider` con su `AccessGate`. El layout del segmento `/admin-occ` lo monta una vez y sigue montado al cambiar de módulo, así que hay una sola pantalla por pestaña y sobrevive a las dos fases de carga.
+- Las dos pantallas de carga siguen debajo, sin cambios: «Comprobando sesión…» y «Cargando permisos…», cada una con su `role="status"`.
+- `OccBootAccessSignal`, que `RoleLayout` monta dentro de la compuerta de la sesión y del proveedor del acceso, junto a `AccessGate`, le dice al proveedor por un canal interno que la sesión se comprobó y que el acceso del departamento se cargó o falló. No dibuja nada.
+- La raíz de la pantalla lleva `data-department="occ"`, así que pinta con los tokens del OCC aunque quede fuera de `ShellFrame`.
+- *Por qué:* dentro de `AdminOccLayout` la pantalla aparecería solo después de los permisos, y una pantalla por compuerta se desmontaría entre una fase y la otra.
+- *Descartado:* reemplazar las dos pantallas de carga, que usan las pruebas y el E2E del ciclo, y montarla también desde `AdminOccLayout`, como proponía el plan.
+
+**2. Cuándo aparece.**
+- Solo en la primera entrada al OCC de cada pestaña después de iniciar sesión, sea cual sea el módulo. Al decidir mostrarla, `boot/occBootSession.js` guarda la marca `elevant-occ-boot-seen` en `sessionStorage`, con el id de la cuenta. Con la marca de esa cuenta, la pantalla no vuelve al cambiar de módulo ni al recargar la pestaña; otra cuenta en la misma pestaña la vuelve a ver.
+- `authService.js` borra la marca al iniciar sesión, al cerrar sesión y cuando la sesión termina por vencimiento o por un 401 que no se renueva. Renovar el token no la borra: es el mismo inicio de sesión.
+- La marca es de la pestaña: una pestaña nueva con la sesión recordada («Recordarme») muestra la pantalla una vez más.
+- Nunca aparece en el HTML del servidor ni en el render de la hidratación: el proveedor empieza oculto y decide en un efecto, cuando el cliente conoce la sesión. Tampoco aparece en otros departamentos, que no montan el proveedor, ni con una sesión de otro rol.
+- Si el navegador no deja usar `sessionStorage`, la pantalla aparece en cada carga de la página. Las funciones de la marca nunca lanzan errores, y la marca no es una frontera de seguridad: solo decide si se muestra la pantalla.
+
+**3. Qué espera y cómo cede.** `boot/occBootMachine.js` es un reductor puro con cinco fases: `hidden`, `waitingAccess`, `waitingReady`, `leaving` y `done`.
+- Primero espera el acceso del departamento, sin límite de tiempo: sin acceso no hay marco que mostrar.
+- Con el acceso cargado, espera el primer `markReady('console' | 'map')` o 6 s (`OCC_BOOT_READY_TIMEOUT_MS`), lo que llegue antes. Un aviso que llegó antes que el acceso cuenta en cuanto el acceso llega.
+- Si el acceso falla, cede al instante, sin transición, y queda a la vista el error de `AccessGate`, con su `role="alert"`.
+- Al salir pasa a `leaving` y, a los 400 ms (`OCC_BOOT_EXIT_MS`), a `done`: el proveedor la desmonta. Ese final lo marca un temporizador y no `transitionend`, para que llegue a tiempo aunque nada se anime, con movimiento reducido o con la pestaña oculta.
+- La línea de progreso sigue al orquestador (`occBootProgress`): la sesión, el acceso y la espera de la primera pantalla, en la que avanza despacio durante los 6 s que puede durar; al salir se completa.
+- *Por qué:* solo el acceso es obligatorio (plan). Si otra lectura tarda o falla, la consola se abre igual y muestra su propio estado de carga o de error.
+
+**4. Quién avisa.** `useOccBoot()` (`boot/occBootContext.js`) devuelve `{ markReady }`, estable mientras vive el proveedor. Cuenta el primer aviso: repetirlo, o avisar con una fuente que no es `console` ni `map`, no hace nada. Fuera del proveedor (otros departamentos, el laboratorio de mapas, pantallas aisladas y pruebas) `markReady` no hace nada. Los contextos viven aparte del proveedor, así que quien avisa no importa ni el proveedor ni la pantalla.
+- Hoy avisa solo Panorama: `DashboardRoute` llama `markReady('console')` cuando deja de cargar, con sus datos (aunque el día esté vacío) o con un estado de error, de sesión, de permiso o sin la estación PUJ.
+- Según la página de contratos, U3 conservará esa llamada en la consola nueva y M4 añadirá `markReady('map')` en el motor de mapas. Hasta entonces, en los demás módulos la pantalla espera los 6 s completos después del acceso.
+
+**5. Cómo se ve** (decisión 14, «al estilo de Alegra»; `boot/OccBootScreen.jsx` y `boot/OccBootScreen.module.css`).
+- Al centro, el isotipo y el logo «ELEVANT · OCC», con una entrada corta (600 ms), y debajo una línea de progreso de 2 px. Sin listas, cifras ni adelantos de datos.
+- El isotipo es `public/brand/elevant-mark-dark.png`, la marca blanca y naranja que ya muestra el riel. El proveedor lo pide desde el `<head>` del render del servidor (`preload` de `react-dom`), así la descarga empieza con la página y no espera a que la pantalla aparezca; una sola descarga sirve a la pantalla y al riel.
+- El logo es texto en Manrope 600, con el espaciado abierto del logotipo oficial; «· OCC» va en el secundario (`--occ-muted`).
+- Detrás, «rutas que se trazan»: ocho arcos SVG finos en `--occ-line-strong`, con opacidades de 0,26 a 0,4, que giran en sentido horario alrededor del logo sin tocarlo. Cada uno se traza desde su origen, se queda y se desvanece, en ciclos de 8 s con inicios escalonados. Los extremos que caen dentro del dibujo son aeropuertos: aparecen cuando la traza sale y cuando llega.
+- Es una capa fija con `z-index: 90`, por encima de las capas del OCC (los toasts van en 70).
+- Al salir, el fondo se desvanece en 380 ms y el bloque del logo en 240 ms, con una leve reducción. La consola, ya montada debajo, queda a la vista mientras el fondo se va.
+- Con movimiento reducido, las rutas se dibujan enteras y quietas, el logo aparece sin moverse y solo avanza la línea de progreso. `occ.css` reduce a 0,01 ms todas las animaciones y transiciones del OCC; el módulo de la pantalla devuelve sus duraciones solo a la línea, con `!important`.
+- Con colores forzados, las rutas desaparecen y la línea usa los colores del sistema.
+- Pinta solo con tokens `--occ-*` del ámbito del OCC: sin colores hexadecimales ni `rgb()`, sin degradados, sombras ni desenfoque.
+
+**6. Accesibilidad.**
+- La pantalla es decorativa y lleva `aria-hidden`; no añade un segundo `role="status"` al de las compuertas.
+- El avance se anuncia con un texto aparte, fuera del árbol oculto, con `aria-live="polite"`: «Preparando el centro de operaciones…» mientras espera y «Listo.» al salir («Preparing the operations center…» y «Ready.» en inglés). Un error de acceso no se anuncia: lo dice la alerta de `AccessGate`.
+- El proveedor queda por encima del `LanguageScope` de `AdminOccLayout`, así que lee el idioma guardado como `AccessGate` (`boot/occBootMessages.js`, con `es` y `en`) y lo pone en el atributo `lang` del texto.
+
+**7. Al salir, no estorba.** Desde el primer instante de `leaving`, la pantalla deja pasar los clics (`pointer-events: none`, en línea, para que ninguna hoja de estilos lo retrase), y a los 400 ms se desmonta. Mientras espera, en cambio, cubre la página y recibe los clics.
+
+**8. Guardas.** `src/features/admin-occ/boot` entra en `MIGRATED_FOLDERS` (sección 4): allí no se admite ninguna clase de color heredada. En `occStyleGuard.test.js`, la guarda de `occ-ui` (sin desenfoque, sin degradados y sin modificadores de opacidad sobre `occ-*`) cubre también la carpeta de la pantalla, y una guarda nueva exige que su hoja de estilos lea solo tokens que define `[data-department='occ']`, sin colores propios, sombras, degradados ni desenfoque.
+
+**9. Diferencias con el plan y el diseño.**
+- *Sin precarga de datos.* El plan pedía precargar en paralelo el acceso, el tiempo real, la operación de hoy, el tráfico, el clima y la cartografía, y guardarlo en memoria para que la consola abriera sin esqueletos. La página de contratos fijó otra cosa: la pantalla espera a que la consola avise que tiene sus datos (`markReady`), o 6 s. La consola lee lo suyo debajo, como siempre, y nada se lee dos veces; `useOccResource` no tiene caché ni datos iniciales. Lo único que se adelanta es el isotipo.
+- *Un solo montaje.* El plan la montaba desde `RoleLayout.jsx` y `AdminOccLayout.jsx`; la página de contratos, una sola vez en `RoleLayout`. `AdminOccLayout` no cambia.
+- *El logo es texto.* La página de contratos señala `public/brand/` para el isotipo y el logo. Las piezas de esa carpeta traen «ELEVANT» con su lema, sobre blanco o sobre azul marino, y ninguna dice «ELEVANT · OCC»: el isotipo sale de ahí y el logo se escribe.
+- *La consola no tiene entrada propia.* La página de contratos dice que el logo se desvanece mientras la consola aparece. La consola ya está montada debajo y aparece porque el fondo de la pantalla se desvanece encima de ella.
+- *La marca se borra en más casos.* La página de contratos la borra al cerrar sesión. U4 también la borra al iniciar sesión y cuando la sesión vence o recibe un 401 que no se renueva, y guarda el id de la cuenta: así cada inicio de sesión la muestra una vez, aunque el anterior no haya cerrado bien.
+- *Dos anuncios, fuera de la pantalla.* El texto `aria-live` va junto a la pantalla y no dentro, porque un texto dentro de un árbol con `aria-hidden` no se anuncia. Dice «Preparando…» y «Listo.», no cada etapa de la línea.
+- *Excepciones al movimiento sobrio (sección 7) y al diseño B.5.* Por la decisión 14, esta es la única pantalla del OCC con un fondo en movimiento. Usa duraciones y fotogramas clave propios (600 ms de entrada, 400 ms de salida, ciclos de 8 s y los 6 s de la línea), no los 120 y 180 ms del diseño, y una capa, `z-index: 90`, por encima de las capas con nombre. Con movimiento reducido, su línea de progreso es la única transición CSS del OCC que conserva su duración por encima de la regla de `occ.css`, como pide la página de contratos.
+- *El logo no es un rótulo.* «ELEVANT · OCC» va en mayúsculas espaciadas y con punto medio porque es el logo que pidió el dueño. La frase normal sin mayúsculas espaciadas (sección 7) y la regla de no unir textos con punto medio (diseño H.1) siguen valiendo para los rótulos.
+- *Pruebas en la suite única.* El diseño I.1 proponía un script propio de capturas y una comprobación del primer pintado en la certificación de la imagen. La pantalla se prueba en el proyecto `occ` de la única configuración de Playwright (`playwright.occ.config.mjs`), a 1440×900 y a 1920×1080 y solo en oscuro, y la certificación no cambia.
+- *Orden.* El plan ponía U4 después de U3. Se adelantó porque `markReady` no depende de la consola nueva.
+
+**10. Límites.**
+- *Primer pintado.* El pendiente de U1 queda cubierto solo en parte. La pantalla no está en el HTML del servidor: en la primera entrada, hasta que el cliente decide, se ve «Comprobando sesión…» sobre el azul marino de `body` (`#0A1220`), y en las entradas siguientes no hay pantalla de arranque.
+- Mientras espera, la pantalla cubre la página: en un módulo que no avisa, hasta 6 s después del acceso. El E2E del ciclo inicia sesión como OCC muchas veces y abre módulos directamente: en cada primera entrada, sus clics esperan a que la pantalla se vaya.
+- Si Panorama tarda más de 6 s, se abre con su estado de carga.
+- La captura de Mapa de posiciones de la suite visual muestra la pantalla de arranque encima del mapa: su prueba entra con una sesión nueva y toma la captura en cuanto el mapa está listo, antes de que la pantalla se vaya.
+
+**Consecuencias de U4.**
+- Para el OCC, la primera entrada de cada pestaña después de iniciar sesión pasa por la pantalla de arranque: lo que tarde el acceso y, como mucho, 6 s más. Las demás entradas no cambian.
+- Los demás departamentos no cambian: `RoleLayout` solo envuelve al OCC, y borrar una marca que no existe no hace nada.
+- Sin cambios fuera de AVIAM Web:
+  - no cambian la API, el OpenAPI, el cliente compartido ni la base, y no hay migración;
+  - no hay dependencias ni orígenes nuevos en el navegador: el isotipo es un archivo del propio sitio, y la CSP no cambia;
+  - solo se despliega AVIAM Web.
+- Ningún `data-testid` del OCC cambia, ni ningún texto, rol o nombre accesible que usen las pruebas o el E2E del ciclo. Se añade `occ-boot-screen`.
+- Pruebas que cambian:
+  - `RoleLayout.test.jsx`: las compuertas simuladas se dibujan como cajas para leer cómo se anidan; suma un caso y amplía el de los demás departamentos;
+  - `DashboardRoute.test.jsx` suma dos casos: Panorama avisa con su primer dato, y enseguida cuando no tiene la estación PUJ;
+  - `authService.test.js` suma tres: la renovación conserva la marca, y el cierre de sesión, un inicio de sesión nuevo, un 401 y el vencimiento la borran;
+  - `occStyleGuard.test.js` amplía una guarda y suma otra.
+- Pruebas nuevas:
+  - en `admin-occ/boot/`: `occBootMachine`, `occBootSession`, `OccBootProvider` y `OccBootScreen`;
+  - `tests/visualBootFixtures.test.js`, que valida las respuestas sintéticas de la suite visual con los validadores estrictos del cliente compartido;
+  - en la suite visual, `tests/visual/occ/boot-screen.spec.mjs`, con `fixtures/bootApi.mjs`: la primera entrada a 1440×900 y a 1920×1080, la salida a los 6 s del acceso cuando nadie avisa, una recarga sin pantalla y el movimiento reducido. Como el resto de la suite, corre fuera del CI.
