@@ -78,8 +78,9 @@ jobs:
     name: Restore, build and test
     needs: classify_database_changes
     runs-on: ubuntu-latest
-    # The SQL integration suite alone takes ~22 min; image build and certification need ~15 more.
-    timeout-minutes: 50
+    # The test step (unit, architecture and the SQL integration suite) takes ~39 min and grows with every SQL test;
+    # image build and certification need ~15 more. 75 leaves room for the tests the next blocks add.
+    timeout-minutes: 75
     services:
       sqlserver:
         image: mcr.microsoft.com/mssql/server:2022-CU26-ubuntu-22.04@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89

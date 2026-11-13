@@ -100,6 +100,29 @@ Lo que informa el proveedor nunca reemplaza una decisión de OCC:
 - **Código legible.** La escala importada recibe el código
   `{ESTACIÓN}-{AAAAMMDD}-{NNN}`, como la manual.
 
+### Vuelos demo: sin proveedor externo
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+`cba00f73` ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)),
+que esa verificación no cubre.
+
+- **Sin proveedor.** Los vuelos demo que dispara Superadministración son dos
+  propuestas de un proveedor propio, `Demo`, que la API escribe sin ninguna
+  llamada de red; un worker las hace avanzar con el reloj del servidor
+  ([almacén](../../database/DevelopmentDB/Elevant.Persistence/Integration/EfDemoFlightStore.cs)).
+- **Fuera del feed pagado.** `GetActivityAsync` excluye sus propuestas y sus
+  escalas: nunca adelantan una lectura de AeroDataBox ni gastan unidades. La
+  revisión de OCC no empareja tramos de proveedores distintos, y una propuesta
+  demo descartada no se restaura.
+- **Sin coincidencias con el tráfico real.** Ningún registro emite su matrícula
+  (`HIDM01` a `HIDM99`), y el aeropuerto contraparte sale de `ref.airports` o
+  de un catálogo interno con datos públicos de referencia.
+- **Activación.** `DemoFlights:Mode` es `Disabled` por defecto y en
+  `appsettings.Production.json`, y `Enabled` en `appsettings.Development.json`;
+  la API se niega a arrancar con `Enabled` fuera de los entornos `Development`,
+  `Test` o `Testing`
+  ([guía de integraciones](../../docs/architecture/external-integrations.md)).
+
 Private Web sí descarga estilos/tiles cartográficos públicos directamente en el navegador. Esa dependencia visual es real y está limitada por CSP, pero no suministra información operacional canónica ni rompe la regla que prohíbe consultar proveedores de aviación desde los clientes.
 
 ## Inventario por estado
@@ -113,6 +136,7 @@ Private Web sí descarga estilos/tiles cartográficos públicos directamente en 
 | OpenFreeMap/OpenMapTiles/MapLibre demo | Implementado en Private Web | El navegador carga estilos/tiles para mapas; CSP permite orígenes concretos | No son fuente de estado operativo ni integración de vuelos. |
 | Object storage S3-compatible | *Posterior al commit verificado:* implementado | La API escribe medios, PDF financieros y evidencias de rampa en un bucket privado y guarda metadatos y hash en SQL ([medios](medios-comerciales-privados.md)) | Que el bucket de un ambiente vivo esté configurado; la retención sigue abierta. |
 | Chat y notificaciones | *Posterior al commit verificado:* internos de ELEVANT | Chat, notificaciones y correo SMTP salen de la API; los hubs solo envían `ChangedV1` ([feed de cambios](feed-de-cambios-operativos.md)) | Que exista un proveedor externo de mensajería o notificaciones push con la app cerrada. |
+| Vuelos demo | *Posterior al commit verificado:* simulados por la propia API y apagados por defecto ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)) | Superadministración dispara dos propuestas del proveedor `Demo`; tras la importación de OCC, un worker marca el aterrizaje y el despegue como lo haría el feed | Que exista un proveedor externo, una llamada de red o un gasto de unidades de AeroDataBox. |
 | Pasarela de tarjeta | *Posterior al commit verificado:* simulada y apagada por defecto ([ADR-0036](../../docs/adr/0036-simulated-card-payment.md), [ADR-0040](../../docs/adr/0040-billing-cycle-invoicing-from-operations-card-collections-credit-notes-and-payables.md)) | `CardPayments:Mode` es `Disabled` por defecto y en `appsettings.Production.json`; `Simulated` solo arranca en Development, Test o Testing y aprueba o rechaza en memoria las tarjetas de prueba, sin red | Que exista una pasarela real o que un cobro mueva dinero. |
 | Proveedor fiscal (DGII) | *Posterior al commit verificado:* sin integración | La simulación fiscal de ADR-0018 (modos `LocalSimulation` y `ProviderSandbox`) salió del producto en la fase 4; la factura es un e-CF simulado que nada transmite ([Finanzas](../03-dominio/finanzas-tarifas-cargos-y-cobros.md)) | Transmisión, firma o aceptación de la DGII. |
 

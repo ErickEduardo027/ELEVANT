@@ -78,6 +78,8 @@ function mapTurnaround(turnaround, station) {
     operationCode: turnaround.operationCode,
     operationDate: turnaround.operationDate,
     status: turnaround.status,
+    // A demo flight the superadministrator triggered (ADR-0041); the server sends the mark only when true.
+    isDemo: turnaround.isDemo === true,
     operationStatus: operation?.status ?? null,
     station: { ...station },
     airline,

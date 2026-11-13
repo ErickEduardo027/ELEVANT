@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import PositionActions from './PositionActions';
+import PositionDetailDrawer from './PositionDetailDrawer';
 import { assignOccStand, recordOccArrival, releaseOccStand } from '../../../services/occPositionsService';
 import { getTurnaround } from '../../../services/planningService';
 import { loadOccMasterData } from '../../../services/occMasterDataService';
@@ -53,6 +54,31 @@ it('places database stands on the map and keeps unknown map positions unverified
   expect(positions.map(item => [item.id, item.status, item.standId])).toEqual([['A1', 'planned', 's-1'],
     ['A2', 'available', 's-2'], ['B21', 'unverified', null]]);
   expect(positions[0].flightNumber).toBe('ZZ101');
+});
+
+it('labels a demo flight «Demo» in the drawer header, on the stand and among the flights to bring, and no other (ADR-0041)', async () => {
+  const demoHere = { ...waiting, isDemo: true };
+  const demoElsewhere = { ...other, turnaroundId: 't-4', arrivalFlightNumber: 'ZZ9003', operationCode: 'DEV-TAT-0004', isDemo: true };
+  const demoBoard = { ...board, unassigned: [other, demoElsewhere],
+    positions: [{ ...board.positions[0], turnarounds: [demoHere] }, board.positions[1]] };
+  const [a1, a2] = mapOccupancyToRampPositions([{ id: 'A1', terminal: 'A', lat: 1, lon: 2 }, { id: 'A2', terminal: 'A', lat: 1, lon: 2 }],
+    demoBoard);
+  const candidates = assignCandidates({ ...demoBoard, stands: demoBoard.positions });
+  const { rerender } = render(<PositionDetailDrawer position={a1} onClose={vi.fn()} onViewFlightInMonitoring={vi.fn()} canAssign
+    candidates={candidates} onChanged={vi.fn()} />);
+
+  expect(within(screen.getByText('A1').parentElement).getByText('Demo')).toBeInTheDocument();
+  const actions = screen.getByRole('region', { name: 'Acciones de la posición' });
+  expect(within(actions).getAllByText('Demo')).toHaveLength(1);
+  expect(screen.getByRole('option', { name: /^ZZ9003 · Demo Airlines · Demo · \d/ })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: /^ZZ303 · Demo Airlines · \d/ })).toBeInTheDocument();
+  await waitFor(() => expect(getTurnaround).toHaveBeenCalledWith('t-1', expect.anything()));
+
+  // A stand without a demo flight carries no label; the demo flight to bring keeps its own in the list.
+  rerender(<PositionDetailDrawer position={a2} onClose={vi.fn()} onViewFlightInMonitoring={vi.fn()} canAssign
+    candidates={candidates} onChanged={vi.fn()} />);
+  expect(screen.queryByText('Demo')).not.toBeInTheDocument();
+  expect(screen.getByRole('option', { name: /^ZZ9003 · Demo Airlines · Demo · \d/ })).toBeInTheDocument();
 });
 
 it('registers the arrival at the local time with the flight ETag, releases the stand and brings another flight', async () => {

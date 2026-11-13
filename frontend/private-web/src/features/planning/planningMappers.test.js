@@ -224,6 +224,17 @@ describe('mapOccPlanningSnapshot', () => {
     expect(departureItem.timelineTimeSource).toBe('departure.scheduledAt');
     expect(departureItem.timelineTime).toBe(departureFallback.departure.scheduledAt);
   });
+
+  it('carries isDemo only when the server marks the turnaround true (ADR-0041)', () => {
+    const [demo, real] = mapOccPlanningSnapshot(snapshot([
+      turnaround({ isDemo: true }),
+      turnaround({ id: 'turnaround-2' }),
+    ])).flights;
+
+    expect(demo.isDemo).toBe(true);
+    // The key is absent on a real flight: it never travels as false.
+    expect(real.isDemo).toBe(false);
+  });
 });
 
 describe('resource and operational derivations', () => {

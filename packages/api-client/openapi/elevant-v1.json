@@ -7112,6 +7112,337 @@
         ]
       }
     },
+    "/api/v1/governance/demo-flights/options": {
+      "get": {
+        "tags": [
+          "DemoFlights"
+        ],
+        "summary": "What the form «Disparar vuelo demo» offers at a station (the requested one, else Punta Cana, else the first):\nairlines with exactly one applicable contract today, airports, aircraft types, stands, limits and warnings.",
+        "operationId": "GetDemoFlightOptions",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoFlightOptionsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/demo-flights": {
+      "get": {
+        "tags": [
+          "DemoFlights"
+        ],
+        "summary": "The demo flights of the last 24 hours at a station, newest first (at most 50), with the server time.",
+        "operationId": "ListDemoFlights",
+        "parameters": [
+          {
+            "name": "stationId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoFlightListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "DemoFlights"
+        ],
+        "summary": "«Disparar vuelo demo»: 201 with the new flight, 200 when the Idempotency-Key replays it. The flight numbers and the\nregistration are generated; a taken or inactive stand answers `stand_unavailable` with its rules in\n`reasons`.",
+        "operationId": "CreateDemoFlight",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateDemoFlightRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoFlightResponse"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoFlightResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/governance/demo-flights/{demoFlightId}/cancel": {
+      "post": {
+        "tags": [
+          "DemoFlights"
+        ],
+        "summary": "«Cancelar vuelo» (intent `Cancel`, before touchdown) or «Terminar demo» (intent `Finish`, after it). The\nintent is checked against the phase instead of a version: an intent of an earlier phase answers\n`version_conflict`, a flight already ended `demo_flight_closed`. Nothing is deleted.",
+        "operationId": "CancelDemoFlight",
+        "parameters": [
+          {
+            "name": "demoFlightId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/CancelDemoFlightRequest"
+                  }
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoFlightResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "Bearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/governance/departments/{department}/access-candidates": {
       "get": {
         "tags": [
@@ -36636,6 +36967,18 @@
         },
         "additionalProperties": false
       },
+      "CancelDemoFlightRequest": {
+        "required": [
+          "intent"
+        ],
+        "type": "object",
+        "properties": {
+          "intent": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "CancelRequisitionInput": {
         "required": [
           "expectedVersion",
@@ -39042,6 +39385,56 @@
         },
         "additionalProperties": false
       },
+      "CreateDemoFlightRequest": {
+        "required": [
+          "aircraftTypeId",
+          "airlineId",
+          "groundMinutes",
+          "minutesToOnBlock",
+          "originIata",
+          "standChoice",
+          "stationId"
+        ],
+        "type": "object",
+        "properties": {
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "originIata": {
+            "type": "string"
+          },
+          "destinationIata": {
+            "type": "string",
+            "nullable": true
+          },
+          "aircraftTypeId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "standChoice": {
+            "type": "string"
+          },
+          "standId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "minutesToOnBlock": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "groundMinutes": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
       "CreateDepartmentAccountInput": {
         "required": [
           "stationIds",
@@ -39649,6 +40042,430 @@
           "reason": {
             "type": "string",
             "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoAircraftTypeOptionResponse": {
+        "required": [
+          "icaoCode",
+          "id",
+          "manufacturer",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "manufacturer": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "sizeCategory": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoAirlineOptionResponse": {
+        "required": [
+          "icaoCode",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "iataCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "icaoCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoAirportOptionResponse": {
+        "required": [
+          "city",
+          "countryCode",
+          "iataCode",
+          "icaoCode",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "iataCode": {
+            "type": "string"
+          },
+          "icaoCode": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "countryCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoFlightLimitsResponse": {
+        "required": [
+          "active",
+          "defaultGroundMinutes",
+          "defaultMinutesToOnBlock",
+          "maxActive",
+          "maxGroundMinutes",
+          "maxMinutesToOnBlock",
+          "minGroundMinutes",
+          "minMinutesToOnBlock"
+        ],
+        "type": "object",
+        "properties": {
+          "minMinutesToOnBlock": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxMinutesToOnBlock": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultMinutesToOnBlock": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "minGroundMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxGroundMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "defaultGroundMinutes": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "maxActive": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "active": {
+            "type": "integer",
+            "format": "int32"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoFlightListResponse": {
+        "required": [
+          "enabled",
+          "flights",
+          "serverTime"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "flights": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemoFlightResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoFlightOptionsResponse": {
+        "required": [
+          "aircraftTypes",
+          "airlines",
+          "airports",
+          "enabled",
+          "limits",
+          "serverTime",
+          "stands",
+          "stations",
+          "warnings"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "serverTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "stations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemoStationOptionResponse"
+            }
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operationDate": {
+            "type": "string",
+            "format": "date",
+            "nullable": true
+          },
+          "airlines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemoAirlineOptionResponse"
+            }
+          },
+          "airports": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemoAirportOptionResponse"
+            }
+          },
+          "aircraftTypes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemoAircraftTypeOptionResponse"
+            }
+          },
+          "stands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemoStandOptionResponse"
+            }
+          },
+          "limits": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DemoFlightLimitsResponse"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DemoFlightWarningResponse"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoFlightResponse": {
+        "required": [
+          "aircraftModel",
+          "aircraftRegistration",
+          "airlineId",
+          "airlineName",
+          "appearAt",
+          "arrivalFlightNumber",
+          "departureFlightNumber",
+          "destinationIata",
+          "id",
+          "imported",
+          "onBlockAt",
+          "originIata",
+          "phase",
+          "scheduledOffBlockAt",
+          "state",
+          "stationCode",
+          "stationId",
+          "touchdownAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "stationCode": {
+            "type": "string"
+          },
+          "airlineId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "airlineName": {
+            "type": "string"
+          },
+          "arrivalFlightNumber": {
+            "type": "string"
+          },
+          "departureFlightNumber": {
+            "type": "string"
+          },
+          "aircraftRegistration": {
+            "type": "string"
+          },
+          "aircraftModel": {
+            "type": "string"
+          },
+          "originIata": {
+            "type": "string"
+          },
+          "destinationIata": {
+            "type": "string"
+          },
+          "suggestedStandCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "state": {
+            "type": "string"
+          },
+          "phase": {
+            "type": "string"
+          },
+          "appearAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "touchdownAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "onBlockAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scheduledOffBlockAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "offBlockAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "takeoffAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vanishAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "imported": {
+            "type": "boolean"
+          },
+          "turnaroundId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "operationCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "standCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "operationStatus": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoFlightWarningResponse": {
+        "required": [
+          "code",
+          "reasons"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoStandOptionResponse": {
+        "required": [
+          "code",
+          "free",
+          "standId",
+          "terminalCode"
+        ],
+        "type": "object",
+        "properties": {
+          "standId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "terminalCode": {
+            "type": "string"
+          },
+          "free": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "DemoStationOptionResponse": {
+        "required": [
+          "code",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         },
         "additionalProperties": false
@@ -47952,6 +48769,10 @@
             "type": "string",
             "format": "uuid",
             "nullable": true
+          },
+          "isDemo": {
+            "type": "boolean",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -48731,6 +49552,10 @@
           },
           "status": {
             "type": "string"
+          },
+          "isDemo": {
+            "type": "boolean",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -49955,6 +50780,10 @@
             "items": {
               "$ref": "#/components/schemas/OccOperationServiceResponse"
             }
+          },
+          "isDemo": {
+            "type": "boolean",
+            "nullable": true
           }
         },
         "additionalProperties": false
@@ -56050,6 +56879,9 @@
     },
     {
       "name": "ContractLifecycle"
+    },
+    {
+      "name": "DemoFlights"
     },
     {
       "name": "DepartmentGovernance"

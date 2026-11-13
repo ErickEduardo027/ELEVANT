@@ -54,6 +54,15 @@ describe('FlightCard', () => {
     expect(onSelect).toHaveBeenCalledWith(FLIGHT.id);
   });
 
+  it('labels a demo flight «Demo» next to its operation code, and no other flight (ADR-0041)', () => {
+    const { rerender } = render(<FlightCard flight={FLIGHT} now="2026-08-19T11:45:00-04:00" onSelect={() => {}} />);
+    expect(screen.queryByText('Demo')).not.toBeInTheDocument();
+
+    rerender(<FlightCard flight={createPlanningFlight({ isDemo: true })} now="2026-08-19T11:45:00-04:00" onSelect={() => {}} />);
+    const badge = screen.getByText('Demo');
+    expect(badge.previousElementSibling).toHaveTextContent('DEV-TAT-0002');
+  });
+
   it('shows only the detail action: the flight changes live in its detail (3-N28)', () => {
     render(<FlightCard flight={FLIGHT} now="2026-08-19T11:45:00-04:00" onSelect={() => {}} />);
 

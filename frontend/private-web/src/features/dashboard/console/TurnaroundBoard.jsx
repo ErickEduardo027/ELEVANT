@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Link from 'next/link';
+import DemoTag from '../../occ-ui/DemoTag';
 import { getPlanningStatusMeta } from '../../planning/planningStatus';
 import { TURNAROUND_FILTERS, legTime, missingResources } from '../dashboardModel';
 import ConsolePanel, { PanelLink } from './ConsolePanel';
@@ -78,9 +79,13 @@ export default function TurnaroundBoard({ t, language, locale, timeZone, groups,
                     <tr key={item.id} className="hover:bg-occ-panel-muted">
                       <td className="px-3 py-2 pl-4"><TimeCell t={t} turnaround={item} locale={locale} timeZone={timeZone} /></td>
                       <td className="px-3 py-2">
-                        <Link href="/admin-occ/planning" className="font-mono text-[13px] font-semibold text-occ-text hover:text-occ-accent hover:underline">
-                          {item.operationCode}
-                        </Link>
+                        <span className="inline-flex items-center gap-2">
+                          <Link href="/admin-occ/planning" className="font-mono text-[13px] font-semibold text-occ-text hover:text-occ-accent hover:underline">
+                            {item.operationCode}
+                          </Link>
+                          {/* ADR-0041: a demo flight the superadministrator triggered is always labelled as such. */}
+                          {item.isDemo === true && <DemoTag />}
+                        </span>
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-occ-text">
                         {item.arrival?.flightNumber ?? <span className="font-sans text-occ-muted">{t('board.noArrival')}</span>}

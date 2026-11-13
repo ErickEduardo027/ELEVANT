@@ -37,6 +37,11 @@ internal static class SafeAuditChanges
         // Agents (phase 3, block B): the agent a handover or a stand change hands the operation to (3-F, 3-N05), by
         // employee number, and the hours of a shift OCC or Gestión Humana adjusted (3-E).
         "assignment.agent", "shift.starts_at", "shift.ends_at", "shift.block",
+        // Demo flights (ADR-0041): what the superadministrator triggered and how the flight ended. The state is the
+        // field a cancellation, a «Terminar demo» and the worker's dismissal change.
+        "demo_flight.arrival", "demo_flight.departure", "demo_flight.airline", "demo_flight.origin",
+        "demo_flight.destination", "demo_flight.registration", "demo_flight.minutes_to_on_block",
+        "demo_flight.ground_minutes", "demo_flight.stand", "demo_flight.state",
     };
 
     public static string? Serialize(params AuditFieldChangeData[] changes)

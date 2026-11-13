@@ -58,6 +58,10 @@ sources:
   - backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.FinanceInvoiceChanges.cs
   - frontend/private-web/src/features/finance/invoices/InvoicesPage.jsx
   - frontend/private-web/src/features/finance/invoicing/useToInvoiceData.js
+  - database/DevelopmentDB/Elevant.Persistence/Integration/EfDemoFlightStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Integration/ProviderFlightAlerts.cs
+  - frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx
+  - frontend/private-web/src/features/governance/DemoFlightsPanel.jsx
 tags:
   - arquitectura
   - tiempo-real
@@ -288,6 +292,34 @@ cubre a quién llegan `finance_invoices` y `finance_approved_services` según
 el permiso, y que la aerolínea recibe `airline_treasury` y nunca las pistas de
 Finanzas. Tampoco esto
 demuestra latencia en el VPS ni entrega con la aplicación cerrada.
+
+## Vuelos demo (OCC a nivel NOC, PR A1)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+`cba00f73` ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)).
+Las pistas siguen sin llevar datos.
+
+- `occ_planning` lo anuncian también, a las cuentas de OCC de la estación, el
+  disparo de un vuelo demo, «Cancelar vuelo», «Terminar demo» y el worker de
+  avance. El worker lo anuncia una vez por estación que cambió en cada pasada
+  de 5 segundos: al marcar el aterrizaje o el despegue de un vuelo importado o
+  al descartar uno que nadie importó
+  ([almacén](../../database/DevelopmentDB/Elevant.Persistence/Integration/EfDemoFlightStore.cs)).
+- «Importar vuelos» relee la lista con esa pista sin volver a «cargando» y
+  conserva lo que OCC eligió
+  ([diálogo](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx)).
+- El superadministrador no recibe `occ_planning`, porque no tiene permisos de
+  OCC: su lista «Vuelos demo de hoy» se relee cada 5 segundos mientras un avión
+  se mueve y cada 20 si no, nunca con la pestaña oculta
+  ([panel](../../frontend/private-web/src/features/governance/DemoFlightsPanel.jsx)).
+
+**Notificaciones.** Disparar un vuelo demo no escribe ninguna: una notificación
+de OCC exige una operación, y permitirla sin una pediría una migración.
+Cancelar un vuelo que OCC ya importó envía una sola vez el aviso existente
+`flight_cancelled_by_provider`
+([avisos del proveedor](../../database/DevelopmentDB/Elevant.Persistence/Integration/ProviderFlightAlerts.cs)).
+
+Tampoco esto demuestra latencia en el VPS.
 
 ## Un observador por pestaña del OCC (PR U2)
 
