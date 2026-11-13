@@ -60,7 +60,31 @@ describe('map images', () => {
     const again = createImageResolver({ rasterize: centreRasterizer() });
     expect(again('stand-hatch').data).toEqual(resolve('stand-hatch').data);
     const single = createImageResolver({ rasterize: centreRasterizer(), pixelRatio: 1 })('airport-arp');
-    expect(single).toMatchObject({ width: 20, height: 20, pixelRatio: 1, sdf: true });
+    expect(single).toMatchObject({ width: 28, height: 20, pixelRatio: 1, sdf: true });
+  });
+
+  it('the aerodrome mark is a ring crossed by a nearly level bar that runs well past it, clear of the image border', () => {
+    const { width, height, ops: [ring, bar] } = MAP_IMAGE_SHAPES['airport-arp'];
+    const numbers = path => path.match(/-?\d+(?:\.\d+)?/g).map(Number);
+    // The ring: `M (cx + r) cy A r r 0 1 1 (cx − r) cy …`, in the middle of the image.
+    const [right, cy, radius] = numbers(ring.stroke);
+    const cx = right - radius;
+    expect([cx, cy]).toEqual([width / 2, height / 2]);
+    expect(bar.stroke).toMatch(/^M[\d.]+ [\d.]+ L[\d.]+ [\d.]+$/);
+    const [x1, y1, x2, y2] = numbers(bar.stroke);
+    const slope = Math.atan2(y2 - y1, x2 - x1);
+    // Nearly level, so it reads as a runway, never as the slash or the bar of a «no entry» sign.
+    expect(Math.abs((slope * 180) / Math.PI)).toBeLessThan(15);
+    // Both ends at least 4 px beyond the ring and its stroke.
+    for (const [x, y] of [[x1, y1], [x2, y2]]) {
+      expect(Math.hypot(x - cx, y - cy) - (radius + ring.lineWidth / 2)).toBeGreaterThanOrEqual(4);
+    }
+    // Butt ends 3 px clear of the border, as every shape here must be, for the SDF and its halo.
+    const half = bar.lineWidth / 2;
+    expect(bar.cap ?? 'butt').toBe('butt');
+    for (const x of [x1, x2]) expect(Math.min(x, width - x) - half * Math.abs(Math.sin(slope))).toBeGreaterThanOrEqual(3);
+    for (const y of [y1, y2]) expect(Math.min(y, height - y) - half).toBeGreaterThanOrEqual(3);
+    expect(Math.min(cy, height - cy) - radius - ring.lineWidth / 2).toBeGreaterThanOrEqual(3);
   });
 
   it('an unknown id resolves to null', () => {

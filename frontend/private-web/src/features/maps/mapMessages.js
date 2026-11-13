@@ -10,9 +10,11 @@ export const mapMessages = {
       show: 'Mostrar leyenda',
       hide: 'Ocultar leyenda',
       unofficial: 'Ubicación de referencia interna, sin verificar',
+      group: 'Grupo de posiciones',
+      groupHint: 'Acerca el mapa para ver cada una',
     },
     basemap: {
-      degraded: 'No se pudo cargar el mapa base. Se muestran el aeródromo y los datos de ELEVANT.',
+      degraded: 'No se pudo cargar el mapa base. Se muestran las posiciones y los datos de ELEVANT.',
     },
     unavailable: {
       title: 'El mapa no está disponible',
@@ -38,9 +40,11 @@ export const mapMessages = {
       show: 'Show legend',
       hide: 'Hide legend',
       unofficial: 'Internal reference location, not verified',
+      group: 'Group of stands',
+      groupHint: 'Zoom in to see each one',
     },
     basemap: {
-      degraded: 'The base map could not be loaded. The airfield and ELEVANT data are shown.',
+      degraded: 'The base map could not be loaded. The stands and ELEVANT data are shown.',
     },
     unavailable: {
       title: 'The map is not available',

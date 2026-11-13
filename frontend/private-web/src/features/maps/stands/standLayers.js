@@ -5,9 +5,11 @@ import { SELECTION_SOURCE, STAND_ICON_SIZE } from '../style/selectionLayers';
 
 // The stands of the OCC maps as points (until PR M4 brings their polygons), drawn in the vocabulary of
 // occ-ui/statusVocabulary.js: each state is a fill, a frame and a glyph made of the SDF images of style/mapImages.js,
-// painted in OCC tokens. Normal states carry no hue; the selection casing is the selection overlay's. Clusters gather
-// the stands below the airfield view and carry no hue either. Pure: OccMap adds the overlay and fills the source with
-// stands/standFeatures.js.
+// painted in OCC tokens. Normal states carry no hue; the selection casing is the selection overlay's. The stands
+// belong to the Aeródromo and Rampa views: below the derived `polygons` threshold nothing of them is drawn, so the
+// region and approach views show the airport's reference point. Clusters gather them until they can be told apart
+// (below the ramp view; on the console's apron, below the airfield view) and carry no hue either. Pure: OccMap adds
+// the overlay and fills the source with stands/standFeatures.js.
 
 export const STAND_SOURCE = 'occ-stands';
 export const STAND_GROUP = 'stands';
@@ -63,6 +65,10 @@ const STATUS = ['get', 'status'];
 const IS_POINT = ['!', ['has', 'point_count']];
 const IS_CLUSTER = ['has', 'point_count'];
 const fonts = () => [...FONT_STACKS.bold];
+// Every layer of the stands starts at the derived stand threshold (airfield fit − 0.3, contracts 2.3).
+const FROM_AIRFIELD = Object.freeze({ 'occ:minThreshold': 'polygons' });
+// The threshold the clusters end below, by label mode: the stand codes outside the console, the stands on its apron.
+const CLUSTER_END = Object.freeze({ default: 'codes', dashboard: 'polygons' });
 
 const statesWith = part => STAND_STATE_KEYS.filter(state => standAppearance(state)[part] !== null);
 // A `match` on the stand state over `states`; the fallback is never reached when the layer filters on those states.
@@ -85,18 +91,45 @@ function markLayer(id, part, extra = {}) {
       ...extra.layout,
     },
     paint: { 'icon-color': byState(states, state => standAppearance(state)[part].color), ...extra.paint },
-    metadata: { 'occ:group': STAND_GROUP, ...extra.metadata },
+    metadata: { 'occ:group': STAND_GROUP, ...FROM_AIRFIELD, ...extra.metadata },
   };
 }
 
-const codeLayout = ({ size, offset, priority }) => ({
+const codeLayout = ({ size, offset = null, priority }) => ({
   'text-field': ['get', 'code'],
   'text-font': fonts(),
   'text-size': size,
-  'text-offset': offset,
+  ...(offset === null ? {} : { 'text-offset': offset }),
   'text-allow-overlap': priority,
   'text-optional': !priority,
 });
+
+// Outside the console a code goes below its stand, and where a close neighbour's mark or code already sits there,
+// above it or beside it, so the stands of a tight row or column keep readable codes instead of hiding one another.
+const CODE_ANCHORS = Object.freeze(['top', 'bottom', 'left', 'right']);
+const CODE_SIZE_PX = 12;
+const CODE_GAP_PX = 7;
+// The stand square is 24 px of its 32 px images (mapImages.js), drawn at STAND_ICON_SIZE.
+const SQUARE_HALF_PX = 12;
+const SQUARE_SHARE = 24 / 32;
+// The marks ignore placement (every stand is always drawn), so a code would never see them. This invisible copy of
+// the stand square sits above the codes and is placed before them (MapLibre places the upper layer first): the codes
+// then keep off every stand.
+const KEEP_OUT_LAYER = 'occ-stands-keep-out';
+
+// An expression on the zoom stops of STAND_ICON_SIZE whose value follows the mark's size at every zoom.
+function withMarkSize(value) {
+  const stops = [];
+  for (let index = 3; index < STAND_ICON_SIZE.length; index += 2) {
+    stops.push(STAND_ICON_SIZE[index], Math.round(value(STAND_ICON_SIZE[index + 1]) * 1000) / 1000);
+  }
+  return ['interpolate', ['linear'], ['zoom'], ...stops];
+}
+
+/** How far a code sits from its stand's centre, in ems of the code: half the mark plus a 7 px gap, at every zoom. */
+export const CODE_OFFSET = withMarkSize(size => (SQUARE_HALF_PX * size + CODE_GAP_PX) / CODE_SIZE_PX);
+/** The size of the invisible keep-out: the stand square only, without the image's clear margin. */
+export const KEEP_OUT_SIZE = withMarkSize(size => size * SQUARE_SHARE);
 
 const codePaint = haloWidth => ({
   // «Sin verificar» keeps its code muted (the vocabulary's muted code); every other code reads in the text colour.
@@ -119,7 +152,7 @@ function labelLayers(labels) {
       'text-allow-overlap': true,
     },
     paint: { 'text-color': occColor('text') },
-    metadata: { 'occ:group': STAND_GROUP },
+    metadata: { 'occ:group': STAND_GROUP, ...FROM_AIRFIELD },
   };
   if (labels === 'default') {
     return [count, {
@@ -128,8 +161,27 @@ function labelLayers(labels) {
       type: 'symbol',
       source: STAND_SOURCE,
       filter: IS_POINT,
-      layout: codeLayout({ size: 12, offset: [0, 1.6], priority: false }),
+      layout: {
+        ...codeLayout({ size: CODE_SIZE_PX, priority: false }),
+        'text-variable-anchor': [...CODE_ANCHORS],
+        'text-radial-offset': [...CODE_OFFSET],
+      },
       paint: codePaint(1.2),
+      metadata: { 'occ:group': STAND_GROUP, 'occ:minThreshold': 'codes' },
+    }, {
+      slot: 'standLabels',
+      id: KEEP_OUT_LAYER,
+      type: 'symbol',
+      source: STAND_SOURCE,
+      filter: IS_POINT,
+      layout: {
+        'icon-image': 'stand-slab',
+        'icon-size': [...KEEP_OUT_SIZE],
+        'icon-padding': 0,
+        'icon-allow-overlap': true,
+        'icon-ignore-placement': false,
+      },
+      paint: { 'icon-opacity': 0 },
       metadata: { 'occ:group': STAND_GROUP, 'occ:minThreshold': 'codes' },
     }];
   }
@@ -179,7 +231,8 @@ function assertLabels(labels) {
  * The overlay of the stands for buildOccStyle: the clustered point source `occ-stands` and its layers. In the
  * `stands` slot the clusters (a circle on the raised slab with a strong line), then the fill, the frame (the pick
  * target, `occ:pick: 'stand'`), the glyph and the clock of each stand; in the `standLabels` slot the cluster count
- * and the codes, behind the derived `codes` threshold (`polygons` on the console).
+ * and the codes, behind the derived `codes` threshold (`polygons` on the console), and outside the console the
+ * invisible keep-out that keeps the codes off the marks. Every other layer starts at the derived `polygons` threshold.
  */
 export function standOverlay({ labels = 'default' } = {}) {
   assertLabels(labels);
@@ -206,7 +259,7 @@ export function standOverlay({ labels = 'default' } = {}) {
           'circle-stroke-color': occColor('line-strong'),
           'circle-stroke-width': 1,
         },
-        metadata: { 'occ:group': STAND_GROUP, 'occ:pick': 'cluster', 'occ:pickId': 'cluster_id' },
+        metadata: { 'occ:group': STAND_GROUP, ...FROM_AIRFIELD, 'occ:pick': 'cluster', 'occ:pickId': 'cluster_id' },
       },
       markLayer('occ-stands-fill', 'fill'),
       markLayer('occ-stands-frame', 'frame', { metadata: { 'occ:pick': 'stand', 'occ:pickId': 'code' } }),
@@ -221,16 +274,32 @@ export function standOverlay({ labels = 'default' } = {}) {
 }
 
 /**
- * The cluster options once the screen's thresholds are known: clusters stop one zoom below the stand threshold
- * (`floor(polygons) − 1`, never below 1), so from the airfield view on every stand is drawn on its own. MapLibre 6.16
- * sets `cluster` from every call, so the call always carries `cluster: true`. `null` before the thresholds.
+ * The cluster options once the screen's thresholds are known: clusters stop one zoom below the threshold of the label
+ * mode (`floor(codes) − 1` outside the console, `floor(polygons) − 1` on its apron, never below 1). The stand points
+ * are fixed-size marks a few metres apart, so outside the console they are gathered through the airfield view and
+ * drawn one by one from the ramp view on, as before M2. MapLibre 6.16 sets `cluster` from every call, so the call
+ * always carries `cluster: true`. `null` before the thresholds.
  */
 export function standClusterOptions(thresholds, { labels = 'default' } = {}) {
   assertLabels(labels);
-  if (!Number.isFinite(thresholds?.polygons)) return null;
+  const end = thresholds?.[CLUSTER_END[labels]];
+  if (!Number.isFinite(end) || !Number.isFinite(thresholds?.polygons)) return null;
   return {
     cluster: true,
     clusterRadius: CLUSTER_RADIUS_PX[labels],
-    clusterMaxZoom: Math.max(1, Math.floor(thresholds.polygons) - 1),
+    clusterMaxZoom: Math.max(1, Math.floor(end) - 1),
   };
+}
+
+/**
+ * How the stands are drawn at `zoom` with the screen's thresholds: `hidden` below the stand threshold (the region and
+ * approach views), `grouped` while MapLibre still gathers them into clusters (a GeoJSON source clusters by the whole
+ * zoom of its tiles, up to clusterMaxZoom) and `points` from there on. Before the thresholds are known the layers have
+ * no zoom range yet and every stand counts as a point.
+ */
+export function standDisplayAt(zoom, thresholds, { labels = 'default' } = {}) {
+  const clusters = standClusterOptions(thresholds, { labels });
+  if (!Number.isFinite(zoom) || clusters === null) return 'points';
+  if (zoom < thresholds.polygons) return 'hidden';
+  return Math.floor(zoom) <= clusters.clusterMaxZoom ? 'grouped' : 'points';
 }

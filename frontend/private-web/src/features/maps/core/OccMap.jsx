@@ -12,7 +12,7 @@ import { createOccShortcutHandler } from '../../occ-ui/occShortcuts';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { mapMessages } from '../mapMessages';
 import { toStandFeatures } from '../stands/standFeatures';
-import { STAND_SOURCE, standClusterOptions, standOverlay } from '../stands/standLayers';
+import { STAND_SOURCE, standClusterOptions, standDisplayAt, standOverlay } from '../stands/standLayers';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle } from '../style/occStyle';
 import { REFERENCE_SOURCE, referenceFeatures, referenceOverlay } from '../style/referenceLayers';
@@ -73,6 +73,7 @@ const initialSnapshot = basemap => ({
   fits: null,
   thresholds: null,
   standsOnScreen: EMPTY,
+  standsGrouped: false,
 });
 
 // What the engine reports, kept outside React state: an engine event is not a render, and the component subscribes
@@ -117,7 +118,8 @@ function findStand(stands, code) {
  * - `defaultView` ('ramp'), `presetStands` (the stands that frame the views; `stands` when absent), `stands` (the
  *   stands of the screen, with `status`; given at start, the map draws them, with `standLabels` 'default' or
  *   'dashboard'), `flights` (given at start, the map draws those with a position);
- * - `overlays` for buildOccStyle and `basemap`, `interactive`: read once, when the map starts, as are whether
+ * - `overlays` for buildOccStyle and `basemap`, `interactive` and `mapOptions` (extra MapLibre options, such as the
+ *   map lab's `fadeDuration: 0`; the map keeps its own locale): read once, when the map starts, as are whether
  *   `stands` and `flights` are given and `standLabels`;
  * - `selection` (`{ kind, id }` or null) and `onSelect({ kind, id } | null)`; `onMapClick({ latitude, longitude })`
  *   while `placing`; `initialCamera` and `onCameraChange(camera)`;
@@ -144,6 +146,7 @@ const OccMap = forwardRef(function OccMap({
   insets,
   interactive = true,
   basemap = true,
+  mapOptions,
   testId = 'occ-map-host',
   labels,
   fallbackItems,
@@ -182,7 +185,8 @@ const OccMap = forwardRef(function OccMap({
     latest.current = {
       stands, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onMapClick, placing, onCameraChange,
       isShortcutBlocked, pitchMode, padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap,
-      overlays, interactive, locale: engineLocale(t, labels?.map), aircraftDataLabel: t('attribution.aircraftData'),
+      overlays, interactive, mapOptions, locale: engineLocale(t, labels?.map),
+      aircraftDataLabel: t('attribution.aircraftData'),
       drawsStands: standsProp !== undefined, drawsFlights: flightsProp !== undefined, standLabels,
     };
   });
@@ -276,13 +280,30 @@ const OccMap = forwardRef(function OccMap({
     engineRef.current?.easeTo({ bearing: 0, duration: NORTH_EASE_MS, essential: false });
   }, []);
   const getCamera = useCallback(() => engineRef.current?.getCamera() ?? null, []);
+  // The pixel of `[lng, lat]` inside the map, as `{ x, y }` from its top-left corner, or null without a map (the
+  // visual suite clicks a stand where the map draws it).
+  const project = useCallback(lngLat => {
+    const point = engineRef.current?.project(lngLat);
+    return point ? { x: point.x, y: point.y } : null;
+  }, []);
+  // Resolves true once the map has drawn a frame with nothing left to load or move, false without a map.
+  const whenIdle = useCallback(() => engineRef.current?.whenIdle() ?? Promise.resolve(false), []);
 
-  // The stands on screen change only when the camera or the stands do; the same list keeps its identity.
+  // The stands drawn one by one inside the visible bounds, and whether stands there are drawn as clusters instead (the
+  // legend explains only what is drawn). They change only when the camera, the thresholds or the stands do; the same
+  // list keeps its identity.
   const updateStandsOnScreen = useCallback(() => {
-    const bounds = engineRef.current?.getBounds() ?? null;
-    const next = bounds === null ? EMPTY : standsInView(latest.current.stands, bounds);
+    const engine = engineRef.current;
+    const bounds = engine?.getBounds() ?? null;
+    const inView = bounds === null ? EMPTY : standsInView(latest.current.stands, bounds);
+    const { standLabels } = appliedRef.current;
+    const display = standDisplayAt(engine?.getCamera()?.zoom, store.get().thresholds, { labels: standLabels ?? 'default' });
+    const next = display === 'points' ? inView : EMPTY;
     const previous = store.get().standsOnScreen;
-    if (standsKey(next) !== standsKey(previous)) store.set({ standsOnScreen: next.length === 0 ? EMPTY : next });
+    store.set({
+      ...(standsKey(next) === standsKey(previous) ? {} : { standsOnScreen: next.length === 0 ? EMPTY : next }),
+      standsGrouped: display === 'grouped' && inView.length > 0,
+    });
   }, [store]);
 
   // The fitted zoom of each view in the room the insets leave; the thresholds follow them (contracts 2.3).
@@ -304,9 +325,11 @@ const OccMap = forwardRef(function OccMap({
       engine.setClusterOptions(STAND_SOURCE, clusters);
     }
     store.set({ fits, thresholds, activeView: presetForZoom(engine.getCamera()?.zoom, fits) });
+    // New thresholds may draw the stands on screen in another way (hidden, grouped or one by one).
+    updateStandsOnScreen();
     const pending = pendingViewRef.current;
     if (fits && pending) applyView(pending.view, { terminal: pending.terminal, animate: false });
-  }, [store, applyView]);
+  }, [store, applyView, updateStandsOnScreen]);
 
   const handleCamera = useCallback((camera, details) => {
     if (!camera) return;
@@ -391,7 +414,7 @@ const OccMap = forwardRef(function OccMap({
       interactive: props.interactive,
       attribution: buildAttribution([], { aircraftDataLabel: props.aircraftDataLabel }),
       imageResolver: createImageResolver(),
-      mapOptions: { locale: props.locale },
+      mapOptions: { ...props.mapOptions, locale: props.locale },
       onStatus: handleStatus,
       onCamera: handleCamera,
       onResize: refit,
@@ -529,8 +552,8 @@ const OccMap = forwardRef(function OccMap({
   }, [requestView, store]);
 
   useImperativeHandle(ref, () => ({
-    flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera,
-  }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera]);
+    flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, project, whenIdle,
+  }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera, project, whenIdle]);
 
   const context = useMemo(() => ({
     engineStatus: snapshot.engineStatus,
@@ -539,6 +562,7 @@ const OccMap = forwardRef(function OccMap({
     fits: snapshot.fits,
     thresholds: snapshot.thresholds,
     standsOnScreen: snapshot.standsOnScreen,
+    standsGrouped: snapshot.standsGrouped,
     requestView,
     flyToPreset,
     flyToStand,
@@ -561,6 +585,8 @@ const OccMap = forwardRef(function OccMap({
       <div
         ref={rootRef}
         data-testid="occ-map"
+        data-occ-engine={snapshot.engineStatus}
+        data-occ-basemap={snapshot.basemapStatus}
         data-occ-view={snapshot.activeView ?? undefined}
         className={`occ-map absolute inset-0 overflow-hidden bg-occ-canvas ${className}`.trim()}
         style={insetVariables(padding)}

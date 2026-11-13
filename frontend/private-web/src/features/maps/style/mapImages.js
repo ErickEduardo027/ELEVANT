@@ -82,13 +82,14 @@ export const MAP_IMAGE_SHAPES = deepFreeze({
   // The selection casing hugs the stand square: 2 px outside it on every side.
   'stand-selected': { width: 36, height: 36, ops: [{ stroke: 'M4 4 H32 V32 H4 Z', lineWidth: 2 }] },
   'aircraft-solid': { width: 40, height: 40, ops: [silhouette(32, 4)] },
-  // Aerodrome reference point: a ring crossed by a runway bar.
+  // Aerodrome reference point: a ring crossed by a runway bar that runs well past it, nearly level (a generic runway,
+  // not a bearing). A bar kept inside the ring reads as a «no entry» sign, so the image is wider than tall.
   'airport-arp': {
-    width: 20,
+    width: 28,
     height: 20,
     ops: [
-      { stroke: 'M15 10 A5 5 0 1 1 5 10 A5 5 0 1 1 15 10 Z', lineWidth: 1.5 },
-      { stroke: 'M6.5 13.5 L13.5 6.5', lineWidth: 2, cap: 'round' },
+      { stroke: 'M18.5 10 A4.5 4.5 0 1 1 9.5 10 A4.5 4.5 0 1 1 18.5 10 Z', lineWidth: 1.5 },
+      { stroke: 'M3.2 11.6 L24.8 8.4', lineWidth: 2 },
     ],
   },
 });

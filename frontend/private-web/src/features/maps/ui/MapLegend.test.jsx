@@ -48,7 +48,13 @@ describe('MapLegend', () => {
     ]);
     expect(swatches.map(rect => rect.style.strokeDasharray)).toEqual(['none', '4 3', 'none', '2 2', '1 3']);
     expect(swatches[2].style.fill).toBe('var(--occ-panel-raised)');
-    expect(legend.querySelectorAll('li path')).toHaveLength(1);
+    // The glyph inside each stand, as the map draws it: the axis of an empty stand, the aircraft of a held one; the
+    // only other path is the hatch of «Inhabilitada».
+    const glyphs = () => [...screen.getByTestId('map-legend').querySelectorAll('li svg')]
+      .map(svg => [...svg.querySelectorAll('[data-glyph]')].map(node => node.dataset.glyph).join('+'));
+    expect(glyphs()).toEqual(['axis', 'aircraft', 'aircraft', '', 'axis']);
+    expect(legend.querySelectorAll('li svg path:not([data-glyph])')).toHaveLength(1);
+    expect(legend.querySelector('[data-glyph="aircraft"]').style.fill).toBe('var(--occ-muted)');
 
     // One button folds it; its name stays «Leyenda» and aria-expanded says whether it is open.
     const toggle = within(legend).getByRole('button', { name: 'Leyenda' });
@@ -64,6 +70,12 @@ describe('MapLegend', () => {
     fireEvent.click(toggle);
     expect(list).toBeVisible();
     unmount();
+
+    // «Llegando» has no aircraft yet and «Por liberar» carries the clock on its corner: neither depends on colour.
+    const view = render(<MapLegend stands={createMapStands({ A2: { status: 'releasing' }, A4: { status: 'arriving' } })} />);
+    expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Llegando', 'Ocupada', 'Por liberar']);
+    expect(glyphs().slice(0, 5)).toEqual(['axis', 'aircraft', '', 'aircraft', 'aircraft+clock']);
+    view.unmount();
 
     // English, from the same vocabulary; it can start folded.
     resetLanguageForTests('en');
@@ -97,6 +109,38 @@ describe('MapLegend', () => {
     // Up close on A1 to A3, the stands OCC placed: their states and no «No oficial».
     act(() => map.jumpTo({ center: [-68.360889, 18.56418], zoom: 19.4 }));
     expect(legendItems()).toEqual(['Libre', 'Planificada', 'Ocupada']);
+  });
+
+  it('explains clusters in the airfield view and has nothing to explain where the stands are not drawn', () => {
+    render(
+      <OccMap stands={STANDS}>
+        <MapLegend />
+      </OccMap>,
+    );
+    const map = fake.state.liveMaps().at(-1);
+    act(() => fake.state.emit(map, 'style.load'));
+    expect(legendItems().slice(0, 5)).toEqual(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar']);
+
+    // The airfield view draws the stands as clusters, which carry no state: the legend says what a cluster is.
+    fireEvent.keyDown(map.getCanvas(), { key: '3' });
+    expect(legendItems()).toEqual(['Grupo de posicionesAcerca el mapa para ver cada una']);
+    const circle = screen.getByTestId('map-legend').querySelector('li svg circle');
+    expect([circle.style.fill, circle.style.stroke]).toEqual(['var(--occ-panel-raised)', 'var(--occ-line-strong)']);
+
+    // Region and approach draw no stand at all.
+    fireEvent.keyDown(map.getCanvas(), { key: '1' });
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    fireEvent.keyDown(map.getCanvas(), { key: '2' });
+    expect(screen.queryByTestId('map-legend')).not.toBeInTheDocument();
+    fireEvent.keyDown(map.getCanvas(), { key: '4' });
+    expect(legendItems().at(-1)).toBe(`${TAGS.unofficial.es}Ubicación de referencia interna, sin verificar`);
+    cleanup();
+
+    resetLanguageForTests('en');
+    window.history.replaceState({}, '', `${PAGE}&view=airfield`);
+    render(<LanguageScope><OccMap stands={STANDS}><MapLegend /></OccMap></LanguageScope>);
+    act(() => fake.state.emit(fake.state.liveMaps().at(-1), 'style.load'));
+    expect(legendItems()).toEqual(['Group of standsZoom in to see each one']);
   });
 
   it('renders nothing when no stand is on screen', async () => {

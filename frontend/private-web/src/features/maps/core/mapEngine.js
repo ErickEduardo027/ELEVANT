@@ -98,6 +98,7 @@ export function createMapEngine({
   const listeners = [];
   const customLayers = new Map();
   const featureStates = new Map();
+  const idleWaiters = new Set();
 
   function report(patch) {
     const next = { ...status, ...patch };
@@ -505,6 +506,25 @@ export function createMapEngine({
     },
 
     /**
+     * Resolves `true` after the next frame MapLibre draws with nothing left to load, place or move (its `idle`
+     * event, after a repaint asked for here), and `false` without a map or when the engine is destroyed first. The
+     * visual suite waits on it before it takes a screenshot.
+     */
+    whenIdle() {
+      if (!live()) return Promise.resolve(false);
+      return new Promise(resolve => {
+        const waiter = { settle: resolve };
+        waiter.onIdle = () => {
+          idleWaiters.delete(waiter);
+          resolve(true);
+        };
+        idleWaiters.add(waiter);
+        map.once('idle', waiter.onIdle);
+        map.triggerRepaint();
+      });
+    },
+
+    /**
      * Removes the map, its listeners, its timer and its container; safe to call twice. MapLibre observes the size of
      * its own container, so the engine has no ResizeObserver of its own to disconnect.
      */
@@ -518,6 +538,11 @@ export function createMapEngine({
       if (map !== null) {
         for (const [type, handler] of listeners) map.off(type, handler);
         listeners.length = 0;
+        for (const waiter of idleWaiters) {
+          map.off('idle', waiter.onIdle);
+          waiter.settle(false);
+        }
+        idleWaiters.clear();
         map.remove();
         map = null;
         liveEngines -= 1;

@@ -11,7 +11,7 @@ import { MAP_IMAGE_IDS } from '../style/mapImages';
 import { FONT_STACKS, buildOccStyle } from '../style/occStyle';
 import { SELECTION_SOURCE, selectionOverlay } from '../style/selectionLayers';
 import {
-  STAND_LABEL_MODES, STAND_SOURCE, standAppearance, standClusterOptions, standOverlay,
+  STAND_LABEL_MODES, STAND_SOURCE, standAppearance, standClusterOptions, standDisplayAt, standOverlay,
 } from './standLayers';
 
 const MARK_LAYERS = ['occ-stands-fill', 'occ-stands-frame', 'occ-stands-glyph', 'occ-stands-clock'];
@@ -96,7 +96,7 @@ describe('standOverlay', () => {
       for (const colour of colours) expect(palette.has(colour), `${labels}: ${colour}`).toBe(true);
       // Only the selected code is cyan; no stand state, cluster or code carries a signal colour or a hue.
       for (const layer of overlay.layers.filter(item => item.id !== 'occ-stands-code-selected')) {
-        for (const colour of JSON.stringify(layer.paint).match(/#[0-9a-f]{6}|rgb\([^)]*\)/gi)) {
+        for (const colour of JSON.stringify(layer.paint).match(/#[0-9a-f]{6}|rgb\([^)]*\)/gi) ?? []) {
           expect(signals.has(colour), `${layer.id}: ${colour}`).toBe(false);
           expect(chroma(colour), `${layer.id}: ${colour}`).toBeLessThan(0.1);
         }
@@ -127,11 +127,20 @@ describe('standOverlay', () => {
       for (const zoom of [12, 14, 15.5, 17, 19]) expect(evaluate(layer, 'layout', 'text-size', { status: 'planned' }, zoom)).toBeGreaterThanOrEqual(12);
     }
 
-    // Outside the console only the codes, from the ramp view on, and no selected or planned layer.
+    // Outside the console only the codes (and their keep-out), from the ramp view on, and no selected or planned layer.
     const plain = standOverlay();
     expect(plain.layers.filter(layer => layer.slot === 'standLabels').map(layer => layer.id))
-      .toEqual(['occ-stands-cluster-count', 'occ-stands-codes']);
+      .toEqual(['occ-stands-cluster-count', 'occ-stands-codes', 'occ-stands-keep-out']);
     expect(layerOf(plain, 'occ-stands-codes').metadata['occ:minThreshold']).toBe('codes');
+    // A code goes below its stand, else above or beside it: a close neighbour's code no longer hides it.
+    const plainCodes = layerOf(plain, 'occ-stands-codes').layout;
+    expect(plainCodes).toMatchObject({
+      'text-variable-anchor': ['top', 'bottom', 'left', 'right'], 'text-allow-overlap': false, 'text-optional': true,
+      'text-size': 12,
+    });
+    expect(plainCodes).not.toHaveProperty('text-offset');
+    // The console keeps its fixed places under the stand.
+    expect(codes.layout).not.toHaveProperty('text-variable-anchor');
 
     // On a map the engine moves those layers to the thresholds derived from the fitted zooms.
     const fake = createFakeMapLibre();
@@ -142,14 +151,69 @@ describe('standOverlay', () => {
     fake.state.emit(map, 'style.load');
     const thresholds = thresholdsFromFits(FITS);
     engine.applyThresholds(thresholds);
+    // Every layer of the stands source starts at the stand threshold; the console's codes do too.
     expect(map.zoomRangeCalls).toEqual([
-      { id: 'occ-stands-codes', minzoom: thresholds.polygons, maxzoom: 24 },
-      { id: 'occ-stands-codes-planned', minzoom: thresholds.polygons, maxzoom: 24 },
-    ]);
+      'occ-stands-clusters', ...MARK_LAYERS, 'occ-stands-cluster-count', 'occ-stands-codes', 'occ-stands-codes-planned',
+    ].map(id => ({ id, minzoom: thresholds.polygons, maxzoom: 24 })));
     expect(() => standOverlay({ labels: 'wall' })).toThrow(RangeError);
   });
 
-  it('clusters carry no hue and derive clusterMaxZoom from the fitted airfield zoom', () => {
+  it('draws the stands from the stand threshold on, grouped until the ramp view outside the console', () => {
+    // FITS: stand threshold 13.6 (airfield 13.9 − 0.3), codes 15.8 (ramp 16.1 − 0.3).
+    const thresholds = thresholdsFromFits(FITS);
+    // Region and approach show the airport's reference point and no stand.
+    expect([6.4, 9.1, 13.5].map(zoom => standDisplayAt(zoom, thresholds))).toEqual(['hidden', 'hidden', 'hidden']);
+    // The airfield view gathers them: fixed-size marks a few metres apart would pile up.
+    expect([13.6, 13.9, 14.99].map(zoom => standDisplayAt(zoom, thresholds))).toEqual(['grouped', 'grouped', 'grouped']);
+    expect([15, 16.1, 19.5].map(zoom => standDisplayAt(zoom, thresholds))).toEqual(['points', 'points', 'points']);
+    // On the console's apron they are drawn one by one as soon as they are drawn at all.
+    expect([13.5, 13.6, 14].map(zoom => standDisplayAt(zoom, thresholds, { labels: 'dashboard' })))
+      .toEqual(['hidden', 'points', 'points']);
+    // Before the thresholds the layers have no zoom range: every stand is a point.
+    expect(standDisplayAt(15, null)).toBe('points');
+    expect(standDisplayAt(undefined, thresholds)).toBe('points');
+
+    for (const labels of STAND_LABEL_MODES) {
+      for (const layer of standOverlay({ labels }).layers.filter(item => item.source === STAND_SOURCE)) {
+        const codes = ['occ-stands-codes', 'occ-stands-keep-out'].includes(layer.id) && labels === 'default';
+        expect(layer.metadata['occ:minThreshold'], `${labels} ${layer.id}`).toBe(codes ? 'codes' : 'polygons');
+      }
+    }
+  });
+
+  it('outside the console keeps every code off the stand marks with an invisible copy placed before the codes', () => {
+    const plain = standOverlay();
+    const labelIds = plain.layers.filter(layer => layer.slot === 'standLabels').map(layer => layer.id);
+    // Last in the slot: drawn last (it is invisible) and placed first, so the codes see it.
+    expect(labelIds).toEqual(['occ-stands-cluster-count', 'occ-stands-codes', 'occ-stands-keep-out']);
+    const keepOut = layerOf(plain, 'occ-stands-keep-out');
+    const frame = layerOf(plain, 'occ-stands-frame');
+    const codes = layerOf(plain, 'occ-stands-codes');
+    expect(keepOut).toMatchObject({ type: 'symbol', source: STAND_SOURCE, filter: ['!', ['has', 'point_count']] });
+    // Always drawn, and an obstacle for every label placed after it.
+    expect(keepOut.layout).toMatchObject({
+      'icon-image': 'stand-slab', 'icon-padding': 0, 'icon-allow-overlap': true, 'icon-ignore-placement': false,
+    });
+    expect(keepOut.paint).toEqual({ 'icon-opacity': 0 });
+    // At every zoom: the keep-out is the drawn square (24 px of the 32 px images, at the marks' size), and a code sits
+    // 7 px clear of it, its 2 px text padding included.
+    const stand = { code: 'A1', status: 'available' };
+    for (const zoom of [15, 15.8, 16, 16.7, 17, 18, 19.5]) {
+      const square = 12 * evaluate(frame, 'layout', 'icon-size', stand, zoom);
+      expect(16 * evaluate(keepOut, 'layout', 'icon-size', stand, zoom), `zoom ${zoom}`).toBeCloseTo(square, 2);
+      const offset = 12 * evaluate(codes, 'layout', 'text-radial-offset', stand, zoom);
+      expect(offset - square, `zoom ${zoom}`).toBeCloseTo(7, 1);
+      expect(offset - 2 - square, `zoom ${zoom}`).toBeGreaterThan(4);
+    }
+    // Never a pick target: a click still finds the stand's frame.
+    expect(keepOut.metadata).toEqual({ 'occ:group': 'stands', 'occ:minThreshold': 'codes' });
+    // The marks themselves never block anything, and the console's apron has no keep-out.
+    expect(frame.layout['icon-ignore-placement']).toBe(true);
+    expect(standOverlay({ labels: 'dashboard' }).layers.map(layer => layer.id)).not.toContain('occ-stands-keep-out');
+    expect(validateStyleMin(buildOccStyle({ overlays: [plain, selectionOverlay()] }))).toEqual([]);
+  });
+
+  it('clusters carry no hue and derive clusterMaxZoom from the fitted zooms', () => {
     for (const labels of STAND_LABEL_MODES) {
       const overlay = standOverlay({ labels });
       const clusters = layerOf(overlay, 'occ-stands-clusters');
@@ -160,14 +224,17 @@ describe('standOverlay', () => {
     expect(standOverlay().sources[STAND_SOURCE].clusterRadius).toBe(50);
     expect(standOverlay({ labels: 'dashboard' }).sources[STAND_SOURCE].clusterRadius).toBe(35);
 
-    // airfield 13.9 → stand threshold 13.6 → clusters up to zoom 12: from 13 on, every stand is drawn on its own.
+    // Outside the console: ramp 16.1 → codes 15.8 → clusters up to zoom 14, every stand on its own from 15 on.
     const thresholds = thresholdsFromFits(FITS);
-    expect(standClusterOptions(thresholds)).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: 12 });
+    expect(standClusterOptions(thresholds)).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: 14 });
+    // On the console's apron: airfield 13.9 → stand threshold 13.6 → clusters up to zoom 12.
+    expect(standClusterOptions(thresholds, { labels: 'dashboard' })).toEqual({ cluster: true, clusterRadius: 35, clusterMaxZoom: 12 });
     expect(standClusterOptions(thresholdsFromFits({ ...FITS, airfield: 15.25 }), { labels: 'dashboard' }))
       .toEqual({ cluster: true, clusterRadius: 35, clusterMaxZoom: 13 });
-    expect(standClusterOptions(thresholdsFromFits({ ...FITS, airfield: 1.1 })).clusterMaxZoom).toBe(1);
+    expect(standClusterOptions(thresholdsFromFits({ ...FITS, ramp: 1.1 })).clusterMaxZoom).toBe(1);
     expect(standClusterOptions(null)).toBeNull();
-    expect(standClusterOptions({ polygons: Number.NaN })).toBeNull();
+    expect(standClusterOptions({ polygons: Number.NaN, codes: 15 })).toBeNull();
+    expect(standClusterOptions({ polygons: 13.6 })).toBeNull();
 
     // MapLibre 6.16 sets `cluster` from every call: the options keep clustering on.
     const fake = createFakeMapLibre();
@@ -177,7 +244,7 @@ describe('standOverlay', () => {
     const map = fake.state.maps.at(-1);
     fake.state.emit(map, 'style.load');
     engine.setClusterOptions(STAND_SOURCE, standClusterOptions(thresholds));
-    expect(map.getSource(STAND_SOURCE).getClusterOptions()).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: 12 });
+    expect(map.getSource(STAND_SOURCE).getClusterOptions()).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: 14 });
   });
 
   it('builds a valid style with Noto Sans only, the pick target on the frame and the marks in the stands slot', () => {

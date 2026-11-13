@@ -19,21 +19,28 @@ const FBO = [[-68.38, 18.562], [-68.377, 18.564]];
 describe('legend entries', () => {
   it('lists only the states of the stands inside the view, in vocabulary order, and the «No oficial» tag for unofficial stands', () => {
     // Terminal A: three located by OCC, so no tag; the order is the vocabulary's, not the list's.
-    expect(legendEntries({ stands: STANDS, bounds: TERMINAL_A })).toEqual({ states: ['available', 'planned', 'occupied'], tags: [] });
+    expect(legendEntries({ stands: STANDS, bounds: TERMINAL_A })).toEqual({ states: ['available', 'planned', 'occupied'], tags: [], grouped: false });
     // The FBO: a stand at its reference location and one without a row bring the tag.
-    expect(legendEntries({ stands: STANDS, bounds: FBO })).toEqual({ states: ['disabled', 'unverified'], tags: ['unofficial'] });
+    expect(legendEntries({ stands: STANDS, bounds: FBO })).toEqual({ states: ['disabled', 'unverified'], tags: ['unofficial'], grouped: false });
     // The retired B33 is never drawn and the stand without a location is never on screen.
     expect(legendEntries({ stands: STANDS, bounds: TERMINAL_A }).states).not.toContain('releasing');
     expect(legendEntries({ stands: STANDS, bounds: TERMINAL_A }).states).not.toContain('arriving');
     // An empty view lists nothing; without bounds every drawn stand counts, and one without a location is never drawn.
-    expect(legendEntries({ stands: STANDS, bounds: [[-69, 19], [-68.9, 19.1]] })).toEqual({ states: [], tags: [] });
+    expect(legendEntries({ stands: STANDS, bounds: [[-69, 19], [-68.9, 19.1]] })).toEqual({ states: [], tags: [], grouped: false });
     expect(legendEntries({ stands: STANDS }).states)
       .toEqual(STAND_STATE_KEYS.filter(state => ['available', 'planned', 'occupied', 'disabled', 'unverified'].includes(state)));
-    expect(legendEntries({ stands: STANDS.filter(stand => stand.id === 'X1') })).toEqual({ states: [], tags: [] });
-    expect(legendEntries()).toEqual({ states: [], tags: [] });
+    expect(legendEntries({ stands: STANDS.filter(stand => stand.id === 'X1') })).toEqual({ states: [], tags: [], grouped: false });
+    expect(legendEntries()).toEqual({ states: [], tags: [], grouped: false });
     // A status outside the vocabulary is not a legend entry.
     expect(legendEntries({ stands: [{ id: 'A9', latitude: 18.564, longitude: -68.361, status: 'mystery', locationSource: 'occ' }] }))
-      .toEqual({ states: [], tags: [] });
+      .toEqual({ states: [], tags: [], grouped: false });
+  });
+
+  it('says when stands on screen are drawn as clusters, which have no state of their own', () => {
+    expect(legendEntries({ stands: [], grouped: true })).toEqual({ states: [], tags: [], grouped: true });
+    expect(legendEntries({ stands: STANDS, bounds: FBO, grouped: true }))
+      .toEqual({ states: ['disabled', 'unverified'], tags: ['unofficial'], grouped: true });
+    expect(legendEntries({ stands: [], grouped: 'yes' }).grouped).toBe(false);
   });
 
   it('standsInView keeps the drawn stands inside the bounds', () => {

@@ -176,6 +176,7 @@ function createState({ constructorError = null, width = 1440, height = 900, expa
     workerUrl: null,
     prewarmCount: 0,
     now: null,
+    protocols: new Map(),
     calls: [],
     maps: [],
     constructorError,
@@ -357,8 +358,12 @@ function createModule(state) {
       return this;
     }
 
+    // As MapLibre's Evented, `off` also removes a listener that was added with `once`.
     off(type, listener) {
-      this.listeners.get(type)?.delete(listener);
+      const listeners = this.listeners.get(type);
+      for (const entry of [...(listeners ?? [])]) {
+        if (entry === listener || entry.original === listener) listeners.delete(entry);
+      }
       return this;
     }
 
@@ -367,6 +372,7 @@ function createModule(state) {
         this.off(type, wrapper);
         listener(event);
       };
+      wrapper.original = listener;
       return this.on(type, wrapper);
     }
 
@@ -728,6 +734,14 @@ function createModule(state) {
       state.calls.push({ fn: 'restoreNow', args: [] });
       state.now = null;
     },
+    addProtocol(name, loadFn) {
+      state.calls.push({ fn: 'addProtocol', args: [name] });
+      state.protocols.set(name, loadFn);
+    },
+    removeProtocol(name) {
+      state.calls.push({ fn: 'removeProtocol', args: [name] });
+      state.protocols.delete(name);
+    },
   };
 }
 
@@ -802,6 +816,7 @@ function addHelpers(state) {
       state.calls.length = 0;
       state.prewarmCount = 0;
       state.now = null;
+      state.protocols.clear();
       state.constructorError = constructorError;
       state.size.width = state.initialSize.width;
       state.size.height = state.initialSize.height;

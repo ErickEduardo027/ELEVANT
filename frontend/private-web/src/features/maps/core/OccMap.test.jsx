@@ -114,6 +114,7 @@ describe('OccMap', () => {
     fireEvent.click(within(list).getByRole('button', { name: 'A5' }));
     expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'stand', id: 'A5' });
     expect(probe()).toMatchObject({ engineStatus: 'unavailable', activeView: null });
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-engine', 'unavailable');
     expect(fake.state.liveMaps()).toEqual([]);
     // The view keys do nothing without a map.
     expect(press(alert, '2').defaultPrevented).toBe(false);
@@ -147,11 +148,17 @@ describe('OccMap', () => {
     loadStyle(map);
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
 
+    const root = screen.getByTestId('occ-map');
+    expect(root).toHaveAttribute('data-occ-engine', 'ready');
+    expect(root).toHaveAttribute('data-occ-basemap', 'loading');
+
     act(() => fake.state.emit(map, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') }));
     const chip = screen.getByRole('status');
-    expect(chip).toHaveTextContent('No se pudo cargar el mapa base. Se muestran el aeródromo y los datos de ELEVANT.');
+    expect(chip).toHaveTextContent('No se pudo cargar el mapa base. Se muestran las posiciones y los datos de ELEVANT.');
     expect(chip).toHaveClass('occ-map-chip');
     expect(probe()).toMatchObject({ engineStatus: 'ready', basemapStatus: 'degraded' });
+    // The same states on the root, where the visual suite waits for them.
+    expect(root).toHaveAttribute('data-occ-basemap', 'degraded');
     // A chip, not a fallback: the canvas stays and the map answers.
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(fake.state.liveMaps()).toEqual([map]);
@@ -343,7 +350,8 @@ describe('OccMap', () => {
     expect(narrow.thresholds).toEqual({
       polygons: narrow.fits.airfield - 0.3, codes: narrow.fits.ramp - 0.3, threeLine: narrow.fits.ramp + 0.8,
     });
-    expect(map.zoomRangeCalls.at(-1)).toEqual({ id: 'occ-stands-codes', minzoom: narrow.thresholds.codes, maxzoom: 24 });
+    expect(map.zoomRangeCalls.findLast(call => call.id === 'occ-stands-codes'))
+      .toEqual({ id: 'occ-stands-codes', minzoom: narrow.thresholds.codes, maxzoom: 24 });
     expect(map.getZoom()).toBeCloseTo(narrow.fits.ramp, 6);
 
     // Folding the side panel gives the room back: new fits, new thresholds.
@@ -486,6 +494,41 @@ describe('OccMap', () => {
     act(() => ref.current.resetNorth());
     expect(map.cameraCalls.at(-1)).toEqual({ method: 'easeTo', options: { bearing: 0, duration: 400, essential: false } });
     expect(ref.current.getCamera()).toMatchObject({ bearing: 0, zoom: map.getZoom() });
+
+    // The pixel of a point inside the map, as a plain object: the centre sits in the middle of the 1440 × 900 map.
+    act(() => ref.current.flyToStand('A5'));
+    expect(ref.current.project(standPoint('A5'))).toEqual({ x: 720, y: 450 });
+    expect(Object.getPrototypeOf(ref.current.project(standPoint('A6')))).toBe(Object.prototype);
+  });
+
+  it('waits through its handle for a frame with nothing left to draw', async () => {
+    const { map, ref } = renderMap();
+    loadStyle(map);
+    const idle = ref.current.whenIdle();
+    act(() => fake.state.emit(map, 'idle'));
+    await expect(idle).resolves.toBe(true);
+    cleanup();
+    fake.state.reset({ constructorError: new GPUInitializationError() });
+    const failing = renderMap();
+    await screen.findByRole('alert');
+    await expect(failing.ref.current.whenIdle()).resolves.toBe(false);
+  });
+
+  it('starts the map with the extra MapLibre options it is given, keeping its own locale', () => {
+    const { map } = renderMap({ mapOptions: { fadeDuration: 0, locale: { 'Map.Title': 'Otro' } } });
+    expect(map.options.fadeDuration).toBe(0);
+    expect(map.options.locale).toMatchObject({ 'Map.Title': 'Mapa del OCC', 'NavigationControl.ZoomIn': 'Acercar' });
+    cleanup();
+    // Without them the engine keeps its own fade.
+    render(<OccMap stands={STANDS} />);
+    expect(fake.state.liveMaps().at(-1).options.fadeDuration).toBe(150);
+  });
+
+  it('answers no pixel without a map', async () => {
+    fake.state.reset({ constructorError: new GPUInitializationError() });
+    const { ref } = renderMap();
+    expect(ref.current.project(standPoint('A5'))).toBeNull();
+    await screen.findByRole('alert');
   });
 
   it('tilts in 3D, shows the 3D buildings when asked and names its controls in Spanish', () => {
@@ -518,21 +561,31 @@ describe('OccMap', () => {
       .toEqual(['occ-stands-clusters', 'occ-stands-fill', 'occ-stands-frame', 'occ-stands-glyph', 'occ-stands-clock']);
     // A screen's own overlays come after the map's in their slot.
     expect(ids.slice(ids.indexOf('slot-standLabels') + 1, ids.indexOf('slot-traffic')))
-      .toEqual(['occ-stands-cluster-count', 'occ-stands-codes', 'test-notes']);
+      .toEqual(['occ-stands-cluster-count', 'occ-stands-codes', 'occ-stands-keep-out', 'test-notes']);
     const source = map.getSource('occ-stands');
     expect(source.setDataCalls).toHaveLength(1);
     expect(source.data.features).toHaveLength(41);
-    const limit = () => Math.floor(probe().thresholds.polygons) - 1;
+    // Outside the console the clusters end one zoom below the codes threshold: one by one from the ramp view on.
+    const limit = () => Math.floor(probe().thresholds.codes) - 1;
     expect(source.getClusterOptions()).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: limit() });
     expect(source.clusterOptionCalls).toHaveLength(1);
+    expect(Math.floor(probe().fits.ramp)).toBeGreaterThan(limit());
+    expect(Math.floor(probe().fits.airfield)).toBeLessThanOrEqual(limit());
+    // Every stand layer starts at the stand threshold, the codes at theirs.
+    const ranges = Object.fromEntries(map.zoomRangeCalls.map(call => [call.id, call.minzoom]));
+    for (const id of ['occ-stands-clusters', 'occ-stands-fill', 'occ-stands-frame', 'occ-stands-glyph', 'occ-stands-clock',
+      'occ-stands-cluster-count']) {
+      expect(ranges[id], id).toBe(probe().thresholds.polygons);
+    }
+    expect(ranges['occ-stands-codes']).toBe(probe().thresholds.codes);
 
     // A narrower map moves the limit: one call for a new limit, none for the same one.
     const before = limit();
-    act(() => fake.state.resize(map, { width: 600 }));
+    act(() => fake.state.resize(map, { width: 1000 }));
     expect(limit()).toBe(before - 1);
     expect(source.clusterOptionCalls).toHaveLength(2);
     expect(source.getClusterOptions()).toMatchObject({ cluster: true, clusterMaxZoom: before - 1 });
-    act(() => fake.state.resize(map, { width: 590 }));
+    act(() => fake.state.resize(map, { width: 800 }));
     expect(limit()).toBe(before - 1);
     expect(source.clusterOptionCalls).toHaveLength(2);
 
@@ -595,8 +648,10 @@ describe('OccMap', () => {
     expect(map.getSource('occ-reference').data).toEqual(referenceFeatures());
     expect(map.zoomRangeCalls.find(call => call.id === 'occ-reference-arp'))
       .toEqual({ id: 'occ-reference-arp', minzoom: 0, maxzoom: probe().thresholds.codes });
+    // Above the pavement of the tiles, the last layer under the stands.
     const ids = map.layerIds();
-    expect(ids[ids.indexOf('slot-reference') + 1]).toBe('occ-reference-arp');
+    expect(ids[ids.indexOf('slot-stands') - 1]).toBe('occ-reference-arp');
+    expect(ids.indexOf('occ-reference-arp')).toBeGreaterThan(ids.indexOf('airfield-runway'));
   });
 
   it('imports occ-map.css and uses only occ-* classes (no opacity modifier)', () => {

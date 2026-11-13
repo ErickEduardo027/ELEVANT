@@ -144,7 +144,7 @@ describe('PositionMap on the map engine', () => {
     const ids = map.layerIds();
     expect(ids.slice(ids.indexOf('slot-stands') + 1, ids.indexOf('slot-routes'))).toEqual(MARK_LAYERS);
     expect(ids.slice(ids.indexOf('slot-standLabels') + 1, ids.indexOf('slot-traffic')))
-      .toEqual(['occ-stands-cluster-count', 'occ-stands-codes']);
+      .toEqual(['occ-stands-cluster-count', 'occ-stands-codes', 'occ-stands-keep-out']);
     const source = map.getSource('occ-stands');
     expect(source.spec).toMatchObject({ type: 'geojson', promoteId: 'code', cluster: true, clusterRadius: 50 });
     expect(source.setDataCalls).toHaveLength(1);
@@ -154,8 +154,8 @@ describe('PositionMap on the map engine', () => {
       properties: { code: 'A1', terminal: 'A', status: 'occupied', unofficial: false },
       geometry: { type: 'Point', coordinates: standPoint('A1') },
     });
-    // The clusters end one zoom below the stand threshold of this screen; PUJ is marked by its reference point.
-    expect(source.getClusterOptions()).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: Math.floor(AIRFIELD_FIT - 0.3) - 1 });
+    // The clusters end one zoom below the codes threshold of this screen; PUJ is marked by its reference point.
+    expect(source.getClusterOptions()).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: Math.floor(RAMP_FIT - 0.3) - 1 });
     expect(map.getSource('occ-reference').data.features.map(feature => feature.properties.label)).toEqual(['PUJ']);
 
     // The same positions read again in new objects write nothing; a changed state writes once more.

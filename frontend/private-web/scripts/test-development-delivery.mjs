@@ -44,6 +44,38 @@ test('a MapLibre worker import that the copy would leave behind is reported', as
   );
 });
 
+test('the map chunk check reports a chunk that carries the map-lab marker and accepts clean chunks', async () => {
+  const { MAP_LAB_NEEDLES, BUILT_ROOTS, findLabChunks } = await import('./verify-map-chunks.mjs');
+  assert.deepEqual(findLabChunks([
+    { file: '.next/static/chunks/app.js', source: 'self.__next_f.push([1,"shell"])' },
+    { file: '.next/static/chunks/lab.js', source: 'e.jsx("div",{"data-occ-map-lab":"v1","data-department":"occ"})' },
+    { file: '.next/server/app/map-lab/page.js', source: 'Promise.resolve().then(()=>r("./MapLabLoader"))' },
+  ]), ['.next/static/chunks/lab.js', '.next/server/app/map-lab/page.js']);
+  assert.deepEqual(findLabChunks([
+    { file: '.next/static/chunks/maps.js', source: 'const MAPLIBRE_WORKER_URL="/assets/maplibre/maplibre-gl-worker.mjs"' },
+    { file: '.next/server/app/map-lab/page.js', source: '(0,n.notFound)()' },
+  ]), []);
+  assert.deepEqual(BUILT_ROOTS, ['.next/static', '.next/server']);
+
+  // The words are the lab's own, and the lab is imported only inside the development branch of its route.
+  const [lab, loader, page, packageJson, dockerignore] = await Promise.all([
+    readFile(path.join(projectRoot, 'src/features/maps/lab/MapLab.jsx'), 'utf8'),
+    readFile(path.join(projectRoot, 'app/map-lab/MapLabLoader.jsx'), 'utf8'),
+    readFile(path.join(projectRoot, 'app/map-lab/page.jsx'), 'utf8'),
+    readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+    readFile(path.join(projectRoot, 'Dockerfile.dockerignore'), 'utf8'),
+  ]);
+  assert.deepEqual(MAP_LAB_NEEDLES, ['data-occ-map-lab', 'MapLabLoader']);
+  assert.match(lab, /^export const MAP_LAB_MARKER = 'data-occ-map-lab';$/m);
+  assert.match(loader, /import\('\.\.\/\.\.\/src\/features\/maps\/lab\/MapLab'\)/);
+  assert.match(page, /if \(process\.env\.NODE_ENV === 'development'\) \{\n\s+const \{ default: MapLabLoader \} = await import\('\.\/MapLabLoader'\);/);
+  assert.match(page, /^\s+notFound\(\);$/m);
+  assert.doesNotMatch(page, /^import .*(?:MapLab|maps\/lab)/m, 'The route imports the lab inside its development branch only');
+  // Every build runs the check after the worker check, and the image build context ships the script.
+  assert.match(JSON.parse(packageJson).scripts.build, /verify-maplibre-worker\.mjs && node \.\/scripts\/verify-map-chunks\.mjs$/);
+  assert.match(dockerignore, /^!frontend\/private-web\/scripts\/verify-map-chunks\.mjs$/m);
+});
+
 const validEnvironment = {
   NEXT_PUBLIC_ELEVANT_API_URL: 'https://api.elevant.test',
   NEXT_PUBLIC_PROTOTYPE_API_URL: 'https://api.elevant.test',

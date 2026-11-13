@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GPUInitializationError, SERVED_WORKER_URL, createFakeMapLibre, sharedFakeMapLibre } from './fakeMapLibre';
 
 const STYLE = {
@@ -124,6 +124,21 @@ describe('fake MapLibre', () => {
     source.setClusterOptions({ clusterMaxZoom: 13 });
     expect(source.getClusterOptions()).toEqual({ cluster: undefined, clusterMaxZoom: 13, clusterRadius: 35 });
     expect(source.clusterOptionCalls).toEqual([{ cluster: true, clusterMaxZoom: 12.4, clusterRadius: 35 }, { clusterMaxZoom: 13 }]);
+  });
+
+  it('once listens a single time and off removes a once listener by the function given, like MapLibre', () => {
+    const { map } = newMap();
+    const first = vi.fn();
+    const second = vi.fn();
+    map.once('idle', first);
+    map.once('idle', second);
+    map.off('idle', second);
+    expect(map.listenerCount('idle')).toBe(1);
+    map._fire('idle');
+    map._fire('idle');
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+    expect(map.listenerCount('idle')).toBe(0);
   });
 
   it('refuses layer-scoped listeners, early style calls, plain-object query points and missing query layers', () => {

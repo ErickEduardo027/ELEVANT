@@ -94,6 +94,9 @@ Desktop.ini
 .fake
 .worktrees/
 frontend/private-web/public/assets/maplibre/
+# The OCC visual suite (npm run test:visual) writes its screenshots here for review; no baseline is committed.
+frontend/private-web/test-results/
+frontend/private-web/playwright-report/
 .superpowers/
 
 # Backend local del prototipo

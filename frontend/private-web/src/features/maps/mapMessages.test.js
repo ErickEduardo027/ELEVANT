@@ -25,7 +25,7 @@ describe('map messages', () => {
       }
     }
     expect(createTranslator(mapMessages, 'es')('basemap.degraded'))
-      .toBe('No se pudo cargar el mapa base. Se muestran el aeródromo y los datos de ELEVANT.');
+      .toBe('No se pudo cargar el mapa base. Se muestran las posiciones y los datos de ELEVANT.');
     expect(createTranslator(mapMessages, 'en')('view.group')).toBe('Map view');
   });
 

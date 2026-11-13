@@ -451,6 +451,30 @@ describe('map engine', () => {
     expect(map.calls.at(-1).method).toBe('remove');
   });
 
+  it('whenIdle asks for a frame and resolves on the next idle event, and false once the map is gone', async () => {
+    const { engine, map, state } = ready(setup());
+    const idle = engine.whenIdle();
+    expect(map.calls.at(-1).method).toBe('triggerRepaint');
+    let settled = false;
+    void idle.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    state.emit(map, 'idle');
+    await expect(idle).resolves.toBe(true);
+    expect(map.listenerCount('idle')).toBe(0);
+
+    // A wait cut short by destroy settles false and leaves no listener behind.
+    const cut = engine.whenIdle();
+    engine.destroy();
+    await expect(cut).resolves.toBe(false);
+    expect(map.listenerCount()).toBe(0);
+    await expect(engine.whenIdle()).resolves.toBe(false);
+
+    // Without a map there is nothing to wait for.
+    const failing = setup({ fake: createFakeMapLibre({ constructorError: new GPUInitializationError() }) });
+    await expect(failing.engine.whenIdle()).resolves.toBe(false);
+  });
+
   it('a StrictMode-like create-destroy-create leaves exactly one live map and one container in the host', () => {
     const before = liveEngineCount();
     const fake = createFakeMapLibre();
@@ -500,8 +524,8 @@ describe('map engine', () => {
     const { map, state } = ready(setup({ imageResolver: createImageResolver({ rasterize: squareRasterizer }) }));
     const added = state.requestImage(map, 'airport-arp');
     expect(added.options).toEqual({ pixelRatio: 2, sdf: true });
-    expect(added.image).toMatchObject({ width: 40, height: 40 });
-    expect(added.image.data).toHaveLength(40 * 40 * 4);
+    expect(added.image).toMatchObject({ width: 56, height: 40 });
+    expect(added.image.data).toHaveLength(56 * 40 * 4);
     // Asking again adds nothing (the fake would throw on a second addImage); an unknown id adds nothing.
     expect(state.requestImage(map, 'airport-arp')).toBe(added);
     expect(state.requestImage(map, 'not-an-icon')).toBeNull();
