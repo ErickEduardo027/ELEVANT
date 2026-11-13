@@ -135,9 +135,9 @@ Las versiones efectivas se fijan en [`package.json`](../../frontend/private-web/
 
 Bajo `/admin-occ` existen rutas para dashboard, planificación, monitoreo de vuelos, mapa de posiciones, revisión, reportes, notificaciones y chat. Las interfaces representan planificación y asignaciones, seguimiento de vuelos/turnarounds, contraste de ejecución, aprobación o devolución, cierre/reportes y coordinación interna.
 
-En la rama `feat/adminocc-redesign`, el espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en Monitoreo, Operación, Comunicación y Administración, con la marca oficial completa, y una barra contextual con el módulo activo, la hora UTC del reloj del equipo, el idioma (español/inglés) y los avisos. Esa rama dibujaba el riel en azul marino y ofrecía el cambio de tema; desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
+El espacio OCC tiene marco propio: un riel de navegación colapsable agrupado en En vivo, Planificar, Revisar y Estación, con la marca oficial completa, y una barra de estado con la estación, el módulo activo, el enlace en vivo, las fuentes, las alertas, la hora local y la UTC del reloj del equipo, el idioma (español/inglés), la leyenda y la cuenta. Lo introdujo la rama `feat/adminocc-redesign`, con el riel agrupado en Monitoreo, Operación, Comunicación y Administración y dibujado en azul marino, una barra contextual con los avisos y el cambio de tema. Desde el PR U1 el OCC es solo oscuro, con el riel en pizarra y sin botón de tema, y desde el PR U2, posterior al commit verificado, el riel sigue la jornada del controlador y la barra es de estado: ver [Sistema visual NOC del OCC (PR U1)](#sistema-visual-noc-del-occ-pr-u1) y [Marco del OCC (PR U2)](#marco-del-occ-pr-u2). Los demás departamentos conservan su marco; el cambio es opcional por departamento (`ShellFrame` acepta componentes y `data-department`). Los destinos y permisos de navegación no cambian. Fuentes: [layout OCC](../../frontend/private-web/src/features/admin-occ/AdminOccLayout.jsx), [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx), [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx) y [tokens](../../frontend/private-web/src/styles/occ.css).
 
-En el árbol local posterior al commit verificado, «Operación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
+En el árbol local posterior al commit verificado, «Estación → Mis gastos» aparece en el riel OCC y abre `/admin-occ/expenses`, también desde el menú móvil. El enlace no concede permisos: la API determina los gastos y acciones disponibles para la cuenta. Fuentes: [navegación OCC](../../frontend/private-web/src/features/admin-occ/navigation.js), [riel OCC](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx) y [ruta de gastos](../../frontend/private-web/app/admin-occ/expenses/page.jsx).
 
 OCC opera solo Punta Cana: todas sus rutas toman el alcance `PUJ` que trae la sesión y ya no ofrecen selector de estación. Si la cuenta no tiene ese alcance, cada módulo muestra su estado sin estación autorizada y no consulta la API; la autorización sigue en el servidor. Fuente: [alcance PUJ](../../frontend/private-web/src/features/admin-occ/useOccStation.js).
 
@@ -602,9 +602,10 @@ el día UTC del navegador.
 | Gestión Humana → Empleados y perfiles de rampa | La baja y el traslado envían una clave y explican qué se libera; un agente con una operación en curso o devuelta no se da de baja ni sale de la rampa (`agent_has_operation_in_progress`). |
 
 La campana muestra los avisos nuevos con su título y destino: los del ciclo del
-contrato para Contratos, los vencimientos de documentos para Gestión Humana, y
-`agent_released` y `agent_document_not_current` para OCC, que abren
-Planificación. Fuentes:
+contrato para Contratos y los vencimientos de documentos para Gestión Humana.
+En OCC, `agent_released` y `agent_document_not_current` abren Planificación;
+desde el PR U2 no los muestra una campana, sino el cajón «Alertas y avisos» de
+la barra de estado ([Marco del OCC](#marco-del-occ-pr-u2)). Fuentes:
 [ciclo de vida](../../frontend/private-web/src/features/contracts/agreements/ContractLifecyclePanel.jsx),
 [permisos](../../frontend/private-web/src/features/contracts/permits/AirlinePermitsPage.jsx),
 [feed](../../frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx),
@@ -639,10 +640,13 @@ las horas locales, de
 | Finanzas → Charters | «Reabrir cotización», con motivo, para un charter con el prepago confirmado. |
 | Finanzas → Por facturar | Explica el servicio que OCC excluyó en la revisión y el que lleva un cargo que su contrato excluye. Un servicio en excepción facturable que no está listo bloquea su operación, y al emitir la e-CF el rechazo por esos dos motivos se explica en español. «Servicios aprobados», que también lo explicaba, se retiró en la fase 4. |
 
-La campana de OCC muestra `flight_cancelled_by_provider`,
-`flight_diverted_by_provider`, `stand_change_unassigned` y
-`contract_not_in_force`, que abren Planificación, y Finanzas recibe
-`charter_cancelled`, que abre Charters. Donde la respuesta no trae la zona de la
+En OCC, `flight_cancelled_by_provider`, `flight_diverted_by_provider`,
+`stand_change_unassigned` y `contract_not_in_force` abren Planificación. Antes
+los mostraba la campana; desde el PR U2, posterior al commit verificado, el
+botón de alertas de la barra de estado los cuenta como «Atención» y abre el
+cajón «Alertas y avisos», donde cada uno ofrece «Recibido» y «Abrir»
+([Marco del OCC](#marco-del-occ-pr-u2)). Finanzas recibe `charter_cancelled`,
+que abre Charters. Donde la respuesta no trae la zona de la
 estación (por ejemplo, «Generado» de los reportes o la consulta de los reportes
 de personal), la web usa el calendario de `America/Santo_Domingo`, porque la
 sesión no trae la zona de cada estación. Fuentes:
@@ -762,6 +766,109 @@ U5. El contraste se
 comprobó por cálculo, con pruebas: el texto mide 12,8:1 sobre los paneles y el
 mínimo, rojo sobre la losa, 4,6:1. Nada de esto acredita un despliegue ni una
 revisión visual en el VPS.
+
+## Marco del OCC (PR U2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código del
+PR U2 «Marco del OCC» (`1afe6820`, `debecb1e`, `2d30d7fe` y `a7ef7a4f`), que esa
+verificación no cubre. Las decisiones, el presupuesto de peticiones y lo que
+queda aplazado están en la nota del 13 de noviembre de 2026 de
+[ADR-0044](../../docs/adr/0044-occ-noc-visual-system.md). U2 cambia solo el
+marco: no reestructura ninguna pantalla, y cada una pasa al proveedor en el PR
+que la rehace (U3, U5 y U6).
+
+- **Un proveedor por pestaña.**
+  [`OccShellProvider`](../../frontend/private-web/src/features/admin-occ/shell/OccShellProvider.jsx)
+  abre el único observador de cambios del marco y lee una sola vez los avisos
+  operativos para la barra, el riel, el cajón y los toasts. En el OCC,
+  [`RoleLayout`](../../frontend/private-web/src/app/RoleLayout.jsx) apaga el
+  observador propio del acceso del departamento, que el marco relee con
+  `department_users` y `access_requests`, y `AppShell` ya no lee avisos ni
+  pinta toasts. Las lecturas del marco pasan por
+  [`useOccResource`](../../frontend/private-web/src/features/admin-occ/live/useOccResource.js):
+  solo leen con su permiso, se repiten como mucho una vez cada 3 s, esperan con
+  la pestaña oculta, tienen un sondeo de seguridad de 60 s y se detienen tras un
+  401, 403 o 404 hasta que cambia el acceso. La
+  [prueba de presupuesto](../../frontend/private-web/src/features/admin-occ/live/occRequestBudget.test.js)
+  falla si el plan de peticiones de una pestaña pasa de 40 por minuto en reposo
+  o de 70 durante un minuto de vuelo demo, y exige que el
+  [inventario](../../frontend/private-web/src/features/admin-occ/live/occRequestPlan.js)
+  nombre cada observador que queda bajo `/admin-occ`, con el PR que lo mueve.
+- **Barra de estado.** La
+  [barra](../../frontend/private-web/src/features/admin-occ/shell/OccTopbar.jsx)
+  mide 48 px en todas las pantallas del OCC. Muestra la placa «PUJ» (y «Punta
+  Cana» desde 1280 px), el nombre del módulo, el enlace en vivo («En vivo»,
+  «Reconectando», «Sin tiempo real» o «Sin conexión», cada uno con su forma y
+  una frase que lo explica), las fuentes («Fuentes al día» o cuántas van con
+  retraso, con su lista), las alertas, la hora local y la UTC del equipo, el
+  idioma, «Leyenda» y la cuenta. Ya no muestra las claves `nav.master-data` ni
+  `nav.devices`: dice «Datos maestros» y «Tablets». Por debajo de 1024 px, la
+  leyenda y el idioma pasan al menú de la cuenta; por debajo de 640 px quedan el
+  menú, la placa, los glifos del enlace y de las alertas (con su número), la
+  hora local y la cuenta
+  ([reglas de ancho](../../frontend/private-web/src/features/admin-occ/shell/status/statusBarLayout.js)).
+  «Leyenda» lee los estados de posición, las señales y las marcas de
+  [`statusVocabulary.js`](../../frontend/private-web/src/features/occ-ui/statusVocabulary.js).
+  No hay botón de tema, modo muro ni búsqueda.
+- **Alertas y avisos.** El
+  [modelo de alertas](../../frontend/private-web/src/features/dashboard/noc/alertModel.js)
+  da la prioridad: «Urgente», toda incidencia; «Atención», la desviación, el
+  vuelo cancelado o desviado por el proveedor, el agente liberado, la operación
+  sin agente elegible y el documento o el contrato no vigente; el resto,
+  «Aviso». El botón de alertas cuenta las urgentes y las de atención sin recibir
+  y abre el
+  [cajón «Alertas y avisos»](../../frontend/private-web/src/features/admin-occ/shell/OccAlertsDrawer.jsx),
+  con las alertas sin recibir primero, los avisos recientes y «Ver historial de
+  avisos». Si la primera lectura de los avisos falla, el botón dice «Alertas:
+  sin datos» con el triángulo ámbar; si falla una relectura, conserva el último
+  número atenuado, con «, sin actualizar», y su descripción accesible da la
+  hora de la última lectura buena. Por debajo de 1536 px, «: sin datos» y
+  «, sin actualizar» quedan para los lectores de pantalla. En los dos casos el
+  cajón ofrece «Reintentar».
+  «Recibido» es el recibo de lectura por cuenta que ya existía
+  (`PUT notifications/{id}/read`), así que el conteo es el mismo en todas las
+  pantallas y después de recargar. Los
+  [toasts](../../frontend/private-web/src/features/admin-occ/shell/occToastQueue.js)
+  salen arriba a la derecha, bajo la barra: tres como mucho, 15 s los urgentes,
+  10 s los de atención y 8 s los avisos. Con el cajón abierto no se dibujan: lo
+  que llega se anuncia dentro del cajón (el urgente, como alerta), y al cerrarlo
+  no reaparece. Solo parpadea el glifo de una alerta urgente sin recibir, y
+  nunca con movimiento reducido.
+- **Riel.** El
+  [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx)
+  agrupa los mismos 14 módulos en
+  [En vivo, Planificar, Revisar y Estación](../../frontend/private-web/src/features/admin-occ/navigation.js),
+  con las mismas rutas y permisos. Chat interno, Revisión y Notificaciones
+  llevan una placa neutra con sus avisos sin leer. Con el riel plegado, cada
+  módulo muestra su nombre al pasar el puntero o al recibir el foco. Ya no hay
+  tarjeta de identidad: la estación está en la barra.
+  [«Saltar al contenido»](../../frontend/private-web/src/features/admin-occ/shell/OccSkipLink.jsx)
+  es el primer elemento enfocable del marco.
+- **Primitivas y guardas.** U2 crea en `src/features/occ-ui` las primitivas que
+  necesita el marco (glifo de señal, placa, muestra de estado, panel emergente,
+  cajón, cola de alertas y pila de toasts), con sus textos en
+  [`occUiMessages.js`](../../frontend/private-web/src/features/occ-ui/occUiMessages.js).
+  [`ShellFrame`](../../frontend/private-web/src/features/shell/ShellFrame.jsx)
+  acepta `mainVariant`: `'scroll'`, por defecto e igual que antes, o `'fill'`,
+  que el OCC aún no usa.
+  [`tailwind.config.js`](../../frontend/private-web/tailwind.config.js) suma las
+  llaves `primary`, `primary-hover`, `on-primary` y `scrim`. Las carpetas
+  `admin-occ/shell` y `admin-occ/live` entran en `MIGRATED_FOLDERS` del
+  [manifiesto del puente](../../frontend/private-web/src/styles/occLegacyBridgeMap.js):
+  allí no se admite ninguna clase de color heredada.
+
+Límites: la lista de avisos trae los 100 más recientes, así que, si hay más,
+los conteos son un mínimo. Un recibo no se anuncia por el feed. Lo que se marca
+como leído o no leído en Notificaciones llega al marco enseguida, porque la
+página le pide que relea los avisos, como mucho una vez cada 3 s. Lo que se
+marca en otra pestaña llega con el siguiente aviso o, como mucho, a los 60 s.
+Panorama, Monitoreo de vuelos, Mapa de posiciones, Planificación, Cobertura de
+posiciones, Datos maestros, Tablets, Chat interno y Notificaciones conservan su
+propio observador hasta U3, U5 o U6, y Usuarios y Mis gastos, el suyo. Quedan
+aplazados el modo muro, la búsqueda, los atajos con su diálogo, el aviso de
+desfase del reloj, la severidad de cada incidencia y el acuse compartido por
+estación. Las pruebas cubren el marco en jsdom; nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
 
 ## Estado de integración
 

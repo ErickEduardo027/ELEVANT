@@ -55,6 +55,12 @@ export default {
           'warn-soft': 'var(--occ-warn-soft)',
           danger: 'var(--occ-danger)',
           'danger-soft': 'var(--occ-danger-soft)',
+          // The primary action is a light key, with its own ink («Recibido» in the alerts).
+          primary: 'var(--occ-primary)',
+          'primary-hover': 'var(--occ-primary-hover)',
+          'on-primary': 'var(--occ-on-primary)',
+          // The veil under an overlay (the rail's menu below 1024 px, the alerts drawer).
+          scrim: 'var(--occ-scrim)',
           nav: 'var(--occ-nav)',
           'nav-line': 'var(--occ-nav-line)',
           'nav-text': 'var(--occ-nav-text)',
@@ -85,11 +91,18 @@ export default {
           '0%': { opacity: '0', transform: 'translateX(-16px)' },
           '100%': { opacity: '1', transform: 'translateX(0)' },
         },
+        // The one blink of the OCC: the glyph of an unreceived urgent alert (src/features/occ-ui/OccGlyph.jsx), lit
+        // half of each second. Only through `motion-safe:`, so reduced motion never sees it.
+        'occ-alarm-blink': {
+          '0%, 100%': { opacity: '1' },
+          '50%': { opacity: '0.25' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 180ms ease-out',
         'slide-in-right': 'slide-in-right 220ms ease-out',
         'slide-in-left': 'slide-in-left 220ms ease-out',
+        'occ-alarm-blink': 'occ-alarm-blink 1s steps(1, end) infinite',
       },
     },
   },

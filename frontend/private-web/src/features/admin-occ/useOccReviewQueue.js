@@ -4,6 +4,7 @@ import { loadOccReviewQueue } from '../../services/occReviewService';
 import { selectOccStationScopes } from './useOccStation';
 import { abortForEffectCleanup, isAbortError } from '../../lib/abort';
 import { createPrivateWebAccountChangeObserver } from '../../services/accountChangeObserver';
+import { useOptionalOccShellChannel } from './shell/occShellContext';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -11,20 +12,24 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * A counter that moves each time the account-change feed announces `occ_review` (ADR-0029, 3-N23): a hand-off, a
  * decision, a reopening, an incident or late evidence of the account's stations. The screen re-reads what it shows
  * when it changes, under the permissions it has now; the feed only says that something changed. Zero until the first
- * announcement, so the first read stays the screen's own.
+ * announcement, so the first read stays the screen's own. Inside the OCC frame it listens on the shell's single
+ * observer; outside it (an isolated screen or a test) it opens its own, as before.
  */
 export function useOccReviewChangeVersion() {
   const { session } = useAuth();
+  const subscribe = useOptionalOccShellChannel()?.subscribe;
   const [version, setVersion] = useState(0);
 
   useEffect(() => {
+    const bump = () => setVersion(value => value + 1);
+    if (subscribe) return subscribe(['occ_review'], bump);
     if (!UUID.test(session?.accountId ?? '')) return undefined;
     const observer = createPrivateWebAccountChangeObserver(resources => {
-      if (resources.includes('occ_review')) setVersion(value => value + 1);
+      if (resources.includes('occ_review')) bump();
     });
     void observer.start().catch(() => {});
     return () => { void observer.stop(); };
-  }, [session?.accountId]);
+  }, [session?.accountId, subscribe]);
 
   return version;
 }

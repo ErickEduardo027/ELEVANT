@@ -7,8 +7,11 @@ import { getLanguage, subscribeLanguage } from '../../i18n/languageStore';
 
 const DepartmentAccessContext = createContext(null);
 
-/** Resources whose change can alter what the signed-in account may do. */
-const ACCESS_RESOURCES = ['department_users', 'access_requests'];
+/**
+ * Resources whose change can alter what the signed-in account may do. The OCC shell listens to them on its single
+ * observer (RoleLayout turns this provider's own observer off for the OCC).
+ */
+export const ACCESS_RESOURCES = Object.freeze(['department_users', 'access_requests']);
 const ACCESS_GATE_MESSAGES = {
   es: { loading: 'Cargando permisos…', error: 'No se pudieron cargar sus permisos.', hint: 'Vuelve a intentar o solicita asistencia a tu administrador.', retry: 'Reintentar' },
   en: { loading: 'Loading permissions…', error: 'Your permissions could not be loaded.', hint: 'Try again or ask your administrator for help.', retry: 'Retry' },

@@ -13,14 +13,24 @@ import { useStackedTableLabels } from '../../components/StackedTable';
 // que usan los demás. `rootAttributes` añade atributos a la raíz (el OCC pone
 // `data-occ-bridge`, que enciende styles/occ-legacy-bridge.css); los del marco
 // mandan sobre ellos.
+// `mainVariant` elige cómo ocupa `main` su espacio: 'scroll' (por defecto, lo de
+// siempre) desplaza el contenido con su margen interior; 'fill' lo deja sin
+// margen ni desplazamiento para las pantallas de alto completo, como un mapa.
 const DEFAULT_ROOT_CLASS = 'bg-surface-light text-text-primary-light dark:bg-surface-dark dark:text-text-primary-dark';
+const MAIN_VARIANT_CLASS = Object.freeze({
+  scroll: 'min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6 3xl:px-10',
+  fill: 'min-w-0 flex-1 overflow-hidden [animation:elevant-fade-in_180ms_ease-out]',
+});
 
 export default function ShellFrame({
-  sidebarProps, topbarProps, mainKey, mainClassName = '', department, rootAttributes,
+  sidebarProps, topbarProps, mainKey, mainClassName = '', mainVariant = 'scroll', department, rootAttributes,
   SidebarComponent = Sidebar, TopbarComponent = Topbar, rootClassName = DEFAULT_ROOT_CLASS, children,
 }) {
   const mainRef = useRef(null);
   useStackedTableLabels(mainRef, mainKey);
+  if (!Object.hasOwn(MAIN_VARIANT_CLASS, mainVariant)) {
+    throw new RangeError(`Unknown ShellFrame mainVariant: ${String(mainVariant)}`);
+  }
 
   return (
     <div
@@ -37,7 +47,7 @@ export default function ShellFrame({
           key={mainKey}
           id="main-content"
           data-shell-main=""
-          className={`min-w-0 flex-1 overflow-y-auto overscroll-contain p-4 [animation:elevant-fade-in_180ms_ease-out] sm:p-6 3xl:px-10 ${mainClassName}`}
+          className={`${MAIN_VARIANT_CLASS[mainVariant]} ${mainClassName}`}
         >
           {children}
         </main>
