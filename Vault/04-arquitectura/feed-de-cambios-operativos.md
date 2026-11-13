@@ -399,7 +399,7 @@ Las pistas siguen sin llevar datos.
   ([regla de ocupación](../../database/DevelopmentDB/Elevant.Persistence/Operations/StandAvailability.cs)).
 - El superadministrador sigue sin recibir `occ_planning`: su panel relee las
   opciones después de cargar posiciones, al cambiar la escala del formulario y
-  al volver a la pestaña.
+  al volver a la pestaña o a su ventana.
 
 Tampoco esto demuestra latencia en el VPS.
 

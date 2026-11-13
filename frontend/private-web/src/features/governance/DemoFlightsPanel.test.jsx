@@ -849,6 +849,36 @@ describe('DemoFlightsPanel (ADR-0041)', () => {
     expect(loadDemoFlightOptions).toHaveBeenCalledTimes(3);
   });
 
+  it('reads the options and the list again when its window gets the focus back while it stayed in sight', async () => {
+    renderPanel();
+    await screen.findByRole('form', { name: 'Disparar vuelo demo' });
+    await waitFor(() => expect(listDemoFlights).toHaveBeenCalledTimes(1));
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(1);
+
+    // OCC creates the coverage in a window beside this one («Crear cobertura» asks for another browser or a private
+    // window): this window never becomes hidden, it only gets the focus back.
+    clock += 10_000;
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(2);
+    expect(listDemoFlights).toHaveBeenCalledTimes(2);
+
+    // A focus right after a read, like the one that follows a return to the tab, reads nothing more.
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(2);
+    clock += 1000;
+    await leaveAndReturn();
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(3);
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(3);
+
+    // Hidden, the focus reads nothing either.
+    clock += 10_000;
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    await act(async () => { window.dispatchEvent(new Event('focus')); });
+    expect(loadDemoFlightOptions).toHaveBeenCalledTimes(3);
+    expect(listDemoFlights).toHaveBeenCalledTimes(3);
+  });
+
   it('reads the options again once they are five minutes old, so a warning that comes with the time shows', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
     // Opened at 23:26 in Punta Cana: nothing to warn about yet. The server warns from 23:30.

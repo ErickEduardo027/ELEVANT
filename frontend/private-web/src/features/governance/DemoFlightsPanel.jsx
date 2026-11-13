@@ -46,6 +46,8 @@ const WINDOW_FIELDS = new Set(['aircraftTypeId', 'minutes', 'groundMinutes']);
  * midnight), today's airlines and the free stands. Once they are this old, the next read of the list reads them again.
  */
 const OPTIONS_MAX_AGE_MS = 5 * 60_000;
+/** Options read less than this ago are not read again when the window gets the focus back. */
+const FOCUS_REREAD_GAP_MS = 2000;
 
 /** The warnings this panel explains (ADR-0041); they never block the trigger. Codes it does not know are not shown. */
 const WARNING_TEXT = Object.freeze({
@@ -459,8 +461,8 @@ function DemoFlightRow({ flight, serverNow, busy, onAction }) {
  * hoy». The phase and the countdowns are computed here each second from the server's instants and an estimate of the
  * server's clock; the list is read every `fastPollMs` while an aircraft moves (approach, taxi-in, taxi-out) and every
  * `slowPollMs` otherwise, never while the tab is hidden (contracts 2.7). The options go with the list once they are
- * `OPTIONS_MAX_AGE_MS` old, and both are read at once when the tab is back in sight (for instance after «Crear
- * cobertura» in OCC). The stands in the options are evaluated for the form's window (aircraft type, minutes to the stand
+ * `OPTIONS_MAX_AGE_MS` old, and both are read at once when the tab is back in sight or its window gets the focus back
+ * (for instance after «Crear cobertura» in OCC's window). The stands in the options are evaluated for the form's window (aircraft type, minutes to the stand
  * and on the ground): `windowDelayMs` after one of them changes the options are read again for it, and every later read
  * keeps it; a load of the Punta Cana stands reads them again too. Each command carries its intent's Idempotency-Key; a
  * 409 or a 404 reads the options (and, for a demo flight, the list) again before its message shows.
@@ -581,15 +583,26 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
   }, [live, hidden, moving, list.version, station, fastPollMs, slowPollMs, readOptions, readList]);
 
   // Hidden, the panel reads nothing; back in sight it reads the options and the list at once: a warning such as
-  // crosses_local_midnight or today's airlines may have changed meanwhile.
+  // crosses_local_midnight or today's airlines may have changed meanwhile. A window beside OCC's (where «Crear
+  // cobertura» sends the superadministrator) never becomes hidden, so getting the focus back reads them too, unless they
+  // were read a moment ago, as right after a return to the tab.
   useEffect(() => {
     function onVisibility() {
       const nowHidden = document.visibilityState === 'hidden';
       setHidden(nowHidden);
       if (!nowHidden && live) void refreshAll(station);
     }
+    function onFocus() {
+      if (!live || document.visibilityState === 'hidden') return;
+      if (Math.abs(clockSource.current() - optionsAskedAt.current) < FOCUS_REREAD_GAP_MS) return;
+      void refreshAll(station);
+    }
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [live, station, refreshAll]);
 
   // A flight started or ended since the options were read: the free stands and the limit are read again, once.

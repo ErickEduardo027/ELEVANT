@@ -1,3 +1,4 @@
+import { OCC_BOOT_SEEN_KEY } from '../../../src/features/admin-occ/boot/occBootSession.js';
 import { AUTH_STORAGE_KEY, createOccApi, occSession } from './fixtures/occApi.mjs';
 import { VIEW_LABELS, mapReady, shoot, viewInUrl, zoomOf } from '../support/map.mjs';
 import { expect, production, test } from '../support/test.mjs';
@@ -5,7 +6,8 @@ import { expect, production, test } from '../support/test.mjs';
 // Mapa de posiciones on the one map engine, with a synthetic OCC session and a stubbed API (fixtures/occApi.mjs), in
 // `next dev` and against a production build (OCC_VISUAL_TARGET=production). Lessons 4 and 7 of PR M1: the zoom
 // buttons and the view presets really move the camera in both builds, and re-reading the positions keeps the same
-// map instead of starting a new one. The page shows one legend, the map's.
+// map instead of starting a new one. The page shows one legend, the map's. Each test opens it as a later OCC entry
+// of its tab, so the OCC boot screen (PR U4, boot-screen.spec.mjs) never covers the map.
 
 const PAGE = '/admin-occ/positions-map';
 const target = production ? 'production' : 'development';
@@ -13,9 +15,13 @@ const target = production ? 'production' : 'development';
 async function openPositionsMap(page, isolation) {
   const api = createOccApi();
   isolation.setApi(api.handle);
-  await page.addInitScript(([key, session]) => {
-    window.localStorage.setItem(key, JSON.stringify(session));
-  }, [AUTH_STORAGE_KEY, occSession()]);
+  // The tab already showed the boot screen to this account (occBootSession.js keeps the account id under
+  // OCC_BOOT_SEEN_KEY), as when Mapa de posiciones is opened from another module. Without the mark the screen would
+  // cover the map until 6 s after the access: nothing on this page reports ready yet.
+  await page.addInitScript(([authKey, bootSeenKey, session]) => {
+    window.localStorage.setItem(authKey, JSON.stringify(session));
+    window.sessionStorage.setItem(bootSeenKey, String(session.accountId));
+  }, [AUTH_STORAGE_KEY, OCC_BOOT_SEEN_KEY, occSession()]);
   const response = await page.goto(PAGE);
   expect(response?.status(), `GET ${PAGE}`).toBe(200);
   const container = page.getByTestId('position-map-container');
@@ -23,6 +29,8 @@ async function openPositionsMap(page, isolation) {
   await expect(container.locator('.maplibregl-canvas')).toBeVisible();
   const map = page.getByTestId('occ-map');
   await mapReady(map);
+  // With that mark the screen stays away: the screenshots show the map and the first click reaches it at once.
+  await expect(page.getByTestId('occ-boot-screen'), 'the OCC boot screen').toHaveCount(0, { timeout: 1_000 });
   await expect.poll(() => api.reads, { message: 'the positions board was read' }).toBeGreaterThan(0);
   return { api, map, container };
 }
@@ -82,9 +90,12 @@ test.describe('Mapa de posiciones on the map engine', () => {
     await expect(page.locator('#main-content').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
     await expect(page.getByRole('banner').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
     await expect(map.getByRole('button', { name: 'Leyenda', exact: true })).toBeVisible();
-    // The stub board at its reference locations: every state it has, in the order of the vocabulary, and «No oficial».
-    await expect(map.getByRole('list', { name: 'Leyenda' }).getByRole('listitem'))
-      .toHaveText(['Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar', /^No oficial/]);
+    // The stub board at its reference locations: every state it has, in the order of the vocabulary, and «No oficial»;
+    // then the airfield the map draws from the MDPC dataset in the ramp view (PR M3).
+    await expect(map.getByRole('list', { name: 'Leyenda' }).getByRole('listitem')).toHaveText([
+      'Libre', 'Planificada', 'Ocupada', 'Inhabilitada', 'Sin verificar', /^No oficial/,
+      'Pista', 'Calle de rodaje', 'Punto de espera', 'Plataforma', 'Terminal',
+    ]);
     await expect(page.getByText('Configuración combinada')).toHaveCount(0);
   });
 });

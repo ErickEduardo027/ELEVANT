@@ -1,5 +1,6 @@
 import { ElevantApiError } from '@elevant/api-client';
 import { createPrivateWebApiClient, setAccessTokenRenewer } from '../../config/elevantApiClient';
+import { clearOccBootSeen } from '../admin-occ/boot/occBootSession';
 import { getRoleHomePath, ROLE_KEYS } from './roleRouting';
 
 export const AUTH_STORAGE_KEY = 'elevant-auth-session';
@@ -275,6 +276,8 @@ export function readSession() {
 export function persistSession(session, remember = false) {
   removeFrom(window.localStorage);
   removeFrom(window.sessionStorage);
+  // Every login shows the OCC boot screen again on its first OCC entry (contratos 2.6).
+  clearOccBootSeen();
   writeTo(remember ? window.localStorage : window.sessionStorage, session);
   scheduleSessionExpiration(session);
   return session;
@@ -284,6 +287,7 @@ export function clearSession() {
   cancelSessionExpiration();
   removeFrom(window.localStorage);
   removeFrom(window.sessionStorage);
+  clearOccBootSeen();
 }
 
 export function handleUnauthorizedResponse(response) {
@@ -324,6 +328,8 @@ export function logout() {
     }
     throw coded('No fue posible completar el cierre de sesión.', 'logout_failed');
   }
+  // Signed out: the next login shows the OCC boot screen again.
+  clearOccBootSeen();
   cancelSessionExpiration();
   // Revoke the refresh chain on the server (ADR-0021); the local session is already gone either way.
   if (session?.refreshToken && process.env.NODE_ENV !== 'test') {

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { useTheme } from '../shell/useTheme';
+import { useOccBoot } from '../admin-occ/boot/occBootContext';
 import { useOccStation } from '../admin-occ/useOccStation';
 import DashboardPage from './DashboardPage';
 import { useDashboardData } from './useDashboardData';
@@ -22,9 +23,13 @@ export default function DashboardRoute() {
   const weather = useMdpcWeather({ enabled: station.status === 'ready' });
   const traffic = useRegionalTraffic({ stationId: station.stationId, enabled: station.status === 'ready' });
   const retry = () => setRetryToken(value => value + 1);
+  const pageStatus = station.status === 'unavailable' ? 'unavailable' : dashboard.status;
+  // The OCC boot screen leaves once the console shows its first data, or a state that needs the user (contratos 2.6).
+  const { markReady } = useOccBoot();
+  useEffect(() => { if (pageStatus !== 'loading') markReady('console'); }, [markReady, pageStatus]);
 
   return <DashboardPage
-    status={station.status === 'unavailable' ? 'unavailable' : dashboard.status}
+    status={pageStatus}
     data={dashboard.data}
     refreshing={dashboard.refreshing}
     refreshFailed={dashboard.refreshFailed}

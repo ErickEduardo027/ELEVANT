@@ -21,7 +21,7 @@ const FLIGHTS = [
 ];
 const TERMINAL_A = [[-68.362, 18.563], [-68.36, 18.565]];
 const FBO = [[-68.38, 18.562], [-68.377, 18.564]];
-const NOTHING = { flights: false, states: [], tags: [], grouped: false };
+const NOTHING = { flights: false, states: [], tags: [], grouped: false, airfield: [] };
 
 describe('legend entries', () => {
   it('lists only the states of the stands inside the view, in vocabulary order, and the «No oficial» tag for unofficial stands', () => {
@@ -63,6 +63,23 @@ describe('legend entries', () => {
     expect(legendEntries({ flights: FLIGHTS }).flights).toBe(true);
     expect(legendEntries({ flights: FLIGHTS.slice(1) })).toEqual(NOTHING);
     expect(legendEntries({ flights: null }).flights).toBe(false);
+  });
+
+  it('lists the airfield items only when they are drawn on screen', () => {
+    // Nothing of the airfield on screen (the region view, or a map without the airport layout): no airfield entry.
+    expect(legendEntries({ stands: STANDS, bounds: TERMINAL_A }).airfield).toEqual([]);
+    // What the map draws on screen, always in the legend's order and once each.
+    expect(legendEntries({ airfield: ['terminal', 'apron', 'runway', 'apron'] }))
+      .toEqual({ ...NOTHING, airfield: ['runway', 'apron', 'terminal'] });
+    expect(legendEntries({ airfield: ['holdBar', 'taxiway', 'runway', 'terminal', 'apron'] }).airfield)
+      .toEqual(['runway', 'taxiway', 'holdBar', 'apron', 'terminal']);
+    // With the stands of the view, the airfield comes on top of their states and tag.
+    expect(legendEntries({ stands: STANDS, bounds: FBO, airfield: ['taxiway', 'apron'] }))
+      .toEqual({ ...NOTHING, states: ['disabled', 'unverified'], tags: ['unofficial'], airfield: ['taxiway', 'apron'] });
+    // Anything that is not an airfield item, or not a list, is not listed.
+    expect(legendEntries({ airfield: ['designator', 'stand', 'toString'] }).airfield).toEqual([]);
+    expect(legendEntries({ airfield: 'runway' }).airfield).toEqual([]);
+    expect(legendEntries({ airfield: null }).airfield).toEqual([]);
   });
 
   it('standsInView keeps the drawn stands inside the bounds', () => {
