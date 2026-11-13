@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { call, expectCall, login } from "./api";
 import { goPrivate } from "./browser";
 import { loadRun, STATE_DIR } from "./env";
@@ -25,6 +25,8 @@ const OWN_TABLET_FILE = "tablet.json";
  * shortest visit (2 minutes to its stand and 20 on the ground) is triggered, imported and assigned within it.
  */
 const SHIFT_AHEAD = 45 * MINUTE;
+/** The longest shift Gestión Humana accepts (ShiftAdjustmentRules.MaxDuration), in minutes. */
+const MAX_SHIFT_MINUTES = 16 * 60;
 
 export type Leg = { id: string; flightNumber: string; scheduledAt: string; estimatedAt: string | null; actualAt: string | null };
 export type PlanningTurnaround = {
@@ -189,7 +191,8 @@ const coversAhead = (agent: CoverageAgent, now = Date.now()) =>
  * `SHIFT_AHEAD` later (ADR-0026). It is checked before any flight exists, on OCC's coverage board, which lists the agents
  * with a shift that day: a stand coverage and the stands a demo flight can be drawn to need it (ADR-0041). Without a
  * shift that day, Gestión Humana programs the shared preset around now in Terminal A; a shift of that day that starts
- * later or ends sooner is widened, keeping what it already covered (3-E). Returns the agent as the board lists it then.
+ * later or ends sooner is widened, keeping what it already covered (3-E) within the 16-hour cap of a shift: its start
+ * moves later when needed. Returns the agent as the board lists it then.
  */
 export async function ensureAgentShiftNow(station: string, day = stationDay()) {
   const occ = await login("occ");
@@ -227,7 +230,9 @@ async function programShiftNow(station: string, day: string, board: CoverageBoar
 
 /**
  * Gestión Humana widens the agent's shift of the day until it covers from now to `SHIFT_AHEAD` later, keeping what it
- * already covered («Ajustar horario», 3-E).
+ * already covered («Ajustar horario», 3-E). A shift lasts at most 16 hours: when the widened shift would be longer its
+ * start moves later (the seeded 06:00–14:00 shift run at night starts after 07:00 and still covers the seeded 08:00
+ * visit).
  */
 async function widenShiftToNow(station: string, day: string) {
   const hr = await login("hr");
@@ -244,8 +249,12 @@ async function widenShiftToNow(station: string, day: string) {
   // The end rounded up to the minute: the shift covers the whole stretch.
   const until = stationMinutes(new Date(now.getTime() + SHIFT_AHEAD + MINUTE - 1));
   expect(until > from, "the stretch the shift must cover ends before the station's midnight").toBe(true);
+  const newEnd = Math.max(end, until);
+  const newStart = Math.max(Math.min(start, from), newEnd - MAX_SHIFT_MINUTES);
+  test.skip(newStart > from,
+    `A shift of at most 16 hours cannot cover from now to ${SHIFT_AHEAD / MINUTE} minutes later; run between 08:30 and 22:30.`);
   await expectCall(200, hr, "PATCH", `/human-resources/shifts/${shift!.id}`, {
-    startsAtLocal: clockOf(Math.min(start, from)), endsAtLocal: clockOf(Math.max(end, until)),
+    startsAtLocal: clockOf(newStart), endsAtLocal: clockOf(newEnd),
     reason: "El agente cubre el vuelo demo del ciclo E2E.", expectedVersion: shift!.version,
   });
 }
