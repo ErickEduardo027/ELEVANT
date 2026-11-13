@@ -810,8 +810,10 @@ que la rehace (U3, U5 y U6).
   pantallas y después de recargar. Los
   [toasts](../../frontend/private-web/src/features/admin-occ/shell/occToastQueue.js)
   salen arriba a la derecha, bajo la barra: tres como mucho, 15 s los urgentes,
-  10 s los de atención y 8 s los avisos. Solo parpadea el glifo de una alerta
-  urgente sin recibir, y nunca con movimiento reducido.
+  10 s los de atención y 8 s los avisos. Con el cajón abierto no se dibujan: lo
+  que llega se anuncia dentro del cajón (el urgente, como alerta), y al cerrarlo
+  no reaparece. Solo parpadea el glifo de una alerta urgente sin recibir, y
+  nunca con movimiento reducido.
 - **Riel.** El
   [riel](../../frontend/private-web/src/features/admin-occ/shell/OccSidebar.jsx)
   agrupa los mismos 14 módulos en

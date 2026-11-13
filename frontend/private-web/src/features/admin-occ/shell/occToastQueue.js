@@ -11,9 +11,12 @@ import { ADMIN_OCC_BASE_PATH } from '../navigation';
 // - Each lives from the moment it shows: an urgent one 15 s, an attention one 10 s, a notice 8 s.
 // - A new toast takes a free place. With none free, the oldest toast that is not urgent and came in an earlier read
 //   gives way; when the three are urgent (or of the same read), the new one waits its turn and shows as soon as one
-//   closes. Nothing pushes an urgent toast out, so it stays at least 15 s unless the controller closes it.
+//   closes. Nothing pushes an urgent toast out, so it stays at least 15 s unless the controller closes it or opens
+//   «Alertas y avisos».
 // - The new notices of one read are a burst: up to three get a toast each; with more, the two most pressing get one
 //   and «Tienes {count} avisos operativos nuevos más.» with «Ver» stands for the rest.
+// - While «Alertas y avisos» is open nothing is drawn: the drawer shows the notices and reads out the toasts that
+//   arrive, and closing it clears the queue, so none of them shows afterwards with its time cut short.
 
 /** How many toasts show at once. */
 export const OCC_TOAST_LIMIT = 3;
@@ -84,9 +87,9 @@ function promote(state, visible, waiting, now) {
  * The queue's reducer. State `{ visible, waiting }`; a visible toast also carries `shownAt` and `expiresAt` (ms).
  * - `{ type: 'arrive', toasts, now }`: one burst, as arrivalToasts builds it. A toast already queued is ignored.
  * - `{ type: 'dismiss', id, now }`: the controller closed it, ran its action, or received its alert.
- * - `{ type: 'expire', now }`: removes the toasts whose time is over.
+ * - `{ type: 'expire', now }`: removes the toasts whose time is over (`expiresAt <= now`).
  * - `{ type: 'clear' }`: empties the queue, waiting toasts included (the controller opened «Alertas y avisos», which
- *   shows every notice they stand for).
+ *   shows every notice they stand for, or closed it, which showed and read out the ones that arrived meanwhile).
  * After a dismiss or an expiry the waiting toasts take the free places. An unknown action leaves the state as it is.
  */
 export function reduceToastQueue(state = EMPTY_TOAST_QUEUE, action = {}) {

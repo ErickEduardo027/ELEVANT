@@ -32,6 +32,23 @@ const ACTION = 'mt-2 inline-flex h-8 min-w-11 items-center justify-center rounde
 const DISMISS = '-mr-1 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-occ-muted '
   + 'hover:bg-occ-panel hover:text-occ-text [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11';
 
+const priorityOf = toast => (Object.hasOwn(SIGNALS, toast.priority) ? toast.priority : 'notice');
+// An urgent toast interrupts; the rest wait their turn to be read.
+const roleOf = priority => (priority === 'urgent' ? 'alert' : 'status');
+
+// What a toast says, in the stack and in the announcer alike: its signal's word, then «{tipo}, {código}».
+function ToastWords({ toast, priority, language }) {
+  return (
+    <>
+      <p className="text-xs font-semibold">{SIGNALS[priority][language]}</p>
+      <p className="mt-0.5 text-sm">
+        {toast.message}
+        {toast.code ? <>{', '}<OccPlate kind="code" className="align-middle">{toast.code}</OccPlate></> : null}
+      </p>
+    </>
+  );
+}
+
 /**
  * The OCC toasts (design F and D27). Each toast is `{ id, priority, message, code, action }`: `priority` is `urgent`,
  * `attention` or `notice` and draws its glyph and word; `code` (optional) is an operation code, drawn after the message
@@ -47,17 +64,13 @@ export default function OccToastStack({ toasts = [], onDismiss, className = '' }
   return (
     <div data-occ-toasts="" className={`${OCC_TOAST_PLACEMENT.className} ${className}`}>
       {toasts.map(toast => {
-        const priority = Object.hasOwn(SIGNALS, toast.priority) ? toast.priority : 'notice';
+        const priority = priorityOf(toast);
         return (
-          <div key={toast.id} role={priority === 'urgent' ? 'alert' : 'status'} data-priority={priority}
+          <div key={toast.id} role={roleOf(priority)} data-priority={priority}
             className={`flex items-start gap-2.5 rounded-[var(--occ-radius-overlay)] border border-occ-line-strong p-3 text-occ-text ${TONE[priority]}`}>
             <OccGlyph name={priority} className="mt-0.5" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold">{SIGNALS[priority][language]}</p>
-              <p className="mt-0.5 text-sm">
-                {toast.message}
-                {toast.code ? <>{', '}<OccPlate kind="code" className="align-middle">{toast.code}</OccPlate></> : null}
-              </p>
+              <ToastWords toast={toast} priority={priority} language={language} />
               {toast.action ? (
                 <button type="button" className={ACTION}
                   onClick={() => { toast.action.onClick?.(); onDismiss?.(toast.id); }}>
@@ -68,6 +81,28 @@ export default function OccToastStack({ toasts = [], onDismiss, className = '' }
             <button type="button" onClick={() => onDismiss?.(toast.id)} aria-label={t('toasts.dismiss')} className={DISMISS}>
               <XIcon className="h-4 w-4" />
             </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * The same toasts read out instead of drawn, for where the stack cannot speak: inside a modal drawer, which hides from
+ * assistive technology everything outside it (shell/OccShellOverlays.jsx puts it in «Alertas y avisos»). Each toast
+ * says what the stack would say, in the same role (an urgent one is an `alert`, the rest are `status`), once, when it
+ * comes in. Visually hidden and without a control, it covers nothing and adds no stop for Tab.
+ */
+export function OccToastAnnouncer({ toasts = [] }) {
+  const { language } = useTranslation(occUiMessages);
+  return (
+    <div data-occ-toast-announcer="" className="sr-only">
+      {toasts.map(toast => {
+        const priority = priorityOf(toast);
+        return (
+          <div key={toast.id} role={roleOf(priority)} data-priority={priority}>
+            <ToastWords toast={toast} priority={priority} language={language} />
           </div>
         );
       })}

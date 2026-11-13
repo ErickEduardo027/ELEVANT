@@ -39,13 +39,18 @@ export default function OccTopbar({ navigation = [], user, onOpenMenu, onLogout 
   const [alertsOpen, setAlertsOpen] = useState(false);
   const alertsButton = useRef(null);
   const drawerId = useId();
-  // The drawer shows every notice the toasts stand for: opening it takes them away.
+  // The drawer shows every notice the toasts stand for: opening it takes them away. What arrives while it is open is
+  // shown and read out inside it (OccShellOverlays), so closing it takes those toasts away too: none shows afterwards
+  // with its time cut short.
   const dismissAllToasts = useOptionalOccShellToasts()?.dismissAllToasts;
   const openAlerts = useCallback(() => {
     setAlertsOpen(true);
     dismissAllToasts?.();
   }, [dismissAllToasts]);
-  const closeAlerts = useCallback(() => setAlertsOpen(false), []);
+  const closeAlerts = useCallback(() => {
+    setAlertsOpen(false);
+    dismissAllToasts?.();
+  }, [dismissAllToasts]);
   const alerts = useMemo(() => ({ open: alertsOpen, id: drawerId, onClose: closeAlerts, returnFocusRef: alertsButton }),
     [alertsOpen, closeAlerts, drawerId]);
 

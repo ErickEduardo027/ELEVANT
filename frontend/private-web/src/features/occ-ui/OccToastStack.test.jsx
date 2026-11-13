@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import tailwindConfig from '../../../tailwind.config.js';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
-import OccToastStack, { OCC_TOAST_PLACEMENT } from './OccToastStack';
+import OccToastStack, { OCC_TOAST_PLACEMENT, OccToastAnnouncer } from './OccToastStack';
 
 const TOASTS = [
   { id: 'notice:a', priority: 'urgent', message: 'Incidencia reportada en rampa', code: 'OP-0412' },
@@ -113,5 +113,42 @@ describe('OccToastStack', () => {
     expect(within(screen.getByRole('alert')).getByRole('button', { name: 'Close notification' })).toBeInTheDocument();
     view.rerender(stack({ toasts: [] }));
     expect(document.querySelector('[data-occ-toasts]')).toBeNull();
+  });
+});
+
+describe('OccToastAnnouncer', () => {
+  const announcer = props => <LanguageScope><OccToastAnnouncer toasts={TOASTS} {...props} /></LanguageScope>;
+  // What each toast says, and as what: an alert or a status.
+  const spoken = root => [...root.querySelectorAll('[role]')].map(item => [item.getAttribute('role'), item.textContent]);
+
+  it('reads the toasts out with the words of the stack, an urgent one as an alert, and draws nothing', () => {
+    const view = render(announcer());
+    const root = document.querySelector('[data-occ-toast-announcer]');
+    // Out of sight and with no control: inside a drawer it covers nothing and adds no stop for Tab.
+    expect(classesOf(root)).toContain('sr-only');
+    expect(within(root).queryAllByRole('button')).toEqual([]);
+    expect(root.querySelector('[data-occ-glyph]')).toBeNull();
+    expect(document.querySelector('[data-occ-toasts]')).toBeNull();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getAllByRole('status')).toHaveLength(2);
+    const said = spoken(root);
+    expect(said[0]).toEqual(['alert', 'UrgenteIncidencia reportada en rampa, OP-0412']);
+    view.unmount();
+
+    // The stack says the same words, in the same roles.
+    render(stack());
+    expect(spoken(document.querySelector('[data-occ-toasts]'))).toEqual(said);
+  });
+
+  it('speaks English, reads an unknown priority as a notice and says nothing without toasts', () => {
+    resetLanguageForTests('en');
+    const view = render(announcer({
+      toasts: [{ id: 'summary:z', priority: 'unknown', message: 'You have 3 more new operational notices.', code: null }],
+    }));
+    const root = document.querySelector('[data-occ-toast-announcer]');
+    expect(spoken(root)).toEqual([['status', 'NoticeYou have 3 more new operational notices.']]);
+    view.rerender(announcer({ toasts: [] }));
+    expect(spoken(document.querySelector('[data-occ-toast-announcer]'))).toEqual([]);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 });

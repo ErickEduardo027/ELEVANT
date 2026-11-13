@@ -306,6 +306,43 @@ describe('OccShellProvider', () => {
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
+  it('takes a toast away when its timer fires, even with the device clock a little behind', async () => {
+    const { created, createObserver } = fakeObservers();
+    const old = notice('operation_submitted');
+    const incidents = [notice('incident_reported'), notice('incident_reported'), notice('incident_reported')];
+    const late = notice('incident_reported');
+    loadOperationalNotifications
+      .mockResolvedValueOnce({ notifications: [old], hasMore: false })
+      .mockResolvedValueOnce({ notifications: [...incidents, old], hasMore: false })
+      .mockResolvedValue({ notifications: [late, ...incidents, old], hasMore: false });
+    render(frame(null, { createObserver }));
+    await flush(10_000);
+    act(() => created[0].onChanges(['notifications']));
+    await flush();
+    expect(screen.getAllByRole('alert')).toHaveLength(3);
+    // Three urgent toasts take the three places, so the next one waits its turn.
+    await flush(3_000);
+    act(() => created[0].onChanges(['notifications']));
+    await flush();
+    expect(loadOperationalNotifications).toHaveBeenCalledTimes(3);
+    expect(screen.getAllByRole('alert')).toHaveLength(3);
+    expect(screen.queryByText(late.operationCode)).not.toBeInTheDocument();
+
+    // The device clock steps back 1 ms (an NTP correction; a coarse Date.now() or a timer that fires a millisecond
+    // early read the same). Timers keep their delays, so the timer of the three fires with Date.now() 1 ms short of
+    // their end.
+    vi.setSystemTime(Date.now() - 1);
+    await flush(12_000);
+    // Their time is over all the same: they go, and the one that waited shows.
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+    expect(screen.getByRole('alert')).toHaveTextContent(`Incidencia reportada en rampa, ${late.operationCode}`);
+    // It stays its own 15 s, and goes.
+    await flush(14_000);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    await flush(2_000);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('feeds the status bar alerts and live link from the shell and shows its toasts outside the bar', async () => {
     const { created, createObserver } = fakeObservers();
     const old = notice('operation_submitted');
@@ -453,6 +490,62 @@ describe('OccShellProvider', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.queryAllByRole('status')).toEqual([]);
     expect(screen.queryAllByRole('alert')).toEqual([]);
+  });
+
+  it('reads out inside the open alerts what arrives, and closing them brings back no toast', async () => {
+    const { created, createObserver } = fakeObservers();
+    const old = notice('operation_submitted');
+    const incident = notice('incident_reported');
+    const deviation = notice('deviation_reported');
+    const later = notice('incident_reported');
+    loadOperationalNotifications
+      .mockResolvedValueOnce({ notifications: [old], hasMore: false })
+      .mockResolvedValueOnce({ notifications: [incident, deviation, old], hasMore: false })
+      .mockResolvedValue({ notifications: [later, incident, deviation, old], hasMore: false });
+    const bar = <OccTopbar navigation={ADMIN_OCC_NAVIGATION} user={{ name: 'Alex Operations', role: 'OCC' }} />;
+    render(frame(bar, { createObserver, overlays: false }));
+    await flush(10_000);
+    fireEvent.click(screen.getByRole('button', { name: 'Sin alertas' }));
+    const drawer = screen.getByRole('dialog', { name: 'Alertas y avisos' });
+    const close = within(drawer).getByRole('button', { name: 'Cerrar' });
+    expect(close).toHaveFocus();
+
+    // An incident and a deviation arrive while the drawer is open. No toast is drawn over it: the drawer reads them out
+    // itself, with the toasts' words, the incident as an alert. A modal drawer hides from screen readers everything
+    // outside it, the stack included.
+    act(() => created[0].onChanges(['notifications']));
+    await flush();
+    expect(document.querySelector('[data-occ-toasts]')).toBeNull();
+    const urgent = within(drawer).getByRole('alert');
+    expect(urgent).toHaveTextContent('Urgente');
+    expect(urgent).toHaveTextContent(`Incidencia reportada en rampa, ${incident.operationCode}`);
+    const attention = within(drawer).getByRole('status');
+    expect(attention).toHaveTextContent('Atención');
+    expect(attention).toHaveTextContent(`Desviación reportada en rampa, ${deviation.operationCode}`);
+    // Out of sight and out of the way: no control in it, and focus stays where it was.
+    const announcer = urgent.closest('[data-occ-toast-announcer]');
+    expect(announcer.className.split(/\s+/)).toContain('sr-only');
+    expect(announcer).toContainElement(attention);
+    expect(within(announcer).queryAllByRole('button')).toEqual([]);
+    expect(close).toHaveFocus();
+    // The queue lists both, unreceived.
+    expect(within(drawer).getByText('2 sin recibir')).toBeInTheDocument();
+
+    // Closed 12 s later, the drawer leaves no toast behind with its time cut short: it showed and read out both.
+    await flush(12_000);
+    fireEvent.click(close);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('alert')).toEqual([]);
+    expect(screen.queryAllByRole('status')).toEqual([]);
+    await flush(5_000);
+    expect(screen.queryAllByRole('alert')).toEqual([]);
+
+    // With the drawer closed, the next arrival has its toast again.
+    act(() => created[0].onChanges(['notifications']));
+    await flush();
+    const toast = screen.getByRole('alert');
+    expect(toast).toHaveTextContent(`Incidencia reportada en rampa, ${later.operationCode}`);
+    expect(toast.closest('[data-occ-toasts]')).not.toBeNull();
   });
 
   it('derives the live state from the observer status', async () => {

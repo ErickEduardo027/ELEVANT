@@ -22,9 +22,10 @@ const HISTORY_LINK = 'inline-flex min-h-8 items-center rounded text-sm font-semi
  * «Alertas y avisos» (design C.5), opened from the status bar's alerts: the queue of the notices the shell already read
  * (no read of its own). «Recibido» is the account's read receipt on the server (notices.markRead, PUT
  * notifications/{id}/read), so the count is the same on every screen and after a reload; «Abrir» goes where the notice
- * points and closes the drawer, like «Ver historial de avisos». Times are the station's.
+ * points and closes the drawer, like «Ver historial de avisos». Times are the station's. `children` go in the drawer
+ * after the queue: OccShellOverlays puts there the toasts that arrive while it is open, read out.
  */
-export default function OccAlertsDrawer({ id, open = true, onClose, returnFocusRef }) {
+export default function OccAlertsDrawer({ id, open = true, onClose, returnFocusRef, children }) {
   const { t, locale } = useTranslation(occShellMessages);
   const router = useRouter();
   const { notices } = useOccShell();
@@ -43,6 +44,7 @@ export default function OccAlertsDrawer({ id, open = true, onClose, returnFocusR
       <OccAlertQueue alerts={queue.alerts} recent={queue.recent} status={notices.status} onAcknowledge={acknowledge}
         onOpen={openNotice} onRetry={retry} locale={locale} timeZone={STATION_TIME_ZONE}
         staleSince={notices.refreshFailed ? notices.fetchedAt : null} />
+      {children}
     </OccDrawer>
   );
 }

@@ -32,10 +32,10 @@ const DAY = () => [
 ];
 
 // Inside a shell root, as ShellFrame draws it: the bar's overlays (the alerts drawer, the toasts) portal into it.
-function topbar(props, shell) {
+function topbar(props, shell, toasts) {
   return (
     <LanguageScope>
-      <OccShellTestProvider value={shell}>
+      <OccShellTestProvider value={shell} toasts={toasts}>
         <div data-shell-root="" data-department="occ">
           <OccTopbar navigation={ADMIN_OCC_NAVIGATION} user={USER} onOpenMenu={vi.fn()} onLogout={vi.fn()} {...props} />
         </div>
@@ -152,6 +152,26 @@ it('the alerts button opens the drawer and reports aria-expanded', async () => {
   expect(screen.getByRole('dialog', { name: 'Alertas y avisos' })).toBeInTheDocument();
   act(() => { window.history.pushState({}, '', '/admin-occ/planning'); window.dispatchEvent(new PopStateEvent('popstate')); });
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it('clears the toasts when the alerts open, and again when they close', async () => {
+  window.history.replaceState({}, '', '/admin-occ/dashboard');
+  const toasts = { toasts: [], dismissToast: vi.fn(), dismissAllToasts: vi.fn() };
+  render(topbar({}, createOccShellValue({ notices: { status: 'success', items: DAY() } }), toasts));
+  const button = screen.getByRole('button', { name: '3 alertas', description: 'Urgente' });
+
+  // The drawer shows every notice the toasts stand for: opening it takes them away.
+  await userEvent.click(button);
+  expect(toasts.dismissAllToasts).toHaveBeenCalledOnce();
+  // What arrives while it is open is shown and read out inside it, so closing it, by any way, brings none back.
+  await userEvent.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(toasts.dismissAllToasts).toHaveBeenCalledTimes(2);
+  await userEvent.click(button);
+  act(() => { window.history.pushState({}, '', '/admin-occ/planning'); window.dispatchEvent(new PopStateEvent('popstate')); });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(toasts.dismissAllToasts).toHaveBeenCalledTimes(4);
+  expect(toasts.dismissToast).not.toHaveBeenCalled();
 });
 
 it('the toast stack starts under the bar', () => {

@@ -335,6 +335,7 @@ U2 cambia solo el marco del OCC: el proveedor, la barra de estado, el riel, el c
 - Otras reglas:
   - no hay toast de mensajes con el chat abierto;
   - abrir el cajón quita los toasts, y recibir una alerta quita la suya;
+  - con el cajón abierto no se dibuja ningún toast. Lo que llega se anuncia dentro del cajón con las mismas palabras (`OccToastAnnouncer`, oculto a la vista y sin controles): el urgente como `alert` y los demás como `status`, porque un cajón modal oculta a los lectores de pantalla todo lo que queda fuera de él. Al cerrarlo, la cola se vacía: lo que llegó ya se vio y se oyó en el cajón, y así ningún toast aparece después con su tiempo recortado;
   - la primera lectura solo aprende qué avisos hay, así que entrar al OCC no repite alertas viejas.
 - Los toasts no usan `useToast`, que no limita ni ordena: `src/components/Toast.jsx` sigue igual para los demás departamentos.
 - Solo parpadea el glifo de una alerta urgente sin recibir, con `motion-safe:` y la animación `occ-alarm-blink` de `tailwind.config.js`. Con movimiento reducido no parpadea: lleva un contorno doble fijo.

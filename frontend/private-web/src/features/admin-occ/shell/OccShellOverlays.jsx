@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import OccToastStack from '../../occ-ui/OccToastStack';
+import OccToastStack, { OccToastAnnouncer } from '../../occ-ui/OccToastStack';
 import OccAlertsDrawer from './OccAlertsDrawer';
 import { useOptionalOccShellToasts } from './occShellContext';
 
@@ -16,9 +16,11 @@ const NO_TOASTS = Object.freeze([]);
  * transform, which would drop the overlays on navigation and pin their fixed position to `main`. Inside the shell root
  * they keep `data-department="occ"` and the legacy bridge above them. Outside OccShellProvider it renders nothing.
  *
- * `alerts` is `{ open, id, onClose, returnFocusRef }`, the drawer's state, which OccTopbar keeps (opening it clears the
- * toasts). While the drawer is open no toast is drawn over it: everything a toast would say is in the drawer, whose
- * count announces what arrives, and the stack would cover its first rows.
+ * `alerts` is `{ open, id, onClose, returnFocusRef }`, the drawer's state, which OccTopbar keeps. While the drawer is
+ * open no toast is drawn over it: everything a toast would say is in the drawer, and the stack would cover its first
+ * rows. The toasts that arrive meanwhile are read out inside it instead (OccToastAnnouncer: an urgent one as an alert),
+ * because a modal drawer hides from assistive technology everything outside it. Opening and closing the drawer both
+ * clear the queue (OccTopbar), so no toast shows after it with its time cut short.
  */
 export default function OccShellOverlays({ alerts = null }) {
   const toasts = useOptionalOccShellToasts();
@@ -39,9 +41,11 @@ export default function OccShellOverlays({ alerts = null }) {
     <>
       <span ref={anchor} hidden />
       {root ? createPortal(
-        drawerOpen
-          ? <OccAlertsDrawer id={alerts.id} onClose={alerts.onClose} returnFocusRef={alerts.returnFocusRef} />
-          : <OccToastStack toasts={items} onDismiss={toasts.dismissToast} />,
+        drawerOpen ? (
+          <OccAlertsDrawer id={alerts.id} onClose={alerts.onClose} returnFocusRef={alerts.returnFocusRef}>
+            <OccToastAnnouncer toasts={items} />
+          </OccAlertsDrawer>
+        ) : <OccToastStack toasts={items} onDismiss={toasts.dismissToast} />,
         root,
       ) : null}
     </>

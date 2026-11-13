@@ -174,11 +174,13 @@ function OccNoticesLayer({ live, children }) {
     return data;
   }, []);
 
-  // One timer, to the next toast whose time is over.
+  // One timer, to the next toast whose time is over. When it fires, that time is over whatever Date.now() reads: with
+  // the device clock a little behind (an NTP correction, a coarse Date.now(), a timer a millisecond early) the toast
+  // would otherwise stay, and the same expiry would schedule no other timer, so it and those waiting would stick.
   const expiry = nextToastExpiry(toastQueue);
   useEffect(() => {
     if (expiry === null) return undefined;
-    const timer = window.setTimeout(() => dispatchToasts({ type: 'expire', now: Date.now() }),
+    const timer = window.setTimeout(() => dispatchToasts({ type: 'expire', now: Math.max(Date.now(), expiry) }),
       Math.max(0, expiry - Date.now()));
     return () => window.clearTimeout(timer);
   }, [expiry]);
