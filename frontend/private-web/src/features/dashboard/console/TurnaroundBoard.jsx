@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Link from 'next/link';
-import Badge from '../../../components/Badge';
+import DemoTag from '../../occ-ui/DemoTag';
 import { getPlanningStatusMeta } from '../../planning/planningStatus';
 import { TURNAROUND_FILTERS, legTime, missingResources } from '../dashboardModel';
 import ConsolePanel, { PanelLink } from './ConsolePanel';
@@ -84,7 +84,7 @@ export default function TurnaroundBoard({ t, language, locale, timeZone, groups,
                             {item.operationCode}
                           </Link>
                           {/* ADR-0041: a demo flight the superadministrator triggered is always labelled as such. */}
-                          {item.isDemo === true && <Badge label="Demo" />}
+                          {item.isDemo === true && <DemoTag />}
                         </span>
                       </td>
                       <td className="px-3 py-2 font-mono text-xs text-occ-text">

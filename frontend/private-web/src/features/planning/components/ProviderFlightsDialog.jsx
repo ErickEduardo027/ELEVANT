@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Badge from '../../../components/Badge';
+import DemoTag from '../../occ-ui/DemoTag';
 import {
   dismissOccFlightProposal, FLIGHT_FEED_VIEWS, flightFeedMessage, importOccFlightProposals, loadOccFlightFeed,
   pauseReasonText, placementReasons, refreshOccFlightFeed, REFRESH_MESSAGES, restoreOccFlightProposal,
@@ -70,7 +70,7 @@ const STAND_ORDER = new Intl.Collator('es', { numeric: true });
 
 /** A demo flight the superadministrator triggered (ADR-0041) is always labelled as such. */
 function DemoMark({ item }) {
-  return item.isDemo === true ? <>{' '}<Badge label="Demo" /></> : null;
+  return item.isDemo === true ? <>{' '}<DemoTag /></> : null;
 }
 
 /**

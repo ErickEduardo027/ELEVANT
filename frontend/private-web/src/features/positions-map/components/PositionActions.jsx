@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import Badge from '../../../components/Badge';
+import DemoTag from '../../occ-ui/DemoTag';
 import {
   assignOccStand, isStalePosition, locateOccStand, positionVersionMessage, recordOccArrival, releaseOccStand,
 } from '../../../services/occPositionsService';
@@ -244,7 +244,7 @@ export default function PositionActions({ position, candidates = [], onChanged, 
           <div key={item.turnaroundId} className="space-y-2 border-b border-black/5 pb-3 last:border-0 dark:border-white/5">
             <p><strong>{item.arrivalFlightNumber ?? item.operationCode}</strong> · {item.airlineName}
               {/* ADR-0041: a demo flight the superadministrator triggered is always labelled as such. */}
-              {item.isDemo === true && <>{' '}<Badge label="Demo" /></>}
+              {item.isDemo === true && <>{' '}<DemoTag /></>}
               <span className="block text-text-secondary-light">Llegada prevista {formatTime(item.arrivalScheduledAt, zone)}
                 {item.arrivedAt ? ` · llegó ${formatTime(item.arrivedAt, zone)}` : ' · aún no ha llegado'}</span></p>
             <VersionNotice version={version} onRetry={reload} />
