@@ -41,7 +41,8 @@ function MonitoringMapArea({
           onSelectFlight={onSelectFlight}
           theme={theme}
         />
-        {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-3 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
+        {/* Above the map's dock (views, «Restablecer vista», «Centrar PUJ»), which sits at the bottom of the map. */}
+        {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-20 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
           {t('page.noLivePositions')}
         </p>}
       </> : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
@@ -189,7 +190,10 @@ export default function FlightMonitoringPage({
           </FlightListDrawer>
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(16rem,3fr)_7fr] 2xl:grid-cols-[minmax(20rem,2fr)_7fr]">
+        // One bounded row on wide screens: an `auto` row grows with a long flight list and stretched the map to the
+        // list's height (3 000 px with 30 flights), which left PUJ and the map's dock below the fold. The list scrolls
+        // inside its own panel.
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[minmax(16rem,3fr)_7fr] lg:grid-rows-[minmax(0,1fr)] 2xl:grid-cols-[minmax(20rem,2fr)_7fr]">
           {listPanel}
           {mapArea}
         </div>

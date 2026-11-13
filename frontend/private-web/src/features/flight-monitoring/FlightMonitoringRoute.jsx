@@ -45,7 +45,8 @@ export default function FlightMonitoringRoute() {
   }, [session?.accountId]);
 
   return (
-    <div className="space-y-3">
+    // The page fills the height of the OCC frame's content, so its grid and the map in it stay bounded by the screen.
+    <div className="h-full">
       <FlightMonitoringPage
         key={`${session?.accountId ?? 'none'}|${selected?.stationId ?? 'none'}`}
         status={monitoring.status}
