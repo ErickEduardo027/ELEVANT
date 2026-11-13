@@ -1962,12 +1962,32 @@ export interface DemoStandOptionResponse {
   standId: string;
   code: string;
   terminalCode: string;
+  located: boolean;
   free: boolean;
+  coveredBy: string[];
+  eligibleAgents: number;
+  eligible: boolean;
+  reasons: string[];
 }
 
 export interface DemoFlightWarningResponse {
   code: string;
   reasons: string[];
+}
+
+export interface DemoStationLayoutResponse {
+  stationId: string;
+  stationCode: string;
+  supported: boolean;
+  catalogTerminals: number;
+  terminals: number;
+  catalogStands: number;
+  stands: number;
+  activeStands: number;
+  locatedStands: number;
+  missingStands: string[];
+  unmatchedStands: string[];
+  complete: boolean;
 }
 
 export interface DemoFlightOptionsResponse {
@@ -1984,6 +2004,7 @@ export interface DemoFlightOptionsResponse {
   stands: DemoStandOptionResponse[];
   limits: DemoFlightLimitsResponse;
   warnings: DemoFlightWarningResponse[];
+  layout?: DemoStationLayoutResponse | null;
 }
 
 export interface PermissionActionData {
@@ -4965,6 +4986,10 @@ export interface PayInvoiceByCardBody {
   amount: number;
 }
 
+export interface PrepareDemoStationRequest {
+  stationId: string;
+}
+
 export interface PresenceHeartbeatRequest {
   clientId: string;
   sequence: number;
@@ -6541,6 +6566,9 @@ review?: string;
 
 export type GetDemoFlightOptionsParams = {
 stationId?: string;
+aircraftTypeId?: string;
+minutesToOnBlock?: number;
+groundMinutes?: number;
 };
 
 export type ListDemoFlightsParams = {
@@ -10050,7 +10078,10 @@ export const getGetDemoFlightOptionsUrl = (params?: GetDemoFlightOptionsParams,)
 
 /**
  * @summary What the form «Disparar vuelo demo» offers at a station (the requested one, else Punta Cana, else the first):
-airlines with exactly one applicable contract today, airports, aircraft types, stands, limits and warnings.
+airlines with exactly one applicable contract today, airports, aircraft types, the stands evaluated for the visit
+of the form (`minutesToOnBlock` 2 to 30, 8 by default; `groundMinutes` 20 to 240, 60 by default; the
+size of `aircraftTypeId`, any size without it), limits, warnings and the station against the Punta Cana
+catalogue. A visit outside the form's ranges answers `invalid_demo_flight`.
  */
 export const getDemoFlightOptions = async (params?: GetDemoFlightOptionsParams, options?: RequestInit): Promise<DemoFlightOptionsResponse> => {
 
@@ -10120,8 +10151,9 @@ export const getCreateDemoFlightUrl = () => {
 
 /**
  * @summary «Disparar vuelo demo»: 201 with the new flight, 200 when the Idempotency-Key replays it. The flight numbers and the
-registration are generated; a taken or inactive stand answers `stand_unavailable` with its rules in
-`reasons`.
+registration are generated. `Random` draws one of the eligible stands (none: `no_eligible_stand`);
+`Specific` needs an eligible stand (`stand_not_eligible`), and a taken or inactive one answers
+`stand_unavailable`. A refused stand names its rules in `reasons`.
  */
 export const createDemoFlight = async (createDemoFlightRequest: CreateDemoFlightRequest, options?: RequestInit): Promise<DemoFlightResponse> => {
 
@@ -10184,6 +10216,46 @@ const res = await fetch(getCancelDemoFlightUrl(demoFlightId),
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
   const data: DemoFlightResponse = body ? JSON.parse(body) : {}
+  return data
+}
+
+
+
+export const getPrepareDemoStationUrl = () => {
+
+
+
+
+  return `/api/v1/governance/demo-station`
+}
+
+/**
+ * @summary «Cargar posiciones de Punta Cana»: creates the catalogue's terminals and stands the station lacks, active and without
+coordinates (the map draws them by their code), and never changes, deactivates or deletes what the station has. It
+answers the station as it is afterwards with 200, the first time and when the Idempotency-Key replays it: the
+answer is a state, not a new resource. Only Punta Cana has a catalogue (`demo_station_unsupported`).
+ */
+export const prepareDemoStation = async (prepareDemoStationRequest: PrepareDemoStationRequest, options?: RequestInit): Promise<DemoStationLayoutResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Array.isArray(h)) return Object.fromEntries(h);
+    return h;
+  };
+const res = await fetch(getPrepareDemoStationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(prepareDemoStationRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: DemoStationLayoutResponse = body ? JSON.parse(body) : {}
   return data
 }
 

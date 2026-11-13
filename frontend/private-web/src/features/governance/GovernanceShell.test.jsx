@@ -30,7 +30,7 @@ vi.mock('../../services/demoFlightsService', async importOriginal => ({
   loadDemoFlightOptions: vi.fn().mockResolvedValue({ enabled: false, serverTime: '2026-11-12T14:00:00+00:00', stations: [],
     stationId: null, operationDate: null, airlines: [], airports: [], aircraftTypes: [], stands: [], warnings: [],
     limits: { minMinutesToOnBlock: 2, maxMinutesToOnBlock: 30, defaultMinutesToOnBlock: 8, minGroundMinutes: 20,
-      maxGroundMinutes: 240, defaultGroundMinutes: 60, maxActive: 3, active: 0 } }),
+      maxGroundMinutes: 240, defaultGroundMinutes: 60, maxActive: 3, active: 0 }, layout: null }),
   listDemoFlights: vi.fn().mockResolvedValue({ enabled: false, serverTime: '2026-11-12T14:00:00+00:00', stationId: null,
     flights: [] }),
 }));

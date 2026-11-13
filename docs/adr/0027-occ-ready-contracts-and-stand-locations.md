@@ -89,3 +89,12 @@ asignación.
 - La regla vive en Persistence. Si otro módulo la necesita, se mueve a un puerto de Application.
 - Las posiciones de otras estaciones se pueden ubicar igual, pero el mapa solo pinta las de PUJ
   hasta que existan referencias de otras estaciones.
+
+> **Actualización (13 de noviembre de 2026).** «Cargar posiciones de Punta Cana», el comando que
+> el superadministrador usa donde están encendidos los vuelos demo
+> ([ADR-0041](0041-demo-flights-and-punta-cana-stands.md)), crea terminales y posiciones sin
+> coordenadas: no escribe `latitude`, `longitude` ni `located_at`, ni en las posiciones que crea
+> ni en las que adopta. El conjunto de datos del mapa sigue dibujando cada posición por su código
+> normalizado, como referencia interna sin verificar, y la ubicación que OCC guarda con
+> `PUT occ/stands/{standId}/location` sigue reemplazándola. Para el vuelo demo, una posición está
+> «ubicada» si su código está en el catálogo de Punta Cana o si OCC la colocó.

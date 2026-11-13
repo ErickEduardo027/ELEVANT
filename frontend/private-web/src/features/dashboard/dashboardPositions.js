@@ -4,8 +4,10 @@ import { RAMP_POSITIONS } from './positionsData';
 // linked for reconciliation only; its coordinates are not copied here.
 export const AIP_PARKING_CHART_URL = 'https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_03-24.pdf';
 export const AIP_AMENDMENT_URL = 'https://aip.sna.gob.do/Datos/AMDT_AIRAC/AMDT_AIRAC_3-26/AMDT_AIRAC_03-26.pdf';
-export const RETIRED_DASHBOARD_POSITIONS = RAMP_POSITIONS.filter(position => position.id === 'B33');
-export const DASHBOARD_POSITIONS = RAMP_POSITIONS.filter(position => position.id !== 'B33');
+// A retired stand is marked in the data (`retired: true` in positionsData.js): it stays as a historical record
+// outside the operational view.
+export const RETIRED_DASHBOARD_POSITIONS = RAMP_POSITIONS.filter(position => position.retired);
+export const DASHBOARD_POSITIONS = RAMP_POSITIONS.filter(position => !position.retired);
 
 // Match the planning code exactly. Similar AIP labels must never be inferred.
 export function unlocatedStandAssignments(turnarounds = [], positions = DASHBOARD_POSITIONS) {

@@ -177,10 +177,13 @@ import {
   isDemoFlight,
   isDemoFlightList,
   isDemoFlightOptions,
+  isDemoStationLayout,
   normalizedDemoFlightCancel,
   normalizedDemoFlightCreate,
+  normalizedDemoFlightOptionsQuery,
   type CreateDemoFlightCommand,
   type DemoFlightIntent,
+  type DemoFlightOptionsQuery,
 } from "./demoFlights";
 import {
   isOccFlightFeedView,
@@ -386,6 +389,7 @@ import {
   getListDemoFlightsUrl,
   getCreateDemoFlightUrl,
   getCancelDemoFlightUrl,
+  getPrepareDemoStationUrl,
   getGetOccMasterDataUrl,
   getCreateOccTerminalUrl,
   getUpdateOccTerminalUrl,
@@ -573,6 +577,7 @@ import {
   type DemoFlightOptionsResponse,
   type DemoFlightListResponse,
   type DemoFlightResponse,
+  type DemoStationLayoutResponse,
   type OccMasterData,
   type MasterTerminalData,
   type MasterStandData,
@@ -1494,14 +1499,19 @@ export interface ElevantApiClient {
     options?: GetHumanResourcesReportOptions): Promise<StationCatalogItemData>;
   /**
    * What the form «Disparar vuelo demo» offers at a station (the one asked for, else Punta Cana, else the first); only
-   * the superadministrator (ADR-0041). Where demo flights are off it answers `enabled: false` with nothing to choose.
+   * the superadministrator (ADR-0041). The query is a station id, or the form's visit (`stationId`, `aircraftTypeId`,
+   * `minutesToOnBlock` 2 to 30, `groundMinutes` 20 to 240; the server's defaults for what is missing), checked before it
+   * is sent; the stands come evaluated for that visit, with the station's `layout`. Where demo flights are off it
+   * answers `enabled: false` with nothing to choose.
    */
-  getDemoFlightOptions(stationId?: string | null, options?: GetHumanResourcesReportOptions): Promise<DemoFlightOptionsResponse>;
+  getDemoFlightOptions(query?: string | DemoFlightOptionsQuery | null,
+    options?: GetHumanResourcesReportOptions): Promise<DemoFlightOptionsResponse>;
   /** The demo flights of the last 24 hours at a station, newest first, with the server time their countdowns use. */
   listDemoFlights(stationId?: string | null, options?: GetHumanResourcesReportOptions): Promise<DemoFlightListResponse>;
   /**
    * «Disparar vuelo demo» with the intent's Idempotency-Key: 201 the first time, 200 when the key replays it. The request
-   * is checked locally first (minutes 2 to 30 and 20 to 240, a stand only when it is chosen).
+   * is checked locally first (minutes 2 to 30 and 20 to 240, a stand only with `Specific`; `Random` lets the server draw
+   * an eligible one with the key as the seed).
    */
   createDemoFlight(input: CreateDemoFlightCommand, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<DemoFlightResponse>;
@@ -1512,6 +1522,13 @@ export interface ElevantApiClient {
    */
   cancelDemoFlight(demoFlightId: string, intent: DemoFlightIntent, idempotencyKey: string,
     options?: GetHumanResourcesReportOptions): Promise<DemoFlightResponse>;
+  /**
+   * «Cargar posiciones de Punta Cana» with the intent's Idempotency-Key (ADR-0041): creates the catalogue's terminals and
+   * stands the station lacks and never changes what it has. It answers the station as it is afterwards, with 200 the
+   * first time and on a replay; only Punta Cana has a catalogue (`demo_station_unsupported`).
+   */
+  prepareDemoStation(stationId: string, idempotencyKey: string,
+    options?: GetHumanResourcesReportOptions): Promise<DemoStationLayoutResponse>;
   /** Terminals, stands and aircraft types of a station in scope (`operations.master_data.read`). */
   getOccMasterData(stationId: string, options?: GetHumanResourcesReportOptions): Promise<OccMasterData>;
   createOccTerminal(input: CreateTerminalInput, idempotencyKey: string,
@@ -7825,9 +7842,9 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       return masterDataCommand("PUT", getUpdateGovernanceStationUrl(station), normalizedStationUpdate(input), idempotencyKey,
         options, (value): value is StationCatalogItemData => isStationCatalogItem(value, station));
     },
-    async getDemoFlightOptions(stationId?: string | null, options?: GetHumanResourcesReportOptions) {
-      const station = stationId == null ? undefined : validatedUuid(stationId, "stationId");
-      const result = await execute(getGetDemoFlightOptionsUrl(station === undefined ? undefined : { stationId: station }),
+    async getDemoFlightOptions(query?: string | DemoFlightOptionsQuery | null, options?: GetHumanResourcesReportOptions) {
+      // A station id alone, as the first screens ask, or the form's visit; checked before it is sent.
+      const result = await execute(getGetDemoFlightOptionsUrl(normalizedDemoFlightOptionsQuery(query)),
         { ...options, method: "GET" }, true);
       if (result.status !== 200 || !isDemoFlightOptions(result.data)) throw malformedResponse(result.status);
       return result.data;
@@ -7852,6 +7869,12 @@ export function createElevantApiClient(options: ElevantApiClientOptions): Elevan
       const flight = validatedUuid(demoFlightId, "demoFlightId");
       return catalogCommand("POST", getCancelDemoFlightUrl(flight), normalizedDemoFlightCancel(intent), idempotencyKey,
         options, (value): value is DemoFlightResponse => isDemoFlight(value, flight));
+    },
+    async prepareDemoStation(stationId: string, idempotencyKey: string, options?: GetHumanResourcesReportOptions) {
+      const station = validatedUuid(stationId, "stationId");
+      // The answer is a state, not a new resource: 200 the first time and on a replay, of the station asked for.
+      return catalogCommand("POST", getPrepareDemoStationUrl(), { stationId: station }, idempotencyKey, options,
+        (value): value is DemoStationLayoutResponse => isDemoStationLayout(value, station));
     },
     async getOccMasterData(stationId: string, options?: GetHumanResourcesReportOptions) {
       const station = validatedUuid(stationId, "stationId");

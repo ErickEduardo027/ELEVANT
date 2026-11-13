@@ -222,12 +222,15 @@ const CARD_PAYMENT_CODES = ["card_payments_unavailable", "card_payment_invalid",
 /**
  * Demo flights of the superadministrator (ADR-0041): off in this environment, a request outside the rules of the form,
  * an airport neither known nor in the built-in list, the limit of active flights (or of the day's numbers) at the
- * station, and a flight already cancelled or finished. The station, airline, contract, aircraft type and stand causes
+ * station, and a flight already cancelled or finished. PR A2: «Cargar posiciones» asked for a station without a
+ * catalogue (only Punta Cana has one), «Al azar» with no eligible stand to draw and a stand chosen by hand that is not
+ * eligible (both with the rules they break in `reasons`). The station, airline, contract, aircraft type and stand causes
  * keep their codes of other lists (`station_unavailable`, `airline_inactive`, `contract_not_in_force`,
  * `contract_ambiguous`, `aircraft_type_unavailable`, `stand_unavailable`).
  */
 const DEMO_FLIGHT_CODES = ["demo_flights_unavailable", "invalid_demo_flight", "demo_origin_unknown",
-  "demo_flight_limit_reached", "demo_flight_closed"] as const;
+  "demo_flight_limit_reached", "demo_flight_closed", "demo_station_unsupported", "no_eligible_stand",
+  "stand_not_eligible"] as const;
 export type ElevantApiErrorCode = "password_change_required" | "password_policy" | "invalid_link" | "refresh_rotated" |
   (typeof CONTRACT_CODES)[number] | (typeof COMMON_COMMAND_CODES)[number] | (typeof COMMERCIAL_REQUEST_CODES)[number] |
   (typeof CONTRACT_DRAFT_CODES)[number] | (typeof FINANCE_COMMAND_CODES)[number] | (typeof CATALOG_CODES)[number] |
@@ -269,7 +272,13 @@ export const ELEVANT_RULE_REASONS = ["window_invalid", "no_stands", "stand_inact
   "terminal_scope_missing",
   // The e-CF issuance names the service that blocks it: a charge its contract excludes (3-N29) or a service OCC
   // excluded from billing in the review (3-N11) (phase 3, block D).
-  "charge_excluded_by_contract", "excluded_in_review"] as const;
+  "charge_excluded_by_contract", "excluded_in_review",
+  // Why a demo flight's stand is not eligible (ADR-0041, PR A2): the map cannot draw it, nobody covers it at the on-block
+  // instant, or the agents who cover it fail OCC's assignment rule (agent_inactive, terminal_scope_missing and
+  // mentor_required are listed above).
+  "stand_not_located", "stand_not_covered", "mobile_account_unavailable", "station_scope_missing",
+  "operational_position_unavailable", "qualification_not_current", "airport_id_not_current",
+  "ramp_driver_license_not_current", "shift_not_compatible", "approved_absence", "assignment_conflict"] as const;
 export type ElevantRuleReason = (typeof ELEVANT_RULE_REASONS)[number];
 
 interface ElevantApiErrorOptions {

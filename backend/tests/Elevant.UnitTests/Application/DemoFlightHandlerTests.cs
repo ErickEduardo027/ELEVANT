@@ -18,6 +18,7 @@ public sealed class DemoFlightHandlerTests
     private static readonly Guid Station = Guid.Parse("20000000-0000-7000-8000-000000000003");
     private static readonly Guid Airline = Guid.Parse("21000000-0000-7000-8000-000000000001");
     private static readonly Guid AircraftType = Guid.Parse("22000000-0000-7000-8000-000000000001");
+    private static readonly Guid Stand = Guid.Parse("23000000-0000-7000-8000-000000000001");
     private static readonly Guid DemoFlight = Guid.Parse("0193a6f2-5c1e-7d3a-9b44-1f2e3d4c5b6a");
     private static readonly Guid Key = Guid.Parse("0193a6f2-5c1e-7d3a-9b44-000000000001");
 
@@ -28,6 +29,9 @@ public sealed class DemoFlightHandlerTests
         Roles = [OccAdministrator.Roles[0] with { Code = "SUPERADMIN", Name = "Superadmin", UserType = "superadmin" }],
         StationScopes = [],
     };
+
+    /// <summary>The options for an aircraft of that type that parks in 15 minutes for two hours.</summary>
+    private static readonly DemoFlightOptionsQuery Query = new(Station, AircraftType, 15, 120);
 
     private static CreateDemoFlightCommand Command(int minutes = 8) =>
         new(Station, Airline, " mia ", null, AircraftType, "None", null, minutes, 60);
@@ -68,7 +72,7 @@ public sealed class DemoFlightHandlerTests
         var ct = TestContext.Current.CancellationToken;
 
         var handler = Handler(store, Superadministrator, DemoFlightAvailability.Disabled);
-        var options = await handler.OptionsAsync(IdentityTestData.AccountId, Station, ct);
+        var options = await handler.OptionsAsync(IdentityTestData.AccountId, Query, ct);
         Assert.NotNull(options);
         Assert.False(options.Enabled);
         Assert.Equal(Now, options.ServerTime);
@@ -80,6 +84,7 @@ public sealed class DemoFlightHandlerTests
         Assert.Empty(options.AircraftTypes);
         Assert.Empty(options.Stands);
         Assert.Empty(options.Warnings);
+        Assert.Null(options.Layout);
         // The form's limits: 2 to 30 minutes to the stand (8 by default), 20 to 240 on the ground (60), 3 at a time.
         Assert.Equal(new DemoFlightLimitsData(2, 30, 8, 20, 240, 60, 3, 0), options.Limits);
 
@@ -94,7 +99,7 @@ public sealed class DemoFlightHandlerTests
         foreach (var other in new[] { OccAdministrator, IdentityTestData.CreateAirlineActor(), null })
         {
             var refused = Handler(store, other, DemoFlightAvailability.Disabled);
-            Assert.Null(await refused.OptionsAsync(IdentityTestData.AccountId, Station, ct));
+            Assert.Null(await refused.OptionsAsync(IdentityTestData.AccountId, Query, ct));
             Assert.Null(await refused.ListAsync(IdentityTestData.AccountId, Station, ct));
             AssertRefused(await refused.CreateAsync(IdentityTestData.AccountId, Command(), Key, ct),
                 MasterDataFailure.Forbidden, "forbidden");
@@ -113,7 +118,7 @@ public sealed class DemoFlightHandlerTests
         foreach (var other in new[] { OccAdministrator, IdentityTestData.CreateAirlineActor(), null })
         {
             var refused = Handler(store, other, DemoFlightAvailability.On);
-            Assert.Null(await refused.OptionsAsync(IdentityTestData.AccountId, Station, ct));
+            Assert.Null(await refused.OptionsAsync(IdentityTestData.AccountId, Query, ct));
             Assert.Null(await refused.ListAsync(IdentityTestData.AccountId, null, ct));
             AssertRefused(await refused.CreateAsync(IdentityTestData.AccountId, Command(), Key, ct),
                 MasterDataFailure.Forbidden, "forbidden");
@@ -122,14 +127,16 @@ public sealed class DemoFlightHandlerTests
         }
         var handler = Handler(store, Superadministrator, DemoFlightAvailability.On);
         // A request without an account is nobody, whatever the resolver would answer.
-        Assert.Null(await handler.OptionsAsync(Guid.Empty, Station, ct));
+        Assert.Null(await handler.OptionsAsync(Guid.Empty, Query, ct));
         AssertRefused(await handler.CreateAsync(Guid.Empty, Command(), Key, ct), MasterDataFailure.Forbidden, "forbidden");
         Assert.Empty(store.Calls);
 
-        Assert.Same(Store.Options, await handler.OptionsAsync(IdentityTestData.AccountId, Station, ct));
+        Assert.Same(Store.Options, await handler.OptionsAsync(IdentityTestData.AccountId, Query, ct));
         Assert.Same(Store.List, await handler.ListAsync(IdentityTestData.AccountId, null, ct));
         Assert.Equal([$"options {IdentityTestData.AccountId} {Station}", $"list {IdentityTestData.AccountId} any"],
             store.Calls);
+        // The visit the form asks about reaches the store as it is: the stands are evaluated for it.
+        Assert.Same(Query, store.Asked);
     }
 
     [Fact]
@@ -141,8 +148,9 @@ public sealed class DemoFlightHandlerTests
 
         AssertRefused(await handler.CreateAsync(IdentityTestData.AccountId, Command(minutes: 1), Key, ct),
             MasterDataFailure.Invalid, "invalid_demo_flight");
-        var random = Command() with { StandChoice = "Random" };
-        AssertRefused(await handler.CreateAsync(IdentityTestData.AccountId, random, Key, ct),
+        // «Al azar» draws its own stand: a request that names one breaks the rule.
+        var randomWithStand = Command() with { StandChoice = "Random", StandId = Stand };
+        AssertRefused(await handler.CreateAsync(IdentityTestData.AccountId, randomWithStand, Key, ct),
             MasterDataFailure.Invalid, "invalid_demo_flight");
         AssertRefused(await handler.CancelAsync(IdentityTestData.AccountId, DemoFlight, "cancel", Key, ct),
             MasterDataFailure.Invalid, "invalid_demo_flight");
@@ -176,6 +184,24 @@ public sealed class DemoFlightHandlerTests
         Assert.Equal((DemoFlight, DemoFlightIntent.Finish), store.Cancelled);
         Assert.Equal([$"create {IdentityTestData.AccountId} {Key}", $"cancel {IdentityTestData.AccountId} {Key}"],
             store.Calls);
+    }
+
+    [Fact]
+    public async Task ARandomStandChoiceReachesTheStoreWithoutAStand()
+    {
+        var store = new Store();
+        var handler = Handler(store, Superadministrator, DemoFlightAvailability.On);
+        var ct = TestContext.Current.CancellationToken;
+
+        var created = await handler.CreateAsync(IdentityTestData.AccountId, Command() with { StandChoice = "Random" }, Key,
+            ct);
+
+        // The store draws the stand among the eligible ones with this key as the seed: the request names none.
+        Assert.Same(Store.Flight, created.Value);
+        Assert.Equal(
+            new CreateDemoFlightInput(Station, Airline, "MIA", "MIA", AircraftType, DemoStandChoice.Random, null, 8, 60),
+            store.Created);
+        Assert.Equal([$"create {IdentityTestData.AccountId} {Key}"], store.Calls);
     }
 
     /// <summary>
@@ -214,8 +240,9 @@ public sealed class DemoFlightHandlerTests
             new DateOnly(2026, 11, 12), [new(Airline, "Demo Airlines", "ZZ", "DZZ")],
             [new("MIA", "KMIA", "Miami International Airport", "Miami", "US")],
             [new(AircraftType, "A320", "Airbus", "A320", "Narrowbody")],
-            [new(Guid.Parse("23000000-0000-7000-8000-000000000001"), "A01", "A", true)],
-            new DemoFlightLimitsData(2, 30, 8, 20, 240, 60, 3, 1), [new("no_occ_accounts", [])]);
+            [new(Stand, "A01", "A", true, true, ["Riley Ramp"], 1, true, [])],
+            new DemoFlightLimitsData(2, 30, 8, 20, 240, 60, 3, 1), [new("no_occ_accounts", [])],
+            new DemoStationLayoutData(Station, "PUJ", true, 3, 3, 41, 41, 43, 41, [], ["B01", "B02"], true));
 
         public static readonly DemoFlightData Flight = new(DemoFlight, Station, "PUJ", Airline, "Demo Airlines", "ZZ9001",
             "ZZ9002", "HIDM01", "Airbus A320", "MIA", "MIA", null, "Active", "Approach", Now, Now.AddSeconds(264),
@@ -230,10 +257,13 @@ public sealed class DemoFlightHandlerTests
 
         public (Guid DemoFlightId, DemoFlightIntent Intent)? Cancelled { get; private set; }
 
-        public Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, Guid? stationId,
+        public DemoFlightOptionsQuery? Asked { get; private set; }
+
+        public Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, DemoFlightOptionsQuery query,
             CancellationToken cancellationToken = default)
         {
-            Calls.Add($"options {actorId} {stationId?.ToString() ?? "any"}");
+            Calls.Add($"options {actorId} {query.StationId?.ToString() ?? "any"}");
+            Asked = query;
             return Task.FromResult<DemoFlightOptionsData?>(Options);
         }
 

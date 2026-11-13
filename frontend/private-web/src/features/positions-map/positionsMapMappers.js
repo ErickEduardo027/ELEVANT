@@ -86,6 +86,12 @@ function plannedTurnaroundSummary(turnaround) {
   };
 }
 
+// A reference row marked `retired: true` (B33 in positionsData.js, ADR-0041) stays in the data as history: no map
+// draws it from the reference, so the map draws the stands the API's Punta Cana catalogue creates.
+function drawnReferences(rampPositions) {
+  return rampPositions.filter(coords => !coords.retired);
+}
+
 // Convierte las escalas planificadas de PUJ en el catálogo de posiciones del
 // mapa. Varias escalas pueden compartir posición en el mismo día: todas se
 // conservan en `plannedTurnarounds` y los campos sueltos describen la primera,
@@ -99,7 +105,7 @@ export function mapTurnaroundsToRampPositions(rampPositions, turnarounds = [], n
     if (!plannedByStand.has(code)) plannedByStand.set(code, []);
     plannedByStand.get(code).push(turnaround);
   }
-  return rampPositions.map(coords => {
+  return drawnReferences(rampPositions).map(coords => {
     const planned = plannedByStand.get(coords.id) ?? [];
     const first = planned[0];
     return {
@@ -141,12 +147,13 @@ function occupancyTurnaround(item) {
 // `unverified` a map position with no stand registered for the station.
 export function mapOccupancyToRampPositions(rampPositions, board, nowIso = new Date().toISOString()) {
   const byCode = new Map((board?.positions ?? []).map(position => [mapStandCode(position.code), position]));
-  const referenceCodes = new Set(rampPositions.map(coords => coords.id));
-  // Stands OCC placed on the map that the internal reference does not know (ADR-0027).
+  const references = drawnReferences(rampPositions);
+  const referenceCodes = new Set(references.map(coords => coords.id));
+  // Stands OCC placed on the map that the internal reference does not draw (ADR-0027), a retired code included.
   const placedOnly = (board?.positions ?? [])
     .filter(stand => stand.latitude != null && stand.longitude != null && !referenceCodes.has(mapStandCode(stand.code)))
     .map(stand => ({ id: mapStandCode(stand.code), terminal: stand.terminalCode ?? null, lat: stand.latitude, lon: stand.longitude }));
-  return [...rampPositions, ...placedOnly].map(reference => {
+  return [...references, ...placedOnly].map(reference => {
     const stand = byCode.get(reference.id);
     // Coordinates saved by OCC replace the unverified internal reference.
     const located = stand?.latitude != null && stand?.longitude != null;

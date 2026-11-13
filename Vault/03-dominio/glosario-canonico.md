@@ -86,6 +86,19 @@ Este glosario normaliza términos usados por código, base y prototipos. “Can�
 | Tipo de aeronave | Catálogo de fabricante/modelo con código ICAO. | La matrícula pertenece al turnaround concreto. |
 | Posición operativa | Puesto o función de trabajo; puede exigir habilitación/equipo. | No es stand, rol IAM ni `AssignmentRole`. |
 
+*Posterior al commit verificado de esta nota (PR A2 de «OCC a nivel NOC»;
+[ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)):* la
+**ocupación de posición** termina también cuando la tablet registra el
+`PUSHBACK` de la operación con su hora real, porque la aeronave ya salió: la
+posición vuelve a «libre», o a su siguiente vuelo planificado. La asignación de
+stand sigue abierta como la posición del vuelo, que los documentos, la tablet y
+Planificación siguen mostrando, y se cierra como antes: con «Liberar» de OCC, un
+cambio de posición o la cancelación o el desvío de la escala. Para el vuelo
+demo, una posición está **ubicada** si su código normalizado está en el catálogo
+de Punta Cana o si OCC la colocó en el mapa, y es **elegible** si además está
+libre durante la escala y la cubre, a la hora de llegada, un agente que pasa la
+regla real de asignación.
+
 ## Vuelo y operación
 
 | Término | Significado | Invariante clave |

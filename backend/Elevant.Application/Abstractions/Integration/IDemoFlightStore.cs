@@ -9,8 +9,12 @@ namespace Elevant.Application.Abstractions.Integration;
 /// </summary>
 public interface IDemoFlightStore
 {
-    /// <summary>What the trigger form offers at a station; null when the caller is not the superadministrator.</summary>
-    Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, Guid? stationId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// What the trigger form offers at a station, with each stand evaluated for the visit of <paramref name="query"/>
+    /// (<see cref="DemoFlightRules.OptionsQuery"/> checked it); null when the caller is not the superadministrator.
+    /// </summary>
+    Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, DemoFlightOptionsQuery query,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// The demo flights of the last 24 hours, newest first, at most 50; null when the caller is not the

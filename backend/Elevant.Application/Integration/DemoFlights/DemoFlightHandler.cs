@@ -13,13 +13,17 @@ namespace Elevant.Application.Integration.DemoFlights;
 public sealed class DemoFlightHandler(IDemoFlightStore store, IActorContextResolver actors,
     DemoFlightAvailability availability, TimeProvider time)
 {
-    /// <summary>What the trigger form offers; null when the caller is not the superadministrator.</summary>
-    public async Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, Guid? stationId,
+    /// <summary>
+    /// What the trigger form offers for the visit of <paramref name="query"/>, which
+    /// <see cref="DemoFlightRules.OptionsQuery"/> built; null when the caller is not the superadministrator.
+    /// </summary>
+    public async Task<DemoFlightOptionsData?> OptionsAsync(Guid actorId, DemoFlightOptionsQuery query,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(query);
         if (!await IsSuperAdministratorAsync(actorId, cancellationToken)) return null;
         return availability.Enabled
-            ? await store.OptionsAsync(actorId, stationId, cancellationToken)
+            ? await store.OptionsAsync(actorId, query, cancellationToken)
             : DemoFlightOptionsData.Disabled(time.GetUtcNow());
     }
 

@@ -5,12 +5,14 @@ import StatusBadge from '../../components/StatusBadge';
 import { BUSINESS_TIME_ZONE } from '../../services/businessDay';
 import { createCommandKeyHolder } from '../../services/commandKeys';
 import {
-  cancelDemoFlight, createDemoFlight, demoFlightMessage, listDemoFlights, loadDemoFlightOptions,
+  cancelDemoFlight, createDemoFlight, demoFlightMessage, demoStationMessage, listDemoFlights, loadDemoFlightOptions,
+  prepareDemoStation,
 } from '../../services/demoFlightsService';
 import { isConflict } from '../../services/problemMessages';
 import {
   clockTime, countdownText, demoFlightAction, demoFlightPhase, isMoving, operationStatusLabel, phaseLabel, serverClockOffset,
 } from './demoFlightStatus';
+import { reasonsSentence, standReasonText } from './demoStandReasons';
 
 const card = 'rounded-xl border border-black/5 bg-white p-5 dark:border-white/5 dark:bg-surface-dark-card';
 const inset = 'rounded-lg border border-black/10 p-4 dark:border-white/10';
@@ -31,13 +33,21 @@ const QUICK_MINUTES = [3, 5, 8, 15];
 const PREFERRED_ORIGIN = 'MIA';
 /** Stands in natural order: A1, A2, A10, AN1, B20. */
 const STAND_ORDER = new Intl.Collator('es', { numeric: true });
+const NAMES = new Intl.ListFormat('es', { type: 'conjunction' });
 const NO_FLIGHTS = [];
 const WHOLE_NUMBER = /^\s*\d+\s*$/;
+/** «Al azar» and «Sin posición» of the field «Posición»; any other value is the id of a stand. */
+const RANDOM_STAND = 'random';
+const NO_STAND = 'none';
+/** The fields of the form that change which stands are eligible: the aircraft's size and the window of the visit. */
+const WINDOW_FIELDS = new Set(['aircraftTypeId', 'minutes', 'groundMinutes']);
 /**
  * The options change with the time: the warnings (crosses_local_midnight comes once the longest arrival would park after
  * midnight), today's airlines and the free stands. Once they are this old, the next read of the list reads them again.
  */
 const OPTIONS_MAX_AGE_MS = 5 * 60_000;
+/** Options read less than this ago are not read again when the window gets the focus back. */
+const FOCUS_REREAD_GAP_MS = 2000;
 
 /** The warnings this panel explains (ADR-0041); they never block the trigger. Codes it does not know are not shown. */
 const WARNING_TEXT = Object.freeze({
@@ -47,6 +57,67 @@ const WARNING_TEXT = Object.freeze({
 
 /** The session expired (401) or the account is not the superadministrator (403): nothing to retry. */
 const denied = error => error?.status === 401 || error?.status === 403;
+
+const wholeNumber = text => (WHOLE_NUMBER.test(text) ? Number(text) : Number.NaN);
+const capitalized = text => text.charAt(0).toLocaleUpperCase('es') + text.slice(1);
+const sameId = (left, right) => typeof left === 'string' && typeof right === 'string' &&
+  left.toLowerCase() === right.toLowerCase();
+
+/**
+ * The window the stands are evaluated for (the `window` of `loadDemoFlightOptions`), from the form's values: the aircraft
+ * type, whose size the stand must admit, and the minutes to the stand and on the ground. Null while a value is outside
+ * the form's ranges: the server would refuse it.
+ */
+function windowOf({ aircraftTypeId, minutes, groundMinutes }, limits) {
+  const within = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+  const minutesToOnBlock = wholeNumber(minutes);
+  const ground = wholeNumber(groundMinutes);
+  if (!aircraftTypeId || !within(minutesToOnBlock, limits.minMinutesToOnBlock, limits.maxMinutesToOnBlock) ||
+      !within(ground, limits.minGroundMinutes, limits.maxGroundMinutes)) return null;
+  return { aircraftTypeId, minutesToOnBlock, groundMinutes: ground };
+}
+
+/** The aircraft type the form sends until one is chosen: the first narrow-body, otherwise the first type. */
+const defaultAircraftType = aircraftTypes => aircraftTypes.find(type => type.sizeCategory === 'Narrowbody') ?? aircraftTypes[0];
+
+/**
+ * The window the first read of a station must be evaluated for: the form's default type when it is a wide-body (the
+ * station has no narrow-body), with the default minutes. Null otherwise: the server's defaults evaluate any size, which
+ * admits a narrow-body or a type of unknown size at every stand.
+ */
+function defaultSizedWindow({ aircraftTypes, limits }) {
+  const type = defaultAircraftType(aircraftTypes);
+  if (type?.sizeCategory !== 'Widebody') return null;
+  return windowOf({ aircraftTypeId: type.id, minutes: String(limits.defaultMinutesToOnBlock),
+    groundMinutes: String(limits.defaultGroundMinutes) }, limits);
+}
+
+/** Who covers an eligible stand when the aircraft parks, by name, and how many of them OCC may assign when not all. */
+function coverText({ coveredBy, eligibleAgents }) {
+  const names = coveredBy.length > 2 ? [...coveredBy.slice(0, 2), `${coveredBy.length - 2} más`] : coveredBy;
+  const cover = `${coveredBy.length === 1 ? 'Cubre' : 'Cubren'} ${NAMES.format(names)}`;
+  return eligibleAgents < coveredBy.length
+    ? `${cover} (${eligibleAgents} ${eligibleAgents === 1 ? 'elegible' : 'elegibles'})`
+    : cover;
+}
+
+/**
+ * A stand as the field «Posición» offers it: who covers it when it is eligible, otherwise why not in words; first the
+ * flags (not located, not free), then the reasons of the rule.
+ */
+function standLabel(stand) {
+  const where = `${stand.code} · Terminal ${stand.terminalCode}`;
+  if (stand.eligible) return `${where} · ${coverText(stand)}`;
+  const why = reasonsSentence([...(stand.located ? [] : ['stand_not_located']), ...(stand.free ? [] : ['stand_not_free']),
+    ...stand.reasons]);
+  return `${where} · ${why ? capitalized(why) : standReasonText(null)}`;
+}
+
+/** The warning `no_eligible_stand`, with the reasons the most stands give (at most three, ADR-0041). */
+function noEligibleStandText(reasons) {
+  const why = reasonsSentence(reasons);
+  return `Ninguna posición habilitada tiene un agente elegible a esa hora${why ? `: ${why}` : ''}.`;
+}
 
 /** What the panel shows, from its two reads. The list only matters where demo flights run. */
 function panelStatus(options, list) {
@@ -97,26 +168,37 @@ function confirmation({ flight, intent, phase }) {
 
 /**
  * «Disparar vuelo demo» (ADR-0041). Untouched fields take the defaults: the first airline, Miami, the first narrow-body
- * aircraft type, no stand and the server's minutes. A value the station no longer offers falls back the same way, so
- * a re-read never sends what disappeared.
+ * aircraft type, «Al azar» (the server draws one of the eligible stands; «Sin posición» when none is) and the server's
+ * minutes. A value the station no longer offers falls back the same way, so a re-read never sends what disappeared. A
+ * change of the aircraft type or of the minutes tells the panel the window to evaluate the stands for (`onWindow`, null
+ * while a value is out of range); the draft survives the re-read, since the panel keys the form by station only.
  */
-function DemoFlightForm({ data, limitReached, maxActive, busy, error, notice, onStation, onSubmit }) {
+function DemoFlightForm({ data, standsLoadable, limitReached, maxActive, busy, error, notice, onStation, onSubmit,
+  onWindow }) {
   const id = useId();
-  const [draft, setDraft] = useState({ airlineId: '', originIata: '', destinationIata: '', aircraftTypeId: '', standId: '',
+  const [draft, setDraft] = useState({ airlineId: '', originIata: '', destinationIata: '', aircraftTypeId: '', stand: '',
     minutes: null, groundMinutes: null });
-  const set = (key, value) => setDraft(current => ({ ...current, [key]: value }));
   const { airlines, airports, aircraftTypes, limits, warnings } = data;
-  const freeStands = data.stands.filter(stand => stand.free).sort((left, right) => STAND_ORDER.compare(left.code, right.code));
+  const stands = [...data.stands].sort((left, right) => STAND_ORDER.compare(left.code, right.code));
+  const canDraw = stands.some(stand => stand.eligible);
 
   const airlineId = airlines.some(airline => airline.id === draft.airlineId) ? draft.airlineId : airlines[0]?.id ?? '';
   const originIata = airports.some(airport => airport.iataCode === draft.originIata) ? draft.originIata
     : (airports.find(airport => airport.iataCode === PREFERRED_ORIGIN) ?? airports[0])?.iataCode ?? '';
   const destinationIata = airports.some(airport => airport.iataCode === draft.destinationIata) ? draft.destinationIata : '';
   const aircraftTypeId = aircraftTypes.some(type => type.id === draft.aircraftTypeId) ? draft.aircraftTypeId
-    : (aircraftTypes.find(type => type.sizeCategory === 'Narrowbody') ?? aircraftTypes[0])?.id ?? '';
-  const standId = freeStands.some(stand => stand.standId === draft.standId) ? draft.standId : '';
+    : defaultAircraftType(aircraftTypes)?.id ?? '';
+  // «Sin posición» is always there; a stand only while it is eligible; otherwise «Al azar» while there is one to draw.
+  const stand = draft.stand === NO_STAND ? NO_STAND
+    : stands.some(item => item.eligible && item.standId === draft.stand) ? draft.stand
+      : canDraw ? RANDOM_STAND : NO_STAND;
   const minutes = draft.minutes ?? String(limits.defaultMinutesToOnBlock);
   const groundMinutes = draft.groundMinutes ?? String(limits.defaultGroundMinutes);
+
+  const set = (key, value) => {
+    setDraft(current => ({ ...current, [key]: value }));
+    if (WINDOW_FIELDS.has(key)) onWindow(windowOf({ aircraftTypeId, minutes, groundMinutes, [key]: value }, limits));
+  };
 
   const blockers = [
     !airlines.length && 'Ninguna aerolínea tiene contrato vigente hoy en esta estación. Active un contrato para disparar un vuelo demo.',
@@ -124,22 +206,49 @@ function DemoFlightForm({ data, limitReached, maxActive, busy, error, notice, on
     !airports.length && 'No hay aeropuertos de origen para esta estación.',
     limitReached && `Ya hay ${maxActive} vuelos demo activos en esta estación. Espere a que termine uno o cancélelo.`,
   ].filter(Boolean);
-  const shown = warnings.filter(warning => Object.hasOwn(WARNING_TEXT, warning.code));
+
+  /** Sends the form with a stand choice: the field's, or «Sin posición» from the warning without an eligible stand. */
+  function send(choice) {
+    if (blockers.length > 0 || busy) return;
+    const standChoice = choice === RANDOM_STAND ? 'Random' : choice === NO_STAND ? 'None' : 'Specific';
+    // Whole minutes only: anything else is refused before it is sent, with the ranges of the form.
+    onSubmit({ stationId: data.stationId, airlineId, originIata, destinationIata: destinationIata || null, aircraftTypeId,
+      standChoice, standId: standChoice === 'Specific' ? choice : null, minutesToOnBlock: wholeNumber(minutes),
+      groundMinutes: wholeNumber(groundMinutes) });
+  }
 
   function submit(event) {
     event.preventDefault();
-    if (blockers.length > 0 || busy) return;
-    // Whole minutes only: anything else is refused before it is sent, with the ranges of the form.
-    const whole = text => (WHOLE_NUMBER.test(text) ? Number(text) : Number.NaN);
-    onSubmit({ stationId: data.stationId, airlineId, originIata, destinationIata: destinationIata || null, aircraftTypeId,
-      standChoice: standId ? 'Specific' : 'None', standId: standId || null, minutesToOnBlock: whole(minutes),
-      groundMinutes: whole(groundMinutes) });
+    send(stand);
+  }
+
+  /** The warnings this form explains, in the server's order; they never block the trigger. */
+  function warningOf(warning, index) {
+    const key = `${warning.code}-${index}`;
+    if (Object.hasOwn(WARNING_TEXT, warning.code)) return <p key={key} className={warningClass}>{WARNING_TEXT[warning.code]}</p>;
+    if (warning.code === 'no_located_stands') return <p key={key} className={warningClass}>{standsLoadable
+      ? 'Aún no hay posiciones ubicadas en el mapa. Use «Cargar posiciones» para que el avión tenga dónde estacionarse.'
+      : 'Aún no hay posiciones ubicadas en el mapa: el avión no tendrá dónde estacionarse.'}</p>;
+    if (warning.code !== 'no_eligible_stand') return null;
+    // Nothing to draw: the flight goes without a stand (OCC assigns one when it imports it), or OCC covers one first.
+    return (
+      <div key={key} className={warningClass}>
+        <p>{noEligibleStandText(warning.reasons)}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <button type="button" disabled={busy || blockers.length > 0} onClick={() => send(NO_STAND)}
+            className={secondaryButton}>Disparar sin posición</button>
+          {/* An instruction, not a link: «Cobertura de posiciones» only opens for an OCC account, never for this one. */}
+          <p className="text-xs"><span className="font-semibold">Crear cobertura:</span> lo hace OCC en «Cobertura de
+            posiciones», con una cuenta de OCC (por ejemplo, en otro navegador o en una ventana privada).</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <form onSubmit={submit} noValidate aria-label="Disparar vuelo demo" className={`${inset} space-y-3`}>
       <h3 className="text-base font-bold">Disparar vuelo demo</h3>
-      {shown.map(warning => <p key={warning.code} className={warningClass}>{WARNING_TEXT[warning.code]}</p>)}
+      {warnings.map(warningOf)}
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="block text-xs font-semibold">Estación
           <select className={fieldClass} value={data.stationId} disabled={busy}
@@ -174,12 +283,16 @@ function DemoFlightForm({ data, limitReached, maxActive, busy, error, notice, on
           </select></label>
         <div>
           <label className="block text-xs font-semibold">Posición
-            <select className={fieldClass} value={standId} disabled={busy} aria-describedby={`${id}-stand`}
-              onChange={event => set('standId', event.target.value)}>
-              <option value="">Sin posición</option>
-              {freeStands.map(stand => <option key={stand.standId} value={stand.standId}>{stand.code} · Terminal {stand.terminalCode}</option>)}
+            <select className={fieldClass} value={stand} disabled={busy} aria-describedby={`${id}-stand`}
+              onChange={event => set('stand', event.target.value)}>
+              <option value={RANDOM_STAND} disabled={!canDraw}>Al azar</option>
+              <option value={NO_STAND}>Sin posición</option>
+              {stands.map(item => <option key={item.standId} value={item.standId} disabled={!item.eligible}>
+                {standLabel(item)}</option>)}
             </select></label>
-          <p id={`${id}-stand`} className={`mt-1 text-xs ${muted}`}>Solo las posiciones libres para la escala. OCC puede asignar otra al importar.</p>
+          <p id={`${id}-stand`} className={`mt-1 text-xs ${muted}`}>
+            Al azar: el servidor elige entre las posiciones con un agente elegible a esa hora. OCC puede asignar otra al
+            importar.</p>
         </div>
         <div>
           <label htmlFor={`${id}-minutes`} className="block text-xs font-semibold">Llega a la posición en (minutos)</label>
@@ -215,6 +328,99 @@ function DemoFlightForm({ data, limitReached, maxActive, busy, error, notice, on
         className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
         {busy ? 'Disparando…' : 'Disparar vuelo demo'}</button>
     </form>
+  );
+}
+
+/** Two answers about the same station state: the same terminals and the same stands, present and missing. */
+const sameStands = (left, right) => left.terminals === right.terminals && left.stands === right.stands &&
+  left.missingStands.join(',') === right.missingStands.join(',');
+
+/**
+ * The notice of a load, from the station before it (`before`) and the load's answer: all loaded, some of it loaded, or
+ * nothing when the load created nothing (the card's warning then says what is missing and why).
+ */
+function loadNotice(before, answer) {
+  if (answer.complete) return 'Se cargaron las posiciones de Punta Cana.';
+  const created = answer.stands - before.stands;
+  if (created > 0) {
+    return `Se ${created === 1 ? 'cargó 1 posición' : `cargaron ${created} posiciones`} de Punta Cana; no se pudieron ` +
+      'cargar todas.';
+  }
+  return answer.terminals > before.terminals
+    ? 'Se cargaron las terminales de Punta Cana que faltaban; no se pudieron cargar las posiciones.' : '';
+}
+
+/**
+ * What a load could not create: the catalogue's stands that are still missing once «Cargar posiciones» answered this
+ * same state, because their terminal or the stand itself is inactive (the command never reactivates a row).
+ */
+function stillMissingText({ missingStands }) {
+  return missingStands.length > 0
+    ? `Faltan: ${missingStands.join(', ')}. Su terminal o la posición están desactivadas: OCC puede activarlas en «Datos maestros».`
+    : 'Una terminal del plano está desactivada: OCC puede activarla en «Datos maestros».';
+}
+
+/**
+ * «Posiciones de Punta Cana» (ADR-0041, contracts 1.2): the station against the Punta Cana catalogue, from the options'
+ * `layout`. «Cargar posiciones» creates the terminals and stands the station lacks, with the intent's Idempotency-Key;
+ * once it is all there the card says so and offers no button. A load that leaves stands missing names them, and the
+ * button comes back only when the station changes (OCC activated a terminal or a stand). `onLoaded(answer)` and
+ * `onStale()` read the options again; a 409 or a 404 waits for that read before its message shows. The panel keys the
+ * card by station: an answer that arrives once another station is on screen reads nothing.
+ */
+function PuntaCanaStandsCard({ layout, onLoaded, onStale }) {
+  const headingId = useId();
+  const keys = useRef(createCommandKeyHolder());
+  const shown = useRef(false);
+  const [load, setLoad] = useState({ busy: false, error: '', notice: '', answer: null });
+  const stuck = load.answer !== null && !layout.complete && sameStands(load.answer, layout);
+  const counts = `Terminales: ${layout.terminals} de ${layout.catalogTerminals} · Posiciones: ${layout.stands} de ` +
+    `${layout.catalogStands} · Ubicadas en el mapa: ${layout.locatedStands} de ${layout.activeStands}`;
+
+  useEffect(() => {
+    shown.current = true;
+    return () => { shown.current = false; };
+  }, []);
+
+  async function loadStands() {
+    const before = layout;
+    const { stationId } = before;
+    setLoad(current => ({ ...current, busy: true, error: '', notice: '' }));
+    try {
+      const answer = await keys.current.run('demo-station.prepare', { stationId }, key => prepareDemoStation(stationId, key));
+      if (!shown.current) return;
+      await onLoaded(answer);
+      setLoad({ busy: false, error: '', notice: loadNotice(before, answer), answer });
+    } catch (failure) {
+      if (!shown.current) return;
+      // The station changed (409) or is gone (404): the options are read before the message shows.
+      if (isConflict(failure) || failure?.status === 404) await onStale();
+      setLoad(current => ({ ...current, busy: false, error: demoStationMessage(failure), notice: '' }));
+    }
+  }
+
+  return (
+    <section aria-labelledby={headingId} className={`${inset} space-y-3`}>
+      <h3 id={headingId} className="text-base font-bold">Posiciones de Punta Cana</h3>
+      {!layout.supported && <p className={`text-sm ${muted}`}>Solo Punta Cana (PUJ) tiene un plano de referencia.</p>}
+      {layout.supported && <>
+        <p className="text-sm tabular-nums">{counts}</p>
+        {layout.complete && <p className={successClass}>
+          Las terminales y las {layout.catalogStands} posiciones de Punta Cana ya están cargadas.</p>}
+        {stuck && <p className={warningClass}>{stillMissingText(layout)}</p>}
+        {!layout.complete && !stuck && <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className={`max-w-prose text-xs ${muted}`}>
+            Crea las terminales y las posiciones de Punta Cana que falten. No cambia ni borra lo que OCC ya configuró.</p>
+          <button type="button" disabled={load.busy} onClick={() => void loadStands()} className={secondaryButton}>
+            {load.busy ? 'Cargando posiciones…' : 'Cargar posiciones'}</button>
+        </div>}
+        {layout.unmatchedStands.length > 0 && <p className={`text-xs ${muted}`}>
+          Posiciones fuera del plano de referencia: {layout.unmatchedStands.join(', ')}. OCC puede desactivarlas en
+          «Datos maestros».</p>}
+      </>}
+      {load.error && <p role="alert" className={alertClass}>{load.error}</p>}
+      {load.notice && <p role="status" className={successClass}>{load.notice}</p>}
+    </section>
   );
 }
 
@@ -255,10 +461,13 @@ function DemoFlightRow({ flight, serverNow, busy, onAction }) {
  * hoy». The phase and the countdowns are computed here each second from the server's instants and an estimate of the
  * server's clock; the list is read every `fastPollMs` while an aircraft moves (approach, taxi-in, taxi-out) and every
  * `slowPollMs` otherwise, never while the tab is hidden (contracts 2.7). The options go with the list once they are
- * `OPTIONS_MAX_AGE_MS` old, and both are read at once when the tab is back in sight. Each command carries its intent's
- * Idempotency-Key; a 409 or a 404 reads the options and the list again before its message shows.
+ * `OPTIONS_MAX_AGE_MS` old, and both are read at once when the tab is back in sight or its window gets the focus back
+ * (for instance after «Crear cobertura» in OCC's window). The stands in the options are evaluated for the form's window (aircraft type, minutes to the stand
+ * and on the ground): `windowDelayMs` after one of them changes the options are read again for it, and every later read
+ * keeps it; a load of the Punta Cana stands reads them again too. Each command carries its intent's Idempotency-Key; a
+ * 409 or a 404 reads the options (and, for a demo flight, the list) again before its message shows.
  */
-export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_000, now = Date.now }) {
+export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_000, windowDelayMs = 500, now = Date.now }) {
   const headingId = useId();
   const [stationId, setStationId] = useState(null);
   const [options, setOptions] = useState({ status: 'loading', data: null, error: null });
@@ -278,16 +487,22 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
   const handledMismatch = useRef('');
   const createKeys = useRef(createCommandKeyHolder());
   const endKeys = useRef(createCommandKeyHolder());
+  /** The form's window the stands are evaluated for (`windowOf`); null: the server's defaults (8 and 60 min, any size). */
+  const formWindow = useRef(null);
+  const windowTimer = useRef(undefined);
 
   useEffect(() => { clockSource.current = now; }, [now]);
+  useEffect(() => () => clearTimeout(windowTimer.current), []);
 
   const readOptions = useCallback(async station => {
     const read = ++optionsRead.current;
     const signal = reads.current?.signal;
     // The age counts from the request: a re-read that fails is not repeated before the next one is due.
     optionsAskedAt.current = clockSource.current();
+    // The stands are evaluated for the form's window once it changed; the first read of a station takes the defaults.
+    const forWindow = station && formWindow.current ? formWindow.current : null;
     try {
-      const data = await loadDemoFlightOptions(station, { signal });
+      const data = await loadDemoFlightOptions(station, forWindow ? { signal, window: forWindow } : { signal });
       if (read === optionsRead.current && !signal?.aborted) setOptions({ status: 'success', data, error: null });
     } catch (error) {
       if (read !== optionsRead.current || signal?.aborted || error?.name === 'AbortError') return;
@@ -315,6 +530,17 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
         : { status: 'error', data: null, error, offset: 0, stale: false, version: current.version + 1 }));
     }
   }, []);
+
+  // A station whose default aircraft type is a wide-body: its stands are read once more for it, so that the form never
+  // offers as eligible a stand the server refuses for the type it sends. A window the form chose stays.
+  useEffect(() => {
+    const data = options.data;
+    if (!data?.stationId || formWindow.current) return;
+    const sized = defaultSizedWindow(data);
+    if (!sized) return;
+    formWindow.current = sized;
+    void readOptions(data.stationId);
+  }, [options.data, readOptions]);
 
   const refreshAll = useCallback(station => Promise.all([readOptions(station), readList(station)]), [readOptions, readList]);
 
@@ -357,15 +583,26 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
   }, [live, hidden, moving, list.version, station, fastPollMs, slowPollMs, readOptions, readList]);
 
   // Hidden, the panel reads nothing; back in sight it reads the options and the list at once: a warning such as
-  // crosses_local_midnight or today's airlines may have changed meanwhile.
+  // crosses_local_midnight or today's airlines may have changed meanwhile. A window beside OCC's (where «Crear
+  // cobertura» sends the superadministrator) never becomes hidden, so getting the focus back reads them too, unless they
+  // were read a moment ago, as right after a return to the tab.
   useEffect(() => {
     function onVisibility() {
       const nowHidden = document.visibilityState === 'hidden';
       setHidden(nowHidden);
       if (!nowHidden && live) void refreshAll(station);
     }
+    function onFocus() {
+      if (!live || document.visibilityState === 'hidden') return;
+      if (Math.abs(clockSource.current() - optionsAskedAt.current) < FOCUS_REREAD_GAP_MS) return;
+      void refreshAll(station);
+    }
     document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+    };
   }, [live, station, refreshAll]);
 
   // A flight started or ended since the options were read: the free stands and the limit are read again, once.
@@ -376,12 +613,36 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
   }, [mismatch, station, readOptions]);
 
   function chooseStation(next) {
+    // The new station's form starts from the defaults, and so does the window its stands are read for.
+    clearTimeout(windowTimer.current);
+    formWindow.current = null;
     setStationId(next);
     setOptions({ status: 'loading', data: null, error: null });
     setList(current => ({ status: 'loading', data: null, error: null, offset: 0, stale: false, version: current.version + 1 }));
     setCreate({ busy: false, error: '', notice: '' });
     setFeedback(null);
     void refreshAll(next);
+  }
+
+  /**
+   * The form changed its window: the stands are read again for it once the values settle. A window out of range (null)
+   * reads nothing, and the last one in range stays the window of every later read.
+   */
+  function chooseWindow(next) {
+    clearTimeout(windowTimer.current);
+    if (!next) return;
+    formWindow.current = next;
+    windowTimer.current = setTimeout(() => void readOptions(station), windowDelayMs);
+  }
+
+  /**
+   * «Cargar posiciones» answered the station as it is now: the card shows it at once, and the options are read again for
+   * the stands it created (located, covered, eligible) and the warnings.
+   */
+  async function standsLoaded(answer) {
+    setOptions(current => (current.data && sameId(current.data.stationId, answer.stationId)
+      ? { ...current, data: { ...current.data, layout: answer } } : current));
+    await readOptions(station);
   }
 
   async function trigger(input) {
@@ -442,11 +703,16 @@ export default function DemoFlightsPanel({ fastPollMs = 5000, slowPollMs = 20_00
       {status === 'noStation' && <p className={`mt-3 ${warningClass}`}>
         No hay estaciones activas. Cree o active una en «Estaciones» para disparar un vuelo demo.</p>}
 
+      {live && options.data.layout && <div className="mt-4">
+        <PuntaCanaStandsCard key={options.data.stationId} layout={options.data.layout} onLoaded={standsLoaded}
+          onStale={() => readOptions(station)} />
+      </div>}
       {live && (
         <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,30rem)_minmax(0,1fr)]">
-          <DemoFlightForm key={options.data.stationId} data={options.data} limitReached={maxActive > 0 && activeNow >= maxActive}
-            maxActive={maxActive} busy={create.busy} error={create.error} notice={create.notice}
-            onStation={chooseStation} onSubmit={input => void trigger(input)} />
+          <DemoFlightForm key={options.data.stationId} data={options.data} standsLoadable={options.data.layout?.supported === true}
+            limitReached={maxActive > 0 && activeNow >= maxActive} maxActive={maxActive} busy={create.busy}
+            error={create.error} notice={create.notice} onStation={chooseStation} onSubmit={input => void trigger(input)}
+            onWindow={chooseWindow} />
           <section aria-labelledby={`${headingId}-today`} className={inset}>
             <h3 id={`${headingId}-today`} className="text-base font-bold">Vuelos demo de hoy</h3>
             {feedback && <p role={feedback.tone === 'danger' ? 'alert' : 'status'}

@@ -38,6 +38,8 @@ sources:
   - frontend/private-web/src/features/governance/DemoFlightsPanel.jsx
   - backend/Elevant.Api/Controllers/DemoFlightsController.cs
   - docs/adr/0041-demo-flights-and-punta-cana-stands.md
+  - backend/Elevant.Application/Operations/DemoStation/PuntaCanaStationLayout.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfDemoStationStore.cs
   - frontend/private-web/src/services/contractsHomeService.js
   - frontend/private-web/src/features/contracts/home/ContractsHomePage.jsx
   - frontend/private-web/src/features/contracts/requests/CommercialIntakePage.jsx
@@ -310,6 +312,21 @@ factura como tal, así que conviene usar una aerolínea de prueba. La lista
 «Vuelos demo de hoy» sigue cada vuelo y ofrece «Cancelar vuelo» o «Terminar
 demo» ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md),
 [panel](../../frontend/private-web/src/features/governance/DemoFlightsPanel.jsx)).
+
+Desde el PR A2 del mismo plan (código de `d6461fa1` a `ff066d47`), el panel
+suma la tarjeta «Posiciones de Punta Cana», el segundo comando del
+superadministrador en «Configuración». «Cargar posiciones»
+(`POST governance/demo-station`, con su `Idempotency-Key` y el mismo modo) crea
+en PUJ las terminales A, B y FBO y las 41 posiciones del
+[catálogo](../../backend/Elevant.Application/Operations/DemoStation/PuntaCanaStationLayout.cs)
+que faltan, activas, sin coordenadas y con atributos provisionales; adopta las
+que ya existen por su código normalizado y nunca cambia, desactiva ni borra
+nada. La respuesta es el estado de la estación, así que repetirla no crea nada
+([almacén](../../database/DevelopmentDB/Elevant.Persistence/Operations/EfDemoStationStore.cs)).
+El formulario dispara ahora «Al azar» por defecto: el servidor sortea la
+posición entre las que cubre, a la hora de llegada, un agente que pasa la regla
+de asignación de OCC; si ninguna lo cumple, el panel lo explica y ofrece
+disparar sin posición o crear antes la cobertura.
 
 El POST público vuelve a validar que los servicios elegidos sigan activos y publicados. La lista visible y la admisión usan el mismo predicado del servidor; un UUID conocido de un servicio interno no amplía el catálogo público. La admisión mantiene una transacción serializable entre esa lectura y su escritura: una retirada concurrente no se intercala entre ambas. Una relectura fallida en el formulario conserva la última selección y permite reintentar; el servidor sigue siendo la autoridad al enviar.
 El cliente compartido no introduce un máximo de 1 000 entradas que el endpoint de catálogo no promete; un catálogo mayor sigue sujeto a validación de forma e identificadores. Una futura paginación requiere un cambio coordinado de API y clientes.

@@ -17,25 +17,37 @@ internal static class MasterDataUsage
     /// <summary>Overnight operations started the day before still hold their stand.</summary>
     public static DateOnly Since(DateOnly today) => today.AddDays(-1);
 
-    /// <summary>A stand is in use while an unfinished flight holds it or an open coverage includes it.</summary>
+    /// <summary>
+    /// A stand is in use while an unfinished flight holds it or an open coverage includes it. A flight whose aircraft
+    /// pushed back left the stand (owner decision 23, <see cref="StandAvailability.PushedBackTurnarounds"/>), although its
+    /// assignment stays open.
+    /// </summary>
     public static async Task<bool> StandInUseAsync(ElevantDbContext context, long standId, DateOnly since, DateTimeOffset now,
-        CancellationToken cancellationToken) =>
-        await (from assignment in context.Set<StandAssignment>().AsNoTracking()
-               join turnaround in context.Turnarounds.AsNoTracking() on assignment.TurnaroundId equals turnaround.Id
-               where assignment.StandId == standId && assignment.AssignedTo == null && turnaround.OperationDate >= since &&
-                     (turnaround.CurrentStatus == TurnaroundStatus.Scheduled ||
-                      turnaround.CurrentStatus == TurnaroundStatus.Confirmed ||
-                      turnaround.CurrentStatus == TurnaroundStatus.InProgress) &&
-                     !context.GroundOperations.Any(operation => operation.TurnaroundId == turnaround.Id &&
-                         (operation.CurrentStatus == GroundOperationStatus.PendingReview ||
-                          operation.CurrentStatus == GroundOperationStatus.InReview ||
-                          operation.CurrentStatus == GroundOperationStatus.Approved ||
-                          operation.CurrentStatus == GroundOperationStatus.Cancelled))
-               select assignment.Id).AnyAsync(cancellationToken) ||
-        await (from link in context.Set<PositionCoverageStand>().AsNoTracking()
-               join coverage in context.Set<PositionCoverage>().AsNoTracking() on link.PositionCoverageId equals coverage.Id
-               where link.StandId == standId && coverage.ReleasedAt == null && coverage.EndsAt > now
-               select link.Id).AnyAsync(cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        // A query variable: EF inlines it as a subquery of the one below.
+        var departed = StandAvailability.PushedBackTurnarounds(context);
+        return await (from assignment in context.Set<StandAssignment>().AsNoTracking()
+                      join turnaround in context.Turnarounds.AsNoTracking()
+                          on assignment.TurnaroundId equals turnaround.Id
+                      where assignment.StandId == standId && assignment.AssignedTo == null &&
+                            turnaround.OperationDate >= since &&
+                            (turnaround.CurrentStatus == TurnaroundStatus.Scheduled ||
+                             turnaround.CurrentStatus == TurnaroundStatus.Confirmed ||
+                             turnaround.CurrentStatus == TurnaroundStatus.InProgress) &&
+                            !context.GroundOperations.Any(operation => operation.TurnaroundId == turnaround.Id &&
+                                (operation.CurrentStatus == GroundOperationStatus.PendingReview ||
+                                 operation.CurrentStatus == GroundOperationStatus.InReview ||
+                                 operation.CurrentStatus == GroundOperationStatus.Approved ||
+                                 operation.CurrentStatus == GroundOperationStatus.Cancelled)) &&
+                            !departed.Contains(turnaround.Id)
+                      select assignment.Id).AnyAsync(cancellationToken) ||
+            await (from link in context.Set<PositionCoverageStand>().AsNoTracking()
+                   join coverage in context.Set<PositionCoverage>().AsNoTracking()
+                       on link.PositionCoverageId equals coverage.Id
+                   where link.StandId == standId && coverage.ReleasedAt == null && coverage.EndsAt > now
+                   select link.Id).AnyAsync(cancellationToken);
+    }
 
     /// <summary>A terminal is in use while it has active stands, an open coverage or shifts from today on.</summary>
     public static async Task<bool> TerminalInUseAsync(ElevantDbContext context, long terminalId, DateOnly today,

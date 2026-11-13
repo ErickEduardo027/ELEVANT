@@ -35,6 +35,21 @@ public sealed class OperationOccupancyRulesTests
         Assert.Equal(holds, OperationOccupancyRules.HoldsStand(operation, turnaround));
     }
 
+    /// <summary>
+    /// Owner decision 23: the recorded push-back frees the stand, whatever the operation's status; the assignment stays
+    /// open, so this rule is the occupancy's alone.
+    /// </summary>
+    [Fact]
+    public void AStandIsFreeOnceThePushbackIsRecorded()
+    {
+        Assert.False(OperationOccupancyRules.HasLeftStand(null));
+        var pushedBackAt = new DateTimeOffset(2026, 11, 13, 14, 50, 0, TimeSpan.Zero);
+        Assert.True(OperationOccupancyRules.HasLeftStand(pushedBackAt));
+        // A corrected time, earlier or later, is still a push-back.
+        Assert.True(OperationOccupancyRules.HasLeftStand(pushedBackAt.AddMinutes(-5)));
+        Assert.True(OperationOccupancyRules.HasLeftStand(pushedBackAt.AddMinutes(5)));
+    }
+
     [Fact]
     public void AnOperationStartsWhenTheAgentPressesStart()
     {

@@ -66,7 +66,7 @@ public sealed class DemoFlightRulesTests
     }
 
     [Fact]
-    public void StandChoiceIsNoneOrSpecificAndSpecificNeedsItsStand()
+    public void StandChoiceIsNoneSpecificOrRandomAndOnlySpecificNamesItsStand()
     {
         var none = DemoFlightRules.Normalize(Command(standChoice: "None"));
         Assert.NotNull(none);
@@ -78,16 +78,48 @@ public sealed class DemoFlightRulesTests
         Assert.Equal(DemoStandChoice.Specific, specific.StandChoice);
         Assert.Equal(Stand, specific.StandId);
 
+        // «Al azar»: the server draws the stand among the eligible ones, so the request never names one.
+        var random = DemoFlightRules.Normalize(Command(standChoice: "Random"));
+        Assert.NotNull(random);
+        Assert.Equal(DemoStandChoice.Random, random.StandChoice);
+        Assert.Null(random.StandId);
+
         Assert.Null(DemoFlightRules.Normalize(Command(standChoice: "Specific")));
         Assert.Null(DemoFlightRules.Normalize(Command(standChoice: "Specific", standId: Guid.Empty)));
         Assert.Null(DemoFlightRules.Normalize(Command(standChoice: "None", standId: Stand)));
-        // Exact names only, never a number; the random draw arrives with the Punta Cana stands (PR A2).
-        string?[] unknown = [null, "", "none", "SPECIFIC", " None", "None ", "0", "1", "None,Specific", "Random"];
+        Assert.Null(DemoFlightRules.Normalize(Command(standChoice: "Random", standId: Stand)));
+        Assert.Null(DemoFlightRules.Normalize(Command(standChoice: "Random", standId: Guid.Empty)));
+        // Exact names only, never a number or a combination.
+        string?[] unknown =
+            [null, "", "none", "SPECIFIC", "random", " None", "None ", "0", "1", "2", "None,Specific", "Any"];
         Assert.All(unknown, choice =>
         {
             Assert.Null(DemoFlightRules.Normalize(Command(standChoice: choice)));
             Assert.Null(DemoFlightRules.Normalize(Command(standChoice: choice, standId: Stand)));
         });
+    }
+
+    [Fact]
+    public void OptionsTakeTheFormWindowOrTheDefaults()
+    {
+        // The window the options evaluate each stand for: the form's values, or its defaults (8 and 60 minutes).
+        Assert.Equal(new DemoFlightOptionsQuery(null, null, 8, 60), DemoFlightRules.OptionsQuery(null, null, null, null));
+        Assert.Equal(new DemoFlightOptionsQuery(Station, null, 8, 60), DemoFlightOptionsQuery.Default(Station));
+        Assert.Equal(DemoFlightOptionsQuery.Default(Station), DemoFlightRules.OptionsQuery(Station, null, null, null));
+        Assert.Equal(new DemoFlightOptionsQuery(Station, AircraftType, 2, 240),
+            DemoFlightRules.OptionsQuery(Station, AircraftType, 2, 240));
+        Assert.Equal(new DemoFlightOptionsQuery(Station, null, 30, 60), DemoFlightRules.OptionsQuery(Station, null, 30, null));
+        Assert.Equal(new DemoFlightOptionsQuery(null, AircraftType, 8, 20),
+            DemoFlightRules.OptionsQuery(null, AircraftType, null, 20));
+
+        // The trigger's ranges, and never an empty identifier.
+        Assert.Null(DemoFlightRules.OptionsQuery(Station, null, 1, null));
+        Assert.Null(DemoFlightRules.OptionsQuery(Station, null, 31, null));
+        Assert.Null(DemoFlightRules.OptionsQuery(Station, null, null, 19));
+        Assert.Null(DemoFlightRules.OptionsQuery(Station, null, null, 241));
+        Assert.Null(DemoFlightRules.OptionsQuery(Station, null, 0, 0));
+        Assert.Null(DemoFlightRules.OptionsQuery(Guid.Empty, null, null, null));
+        Assert.Null(DemoFlightRules.OptionsQuery(Station, Guid.Empty, 8, 60));
     }
 
     [Theory]
