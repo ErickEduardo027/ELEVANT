@@ -189,14 +189,15 @@ function OccNoticesLayer({ live, children }) {
     key: 'notices', load, permission: NOTICES_PERMISSION, resources: NOTICE_RESOURCES, scopeKey: accountId,
     isEmpty: hasNoNotices,
   });
-  const { refresh, retry, setData } = notices;
+  const { refresh, invalidate, retry, setData } = notices;
 
-  // Other modules ask for a new read of the bell after they change a notice.
+  // The feed announces no read receipt: a module that changes one (the notifications page) asks for a new read of the
+  // notices, grouped like an announcement, so a burst of receipts costs one read at once and one 3 s later.
   useEffect(() => {
-    const onRefresh = () => refresh();
+    const onRefresh = () => invalidate();
     window.addEventListener(NOTIFICATIONS_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(NOTIFICATIONS_REFRESH_EVENT, onRefresh);
-  }, [refresh]);
+  }, [invalidate]);
 
   // «Recibido» is the per-account read receipt; the server's answer replaces the notice, and a received alert needs no
   // toast any more.

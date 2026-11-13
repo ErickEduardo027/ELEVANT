@@ -30,16 +30,28 @@ function setVisibility(state) {
 // Moves the fake clock and lets every answer and render that falls due settle.
 const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 
+// `statuses` lists every status the hook committed, in order.
 function setup(props, { access = ACCESS, shell = createOccShellValue() } = {}) {
   const loadAccess = vi.fn().mockResolvedValue(access);
+  const statuses = [];
   const wrapper = ({ children }) => (
     <DepartmentAccessProvider initialAccess={access} load={loadAccess} observe={false}>
       <OccShellTestProvider value={shell}><CaptureAccess />{children}</OccShellTestProvider>
     </DepartmentAccessProvider>
   );
-  const hook = renderHook(current => useOccResource(current),
-    { wrapper, initialProps: { key: 'planning', permission: PERMISSION, ...props } });
-  return { ...hook, shell, loadAccess };
+  const hook = renderHook(current => {
+    const read = useOccResource(current);
+    useEffect(() => { statuses.push(read.status); }, [read.status]);
+    return read;
+  }, { wrapper, initialProps: { key: 'planning', permission: PERMISSION, ...props } });
+  return { ...hook, shell, loadAccess, statuses };
+}
+
+// A read that answers only when the test refuses it.
+function refusable() {
+  const pending = {};
+  pending.load = () => new Promise((_, reject) => { pending.refuse = status => reject(refused(status)); });
+  return pending;
 }
 
 beforeEach(() => {
@@ -182,6 +194,7 @@ describe('useOccResource', () => {
 
       await flush(5 * OCC_SAFETY_POLL_MS);
       act(() => shell.announce(['occ_planning']));
+      act(() => result.current.invalidate());
       await flush(10_000);
       expect(load, String(status)).toHaveBeenCalledTimes(2);
 
@@ -192,6 +205,84 @@ describe('useOccResource', () => {
       expect(result.current, String(status)).toMatchObject({ status: 'success', data: { rows: [2] } });
       unmount();
     }
+  });
+
+  it('a 401 or 403 also drops the re-read an announcement left waiting on the refused read', async () => {
+    for (const [status, state] of [[403, 'forbidden'], [401, 'unauthorized']]) {
+      const pending = refusable();
+      const load = vi.fn()
+        .mockResolvedValueOnce({ rows: [1] })
+        .mockImplementationOnce(pending.load)
+        .mockResolvedValue({ rows: [2] });
+      const { result, shell, statuses, unmount } = setup({ load, resources: ['occ_planning'] });
+      await flush(10_000);
+      // The first announcement reads at once; the second arrives during that read and waits for it.
+      act(() => shell.announce(['occ_planning']));
+      act(() => shell.announce(['occ_planning']));
+      expect(load, String(status)).toHaveBeenCalledTimes(2);
+      await act(async () => { pending.refuse(status); });
+      expect(result.current, String(status)).toMatchObject({ status: state, data: null });
+
+      await flush(10_000);
+      expect(load, String(status)).toHaveBeenCalledTimes(2);
+      // Once refused it stays refused, with no «loading» in between: the bar's alerts button would come and go.
+      expect(statuses.slice(statuses.indexOf(state)), String(status)).toEqual([state]);
+      unmount();
+    }
+  });
+
+  it('a 401 or 403 in a hidden tab issues no read when the tab shows again', async () => {
+    for (const [status, state] of [[403, 'forbidden'], [401, 'unauthorized']]) {
+      const pending = refusable();
+      const load = vi.fn()
+        .mockResolvedValueOnce({ rows: [1] })
+        .mockImplementationOnce(pending.load)
+        .mockResolvedValue({ rows: [2] });
+      const { result, shell, statuses, unmount } = setup({ load, resources: ['occ_planning'] });
+      // The safety poll starts a read; the tab hides and an announcement waits for it to show.
+      await flush(OCC_SAFETY_POLL_MS);
+      expect(load, String(status)).toHaveBeenCalledTimes(2);
+      setVisibility('hidden');
+      act(() => shell.announce(['occ_planning']));
+      await act(async () => { pending.refuse(status); });
+      expect(result.current, String(status)).toMatchObject({ status: state, data: null });
+
+      await flush(10_000);
+      setVisibility('visible');
+      await flush(10_000);
+      expect(load, String(status)).toHaveBeenCalledTimes(2);
+      expect(statuses.slice(statuses.indexOf(state)), String(status)).toEqual([state]);
+      unmount();
+    }
+  });
+
+  it('invalidate() re-reads as an announcement does, while refresh() reads at once', async () => {
+    const load = vi.fn().mockResolvedValue({ rows: [] });
+    const { result } = setup({ load });
+    await flush(10_000);
+    act(() => result.current.invalidate());
+    await flush();
+    expect(load).toHaveBeenCalledTimes(2);
+
+    // Inside the 3 s window it waits for the window's end, and several become one read.
+    act(() => result.current.invalidate());
+    act(() => result.current.invalidate());
+    await flush(2_999);
+    expect(load).toHaveBeenCalledTimes(2);
+    await flush(1);
+    expect(load).toHaveBeenCalledTimes(3);
+    act(() => result.current.refresh());
+    await flush();
+    expect(load).toHaveBeenCalledTimes(4);
+
+    // In a hidden tab it waits for the tab to show.
+    setVisibility('hidden');
+    act(() => result.current.invalidate());
+    await flush(10_000);
+    expect(load).toHaveBeenCalledTimes(4);
+    setVisibility('visible');
+    await flush();
+    expect(load).toHaveBeenCalledTimes(5);
   });
 
   it('resumes after retry or a new access object', async () => {

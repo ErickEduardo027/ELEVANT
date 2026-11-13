@@ -336,5 +336,8 @@ archivo montado bajo `/admin-occ` abre un observador que su inventario no
 registra.
 
 Un recibo de lectura no genera pista: otra pestaña de la misma cuenta lo ve en
-su siguiente lectura de avisos, como mucho a los 60 segundos. Esto tampoco
-demuestra latencia en el VPS ni entrega entre navegadores.
+su siguiente lectura de avisos, como mucho a los 60 segundos. En la misma
+pestaña, la página de Notificaciones pide al marco que relea los avisos al
+guardar un recibo, y el marco agrupa esa relectura como una pista: como mucho
+una cada 3 segundos. Esto tampoco demuestra latencia en el VPS ni entrega entre
+navegadores.

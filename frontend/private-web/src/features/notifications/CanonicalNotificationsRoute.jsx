@@ -8,6 +8,7 @@ import ServiceClosurePanel from '../contracts/catalog/ServiceClosurePanel';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { notificationKindLabel, notificationTargetPath } from './notificationKinds';
 import { notificationsMessages } from './notificationsMessages';
+import { requestNotificationsRefresh } from './useNotificationBadge';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -58,6 +59,8 @@ export default function CanonicalNotificationsRoute() {
       const saved = await setOperationalNotificationRead(item.id, !item.readAt);
       setState(previous => ({ ...previous, items: previous.items.map(current =>
         current.id === saved.id ? saved : current) }));
+      // No announcement reports a receipt: the OCC frame's alerts and rail counts read the notices again.
+      requestNotificationsRefresh();
     } catch (error) {
       setWriteError(error.message);
     } finally {

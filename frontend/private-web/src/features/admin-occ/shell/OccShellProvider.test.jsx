@@ -190,10 +190,20 @@ describe('OccShellProvider', () => {
     await flush(10_000);
     expect(loadOperationalNotifications).toHaveBeenCalledTimes(3);
 
-    // Another module asking for a new read of the bell (the notifications page after a change) gets one.
+    // Another module asking for a new read of the bell (the notifications page after a receipt) gets one.
     act(() => window.dispatchEvent(new CustomEvent(NOTIFICATIONS_REFRESH_EVENT)));
     await flush();
     expect(loadOperationalNotifications).toHaveBeenCalledTimes(4);
+
+    // Grouped like an announcement: more asks inside those 3 s get one read at the end of them.
+    for (const wait of [500, 500]) {
+      await flush(wait);
+      act(() => window.dispatchEvent(new CustomEvent(NOTIFICATIONS_REFRESH_EVENT)));
+    }
+    await flush(1_999);
+    expect(loadOperationalNotifications).toHaveBeenCalledTimes(4);
+    await flush(1);
+    expect(loadOperationalNotifications).toHaveBeenCalledTimes(5);
   });
 
   it('does not load notices without operations.notifications.read', async () => {

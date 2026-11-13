@@ -265,13 +265,13 @@ U2 cambia solo el marco del OCC: el proveedor, la barra de estado, el riel, el c
 
   Las páginas de otros departamentos que monta el OCC conservan el suyo mientras están abiertas: la pestaña de servicios de Notificaciones (`contracts/catalog/ServiceClosurePanel.jsx`), Usuarios (`department-users/useDepartmentGovernance.js` y `human-resources/users/RampProfilesPanel.jsx`) y Mis gastos (`finance/payables/usePayablesWorkspace.js`). Reportes, Contratos listos y Revisión ya no abren ninguno.
 
-**3. Cómo pasa una pantalla a `useOccResource`.** `useOccResource({ key, load, permission, resources, scopeKey, enabled, pollMs, coalesceMs, timeoutMs, isEmpty, sourceId })` devuelve `{ status, data, refreshing, refreshFailed, fetchedAt, refresh, retry, setData }`. El PR que rehace una pantalla sigue cuatro pasos:
+**3. Cómo pasa una pantalla a `useOccResource`.** `useOccResource({ key, load, permission, resources, scopeKey, enabled, pollMs, coalesceMs, timeoutMs, isEmpty, sourceId })` devuelve `{ status, data, refreshing, refreshFailed, fetchedAt, refresh, invalidate, retry, setData }`. `refresh()` relee en el acto. `invalidate()` es para un cambio que hizo la propia pestaña y que ningún aviso del feed va a anunciar: relee como un aviso, agrupado y aplazado con la pestaña oculta. El PR que rehace una pantalla sigue cuatro pasos:
 1. Cambia el observador de la pantalla y su bloque de foco, conexión y sondeo de 25 s por un `useOccResource` por lectura, con estas opciones:
    - `permission`, el permiso de la lectura: `operations.planning.read` para planificación, `operations.positions_map.read` para posiciones, `operations.review.read` para la cola de revisión y `operations.notifications.read` para los avisos. Sin él no sale ninguna petición y el estado es `forbidden`.
    - `resources`, los recursos del feed con que relee. Los avisos se juntan: la lectura se repite como mucho una vez cada 3 s, y los avisos que llegan durante una lectura se juntan en una sola lectura después de ella. Con la pestaña oculta esperan y se leen una vez al volver. Los paneles secundarios de la consola no escuchan `occ_planning` (contrato 2.7).
    - `pollMs`, el sondeo de seguridad: 60 s por defecto, contados desde la última lectura terminada. Puede ser una función de los datos y también se aplaza con la pestaña oculta.
    - `scopeKey`, el alcance, por ejemplo la estación y la fecha. Un alcance nuevo retira los datos del anterior, también en el primer pintado.
-2. Muestra los estados del hook: `loading`, `success`, `empty`, `error`, `timeout`, `forbidden` (un 403 o un 404) y `unauthorized` (un 401). Una lectura se abandona a los 20 s (`timeout`). Tras un 401, un 403 o un 404, el hook retira los datos, deja de sondear y no atiende avisos hasta que cambia el objeto de acceso o se llama a `retry()`. Una relectura fallida conserva los datos y lo dice con `refreshFailed`.
+2. Muestra los estados del hook: `loading`, `success`, `empty`, `error`, `timeout`, `forbidden` (un 403 o un 404) y `unauthorized` (un 401). Una lectura se abandona a los 20 s (`timeout`). Tras un 401, un 403 o un 404, el hook retira los datos, deja de sondear y olvida las relecturas que tenía pendientes: la de un aviso que esperaba a la lectura rechazada, la del final de los 3 s y la aplazada con la pestaña oculta. No atiende avisos nuevos hasta que cambia el objeto de acceso o se llama a `retry()`. Una relectura fallida conserva los datos y lo dice con `refreshFailed`.
 3. Si la lectura es una de las fuentes de la barra, pasa su `sourceId`, y el hook la informa a la lista de fuentes.
 4. Borra su archivo de `OCC_OBSERVER_SITES`: la prueba falla mientras el inventario y el código no coincidan. La prueba solo repite hoy la consola planificada y las pantallas con observador propio, así que el mismo PR añade al plan las lecturas de la pantalla que la consola no tiene, para que se sigan contando.
 
@@ -367,7 +367,10 @@ U2 cambia solo el marco del OCC: el proveedor, la barra de estado, el riel, el c
 
 **13. Límites.**
 - La lista de avisos trae los 100 más recientes de la cuenta, con `hasMore`. Si hay más, los conteos de la barra, del riel y del cajón son un mínimo, y la interfaz todavía no lo dice.
-- Un recibo no se anuncia por el feed. Lo que se marca como leído o no leído en la página de Notificaciones, o en otra pestaña de la misma cuenta, llega a la barra, al riel y al cajón en la siguiente lectura del marco: con el próximo aviso nuevo o, como mucho, a los 60 s. Antes de U2, la campana releía cada 15 s. Marcar un aviso como no leído en Notificaciones lo vuelve a dejar sin recibir.
+- Un recibo no se anuncia por el feed.
+  - Lo que se marca como leído o no leído en la página de Notificaciones llega enseguida a la barra, al riel y al cajón. Al guardar el recibo, la página pide al marco que relea los avisos (`requestNotificationsRefresh()`), y el marco agrupa esas peticiones como un aviso del feed (`invalidate()`): como mucho, una lectura cada 3 s. La página solo gana esa llamada. No se reestructura y conserva su observador hasta U6.
+  - Lo que se marca en otra pestaña de la misma cuenta llega en la siguiente lectura del marco: con el próximo aviso nuevo o, como mucho, a los 60 s. Antes de U2, la campana releía cada 15 s.
+  - Marcar un aviso como no leído en Notificaciones lo vuelve a dejar sin recibir.
 - La prueba de presupuesto repite el plan de peticiones: no cuenta las peticiones reales del navegador.
 - Las pantallas que no se movieron conservan su propio observador (punto 2), con su sondeo.
 - Los relojes y la antigüedad de las fuentes usan el reloj del equipo.
@@ -382,7 +385,8 @@ U2 cambia solo el marco del OCC: el proveedor, la barra de estado, el riel, el c
 - Pruebas que cambian:
   - `OccTopbar.test.jsx`: el botón «Notificaciones, 3 sin leer» / «Notifications, 3 unread», con su tope «99+», pasa a «3 alertas» / «3 alerts», con `notifications-badge` en el número;
   - `OccSidebar.test.jsx`: el grupo «Operación» / «Operations» pasa a «Estación» / «Station»;
-  - `statusVocabulary.test.js` y `accountChangeObserver.test.js` suman casos.
+  - `statusVocabulary.test.js` y `accountChangeObserver.test.js` suman casos;
+  - `notifications/CanonicalNotificationsRoute.test.jsx` suma uno: con el marco montado, un recibo guardado en la página llega a la barra y al riel sin esperar el sondeo de 60 s.
 
   Ningún `data-testid` del OCC cambia, ni ningún texto que use el E2E del ciclo.
 - Pruebas nuevas, junto a cada módulo:

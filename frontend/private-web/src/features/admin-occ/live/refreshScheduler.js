@@ -10,6 +10,8 @@ import { OCC_COALESCE_MS } from './occCadence';
  * - A request that arrives while the tab is hidden waits, and `becameVisible()` reads once for all of them.
  * - `started()` and `settled()` frame every read of the resource, whatever started it, so a poll or a manual
  *   refresh also counts for the window and satisfies a pending trailing read.
+ * - `reset()` forgets every read it holds (the joined one, the trailing one and the deferred one): useOccResource
+ *   calls it when the server refuses the resource.
  */
 export function createRefreshScheduler({ coalesceMs = OCC_COALESCE_MS, now = () => Date.now(),
   schedule = (callback, ms) => setTimeout(callback, ms), cancel = id => clearTimeout(id),
@@ -63,6 +65,12 @@ export function createRefreshScheduler({ coalesceMs = OCC_COALESCE_MS, now = () 
       if (disposed || !deferred) return;
       deferred = false;
       request();
+    },
+    // The window of the last read still counts: only the reads waiting to run are dropped.
+    reset() {
+      pending = false;
+      deferred = false;
+      clearTimer();
     },
     dispose() {
       disposed = true;

@@ -830,15 +830,17 @@ que la rehace (U3, U5 y U6).
   allí no se admite ninguna clase de color heredada.
 
 Límites: la lista de avisos trae los 100 más recientes, así que, si hay más,
-los conteos son un mínimo. Un recibo no se anuncia por el feed: lo que se marca
-como leído en Notificaciones o en otra pestaña llega al marco con el siguiente
-aviso o, como mucho, a los 60 s. Panorama, Monitoreo de vuelos, Mapa de
-posiciones, Planificación, Cobertura de posiciones, Datos maestros, Tablets,
-Chat interno y Notificaciones conservan su propio observador hasta U3, U5 o U6,
-y Usuarios y Mis gastos, el suyo. Quedan aplazados el modo muro, la búsqueda,
-los atajos con su diálogo, el aviso de desfase del reloj, la severidad de cada
-incidencia y el acuse compartido por estación. Las pruebas cubren el marco en
-jsdom; nada de esto acredita un despliegue ni una revisión visual en el VPS.
+los conteos son un mínimo. Un recibo no se anuncia por el feed. Lo que se marca
+como leído o no leído en Notificaciones llega al marco enseguida, porque la
+página le pide que relea los avisos, como mucho una vez cada 3 s. Lo que se
+marca en otra pestaña llega con el siguiente aviso o, como mucho, a los 60 s.
+Panorama, Monitoreo de vuelos, Mapa de posiciones, Planificación, Cobertura de
+posiciones, Datos maestros, Tablets, Chat interno y Notificaciones conservan su
+propio observador hasta U3, U5 o U6, y Usuarios y Mis gastos, el suyo. Quedan
+aplazados el modo muro, la búsqueda, los atajos con su diálogo, el aviso de
+desfase del reloj, la severidad de cada incidencia y el acuse compartido por
+estación. Las pruebas cubren el marco en jsdom; nada de esto acredita un
+despliegue ni una revisión visual en el VPS.
 
 ## Estado de integración
 

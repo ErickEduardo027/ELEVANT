@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -19,6 +19,12 @@ vi.mock('../../components/AppLink', () => ({
 import CanonicalNotificationsRoute from './CanonicalNotificationsRoute';
 import { LanguageScope } from '../../i18n/LanguageScope';
 import { resetLanguageForTests } from '../../i18n/languageStore';
+import { administratorAccess, DepartmentAccessProvider } from '../access/DepartmentAccessContext';
+import { DepartmentPermissionCodes } from '../access/testAccess';
+import { ADMIN_OCC_NAVIGATION } from '../admin-occ/navigation';
+import OccSidebar from '../admin-occ/shell/OccSidebar';
+import { OccShellProvider } from '../admin-occ/shell/OccShellProvider';
+import OccTopbar from '../admin-occ/shell/OccTopbar';
 
 function deferred() {
   let resolve;
@@ -88,4 +94,76 @@ it('renders notices in English with the shared kind labels and target links insi
   } finally {
     act(() => resetLanguageForTests('es'));
   }
+});
+
+it('a receipt saved here reaches the OCC frame at once, not with its 60 s poll', async () => {
+  vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+  vi.setSystemTime(Date.parse('2026-11-12T14:00:00Z'));
+  window.history.replaceState({}, '', '/admin-occ/notifications');
+  // One account's notices on a fake server: the frame and the page read the same list, and a receipt changes it.
+  let rows = [
+    { ...notice('91000000-0000-4000-8000-000000000001', 'OP-201'), kind: 'incident_reported' },
+    { ...notice('91000000-0000-4000-8000-000000000002', 'OP-202'), kind: 'agent_message' },
+  ];
+  const [incident] = rows;
+  mocks.useAuth.mockReturnValue({ session: { accountId: '10000000-0000-0000-0000-000000000001' } });
+  mocks.observer.mockReturnValue({ start: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) });
+  mocks.load.mockReset().mockImplementation(async () => ({ notifications: rows, hasMore: false }));
+  mocks.setRead.mockReset().mockImplementation(async (id, read) => {
+    rows = rows.map(item => (item.id === id ? { ...item, readAt: read ? new Date().toISOString() : null } : item));
+    return rows.find(item => item.id === id);
+  });
+  const access = administratorAccess('operations', DepartmentPermissionCodes.operations);
+  const user = { name: 'Alex Operations', role: 'OCC' };
+  const flush = (ms = 0) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
+  const toggle = async (kind, name) => {
+    const row = screen.getByText(kind).closest('li');
+    await act(async () => { fireEvent.click(within(row).getByRole('button', { name })); });
+  };
+  const railPlate = count => screen.getByRole('link', { name: 'Notificaciones', description: `${count} sin leer` });
+
+  render(
+    <LanguageScope>
+      <DepartmentAccessProvider initialAccess={access} load={vi.fn().mockResolvedValue(access)} observe={false}>
+        <OccShellProvider observe={false}>
+          <div data-shell-root="" data-department="occ">
+            <OccSidebar navigation={ADMIN_OCC_NAVIGATION} user={user} breakpoint="desktop" railVisible railExpanded
+              overlayOpen={false} onToggle={vi.fn()} onCloseOverlay={vi.fn()} />
+            <OccTopbar navigation={ADMIN_OCC_NAVIGATION} user={user} />
+            <main><CanonicalNotificationsRoute /></main>
+          </div>
+        </OccShellProvider>
+      </DepartmentAccessProvider>
+    </LanguageScope>,
+  );
+  // Ten seconds on the page: the frame and the page read once each, and no poll falls due.
+  await flush(10_000);
+  expect(mocks.load).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole('button', { name: '1 alerta' })).toBeInTheDocument();
+  expect(railPlate(2)).toBeInTheDocument();
+
+  // Marked read here: the page keeps the server's answer, and the frame reads the notices again at once.
+  await toggle('Incidencia reportada en rampa', 'Marcar leída');
+  await flush();
+  expect(mocks.setRead).toHaveBeenCalledExactlyOnceWith(incident.id, true);
+  expect(mocks.load).toHaveBeenCalledTimes(3);
+  expect(screen.getByRole('button', { name: 'Sin alertas' })).toBeInTheDocument();
+  expect(railPlate(1)).toBeInTheDocument();
+
+  // Marked unread within 3 s of that read: grouped like an announcement, the frame reads at the end of the 3 s.
+  await toggle('Incidencia reportada en rampa', 'Marcar no leída');
+  await flush();
+  expect(mocks.setRead).toHaveBeenLastCalledWith(incident.id, false);
+  expect(screen.getByRole('button', { name: 'Sin alertas' })).toBeInTheDocument();
+  await flush(3_000);
+  expect(mocks.load).toHaveBeenCalledTimes(4);
+  expect(screen.getByRole('button', { name: '1 alerta' })).toBeInTheDocument();
+  expect(railPlate(2)).toBeInTheDocument();
+
+  // A receipt the server refuses changed nothing, so the frame reads nothing.
+  mocks.setRead.mockRejectedValueOnce(Object.assign(new Error('refused'), { status: 409 }));
+  await toggle('Nuevo mensaje del agente', 'Marcar leída');
+  await flush(5_000);
+  expect(mocks.load).toHaveBeenCalledTimes(4);
+  expect(railPlate(2)).toBeInTheDocument();
 });

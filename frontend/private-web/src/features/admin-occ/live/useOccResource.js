@@ -74,8 +74,10 @@ function createResourceEngine(key) {
   function fail(cycle, error) {
     const status = statusForError(error);
     if (status === 'unauthorized' || status === 'forbidden') {
-      // The server refused this account: drop what it showed and stop asking until access changes or retry().
+      // The server refused this account: drop what it showed and the re-reads queued behind this read, and stop
+      // asking until access changes or retry() (contracts 2.7).
       cycle.blocked = true;
+      cycle.scheduler.reset();
       emit(closed(cycle, status));
       return;
     }
@@ -115,9 +117,10 @@ function createResourceEngine(key) {
 
   function onVisibility() {
     const cycle = current;
-    if (!cycle || isHidden()) return;
+    // A refused resource reads nothing when the tab shows again, whatever waited for it.
+    if (!cycle || cycle.blocked || isHidden()) return;
     cycle.scheduler.becameVisible();
-    if (cycle.pollDue && !cycle.inFlight && !cycle.blocked) read(cycle);
+    if (cycle.pollDue && !cycle.inFlight) read(cycle);
   }
 
   function stop() {
@@ -142,13 +145,15 @@ function createResourceEngine(key) {
       stop();
       const cycle = { scopeKey, stopped: false, blocked: false, inFlight: false, controller: null, pollTimer: null,
         pollDue: false };
-      cycle.scheduler = createRefreshScheduler({ coalesceMs: config.coalesceMs, isHidden, run: () => read(cycle) });
+      // Every read the scheduler starts goes through `run`: none while the server refuses the resource.
+      cycle.scheduler = createRefreshScheduler({ coalesceMs: config.coalesceMs, isHidden,
+        run: () => { if (!cycle.blocked) read(cycle); } });
       current = cycle;
       document.addEventListener('visibilitychange', onVisibility);
       read(cycle);
     },
     stop,
-    // An announcement of one of the resource's resources.
+    // An announcement of one of the resource's resources, or invalidate() after a change made in this tab.
     announce() {
       if (current && !current.blocked) current.scheduler.request();
     },
@@ -189,8 +194,10 @@ function createResourceEngine(key) {
  *   flight, and deferred while the tab is hidden.
  * - A safety poll re-reads `pollMs` after the last finished read (a number, or a function of the data), also
  *   deferred while the tab is hidden.
- * - After a 401 (`unauthorized`) or a 403/404 (`forbidden`) it drops the data, stops polling and ignores
- *   announcements until the access object changes or `retry()` is called.
+ * - `refresh()` reads at once (joined to a read in flight); `invalidate()`, for a change this tab made that no
+ *   announcement will report, re-reads as an announcement does.
+ * - After a 401 (`unauthorized`) or a 403/404 (`forbidden`) it drops the data, stops polling, forgets the re-reads
+ *   announcements had queued and ignores new ones until the access object changes or `retry()` is called.
  * - A failed refresh keeps the data (`refreshFailed`); a new `scopeKey` drops it; a read is abandoned after
  *   `timeoutMs` (`timeout`); unmounting aborts the read in flight.
  * - With `sourceId` it reports the read to the shell's source list. `enabled: false` reads nothing (`idle`).
@@ -239,6 +246,7 @@ export function useOccResource({ key, load, permission, resources = NO_RESOURCES
 
   return useMemo(() => ({
     status: view.status, data: view.data, refreshing: view.refreshing, refreshFailed: view.refreshFailed,
-    fetchedAt: view.fetchedAt, refresh: engine.refresh, retry: engine.retry, setData: engine.setData,
+    fetchedAt: view.fetchedAt, refresh: engine.refresh, invalidate: engine.announce, retry: engine.retry,
+    setData: engine.setData,
   }), [engine, view]);
 }

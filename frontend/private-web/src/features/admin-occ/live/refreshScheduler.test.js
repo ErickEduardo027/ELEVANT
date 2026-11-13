@@ -103,6 +103,39 @@ describe('refresh scheduler', () => {
     expect(h.reads).toEqual([30_000, 41_000, 50_000]);
   });
 
+  it('forgets on reset every read it holds: joined, trailing or deferred', () => {
+    // A request joined to the read in flight.
+    const joined = harness({ latencyMs: 5_000 });
+    joined.at(0, joined.scheduler.request);
+    joined.at(1_000, joined.scheduler.request);
+    joined.at(2_000, joined.scheduler.reset);
+    joined.advanceTo(20_000);
+    expect(joined.reads).toEqual([0]);
+
+    // A trailing read waiting for the end of the window.
+    const trailing = harness();
+    trailing.at(0, trailing.scheduler.request);
+    trailing.at(1_000, trailing.scheduler.request);
+    trailing.at(2_000, trailing.scheduler.reset);
+    expect(trailing.timers.size).toBe(0);
+    trailing.advanceTo(20_000);
+    expect(trailing.reads).toEqual([0]);
+
+    // A request deferred while the tab was hidden.
+    const deferred = harness();
+    deferred.hide();
+    deferred.at(0, deferred.scheduler.request);
+    deferred.at(1_000, deferred.scheduler.reset);
+    deferred.at(2_000, deferred.show);
+    deferred.advanceTo(20_000);
+    expect(deferred.reads).toEqual([]);
+
+    // Nothing else changes: the next request reads as before.
+    trailing.at(20_000, trailing.scheduler.request);
+    trailing.advanceTo(30_000);
+    expect(trailing.reads).toEqual([0, 20_000]);
+  });
+
   it('reads nothing after dispose', () => {
     const h = harness();
     h.at(0, h.scheduler.request);
