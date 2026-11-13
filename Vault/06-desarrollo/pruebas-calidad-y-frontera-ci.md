@@ -183,9 +183,9 @@ también posterior al commit verificado;
   su turno del día si hace falta; la API marca el aterrizaje, la tablet
   registra `BLOCK_ON` y `PUSHBACK`, la API marca el despegue y la lista de
   Superadministración sigue cada fase; un segundo vuelo se cancela antes de
-  tocar pista y sale de los vuelos propuestos. Al final el agente entrega la
-  operación sin servicios y OCC libera la posición, que el push-back todavía no
-  libera.
+  tocar pista y sale de los vuelos propuestos. En ese corte, al final el agente
+  entregaba la operación sin servicios y OCC liberaba la posición, que el
+  push-back todavía no liberaba (ver el PR A2, abajo).
 - **Sin corrida registrada.** El PR lo entregó escrito contra los selectores y
   los textos reales, sin un stack local con el que ejecutarlo. Ningún workflow
   de CI lo corre.
@@ -196,6 +196,33 @@ también posterior al commit verificado;
   ([pruebas SQL](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.DemoFlights.cs));
   del cliente compartido, y de private-web: panel, estado, servicio, diálogo de
   importación y etiquetas «Demo».
+
+Desde las posiciones de Punta Cana (PR A2 del mismo plan, código de `d6461fa1`
+a `ff066d47`, también posterior al commit verificado;
+[ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)):
+
+- **Proyecto `demo`.** Antes de disparar, Superadministración carga las
+  posiciones de Punta Cana desde su tarjeta, y OCC cubre por la API una posición
+  de la Terminal A con el agente sembrado: si el agente no tiene turno ese día,
+  Gestión Humana le programa la plantilla que cubre la hora actual, y si lo tiene
+  pero no alcanza, lo amplía. El vuelo se dispara con «Al azar»: la prueba
+  comprueba que el servidor sortea la posición cubierta, la única elegible, y que
+  «Importar vuelos» la preselecciona. Tras el `PUSHBACK`, el tablero de
+  posiciones la da libre mientras Planificación y la tablet la siguen nombrando.
+  La limpieza ya no pulsa «Liberar»: el agente entrega la operación y OCC libera
+  la cobertura que creó la prueba.
+- **Sin corrida registrada.** El PR lo entregó escrito contra los selectores y
+  los textos reales, sin un stack local con el que ejecutarlo. Ningún workflow
+  de CI lo corre.
+- **Pruebas automáticas.** Unitarias del catálogo, el plan de la carga, el
+  sorteo, la elegibilidad, el manejador de la carga y la regla del push-back; de
+  arquitectura, la paridad del catálogo con el conjunto de datos del mapa; de la
+  API, la carga y la consulta de las opciones; 8 pruebas SQL de la carga y de las
+  posiciones elegibles
+  ([carga](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.DemoStation.cs))
+  y 8 de la liberación con el push-back, con la tablet real
+  ([liberación](../../backend/tests/Elevant.IntegrationTests/Persistence/SqlServerMigrationTests.StandRelease.cs));
+  del cliente compartido, y de private-web: panel, tarjeta, motivos y servicio.
 
 ## Qué agrega cada workflow activo
 

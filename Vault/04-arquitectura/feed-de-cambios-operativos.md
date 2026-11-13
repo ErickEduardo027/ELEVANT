@@ -59,6 +59,8 @@ sources:
   - database/DevelopmentDB/Elevant.Persistence/Integration/ProviderFlightAlerts.cs
   - frontend/private-web/src/features/planning/components/ProviderFlightsDialog.jsx
   - frontend/private-web/src/features/governance/DemoFlightsPanel.jsx
+  - database/DevelopmentDB/Elevant.Persistence/Operations/EfDemoStationStore.cs
+  - database/DevelopmentDB/Elevant.Persistence/Operations/StandAvailability.cs
 tags:
   - arquitectura
   - tiempo-real
@@ -312,5 +314,27 @@ de OCC exige una operación, y permitirla sin una pediría una migración.
 Cancelar un vuelo que OCC ya importó envía una sola vez el aviso existente
 `flight_cancelled_by_provider`
 ([avisos del proveedor](../../database/DevelopmentDB/Elevant.Persistence/Integration/ProviderFlightAlerts.cs)).
+
+Tampoco esto demuestra latencia en el VPS.
+
+## Posiciones de Punta Cana (OCC a nivel NOC, PR A2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código de
+`d6461fa1` a `ff066d47` ([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)).
+Las pistas siguen sin llevar datos.
+
+- «Cargar posiciones de Punta Cana» anuncia `occ_planning` una sola vez a las
+  cuentas de OCC de la estación cuando crea terminales o posiciones, en la misma
+  transacción que las crea; si no falta nada, solo escribe el recibo y no
+  anuncia nada
+  ([almacén](../../database/DevelopmentDB/Elevant.Persistence/Operations/EfDemoStationStore.cs)).
+  Cobertura, Datos maestros, el Mapa de posiciones y Planificación releen la
+  estación con esa pista.
+- Registrar el `PUSHBACK` en la tablet ya anunciaba `occ_planning`. Desde este
+  PR, la relectura del tablero de posiciones da libre la posición de ese vuelo
+  ([regla de ocupación](../../database/DevelopmentDB/Elevant.Persistence/Operations/StandAvailability.cs)).
+- El superadministrador sigue sin recibir `occ_planning`: su panel relee las
+  opciones después de cargar posiciones, al cambiar la escala del formulario y
+  al volver a la pestaña.
 
 Tampoco esto demuestra latencia en el VPS.

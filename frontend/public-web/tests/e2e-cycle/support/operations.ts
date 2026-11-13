@@ -7,8 +7,9 @@ import { loadRun, STATE_DIR } from "./env";
 
 /**
  * What the cycle steps do with a flight once it exists (ADR-0037): OCC's planning snapshot and assignment, today's
- * shift of the seeded ramp agent and the tablet as the APK uses the API. The demo flight walkthrough (ADR-0041) uses
- * them; fase 3 still keeps its own copies of the first ones, which move here once that phase can be run again.
+ * shift of the seeded ramp agent, OCC's position coverage and the tablet as the APK uses the API. The demo flight
+ * walkthrough (ADR-0041) uses them; fase 3 still keeps its own copies of the first ones, which move here once that
+ * phase can be run again.
  */
 
 /** The seeded ramp agent (DEV-RA-001), scoped to Terminal A of PUJ. */
@@ -19,6 +20,11 @@ const MINUTE = 60_000;
 const STATION_ZONE = "America/Santo_Domingo";
 /** The tablet this harness registers when no cycle run left one (E2E_CYCLE_STATE_DIR). */
 const OWN_TABLET_FILE = "tablet.json";
+/**
+ * How long from now the agent's shift lasts at least when it is checked before any flight exists: a demo flight of the
+ * shortest visit (2 minutes to its stand and 20 on the ground) is triggered, imported and assigned within it.
+ */
+const SHIFT_AHEAD = 45 * MINUTE;
 
 export type Leg = { id: string; flightNumber: string; scheduledAt: string; estimatedAt: string | null; actualAt: string | null };
 export type PlanningTurnaround = {
@@ -37,8 +43,25 @@ export type Device = Awaited<ReturnType<typeof tablet>>;
 type Problem = { code?: string; reasons?: string[] };
 /** GET /occ/planning/turnarounds/{id}/agents/{agentId}/shift: the agent's shift of the flight's day (3-E). */
 type AgentShift = { shiftId: string; startsAtLocal: string; endsAtLocal: string; terminalCode: string; version: string };
+/** An agent with a shift of the coverage board's day: the shift's terminal and its instants. */
+export type CoverageAgent = { agentId: string; name: string; terminalId: string; terminalCode: string;
+  shiftStartsAt: string; shiftEndsAt: string };
+/**
+ * GET /occ/coverage: OCC's position coverage of a station's day (ADR-0030). The active terminals, the stands with whom
+ * the day's coverages name for each, the agents with a shift that day and the coverages not released.
+ */
+export type CoverageBoard = {
+  terminals: Array<{ terminalId: string; code: string }>;
+  stands: Array<{ standId: string; code: string; terminalId: string | null; isActive: boolean; hasBoardingBridge: boolean;
+    coveredBy: string[] }>;
+  agents: CoverageAgent[];
+  coverages: Array<{ id: string; agentId: string; agentName: string; stands: Array<{ standId: string; code: string }>;
+    startsAt: string; endsAt: string }>;
+};
 
 const localDay = () => new Date().toLocaleDateString("en-CA");
+/** A day of the station's calendar («yyyy-MM-dd»), as the API's operation dates. */
+const stationDay = (instant = new Date()) => instant.toLocaleDateString("en-CA", { timeZone: STATION_ZONE });
 
 /** OCC's planning snapshot of a station's day; by default this machine's day, as the cycle phases read it. */
 export async function todaysTurnarounds(station: string, day = localDay()) {
@@ -107,7 +130,7 @@ function clockOf(minutes: number) {
  * The preset that covers now ± 90 minutes in the station's time, the one fase 2 programs (a cycle run later that day
  * keeps it); a shift that ends at midnight goes last.
  */
-function shiftPreset(now = new Date()) {
+export function shiftPreset(now = new Date()) {
   const minutes = stationMinutes(now);
   const options = SHIFT_PRESETS.filter(preset => preset.start <= minutes - 90 && preset.end >= minutes + 90);
   options.sort((a, b) => Number(a.end >= 24 * 60) - Number(b.end >= 24 * 60) || b.end - a.end);
@@ -149,6 +172,81 @@ async function widenShift(occ: string, turnaroundId: string, agentId: string) {
   await expectCall(200, occ, "PATCH", `/human-resources/shifts/${shift.shiftId}`, {
     startsAtLocal: clockOf(Math.min(start, from)), endsAtLocal: clockOf(Math.max(end, until)),
     reason: "El agente cubre un vuelo del ciclo E2E.", expectedVersion: shift.version,
+  });
+}
+
+/** OCC's position coverage of a station's day, as «Cobertura de posiciones» reads it (ADR-0030). */
+export async function coverageBoard(occ: string, station: string, day: string) {
+  return (await expectCall<CoverageBoard>(200, occ, "GET", `/occ/coverage?stationId=${station}&date=${day}`)).data;
+}
+
+/** The agent's shift covers from now until `SHIFT_AHEAD` later. */
+const coversAhead = (agent: CoverageAgent, now = Date.now()) =>
+  Date.parse(agent.shiftStartsAt) <= now && now + SHIFT_AHEAD <= Date.parse(agent.shiftEndsAt);
+
+/**
+ * The seeded agent has a shift of the station's day in Terminal A, where it is scoped, from now until at least
+ * `SHIFT_AHEAD` later (ADR-0026). It is checked before any flight exists, on OCC's coverage board, which lists the agents
+ * with a shift that day: a stand coverage and the stands a demo flight can be drawn to need it (ADR-0041). Without a
+ * shift that day, Gestión Humana programs the shared preset around now in Terminal A; a shift of that day that starts
+ * later or ends sooner is widened, keeping what it already covered (3-E). Returns the agent as the board lists it then.
+ */
+export async function ensureAgentShiftNow(station: string, day = stationDay()) {
+  const occ = await login("occ");
+  const board = await coverageBoard(occ, station, day);
+  const current = board.agents.find(item => item.name === RAMP_AGENT);
+  if (current) {
+    expect(current.terminalCode, "the agent's shift of the day is in Terminal A, where the agent is scoped").toBe("A");
+    if (coversAhead(current)) return current;
+    await widenShiftToNow(station, day);
+  } else {
+    await programShiftNow(station, day, board);
+  }
+  const agent = (await coverageBoard(occ, station, day)).agents.find(item => item.name === RAMP_AGENT);
+  expect(agent !== undefined && coversAhead(agent), "the agent's shift of the day covers the next minutes").toBe(true);
+  return agent!;
+}
+
+/**
+ * Gestión Humana programs the agent's shift of the day in Terminal A with the preset that covers now, as fase 2 does
+ * from its weekly editor: `PUT /human-resources/shifts/{id}`, whose new id is the intent.
+ */
+async function programShiftNow(station: string, day: string, board: CoverageBoard) {
+  const terminal = board.terminals.find(item => item.code === "A");
+  expect(terminal, "the station has an active Terminal A").toBeTruthy();
+  const hr = await login("hr");
+  type Profiles = { profiles: Array<{ id: string; firstName: string; lastName: string }> };
+  const profile = (await expectCall<Profiles>(200, hr, "GET", "/human-resources/ramp-profiles")).data.profiles
+    .find(item => `${item.firstName} ${item.lastName}` === RAMP_AGENT);
+  expect(profile, "Gestión Humana has the seeded agent's ramp profile").toBeTruthy();
+  await expectCall(200, hr, "PUT", `/human-resources/shifts/${crypto.randomUUID()}`, {
+    rampProfileId: profile!.id, stationId: station, terminalId: terminal!.terminalId, workDate: day, ...shiftPreset(),
+    notes: "Turno del agente para el vuelo demo del ciclo E2E.",
+  });
+}
+
+/**
+ * Gestión Humana widens the agent's shift of the day until it covers from now to `SHIFT_AHEAD` later, keeping what it
+ * already covered («Ajustar horario», 3-E).
+ */
+async function widenShiftToNow(station: string, day: string) {
+  const hr = await login("hr");
+  type Shifts = { shifts: Array<{ id: string; agentName: string; stationId: string; startsAtLocal: string;
+    endsAtLocal: string; version: string }> };
+  const shift = (await expectCall<Shifts>(200, hr, "GET", `/human-resources/shifts?from=${day}&to=${day}&page=1&limit=100`))
+    .data.shifts.find(item => item.agentName === RAMP_AGENT && item.stationId.toLowerCase() === station.toLowerCase());
+  expect(shift, "Gestión Humana lists the agent's shift of the day").toBeTruthy();
+  const start = minutesOf(shift!.startsAtLocal);
+  // An end at or before the start is the next day's: the 15:00–00:00 preset ends at midnight.
+  const end = minutesOf(shift!.endsAtLocal) + (minutesOf(shift!.endsAtLocal) <= start ? 24 * 60 : 0);
+  const now = new Date();
+  const from = stationMinutes(now);
+  // The end rounded up to the minute: the shift covers the whole stretch.
+  const until = stationMinutes(new Date(now.getTime() + SHIFT_AHEAD + MINUTE - 1));
+  expect(until > from, "the stretch the shift must cover ends before the station's midnight").toBe(true);
+  await expectCall(200, hr, "PATCH", `/human-resources/shifts/${shift!.id}`, {
+    startsAtLocal: clockOf(Math.min(start, from)), endsAtLocal: clockOf(Math.max(end, until)),
+    reason: "El agente cubre el vuelo demo del ciclo E2E.", expectedVersion: shift!.version,
   });
 }
 
@@ -194,8 +292,8 @@ export async function tablet() {
 
 /** The operation of a flight on the agent's tablet. */
 export async function tabletOperation(device: Device, turnaroundId: string) {
-  const mine = await device.get<{ operations: Array<{ operation: { id: string; status: string }; turnaround: { id: string };
-    services: Array<{ id: string }> }> }>("/ramp/operations");
+  const mine = await device.get<{ operations: Array<{ operation: { id: string; status: string };
+    turnaround: { id: string; stand: { code: string } | null }; services: Array<{ id: string }> }> }>("/ramp/operations");
   const found = mine.data.operations.find(item => item.turnaround.id === turnaroundId);
   expect(found, "the flight reaches the agent's tablet").toBeTruthy();
   return found!;

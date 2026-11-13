@@ -296,6 +296,14 @@ la fase 2 del ciclo (`50e7778f`), que esa verificación no cubre
   apto (inactivo, ausente o sin carnet o licencia vigente) mediante una
   proyección que no libera nada.
 
+*Posterior al commit verificado de esta nota (vuelos demo, código de
+`cba00f73`; [ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)):*
+una propuesta descartada del proveedor «Demo» nunca se restaura, aunque su vuelo
+no haya pasado (`flight_proposal_passed`): pertenece a un vuelo demo que ya se
+canceló o terminó. Las propuestas de los demás proveedores siguen la regla de
+arriba
+([revisión del feed](../../database/DevelopmentDB/Elevant.Persistence/Integration/EfOccFlightFeedStore.cs)).
+
 No se ha verificado en el VPS.
 
 ## La operación (fase 3 del ciclo)
@@ -367,6 +375,44 @@ bloques A, B y C (`34e90aad`) y D (`3b749a94`), que esa verificación no cubre
   confirmado no se agregan servicios hasta que Finanzas reabra la cotización.
   OCC da de alta la aerolínea mínima de un charter, que una aprobación
   comercial posterior completa.
+
+No se ha verificado en el VPS.
+
+## Posiciones de Punta Cana y liberación con el push-back (OCC a nivel NOC, PR A2)
+
+Posterior al commit verificado de esta nota: esta sección describe el código
+del PR A2 (`d6461fa1` a `ff066d47`), que esa verificación no cubre
+([ADR-0041](../../docs/adr/0041-demo-flights-and-punta-cana-stands.md)).
+
+- **La posición queda libre con el push-back.** Una asignación deja de ocupar
+  su posición en cuanto la operación de la escala tiene el hito `PUSHBACK` con
+  hora real: el avión ya salió
+  ([`OperationOccupancyRules.HasLeftStand`](../../backend/Elevant.Application/Operations/OperationOccupancyRules.cs)
+  y su única forma SQL,
+  [`StandAvailability.PushedBackTurnarounds`](../../database/DevelopmentDB/Elevant.Persistence/Operations/StandAvailability.cs)).
+  Desde ese momento otro vuelo puede tomar la posición; el tablero la da libre,
+  o con su vuelo siguiente, y no lista el vuelo que salió ni entre los vuelos
+  sin posición; y una posición cuyo único vuelo ya salió se puede desactivar. La
+  regla vale para todos los vuelos, no solo para los demo, y completa la de
+  ocupación de arriba: antes de este PR la posición solo quedaba libre con
+  «Liberar», la aprobación, la cancelación o el cierre de la escala.
+- **La asignación sigue abierta.** El push-back no cierra la fila de la
+  asignación: los documentos de la operación, la tablet, Planificación, los
+  candidatos del relevo y la programación del turno siguen nombrando la
+  posición del vuelo, y «Liberar» de OCC la sigue cerrando. Corregir la hora del
+  push-back mantiene libre la posición.
+- **Plano de Punta Cana.** Donde están encendidos los vuelos demo, el
+  superadministrador crea las terminales y las posiciones del catálogo de Punta
+  Cana que faltan (41, sin la B33), activas, sin coordenadas y sin cambiar,
+  desactivar ni borrar lo que ya existe: una posición que ya está se adopta por
+  su código normalizado (`A01` es la `A1` del catálogo). Sus atributos son
+  provisionales y OCC los revisa en la configuración de la cobertura.
+- **La posición del vuelo demo.** «Al azar» sortea, con la `Idempotency-Key`
+  como semilla, entre las posiciones elegibles: ubicadas en el mapa, libres
+  durante la escala y cubiertas a la hora de llegada por un agente que pasa la
+  regla real de asignación. Una posición elegida a mano también tiene que ser
+  elegible
+  ([elegibilidad](../../backend/Elevant.Application/Operations/DemoStation/DemoStandEligibility.cs)).
 
 No se ha verificado en el VPS.
 
