@@ -75,10 +75,12 @@ test.describe('Mapa de posiciones on the map engine', () => {
     expect(isolation.count('tilejson')).toBe(1);
   });
 
-  test('the map\'s legend is the only one on the page and lists the states on screen', async ({ page, isolation }) => {
+  test('the map\'s legend is the only one in the screen and lists the states on screen', async ({ page, isolation }) => {
     const { map } = await openPositionsMap(page, isolation);
-    // One «Leyenda», the map's: the page no longer adds its own squares in colours the map does not draw.
-    await expect(page.getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
+    // One «Leyenda» in the screen, the map's: the page no longer adds its own squares in colours the map does not draw.
+    // The status bar keeps the frame's own «Leyenda» (PR U2), reachable from every screen, outside the content.
+    await expect(page.locator('#main-content').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('banner').getByRole('button', { name: 'Leyenda', exact: true })).toHaveCount(1);
     await expect(map.getByRole('button', { name: 'Leyenda', exact: true })).toBeVisible();
     // The stub board at its reference locations: every state it has, in the order of the vocabulary, and «No oficial».
     await expect(map.getByRole('list', { name: 'Leyenda' }).getByRole('listitem'))
