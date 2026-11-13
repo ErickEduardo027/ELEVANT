@@ -539,6 +539,42 @@ describe('map engine', () => {
     expect(quiet.map.listenerCount('click') + quiet.map.listenerCount('mousemove')).toBe(0);
   });
 
+  it('reports resizes and the bounds on screen, and picks under a moving pointer only when the hit is read', () => {
+    const onResize = vi.fn();
+    const onPointerMove = vi.fn();
+    const { engine, map, state } = ready(setup({ onResize, onPointerMove, camera: { center: [-68.3634, 18.5674], zoom: 15 } }));
+    const [[west, south], [east, north]] = engine.getBounds();
+    expect([west < -68.3634, east > -68.3634, south < 18.5674, north > 18.5674]).toEqual([true, true, true, true]);
+
+    // MapLibre resized the map to its container: the caller hears it after the new size is in.
+    state.resize(map, { width: 720 });
+    expect(onResize).toHaveBeenCalledOnce();
+    const [[narrowWest], [narrowEast]] = engine.getBounds();
+    expect(narrowEast - narrowWest).toBeCloseTo((east - west) / 2, 9);
+
+    const queries = [];
+    const feature = { id: 1, layer: { id: 'occ-stand-points' }, properties: { code: 'B21' } };
+    state.setRenderedFeatures(map, geometry => {
+      queries.push(geometry);
+      return [feature];
+    });
+    state.emit(map, 'mousemove', { point: { x: 11, y: 21 }, lngLat: { lng: -68.36, lat: 18.57 } });
+    state.emit(map, 'mousemove', { point: { x: 12, y: 22 }, lngLat: { lng: -68.36, lat: 18.57 } });
+    expect(onPointerMove).toHaveBeenCalledTimes(2);
+    expect(queries).toEqual([]);
+    const latest = onPointerMove.mock.calls.at(-1)[0];
+    expect(latest).toMatchObject({ point: { x: 12, y: 22 }, lngLat: [-68.36, 18.57] });
+    expect(latest.hit).toEqual({ kind: 'stand', id: 'B21', feature });
+    expect(latest.hit).toBe(latest.hit);
+    expect(queries).toEqual([[[8, 18], [16, 26]]]);
+
+    // Without a handler there is no resize listener; without a map there are no bounds.
+    expect(setup().map.listenerCount('resize')).toBe(0);
+    engine.destroy();
+    expect(engine.getBounds()).toBeNull();
+    expect(onResize).toHaveBeenCalledOnce();
+  });
+
   it('setAttribution replaces the attribution and keeps it in the corner, closed', () => {
     const { engine, map } = setup({ attribution: 'OCC' });
     engine.setAttribution('OCC · Datos de aeronaves: adsb.fi');

@@ -102,8 +102,13 @@ export default function ProviderFlightsDialog({ stationId, date, timeZone, onClo
     return () => controller.abort();
   }, [stationId, date, canImport, view, catalogAttempt]);
 
+  // Escape closes the dialog and is marked as used, so the map keys under it do not also clear the selection.
   useEffect(() => {
-    function handleKey(event) { if (event.key === 'Escape') onClose(); }
+    function handleKey(event) {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
+    }
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
   }, [onClose]);

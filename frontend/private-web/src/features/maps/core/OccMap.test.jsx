@@ -1,0 +1,556 @@
+import { StrictMode, createRef } from 'react';
+import { act, cleanup, createEvent, fireEvent, render, screen, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GPUInitializationError, sharedFakeMapLibre } from '../../../../tests/fakeMapLibre';
+import { LanguageScope } from '../../../i18n/LanguageScope';
+import { resetLanguageForTests } from '../../../i18n/languageStore';
+import tailwindConfig from '../../../../tailwind.config.js';
+import { findLegacyColourClasses } from '../../../styles/occLegacyBridge';
+import { readSource } from '../../../styles/occSourceScan';
+import { occColor } from '../../occ-ui/occPalette';
+import { createMapStands, standPoint } from '../testing/mapFixtures';
+import { boundsCenter, presetTargets } from './cameraPresets';
+import { liveEngineCount } from './mapEngine';
+import OccMap from './OccMap';
+import { useOccMap } from './OccMapContext';
+
+vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre.js')).sharedFakeMapLibre().module);
+
+const fake = sharedFakeMapLibre();
+const STANDS = createMapStands();
+const PAGE = '/admin-occ/positions-map?stationId=s-1';
+// Pickable test layers: stand points and their clusters, as step c of M2 will add them.
+const PICK_OVERLAY = {
+  sources: { 'test-stands': { type: 'geojson', cluster: true } },
+  layers: [
+    {
+      slot: 'stands', id: 'test-clusters', type: 'circle', source: 'test-stands', filter: ['has', 'point_count'],
+      metadata: { 'occ:group': 'stands', 'occ:pick': 'cluster', 'occ:pickId': 'cluster_id' },
+    },
+    {
+      slot: 'stands', id: 'test-points', type: 'circle', source: 'test-stands', filter: ['!', ['has', 'point_count']],
+      metadata: { 'occ:group': 'stands', 'occ:pick': 'stand', 'occ:pickId': 'code' },
+    },
+    {
+      slot: 'standLabels', id: 'test-codes', type: 'symbol', source: 'test-stands',
+      layout: { 'text-field': ['get', 'code'], 'text-font': ['Noto Sans Bold'] },
+      metadata: { 'occ:group': 'stands', 'occ:minThreshold': 'codes' },
+    },
+  ],
+};
+
+// What the map shares with its overlays, printed for the assertions (a plain element: <output> is a live region).
+function Probe() {
+  const { engineStatus, basemapStatus, activeView, fits, thresholds, standsOnScreen } = useOccMap();
+  return (
+    <pre data-testid="probe">
+      {JSON.stringify({ engineStatus, basemapStatus, activeView, fits, thresholds, onScreen: standsOnScreen.map(stand => stand.id) })}
+    </pre>
+  );
+}
+
+const probe = () => JSON.parse(screen.getByTestId('probe').textContent);
+const query = () => new URLSearchParams(window.location.search);
+
+function renderMap(props = {}, { strict = false } = {}) {
+  const ref = createRef();
+  const element = props => (
+    <OccMap ref={ref} stands={STANDS} testId="position-map-container" {...props}>
+      <Probe />
+      {props.children}
+    </OccMap>
+  );
+  const view = render(strict ? <StrictMode>{element(props)}</StrictMode> : element(props));
+  return {
+    ...view,
+    ref,
+    map: fake.state.liveMaps().at(-1) ?? null,
+    rerender: next => view.rerender(strict ? <StrictMode>{element(next)}</StrictMode> : element(next)),
+  };
+}
+
+const loadStyle = map => act(() => fake.state.emit(map, 'style.load'));
+const press = (target, key, init = {}) => {
+  const event = createEvent.keyDown(target, { key, ...init });
+  fireEvent(target, event);
+  return event;
+};
+
+beforeEach(() => {
+  fake.state.reset();
+  window.history.replaceState({}, '', PAGE);
+});
+
+afterEach(() => {
+  cleanup();
+  resetLanguageForTests('es');
+  window.history.replaceState({}, '', '/');
+  vi.restoreAllMocks();
+});
+
+describe('OccMap', () => {
+  it('renders the selectable fallback with the given Spanish and English strings when the engine is unavailable', async () => {
+    fake.state.reset({ constructorError: new GPUInitializationError() });
+    const onSelect = vi.fn();
+    const labels = {
+      unavailableTitle: 'La cartografía no está disponible',
+      unavailableDescription: 'Puedes consultar y seleccionar las posiciones desde esta lista mientras se restablece el mapa base.',
+      unavailableList: 'Posiciones',
+    };
+    renderMap({ labels, selection: { kind: 'stand', id: 'A2' }, onSelect });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveAttribute('data-testid', 'map-unavailable');
+    // Right after the host of the canvas, where occ.css looks for the fallback of the positions map.
+    expect(screen.getByTestId('position-map-container').nextElementSibling).toBe(alert);
+    expect(within(alert).getByRole('heading', { name: labels.unavailableTitle })).toBeInTheDocument();
+    expect(within(alert).getByText(labels.unavailableDescription)).toBeInTheDocument();
+    const list = within(alert).getByRole('group', { name: 'Posiciones' });
+    expect(within(list).getAllByRole('button')).toHaveLength(41);
+    expect(within(list).getByRole('button', { name: 'A2' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(list).getByRole('button', { name: 'A5' }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'stand', id: 'A5' });
+    expect(probe()).toMatchObject({ engineStatus: 'unavailable', activeView: null });
+    expect(fake.state.liveMaps()).toEqual([]);
+    // The view keys do nothing without a map.
+    expect(press(alert, '2').defaultPrevented).toBe(false);
+    expect(query().has('view')).toBe(false);
+    cleanup();
+
+    // English strings from the adapter, a list of its own and its own select handler.
+    resetLanguageForTests('en');
+    const onFallbackSelect = vi.fn();
+    render(
+      <LanguageScope>
+        <OccMap stands={STANDS} labels={{ unavailableTitle: 'Base map unavailable', unavailableDescription: 'You can browse and select stands from this list while the base map is restored.' }}
+          fallbackItems={[{ id: 'l:leg-1', label: 'AA904', kind: 'flight' }]} onFallbackSelect={onFallbackSelect} />
+      </LanguageScope>,
+    );
+    const english = await screen.findByRole('alert');
+    expect(within(english).getByRole('heading', { name: 'Base map unavailable' })).toBeInTheDocument();
+    expect(within(english).getByText(/while the base map is restored/)).toBeInTheDocument();
+    fireEvent.click(within(within(english).getByRole('group', { name: 'Map list' })).getByRole('button', { name: 'AA904' }));
+    expect(onFallbackSelect).toHaveBeenCalledExactlyOnceWith('l:leg-1', { id: 'l:leg-1', label: 'AA904', kind: 'flight' });
+    cleanup();
+
+    // Without strings of its own the map says it in the language of the screen.
+    render(<LanguageScope><OccMap stands={STANDS} /></LanguageScope>);
+    expect(await screen.findByRole('heading', { name: 'The map is not available' })).toBeInTheDocument();
+  });
+
+  it('shows the degraded base-map chip and keeps the map usable', () => {
+    const onSelect = vi.fn();
+    const { map } = renderMap({ selection: { kind: 'stand', id: 'A5' }, onSelect });
+    loadStyle(map);
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+
+    act(() => fake.state.emit(map, 'error', { sourceId: 'openmaptiles', error: new Error('Failed to fetch') }));
+    const chip = screen.getByRole('status');
+    expect(chip).toHaveTextContent('No se pudo cargar el mapa base. Se muestran el aeródromo y los datos de ELEVANT.');
+    expect(chip).toHaveClass('occ-map-chip');
+    expect(probe()).toMatchObject({ engineStatus: 'ready', basemapStatus: 'degraded' });
+    // A chip, not a fallback: the canvas stays and the map answers.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(fake.state.liveMaps()).toEqual([map]);
+    expect(screen.getByTestId('position-map-container').querySelector('.maplibregl-canvas')).not.toBeNull();
+    press(map.getCanvas(), '3');
+    expect(query().get('view')).toBe('airfield');
+    expect(map.getZoom()).toBeCloseTo(probe().fits.airfield, 6);
+    expect(map.getSource('occ-selection').data.features).toHaveLength(1);
+
+    // A tile of the base map brings it back.
+    act(() => fake.state.emit(map, 'sourcedata', { sourceId: 'openmaptiles', tile: {} }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('leaves exactly one live map after a StrictMode double mount', () => {
+    const before = liveEngineCount();
+    const { map, unmount } = renderMap({}, { strict: true });
+    expect(fake.state.maps).toHaveLength(2);
+    expect(fake.state.liveMaps()).toEqual([fake.state.maps[1]]);
+    expect(map).toBe(fake.state.maps[1]);
+    expect(liveEngineCount()).toBe(before + 1);
+    const host = screen.getByTestId('position-map-container');
+    expect(host.querySelectorAll('.occ-map-engine')).toHaveLength(1);
+    expect(host.querySelectorAll('.maplibregl-canvas')).toHaveLength(1);
+    // The map that stayed is the one that answers: it opened on the ramp and its zoom buttons' map moves.
+    loadStyle(map);
+    expect(map.getZoom()).toBeCloseTo(probe().fits.ramp, 6);
+    press(map.getCanvas(), '1');
+    expect(map.getZoom()).toBeCloseTo(probe().fits.region, 6);
+    expect(screen.getByTestId('occ-map')).toHaveAttribute('data-occ-view', 'region');
+    expect(fake.state.maps[0].cameraCalls.filter(call => call.method !== 'setPadding' && call.method !== 'jumpTo')).toEqual([]);
+
+    unmount();
+    expect(fake.state.liveMaps()).toEqual([]);
+    expect(liveEngineCount()).toBe(before);
+  });
+
+  it('keys 1 to 4 change the view and write view=; Esc clears the selection; keys typed in a field or with Ctrl do nothing', () => {
+    const onSelect = vi.fn();
+    const { map, rerender } = renderMap({
+      selection: { kind: 'stand', id: 'A5' }, onSelect, children: <input aria-label="Buscar posición" />,
+    });
+    loadStyle(map);
+    const canvas = map.getCanvas();
+    const root = screen.getByTestId('occ-map');
+    for (const [key, view] of [['1', 'region'], ['2', 'approach'], ['3', 'airfield'], ['4', 'ramp']]) {
+      expect(press(canvas, key).defaultPrevented, key).toBe(true);
+      expect(query().get('view'), key).toBe(view);
+      expect(map.getZoom(), key).toBeCloseTo(probe().fits[view], 6);
+      expect(root, key).toHaveAttribute('data-occ-view', view);
+      expect(Number(root.getAttribute('data-occ-zoom')), key).toBeCloseTo(probe().fits[view], 2);
+    }
+    expect(query().get('stationId')).toBe('s-1');
+
+    // Esc clears the selection and uses the key.
+    expect(press(canvas, 'Escape').defaultPrevented).toBe(true);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith(null);
+
+    // A field inside the map, Ctrl or Meta, and a key pressed outside the map do nothing.
+    const field = screen.getByRole('textbox', { name: 'Buscar posición' });
+    expect(press(field, '1').defaultPrevented).toBe(false);
+    expect(press(canvas, '2', { ctrlKey: true }).defaultPrevented).toBe(false);
+    expect(press(canvas, '3', { metaKey: true }).defaultPrevented).toBe(false);
+    expect(press(document.body, '1').defaultPrevented).toBe(false);
+    expect(query().get('view')).toBe('ramp');
+    expect(map.getZoom()).toBeCloseTo(probe().fits.ramp, 6);
+
+    // With nothing selected Esc is not used; a modal dialog or a drawer the page reports holds every key.
+    rerender({ selection: null, onSelect });
+    expect(press(canvas, 'Escape').defaultPrevented).toBe(false);
+    expect(onSelect).toHaveBeenCalledOnce();
+    let drawerOpen = true;
+    rerender({ selection: { kind: 'stand', id: 'A5' }, onSelect, isShortcutBlocked: () => drawerOpen });
+    expect(press(canvas, 'Escape').defaultPrevented).toBe(false);
+    expect(press(canvas, '1').defaultPrevented).toBe(false);
+    drawerOpen = false;
+    const dialog = document.body.appendChild(Object.assign(document.createElement('div'), { role: 'dialog' }));
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    expect(press(canvas, '1').defaultPrevented).toBe(false);
+    dialog.remove();
+    expect(query().get('view')).toBe('ramp');
+    expect(onSelect).toHaveBeenCalledOnce();
+    // D, S and L belong to later PRs: they pass through.
+    for (const key of ['d', 's', 'l']) expect(press(canvas, key).defaultPrevented, key).toBe(false);
+  });
+
+  it('opens on the URL view, else initialCamera, else defaultView; re-pressing the active view after a free zoom flies again', () => {
+    const initialCamera = { center: [-68.365, 18.563], zoom: 12.3, bearing: 0, pitch: 0 };
+    window.history.replaceState({}, '', `${PAGE}&view=approach`);
+    let view = renderMap({ initialCamera, defaultView: 'ramp' });
+    expect(view.map.getZoom()).toBeCloseTo(probe().fits.approach, 6);
+    expect(probe().activeView).toBe('approach');
+    // The view is jumped to at start, not animated.
+    expect(view.map.cameraCalls.filter(call => call.method !== 'setPadding').map(call => call.method)).toEqual(['jumpTo']);
+    view.unmount();
+
+    // A terminal preset of the URL frames that terminal's stands.
+    window.history.replaceState({}, '', `${PAGE}&view=ramp&terminal=FBO`);
+    view = renderMap();
+    const fbo = presetTargets({ stands: STANDS }).terminals.FBO.bounds;
+    const expectedFbo = Math.log2((1440 * 360) / (512 * (fbo[1][0] - fbo[0][0])));
+    expect(view.map.getZoom()).toBeCloseTo(expectedFbo, 6);
+    expect(view.map.getCenter().lng).toBeCloseTo((fbo[0][0] + fbo[1][0]) / 2, 9);
+    view.unmount();
+
+    window.history.replaceState({}, '', PAGE);
+    view = renderMap({ initialCamera, defaultView: 'ramp' });
+    expect(view.map.options).toMatchObject({ center: [-68.365, 18.563], zoom: 12.3 });
+    expect(view.map.getZoom()).toBe(12.3);
+    expect(view.map.cameraCalls.filter(call => call.method !== 'setPadding')).toEqual([]);
+    expect(probe().activeView).toBe('airfield');
+    view.unmount();
+
+    view = renderMap({ defaultView: 'airfield' });
+    const { map } = view;
+    const { fits } = probe();
+    expect(map.getZoom()).toBeCloseTo(fits.airfield, 6);
+    // The default view is not written in the URL.
+    expect(query().has('view')).toBe(false);
+
+    // A free zoom keeps the selector truthful; pressing the view flies back and writes it.
+    act(() => map.jumpTo({ zoom: 9 }));
+    expect(probe().activeView).toBe('approach');
+    press(map.getCanvas(), '3');
+    expect(query().get('view')).toBe('airfield');
+    expect(map.getZoom()).toBeCloseTo(fits.airfield, 6);
+    // The URL already says airfield: after another free zoom the same key still flies.
+    act(() => map.jumpTo({ zoom: 17 }));
+    const calls = map.cameraCalls.length;
+    press(map.getCanvas(), '3');
+    expect(map.cameraCalls).toHaveLength(calls + 1);
+    expect(map.cameraCalls.at(-1)).toMatchObject({ method: 'flyTo', options: { curve: 1.42, essential: false } });
+    expect(map.getZoom()).toBeCloseTo(fits.airfield, 6);
+
+    // A view written in the URL by someone else (another panel, back and forward) flies too.
+    act(() => globalThis.__nextRouterMock.replace(`${PAGE}&view=region`));
+    expect(map.getZoom()).toBeCloseTo(fits.region, 6);
+    expect(probe().activeView).toBe('region');
+  });
+
+  it('frames its first view as soon as a map without a size gets one, unless a person moved it first', () => {
+    // A collapsed container: MapLibre cannot fit anything yet.
+    fake.state.size.width = 0;
+    let view = renderMap({ defaultView: 'airfield' });
+    const airfield = presetTargets({ stands: STANDS }).airfield.bounds;
+    // It waits over the airfield, not at MapLibre's [0, 0], and moves nothing.
+    expect(view.map.options.center).toEqual(boundsCenter(airfield));
+    expect(probe()).toMatchObject({ fits: null, thresholds: null, activeView: null });
+    expect(view.map.cameraCalls.filter(call => call.method !== 'setPadding')).toEqual([]);
+
+    act(() => fake.state.resize(view.map, { width: 1440 }));
+    const { fits } = probe();
+    expect(view.map.getZoom()).toBeCloseTo(fits.airfield, 6);
+    expect(view.map.getCenter().lng).toBeCloseTo(boundsCenter(airfield)[0], 9);
+    expect(view.map.cameraCalls.filter(call => call.method !== 'setPadding').map(call => call.method)).toEqual(['jumpTo']);
+    expect(probe().activeView).toBe('airfield');
+    // Once framed, a later resize keeps the camera where it is.
+    act(() => fake.state.resize(view.map, { width: 1200 }));
+    expect(view.map.cameraCalls.filter(call => call.method !== 'setPadding')).toHaveLength(1);
+    view.unmount();
+
+    // A person who moves the map before it has a size keeps the camera they chose.
+    fake.state.size.width = 0;
+    view = renderMap({ defaultView: 'airfield' });
+    act(() => view.map.jumpTo({ zoom: 9, originalEvent: new MouseEvent('wheel') }));
+    act(() => fake.state.resize(view.map, { width: 1440 }));
+    expect(view.map.getZoom()).toBe(9);
+    expect(probe().activeView).toBe('approach');
+  });
+
+  it('insets feed the padding and the CSS variables and re-derive the thresholds', () => {
+    const insets = { top: 56, right: 320, bottom: 48, left: 0 };
+    const { map, rerender } = renderMap({ overlays: [PICK_OVERLAY], insets });
+    loadStyle(map);
+    expect(map.getPadding()).toEqual(insets);
+    const root = screen.getByTestId('occ-map');
+    const engineContainer = root.querySelector('.occ-map-engine');
+    for (const [side, value] of Object.entries(insets)) {
+      expect(root.style.getPropertyValue(`--occ-map-inset-${side}`), side).toBe(`${value}px`);
+      expect(engineContainer.style.getPropertyValue(`--occ-map-inset-${side}`), side).toBe(`${value}px`);
+    }
+
+    // The ramp fits the width the panels leave free; the code threshold sits 0.3 below that fit.
+    const ramp = presetTargets({ stands: STANDS }).ramp.bounds;
+    const fitFor = width => Math.log2((width * 360) / (512 * (ramp[1][0] - ramp[0][0])));
+    const narrow = probe();
+    expect(narrow.fits.ramp).toBeCloseTo(fitFor(1440 - 320), 9);
+    expect(narrow.thresholds).toEqual({
+      polygons: narrow.fits.airfield - 0.3, codes: narrow.fits.ramp - 0.3, threeLine: narrow.fits.ramp + 0.8,
+    });
+    expect(map.zoomRangeCalls.at(-1)).toEqual({ id: 'test-codes', minzoom: narrow.thresholds.codes, maxzoom: 24 });
+    expect(map.getZoom()).toBeCloseTo(narrow.fits.ramp, 6);
+
+    // Folding the side panel gives the room back: new fits, new thresholds.
+    rerender({ overlays: [PICK_OVERLAY], insets: { ...insets, right: 0 } });
+    expect(map.getPadding()).toEqual({ ...insets, right: 0 });
+    expect(root.style.getPropertyValue('--occ-map-inset-right')).toBe('0px');
+    const wide = probe();
+    expect(wide.fits.ramp).toBeCloseTo(fitFor(1440), 9);
+    expect(map.zoomRangeCalls.at(-1).minzoom).toBeCloseTo(wide.fits.ramp - 0.3, 9);
+    // The same insets in a new object change nothing.
+    const ranges = map.zoomRangeCalls.length;
+    rerender({ overlays: [PICK_OVERLAY], insets: { ...insets, right: 0 } });
+    expect(map.zoomRangeCalls).toHaveLength(ranges);
+
+    // A resize of the map re-derives them as well.
+    act(() => fake.state.resize(map, { width: 1000 }));
+    expect(probe().fits.ramp).toBeCloseTo(fitFor(1000), 9);
+    expect(map.zoomRangeCalls.at(-1).minzoom).toBeCloseTo(fitFor(1000) - 0.3, 9);
+
+    // A view flies inside the insets.
+    press(map.getCanvas(), '3');
+    expect(map.cameraCalls.at(-1).options.padding).toEqual({ ...insets, right: 0 });
+  });
+
+  it('draws the selection in the selection slot with the accent colour', () => {
+    const { map, rerender } = renderMap({ selection: { kind: 'stand', id: 'a05' } });
+    loadStyle(map);
+    const source = map.getSource('occ-selection');
+    expect(source.data).toEqual({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', properties: { kind: 'stand', id: 'A5' }, geometry: { type: 'Point', coordinates: standPoint('A5') } }],
+    });
+    // The top slot of the map, cyan, and data rather than feature state.
+    const ids = map.layerIds();
+    expect(ids.slice(ids.indexOf('slot-selection') + 1)).toEqual(['occ-selection-stand', 'occ-selection-ring']);
+    expect(ids.at(-1)).toBe('occ-selection-ring');
+    expect(map.getLayer('occ-selection-stand').paint['icon-color']).toBe(occColor('accent'));
+    expect(map.getLayer('occ-selection-ring').paint['circle-stroke-color']).toBe(occColor('accent'));
+    expect(map.calls.filter(call => call.method === 'setFeatureState')).toEqual([]);
+
+    rerender({ selection: { kind: 'stand', id: 'B21' } });
+    expect(source.data.features[0].geometry.coordinates).toEqual(standPoint('B21'));
+    // The same selection in a new object writes nothing; a flight is ringed where it is; none clears the source.
+    const writes = source.setDataCalls.length;
+    rerender({ selection: { kind: 'stand', id: 'B21' } });
+    expect(source.setDataCalls).toHaveLength(writes);
+    rerender({ selection: { kind: 'flight', id: 'leg-7' }, flights: [{ id: 'leg-7', latitude: 18.7, longitude: -68.2 }] });
+    expect(source.data.features).toEqual([{
+      type: 'Feature', properties: { kind: 'flight', id: 'leg-7' }, geometry: { type: 'Point', coordinates: [-68.2, 18.7] },
+    }]);
+    rerender({ selection: null });
+    expect(source.data.features).toEqual([]);
+
+    // It survives a context loss as data: nothing needs to be written again.
+    act(() => fake.state.loseContext(map));
+    act(() => fake.state.restoreContext(map));
+    loadStyle(map);
+    expect(map.getSource('occ-selection').data.features).toEqual([]);
+  });
+
+  it('selects what is clicked, expands a cluster, reports the point while placing and sets the cursor once per frame', async () => {
+    const onSelect = vi.fn();
+    const onMapClick = vi.fn();
+    const { map, rerender } = renderMap({ overlays: [PICK_OVERLAY], onSelect, onMapClick });
+    loadStyle(map);
+    const click = (features, lngLat = { lng: -68.36, lat: 18.564 }) => {
+      fake.state.setRenderedFeatures(map, () => features);
+      return act(async () => fake.state.emit(map, 'click', { point: { x: 100, y: 100 }, lngLat }));
+    };
+
+    await click([{ id: 1, layer: { id: 'test-points' }, properties: { code: 'B21' } }]);
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'stand', id: 'B21' });
+    await click([]);
+    expect(onSelect).toHaveBeenCalledOnce();
+
+    // A cluster zooms in to MapLibre's expansion zoom (a promise in 6.x) and selects nothing.
+    await click([{ id: 9, source: 'test-stands', layer: { id: 'test-clusters' }, properties: { cluster_id: 42, point_count: 5 },
+      geometry: { type: 'Point', coordinates: [-68.37, 18.563] } }]);
+    expect(map.getSource('test-stands').expansionZoomCalls).toEqual([42]);
+    expect(map.cameraCalls.at(-1)).toEqual({ method: 'easeTo', options: { center: [-68.37, 18.563], zoom: 16, duration: 500 } });
+    expect(onSelect).toHaveBeenCalledOnce();
+
+    // While placing a stand the click gives its point and selects nothing.
+    rerender({ overlays: [PICK_OVERLAY], onSelect, onMapClick, placing: true });
+    expect(map.getCanvas().style.cursor).toBe('crosshair');
+    await click([{ id: 1, layer: { id: 'test-points' }, properties: { code: 'B21' } }], { lng: -68.3611, lat: 18.5649 });
+    expect(onMapClick).toHaveBeenCalledExactlyOnceWith({ latitude: 18.5649, longitude: -68.3611 });
+    expect(onSelect).toHaveBeenCalledOnce();
+
+    // The cursor: one pick per frame, a pointer over what can be chosen.
+    rerender({ overlays: [PICK_OVERLAY], onSelect, onMapClick, placing: false });
+    expect(map.getCanvas().style.cursor).toBe('');
+    const frames = [];
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
+    let picks = 0;
+    fake.state.setRenderedFeatures(map, () => {
+      picks += 1;
+      return [{ id: 1, layer: { id: 'test-points' }, properties: { code: 'A5' } }];
+    });
+    for (const x of [10, 11, 12]) fake.state.emit(map, 'mousemove', { point: { x, y: 10 }, lngLat: { lng: -68.36, lat: 18.56 } });
+    expect(frames).toHaveLength(1);
+    expect(picks).toBe(0);
+    frames.shift()(0);
+    expect(picks).toBe(1);
+    expect(map.getCanvas().style.cursor).toBe('pointer');
+    fake.state.emit(map, 'mouseout');
+    frames.shift()(16);
+    expect(map.getCanvas().style.cursor).toBe('');
+  });
+
+  it('flies to presets, stands and bounds through its handle', () => {
+    const { map, ref } = renderMap();
+    loadStyle(map);
+    const { fits } = probe();
+    act(() => ref.current.flyToPreset('region'));
+    expect(map.getZoom()).toBeCloseTo(fits.region, 6);
+    // Only flying: the URL keeps no view for a call of the page.
+    expect(query().has('view')).toBe(false);
+    act(() => ref.current.flyToPuj());
+    expect(map.getZoom()).toBeCloseTo(fits.airfield, 6);
+    act(() => ref.current.flyToAll());
+    expect(map.getZoom()).toBeCloseTo(fits.ramp, 6);
+
+    act(() => ref.current.flyToStand('a05'));
+    expect(map.getCenter().toArray()).toEqual(standPoint('A5'));
+    expect(map.getZoom()).toBeCloseTo(fits.ramp + 1.5, 6);
+    act(() => ref.current.flyToStand('A6', { minZoom: 18.5 }));
+    expect(map.getZoom()).toBe(18.5);
+    // Closer than asked stays closer; an unknown stand moves nothing.
+    act(() => ref.current.flyToStand('A7', { minZoom: 15 }));
+    expect(map.getZoom()).toBe(18.5);
+    expect(ref.current.flyToStand('Z9')).toBe(false);
+
+    act(() => ref.current.flyToBounds([standPoint('A1'), standPoint('A11')]));
+    const span = standPoint('A1')[0] - standPoint('A11')[0];
+    expect(map.getZoom()).toBeCloseTo(Math.log2(((1440 - 140) * 360) / (512 * span)), 6);
+    expect(ref.current.flyToBounds([])).toBe(false);
+
+    act(() => map.jumpTo({ bearing: -17 }));
+    act(() => ref.current.resetNorth());
+    expect(map.cameraCalls.at(-1)).toEqual({ method: 'easeTo', options: { bearing: 0, duration: 400, essential: false } });
+    expect(ref.current.getCamera()).toMatchObject({ bearing: 0, zoom: map.getZoom() });
+  });
+
+  it('tilts in 3D, shows the 3D buildings when asked and names its controls in Spanish', () => {
+    const { map, rerender } = renderMap({ pitchMode: '2d' });
+    loadStyle(map);
+    expect(map.options.locale).toMatchObject({
+      'Map.Title': 'Mapa del OCC', 'NavigationControl.ZoomIn': 'Acercar', 'NavigationControl.ZoomOut': 'Alejar',
+      'ScaleControl.NauticalMiles': 'NM',
+    });
+    expect(map.getPitch()).toBe(0);
+    rerender({ pitchMode: '3d', groups: { 'buildings-3d': true } });
+    expect(map.cameraCalls.at(-1)).toEqual({ method: 'easeTo', options: { pitch: 55, bearing: -17, duration: 600, essential: false } });
+    expect(map.getLayer('building-3d').layout.visibility).toBe('visible');
+    // The region view stays flat, in 3D as well; the airfield tilts less than the ramp.
+    press(map.getCanvas(), '1');
+    expect([map.getPitch(), map.getBearing()]).toEqual([0, 0]);
+    press(map.getCanvas(), '3');
+    expect([map.getPitch(), map.getBearing()]).toEqual([40, -17]);
+    press(map.getCanvas(), '4');
+    expect([map.getPitch(), map.getBearing()]).toEqual([55, -17]);
+    rerender({ pitchMode: '3d', groups: { 'buildings-3d': false } });
+    expect(map.getLayer('building-3d').layout.visibility).toBe('none');
+  });
+
+  it('imports occ-map.css and uses only occ-* classes (no opacity modifier)', () => {
+    const component = readSource('src/features/maps/core/OccMap.jsx');
+    expect(component).toMatch(/^import 'maplibre-gl\/dist\/maplibre-gl\.css';$/m);
+    expect(component).toMatch(/^import '\.\.\/\.\.\/\.\.\/styles\/occ-map\.css';$/m);
+    const files = [
+      'src/features/maps/core/OccMap.jsx', 'src/features/maps/core/MapUnavailable.jsx',
+      'src/features/maps/ui/MapLegend.jsx', 'src/features/maps/ui/MapPresetSwitcher.jsx',
+    ];
+    const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));
+    for (const file of files) {
+      const source = readSource(file);
+      // No legacy colour (that check also reads an occ colour with an opacity modifier), and no modifier at all.
+      expect(findLegacyColourClasses(source), file).toEqual([]);
+      expect(source.match(/-occ-[a-z-]+\/(?:\d+|\[)/g), file).toBeNull();
+      // Flat: no shadow, ring (a shadow too), blur or gradient.
+      expect(source, file).not.toMatch(/backdrop|gradient|\bblur\b|\bshadow-(?!none\b)|(?<![\w-])ring-/);
+      // Every occ colour class names a token of tailwind.config.js, and the only other colour is «none».
+      for (const [, , token] of source.matchAll(/(?<![\w-])(bg|text|border|outline|fill|stroke)-occ-([a-z]+(?:-[a-z]+)*)/g)) {
+        expect(tokens.has(token), `${file}: occ-${token}`).toBe(true);
+      }
+      const plainColours = [...source.matchAll(/(?<![\w-])(?:bg|border|outline|fill|stroke)-(white|black|current|inherit|[a-z]+-\d{2,3})(?![\w-])/g)];
+      expect(plainColours.map(match => match[0]), file).toEqual([]);
+      // Radii of the OCC: 2 (plates), 4 (controls), 6 (panels) and 8 px (overlays).
+      for (const [radius] of source.matchAll(/(?<![\w-])rounded(?:-[a-z0-9]+)?(?![\w-])/g)) {
+        expect(['rounded-sm', 'rounded', 'rounded-md', 'rounded-lg'], `${file}: ${radius}`).toContain(radius);
+      }
+    }
+
+    const stylesheet = readSource('src/styles/occ-map.css');
+    const css = stylesheet.replace(/\/\*[\s\S]*?\*\//g, '');
+    const preludes = [...css.matchAll(/([^{}]+)\{/g)].map(([, prelude]) => prelude.trim());
+    // The only at-rule keeps MapLibre's own icons in forced colours.
+    expect(preludes.filter(prelude => prelude.startsWith('@'))).toEqual(['@media (forced-colors: active)']);
+    const selectors = preludes.filter(prelude => !prelude.startsWith('@')).flatMap(prelude => prelude.split(',').map(part => part.trim()));
+    expect(selectors.length).toBeGreaterThan(10);
+    for (const selector of selectors) expect(selector.startsWith('.occ-map'), selector).toBe(true);
+    for (const [, value] of css.matchAll(/box-shadow:\s*([^;]+);/g)) expect(value.trim()).toBe('none');
+    expect(css).not.toMatch(/backdrop-filter|gradient|blur\(/);
+    // Colours only through the tokens; radii only 2, 4, 6 or 8 px.
+    expect(css).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+    expect([...css.matchAll(/var\((--[a-z0-9-]+)/g)].map(([, name]) => name).filter(name => !name.startsWith('--occ-'))).toEqual([]);
+    for (const [, value] of css.matchAll(/border-radius:\s*([^;]+);/g)) expect(['2px', '4px', '6px', '8px']).toContain(value.trim());
+    // The root of the component is the scope of the stylesheet.
+    renderMap();
+    expect(screen.getByTestId('occ-map')).toHaveClass('occ-map');
+  });
+});

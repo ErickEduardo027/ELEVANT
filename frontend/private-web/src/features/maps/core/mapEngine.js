@@ -1,4 +1,5 @@
 import { BASEMAP_SOURCE_ID, SLOT_GROUP, nextSlot, slotMarkerId } from '../style/occStyle';
+import { collapseCompactAttribution } from './attribution';
 import { ensureWorkerUrl } from './workerUrl';
 
 // The only module of the OCC maps that constructs a MapLibre Map (design A2). Everything a screen draws is declared in
@@ -60,12 +61,14 @@ const stateKey = (source, id) => `${source}\u0000${typeof id}:${String(id)}`;
  * @param {(status: object) => void} [options.onStatus] `{ engine: 'starting'|'ready'|'unavailable', basemap:
  *   'off'|'loading'|'ok'|'degraded', reason: null|'webgl'|'error' }`, on every change.
  * @param {(camera: object, details: { byUser: boolean }) => void} [options.onCamera] after every move.
+ * @param {() => void} [options.onResize] after MapLibre has resized the map to its container (the fitted zooms change).
  * @param {(event: object) => void} [options.onClick] `{ point, lngLat, hit }`, `hit` as pickAt answers.
- * @param {(event: object|null) => void} [options.onPointerMove] the same while the pointer moves; `null` when it leaves.
+ * @param {(event: object|null) => void} [options.onPointerMove] the same while the pointer moves, `null` when it
+ *   leaves; its `hit` is picked when first read, so a caller that reads it once per frame picks once per frame.
  */
 export function createMapEngine({
   maplibre, host, style, camera, interactive = true, attribution, imageResolver, mapOptions,
-  onStatus, onCamera, onClick, onPointerMove,
+  onStatus, onCamera, onResize, onClick, onPointerMove,
 } = {}) {
   if (!maplibre) throw new TypeError('createMapEngine needs the maplibre-gl module');
   if (!host?.ownerDocument) throw new TypeError('createMapEngine needs a host element');
@@ -170,11 +173,7 @@ export function createMapEngine({
   // MapLibre opens a compact attribution with content as soon as it is added, and again when its content first
   // arrives. Keep it closed until the person opens it.
   function keepAttributionClosed() {
-    if (!attributionPristine) return;
-    const details = container.querySelector(ATTRIBUTION_SELECTOR);
-    if (!details) return;
-    details.removeAttribute('open');
-    details.classList.remove('maplibregl-compact-show');
+    if (attributionPristine) collapseCompactAttribution(container);
   }
 
   // Bottom-right corner: MapLibre stacks a later bottom control above the earlier ones, so the attribution goes first
@@ -214,6 +213,20 @@ export function createMapEngine({
     const point = event.point ? { x: event.point.x, y: event.point.y } : null;
     const lngLat = event.lngLat ? [event.lngLat.lng, event.lngLat.lat] : null;
     return { point, lngLat, hit: point === null ? null : pickAt(point), originalEvent: event.originalEvent };
+  }
+
+  // A pointer move fires at the screen's rate: its `hit` is picked on first read, at most once.
+  function pointerMoveEvent(event) {
+    const point = event.point ? { x: event.point.x, y: event.point.y } : null;
+    const lngLat = event.lngLat ? [event.lngLat.lng, event.lngLat.lat] : null;
+    let hit;
+    return Object.defineProperty({ point, lngLat, originalEvent: event.originalEvent }, 'hit', {
+      enumerable: true,
+      get() {
+        if (hit === undefined) hit = point === null ? null : pickAt(point);
+        return hit;
+      },
+    });
   }
 
   function listen(type, handler) {
@@ -285,9 +298,10 @@ export function createMapEngine({
     listen('moveend', event => {
       onCamera?.(readCamera(), { byUser: Boolean(event?.originalEvent) });
     });
+    if (onResize) listen('resize', () => onResize());
     if (onClick) listen('click', event => onClick(pointerEvent(event)));
     if (onPointerMove) {
-      listen('mousemove', event => onPointerMove(pointerEvent(event)));
+      listen('mousemove', event => onPointerMove(pointerMoveEvent(event)));
       listen('mouseout', () => onPointerMove(null));
     }
 
@@ -431,6 +445,13 @@ export function createMapEngine({
     /** `{ center: [lng, lat], zoom, bearing, pitch }`, or `null` without a map. */
     getCamera() {
       return live() ? readCamera() : null;
+    },
+
+    /** What the map shows, `[[west, south], [east, north]]` (the box around it when tilted), or `null` without a map. */
+    getBounds() {
+      if (!live()) return null;
+      const bounds = map.getBounds();
+      return [[bounds.getWest(), bounds.getSouth()], [bounds.getEast(), bounds.getNorth()]];
     },
 
     /** The top feature of a pickable layer under `point`: `{ kind, id, feature }` from `occ:pick` / `occ:pickId`. */

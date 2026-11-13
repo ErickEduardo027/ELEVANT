@@ -101,6 +101,17 @@ function featureKey({ source, sourceLayer, id }) {
   return `${source}\u0000${sourceLayer ?? ''}\u0000${typeof id}:${id}`;
 }
 
+// Web Mercator in world pixels at `scale` (TILE_SIZE × 2^zoom), and back.
+function worldPixels({ lng, lat }, scale) {
+  const sin = Math.sin((lat * Math.PI) / 180);
+  return { x: ((lng + 180) / 360) * scale, y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale };
+}
+
+function lngLatAt(x, y, scale) {
+  const lat = (Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / scale))) * 180) / Math.PI;
+  return [(x / scale) * 360 - 180, lat];
+}
+
 class FakeControl {
   constructor(options = {}) {
     this.options = options;
@@ -169,6 +180,7 @@ function createState({ constructorError = null, width = 1440, height = 900, expa
     maps: [],
     constructorError,
     size: { width, height },
+    initialSize: Object.freeze({ width, height }),
     expansionZoom,
   };
 }
@@ -270,7 +282,7 @@ function createModule(state) {
 
       this.camera = { center: new FakeLngLat(0, 0), zoom: 0, bearing: 0, pitch: 0 };
       this._setCamera(options);
-      if (options.bounds) this._setCamera(this.cameraForBounds(options.bounds, options.fitBoundsOptions));
+      if (options.bounds) this._setCamera(this.cameraForBounds(options.bounds, options.fitBoundsOptions) ?? {});
       state.maps.push(this);
     }
 
@@ -553,20 +565,28 @@ function createModule(state) {
       return this._move('flyTo', options);
     }
 
+    // As MapLibre: no move when the bounds cannot be fitted; with `absolutePadding` the padding goes to the map.
     fitBounds(bounds, options = {}) {
       const camera = this.cameraForBounds(bounds, options);
+      if (!camera) return this;
       return this._move('fitBounds', { bounds: boundsCorners(bounds), ...options }, camera);
     }
 
-    // Deterministic: the zoom at which the width of the bounds fills the fake width (1440 px unless given), less the
-    // horizontal padding. It ignores the latitude and the height of the bounds.
+    // Deterministic: the zoom at which the width of the bounds fills the free width of the fake viewport (1440 px
+    // unless given). It ignores the latitude and the height of the bounds. As in MapLibre 6.16, the free width is the
+    // viewport less `padding` and the map's own padding, or less `padding` alone with `absolutePadding` (and the
+    // answer then carries that padding); a viewport with no room left answers nothing, and one with exactly none
+    // answers an infinite zoom out.
     cameraForBounds(bounds, options = {}) {
       const [[west, south], [east, north]] = boundsCorners(bounds);
       const padding = paddingOf(options.padding);
-      const width = Math.max(1, state.size.width - padding.left - padding.right);
+      const mapPadding = options.absolutePadding ? paddingOf(0) : this.padding;
+      const width = state.size.width - padding.left - padding.right - mapPadding.left - mapPadding.right;
+      if (width < 0) return undefined;
       const boundsWidthAtZoomZero = (TILE_SIZE * Math.max(east - west, 1e-9)) / 360;
       const zoom = Math.min(Math.log2(width / boundsWidthAtZoomZero), options.maxZoom ?? this.options.maxZoom ?? 22);
-      return { center: new FakeLngLat((west + east) / 2, (south + north) / 2), zoom, bearing: options.bearing ?? 0 };
+      const camera = { center: new FakeLngLat((west + east) / 2, (south + north) / 2), zoom, bearing: options.bearing ?? 0 };
+      return options.absolutePadding ? { ...camera, padding } : camera;
     }
 
     setPadding(padding) {
@@ -601,13 +621,19 @@ function createModule(state) {
     // Web Mercator around the current centre, in pixels of the fake viewport.
     project(lngLat) {
       const scale = TILE_SIZE * 2 ** this.camera.zoom;
-      const toPixels = ({ lng, lat }) => {
-        const sin = Math.sin((lat * Math.PI) / 180);
-        return { x: ((lng + 180) / 360) * scale, y: (0.5 - Math.log((1 + sin) / (1 - sin)) / (4 * Math.PI)) * scale };
-      };
-      const centre = toPixels(this.camera.center);
-      const point = toPixels(FakeLngLat.convert(lngLat));
+      const centre = worldPixels(this.camera.center, scale);
+      const point = worldPixels(FakeLngLat.convert(lngLat), scale);
       return { x: point.x - centre.x + state.size.width / 2, y: point.y - centre.y + state.size.height / 2 };
+    }
+
+    // The rectangle of the fake viewport around the centre, in Web Mercator; pitch and bearing are ignored.
+    getBounds() {
+      const scale = TILE_SIZE * 2 ** this.camera.zoom;
+      const centre = worldPixels(this.camera.center, scale);
+      const { width, height } = state.size;
+      const [west, north] = lngLatAt(centre.x - width / 2, centre.y - height / 2, scale);
+      const [east, south] = lngLatAt(centre.x + width / 2, centre.y + height / 2, scale);
+      return new FakeLngLatBounds([west, south], [east, north]);
     }
 
     // Everything else the OCC maps use.
@@ -752,14 +778,26 @@ function addHelpers(state) {
       state.restoreContext(map);
     },
 
-    // Forgets the maps and the recorded calls. The worker URL stays set: like in MapLibre it is configuration of the
-    // page, and the engine sets it once per module.
+    // MapLibre after its container changed size: the viewport takes the new size (the fake has one size for all its
+    // maps), then movestart, resize and moveend fire, as Map.resize() fires them.
+    resize(map, { width = state.size.width, height = state.size.height } = {}) {
+      state.size.width = width;
+      state.size.height = height;
+      map._fire('movestart');
+      map._fire('resize');
+      map._fire('moveend');
+    },
+
+    // Forgets the maps and the recorded calls and restores the viewport size. The worker URL stays set: like in
+    // MapLibre it is configuration of the page, and the engine sets it once per module.
     reset({ constructorError = null } = {}) {
       state.maps.length = 0;
       state.calls.length = 0;
       state.prewarmCount = 0;
       state.now = null;
       state.constructorError = constructorError;
+      state.size.width = state.initialSize.width;
+      state.size.height = state.initialSize.height;
     },
   });
 }

@@ -13,9 +13,15 @@ export const OPENFREEMAP_TILEJSON = 'https://tiles.openfreemap.org/planet';
 /** The glyph server of OpenFreeMap; it only serves the three stacks of FONT_STACKS. */
 export const GLYPHS_URL = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
 
-// Shown while the vector tiles are in use (MapLibre lists the attribution of the sources it draws).
-export const OPENFREEMAP_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank">'
-  + 'OpenStreetMap</a> contributors · © OpenFreeMap · © OpenMapTiles';
+// The credit of the base map's data and tiles. It replaces the HTML of the remote TileJSON on the vector source, and
+// core/attribution.js puts the same text first in every map's credit line: MapLibre drops a credit that another one
+// contains, so it shows once.
+const creditLink = (href, text) => `<a href="${href}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+export const OPENFREEMAP_ATTRIBUTION = [
+  creditLink('https://www.openstreetmap.org/copyright', '© OpenStreetMap contributors'),
+  creditLink('https://openfreemap.org', 'OpenFreeMap'),
+  creditLink('https://www.openmaptiles.org/', '© OpenMapTiles'),
+].join(' · ');
 
 /** Slots from the bottom of the map to the top. */
 export const SLOT_ORDER = Object.freeze([

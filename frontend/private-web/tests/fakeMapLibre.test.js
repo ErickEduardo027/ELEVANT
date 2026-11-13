@@ -58,6 +58,52 @@ describe('fake MapLibre', () => {
     expect(map.styleCalls).toHaveLength(1);
   });
 
+  it('getBounds is the viewport around the centre; resize changes it and fires the events of Map.resize()', () => {
+    const { fake, map } = newMap();
+    const bounds = map.getBounds();
+    expect((bounds.getWest() + bounds.getEast()) / 2).toBeCloseTo(-68.3634, 9);
+    // The corners project onto the edges of the 1440 × 900 viewport.
+    expect(map.project([bounds.getWest(), 18.5674]).x).toBeCloseTo(0, 6);
+    expect(map.project([bounds.getEast(), 18.5674]).x).toBeCloseTo(1440, 6);
+    expect(map.project([-68.3634, bounds.getNorth()]).y).toBeCloseTo(0, 6);
+    expect(map.project([-68.3634, bounds.getSouth()]).y).toBeCloseTo(900, 6);
+
+    const events = [];
+    for (const type of ['movestart', 'resize', 'moveend']) map.on(type, () => events.push(type));
+    fake.state.resize(map, { width: 720 });
+    expect(events).toEqual(['movestart', 'resize', 'moveend']);
+    expect(map.project([map.getBounds().getEast(), 18.5674]).x).toBeCloseTo(720, 6);
+    expect(map.cameraForBounds([[-68.4, 18.55], [-68.33, 18.59]]).zoom).toBeCloseTo(Math.log2(720 / ((512 * 0.07) / 360)), 6);
+    // A reset brings the viewport back for the next test.
+    fake.state.reset();
+    expect(fake.state.size).toEqual({ width: 1440, height: 900 });
+  });
+
+  it('cameraForBounds counts the map padding unless absolutePadding, and answers nothing without room, like MapLibre', () => {
+    const { fake, map } = newMap();
+    const bounds = [[-68.4, 18.55], [-68.33, 18.59]];
+    const zoomFor = width => Math.log2(width / ((512 * 0.07) / 360));
+    map.setPadding({ top: 0, right: 300, bottom: 0, left: 100 });
+    // The fit padding comes on top of the map's own padding...
+    expect(map.cameraForBounds(bounds, { padding: 20 }).zoom).toBeCloseTo(zoomFor(1440 - 400 - 40), 6);
+    expect(map.cameraForBounds(bounds, { padding: 20 })).not.toHaveProperty('padding');
+    // ...or replaces it, and the answer carries the padding the camera will have.
+    const absolute = map.cameraForBounds(bounds, { padding: { left: 50, right: 50 }, absolutePadding: true });
+    expect(absolute.zoom).toBeCloseTo(zoomFor(1440 - 100), 6);
+    expect(absolute.padding).toEqual({ top: 0, right: 50, bottom: 0, left: 50 });
+    map.fitBounds(bounds, { padding: { left: 50, right: 50 }, absolutePadding: true });
+    expect(map.getPadding()).toEqual({ top: 0, right: 50, bottom: 0, left: 50 });
+
+    // A viewport without a size: an infinite zoom out with exactly no room, nothing (and no move) with less.
+    fake.state.resize(map, { width: 0 });
+    expect(map.cameraForBounds(bounds, { absolutePadding: true }).zoom).toBe(-Infinity);
+    expect(map.cameraForBounds(bounds, { padding: 10, absolutePadding: true })).toBeUndefined();
+    const moves = map.cameraCalls.length;
+    expect(map.fitBounds(bounds, { padding: 10 })).toBe(map);
+    expect(map.cameraCalls).toHaveLength(moves);
+    fake.state.reset();
+  });
+
   it('getClusterExpansionZoom returns a promise like MapLibre 6', async () => {
     const { fake, map } = newMap(createFakeMapLibre({ expansionZoom: 15.5 }));
     fake.state.emit(map, 'style.load');

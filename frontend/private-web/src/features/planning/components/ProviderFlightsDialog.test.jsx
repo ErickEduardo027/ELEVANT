@@ -200,3 +200,22 @@ it('says when the provider is not configured and shows the empty, unauthorized a
   fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
   expect(await screen.findByText(/No hay vuelos propuestos para esta fecha/)).toBeInTheDocument();
 });
+
+it('calls preventDefault when Escape closes the dialog', async () => {
+  getManualTurnaroundOptions.mockResolvedValue(options);
+  loadOccFlightFeed.mockResolvedValue(feed([]));
+  const onClose = vi.fn();
+  render(<ProviderFlightsDialog stationId={stationId} date="2026-11-03" onClose={onClose} />);
+  expect(await screen.findByText(/No hay vuelos propuestos para esta fecha/)).toBeInTheDocument();
+
+  const press = key => {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    screen.getByRole('dialog').dispatchEvent(event);
+    return event;
+  };
+  expect(press('Enter').defaultPrevented).toBe(false);
+  expect(onClose).not.toHaveBeenCalled();
+  // Escape closes the dialog and is marked as used, so the map keys under it leave the selection alone.
+  expect(press('Escape').defaultPrevented).toBe(true);
+  expect(onClose).toHaveBeenCalledOnce();
+});
