@@ -14,14 +14,15 @@ import { getFilterOptions } from './flightMonitoringMappers';
 import { useTranslation } from '../../i18n/LanguageScope';
 import { flightMonitoringMessages } from './flightMonitoringMessages';
 
+// The detail card is docked at the top left of the map, so it never follows the aircraft on screen.
+const DOCKED_POPOVER_STYLE = Object.freeze({ top: 12, left: 12 });
+
 function MonitoringMapArea({
   stationCode,
   flights,
   selectedFlightId,
   onSelectFlight,
   theme,
-  onPopoverPosition,
-  popoverPosition,
   selectedFlight,
   now,
   onClosePopover,
@@ -39,7 +40,6 @@ function MonitoringMapArea({
           selectedFlightId={selectedFlightId}
           onSelectFlight={onSelectFlight}
           theme={theme}
-          onPopoverPosition={onPopoverPosition}
         />
         <FlightLegend />
         {geolocatedFlights.length === 0 && <p role="status" className="absolute bottom-3 left-3 z-10 max-w-sm rounded-lg bg-white/90 p-3 text-xs shadow dark:bg-surface-dark-card/90">
@@ -48,7 +48,7 @@ function MonitoringMapArea({
       </> : <div role="status" className="flex h-full min-h-[420px] items-center justify-center rounded-2xl border border-black/10 bg-white/80 p-8 text-center text-sm text-text-secondary-light dark:border-white/10 dark:bg-surface-dark-card dark:text-text-secondary-dark">
         {t('page.noLiveSource')}
       </div>}
-      <FlightDetailPopover flight={selectedFlight} now={now} style={popoverPosition ?? {}} onClose={onClosePopover} onStatusChange={onStatusChange} />
+      <FlightDetailPopover flight={selectedFlight} now={now} style={DOCKED_POPOVER_STYLE} onClose={onClosePopover} onStatusChange={onStatusChange} />
     </div>
   );
 }
@@ -67,7 +67,6 @@ export default function FlightMonitoringPage({
 }) {
   const { t } = useTranslation(flightMonitoringMessages);
   const [selectedFlightId, setSelectedFlightId] = useState(focusFlightId);
-  const [popoverPosition, setPopoverPosition] = useState(null);
   const [now, setNow] = useState(() => new Date().toISOString());
   const [listDrawerOpen, setListDrawerOpen] = useState(false);
   const isTablet = useIsTabletBreakpoint();
@@ -149,8 +148,6 @@ export default function FlightMonitoringPage({
       selectedFlightId={selectedFlightId}
       onSelectFlight={setSelectedFlightId}
       theme={theme}
-      onPopoverPosition={setPopoverPosition}
-      popoverPosition={popoverPosition}
       selectedFlight={selectedFlight}
       now={now}
       onClosePopover={() => setSelectedFlightId(null)}

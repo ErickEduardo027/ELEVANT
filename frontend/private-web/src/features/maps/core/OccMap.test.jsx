@@ -8,6 +8,7 @@ import tailwindConfig from '../../../../tailwind.config.js';
 import { findLegacyColourClasses } from '../../../styles/occLegacyBridge';
 import { readSource } from '../../../styles/occSourceScan';
 import { occColor } from '../../occ-ui/occPalette';
+import { referenceFeatures } from '../style/referenceLayers';
 import { createMapStands, standPoint } from '../testing/mapFixtures';
 import { boundsCenter, presetTargets } from './cameraPresets';
 import { liveEngineCount } from './mapEngine';
@@ -19,25 +20,20 @@ vi.mock('maplibre-gl', async () => (await import('../../../../tests/fakeMapLibre
 const fake = sharedFakeMapLibre();
 const STANDS = createMapStands();
 const PAGE = '/admin-occ/positions-map?stationId=s-1';
-// Pickable test layers: stand points and their clusters, as step c of M2 will add them.
-const PICK_OVERLAY = {
-  sources: { 'test-stands': { type: 'geojson', cluster: true } },
-  layers: [
-    {
-      slot: 'stands', id: 'test-clusters', type: 'circle', source: 'test-stands', filter: ['has', 'point_count'],
-      metadata: { 'occ:group': 'stands', 'occ:pick': 'cluster', 'occ:pickId': 'cluster_id' },
-    },
-    {
-      slot: 'stands', id: 'test-points', type: 'circle', source: 'test-stands', filter: ['!', ['has', 'point_count']],
-      metadata: { 'occ:group': 'stands', 'occ:pick': 'stand', 'occ:pickId': 'code' },
-    },
-    {
-      slot: 'standLabels', id: 'test-codes', type: 'symbol', source: 'test-stands',
-      layout: { 'text-field': ['get', 'code'], 'text-font': ['Noto Sans Bold'] },
-      metadata: { 'occ:group': 'stands', 'occ:minThreshold': 'codes' },
-    },
-  ],
+// A layer of a screen of its own, next to the stands the map draws.
+const EXTRA_OVERLAY = {
+  sources: { 'test-notes': { type: 'geojson' } },
+  layers: [{
+    slot: 'standLabels', id: 'test-notes', type: 'symbol', source: 'test-notes',
+    layout: { 'text-field': ['get', 'note'], 'text-font': ['Noto Sans Regular'] },
+    metadata: { 'occ:group': 'notes' },
+  }],
 };
+// Synthetic flights with and without a position, around Punta Cana.
+const FLIGHTS = [
+  { id: 'l:leg-1', flightKey: 'l:leg-1', heading: 120, latitude: 18.71, longitude: -68.52 },
+  { id: 'p:prop-2', flightKey: 'p:prop-2', heading: null, latitude: null, longitude: null },
+];
 
 // What the map shares with its overlays, printed for the assertions (a plain element: <output> is a live region).
 function Probe() {
@@ -50,6 +46,13 @@ function Probe() {
 }
 
 const probe = () => JSON.parse(screen.getByTestId('probe').textContent);
+// The style source a map started without the stands or flights prop has for them.
+function createMapWithout(kind) {
+  const view = render(<OccMap />);
+  const source = fake.state.liveMaps().at(-1).options.style.sources[kind === 'flights' ? 'occ-flights' : 'occ-stands'];
+  view.unmount();
+  return source;
+}
 const query = () => new URLSearchParams(window.location.search);
 
 function renderMap(props = {}, { strict = false } = {}) {
@@ -322,7 +325,7 @@ describe('OccMap', () => {
 
   it('insets feed the padding and the CSS variables and re-derive the thresholds', () => {
     const insets = { top: 56, right: 320, bottom: 48, left: 0 };
-    const { map, rerender } = renderMap({ overlays: [PICK_OVERLAY], insets });
+    const { map, rerender } = renderMap({ insets });
     loadStyle(map);
     expect(map.getPadding()).toEqual(insets);
     const root = screen.getByTestId('occ-map');
@@ -340,11 +343,11 @@ describe('OccMap', () => {
     expect(narrow.thresholds).toEqual({
       polygons: narrow.fits.airfield - 0.3, codes: narrow.fits.ramp - 0.3, threeLine: narrow.fits.ramp + 0.8,
     });
-    expect(map.zoomRangeCalls.at(-1)).toEqual({ id: 'test-codes', minzoom: narrow.thresholds.codes, maxzoom: 24 });
+    expect(map.zoomRangeCalls.at(-1)).toEqual({ id: 'occ-stands-codes', minzoom: narrow.thresholds.codes, maxzoom: 24 });
     expect(map.getZoom()).toBeCloseTo(narrow.fits.ramp, 6);
 
     // Folding the side panel gives the room back: new fits, new thresholds.
-    rerender({ overlays: [PICK_OVERLAY], insets: { ...insets, right: 0 } });
+    rerender({ insets: { ...insets, right: 0 } });
     expect(map.getPadding()).toEqual({ ...insets, right: 0 });
     expect(root.style.getPropertyValue('--occ-map-inset-right')).toBe('0px');
     const wide = probe();
@@ -352,7 +355,7 @@ describe('OccMap', () => {
     expect(map.zoomRangeCalls.at(-1).minzoom).toBeCloseTo(wide.fits.ramp - 0.3, 9);
     // The same insets in a new object change nothing.
     const ranges = map.zoomRangeCalls.length;
-    rerender({ overlays: [PICK_OVERLAY], insets: { ...insets, right: 0 } });
+    rerender({ insets: { ...insets, right: 0 } });
     expect(map.zoomRangeCalls).toHaveLength(ranges);
 
     // A resize of the map re-derives them as well.
@@ -404,41 +407,41 @@ describe('OccMap', () => {
   it('selects what is clicked, expands a cluster, reports the point while placing and sets the cursor once per frame', async () => {
     const onSelect = vi.fn();
     const onMapClick = vi.fn();
-    const { map, rerender } = renderMap({ overlays: [PICK_OVERLAY], onSelect, onMapClick });
+    const { map, rerender } = renderMap({ onSelect, onMapClick });
     loadStyle(map);
     const click = (features, lngLat = { lng: -68.36, lat: 18.564 }) => {
       fake.state.setRenderedFeatures(map, () => features);
       return act(async () => fake.state.emit(map, 'click', { point: { x: 100, y: 100 }, lngLat }));
     };
 
-    await click([{ id: 1, layer: { id: 'test-points' }, properties: { code: 'B21' } }]);
+    await click([{ id: 'B21', layer: { id: 'occ-stands-frame' }, properties: { code: 'B21' } }]);
     expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'stand', id: 'B21' });
     await click([]);
     expect(onSelect).toHaveBeenCalledOnce();
 
     // A cluster zooms in to MapLibre's expansion zoom (a promise in 6.x) and selects nothing.
-    await click([{ id: 9, source: 'test-stands', layer: { id: 'test-clusters' }, properties: { cluster_id: 42, point_count: 5 },
+    await click([{ id: 9, source: 'occ-stands', layer: { id: 'occ-stands-clusters' }, properties: { cluster_id: 42, point_count: 5 },
       geometry: { type: 'Point', coordinates: [-68.37, 18.563] } }]);
-    expect(map.getSource('test-stands').expansionZoomCalls).toEqual([42]);
+    expect(map.getSource('occ-stands').expansionZoomCalls).toEqual([42]);
     expect(map.cameraCalls.at(-1)).toEqual({ method: 'easeTo', options: { center: [-68.37, 18.563], zoom: 16, duration: 500 } });
     expect(onSelect).toHaveBeenCalledOnce();
 
     // While placing a stand the click gives its point and selects nothing.
-    rerender({ overlays: [PICK_OVERLAY], onSelect, onMapClick, placing: true });
+    rerender({ onSelect, onMapClick, placing: true });
     expect(map.getCanvas().style.cursor).toBe('crosshair');
-    await click([{ id: 1, layer: { id: 'test-points' }, properties: { code: 'B21' } }], { lng: -68.3611, lat: 18.5649 });
+    await click([{ id: 'B21', layer: { id: 'occ-stands-frame' }, properties: { code: 'B21' } }], { lng: -68.3611, lat: 18.5649 });
     expect(onMapClick).toHaveBeenCalledExactlyOnceWith({ latitude: 18.5649, longitude: -68.3611 });
     expect(onSelect).toHaveBeenCalledOnce();
 
     // The cursor: one pick per frame, a pointer over what can be chosen.
-    rerender({ overlays: [PICK_OVERLAY], onSelect, onMapClick, placing: false });
+    rerender({ onSelect, onMapClick, placing: false });
     expect(map.getCanvas().style.cursor).toBe('');
     const frames = [];
     vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation(callback => frames.push(callback));
     let picks = 0;
     fake.state.setRenderedFeatures(map, () => {
       picks += 1;
-      return [{ id: 1, layer: { id: 'test-points' }, properties: { code: 'A5' } }];
+      return [{ id: 'A5', layer: { id: 'occ-stands-frame' }, properties: { code: 'A5' } }];
     });
     for (const x of [10, 11, 12]) fake.state.emit(map, 'mousemove', { point: { x, y: 10 }, lngLat: { lng: -68.36, lat: 18.56 } });
     expect(frames).toHaveLength(1);
@@ -507,13 +510,103 @@ describe('OccMap', () => {
     expect(map.getLayer('building-3d').layout.visibility).toBe('none');
   });
 
+  it('draws the stands it is given in the stands slot with one setData per change and ends the clusters below the stand threshold', () => {
+    const { map, rerender } = renderMap({ overlays: [EXTRA_OVERLAY] });
+    loadStyle(map);
+    const ids = map.layerIds();
+    expect(ids.slice(ids.indexOf('slot-stands') + 1, ids.indexOf('slot-routes')))
+      .toEqual(['occ-stands-clusters', 'occ-stands-fill', 'occ-stands-frame', 'occ-stands-glyph', 'occ-stands-clock']);
+    // A screen's own overlays come after the map's in their slot.
+    expect(ids.slice(ids.indexOf('slot-standLabels') + 1, ids.indexOf('slot-traffic')))
+      .toEqual(['occ-stands-cluster-count', 'occ-stands-codes', 'test-notes']);
+    const source = map.getSource('occ-stands');
+    expect(source.setDataCalls).toHaveLength(1);
+    expect(source.data.features).toHaveLength(41);
+    const limit = () => Math.floor(probe().thresholds.polygons) - 1;
+    expect(source.getClusterOptions()).toEqual({ cluster: true, clusterRadius: 50, clusterMaxZoom: limit() });
+    expect(source.clusterOptionCalls).toHaveLength(1);
+
+    // A narrower map moves the limit: one call for a new limit, none for the same one.
+    const before = limit();
+    act(() => fake.state.resize(map, { width: 600 }));
+    expect(limit()).toBe(before - 1);
+    expect(source.clusterOptionCalls).toHaveLength(2);
+    expect(source.getClusterOptions()).toMatchObject({ cluster: true, clusterMaxZoom: before - 1 });
+    act(() => fake.state.resize(map, { width: 590 }));
+    expect(limit()).toBe(before - 1);
+    expect(source.clusterOptionCalls).toHaveLength(2);
+
+    // The same stands in new objects write nothing; a changed state writes once; the map stays.
+    rerender({ overlays: [EXTRA_OVERLAY], stands: createMapStands() });
+    expect(source.setDataCalls).toHaveLength(1);
+    rerender({ overlays: [EXTRA_OVERLAY], stands: createMapStands({ A2: { status: 'releasing' } }) });
+    expect(source.setDataCalls).toHaveLength(2);
+    expect(source.data.features.find(feature => feature.properties.code === 'A2').properties.status).toBe('releasing');
+    expect(fake.state.maps).toEqual([map]);
+    cleanup();
+
+    // A map given no stands has no stand layers; one given an empty list is ready for them.
+    expect(createMapWithout('stands')).toBeUndefined();
+    render(<OccMap stands={[]} />);
+    const empty = fake.state.liveMaps().at(-1);
+    loadStyle(empty);
+    expect(empty.getSource('occ-stands').data.features).toEqual([]);
+  });
+
+  it('draws the flights it is given that carry a position and centres one through flyToFlight', () => {
+    const ref = createRef();
+    const onSelect = vi.fn();
+    const { rerender } = render(<OccMap ref={ref} flights={FLIGHTS} defaultView="region" onSelect={onSelect} />);
+    const map = fake.state.liveMaps().at(-1);
+    loadStyle(map);
+    const source = map.getSource('occ-flights');
+    expect(source.setDataCalls).toHaveLength(1);
+    expect(source.data.features).toEqual([{
+      type: 'Feature', properties: { id: 'l:leg-1', heading: 120 }, geometry: { type: 'Point', coordinates: [-68.52, 18.71] },
+    }]);
+    const ids = map.layerIds();
+    expect(ids[ids.indexOf('slot-traffic') + 1]).toBe('occ-flights');
+
+    const zoom = map.getZoom();
+    act(() => ref.current.flyToFlight('l:leg-1'));
+    expect(map.getCenter().toArray()).toEqual([-68.52, 18.71]);
+    expect(map.getZoom()).toBeCloseTo(zoom, 9);
+    act(() => ref.current.flyToFlight('l:leg-1', { minZoom: 12 }));
+    expect(map.getZoom()).toBe(12);
+    // A flight without a position, or an unknown one, moves nothing.
+    expect(ref.current.flyToFlight('p:prop-2')).toBe(false);
+    expect(ref.current.flyToFlight('l:leg-9')).toBe(false);
+
+    // A symbol click selects the flight.
+    fake.state.setRenderedFeatures(map, () => [{ id: 'l:leg-1', layer: { id: 'occ-flights' }, properties: { id: 'l:leg-1' } }]);
+    act(() => fake.state.emit(map, 'click', { point: { x: 10, y: 10 }, lngLat: { lng: -68.52, lat: 18.71 } }));
+    expect(onSelect).toHaveBeenCalledExactlyOnceWith({ kind: 'flight', id: 'l:leg-1' });
+    // New positions are one more write on the same map.
+    rerender(<OccMap ref={ref} flights={[{ ...FLIGHTS[0], latitude: 18.72 }, FLIGHTS[1]]} defaultView="region" onSelect={onSelect} />);
+    expect(source.setDataCalls).toHaveLength(2);
+    expect(fake.state.maps).toEqual([map]);
+    // A map given no flights has no flight layer.
+    expect(createMapWithout('flights')).toBeUndefined();
+  });
+
+  it('always marks PUJ with its reference point, up to the codes threshold', () => {
+    const { map } = renderMap();
+    loadStyle(map);
+    expect(map.getSource('occ-reference').data).toEqual(referenceFeatures());
+    expect(map.zoomRangeCalls.find(call => call.id === 'occ-reference-arp'))
+      .toEqual({ id: 'occ-reference-arp', minzoom: 0, maxzoom: probe().thresholds.codes });
+    const ids = map.layerIds();
+    expect(ids[ids.indexOf('slot-reference') + 1]).toBe('occ-reference-arp');
+  });
+
   it('imports occ-map.css and uses only occ-* classes (no opacity modifier)', () => {
     const component = readSource('src/features/maps/core/OccMap.jsx');
     expect(component).toMatch(/^import 'maplibre-gl\/dist\/maplibre-gl\.css';$/m);
     expect(component).toMatch(/^import '\.\.\/\.\.\/\.\.\/styles\/occ-map\.css';$/m);
     const files = [
       'src/features/maps/core/OccMap.jsx', 'src/features/maps/core/MapUnavailable.jsx',
-      'src/features/maps/ui/MapLegend.jsx', 'src/features/maps/ui/MapPresetSwitcher.jsx',
+      'src/features/maps/ui/MapLegend.jsx', 'src/features/maps/ui/MapPresetSwitcher.jsx', 'src/features/maps/ui/MapDock.jsx',
+      'src/features/positions-map/components/PositionMap.jsx', 'src/features/flight-monitoring/components/FlightMap.jsx',
     ];
     const tokens = new Set(Object.keys(tailwindConfig.theme.extend.colors.occ));
     for (const file of files) {

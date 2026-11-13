@@ -12,17 +12,12 @@ const ADAPTERS = [
 ];
 
 // Old maps that keep their own lifecycle and still swap the basemap style on a theme change: RegionalTrafficMap and
-// GoesCloudMap stay frozen until PR U3 retires the old dashboard, and the orphan AirfieldMap goes in step c of M2.
-// The test fails once one of them is gone, so this list never outlives its files.
+// GoesCloudMap stay frozen until PR U3 retires the old dashboard. The test fails once one of them is gone, so this
+// list never outlives its files.
 const OLD_MAPS = [
   'src/features/maps/RegionalTrafficMap.jsx',
   'src/features/maps/GoesCloudMap.jsx',
-  'src/features/maps/AirfieldMap.jsx',
 ];
-
-// The two adapters own their MapLibre map until step c of M2 moves them onto the engine. Each must still call
-// setStyle while it is listed here, so the entry cannot outlive the move: step c empties this list.
-const ADAPTERS_NOT_YET_ON_THE_ENGINE = [...ADAPTERS];
 
 const SCRIPT = /\.(?:js|jsx|mjs)$/;
 const REGEX_CAN_FOLLOW = '(,=:[!&|?{};';
@@ -91,26 +86,25 @@ function mapStackFiles() {
 }
 
 describe('one style for the whole map lifetime', () => {
-  it('no module of the engine, style, ui, lab or the two adapters calls setStyle (the frozen RegionalTrafficMap, GoesCloudMap and old files are excluded)', () => {
+  it('no module of the engine, style, ui, lab or the two adapters calls setStyle (the frozen RegionalTrafficMap and GoesCloudMap are excluded)', () => {
     const files = mapStackFiles();
-    for (const file of ['core/mapEngine.js', 'core/workerUrl.js', 'style/occStyle.js', 'style/basemapLayers.js', 'style/mapImages.js']) {
+    for (const file of ['core/mapEngine.js', 'core/workerUrl.js', 'style/occStyle.js', 'style/basemapLayers.js', 'style/mapImages.js',
+      'stands/standLayers.js', 'traffic/flightLayers.js', 'style/referenceLayers.js']) {
       expect(files).toContain(`src/features/maps/${file}`);
     }
-    for (const file of [...OLD_MAPS, ...ADAPTERS_NOT_YET_ON_THE_ENGINE]) {
+    for (const file of [...OLD_MAPS, ...ADAPTERS]) {
       expect(existsSync(file), `${file} is gone: remove it from this test's lists`).toBe(true);
     }
 
-    const scanned = files.filter(file => !OLD_MAPS.includes(file) && !ADAPTERS_NOT_YET_ON_THE_ENGINE.includes(file));
+    const scanned = files.filter(file => !OLD_MAPS.includes(file));
+    expect(scanned).toEqual(expect.arrayContaining(ADAPTERS));
     expect(scanned.filter(file => callsSetStyle(readSource(file)))).toEqual([]);
-    for (const adapter of ADAPTERS_NOT_YET_ON_THE_ENGINE) {
-      expect(callsSetStyle(readSource(adapter)), `${adapter} no longer calls setStyle: take it off the waiting list`)
-        .toBe(true);
-    }
+    // The frozen maps still do, so the scan would see a call where there is one.
+    for (const file of OLD_MAPS) expect(callsSetStyle(readSource(file)), file).toBe(true);
   });
 
-  it('only the engine constructs a MapLibre map in the new map stack', () => {
-    const newStack = mapStackFiles()
-      .filter(file => !OLD_MAPS.includes(file) && !ADAPTERS_NOT_YET_ON_THE_ENGINE.includes(file));
+  it('only the engine constructs a MapLibre map in the new map stack, the two adapters included', () => {
+    const newStack = mapStackFiles().filter(file => !OLD_MAPS.includes(file));
     expect(newStack.filter(file => constructsMapLibreMap(readSource(file)))).toEqual(['src/features/maps/core/mapEngine.js']);
   });
 

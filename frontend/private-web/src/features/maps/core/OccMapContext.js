@@ -5,7 +5,7 @@ import { createContext, useContext } from 'react';
 //   'degraded'), `activeView` (the view the camera really shows, from presetForZoom), `fits` and `thresholds`;
 // - meta: `standsOnScreen`, the drawn stands inside the visible bounds (the legend lists only those);
 // - actions: `requestView(view, { terminal })` flies and writes `view=` in the URL, `flyToPreset(view, { terminal })`
-//   only flies, `flyToStand(code, { minZoom })` centres a stand.
+//   only flies, `flyToStand(code, { minZoom })` centres a stand and `flyToFlight(id, { minZoom })` a flight.
 // Outside an OccMap the value is a map that does nothing and shows nothing.
 
 const doNothing = () => {};
@@ -20,6 +20,7 @@ export const OCC_MAP_IDLE = Object.freeze({
   requestView: doNothing,
   flyToPreset: doNothing,
   flyToStand: doNothing,
+  flyToFlight: doNothing,
 });
 
 export const OccMapContext = createContext(OCC_MAP_IDLE);

@@ -11,15 +11,20 @@ import { useTranslation } from '../../../i18n/LanguageScope';
 import { createOccShortcutHandler } from '../../occ-ui/occShortcuts';
 import { mapStandCode } from '../../positions-map/positionsMapMappers';
 import { mapMessages } from '../mapMessages';
+import { toStandFeatures } from '../stands/standFeatures';
+import { STAND_SOURCE, standClusterOptions, standOverlay } from '../stands/standLayers';
 import { createImageResolver } from '../style/mapImages';
 import { buildOccStyle } from '../style/occStyle';
+import { REFERENCE_SOURCE, referenceFeatures, referenceOverlay } from '../style/referenceLayers';
 import { SELECTION_SOURCE, selectionFeatures, selectionOverlay } from '../style/selectionLayers';
+import { FLIGHT_SOURCE, flightOverlay, toFlightFeatures } from '../traffic/flightLayers';
 import { buildAttribution } from './attribution';
 import {
   VIEW_NAMES, boundsCenter, cameraAngles, fitZooms, isRetired, lngLatOf, presetForZoom, presetTargets, sameFits,
   standCodeOf, standsInView, targetFor, thresholdsFromFits, transitionFor, unionBounds,
 } from './cameraPresets';
 import { createMapEngine } from './mapEngine';
+import { matchFlight } from './mapSelection';
 import MapUnavailable from './MapUnavailable';
 import { OccMapContext } from './OccMapContext';
 import { useMapSelection } from './useMapSelection';
@@ -27,8 +32,9 @@ import { useMapSelection } from './useMapSelection';
 // The one map component of the OCC (design A4). Client only: the pages load it through next/dynamic with ssr false.
 // It owns one engine (core/mapEngine.js) for its whole life, the four views of contracts 2.3 with thresholds derived
 // from the fitted zooms, the selection casing, the map keys of contracts 2.2 and the fallback list. DOM overlays come
-// as children and reach the map through OccMapContext. In M2 it draws no stands or flights itself (step c of M2
-// passes them as overlays): it uses them to frame the views, to place the selection and for the fallback list.
+// as children and reach the map through OccMapContext. It always draws the references (the ARP of PUJ); given
+// `stands` it draws them as points in the stands slot, and given `flights` it draws those with a position. Their
+// overlays are part of the style from the start, so new data is one setData and the map is never re-created.
 
 const EMPTY = Object.freeze([]);
 const NO_GROUPS = Object.freeze({});
@@ -109,8 +115,10 @@ function findStand(stands, code) {
 /**
  * Props:
  * - `defaultView` ('ramp'), `presetStands` (the stands that frame the views; `stands` when absent), `stands` (the
- *   stands of the screen, with `status`), `flights`;
- * - `overlays` for buildOccStyle and `basemap`, `interactive`: read once, when the map starts;
+ *   stands of the screen, with `status`; given at start, the map draws them, with `standLabels` 'default' or
+ *   'dashboard'), `flights` (given at start, the map draws those with a position);
+ * - `overlays` for buildOccStyle and `basemap`, `interactive`: read once, when the map starts, as are whether
+ *   `stands` and `flights` are given and `standLabels`;
  * - `selection` (`{ kind, id }` or null) and `onSelect({ kind, id } | null)`; `onMapClick({ latitude, longitude })`
  *   while `placing`; `initialCamera` and `onCameraChange(camera)`;
  * - `pitchMode` ('2d' | '3d'), `groups` ({ 'buildings-3d': true }), `insets` ({ top, right, bottom, left } in px);
@@ -121,8 +129,9 @@ function findStand(stands, code) {
 const OccMap = forwardRef(function OccMap({
   defaultView = 'ramp',
   presetStands,
-  stands = EMPTY,
-  flights = EMPTY,
+  stands: standsProp,
+  standLabels = 'default',
+  flights: flightsProp,
   overlays = EMPTY,
   selection = null,
   onSelect,
@@ -147,6 +156,8 @@ const OccMap = forwardRef(function OccMap({
   const { view: urlView, terminal: urlTerminal, setView } = useMapSelection();
   const [store] = useState(() => createViewStore(initialSnapshot(basemap)));
   const snapshot = useSyncExternalStore(store.subscribe, store.get, store.get);
+  const stands = standsProp ?? EMPTY;
+  const flights = flightsProp ?? EMPTY;
 
   const paddingKey = insetsKey(normalizeInsets(insets));
   const padding = useMemo(() => insetsFromKey(paddingKey), [paddingKey]);
@@ -162,6 +173,7 @@ const OccMap = forwardRef(function OccMap({
   // A view that could not be framed yet because the map has no size (a hidden or collapsed container): it is framed,
   // without animation, as soon as the map has room.
   const pendingViewRef = useRef(null);
+  // What the current engine was given or drew last; reset whenever an engine starts.
   const appliedRef = useRef({ padding: null, pitchMode: null, groups: null, selection: null });
   const pointerRef = useRef({ event: null, frame: 0 });
 
@@ -171,6 +183,7 @@ const OccMap = forwardRef(function OccMap({
       stands, presetStands: presetStands ?? EMPTY, flights, selection, onSelect, onMapClick, placing, onCameraChange,
       isShortcutBlocked, pitchMode, padding, targets, urlView, urlTerminal, defaultView, initialCamera, basemap,
       overlays, interactive, locale: engineLocale(t, labels?.map), aircraftDataLabel: t('attribution.aircraftData'),
+      drawsStands: standsProp !== undefined, drawsFlights: flightsProp !== undefined, standLabels,
     };
   });
 
@@ -231,6 +244,19 @@ const OccMap = forwardRef(function OccMap({
     return true;
   }, [moveCamera, store]);
 
+  // Centres a flight that has a position (by any id matchFlight reads), keeping the zoom unless `minZoom` asks for more.
+  const flyToFlight = useCallback((id, { minZoom } = {}) => {
+    const engine = engineRef.current;
+    const { flights: current, padding: inset } = latest.current ?? {};
+    const flight = matchFlight(current ?? EMPTY, id);
+    const point = lngLatOf(flight?.position ?? flight);
+    const camera = engine?.getCamera();
+    if (!point || !camera) return false;
+    const zoom = Number.isFinite(minZoom) ? Math.max(camera.zoom, minZoom) : camera.zoom;
+    moveCamera({ center: point, zoom, padding: inset });
+    return true;
+  }, [moveCamera]);
+
   // Frames `[[lng, lat], …]` with `padding` pixels to spare inside the insets.
   const flyToBounds = useCallback((coords, { padding: extra = BOUNDS_PADDING_PX } = {}) => {
     const boxes = (Array.isArray(coords) ? coords : [])
@@ -270,6 +296,13 @@ const OccMap = forwardRef(function OccMap({
     if (sameFits(fits, store.get().fits)) return;
     const thresholds = thresholdsFromFits(fits);
     if (thresholds) engine.applyThresholds(thresholds);
+    // The stand clusters end where the stands are drawn on their own: one call per new limit.
+    const applied = appliedRef.current;
+    const clusters = applied.drawsStands ? standClusterOptions(thresholds, { labels: applied.standLabels }) : null;
+    if (clusters && clusters.clusterMaxZoom !== applied.clusterMaxZoom) {
+      applied.clusterMaxZoom = clusters.clusterMaxZoom;
+      engine.setClusterOptions(STAND_SOURCE, clusters);
+    }
     store.set({ fits, thresholds, activeView: presetForZoom(engine.getCamera()?.zoom, fits) });
     const pending = pendingViewRef.current;
     if (fits && pending) applyView(pending.view, { terminal: pending.terminal, animate: false });
@@ -329,7 +362,10 @@ const OccMap = forwardRef(function OccMap({
     const props = latest.current;
     const pointer = pointerRef.current;
     store.set(initialSnapshot(props.basemap));
-    appliedRef.current = { padding: props.padding, pitchMode: props.pitchMode, groups: null, selection: null };
+    appliedRef.current = {
+      padding: props.padding, pitchMode: props.pitchMode, groups: null, selection: null, stands: null, flights: null,
+      clusterMaxZoom: null, drawsStands: props.drawsStands, drawsFlights: props.drawsFlights, standLabels: props.standLabels,
+    };
     pendingViewRef.current = null;
     // The URL view, else the camera the page kept, else the default view.
     const initialView = props.urlView ?? (props.initialCamera ? null : props.defaultView);
@@ -340,10 +376,17 @@ const OccMap = forwardRef(function OccMap({
       ? { ...angles, ...props.initialCamera }
       : { ...angles, center: boundsCenter(targetFor(props.targets, initialView, initialTerminal)?.bounds) ?? undefined };
 
+    const overlays = [
+      selectionOverlay(),
+      referenceOverlay(),
+      ...(props.drawsStands ? [standOverlay({ labels: props.standLabels })] : []),
+      ...(props.drawsFlights ? [flightOverlay()] : []),
+      ...props.overlays,
+    ];
     const engine = createMapEngine({
       maplibre,
       host: hostRef.current,
-      style: buildOccStyle({ basemap: props.basemap, overlays: [selectionOverlay(), ...props.overlays] }),
+      style: buildOccStyle({ basemap: props.basemap, overlays }),
       camera: start,
       interactive: props.interactive,
       attribution: buildAttribution([], { aircraftDataLabel: props.aircraftDataLabel }),
@@ -356,6 +399,7 @@ const OccMap = forwardRef(function OccMap({
       onPointerMove: handlePointer,
     });
     engineRef.current = engine;
+    engine.setData(REFERENCE_SOURCE, referenceFeatures());
     engine.setInsets(props.padding);
     refit();
     lastViewRef.current = props.urlView === null ? null : viewKey(props.urlView, props.urlTerminal);
@@ -401,6 +445,28 @@ const OccMap = forwardRef(function OccMap({
   useEffect(() => {
     updateStandsOnScreen();
   }, [stands, updateStandsOnScreen]);
+
+  // The drawn stands and flights: one setData when what they draw changes, never a new map. A re-read of the same
+  // positions in new objects writes nothing.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !appliedRef.current.drawsStands) return;
+    const data = toStandFeatures(stands);
+    const key = JSON.stringify(data.features);
+    if (appliedRef.current.stands === key) return;
+    appliedRef.current.stands = key;
+    engine.setData(STAND_SOURCE, data);
+  }, [stands]);
+
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (!engine || !appliedRef.current.drawsFlights) return;
+    const data = toFlightFeatures(flights);
+    const key = JSON.stringify(data.features);
+    if (appliedRef.current.flights === key) return;
+    appliedRef.current.flights = key;
+    engine.setData(FLIGHT_SOURCE, data);
+  }, [flights]);
 
   // The selection casing: one feature in the selection source, written only when it changes.
   useEffect(() => {
@@ -463,8 +529,8 @@ const OccMap = forwardRef(function OccMap({
   }, [requestView, store]);
 
   useImperativeHandle(ref, () => ({
-    flyToPreset, flyToStand, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera,
-  }), [flyToPreset, flyToStand, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera]);
+    flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera,
+  }), [flyToPreset, flyToStand, flyToFlight, flyToBounds, flyToAll, flyToPuj, resetNorth, getCamera]);
 
   const context = useMemo(() => ({
     engineStatus: snapshot.engineStatus,
@@ -476,7 +542,8 @@ const OccMap = forwardRef(function OccMap({
     requestView,
     flyToPreset,
     flyToStand,
-  }), [snapshot, requestView, flyToPreset, flyToStand]);
+    flyToFlight,
+  }), [snapshot, requestView, flyToPreset, flyToStand, flyToFlight]);
 
   // The list of the fallback: the adapter's own items, else the stands of the screen, else those that frame the views.
   const listedStands = stands.length > 0 ? stands : referenceStands;

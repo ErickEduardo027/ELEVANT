@@ -142,8 +142,11 @@ sin sesión y llama `POST /api/v1/auth/password-change`; después exige iniciar
 sesión con la nueva contraseña. Los cambios de contraseña revocan JWT anteriores.
 
 Para pruebas locales, `.env.local` (ignorado por Git) puede apuntar ambas URLs
-de API al origen HTTPS privado de Development. Monitoreo y Mapa de posiciones
-usan MapLibre en local y en la imagen publicada; no requieren una clave de
+de API al origen HTTPS privado de Development. Monitoreo, Mapa de posiciones,
+Planificación y la plataforma de la consola dibujan sus mapas con un solo motor
+de MapLibre (`src/features/maps/core/mapEngine.js`) y un estilo NOC propio,
+construido en código (`src/features/maps/style/occStyle.js`) sobre las teselas
+vectoriales y los glifos de OpenFreeMap: no hay variables de estilo ni clave de
 Google. `predev` y `prebuild` copian el worker y su módulo compartido desde la
 versión instalada de MapLibre a `public/assets/maplibre/`. La verificación del
 build y la certificación de la imagen comprueban esos dos archivos. Desde
@@ -153,14 +156,17 @@ La verificación del build falla si el worker vuelve a importar un módulo que
 no se copia. `maplibre-gl` va con versión exacta en `package.json`: el worker
 servido y el bundle deben ser de la misma versión, así que cada subida es un
 cambio deliberado. Si cambias de versión de MapLibre, vuelve a ejecutar
-`npm ci` y el build; no edites los archivos generados. Los estilos públicos se
-cargan desde los orígenes permitidos por la CSP y necesitan conectividad del
-navegador a esos proveedores.
+`npm ci` y el build; no edites los archivos generados. El navegador necesita
+alcanzar `tiles.openfreemap.org`, que la CSP ya permite; si el mapa base no
+carga, el mapa sigue con las posiciones y lo avisa. Los dos mapas auxiliares del
+dashboard (región y meteorología) conservan los estilos publicados de
+OpenFreeMap hasta que se retire el dashboard actual.
 
 El mapa base de PUJ aparece en Monitoreo aun sin coordenadas de aeronaves y lo
-indica explícitamente. Otras estaciones no usan el centro de PUJ. La selección
-de una clave local de Google quedó desactivada; cualquier experimento futuro
-con ese proveedor requiere una decisión y una CSP revisadas por separado.
+indica explícitamente. Otras estaciones no usan el centro de PUJ. Las variantes
+de Google Maps y su cargador se retiraron del código y de las dependencias;
+cualquier experimento futuro con ese proveedor requiere una decisión y una CSP
+revisadas por separado.
 
 ## Layout responsive
 

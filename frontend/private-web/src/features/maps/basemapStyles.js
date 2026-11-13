@@ -1,12 +1,14 @@
-// Mapas base OpenStreetMap vía OpenFreeMap (sin clave), configurables por entorno. Los usan
-// el mapa de posiciones y el del aeródromo; el estilo "dark" no incluye edificios 3D.
+// Mapas base OpenStreetMap vía OpenFreeMap (sin clave) de los dos mapas del dashboard que aún tienen su propio ciclo
+// de vida, RegionalTrafficMap y GoesCloudMap, hasta que el PR U3 los retire. El estilo ya no se configura por entorno:
+// los demás mapas del OCC usan el estilo NOC construido en código (style/occStyle.js). El estilo "dark" no incluye
+// edificios 3D.
 const DEFAULT_STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/liberty';
 const DEFAULT_STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark';
 
-export const BASEMAP_STYLE_URLS = {
-  light: process.env.NEXT_PUBLIC_POSITIONS_MAP_STYLE_LIGHT || DEFAULT_STYLE_LIGHT,
-  dark: process.env.NEXT_PUBLIC_POSITIONS_MAP_STYLE_DARK || DEFAULT_STYLE_DARK,
-};
+export const BASEMAP_STYLE_URLS = Object.freeze({
+  light: DEFAULT_STYLE_LIGHT,
+  dark: DEFAULT_STYLE_DARK,
+});
 
 export const OSM_ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors · © OpenFreeMap · © OpenMapTiles';
 

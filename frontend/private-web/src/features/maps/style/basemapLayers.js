@@ -9,6 +9,9 @@ import { BASEMAP_COLORS } from './mapTheme';
 /** The vector source of the base map (the id occStyle.js gives the OpenFreeMap TileJSON). */
 export const BASEMAP_SOURCE_ID = 'openmaptiles';
 
+/** The airport of the OCC: style/referenceLayers.js draws it at its reference point, so its tile label is left out. */
+export const HOME_AIRPORT_IATA = 'PUJ';
+
 // The OpenFreeMap glyph server serves these three stacks and nothing else, so no other font may appear in the style.
 export const FONT_STACKS = Object.freeze({
   regular: Object.freeze(['Noto Sans Regular']),
@@ -129,13 +132,13 @@ export function basemapLayers({ colors = BASEMAP_COLORS } = {}) {
       paint: labelPaint(colors.placeLabel, colors.labelHalo),
     }),
     // Airports by IATA code with the reference-point symbol, for the region and approach views only: from the
-    // airfield view on, the airfield itself is on screen.
+    // airfield view on, the airfield itself is on screen. The home airport comes from the reference overlay.
     tileLayer('aerodrome_label', 'basemap.labels', {
       id: 'base-label-aerodrome',
       type: 'symbol',
       minzoom: 7,
       maxzoom: 12,
-      filter: ['has', 'iata'],
+      filter: ['all', ['has', 'iata'], ['!=', ['get', 'iata'], HOME_AIRPORT_IATA]],
       layout: {
         'icon-image': 'airport-arp',
         'text-field': ['get', 'iata'],

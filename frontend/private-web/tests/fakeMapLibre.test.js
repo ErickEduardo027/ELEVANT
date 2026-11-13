@@ -113,6 +113,19 @@ describe('fake MapLibre', () => {
     expect(map.getSource('points').expansionZoomCalls).toEqual([7]);
   });
 
+  it('setClusterOptions takes cluster from every call and rounds the maximum zoom, like MapLibre 6.16', async () => {
+    const { fake, map } = newMap();
+    fake.state.emit(map, 'style.load');
+    const source = map.getSource('points');
+    expect(source.getClusterOptions()).toMatchObject({ cluster: true });
+    await expect(source.setClusterOptions({ cluster: true, clusterMaxZoom: 12.4, clusterRadius: 35 })).resolves.toBeUndefined();
+    expect(source.getClusterOptions()).toEqual({ cluster: true, clusterMaxZoom: 12, clusterRadius: 35 });
+    // Without `cluster` MapLibre switches clustering off; radius and zoom stay as they were.
+    source.setClusterOptions({ clusterMaxZoom: 13 });
+    expect(source.getClusterOptions()).toEqual({ cluster: undefined, clusterMaxZoom: 13, clusterRadius: 35 });
+    expect(source.clusterOptionCalls).toEqual([{ cluster: true, clusterMaxZoom: 12.4, clusterRadius: 35 }, { clusterMaxZoom: 13 }]);
+  });
+
   it('refuses layer-scoped listeners, early style calls, plain-object query points and missing query layers', () => {
     const { fake, map } = newMap();
     expect(() => map.on('click', 'dots', () => {})).toThrow(/layer-scoped/);

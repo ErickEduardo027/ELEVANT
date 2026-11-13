@@ -211,9 +211,16 @@ function createModule(state) {
         this.updateDataCalls.push(diff);
         return Promise.resolve();
       },
+      // As MapLibre 6.16: `cluster` is taken from every call (leaving it out turns clustering off), the radius and the
+      // maximum zoom only when given, and a maximum zoom that is not an integer is rounded.
       setClusterOptions(options) {
         map._record('setClusterOptions', [id, options]);
-        this.clusterOptions = { ...this.clusterOptions, ...options };
+        this.clusterOptions = {
+          ...this.clusterOptions,
+          cluster: options.cluster,
+          ...(options.clusterRadius === undefined ? {} : { clusterRadius: options.clusterRadius }),
+          ...(options.clusterMaxZoom === undefined ? {} : { clusterMaxZoom: Math.round(options.clusterMaxZoom) }),
+        };
         this.clusterOptionCalls.push(options);
         return Promise.resolve();
       },

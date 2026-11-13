@@ -18,6 +18,8 @@ export const mapMessages = {
       title: 'El mapa no está disponible',
       description: 'Este navegador no puede dibujar el mapa. Puedes elegir desde la lista.',
       list: 'Lista del mapa',
+      stands: 'Posiciones del mapa',
+      flights: 'Vuelos del mapa',
     },
     attribution: { aircraftData: 'Datos de aeronaves' },
     controls: {
@@ -44,6 +46,8 @@ export const mapMessages = {
       title: 'The map is not available',
       description: 'This browser cannot draw the map. You can choose from the list.',
       list: 'Map list',
+      stands: 'Stands on the map',
+      flights: 'Flights on the map',
     },
     attribution: { aircraftData: 'Aircraft data' },
     controls: {
