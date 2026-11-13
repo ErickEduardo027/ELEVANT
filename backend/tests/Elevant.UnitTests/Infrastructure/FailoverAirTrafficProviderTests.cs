@@ -1,4 +1,5 @@
 using Elevant.Application.Abstractions.Operations;
+using Elevant.Application.Operations.AirPicture;
 using Elevant.Infrastructure.Integrations.AirTraffic;
 
 namespace Elevant.UnitTests.Infrastructure;
@@ -7,8 +8,9 @@ namespace Elevant.UnitTests.Infrastructure;
 /// ADR-0042 (contracts 1.3): <c>AirTraffic:Providers</c> is an ordered list. Each read is answered by the active network;
 /// the next one takes over after three failures in a row of the active one. Every ten minutes (or after its
 /// <c>Retry-After</c>) the first is asked again before the active one: it becomes active again when it answers, and when it
-/// does not the active one answers the same read, so the caller never sees the failed retry. The credit follows the
-/// active network.
+/// does not the active one answers the same read, so the caller never sees the failed retry. A network that answered 429
+/// is not asked before its <c>Retry-After</c> ends, at least a minute later, not even by a hand-over: the active one keeps
+/// the turn meanwhile. The credit follows the active network.
 /// </summary>
 public sealed class FailoverAirTrafficProviderTests
 {
@@ -20,9 +22,10 @@ public sealed class FailoverAirTrafficProviderTests
     [Fact]
     public async Task MovesToTheNextProviderAfterThreeFailures()
     {
+        var clock = new ManualClock(Start);
         var first = new ScriptedProvider(First) { Outcome = AirTrafficOutcome.Failed };
         var second = new ScriptedProvider(Second);
-        using var failover = new FailoverAirTrafficProvider([first, second], new ManualClock(Start));
+        using var failover = new FailoverAirTrafficProvider([first, second], clock);
 
         // Two failures, a success and two more failures: a success starts the count again.
         await Read(failover);
@@ -41,7 +44,9 @@ public sealed class FailoverAirTrafficProviderTests
         Assert.Equal((AirTrafficOutcome.Succeeded, Second), (next.Outcome, next.Source));
         Assert.Equal((6, 1), (first.Reads, second.Reads));
 
-        // Any outcome but a success counts. After three failures of the last network the first takes over again.
+        // Any outcome but a success counts. After three failures of the last network the first takes over again, once the
+        // minute a 429 waits at least is over.
+        clock.Advance(AirTrafficBackOff.MinimumRateLimitWait);
         foreach (var outcome in new[] { AirTrafficOutcome.Unauthorized, AirTrafficOutcome.QuotaExceeded, AirTrafficOutcome.Failed })
         {
             second.Outcome = outcome;
@@ -191,6 +196,99 @@ public sealed class FailoverAirTrafficProviderTests
         // That one asked for a year: the next retry waits a day, the longest wait of all.
         Assert.Equal(TimeSpan.FromDays(1), await UntilTheFirstIsAskedAgain());
         Assert.Equal(Second, failover.Attribution);
+    }
+
+    [Fact]
+    public async Task NoNetworkTakesTheTurnBeforeItsRetryAfter()
+    {
+        var clock = new ManualClock(Start);
+        var first = new ScriptedProvider(First) { Outcome = AirTrafficOutcome.Failed };
+        var second = new ScriptedProvider(Second) { Outcome = AirTrafficOutcome.Failed };
+        using var failover = new FailoverAirTrafficProvider([first, second], clock);
+
+        // The first fails three times and hands over. The second fails twice, and its third failure is a 429 that asks for
+        // half an hour: it hands back to the first.
+        for (var read = 0; read < 5; read++) await Read(failover);
+        (second.Outcome, second.RetryAfter) = (AirTrafficOutcome.RateLimited, TimeSpan.FromMinutes(30));
+        var limited = await Read(failover);
+        Assert.Equal((AirTrafficOutcome.RateLimited, Second), (limited.Outcome, limited.Source));
+        Assert.Equal(First, failover.Attribution);
+        Assert.Equal((3, 3), (first.Reads, second.Reads));
+
+        // The first keeps failing, once a minute. Its third failure would hand over, but the second is still waiting: the
+        // first keeps the turn and answers every read, and the second is not asked during its half hour.
+        for (var minute = 1; minute < 30; minute++)
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+            Assert.Equal(First, (await Read(failover)).Source);
+            Assert.Equal(First, failover.Attribution);
+        }
+        Assert.Equal((32, 3), (first.Reads, second.Reads));
+
+        // Once the half hour is over, the next failure of the first hands over at once, and the second answers.
+        clock.Advance(TimeSpan.FromMinutes(1));
+        second.Outcome = AirTrafficOutcome.Succeeded;
+        Assert.Equal(First, (await Read(failover)).Source);
+        Assert.Equal(Second, failover.Attribution);
+        var answered = await Read(failover);
+        Assert.Equal((AirTrafficOutcome.Succeeded, Second), (answered.Outcome, answered.Source));
+        Assert.Equal((33, 4), (first.Reads, second.Reads));
+
+        // The other way round: ten minutes after that hand-over the retry finds the first asking for half an hour.
+        clock.Advance(FailoverAirTrafficProvider.FirstProviderRetry);
+        (first.Outcome, first.RetryAfter) = (AirTrafficOutcome.RateLimited, TimeSpan.FromMinutes(30));
+        Assert.Equal(Second, (await Read(failover)).Source);
+        Assert.Equal((34, 5), (first.Reads, second.Reads));
+
+        // Then the second fails, once a minute. After its third failure it keeps the turn, because the first is waiting,
+        // and the first is asked again only when its half hour is over: by the retry, which finds it answering.
+        second.Outcome = AirTrafficOutcome.Failed;
+        for (var minute = 1; minute < 30; minute++)
+        {
+            clock.Advance(TimeSpan.FromMinutes(1));
+            Assert.Equal(Second, (await Read(failover)).Source);
+            Assert.Equal(Second, failover.Attribution);
+        }
+        Assert.Equal((34, 34), (first.Reads, second.Reads));
+        clock.Advance(TimeSpan.FromMinutes(1));
+        first.Outcome = AirTrafficOutcome.Succeeded;
+        var back = await Read(failover);
+        Assert.Equal((AirTrafficOutcome.Succeeded, First), (back.Outcome, back.Source));
+        Assert.Equal((35, 34), (first.Reads, second.Reads));
+        Assert.Equal(First, failover.Attribution);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(5)]
+    public async Task ARequestToSlowDownKeepsTheTurnAwayForAtLeastAMinute(int? retryAfterSeconds)
+    {
+        var clock = new ManualClock(Start);
+        var first = new ScriptedProvider(First)
+        {
+            Outcome = AirTrafficOutcome.RateLimited,
+            RetryAfter = retryAfterSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : null,
+        };
+        var second = new ScriptedProvider(Second) { Outcome = AirTrafficOutcome.Failed };
+        using var failover = new FailoverAirTrafficProvider([first, second], clock);
+
+        // Three 429s of the first, without a Retry-After or with a shorter one than a minute, hand over to the second.
+        for (var read = 0; read < 3; read++) await Read(failover);
+        Assert.Equal(Second, failover.Attribution);
+
+        // The second fails three times within that minute: the first does not take the turn back yet.
+        for (var read = 0; read < 3; read++)
+        {
+            clock.Advance(TimeSpan.FromSeconds(15));
+            Assert.Equal(Second, (await Read(failover)).Source);
+        }
+        Assert.Equal(Second, failover.Attribution);
+
+        // A minute after its 429 the next failure of the second hands over to it.
+        clock.Advance(TimeSpan.FromSeconds(15));
+        Assert.Equal(Second, (await Read(failover)).Source);
+        Assert.Equal(First, failover.Attribution);
+        Assert.Equal((3, 4), (first.Reads, second.Reads));
     }
 
     [Fact]

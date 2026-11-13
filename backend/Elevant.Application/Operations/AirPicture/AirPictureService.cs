@@ -320,7 +320,8 @@ public sealed class AirPictureService
             if (!Equals(_provider.Attribution, result.Source))
             {
                 // Another network of the list took over after this failure: it is asked at the normal pace, and its own
-                // failures are counted from the start.
+                // failures are counted from the start. The wait the failed network asked for (a 429's Retry-After) stays
+                // with the list, which asks it again neither in a retry nor in a hand-over before that wait ends (ADR-0042).
                 wait = _settings.Interval;
                 _failures = 0;
             }

@@ -515,6 +515,98 @@ public sealed class AirPictureServiceTests
     }
 
     [Fact]
+    public async Task ARateLimitThatHandsOverIsWaitedOutByThatNetworkOnly()
+    {
+        var clock = new ManualClock(Start);
+        var first = new ScriptedNetwork(First, clock) { Outcome = AirTrafficOutcome.Failed };
+        var second = new ScriptedNetwork(Second, clock);
+        using var failover = new FailoverAirTrafficProvider([first, second], clock);
+        var service = new AirPictureService(failover, Settings(), clock);
+        service.NoteDemand();
+
+        async Task<TimeSpan> Pass()
+        {
+            var wait = await service.PollOnceAsync(Ct);
+            clock.Advance(wait);
+            return wait;
+        }
+
+        // Two failures back off as usual. The third is a 429 that asks for half an hour, and it hands over: the reader
+        // waits only the interval, because the half hour is the first network's, not the second's.
+        Assert.Equal(TimeSpan.FromSeconds(15), await Pass());
+        Assert.Equal(TimeSpan.FromSeconds(30), await Pass());
+        (first.Outcome, first.RetryAfter) = (AirTrafficOutcome.RateLimited, TimeSpan.FromSeconds(1_800));
+        Assert.Equal(TimeSpan.FromSeconds(10), await Pass());
+        Assert.Equal(Second, service.Read(shortTrails: false).Source);
+        var limitedAt = Start.AddSeconds(45);
+        Assert.Equal(limitedAt, first.LastReadAt);
+
+        // The second answers every ten seconds and the picture stays live. The first is not asked during its half hour,
+        // although its retry of every ten minutes falls due within it: it is asked with the first pass after the half
+        // hour, and asks for another one. The second answers that same pass, and the next retry comes half an hour
+        // later, not ten minutes.
+        foreach (var askedAt in new[] { limitedAt.AddSeconds(1_800), limitedAt.AddSeconds(3_600) })
+        {
+            var firstReads = first.Reads;
+            while (first.Reads == firstReads)
+            {
+                var passAt = clock.GetUtcNow();
+                Assert.True(passAt <= askedAt, "The first network was not asked again when its wait ended.");
+                second.Aircraft = [Plane("0c0002", passAt)];
+                var secondReads = second.Reads;
+                Assert.Equal(TimeSpan.FromSeconds(10), await Pass());
+                Assert.True(first.Reads == firstReads || passAt == askedAt, "The first network was asked before its wait ended.");
+                Assert.Equal(secondReads + 1, second.Reads);
+                var picture = service.Read(shortTrails: false);
+                Assert.Equal((AirPictureStatus.Live, (string?)null, Second, 10),
+                    (picture.Status, picture.Reason, picture.Source, picture.RefreshAfterSeconds));
+                Assert.Equal("0c0002", Assert.Single(picture.Aircraft).Aircraft.Hex);
+            }
+            Assert.Equal(askedAt, first.LastReadAt);
+        }
+    }
+
+    [Fact]
+    public async Task AFailingNetworkKeepsTheTurnWhileTheOtherWaitsOutItsRetryAfter()
+    {
+        var clock = new ManualClock(Start);
+        var first = new ScriptedNetwork(First, clock) { Outcome = AirTrafficOutcome.Failed };
+        var second = new ScriptedNetwork(Second, clock);
+        using var failover = new FailoverAirTrafficProvider([first, second], clock);
+        var service = new AirPictureService(failover, Settings(), clock);
+        service.NoteDemand();
+
+        async Task<TimeSpan> Pass()
+        {
+            var wait = await service.PollOnceAsync(Ct);
+            clock.Advance(wait);
+            return wait;
+        }
+
+        // The first hands over after three failures, at 15:00:45. Its retry at 15:10:45 asks for half an hour, and the
+        // second answers that pass.
+        foreach (var seconds in new[] { 15, 30, 10 }) Assert.Equal(TimeSpan.FromSeconds(seconds), await Pass());
+        (first.Outcome, first.RetryAfter) = (AirTrafficOutcome.RateLimited, TimeSpan.FromSeconds(1_800));
+        while (first.Reads == 3) await Pass();
+        Assert.Equal(Start.AddSeconds(645), first.LastReadAt);
+
+        // Then the second fails. Its third failure would hand back to the first, which is still waiting: the second keeps
+        // the turn and the credit, its failures back off as usual, and the first is asked again only after its half
+        // hour (15:40:45), by the retry of the first pass after it, which finds it answering.
+        (first.Outcome, second.Outcome) = (AirTrafficOutcome.Succeeded, AirTrafficOutcome.Failed);
+        var waits = new List<int>();
+        while (first.Reads == 4)
+        {
+            Assert.Equal(Second, service.Read(shortTrails: false).Source);
+            waits.Add((int)(await Pass()).TotalSeconds);
+        }
+        Assert.Equal([15, 30, 60, 120, 240, 300, 300, 300, 300, 300, 10], waits);
+        Assert.Equal(Start.AddSeconds(2_620), first.LastReadAt);
+        var back = service.Read(shortTrails: false);
+        Assert.Equal((AirPictureStatus.Live, First), (back.Status, back.Source));
+    }
+
+    [Fact]
     public async Task DisabledAnswersNotConfiguredWithoutCalls()
     {
         var clock = new ManualClock(Start);
