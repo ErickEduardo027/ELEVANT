@@ -21,8 +21,8 @@ export const DEMO_FLIGHT_MESSAGES = Object.freeze({
   aircraft_type_unavailable: 'El tipo de avión ya no está disponible. Elija otro.',
   demo_origin_unknown: 'No se conoce ese aeropuerto. Elija uno de la lista.',
   stand_unavailable: 'La posición ya no está libre para esa escala. Elija otra o «Sin posición».',
-  stand_not_eligible: 'La posición elegida no tiene un agente elegible a esa hora. Elija otra o «Sin posición».',
-  no_eligible_stand: 'Ninguna posición habilitada tiene un agente elegible a esa hora. Dispare sin posición o cree antes la cobertura en «Cobertura de posiciones».',
+  stand_not_eligible: 'Esa posición ya no tiene un agente elegible a esa hora. Elija otra, «Al azar» o «Sin posición».',
+  no_eligible_stand: 'Ninguna posición tiene un agente elegible a esa hora. Dispare sin posición o cree antes la cobertura.',
   demo_station_unsupported: 'Solo Punta Cana (PUJ) tiene un plano de referencia.',
   demo_flight_limit_reached: 'Ya hay demasiados vuelos demo activos en esta estación. Espere a que termine uno o cancélelo.',
   demo_flight_closed: 'Ese vuelo demo ya terminó o se canceló. Se actualizó la lista.',
@@ -37,6 +37,26 @@ export const DEMO_FLIGHT_MESSAGES = Object.freeze({
  */
 export function demoFlightMessage(error) {
   return problemMessage(error, DEMO_FLIGHT_MESSAGES, { forbidden: DEMO_FLIGHT_MESSAGES.forbidden,
+    fallback: 'No se pudo completar la acción. Revise la conexión e intente de nuevo.' });
+}
+
+/**
+ * Spanish explanation of each Problem Details code of «Cargar posiciones de Punta Cana» (ADR-0041): the codes it shares
+ * with the demo flights, and its own words for the station, a stand OCC created meanwhile (`version_conflict`) and the
+ * superadministrator's refusal. The server title is never shown.
+ */
+export const DEMO_STATION_MESSAGES = Object.freeze({
+  demo_flights_unavailable: DEMO_FLIGHT_MESSAGES.demo_flights_unavailable,
+  demo_station_unsupported: DEMO_FLIGHT_MESSAGES.demo_station_unsupported,
+  station_unavailable: 'La estación ya no está activa. Se actualizaron los datos.',
+  not_found: 'La estación ya no existe. Se actualizaron los datos.',
+  version_conflict: 'Las posiciones de la estación cambiaron mientras se cargaban. Se actualizaron los datos; intente de nuevo.',
+  forbidden: 'Solo el superadministrador carga las posiciones de Punta Cana.',
+});
+
+/** The message of a failed «Cargar posiciones», from its code; never the server title. */
+export function demoStationMessage(error) {
+  return problemMessage(error, DEMO_STATION_MESSAGES, { forbidden: DEMO_STATION_MESSAGES.forbidden,
     fallback: 'No se pudo completar la acción. Revise la conexión e intente de nuevo.' });
 }
 
@@ -73,7 +93,8 @@ export const listDemoFlights = (stationId, { signal } = {}) =>
 
 /**
  * «Disparar vuelo demo» with the intent's Idempotency-Key. The request is checked first (2 to 30 minutes to the stand,
- * 20 to 240 on the ground, a stand only when one is chosen): a refusal never reaches the server.
+ * 20 to 240 on the ground, a stand only with `Specific`: «Al azar» lets the server draw one): a refusal never reaches
+ * the server.
  */
 export const createDemoFlight = async (input, idempotencyKey) => {
   validated(normalizedDemoFlightCreate, input);

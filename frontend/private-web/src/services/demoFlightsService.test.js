@@ -7,8 +7,8 @@ vi.mock('../features/auth/authService', () => auth);
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: () => api }));
 
 const {
-  cancelDemoFlight, createDemoFlight, DEMO_FLIGHT_MESSAGES, demoFlightMessage, listDemoFlights, loadDemoFlightOptions,
-  prepareDemoStation,
+  cancelDemoFlight, createDemoFlight, DEMO_FLIGHT_MESSAGES, DEMO_STATION_MESSAGES, demoFlightMessage, demoStationMessage,
+  listDemoFlights, loadDemoFlightOptions, prepareDemoStation,
 } = await import('./demoFlightsService');
 
 const SERVER_TITLE = 'The demo flight cannot be created.';
@@ -56,10 +56,41 @@ describe('demo flights service (ADR-0041)', () => {
     }
   });
 
+  it('explains the stand and station refusals by their code', () => {
+    // «Al azar» with nothing to draw, a stand chosen by hand that lost its eligible agent, and a stand taken meanwhile.
+    expect(demoFlightMessage(failure(409, 'no_eligible_stand')))
+      .toBe('Ninguna posición tiene un agente elegible a esa hora. Dispare sin posición o cree antes la cobertura.');
+    expect(demoFlightMessage(failure(409, 'stand_not_eligible')))
+      .toBe('Esa posición ya no tiene un agente elegible a esa hora. Elija otra, «Al azar» o «Sin posición».');
+    expect(demoFlightMessage(failure(409, 'stand_unavailable')))
+      .toBe('La posición ya no está libre para esa escala. Elija otra o «Sin posición».');
+    expect(demoFlightMessage(failure(409, 'demo_station_unsupported'))).toBe('Solo Punta Cana (PUJ) tiene un plano de referencia.');
+
+    // «Cargar posiciones» speaks of the station and its stands, never of a demo flight.
+    expect(demoStationMessage(failure(409, 'demo_station_unsupported'))).toBe('Solo Punta Cana (PUJ) tiene un plano de referencia.');
+    expect(demoStationMessage(failure(409, 'demo_flights_unavailable')))
+      .toBe('Los vuelos demo no están disponibles en este entorno.');
+    expect(demoStationMessage(failure(404, 'station_unavailable'))).toBe('La estación ya no está activa. Se actualizaron los datos.');
+    expect(demoStationMessage(failure(404, 'not_found'))).toBe('La estación ya no existe. Se actualizaron los datos.');
+    expect(demoStationMessage(failure(409, 'version_conflict')))
+      .toBe('Las posiciones de la estación cambiaron mientras se cargaban. Se actualizaron los datos; intente de nuevo.');
+    // A 403 without its code is the superadministrator's refusal too; a reused key and no answer keep the shared words.
+    expect(demoStationMessage(failure(403))).toBe('Solo el superadministrador carga las posiciones de Punta Cana.');
+    expect(demoStationMessage(failure(409, 'idempotency_conflict')))
+      .toBe('Ese envío ya se usó con otros datos; actualice e intente de nuevo.');
+    expect(demoStationMessage(new TypeError('Failed to fetch')))
+      .toBe('No se pudo completar la acción. Revise la conexión e intente de nuevo.');
+    for (const code of Object.keys(DEMO_STATION_MESSAGES)) {
+      expect(demoStationMessage(failure(409, code)), code).toBe(DEMO_STATION_MESSAGES[code]);
+      expect(demoStationMessage(failure(409, code)), code).not.toContain(SERVER_TITLE);
+      expect(DEMO_STATION_MESSAGES[code], code).not.toMatch(/vuelo demo (?:cambió|ya no existe)/);
+    }
+  });
+
   it('refuses minutes out of range before sending, and sends a valid flight with its key', async () => {
     for (const bad of [input({ minutesToOnBlock: 1 }), input({ minutesToOnBlock: 31 }), input({ groundMinutes: 19 }),
       input({ groundMinutes: 241 }), input({ minutesToOnBlock: 7.5 }), input({ minutesToOnBlock: Number.NaN }),
-      input({ standChoice: 'Specific', standId: null })])
+      input({ standChoice: 'Specific', standId: null }), input({ standChoice: 'Random', standId: stand.standId })])
       await expect(createDemoFlight(bad, key)).rejects.toMatchObject({ status: 400, code: 'invalid_demo_flight' });
     expect(api.createDemoFlight).not.toHaveBeenCalled();
     expect(demoFlightMessage({ status: 400, code: 'invalid_demo_flight' })).toMatch(/de 2 a 30 minutos .* de 20 a 240/);
@@ -67,6 +98,10 @@ describe('demo flights service (ADR-0041)', () => {
     api.createDemoFlight.mockResolvedValueOnce({ id: 'demo-1' });
     await expect(createDemoFlight(input(), key)).resolves.toEqual({ id: 'demo-1' });
     expect(api.createDemoFlight).toHaveBeenCalledWith(input(), key);
+    // «Al azar» names no stand: the server draws it.
+    api.createDemoFlight.mockResolvedValueOnce({ id: 'demo-2' });
+    await expect(createDemoFlight(input({ standChoice: 'Random' }), key)).resolves.toEqual({ id: 'demo-2' });
+    expect(api.createDemoFlight).toHaveBeenLastCalledWith(input({ standChoice: 'Random' }), key);
   });
 
   it('sends the cancel with its intent and key', async () => {
