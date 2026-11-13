@@ -1,4 +1,4 @@
-import { normalizedDemoFlightCreate } from '@elevant/api-client';
+import { normalizedDemoFlightCreate, normalizedDemoFlightOptionsQuery } from '@elevant/api-client';
 import { createPrivateWebApiClient } from '../config/elevantApiClient';
 import { handleUnauthorizedResponse, readSession } from '../features/auth/authService';
 import { problemMessage } from './problemMessages';
@@ -21,6 +21,9 @@ export const DEMO_FLIGHT_MESSAGES = Object.freeze({
   aircraft_type_unavailable: 'El tipo de avión ya no está disponible. Elija otro.',
   demo_origin_unknown: 'No se conoce ese aeropuerto. Elija uno de la lista.',
   stand_unavailable: 'La posición ya no está libre para esa escala. Elija otra o «Sin posición».',
+  stand_not_eligible: 'La posición elegida no tiene un agente elegible a esa hora. Elija otra o «Sin posición».',
+  no_eligible_stand: 'Ninguna posición habilitada tiene un agente elegible a esa hora. Dispare sin posición o cree antes la cobertura en «Cobertura de posiciones».',
+  demo_station_unsupported: 'Solo Punta Cana (PUJ) tiene un plano de referencia.',
   demo_flight_limit_reached: 'Ya hay demasiados vuelos demo activos en esta estación. Espere a que termine uno o cancélelo.',
   demo_flight_closed: 'Ese vuelo demo ya terminó o se canceló. Se actualizó la lista.',
   version_conflict: 'El vuelo demo cambió mientras lo revisaba. Se actualizó la lista; intente de nuevo.',
@@ -53,10 +56,16 @@ async function guarded(request) {
 
 /**
  * What «Disparar vuelo demo» offers at a station (without one, the server's: Punta Cana, else the first by code), with
- * `enabled` and the server time. Superadministrator only.
+ * `enabled`, the server time and the station against the Punta Cana catalogue (`layout`). Superadministrator only.
+ * With `window` (`{ aircraftTypeId, minutesToOnBlock, groundMinutes }`, the form's values) each stand comes evaluated
+ * for that visit; without it, for the form's defaults. A window outside the form's ranges is refused before it is
+ * sent, as invalid data (400 with its code).
  */
-export const loadDemoFlightOptions = (stationId, { signal } = {}) =>
-  guarded(() => client().getDemoFlightOptions(stationId ?? null, { signal, cache: 'no-store' }));
+export const loadDemoFlightOptions = async (stationId, { signal, window } = {}) => {
+  const query = window ? { stationId: stationId ?? null, ...window } : stationId ?? null;
+  validated(normalizedDemoFlightOptionsQuery, query);
+  return guarded(() => client().getDemoFlightOptions(query, { signal, cache: 'no-store' }));
+};
 
 /** The demo flights of the last 24 hours at a station, newest first, with the server time their countdowns use. */
 export const listDemoFlights = (stationId, { signal } = {}) =>
@@ -74,3 +83,10 @@ export const createDemoFlight = async (input, idempotencyKey) => {
 /** «Cancelar vuelo» (`Cancel`, before touchdown) or «Terminar demo» (`Finish`, after it), with the intent's key. */
 export const cancelDemoFlight = (demoFlightId, intent, idempotencyKey) =>
   guarded(() => client().cancelDemoFlight(demoFlightId, intent, idempotencyKey));
+
+/**
+ * «Cargar posiciones de Punta Cana» with the intent's key: the station gets the catalogue's terminals and stands it
+ * lacks, and the answer is its state afterwards (the same `layout` the options carry), also when the key replays it.
+ */
+export const prepareDemoStation = (stationId, idempotencyKey) =>
+  guarded(() => client().prepareDemoStation(stationId, idempotencyKey));

@@ -23,19 +23,44 @@ const iso = ms => new Date(ms).toISOString();
 
 const LIMITS = { minMinutesToOnBlock: 2, maxMinutesToOnBlock: 30, defaultMinutesToOnBlock: 8, minGroundMinutes: 20,
   maxGroundMinutes: 240, defaultGroundMinutes: 60, maxActive: 3, active: 0 };
-const options = (extra = {}) => ({ enabled: true, serverTime: '2026-11-12T14:00:00+00:00',
-  stations: [{ id: STATION, code: 'PUJ', name: 'Punta Cana' }], stationId: STATION, operationDate: '2026-11-12',
-  airlines: [{ id: AIRLINE, name: 'Demo Airlines', iataCode: 'ZZ', icaoCode: 'DZZ' }],
-  // Bogotá comes first, but Miami is the default origin; the wide-body comes first, but a narrow-body is the default.
-  airports: [{ iataCode: 'BOG', icaoCode: 'SKBO', name: 'El Dorado', city: 'Bogotá', countryCode: 'CO' },
-    { iataCode: 'MIA', icaoCode: 'KMIA', name: 'Miami International Airport', city: 'Miami', countryCode: 'US' }],
-  aircraftTypes: [{ id: B77W, icaoCode: 'B77W', manufacturer: 'Boeing', model: '777-300ER', sizeCategory: 'Widebody' },
-    { id: A320, icaoCode: 'A320', manufacturer: 'Airbus', model: 'A320', sizeCategory: 'Narrowbody' }],
-  stands: [{ standId: 's-a10', code: 'A10', terminalCode: 'A', free: true }, { standId: 's-a2', code: 'A2', terminalCode: 'A', free: true },
-    { standId: 's-a1', code: 'A1', terminalCode: 'A', free: false }, { standId: 's-b20', code: 'B20', terminalCode: 'B', free: true }],
-  limits: LIMITS, warnings: [], ...extra });
+/**
+ * A stand for the visit the options were read for (EfDemoFlightStore): by default located, free and covered at the
+ * on-block instant by an agent who passes OCC's rule, so it is eligible.
+ */
+const stand = (standId, code, terminalCode, extra = {}) => ({ standId, code, terminalCode, located: true, free: true,
+  coveredBy: ['Riley Ramp'], eligibleAgents: 1, eligible: true, reasons: [], ...extra });
+const range = (prefix, first, last) => Array.from({ length: last - first + 1 }, (_, index) => `${prefix}${first + index}`);
+/** The 41 stands of the Punta Cana catalogue (no B33). */
+const CATALOGUE = [...range('A', 1, 11), ...range('AN', 1, 5), ...range('B', 20, 32), ...range('B', 34, 37),
+  ...range('BN', 6, 13)];
+/**
+ * A station against the Punta Cana catalogue, as the options carry it: Punta Cana as the seed leaves it (A01 and A02
+ * are the catalogue's A1 and A2, B01 and B02 are outside it), and any other station without a catalogue.
+ */
+const layoutOf = stationId => (stationId === STATION
+  ? { stationId, stationCode: 'PUJ', supported: true, catalogTerminals: 3, terminals: 2, catalogStands: 41, stands: 2,
+    activeStands: 4, locatedStands: 2, missingStands: CATALOGUE.slice(2), unmatchedStands: ['B01', 'B02'], complete: false }
+  : { stationId, stationCode: 'SDQ', supported: false, catalogTerminals: 0, terminals: 0, catalogStands: 0, stands: 0,
+    activeStands: 0, locatedStands: 0, missingStands: [], unmatchedStands: [], complete: false });
+const options = (extra = {}) => {
+  const data = { enabled: true, serverTime: '2026-11-12T14:00:00+00:00',
+    stations: [{ id: STATION, code: 'PUJ', name: 'Punta Cana' }], stationId: STATION, operationDate: '2026-11-12',
+    airlines: [{ id: AIRLINE, name: 'Demo Airlines', iataCode: 'ZZ', icaoCode: 'DZZ' }],
+    // Bogotá comes first, but Miami is the default origin; the wide-body comes first, but a narrow-body is the default.
+    airports: [{ iataCode: 'BOG', icaoCode: 'SKBO', name: 'El Dorado', city: 'Bogotá', countryCode: 'CO' },
+      { iataCode: 'MIA', icaoCode: 'KMIA', name: 'Miami International Airport', city: 'Miami', countryCode: 'US' }],
+    aircraftTypes: [{ id: B77W, icaoCode: 'B77W', manufacturer: 'Boeing', model: '777-300ER', sizeCategory: 'Widebody' },
+      { id: A320, icaoCode: 'A320', manufacturer: 'Airbus', model: 'A320', sizeCategory: 'Narrowbody' }],
+    // A1 is taken during the visit; nobody covers B20 when the aircraft parks.
+    stands: [stand('s-a10', 'A10', 'A'), stand('s-a2', 'A2', 'A'),
+      stand('s-a1', 'A1', 'A', { free: false, eligible: false }),
+      stand('s-b20', 'B20', 'B', { coveredBy: [], eligibleAgents: 0, eligible: false, reasons: ['stand_not_covered'] })],
+    limits: LIMITS, warnings: [], ...extra };
+  return { ...data, layout: Object.hasOwn(extra, 'layout') ? extra.layout : layoutOf(data.stationId) };
+};
 const DISABLED_OPTIONS = { enabled: false, serverTime: '2026-11-12T14:00:00+00:00', stations: [], stationId: null,
-  operationDate: null, airlines: [], airports: [], aircraftTypes: [], stands: [], limits: LIMITS, warnings: [] };
+  operationDate: null, airlines: [], airports: [], aircraftTypes: [], stands: [], limits: LIMITS, warnings: [],
+  layout: null };
 const MIDNIGHT_WARNING =
   'Falta poco para la medianoche en la estación: si el avión llega después, el vuelo queda en la planificación de mañana.';
 /** The day of an instant in Punta Cana (America/Santo_Domingo, UTC−4 all year). */

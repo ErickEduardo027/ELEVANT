@@ -31,6 +31,7 @@ public sealed class DemoFlightContractSafetyTests
             typeof(DemoFlightListResponse), typeof(DemoFlightOptionsResponse), typeof(DemoStationOptionResponse),
             typeof(DemoAirlineOptionResponse), typeof(DemoAirportOptionResponse), typeof(DemoAircraftTypeOptionResponse),
             typeof(DemoStandOptionResponse), typeof(DemoFlightLimitsResponse), typeof(DemoFlightWarningResponse),
+            typeof(PrepareDemoStationRequest), typeof(DemoStationLayoutResponse),
         }, DemoContracts.ToHashSet());
         var properties = DemoContracts.SelectMany(type => type.GetProperties(BindingFlags.Instance | BindingFlags.Public))
             .ToArray();
@@ -51,12 +52,15 @@ public sealed class DemoFlightContractSafetyTests
             property.Name.Contains("Registration", StringComparison.Ordinal));
         // The cancel carries an intent, not the row version the progress worker makes stale by design.
         Assert.Equal(["Intent"], typeof(CancelDemoFlightRequest).GetProperties().Select(property => property.Name));
+        // «Cargar posiciones de Punta Cana» names only the station: what it creates is the catalogue's, never the request's.
+        Assert.Equal(["StationId"], typeof(PrepareDemoStationRequest).GetProperties().Select(property => property.Name));
     }
 
     [Fact]
     public void DemoWriteContractsRejectUnknownJsonMembers()
     {
-        foreach (var type in new[] { typeof(CreateDemoFlightRequest), typeof(CancelDemoFlightRequest) })
+        foreach (var type in new[] { typeof(CreateDemoFlightRequest), typeof(CancelDemoFlightRequest),
+                     typeof(PrepareDemoStationRequest) })
         {
             var attribute = Assert.Single(type.GetCustomAttributes<JsonUnmappedMemberHandlingAttribute>(inherit: false));
             Assert.Equal(JsonUnmappedMemberHandling.Disallow, attribute.UnmappedMemberHandling);
@@ -84,6 +88,7 @@ public sealed class DemoFlightContractSafetyTests
                 "CreateDemoFlight POST demo-flights",
                 "GetDemoFlightOptions GET demo-flights/options",
                 "ListDemoFlights GET demo-flights",
+                "PrepareDemoStation POST demo-station",
             ],
             actions.Select(item => $"{item.Http!.Name} {Assert.Single(item.Http.HttpMethods)} {item.Http.Template}")
                 .Order(StringComparer.Ordinal));

@@ -1,21 +1,31 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({ getDemoFlightOptions: vi.fn(), listDemoFlights: vi.fn(), createDemoFlight: vi.fn(),
-  cancelDemoFlight: vi.fn() }));
+  cancelDemoFlight: vi.fn(), prepareDemoStation: vi.fn() }));
 const auth = vi.hoisted(() => ({ handleUnauthorizedResponse: vi.fn(), readSession: () => null }));
 vi.mock('../features/auth/authService', () => auth);
 vi.mock('../config/elevantApiClient', () => ({ createPrivateWebApiClient: () => api }));
 
-const { cancelDemoFlight, createDemoFlight, DEMO_FLIGHT_MESSAGES, demoFlightMessage, listDemoFlights, loadDemoFlightOptions } =
-  await import('./demoFlightsService');
+const {
+  cancelDemoFlight, createDemoFlight, DEMO_FLIGHT_MESSAGES, demoFlightMessage, listDemoFlights, loadDemoFlightOptions,
+  prepareDemoStation,
+} = await import('./demoFlightsService');
 
 const SERVER_TITLE = 'The demo flight cannot be created.';
 const failure = (status, code) => Object.assign(new Error(SERVER_TITLE), { status, code, title: SERVER_TITLE });
 const key = 'a0000000-0000-7000-8000-000000000009';
 const station = '20000000-0000-7000-8000-000000000003';
+const a320 = '40000000-0000-7000-8000-000000000001';
 const input = (extra = {}) => ({ stationId: station, airlineId: '30000000-0000-7000-8000-000000000001', originIata: 'MIA',
-  destinationIata: null, aircraftTypeId: '40000000-0000-7000-8000-000000000001', standChoice: 'None', standId: null,
+  destinationIata: null, aircraftTypeId: a320, standChoice: 'None', standId: null,
   minutesToOnBlock: 8, groundMinutes: 60, ...extra });
+/** Punta Cana once its stands were loaded: complete, with the seeded B01 and B02 outside the catalogue. */
+const layout = { stationId: station, stationCode: 'PUJ', supported: true, catalogTerminals: 3, terminals: 3,
+  catalogStands: 41, stands: 41, activeStands: 43, locatedStands: 41, missingStands: [], unmatchedStands: ['B01', 'B02'],
+  complete: true };
+/** A stand for the form's visit: located, free and covered at the on-block instant by an agent who passes the rule. */
+const stand = { standId: '50000000-0000-7000-8000-000000000001', code: 'A1', terminalCode: 'A', located: true, free: true,
+  coveredBy: ['Riley Ramp'], eligibleAgents: 1, eligible: true, reasons: [] };
 
 afterEach(() => vi.clearAllMocks());
 
@@ -31,9 +41,15 @@ describe('demo flights service (ADR-0041)', () => {
     // A 403 without its code is the superadministrator's refusal too, and no answer is the connection.
     expect(demoFlightMessage(failure(403))).toBe('Solo el superadministrador dispara vuelos demo.');
     expect(demoFlightMessage(new TypeError('Failed to fetch'))).toMatch(/Revise la conexión/);
+    // A stand chosen by hand that is not eligible, «Al azar» with nothing to draw and a station without a catalogue.
+    expect(demoFlightMessage(failure(409, 'stand_not_eligible'))).toMatch(/no tiene un agente elegible a esa hora/);
+    expect(demoFlightMessage(failure(409, 'no_eligible_stand'))).toMatch(/cree antes la cobertura/);
+    expect(demoFlightMessage(failure(409, 'demo_station_unsupported')))
+      .toBe('Solo Punta Cana (PUJ) tiene un plano de referencia.');
     for (const code of ['demo_flights_unavailable', 'invalid_demo_flight', 'station_unavailable', 'airline_inactive',
       'contract_not_in_force', 'contract_ambiguous', 'aircraft_type_unavailable', 'demo_origin_unknown', 'stand_unavailable',
-      'demo_flight_limit_reached', 'demo_flight_closed', 'version_conflict', 'not_found', 'forbidden']) {
+      'stand_not_eligible', 'no_eligible_stand', 'demo_station_unsupported', 'demo_flight_limit_reached',
+      'demo_flight_closed', 'version_conflict', 'not_found', 'forbidden']) {
       expect(DEMO_FLIGHT_MESSAGES[code], code).toBeTruthy();
       expect(demoFlightMessage(failure(409, code))).toBe(DEMO_FLIGHT_MESSAGES[code]);
       expect(demoFlightMessage(failure(409, code))).not.toContain(SERVER_TITLE);
@@ -74,6 +90,38 @@ describe('demo flights service (ADR-0041)', () => {
       [null, { signal: undefined, cache: 'no-store' }]]);
     expect(api.listDemoFlights.mock.calls).toEqual([[station, { signal, cache: 'no-store' }],
       [null, { signal: undefined, cache: 'no-store' }]]);
+  });
+
+  it('reads the options for the visit of the form and refuses a window out of range before sending', async () => {
+    const signal = new AbortController().signal;
+    const answer = { enabled: true, stationId: station, stands: [stand], layout };
+    api.getDemoFlightOptions.mockResolvedValue(answer);
+    // The stands come evaluated for the form's values: the aircraft type's size, the minutes to the stand and on the ground.
+    await expect(loadDemoFlightOptions(station, { signal, window: { aircraftTypeId: a320, minutesToOnBlock: 15,
+      groundMinutes: 90 } })).resolves.toBe(answer);
+    await loadDemoFlightOptions(null, { window: { minutesToOnBlock: 3 } });
+    expect(api.getDemoFlightOptions.mock.calls).toEqual([
+      [{ stationId: station, aircraftTypeId: a320, minutesToOnBlock: 15, groundMinutes: 90 }, { signal, cache: 'no-store' }],
+      [{ stationId: null, minutesToOnBlock: 3 }, { signal: undefined, cache: 'no-store' }],
+    ]);
+
+    // A window the server would refuse is explained as invalid data and never sent.
+    for (const window of [{ minutesToOnBlock: 1 }, { minutesToOnBlock: 31 }, { groundMinutes: 19 }, { groundMinutes: 241 },
+      { minutesToOnBlock: 7.5 }, { minutesToOnBlock: Number.NaN }, { aircraftTypeId: 'A320' }, { standId: stand.standId }])
+      await expect(loadDemoFlightOptions(station, { window })).rejects.toMatchObject({ status: 400, code: 'invalid_demo_flight' });
+    expect(api.getDemoFlightOptions).toHaveBeenCalledTimes(2);
+  });
+
+  it('loads the Punta Cana stands with the key of the intent and answers the state', async () => {
+    api.prepareDemoStation.mockResolvedValueOnce(layout).mockRejectedValueOnce(failure(401))
+      .mockRejectedValueOnce(failure(409, 'demo_station_unsupported'));
+    await expect(prepareDemoStation(station, key)).resolves.toBe(layout);
+    expect(api.prepareDemoStation).toHaveBeenCalledWith(station, key);
+    // An expired session ends it; a refusal keeps its code for the message.
+    await expect(prepareDemoStation(station, key)).rejects.toMatchObject({ status: 401 });
+    expect(auth.handleUnauthorizedResponse).toHaveBeenCalledWith({ status: 401 });
+    await expect(prepareDemoStation(station, key)).rejects.toMatchObject({ status: 409, code: 'demo_station_unsupported' });
+    expect(auth.handleUnauthorizedResponse).toHaveBeenCalledTimes(1);
   });
 
   it('ends the session on a 401 and passes every other failure through', async () => {

@@ -97,16 +97,27 @@ referencia lo corrige con un motivo de 5 a 500 caracteres mientras no se haya
 aplicado.
 
 Vuelos demo (ADR-0041, solo el superadministrador):
-`getDemoFlightOptions(stationId?)` y `listDemoFlights(stationId?)` leen el
+`getDemoFlightOptions(query?)` y `listDemoFlights(stationId?)` leen el
 formulario y los vuelos de las últimas 24 horas con `enabled` y la hora del
 servidor; donde `DemoFlights:Mode` está apagado responden `enabled: false`.
-`createDemoFlight(input, idempotencyKey)` valida antes de enviar (de 2 a 30
-minutos hasta la posición, de 20 a 240 en tierra, `standChoice` `None` o
-`Specific`, sin claves desconocidas) y acepta 201 o 200 en la repetición.
+La consulta de las opciones es el id de una estación o la visita del
+formulario (`{ stationId?, aircraftTypeId?, minutesToOnBlock?, groundMinutes? }`,
+validada antes de enviar; lo que falta toma 8 y 60 minutos): cada posición
+llega evaluada para esa visita (`located`, `free`, `coveredBy`,
+`eligibleAgents`, `eligible` y `reasons`) y `layout` trae la estación frente
+al catálogo de Punta Cana. `createDemoFlight(input, idempotencyKey)` valida
+antes de enviar (de 2 a 30 minutos hasta la posición, de 20 a 240 en tierra,
+`standChoice` `None`, `Specific` con su posición o `Random` sin ella, sin
+claves desconocidas) y acepta 201 o 200 en la repetición.
 `cancelDemoFlight(demoFlightId, "Cancel" | "Finish", idempotencyKey)` no
-envía versión: el servidor contrasta la intención con la fase. Los códigos
-nuevos son `demo_flights_unavailable`, `invalid_demo_flight`,
-`demo_origin_unknown`, `demo_flight_limit_reached` y `demo_flight_closed`. La
+envía versión: el servidor contrasta la intención con la fase.
+`prepareDemoStation(stationId, idempotencyKey)` («Cargar posiciones de Punta
+Cana») crea lo que le falta a la estación y responde 200 con su estado, también
+en la repetición; su validador exige el estado de la estación pedida. Los
+códigos nuevos son `demo_flights_unavailable`, `invalid_demo_flight`,
+`demo_origin_unknown`, `demo_flight_limit_reached`, `demo_flight_closed`,
+`demo_station_unsupported`, `no_eligible_stand` y `stand_not_eligible`; los
+dos últimos traen en `reasons` por qué la posición no es elegible. La
 propuesta del feed, la escala de planificación y la del mapa de posiciones
 traen `isDemo` solo cuando es `true`; sus validadores aceptan la clave ausente
 o `true`. La app móvil no lee estas respuestas.
